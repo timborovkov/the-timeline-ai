@@ -41,6 +41,13 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
 
   const passwordHash = await hashPassword(password);
 
+  // Sentinel thrown when an invite token is supplied but doesn't apply.
+  // We surface a specific error rather than silently dropping the invite
+  // and creating a fresh default team, which would mislead the user about
+  // which team they joined.
+  const INVITE_INVALID = 'INVITE_INVALID';
+  const INVITE_WRONG_EMAIL = 'INVITE_WRONG_EMAIL';
+
   // All-or-nothing: user + (invite acceptance OR new team + membership) land
   // atomically. A mid-stream failure leaves zero orphan rows.
   let activeTeamId: string;
@@ -60,18 +67,22 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
           .where(and(eq(teamInvites.token, inviteToken), isNull(teamInvites.acceptedAt)))
           .limit(1);
         const invite = invites[0];
-        if (invite && invite.expiresAt > new Date() && invite.email.toLowerCase() === email) {
-          await tx.insert(teamMembers).values({
-            teamId: invite.teamId,
-            userId,
-            role: invite.role,
-          });
-          await tx
-            .update(teamInvites)
-            .set({ acceptedAt: new Date() })
-            .where(eq(teamInvites.id, invite.id));
-          return invite.teamId;
+        if (!invite || invite.expiresAt < new Date()) {
+          throw new Error(INVITE_INVALID);
         }
+        if (invite.email.toLowerCase() !== email) {
+          throw new Error(INVITE_WRONG_EMAIL);
+        }
+        await tx.insert(teamMembers).values({
+          teamId: invite.teamId,
+          userId,
+          role: invite.role,
+        });
+        await tx
+          .update(teamInvites)
+          .set({ acceptedAt: new Date() })
+          .where(eq(teamInvites.id, invite.id));
+        return invite.teamId;
       }
 
       const baseSlug = slugify(`${name}-team`) || 'team';
@@ -85,7 +96,16 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
       await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
       return teamId;
     });
-  } catch {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : '';
+    if (msg === INVITE_INVALID) {
+      return { error: 'This invite link is invalid or has expired. Ask for a new one.' };
+    }
+    if (msg === INVITE_WRONG_EMAIL) {
+      return {
+        error: 'This invite was sent to a different email. Sign up with the email it was sent to.',
+      };
+    }
     return { error: 'Could not create account. Please try again.' };
   }
 
