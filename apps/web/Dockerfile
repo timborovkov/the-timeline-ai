@@ -21,6 +21,8 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
 FROM base AS builder
 COPY --from=deps /app/ .
 COPY --from=pruner /app/out/full/ .
+# turbo prune excludes root-level config; copy it explicitly
+COPY --from=pruner /app/tsconfig.base.json ./tsconfig.base.json
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm --filter @timeline/web build
 
