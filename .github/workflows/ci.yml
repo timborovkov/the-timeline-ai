@@ -8,7 +8,7 @@ on:
 
 jobs:
   ci:
-    name: Lint · Typecheck · Build
+    name: Lint · Typecheck · Format · Knip · Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -28,6 +28,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Format check
+        run: pnpm format:check
+
       - name: Lint
         run: pnpm lint
 
@@ -35,7 +38,16 @@ jobs:
         run: pnpm typecheck
 
       - name: Build packages
+        env:
+          # Build-time dummy values; never used at runtime.
+          AUTH_SECRET: ci_dummy_secret_at_least_16_chars
+          DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
         run: pnpm build
+
+      - name: Knip (dead code / unused deps)
+        env:
+          DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
+        run: pnpm knip
 
   docker-web:
     name: Docker build · web

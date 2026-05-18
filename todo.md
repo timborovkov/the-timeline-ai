@@ -10,7 +10,7 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 - [x] Write Dockerfiles: `apps/web/Dockerfile` (Next.js standalone), `apps/worker/Dockerfile`. Both multi-stage with turbo prune.
 - [x] Write `docker-compose.yml` for local dev: Postgres, Redis, Qdrant, RustFS, bucket-init container.
 - [x] Document `.env.example` with every variable the app expects.
-- [ ] Verify full local stack starts cleanly: `docker compose up -d` → all healthchecks green.
+- [x] Verify full local stack starts cleanly: `docker compose up -d` → all healthchecks green.
 - [ ] Create Railway project. Provision Postgres plugin, Redis plugin.
 - [ ] Add Qdrant service on Railway (`qdrant/qdrant:v1.12.4` image + persistent volume).
 - [ ] Add RustFS service on Railway (`rustfs/rustfs:latest` image + persistent volume). Run bucket init once.
@@ -24,16 +24,16 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 
 ## Phase 1 — Teams, users, basic capture
 
-- [ ] `packages/db`: Drizzle (or Prisma) setup with migrations. `pnpm db:migrate` and `pnpm db:generate` scripts.
-- [ ] Schema: `users`, `teams`, `team_members` (with role: `owner` / `admin` / `member`).
-- [ ] Auth flows in `apps/web`: sign up, sign in (email + OAuth), create team, invite member by email.
-- [ ] Team switcher in app shell.
-- [ ] Schema: `raw_events` (id, team_id, author_user_id, source, content_text, content_audio_url, occurred_at, created_at, visibility, source_metadata jsonb).
-- [ ] Web UI: text capture form. Submit → row in `raw_events`. No AI yet.
-- [ ] Timeline view: reverse-chronological list of raw events for current team. Filterable by author and date.
-- [ ] Enforce team isolation at the query layer (helper that always injects `team_id` — never trust the caller).
-- [ ] Row-level visibility filtering on timeline reads.
-- [ ] `/api/health` endpoint for Railway healthchecks.
+- [x] `packages/db`: Drizzle (or Prisma) setup with migrations. `pnpm db:migrate` and `pnpm db:generate` scripts.
+- [x] Schema: `users`, `teams`, `team_members` (with role: `owner` / `admin` / `member`).
+- [x] Auth flows in `apps/web`: sign up, sign in (email + OAuth), create team, invite member by email.
+- [x] Team switcher in app shell.
+- [x] Schema: `raw_events` (id, team_id, author_user_id, source, content_text, content_audio_url, occurred_at, created_at, visibility, source_metadata jsonb).
+- [x] Web UI: text capture form. Submit → row in `raw_events`. No AI yet.
+- [x] Timeline view: reverse-chronological list of raw events for current team. Filterable by author and date.
+- [x] Enforce team isolation at the query layer (helper that always injects `team_id` — never trust the caller).
+- [x] Row-level visibility filtering on timeline reads.
+- [x] `/api/health` endpoint for Railway healthchecks.
 - [ ] Deploy to Railway staging. Verify web service runs against Railway Postgres + Redis.
 
 **Checkpoint:** A team can sign up, invite members, post text notes, see them in a timeline. No AI, no Telegram, no email. Deployed to staging. This is the spine — make sure it's solid.

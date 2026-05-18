@@ -1,0 +1,31 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    ".": {
+      "project": ["*.{js,ts}"]
+    },
+    "apps/web": {
+      "entry": [
+        "src/app/**/{page,route,layout,loading,error,not-found,template,default,sitemap,robots,manifest,icon,apple-icon,opengraph-image,twitter-image}.{ts,tsx,js,jsx}",
+        "src/middleware.{ts,tsx}",
+        "postcss.config.{js,mjs,cjs,ts}"
+      ],
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignore": ["src/components/ui/**"],
+      "ignoreDependencies": ["tailwindcss"]
+    },
+    "apps/worker": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["bullmq", "@timeline/db", "@timeline/shared"]
+    },
+    "packages/db": {
+      "entry": ["src/index.ts", "src/schema/**/*.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/shared": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
+    }
+  }
+}
