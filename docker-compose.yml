@@ -55,7 +55,7 @@ services:
     environment:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-dev_qdrant_key}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/healthz >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "perl -MIO::Socket::INET -e 'exit(IO::Socket::INET->new(PeerAddr=>\"127.0.0.1\",PeerPort=>6333,Proto=>\"tcp\")?0:1)'"]
       interval: 5s
       timeout: 3s
       retries: 10
