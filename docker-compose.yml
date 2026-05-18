@@ -55,7 +55,7 @@ services:
     environment:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-dev_qdrant_key}
     healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --spider http://localhost:6333/healthz || exit 1"]
+      test: ["CMD-SHELL", "perl -MIO::Socket::INET -e 'exit(IO::Socket::INET->new(PeerAddr=>\"127.0.0.1\",PeerPort=>6333,Proto=>\"tcp\")?0:1)'"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -75,7 +75,7 @@ services:
     volumes:
       - rustfs_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/health || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 10

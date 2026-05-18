@@ -3,17 +3,25 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@9.12.0",
+  "type": "module",
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "db:migrate": "pnpm --filter @timeline/db migrate",
     "db:generate": "pnpm --filter @timeline/db generate",
     "db:studio": "pnpm --filter @timeline/db studio"
   },
   "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "typescript-eslint": "^8.0.0",
     "turbo": "^2.1.0",
     "typescript": "^5.6.0",
     "prettier": "^3.3.0"
