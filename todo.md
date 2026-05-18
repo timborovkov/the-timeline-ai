@@ -4,23 +4,23 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 
 ## Phase 0 — Foundations
 
-- [ ] Initialize pnpm + Turborepo monorepo: `apps/web`, `apps/worker`, `packages/shared`, `packages/db`.
-- [ ] Set up TypeScript project references across packages. Shared `tsconfig.base.json`.
-- [ ] Set up Prettier + ESLint at root, applied via Turbo.
-- [ ] Write Dockerfiles: `apps/web/Dockerfile` (Next.js standalone), `apps/worker/Dockerfile`. Both multi-stage with turbo prune.
-- [ ] Write `docker-compose.yml` for local dev: Postgres, Redis, Qdrant, RustFS, bucket-init container.
-- [ ] Document `.env.example` with every variable the app expects.
+- [x] Initialize pnpm + Turborepo monorepo: `apps/web`, `apps/worker`, `packages/shared`, `packages/db`.
+- [x] Set up TypeScript project references across packages. Shared `tsconfig.base.json`.
+- [x] Set up Prettier + ESLint at root, applied via Turbo.
+- [x] Write Dockerfiles: `apps/web/Dockerfile` (Next.js standalone), `apps/worker/Dockerfile`. Both multi-stage with turbo prune.
+- [x] Write `docker-compose.yml` for local dev: Postgres, Redis, Qdrant, RustFS, bucket-init container.
+- [x] Document `.env.example` with every variable the app expects.
 - [ ] Verify full local stack starts cleanly: `docker compose up -d` → all healthchecks green.
 - [ ] Create Railway project. Provision Postgres plugin, Redis plugin.
 - [ ] Add Qdrant service on Railway (`qdrant/qdrant:v1.12.4` image + persistent volume).
 - [ ] Add RustFS service on Railway (`rustfs/rustfs:latest` image + persistent volume). Run bucket init once.
-- [ ] Write `apps/web/railway.json` and `apps/worker/railway.json` (per-worker start command overrides in service settings).
+- [x] Write `apps/web/railway.json` and `apps/worker/railway.json` (per-worker start command overrides in service settings).
 - [ ] Set up two Railway environments: `staging` and `production`. Configure branch deploys (`main` → production, `staging` → staging).
 - [ ] Set up OpenRouter account. Test chat, embeddings, transcription endpoints from local.
 - [ ] Set up Postmark account. Configure inbound webhook URL (placeholder app endpoint).
 - [ ] Register Telegram bot via BotFather. Disable privacy mode. Save token to Railway shared variables.
 - [ ] Set up Sentry (or equivalent) for error tracking, structured logging.
-- [ ] Set up CI on GitHub Actions: lint, typecheck, test, build Docker images on PR.
+- [x] Set up CI on GitHub Actions: lint, typecheck, test, build Docker images on PR.
 
 ## Phase 1 — Teams, users, basic capture
 
