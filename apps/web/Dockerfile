@@ -24,6 +24,8 @@ COPY --from=pruner /app/out/full/ .
 # turbo prune excludes root-level config; copy it explicitly
 COPY --from=pruner /app/tsconfig.base.json ./tsconfig.base.json
 ENV NEXT_TELEMETRY_DISABLED=1
+RUN pnpm --filter @timeline/db build
+RUN pnpm --filter @timeline/shared build
 RUN pnpm --filter @timeline/web build
 
 # ---- Runner ----
