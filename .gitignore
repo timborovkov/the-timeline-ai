@@ -33,8 +33,6 @@ pnpm-debug.log*
 *.tsbuildinfo
 
 
-# ---- Docker ----
-.dockerignore
 
 # ---- Misc ----
 coverage/

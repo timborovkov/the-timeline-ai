@@ -1,0 +1,24 @@
+.git
+.github
+.claude
+node_modules
+dist
+.next
+.turbo
+*.tsbuildinfo
+
+.env
+.env.local
+.env.*.local
+
+.DS_Store
+Thumbs.db
+
+coverage
+.nyc_output
+
+# Docker build context doesn't need these
+*.md
+todo.md
+product-brief.md
+RAILWAY.md
