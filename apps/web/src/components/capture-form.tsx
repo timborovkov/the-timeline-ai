@@ -20,9 +20,12 @@ export function CaptureForm() {
   const [state, action] = useFormState<CreateEventState, FormData>(createTextEventAction, {});
   const formRef = useRef<HTMLFormElement>(null);
 
+  // Depend on the action timestamp, not just `ok`. useFormState replaces state
+  // on every action call, but if two successful submits both return `{ ok: true }`
+  // React sees no change and skips the reset. The timestamp changes every time.
   useEffect(() => {
     if (state.ok) formRef.current?.reset();
-  }, [state.ok]);
+  }, [state.ok, state.at]);
 
   return (
     <form ref={formRef} action={action} className="space-y-3">

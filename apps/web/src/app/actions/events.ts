@@ -16,6 +16,10 @@ const createTextSchema = z.object({
 export interface CreateEventState {
   error?: string;
   ok?: boolean;
+  // Monotonic id that changes on every successful submit so the client can
+  // distinguish two consecutive successes (otherwise `ok: true` looks identical
+  // to React's dep-array check and effects won't re-fire).
+  at?: number;
 }
 
 export async function createTextEventAction(
@@ -45,5 +49,5 @@ export async function createTextEventAction(
   });
 
   revalidatePath('/app/timeline');
-  return { ok: true };
+  return { ok: true, at: Date.now() };
 }
