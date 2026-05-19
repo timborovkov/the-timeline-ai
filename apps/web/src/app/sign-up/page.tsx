@@ -24,7 +24,14 @@ export default async function SignUpPage({ searchParams }: Props) {
           <SignUpForm inviteToken={invite} />
           <p className="text-sm text-muted-foreground">
             Already have an account?{' '}
-            <Link href="/sign-in" className="text-primary hover:underline">
+            <Link
+              href={
+                invite
+                  ? `/sign-in?callbackUrl=${encodeURIComponent(`/accept-invite/${invite}`)}`
+                  : '/sign-in'
+              }
+              className="text-primary hover:underline"
+            >
               Sign in
             </Link>
             .

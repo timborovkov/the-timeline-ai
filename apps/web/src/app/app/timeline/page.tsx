@@ -20,6 +20,15 @@ function parseDate(input: string | undefined): Date | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
+// `<input type="date">` returns YYYY-MM-DD which parses as midnight UTC.
+// For an inclusive end-of-day filter, shift the upper bound to the next
+// midnight so the whole selected day's events match.
+function parseEndOfDay(input: string | undefined): Date | undefined {
+  const d = parseDate(input);
+  if (!d) return undefined;
+  return new Date(d.getTime() + 24 * 60 * 60 * 1000);
+}
+
 export default async function TimelinePage({ searchParams }: Props) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -34,7 +43,7 @@ export default async function TimelinePage({ searchParams }: Props) {
   const events = await scope.listEvents({
     authorUserId: sp.author,
     from: parseDate(sp.from),
-    to: parseDate(sp.to),
+    to: parseEndOfDay(sp.to),
   });
 
   const authorIds = Array.from(

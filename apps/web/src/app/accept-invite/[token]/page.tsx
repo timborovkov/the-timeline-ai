@@ -1,7 +1,6 @@
 import { teamInvites, teams } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { acceptInviteAction } from '@/app/actions/invites';
 import { Button } from '@/components/ui/button';
@@ -20,7 +19,35 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
   const session = await auth();
 
   if (!session?.user) {
-    redirect(`/sign-up?invite=${encodeURIComponent(token)}`);
+    // Show a choice: existing users sign in (and come back here), new users
+    // sign up with the invite. Unconditional redirect to sign-up would force
+    // existing accounts through a duplicate-email error.
+    const inviteUrl = `/accept-invite/${encodeURIComponent(token)}`;
+    const signInHref = `/sign-in?callbackUrl=${encodeURIComponent(inviteUrl)}`;
+    const signUpHref = `/sign-up?invite=${encodeURIComponent(token)}`;
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
+        <Card>
+          <CardHeader>
+            <CardTitle>Accept invite</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Sign in if you already have an account, or sign up to create one with the invited
+              email.
+            </p>
+            <div className="flex gap-3">
+              <Button asChild>
+                <Link href={signInHref}>Sign in</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href={signUpHref}>Sign up</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+    );
   }
 
   const sessionEmail = session.user.email?.toLowerCase();

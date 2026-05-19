@@ -1,5 +1,5 @@
 import { type Db, rawEvents, teamMembers, teams, teamRole } from '@timeline/db';
-import { and, asc, desc, eq, gte, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lt, or, sql } from 'drizzle-orm';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.
@@ -10,7 +10,10 @@ const ROLE_RANK: Record<TeamRole, number> = { member: 0, admin: 1, owner: 2 };
 
 export interface EventListFilters {
   authorUserId?: string;
+  /** Inclusive lower bound on `occurred_at`. */
   from?: Date;
+  /** Exclusive upper bound on `occurred_at`. Callers wanting "include all of
+   *  day X" should pass midnight UTC of day X+1. */
   to?: Date;
   limit?: number;
 }
@@ -88,7 +91,7 @@ export function withTeam(db: Db, teamId: string, userId: string) {
         conditions.push(eq(rawEvents.authorUserId, filters.authorUserId));
       }
       if (filters.from) conditions.push(gte(rawEvents.occurredAt, filters.from));
-      if (filters.to) conditions.push(lte(rawEvents.occurredAt, filters.to));
+      if (filters.to) conditions.push(lt(rawEvents.occurredAt, filters.to));
       return db
         .select()
         .from(rawEvents)
