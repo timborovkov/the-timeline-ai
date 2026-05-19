@@ -118,11 +118,22 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     maxAge: 60 * 60 * 24 * 365,
   });
 
-  await signIn('credentials', {
-    email,
-    password,
-    redirect: false,
-  });
+  // Best-effort auto-signin. The account already exists and is committed —
+  // if signIn throws for any reason (Auth.js misconfig, transient adapter
+  // failure), send the user to /sign-in instead of surfacing a confusing
+  // "could not create account" while the account actually exists.
+  try {
+    await signIn('credentials', {
+      email,
+      password,
+      redirect: false,
+    });
+  } catch (e) {
+    if (e instanceof AuthError) {
+      redirect('/sign-in');
+    }
+    throw e;
+  }
 
   redirect('/app/timeline');
 }

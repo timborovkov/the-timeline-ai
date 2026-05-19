@@ -43,7 +43,7 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
       }
 
       const existing = await tx
-        .select()
+        .select({ role: teamMembers.role })
         .from(teamMembers)
         .where(and(eq(teamMembers.teamId, invite.teamId), eq(teamMembers.userId, userId)))
         .limit(1);
@@ -53,6 +53,14 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
           userId,
           role: invite.role,
         });
+      } else if (existing[0]?.role !== invite.role && existing[0]?.role !== 'owner') {
+        // Re-accepting an invite is a legitimate way to change a member's
+        // role (e.g. promote member → admin). Never demote an owner via this
+        // path — owners must be removed/added explicitly.
+        await tx
+          .update(teamMembers)
+          .set({ role: invite.role })
+          .where(and(eq(teamMembers.teamId, invite.teamId), eq(teamMembers.userId, userId)));
       }
       await tx
         .update(teamInvites)

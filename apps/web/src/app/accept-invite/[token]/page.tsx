@@ -122,6 +122,11 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
             You've been invited to join <span className="font-medium">{invite.teamName}</span> as{' '}
             <span className="font-medium">{invite.role}</span>.
           </p>
+          {error === 'failed' ? (
+            <p className="text-sm text-destructive">
+              Something went wrong while joining. Please try again.
+            </p>
+          ) : null}
           <form action={acceptInviteAction} className="flex items-center gap-3">
             <input type="hidden" name="token" value={token} />
             <Button type="submit">Join team</Button>
