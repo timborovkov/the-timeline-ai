@@ -86,6 +86,12 @@ export const telegramLinkTokens = pgTable(
     issuedByUserId: uuid('issued_by_user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    // The issuer's own Telegram @username (without the @, normalized to
+    // lower case). The token is consumable ONLY from a TG account whose
+    // username matches. This is the proof that ties consumer ↔ issuer and
+    // makes binding telegram_users.user_id safe at consumption time.
+    // Nullable for legacy tokens; new tokens always set it.
+    targetTgUsername: text('target_tg_username'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
     consumedByTgUserId: bigint('consumed_by_tg_user_id', { mode: 'number' }),

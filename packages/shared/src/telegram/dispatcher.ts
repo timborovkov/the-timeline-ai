@@ -190,6 +190,12 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
       if (row.consumedAt) throw new Error('consumed');
       if (row.expiresAt < new Date()) throw new Error('expired');
       if (row.scope !== 'personal') throw new Error('wrong_scope_personal');
+      // Identity gate: token is bound to the issuer's TG @username at
+      // generation time and is only consumable from that exact account.
+      // Once matched, the consumer IS the issuer — safe to bind user_id.
+      if (!row.targetTgUsername) throw new Error('legacy_no_username');
+      const consumerUsername = ctx.tgUser.username?.toLowerCase() ?? '';
+      if (consumerUsername !== row.targetTgUsername) throw new Error('wrong_user');
       // Re-verify the issuer's team membership at consumption time so a
       // teammate who was removed inside the 15-min TTL window cannot still
       // bind Telegram capture to a team they no longer belong to.
@@ -240,15 +246,16 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
         });
       }
 
-      // We do NOT bind telegram_users.user_id = row.issuedByUserId here.
-      // A single short-lived token can't prove the consumer IS the issuer —
-      // anyone who obtains the token (paste in wrong window, shoulder-surf)
-      // could then post to the team's timeline attributed to the issuer.
-      // Until Phase 2b adds an out-of-band confirmation flow, messages from
-      // a linked DM land in the right team but with author_user_id=null and
-      // source_unverified=true. The team binding (telegram_user_teams) is
-      // safe to establish — it only routes to a team the issuer is already
-      // a member of; the unverified flag is what protects attribution.
+      // Now that the @username match has proven consumer == issuer, bind
+      // the Telegram account to the app user. This is what makes DM ingest
+      // attribute messages to the right author_user_id (instead of going
+      // in as source_unverified) AND what gives removeMemberAction a
+      // consumer-side anchor for revoking routing on member removal.
+      await tx
+        .update(telegramUsers)
+        .set({ userId: row.issuedByUserId, updatedAt: new Date() })
+        .where(eq(telegramUsers.id, ctx.tgUserRow.id));
+
       await tx
         .update(telegramLinkTokens)
         .set({
@@ -276,7 +283,11 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
               ? 'That token is for a group binding, not a DM link.'
               : reason === 'issuer_revoked'
                 ? 'The teammate who issued this token is no longer in that team. Ask a current member for a new one.'
-                : 'Could not link. Try again.';
+                : reason === 'wrong_user'
+                  ? 'This token was issued for a different Telegram @username. Generate one in the web app for your own account.'
+                  : reason === 'legacy_no_username'
+                    ? 'This token predates the identity check. Generate a new one in the web app.'
+                    : 'Could not link. Try again.';
     await ctx.tg.sendMessage({ chat_id: ctx.message.chat.id, text });
   }
 }
@@ -551,6 +562,11 @@ async function cmdLinkGroup(ctx: GroupContext, arg: string): Promise<void> {
       if (row.consumedAt) throw new Error('consumed');
       if (row.expiresAt < new Date()) throw new Error('expired');
       if (row.scope !== 'group') throw new Error('wrong_scope_group');
+      // Identity gate: only the admin who issued the token (proved by
+      // matching their TG @username) can consume it inside the group.
+      if (!row.targetTgUsername) throw new Error('legacy_no_username');
+      const consumerUsername = issuer.username?.toLowerCase() ?? '';
+      if (consumerUsername !== row.targetTgUsername) throw new Error('wrong_user');
       // Issuer must still be an admin of the team at consumption time —
       // group binding is a privileged operation and a former admin's
       // outstanding token must not survive their removal/demotion.
@@ -612,7 +628,11 @@ async function cmdLinkGroup(ctx: GroupContext, arg: string): Promise<void> {
                 ? 'This group is already bound to a team. Unbind it first with /unlink.'
                 : reason === 'issuer_revoked'
                   ? 'The admin who issued this token is no longer an admin of that team. Ask a current admin for a new one.'
-                  : 'Could not bind. Try again.';
+                  : reason === 'wrong_user'
+                    ? 'This token was issued for a different Telegram @username. Have the issuing admin run /link from their own account.'
+                    : reason === 'legacy_no_username'
+                      ? 'This token predates the identity check. Generate a new one in the web app.'
+                      : 'Could not bind. Try again.';
     await ctx.tg.sendMessage({ chat_id: ctx.message.chat.id, text });
   }
 }

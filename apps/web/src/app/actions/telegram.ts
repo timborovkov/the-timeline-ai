@@ -18,10 +18,21 @@ export interface GenerateLinkTokenState {
   expiresAt?: string;
 }
 
+// TG usernames: 5-32 chars, alphanumeric + underscore, no leading digit.
+// We accept with or without the leading @ and normalize to lower case.
+const TG_USERNAME_RE = /^[a-zA-Z][a-zA-Z0-9_]{4,31}$/;
+
+function normalizeTgUsername(raw: FormDataEntryValue | null): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim().replace(/^@/, '');
+  if (!TG_USERNAME_RE.test(trimmed)) return null;
+  return trimmed.toLowerCase();
+}
+
 async function generateLinkTokenAction(
   scope: 'personal' | 'group',
   _prev: GenerateLinkTokenState,
-  _formData: FormData,
+  formData: FormData,
 ): Promise<GenerateLinkTokenState> {
   const session = await auth();
   if (!session?.user) return { error: 'Not signed in' };
@@ -35,6 +46,14 @@ async function generateLinkTokenAction(
     return { error: scope === 'group' ? 'Only admins can issue group tokens' : 'Not a member' };
   }
 
+  const targetTgUsername = normalizeTgUsername(formData.get('tgUsername'));
+  if (!targetTgUsername) {
+    return {
+      error:
+        'Enter your Telegram @username (5–32 chars, letters/numbers/underscore, must start with a letter). If you don’t have one yet, set it in Telegram: Settings → Username.',
+    };
+  }
+
   const token = randomToken(24);
   const expiresAt = new Date(Date.now() + LINK_TOKEN_TTL_MS);
   await db.insert(telegramLinkTokens).values({
@@ -42,6 +61,7 @@ async function generateLinkTokenAction(
     teamId: active.teamId,
     scope,
     issuedByUserId: session.user.id,
+    targetTgUsername,
     expiresAt,
   });
   revalidatePath('/app/team/telegram');

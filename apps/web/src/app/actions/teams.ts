@@ -5,10 +5,11 @@ import {
   teamMembers,
   teams,
   telegramChatBindings,
+  telegramUsers,
   telegramUserTeams,
 } from '@timeline/db';
 import { randomSlugSuffix, randomToken, slugify, withTeam } from '@timeline/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -157,10 +158,33 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
         .delete(teamMembers)
         .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
 
-      // Revoke Telegram routing established by this user. Without this,
-      // DM messages from the removed user's linked Telegram account would
-      // continue to land in this team's timeline, and group bindings they
-      // set up would keep capturing for a team they no longer belong to.
+      // Revoke Telegram routing for this user — two anchors, both needed:
+      //
+      //   1. Consumer-side: telegram_users.user_id points at this app
+      //      user (bound at /link time, after the username-match identity
+      //      check). Any telegram_user_teams row keyed by such a
+      //      telegram_users.id is *their* DM. This is the primary anchor.
+      //   2. Provenance-side: rows where linked_by_user_id matches —
+      //      catches edge cases like a teammate consuming an admin's token
+      //      under a different TG account (rejected at consumption now,
+      //      but the historical cleanup stays as defense in depth).
+      //
+      // Also drop group bindings they personally established.
+      const ownedTgUserIds = await tx
+        .select({ id: telegramUsers.id })
+        .from(telegramUsers)
+        .where(eq(telegramUsers.userId, memberUserId));
+      if (ownedTgUserIds.length > 0) {
+        const ids = ownedTgUserIds.map((r) => r.id);
+        await tx
+          .delete(telegramUserTeams)
+          .where(
+            and(
+              eq(telegramUserTeams.teamId, active.teamId),
+              inArray(telegramUserTeams.telegramUserId, ids),
+            ),
+          );
+      }
       await tx
         .delete(telegramUserTeams)
         .where(

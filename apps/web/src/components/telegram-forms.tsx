@@ -8,6 +8,8 @@ import {
   type GenerateLinkTokenState,
 } from '@/app/actions/telegram';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 function Submit({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -58,6 +60,26 @@ function TokenResult({
   );
 }
 
+function TgUsernameField({ id }: { id: string }) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>Your Telegram @username</Label>
+      <Input
+        id={id}
+        name="tgUsername"
+        type="text"
+        placeholder="e.g. alice_smith"
+        autoComplete="off"
+        required
+      />
+      <p className="text-xs text-muted-foreground">
+        Only an account with this exact @username can consume the token. Set yours in Telegram under
+        Settings → Username if you haven&rsquo;t.
+      </p>
+    </div>
+  );
+}
+
 export function GeneratePersonalTokenForm({ botUsername }: { botUsername: string | null }) {
   const [state, action] = useFormState<GenerateLinkTokenState, FormData>(
     generatePersonalLinkTokenAction,
@@ -65,6 +87,7 @@ export function GeneratePersonalTokenForm({ botUsername }: { botUsername: string
   );
   return (
     <form action={action} className="space-y-3">
+      <TgUsernameField id="personal-tg-username" />
       <Submit label="Generate personal link" />
       <TokenResult state={state} botUsername={botUsername} />
     </form>
@@ -78,6 +101,7 @@ export function GenerateGroupTokenForm({ botUsername }: { botUsername: string | 
   );
   return (
     <form action={action} className="space-y-3">
+      <TgUsernameField id="group-tg-username" />
       <Submit label="Generate group link" />
       <TokenResult state={state} botUsername={botUsername} />
     </form>
