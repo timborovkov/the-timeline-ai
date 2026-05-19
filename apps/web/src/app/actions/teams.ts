@@ -2,7 +2,7 @@
 
 import { teamInvites, teamMembers, teams } from '@timeline/db';
 import { randomSlugSuffix, randomToken, slugify, withTeam } from '@timeline/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, count, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -123,18 +123,34 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
   const callerRole = await scope.requireMembership('admin');
   if (memberUserId === session.user.id) return;
 
-  // Admins cannot remove owners; only another owner can.
-  const targetRows = await db
-    .select({ role: teamMembers.role })
-    .from(teamMembers)
-    .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)))
-    .limit(1);
-  const targetRole = targetRows[0]?.role;
-  if (!targetRole) return;
-  if (targetRole === 'owner' && callerRole !== 'owner') return;
-
-  await db
-    .delete(teamMembers)
-    .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
+  try {
+    await db.transaction(async (tx) => {
+      const targetRows = await tx
+        .select({ role: teamMembers.role })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)))
+        .limit(1);
+      const targetRole = targetRows[0]?.role;
+      if (!targetRole) return;
+      // Admins cannot remove owners; only another owner can.
+      if (targetRole === 'owner' && callerRole !== 'owner') return;
+      // Never strand a team with zero owners.
+      if (targetRole === 'owner') {
+        const ownerCount = await tx
+          .select({ c: count() })
+          .from(teamMembers)
+          .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.role, 'owner')));
+        if ((ownerCount[0]?.c ?? 0) <= 1) {
+          throw new Error('last_owner');
+        }
+      }
+      await tx
+        .delete(teamMembers)
+        .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === 'last_owner') return;
+    throw e;
+  }
   revalidatePath('/app/team');
 }
