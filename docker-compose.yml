@@ -18,11 +18,11 @@ services:
       POSTGRES_PASSWORD: timeline_dev
       POSTGRES_DB: timeline
     ports:
-      - "5432:5432"
+      - '5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U timeline -d timeline"]
+      test: ['CMD-SHELL', 'pg_isready -U timeline -d timeline']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -33,11 +33,11 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes
     ports:
-      - "6379:6379"
+      - '6379:6379'
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 3s
       retries: 10
@@ -48,14 +48,18 @@ services:
     image: qdrant/qdrant:v1.12.4
     restart: unless-stopped
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - '6333:6333'
+      - '6334:6334'
     volumes:
       - qdrant_data:/qdrant/storage
     environment:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-dev_qdrant_key}
     healthcheck:
-      test: ["CMD-SHELL", "perl -MIO::Socket::INET -e 'exit(IO::Socket::INET->new(PeerAddr=>\"127.0.0.1\",PeerPort=>6333,Proto=>\"tcp\")?0:1)'"]
+      test:
+        [
+          'CMD-SHELL',
+          'perl -MIO::Socket::INET -e ''exit(IO::Socket::INET->new(PeerAddr=>"127.0.0.1",PeerPort=>6333,Proto=>"tcp")?0:1)''',
+        ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -66,8 +70,8 @@ services:
     image: rustfs/rustfs:latest
     restart: unless-stopped
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - '9000:9000'
+      - '9001:9001'
     environment:
       RUSTFS_ROOT_USER: timeline
       RUSTFS_ROOT_PASSWORD: timeline_dev_secret
@@ -75,7 +79,7 @@ services:
     volumes:
       - rustfs_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9000/health || exit 1"]
+      test: ['CMD-SHELL', 'curl -f http://localhost:9000/health || exit 1']
       interval: 5s
       timeout: 3s
       retries: 10
@@ -106,13 +110,13 @@ services:
   # These profiles let you exercise the full container stack when needed.
 
   web:
-    profiles: ["app"]
+    profiles: ['app']
     build:
       context: .
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - '3000:3000'
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://timeline:timeline_dev@postgres:5432/timeline
@@ -123,7 +127,7 @@ services:
       S3_REGION: us-east-1
       S3_ACCESS_KEY_ID: timeline
       S3_SECRET_ACCESS_KEY: timeline_dev_secret
-      S3_FORCE_PATH_STYLE: "true"
+      S3_FORCE_PATH_STYLE: 'true'
       AUTH_SECRET: ${AUTH_SECRET}
       AUTH_URL: http://localhost:3000
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
@@ -143,7 +147,7 @@ services:
         condition: service_completed_successfully
 
   worker:
-    profiles: ["app"]
+    profiles: ['app']
     build:
       context: .
       dockerfile: apps/worker/Dockerfile
@@ -158,7 +162,7 @@ services:
       S3_REGION: us-east-1
       S3_ACCESS_KEY_ID: timeline
       S3_SECRET_ACCESS_KEY: timeline_dev_secret
-      S3_FORCE_PATH_STYLE: "true"
+      S3_FORCE_PATH_STYLE: 'true'
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openai/text-embedding-3-small}
       EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}

@@ -2,4 +2,9 @@ node_modules
 dist
 .next
 .turbo
+coverage
+pnpm-lock.yaml
+packages/db/drizzle
+**/.next/**
+**/dist/**
 *.md

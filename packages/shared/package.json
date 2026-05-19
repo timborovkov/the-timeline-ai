@@ -17,7 +17,15 @@
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "@timeline/db": "workspace:*",
+    "bcryptjs": "^2.4.3",
+    "drizzle-orm": "^0.38.0",
+    "zod": "^3.23.0"
+  },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.0.0",
     "typescript": "*"
   }
 }
