@@ -41,6 +41,7 @@ const schema = z.object({
   // Telegram (Phase 2+)
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
+  TELEGRAM_BOT_USERNAME: z.string().optional(),
 
   // Postmark (Phase 7)
   POSTMARK_SERVER_TOKEN: z.string().optional(),

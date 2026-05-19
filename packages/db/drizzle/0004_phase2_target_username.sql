@@ -1,0 +1,1 @@
+ALTER TABLE "telegram_link_tokens" ADD COLUMN "target_tg_username" text;

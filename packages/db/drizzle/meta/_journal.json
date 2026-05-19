@@ -8,6 +8,34 @@
       "when": 1779142073036,
       "tag": "0000_phase1",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779188098167,
+      "tag": "0001_phase2_telegram",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779195326460,
+      "tag": "0002_phase2_telegram_dedup",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779207447858,
+      "tag": "0003_phase2_linker_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1779224852417,
+      "tag": "0004_phase2_target_username",
+      "breakpoints": true
     }
   ]
 }

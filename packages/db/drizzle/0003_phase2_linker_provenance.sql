@@ -1,0 +1,2 @@
+ALTER TABLE "telegram_user_teams" ADD COLUMN "linked_by_user_id" uuid;--> statement-breakpoint
+ALTER TABLE "telegram_user_teams" ADD CONSTRAINT "telegram_user_teams_linked_by_user_id_users_id_fk" FOREIGN KEY ("linked_by_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;

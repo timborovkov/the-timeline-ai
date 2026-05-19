@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "raw_events_telegram_update_id_unq" ON "raw_events" USING btree ((("source_metadata" ->> 'tg_update_id'))) WHERE "raw_events"."source" = 'telegram' AND "raw_events"."source_metadata" ? 'tg_update_id';

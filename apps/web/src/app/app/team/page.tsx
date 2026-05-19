@@ -1,6 +1,7 @@
 import { users } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { removeMemberAction } from '@/app/actions/teams';
@@ -88,6 +89,18 @@ export default async function TeamSettingsPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Telegram</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <p className="text-muted-foreground">Capture from Telegram DMs and group chats.</p>
+          <Link href="/app/team/telegram" className="underline">
+            Manage Telegram links →
+          </Link>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

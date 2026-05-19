@@ -1,8 +1,15 @@
 'use server';
 
-import { teamInvites, teamMembers, teams } from '@timeline/db';
+import {
+  teamInvites,
+  teamMembers,
+  teams,
+  telegramChatBindings,
+  telegramUsers,
+  telegramUserTeams,
+} from '@timeline/db';
 import { randomSlugSuffix, randomToken, slugify, withTeam } from '@timeline/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -123,18 +130,124 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
   const callerRole = await scope.requireMembership('admin');
   if (memberUserId === session.user.id) return;
 
-  // Admins cannot remove owners; only another owner can.
-  const targetRows = await db
-    .select({ role: teamMembers.role })
-    .from(teamMembers)
-    .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)))
-    .limit(1);
-  const targetRole = targetRows[0]?.role;
-  if (!targetRole) return;
-  if (targetRole === 'owner' && callerRole !== 'owner') return;
+  try {
+    await db.transaction(async (tx) => {
+      const targetRows = await tx
+        .select({ role: teamMembers.role })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)))
+        .limit(1);
+      const targetRole = targetRows[0]?.role;
+      if (!targetRole) return;
+      // Admins cannot remove owners; only another owner can.
+      if (targetRole === 'owner' && callerRole !== 'owner') return;
+      // Never strand a team with zero owners. SELECT FOR UPDATE on the team's
+      // owner rows so a concurrent removal of a different owner cannot also
+      // pass this check and leave the team ownerless.
+      if (targetRole === 'owner') {
+        const ownerRows = await tx
+          .select({ userId: teamMembers.userId })
+          .from(teamMembers)
+          .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.role, 'owner')))
+          .for('update');
+        if (ownerRows.length <= 1) {
+          throw new Error('last_owner');
+        }
+      }
+      await tx
+        .delete(teamMembers)
+        .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
 
-  await db
-    .delete(teamMembers)
-    .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
+      // Revoke Telegram routing for this user — two anchors, both needed:
+      //
+      //   1. Consumer-side: telegram_users.user_id points at this app
+      //      user (bound at /link time, after the username-match identity
+      //      check). Any telegram_user_teams row keyed by such a
+      //      telegram_users.id is *their* DM. This is the primary anchor.
+      //   2. Provenance-side: rows where linked_by_user_id matches —
+      //      catches edge cases like a teammate consuming an admin's token
+      //      under a different TG account (rejected at consumption now,
+      //      but the historical cleanup stays as defense in depth).
+      //
+      // Also drop group bindings they personally established.
+      const ownedTgUserIds = await tx
+        .select({ id: telegramUsers.id })
+        .from(telegramUsers)
+        .where(eq(telegramUsers.userId, memberUserId));
+      const ownedIds = ownedTgUserIds.map((r) => r.id);
+
+      // Snapshot the TG users whose active-team row is about to be deleted.
+      // After the deletes we'll promote a remaining linked team to active
+      // for each, so a DM author isn't left in a "linked but no active
+      // team" state when they had other teams linked.
+      const deactivationCandidates = await tx
+        .select({ telegramUserId: telegramUserTeams.telegramUserId })
+        .from(telegramUserTeams)
+        .where(
+          and(
+            eq(telegramUserTeams.teamId, active.teamId),
+            eq(telegramUserTeams.isActive, true),
+            or(
+              ownedIds.length > 0
+                ? inArray(telegramUserTeams.telegramUserId, ownedIds)
+                : sql`false`,
+              eq(telegramUserTeams.linkedByUserId, memberUserId),
+            ),
+          ),
+        );
+      const affectedTgIds = Array.from(
+        new Set(deactivationCandidates.map((r) => r.telegramUserId)),
+      );
+
+      if (ownedIds.length > 0) {
+        await tx
+          .delete(telegramUserTeams)
+          .where(
+            and(
+              eq(telegramUserTeams.teamId, active.teamId),
+              inArray(telegramUserTeams.telegramUserId, ownedIds),
+            ),
+          );
+      }
+      await tx
+        .delete(telegramUserTeams)
+        .where(
+          and(
+            eq(telegramUserTeams.teamId, active.teamId),
+            eq(telegramUserTeams.linkedByUserId, memberUserId),
+          ),
+        );
+      await tx
+        .delete(telegramChatBindings)
+        .where(
+          and(
+            eq(telegramChatBindings.teamId, active.teamId),
+            eq(telegramChatBindings.boundByUserId, memberUserId),
+          ),
+        );
+
+      // For each TG user that just lost its active routing row, promote
+      // the oldest remaining linked team to active. Skip if another active
+      // row somehow survived (paranoia) or if they have no remaining
+      // links at all.
+      for (const tgUserId of affectedTgIds) {
+        const remaining = await tx
+          .select({ id: telegramUserTeams.id, isActive: telegramUserTeams.isActive })
+          .from(telegramUserTeams)
+          .where(eq(telegramUserTeams.telegramUserId, tgUserId))
+          .orderBy(asc(telegramUserTeams.createdAt), asc(telegramUserTeams.id));
+        const oldest = remaining[0];
+        if (!oldest) continue;
+        if (remaining.some((r) => r.isActive)) continue;
+        await tx
+          .update(telegramUserTeams)
+          .set({ isActive: true })
+          .where(eq(telegramUserTeams.id, oldest.id));
+      }
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === 'last_owner') return;
+    throw e;
+  }
   revalidatePath('/app/team');
 }
