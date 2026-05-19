@@ -781,7 +781,6 @@ async function insertEvent(db: Db, input: InsertEventInput): Promise<void> {
     metadata.tg_user_id = input.message.from.id;
     if (input.message.from.username) metadata.tg_username = input.message.from.username;
   }
-  if (input.sourceUnverified) metadata.source_unverified = true;
 
   let teamId: string | null = input.fallbackTeamId;
   if (input.isEdit) {
@@ -807,6 +806,28 @@ async function insertEvent(db: Db, input: InsertEventInput): Promise<void> {
   }
   if (!teamId) return;
 
+  // Per-message membership check. The candidate author_user_id comes from
+  // telegram_users.user_id (bound at /link time after the username-match
+  // identity gate). It can go stale if the user is later removed from the
+  // team while their Telegram account is still in a bound group chat
+  // someone else owns. Don't attribute group/DM messages to non-members;
+  // they ingest as source_unverified instead so the timeline doesn't
+  // grow ghost-authored events.
+  let authorUserId = input.authorUserId;
+  let sourceUnverified = input.sourceUnverified;
+  if (authorUserId) {
+    const stillMember = await db
+      .select({ userId: teamMembers.userId })
+      .from(teamMembers)
+      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, authorUserId)))
+      .limit(1);
+    if (!stillMember[0]) {
+      authorUserId = null;
+      sourceUnverified = true;
+    }
+  }
+  if (sourceUnverified) metadata.source_unverified = true;
+
   // Edits use edit_date for occurredAt so the timeline orders them by when
   // the user actually edited, not by when the original was sent.
   const occurredAtSec = input.isEdit
@@ -822,7 +843,7 @@ async function insertEvent(db: Db, input: InsertEventInput): Promise<void> {
     .insert(rawEvents)
     .values({
       teamId,
-      authorUserId: input.authorUserId,
+      authorUserId,
       source: 'telegram',
       contentText: input.text,
       occurredAt: new Date(occurredAtSec * 1000),
