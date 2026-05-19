@@ -6,7 +6,7 @@ import {
   telegramUsers,
   telegramUserTeams,
 } from '@timeline/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 
 import { type TelegramApi } from './api';
 import { tgUpdateSchema, type TgMessage, type TgUpdate, type TgUser } from './types';
@@ -222,6 +222,16 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
         });
       }
 
+      // Attribute this Telegram account to the app user who issued the token.
+      // Personal tokens are issued by a user from their own team settings page
+      // and consumed in their own DM, so the issuer == the intended author.
+      // Without this, DM messages would land with author_user_id=null and a
+      // source_unverified flag despite the link succeeding.
+      await tx
+        .update(telegramUsers)
+        .set({ userId: row.issuedByUserId, updatedAt: new Date() })
+        .where(eq(telegramUsers.id, ctx.tgUserRow.id));
+
       await tx
         .update(telegramLinkTokens)
         .set({
@@ -253,6 +263,9 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
 }
 
 async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
+  // Order by createdAt so the numbered list is stable across messages —
+  // otherwise "/team 2" could switch to a different team than the one the
+  // user just saw at position 2.
   const memberships = await ctx.db
     .select({
       id: telegramUserTeams.id,
@@ -260,7 +273,8 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
       isActive: telegramUserTeams.isActive,
     })
     .from(telegramUserTeams)
-    .where(eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id));
+    .where(eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id))
+    .orderBy(asc(telegramUserTeams.createdAt), asc(telegramUserTeams.id));
 
   if (memberships.length === 0) {
     await ctx.tg.sendMessage({
