@@ -20,7 +20,7 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 - [ ] Set up Postmark account. Configure inbound webhook URL (placeholder app endpoint).
 - [ ] Register Telegram bot via BotFather. Disable privacy mode. Save token to Railway shared variables.
 - [ ] Set up Sentry (or equivalent) for error tracking, structured logging.
-- [x] Set up CI on GitHub Actions: lint, typecheck, test, build Docker images on PR.
+- [x] Set up CI on GitHub Actions: lint, typecheck, format, knip, build on PR. Docker images verified locally / by Railway on deploy, not in CI (saves minutes).
 
 ## Phase 1 — Teams, users, basic capture
 
@@ -156,4 +156,4 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 - [ ] OpenRouter spend dashboard. Per-feature cost tracking.
 - [ ] Security: rotate API keys quarterly, audit team isolation on every schema change.
 - [ ] Re-extraction and re-embedding procedures tested quarterly even when not needed — so they work when they are needed.
-- [ ] Keep Dockerfiles and `railway.json` in sync with reality. CI builds the images on every PR.
+- [ ] Keep Dockerfiles and `railway.json` in sync with reality. Verified locally / by Railway on deploy.
