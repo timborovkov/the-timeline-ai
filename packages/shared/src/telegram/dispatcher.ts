@@ -399,7 +399,10 @@ async function cmdHelpDm(ctx: DmContext): Promise<void> {
 }
 
 async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Promise<void> {
-  if (!ctx.activeTeamId) {
+  // Edits flow through insertEvent regardless of active-team state — the
+  // original event's team_id is the source of truth and an /unlink between
+  // send and edit must not silently lose the correction.
+  if (!ctx.activeTeamId && !isEdit) {
     await ctx.tg.sendMessage({
       chat_id: ctx.message.chat.id,
       text: 'No active team. Run /link <token> first. Your message was not recorded.',
@@ -407,7 +410,7 @@ async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Prom
     return;
   }
   await insertEvent(ctx.db, {
-    teamId: ctx.activeTeamId,
+    fallbackTeamId: ctx.activeTeamId,
     authorUserId: ctx.tgUserRow.userId,
     text,
     message: ctx.message,
@@ -429,10 +432,13 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
   if (isEdit && command) return;
 
   if (!text) return;
-  if (!ctx.binding) return; // Unbound group: silently ignore until linked.
+  // Unbound group: drop new messages silently (Phase 2 behavior). Edits
+  // still flow through so an edit of a previously-recorded message can land
+  // on its original team even after /unlink.
+  if (!ctx.binding && !isEdit) return;
 
   await insertEvent(ctx.db, {
-    teamId: ctx.binding.teamId,
+    fallbackTeamId: ctx.binding?.teamId ?? null,
     authorUserId: ctx.tgUserRow?.userId ?? null,
     text,
     message: ctx.message,
@@ -722,7 +728,14 @@ async function getChatBinding(
 }
 
 interface InsertEventInput {
-  teamId: string;
+  /**
+   * The team to land non-edit messages on (active DM team or group binding).
+   * For edits, this is also the fallback when the original isn't found — see
+   * "orphan edit" handling below. Null means "no current routing context"
+   * (e.g. /unlinked DM); edits can still be recorded against the original
+   * event's team if we find one.
+   */
+  fallbackTeamId: string | null;
   authorUserId: string | null;
   text: string;
   message: TgMessage;
@@ -744,22 +757,35 @@ async function insertEvent(db: Db, input: InsertEventInput): Promise<void> {
   }
   if (input.sourceUnverified) metadata.source_unverified = true;
 
-  // Edits inherit the original event's team_id. A DM author can switch
-  // /team between the original send and the edit; if we used the new
-  // active team here, the edit would land on a different team than the
-  // original and the edits_event_id would point at a row in another team.
-  let teamId = input.teamId;
+  let teamId: string | null = input.fallbackTeamId;
   if (input.isEdit) {
+    // Edits inherit the original event's team_id. A DM author can switch
+    // /team or even /unlink between the original send and the edit; if we
+    // used current context here, the edit would land on a different team
+    // than the original (or be dropped entirely).
     const original = await findOriginalEvent(db, input.message.chat.id, input.message.message_id);
     if (original) {
       metadata.edits_event_id = original.id;
       teamId = original.teamId;
+    } else if (teamId) {
+      // No original found yet — most likely the original webhook failed
+      // before its insert and Telegram is still retrying it. Record the
+      // edit under the current routing context so the correction is not
+      // silently lost; a future reconciliation pass can relink it.
+      metadata.edit_orphan = true;
     } else {
-      // No original found — likely an edit of a pre-link message or one we
-      // never recorded. Drop the edit rather than create a stranded row.
+      // No original AND no current team to attribute to (e.g. edit of a
+      // pre-link message after /unlink). Nothing safe to write.
       return;
     }
   }
+  if (!teamId) return;
+
+  // Edits use edit_date for occurredAt so the timeline orders them by when
+  // the user actually edited, not by when the original was sent.
+  const occurredAtSec = input.isEdit
+    ? (input.message.edit_date ?? input.message.date)
+    : input.message.date;
 
   // ON CONFLICT DO NOTHING against the partial unique index on
   // (source_metadata->>'tg_update_id') WHERE source='telegram'. If Telegram
@@ -773,7 +799,7 @@ async function insertEvent(db: Db, input: InsertEventInput): Promise<void> {
       authorUserId: input.authorUserId,
       source: 'telegram',
       contentText: input.text,
-      occurredAt: new Date(input.message.date * 1000),
+      occurredAt: new Date(occurredAtSec * 1000),
       sourceMetadata: metadata,
     })
     .onConflictDoNothing();

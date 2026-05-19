@@ -23,6 +23,8 @@ export const tgMessageSchema = z.object({
   from: tgUserSchema.optional(),
   chat: tgChatSchema,
   date: z.number().int(),
+  // Present on edited_message updates; absent on the original send.
+  edit_date: z.number().int().optional(),
   text: z.string().optional(),
   caption: z.string().optional(),
   entities: z
