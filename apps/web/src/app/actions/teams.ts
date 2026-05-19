@@ -1,6 +1,12 @@
 'use server';
 
-import { teamInvites, teamMembers, teams } from '@timeline/db';
+import {
+  teamInvites,
+  teamMembers,
+  teams,
+  telegramChatBindings,
+  telegramUserTeams,
+} from '@timeline/db';
 import { randomSlugSuffix, randomToken, slugify, withTeam } from '@timeline/shared';
 import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
@@ -150,6 +156,27 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
       await tx
         .delete(teamMembers)
         .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
+
+      // Revoke Telegram routing established by this user. Without this,
+      // DM messages from the removed user's linked Telegram account would
+      // continue to land in this team's timeline, and group bindings they
+      // set up would keep capturing for a team they no longer belong to.
+      await tx
+        .delete(telegramUserTeams)
+        .where(
+          and(
+            eq(telegramUserTeams.teamId, active.teamId),
+            eq(telegramUserTeams.linkedByUserId, memberUserId),
+          ),
+        );
+      await tx
+        .delete(telegramChatBindings)
+        .where(
+          and(
+            eq(telegramChatBindings.teamId, active.teamId),
+            eq(telegramChatBindings.boundByUserId, memberUserId),
+          ),
+        );
     });
   } catch (e) {
     if (e instanceof Error && e.message === 'last_owner') return;

@@ -225,14 +225,17 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
         );
 
       if (existing[0]) {
+        // Refresh linkedByUserId on relink so the most recent issuer is the
+        // one whose team-membership controls this row's continued validity.
         await tx
           .update(telegramUserTeams)
-          .set({ isActive: true })
+          .set({ isActive: true, linkedByUserId: row.issuedByUserId })
           .where(eq(telegramUserTeams.id, existing[0].id));
       } else {
         await tx.insert(telegramUserTeams).values({
           telegramUserId: ctx.tgUserRow.id,
           teamId: row.teamId,
+          linkedByUserId: row.issuedByUserId,
           isActive: true,
         });
       }
@@ -573,6 +576,9 @@ async function cmdLinkGroup(ctx: GroupContext, arg: string): Promise<void> {
       await tx.insert(telegramChatBindings).values({
         tgChatId: ctx.message.chat.id,
         teamId: row.teamId,
+        // Provenance: removeMemberAction uses bound_by_user_id to revoke
+        // group bindings established by a teammate who later leaves.
+        boundByUserId: row.issuedByUserId,
         title: ctx.message.chat.title ?? null,
       });
 

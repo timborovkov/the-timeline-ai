@@ -41,6 +41,12 @@ export const telegramUserTeams = pgTable(
     teamId: uuid('team_id')
       .notNull()
       .references(() => teams.id, { onDelete: 'cascade' }),
+    // Issuer of the link token that created this row. Provenance anchor
+    // used by removeMemberAction to revoke routing when the linker leaves
+    // the team. Nullable for legacy / system-created rows.
+    linkedByUserId: uuid('linked_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     isActive: boolean('is_active').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
