@@ -57,6 +57,10 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 
 **Checkpoint:** Users can type into Telegram and have it land in the timeline, attributed correctly. Multiple teams, switching works.
 
+**Carryover from Phase 1 review:**
+- [ ] OAuth signup currently doesn't honor invite tokens — the GitHub button is hidden on `/sign-up?invite=…`. Decide whether to thread the invite token through OAuth state and honor it post-callback (when Telegram OAuth or extra providers land).
+- [ ] No safeguard against removing the last owner of a team. Owners can't be removed by admins (already enforced), but an owner can be removed by another owner with no transfer flow. Add either a "must have ≥1 owner" check or an explicit transfer-ownership action.
+
 ## Phase 3 — Voice notes and worker infrastructure
 
 - [ ] `apps/worker`: BullMQ setup with separate queues per worker type (`transcribe`, `extract`, `embed`).
