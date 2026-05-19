@@ -2,7 +2,7 @@
 
 import { teamInvites, teamMembers, teams } from '@timeline/db';
 import { randomSlugSuffix, randomToken, slugify, withTeam } from '@timeline/shared';
-import { and, count, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -134,13 +134,16 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
       if (!targetRole) return;
       // Admins cannot remove owners; only another owner can.
       if (targetRole === 'owner' && callerRole !== 'owner') return;
-      // Never strand a team with zero owners.
+      // Never strand a team with zero owners. SELECT FOR UPDATE on the team's
+      // owner rows so a concurrent removal of a different owner cannot also
+      // pass this check and leave the team ownerless.
       if (targetRole === 'owner') {
-        const ownerCount = await tx
-          .select({ c: count() })
+        const ownerRows = await tx
+          .select({ userId: teamMembers.userId })
           .from(teamMembers)
-          .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.role, 'owner')));
-        if ((ownerCount[0]?.c ?? 0) <= 1) {
+          .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.role, 'owner')))
+          .for('update');
+        if (ownerRows.length <= 1) {
           throw new Error('last_owner');
         }
       }

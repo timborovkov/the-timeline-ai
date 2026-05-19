@@ -177,7 +177,8 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
         .select()
         .from(telegramLinkTokens)
         .where(eq(telegramLinkTokens.token, token))
-        .limit(1);
+        .limit(1)
+        .for('update');
       const row = tokens[0];
       if (!row) throw new Error('not_found');
       if (row.consumedAt) throw new Error('consumed');
@@ -493,7 +494,8 @@ async function cmdLinkGroup(ctx: GroupContext, arg: string): Promise<void> {
         .select()
         .from(telegramLinkTokens)
         .where(eq(telegramLinkTokens.token, token))
-        .limit(1);
+        .limit(1)
+        .for('update');
       const row = tokens[0];
       if (!row) throw new Error('not_found');
       if (row.consumedAt) throw new Error('consumed');
@@ -505,6 +507,8 @@ async function cmdLinkGroup(ctx: GroupContext, arg: string): Promise<void> {
         .from(telegramChatBindings)
         .where(eq(telegramChatBindings.tgChatId, ctx.message.chat.id))
         .limit(1);
+      // The tg_chat_id UNIQUE constraint also enforces this — the check
+      // here just gives a clearer error message in the common case.
       if (existingBinding[0]) throw new Error('already_bound');
 
       await tx.insert(telegramChatBindings).values({
@@ -647,14 +651,19 @@ async function getChatBinding(
   title: string | null,
 ): Promise<{ teamId: string } | null> {
   const rows = await db
-    .select({ id: telegramChatBindings.id, teamId: telegramChatBindings.teamId })
+    .select({
+      id: telegramChatBindings.id,
+      teamId: telegramChatBindings.teamId,
+      title: telegramChatBindings.title,
+    })
     .from(telegramChatBindings)
     .where(eq(telegramChatBindings.tgChatId, tgChatId))
     .limit(1);
   const row = rows[0];
   if (!row) return null;
-  // Refresh denormalized title best-effort.
-  if (title) {
+  // Refresh denormalized title only when it actually changed, so steady-state
+  // group activity stays at one write per message (the raw_events insert).
+  if (title && title !== row.title) {
     await db.update(telegramChatBindings).set({ title }).where(eq(telegramChatBindings.id, row.id));
   }
   return { teamId: row.teamId };
