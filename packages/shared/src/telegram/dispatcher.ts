@@ -810,6 +810,14 @@ async function findOriginalEvent(
   chatId: number,
   messageId: number,
 ): Promise<{ id: string; teamId: string } | null> {
+  // Excludes:
+  //   - rows that are themselves edits (have edits_event_id)
+  //   - orphan-edit rows (edit_orphan=true) — these are edits we recorded
+  //     before the original was inserted; they must NOT be picked up as the
+  //     original by a later edit, or edits would chain onto an orphan
+  //     instead of the real first message once it lands.
+  // Ordered by createdAt to keep behavior deterministic if more than one
+  // row somehow matches.
   const rows = await db
     .select({ id: rawEvents.id, teamId: rawEvents.teamId })
     .from(rawEvents)
@@ -818,10 +826,11 @@ async function findOriginalEvent(
         eq(rawEvents.source, 'telegram'),
         sql`(${rawEvents.sourceMetadata} ->> 'tg_chat_id')::bigint = ${chatId}`,
         sql`(${rawEvents.sourceMetadata} ->> 'tg_message_id')::bigint = ${messageId}`,
-        // exclude rows that are themselves edits
         sql`(${rawEvents.sourceMetadata} ? 'edits_event_id') = false`,
+        sql`COALESCE((${rawEvents.sourceMetadata} ->> 'edit_orphan')::boolean, false) = false`,
       ),
     )
+    .orderBy(asc(rawEvents.createdAt))
     .limit(1);
   return rows[0] ?? null;
 }
