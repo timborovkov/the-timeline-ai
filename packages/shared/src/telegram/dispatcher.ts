@@ -1,6 +1,7 @@
 import {
   type Db,
   rawEvents,
+  teamMembers,
   telegramChatBindings,
   telegramLinkTokens,
   telegramUsers,
@@ -189,6 +190,15 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
       if (row.consumedAt) throw new Error('consumed');
       if (row.expiresAt < new Date()) throw new Error('expired');
       if (row.scope !== 'personal') throw new Error('wrong_scope_personal');
+      // Re-verify the issuer's team membership at consumption time so a
+      // teammate who was removed inside the 15-min TTL window cannot still
+      // bind Telegram capture to a team they no longer belong to.
+      const issuerStillMember = await tx
+        .select({ role: teamMembers.role })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, row.teamId), eq(teamMembers.userId, row.issuedByUserId)))
+        .limit(1);
+      if (!issuerStillMember[0]) throw new Error('issuer_revoked');
 
       // Upsert membership row, then flip active.
       const existing = await tx
@@ -261,7 +271,9 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
             ? 'That link token has expired (15-minute TTL). Generate a new one.'
             : reason === 'wrong_scope_personal'
               ? 'That token is for a group binding, not a DM link.'
-              : 'Could not link. Try again.';
+              : reason === 'issuer_revoked'
+                ? 'The teammate who issued this token is no longer in that team. Ask a current member for a new one.'
+                : 'Could not link. Try again.';
     await ctx.tg.sendMessage({ chat_id: ctx.message.chat.id, text });
   }
 }
@@ -289,9 +301,18 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
   }
   const first = memberships[0];
   if (memberships.length === 1 && first) {
+    // If the sole row is inactive (rare desync — e.g. a prior /link to a
+    // different team that was later /unlinked), self-heal by activating it
+    // so /whereami and DM ingest start working again.
+    if (!first.isActive) {
+      await ctx.db
+        .update(telegramUserTeams)
+        .set({ isActive: true })
+        .where(eq(telegramUserTeams.id, first.id));
+    }
     await ctx.tg.sendMessage({
       chat_id: ctx.message.chat.id,
-      text: `Only one linked team (${first.teamId}). It's already active.`,
+      text: `Only one linked team (${first.teamId}). It's now active.`,
     });
     return;
   }
@@ -521,6 +542,18 @@ async function cmdLinkGroup(ctx: GroupContext, arg: string): Promise<void> {
       if (row.consumedAt) throw new Error('consumed');
       if (row.expiresAt < new Date()) throw new Error('expired');
       if (row.scope !== 'group') throw new Error('wrong_scope_group');
+      // Issuer must still be an admin of the team at consumption time —
+      // group binding is a privileged operation and a former admin's
+      // outstanding token must not survive their removal/demotion.
+      const issuerRoleRows = await tx
+        .select({ role: teamMembers.role })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, row.teamId), eq(teamMembers.userId, row.issuedByUserId)))
+        .limit(1);
+      const issuerRole = issuerRoleRows[0]?.role;
+      if (issuerRole !== 'owner' && issuerRole !== 'admin') {
+        throw new Error('issuer_revoked');
+      }
 
       const existingBinding = await tx
         .select()
@@ -565,7 +598,9 @@ async function cmdLinkGroup(ctx: GroupContext, arg: string): Promise<void> {
               ? 'That token is for a personal DM link, not a group binding.'
               : reason === 'already_bound'
                 ? 'This group is already bound to a team. Unbind it first with /unlink.'
-                : 'Could not bind. Try again.';
+                : reason === 'issuer_revoked'
+                  ? 'The admin who issued this token is no longer an admin of that team. Ask a current admin for a new one.'
+                  : 'Could not bind. Try again.';
     await ctx.tg.sendMessage({ chat_id: ctx.message.chat.id, text });
   }
 }
