@@ -15,6 +15,13 @@
       "when": 1779188098167,
       "tag": "0001_phase2_telegram",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779195326460,
+      "tag": "0002_phase2_telegram_dedup",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,14 @@
-import { index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import {
+  index,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { teams } from './teams';
 import { users } from './users';
@@ -28,5 +38,11 @@ export const rawEvents = pgTable(
     index('raw_events_team_idx').on(table.teamId),
     index('raw_events_team_occurred_idx').on(table.teamId, table.occurredAt),
     index('raw_events_author_idx').on(table.authorUserId),
+    // Idempotency: Telegram delivers the same update_id on retry when we
+    // 5xx, time out, or crash before responding. The partial unique index
+    // makes the second insert a no-op via ON CONFLICT DO NOTHING.
+    uniqueIndex('raw_events_telegram_update_id_unq')
+      .on(sql`((${table.sourceMetadata} ->> 'tg_update_id'))`)
+      .where(sql`${table.source} = 'telegram' AND ${table.sourceMetadata} ? 'tg_update_id'`),
   ],
 );

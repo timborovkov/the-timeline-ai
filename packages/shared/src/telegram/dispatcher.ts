@@ -18,6 +18,7 @@ interface DispatcherDeps {
 
 interface DmContext extends DispatcherDeps {
   message: TgMessage;
+  updateId: number;
   tgUser: TgUser;
   tgUserRow: { id: string; userId: string | null };
   activeTeamId: string | null;
@@ -25,6 +26,7 @@ interface DmContext extends DispatcherDeps {
 
 interface GroupContext extends DispatcherDeps {
   message: TgMessage;
+  updateId: number;
   tgUser: TgUser | null;
   tgUserRow: { id: string; userId: string | null } | null;
   binding: { teamId: string } | null;
@@ -44,9 +46,9 @@ export async function handleUpdate(
 
   try {
     if (update.message) {
-      await routeMessage(deps, update.message, false);
+      await routeMessage(deps, update.update_id, update.message, false);
     } else if (update.edited_message) {
-      await routeMessage(deps, update.edited_message, true);
+      await routeMessage(deps, update.update_id, update.edited_message, true);
     }
     // callback_query: not used yet (Phase 2 has no inline keyboards
     // beyond optional /team — kept simple by replying with text).
@@ -59,6 +61,7 @@ export async function handleUpdate(
 
 async function routeMessage(
   deps: DispatcherDeps,
+  updateId: number,
   message: TgMessage,
   isEdit: boolean,
 ): Promise<void> {
@@ -70,6 +73,7 @@ async function routeMessage(
     await handleDm(
       {
         ...deps,
+        updateId,
         message,
         tgUser: message.from,
         tgUserRow,
@@ -86,6 +90,7 @@ async function routeMessage(
     await handleGroup(
       {
         ...deps,
+        updateId,
         message,
         tgUser: message.from ?? null,
         tgUserRow,
@@ -222,16 +227,15 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
         });
       }
 
-      // Attribute this Telegram account to the app user who issued the token.
-      // Personal tokens are issued by a user from their own team settings page
-      // and consumed in their own DM, so the issuer == the intended author.
-      // Without this, DM messages would land with author_user_id=null and a
-      // source_unverified flag despite the link succeeding.
-      await tx
-        .update(telegramUsers)
-        .set({ userId: row.issuedByUserId, updatedAt: new Date() })
-        .where(eq(telegramUsers.id, ctx.tgUserRow.id));
-
+      // We do NOT bind telegram_users.user_id = row.issuedByUserId here.
+      // A single short-lived token can't prove the consumer IS the issuer —
+      // anyone who obtains the token (paste in wrong window, shoulder-surf)
+      // could then post to the team's timeline attributed to the issuer.
+      // Until Phase 2b adds an out-of-band confirmation flow, messages from
+      // a linked DM land in the right team but with author_user_id=null and
+      // source_unverified=true. The team binding (telegram_user_teams) is
+      // safe to establish — it only routes to a team the issuer is already
+      // a member of; the unverified flag is what protects attribution.
       await tx
         .update(telegramLinkTokens)
         .set({
@@ -386,6 +390,7 @@ async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Prom
     authorUserId: ctx.tgUserRow.userId,
     text,
     message: ctx.message,
+    updateId: ctx.updateId,
     sourceUnverified: ctx.tgUserRow.userId === null,
     isEdit,
   });
@@ -410,6 +415,7 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
     authorUserId: ctx.tgUserRow?.userId ?? null,
     text,
     message: ctx.message,
+    updateId: ctx.updateId,
     sourceUnverified: !ctx.tgUserRow?.userId,
     isEdit,
   });
@@ -688,6 +694,7 @@ interface InsertEventInput {
   authorUserId: string | null;
   text: string;
   message: TgMessage;
+  updateId: number;
   sourceUnverified: boolean;
   isEdit: boolean;
 }
@@ -697,6 +704,7 @@ async function insertEvent(db: Db, input: InsertEventInput): Promise<void> {
     tg_chat_id: input.message.chat.id,
     tg_chat_type: input.message.chat.type,
     tg_message_id: input.message.message_id,
+    tg_update_id: input.updateId,
   };
   if (input.message.from) {
     metadata.tg_user_id = input.message.from.id;
@@ -704,28 +712,48 @@ async function insertEvent(db: Db, input: InsertEventInput): Promise<void> {
   }
   if (input.sourceUnverified) metadata.source_unverified = true;
 
+  // Edits inherit the original event's team_id. A DM author can switch
+  // /team between the original send and the edit; if we used the new
+  // active team here, the edit would land on a different team than the
+  // original and the edits_event_id would point at a row in another team.
+  let teamId = input.teamId;
   if (input.isEdit) {
     const original = await findOriginalEvent(db, input.message.chat.id, input.message.message_id);
-    if (original) metadata.edits_event_id = original.id;
+    if (original) {
+      metadata.edits_event_id = original.id;
+      teamId = original.teamId;
+    } else {
+      // No original found — likely an edit of a pre-link message or one we
+      // never recorded. Drop the edit rather than create a stranded row.
+      return;
+    }
   }
 
-  await db.insert(rawEvents).values({
-    teamId: input.teamId,
-    authorUserId: input.authorUserId,
-    source: 'telegram',
-    contentText: input.text,
-    occurredAt: new Date(input.message.date * 1000),
-    sourceMetadata: metadata,
-  });
+  // ON CONFLICT DO NOTHING against the partial unique index on
+  // (source_metadata->>'tg_update_id') WHERE source='telegram'. If Telegram
+  // retries an update because we didn't 200 in time (or the process crashed
+  // mid-handler), the second insert is a silent no-op instead of a duplicate
+  // row in the timeline.
+  await db
+    .insert(rawEvents)
+    .values({
+      teamId,
+      authorUserId: input.authorUserId,
+      source: 'telegram',
+      contentText: input.text,
+      occurredAt: new Date(input.message.date * 1000),
+      sourceMetadata: metadata,
+    })
+    .onConflictDoNothing();
 }
 
 async function findOriginalEvent(
   db: Db,
   chatId: number,
   messageId: number,
-): Promise<{ id: string } | null> {
+): Promise<{ id: string; teamId: string } | null> {
   const rows = await db
-    .select({ id: rawEvents.id })
+    .select({ id: rawEvents.id, teamId: rawEvents.teamId })
     .from(rawEvents)
     .where(
       and(
