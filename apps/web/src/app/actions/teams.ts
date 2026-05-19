@@ -9,7 +9,7 @@ import {
   telegramUserTeams,
 } from '@timeline/db';
 import { randomSlugSuffix, randomToken, slugify, withTeam } from '@timeline/shared';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -174,14 +174,38 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
         .select({ id: telegramUsers.id })
         .from(telegramUsers)
         .where(eq(telegramUsers.userId, memberUserId));
-      if (ownedTgUserIds.length > 0) {
-        const ids = ownedTgUserIds.map((r) => r.id);
+      const ownedIds = ownedTgUserIds.map((r) => r.id);
+
+      // Snapshot the TG users whose active-team row is about to be deleted.
+      // After the deletes we'll promote a remaining linked team to active
+      // for each, so a DM author isn't left in a "linked but no active
+      // team" state when they had other teams linked.
+      const deactivationCandidates = await tx
+        .select({ telegramUserId: telegramUserTeams.telegramUserId })
+        .from(telegramUserTeams)
+        .where(
+          and(
+            eq(telegramUserTeams.teamId, active.teamId),
+            eq(telegramUserTeams.isActive, true),
+            or(
+              ownedIds.length > 0
+                ? inArray(telegramUserTeams.telegramUserId, ownedIds)
+                : sql`false`,
+              eq(telegramUserTeams.linkedByUserId, memberUserId),
+            ),
+          ),
+        );
+      const affectedTgIds = Array.from(
+        new Set(deactivationCandidates.map((r) => r.telegramUserId)),
+      );
+
+      if (ownedIds.length > 0) {
         await tx
           .delete(telegramUserTeams)
           .where(
             and(
               eq(telegramUserTeams.teamId, active.teamId),
-              inArray(telegramUserTeams.telegramUserId, ids),
+              inArray(telegramUserTeams.telegramUserId, ownedIds),
             ),
           );
       }
@@ -201,6 +225,25 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
             eq(telegramChatBindings.boundByUserId, memberUserId),
           ),
         );
+
+      // For each TG user that just lost its active routing row, promote
+      // the oldest remaining linked team to active. Skip if another active
+      // row somehow survived (paranoia) or if they have no remaining
+      // links at all.
+      for (const tgUserId of affectedTgIds) {
+        const remaining = await tx
+          .select({ id: telegramUserTeams.id, isActive: telegramUserTeams.isActive })
+          .from(telegramUserTeams)
+          .where(eq(telegramUserTeams.telegramUserId, tgUserId))
+          .orderBy(asc(telegramUserTeams.createdAt), asc(telegramUserTeams.id));
+        const oldest = remaining[0];
+        if (!oldest) continue;
+        if (remaining.some((r) => r.isActive)) continue;
+        await tx
+          .update(telegramUserTeams)
+          .set({ isActive: true })
+          .where(eq(telegramUserTeams.id, oldest.id));
+      }
     });
   } catch (e) {
     if (e instanceof Error && e.message === 'last_owner') return;
