@@ -1,7 +1,10 @@
 import Link from 'next/link';
 
 import { SignInForm } from '@/components/auth-form';
+import { GitHubSignInButton } from '@/components/github-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { hasGitHubAuth } from '@/lib/auth';
 
 interface Props {
   searchParams: Promise<{ callbackUrl?: string }>;
@@ -17,6 +20,16 @@ export default async function SignInPage({ searchParams }: Props) {
           <CardDescription>Sign in to your team's timeline.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {hasGitHubAuth ? (
+            <>
+              <GitHubSignInButton callbackUrl={callbackUrl} />
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <Separator className="flex-1" />
+                <span>or</span>
+                <Separator className="flex-1" />
+              </div>
+            </>
+          ) : null}
           <SignInForm callbackUrl={callbackUrl} />
           <p className="text-sm text-muted-foreground">
             No account yet?{' '}

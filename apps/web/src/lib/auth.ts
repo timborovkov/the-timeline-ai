@@ -1,6 +1,15 @@
 import { DrizzleAdapter } from '@auth/drizzle-adapter';
-import { accounts, authenticators, getDb, sessions, users, verificationTokens } from '@timeline/db';
-import { verifyPassword } from '@timeline/shared';
+import {
+  accounts,
+  authenticators,
+  getDb,
+  sessions,
+  teamMembers,
+  teams,
+  users,
+  verificationTokens,
+} from '@timeline/db';
+import { randomSlugSuffix, slugify, verifyPassword } from '@timeline/shared';
 import { eq } from 'drizzle-orm';
 import NextAuth, { type NextAuthConfig } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
@@ -40,7 +49,9 @@ const providers: NextAuthConfig['providers'] = [
   }),
 ];
 
-if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) {
+export const hasGitHubAuth = Boolean(process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET);
+
+if (hasGitHubAuth) {
   providers.push(
     GitHub({
       clientId: process.env.AUTH_GITHUB_ID,
@@ -59,6 +70,33 @@ const nextAuth = NextAuth({
     authenticatorsTable: authenticators,
   }),
   providers,
+  events: {
+    // OAuth signups land here after the adapter inserts the user. Credentials
+    // signups handle their own team creation in signUpAction, so this only
+    // fires for first-time OAuth users — give them a default solo team so
+    // they don't land on /app with no membership.
+    async createUser({ user }) {
+      const userId = user.id;
+      if (!userId) return;
+      const existing = await db
+        .select({ teamId: teamMembers.teamId })
+        .from(teamMembers)
+        .where(eq(teamMembers.userId, userId))
+        .limit(1);
+      if (existing.length > 0) return;
+      const label = user.name ?? user.email?.split('@')[0] ?? 'team';
+      const slug = `${slugify(`${label}-team`) || 'team'}-${randomSlugSuffix()}`;
+      await db.transaction(async (tx) => {
+        const inserted = await tx
+          .insert(teams)
+          .values({ name: `${label}'s Team`, slug })
+          .returning({ id: teams.id });
+        const teamId = inserted[0]?.id;
+        if (!teamId) throw new Error('Failed to create default team');
+        await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
+      });
+    },
+  },
 });
 
 export const handlers = nextAuth.handlers;

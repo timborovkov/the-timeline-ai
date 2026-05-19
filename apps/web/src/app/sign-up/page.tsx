@@ -1,7 +1,10 @@
 import Link from 'next/link';
 
 import { SignUpForm } from '@/components/auth-form';
+import { GitHubSignInButton } from '@/components/github-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { hasGitHubAuth } from '@/lib/auth';
 
 interface Props {
   searchParams: Promise<{ invite?: string }>;
@@ -21,6 +24,16 @@ export default async function SignUpPage({ searchParams }: Props) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {hasGitHubAuth && !invite ? (
+            <>
+              <GitHubSignInButton />
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <Separator className="flex-1" />
+                <span>or</span>
+                <Separator className="flex-1" />
+              </div>
+            </>
+          ) : null}
           <SignUpForm inviteToken={invite} />
           <p className="text-sm text-muted-foreground">
             Already have an account?{' '}

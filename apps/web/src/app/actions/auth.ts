@@ -195,3 +195,14 @@ export async function signOutAction(): Promise<void> {
   await signOut({ redirect: false });
   redirect('/');
 }
+
+export async function signInWithGitHubAction(formData: FormData): Promise<void> {
+  const callbackUrl = safeCallbackUrl(
+    typeof formData.get('callbackUrl') === 'string'
+      ? (formData.get('callbackUrl') as string)
+      : undefined,
+  );
+  // signIn() with a non-credentials provider throws NEXT_REDIRECT on success.
+  // Let it propagate; Next handles the response.
+  await signIn('github', { redirectTo: callbackUrl });
+}
