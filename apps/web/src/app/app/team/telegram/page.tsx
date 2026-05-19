@@ -33,16 +33,32 @@ export default async function TelegramSettingsPage() {
   const webhookConfigured = Boolean(env.TELEGRAM_WEBHOOK_SECRET);
 
   const now = new Date();
-  const activeTokens = await db
-    .select()
-    .from(telegramLinkTokens)
-    .where(
-      and(
+  // Tokens are secrets. The cleartext value is only shown once, on the
+  // generating client's own form-state response. Persistent server-rendered
+  // lists never include the token value. Members see only their own pending
+  // tokens (so they can see what's outstanding); admins see all tokens so
+  // they can revoke stale ones across the team.
+  const tokensWhere = isAdmin
+    ? and(
         eq(telegramLinkTokens.teamId, active.teamId),
         isNull(telegramLinkTokens.consumedAt),
         gt(telegramLinkTokens.expiresAt, now),
-      ),
-    )
+      )
+    : and(
+        eq(telegramLinkTokens.teamId, active.teamId),
+        eq(telegramLinkTokens.issuedByUserId, session.user.id),
+        isNull(telegramLinkTokens.consumedAt),
+        gt(telegramLinkTokens.expiresAt, now),
+      );
+  const activeTokens = await db
+    .select({
+      id: telegramLinkTokens.id,
+      scope: telegramLinkTokens.scope,
+      expiresAt: telegramLinkTokens.expiresAt,
+      issuedByUserId: telegramLinkTokens.issuedByUserId,
+    })
+    .from(telegramLinkTokens)
+    .where(tokensWhere)
     .orderBy(desc(telegramLinkTokens.createdAt));
 
   const bindings = await db
@@ -133,14 +149,23 @@ export default async function TelegramSettingsPage() {
           <CardHeader>
             <CardTitle>Pending tokens</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Token values are only shown once, when you generate them. Lost a token? Revoke it and
+              generate a new one.
+            </p>
             <ul className="divide-y">
               {activeTokens.map((t) => (
                 <li key={t.id} className="flex items-center justify-between py-3">
                   <div className="flex flex-col">
-                    <code className="font-mono text-xs">{t.token}</code>
+                    <span className="text-sm">
+                      {t.scope === 'group' ? 'Group binding' : 'Personal link'}
+                    </span>
                     <span className="text-xs text-muted-foreground">
-                      {t.scope} · expires {t.expiresAt.toISOString()}
+                      expires {t.expiresAt.toISOString()}
+                      {isAdmin && t.issuedByUserId !== session.user.id
+                        ? ` · issued by another teammate`
+                        : ''}
                     </span>
                   </div>
                   {isAdmin ? (

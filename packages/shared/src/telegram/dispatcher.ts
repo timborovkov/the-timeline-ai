@@ -620,24 +620,12 @@ async function upsertTelegramUser(
   db: Db,
   user: TgUser,
 ): Promise<{ id: string; userId: string | null }> {
-  const existing = await db
-    .select({ id: telegramUsers.id, userId: telegramUsers.userId })
-    .from(telegramUsers)
-    .where(eq(telegramUsers.tgUserId, user.id))
-    .limit(1);
-  if (existing[0]) {
-    await db
-      .update(telegramUsers)
-      .set({
-        username: user.username ?? null,
-        firstName: user.first_name ?? null,
-        lastName: user.last_name ?? null,
-        updatedAt: new Date(),
-      })
-      .where(eq(telegramUsers.id, existing[0].id));
-    return existing[0];
-  }
-  const inserted = await db
+  // Single statement upsert. Two concurrent webhook workers seeing the same
+  // brand-new TG user used to race a SELECT-then-INSERT and the loser would
+  // throw on the unique violation, swallowed by handleUpdate — that update's
+  // message was then silently dropped because Telegram had already gotten a
+  // 200 from the winning request.
+  const rows = await db
     .insert(telegramUsers)
     .values({
       tgUserId: user.id,
@@ -645,9 +633,18 @@ async function upsertTelegramUser(
       firstName: user.first_name ?? null,
       lastName: user.last_name ?? null,
     })
+    .onConflictDoUpdate({
+      target: telegramUsers.tgUserId,
+      set: {
+        username: user.username ?? null,
+        firstName: user.first_name ?? null,
+        lastName: user.last_name ?? null,
+        updatedAt: new Date(),
+      },
+    })
     .returning({ id: telegramUsers.id, userId: telegramUsers.userId });
-  const row = inserted[0];
-  if (!row) throw new Error('Failed to insert telegram_users row');
+  const row = rows[0];
+  if (!row) throw new Error('Failed to upsert telegram_users row');
   return row;
 }
 
