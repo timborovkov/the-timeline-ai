@@ -29,6 +29,14 @@ function parseEndOfDay(input: string | undefined): Date | undefined {
   return new Date(d.getTime() + 24 * 60 * 60 * 1000);
 }
 
+// Drop non-UUID `?author=…` values rather than passing them to Postgres,
+// which would throw on the UUID cast and 500 the page.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function parseUuid(input: string | undefined): string | undefined {
+  if (!input) return undefined;
+  return UUID_RE.test(input) ? input : undefined;
+}
+
 export default async function TimelinePage({ searchParams }: Props) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -41,7 +49,7 @@ export default async function TimelinePage({ searchParams }: Props) {
   await scope.requireMembership();
 
   const events = await scope.listEvents({
-    authorUserId: sp.author,
+    authorUserId: parseUuid(sp.author),
     from: parseDate(sp.from),
     to: parseEndOfDay(sp.to),
   });
