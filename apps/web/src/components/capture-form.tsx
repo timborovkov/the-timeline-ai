@@ -37,6 +37,9 @@ export function CaptureForm() {
       />
       <div className="flex items-center justify-between gap-3">
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          {/* Hidden default + checkbox: FormData.getAll('visibility') picks the
+              last entry, which is 'private' when checked, otherwise 'team'. */}
+          <input type="hidden" name="visibility" value="team" />
           <input type="checkbox" name="visibility" value="private" className="h-3.5 w-3.5" />
           Private (only me)
         </label>

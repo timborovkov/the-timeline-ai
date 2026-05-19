@@ -5,6 +5,7 @@ import { hashPassword, randomSlugSuffix, slugify } from '@timeline/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { AuthError } from 'next-auth';
 import { z } from 'zod';
 
 import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
@@ -172,8 +173,13 @@ export async function signInAction(_prev: SignInState, formData: FormData): Prom
       password: parsed.data.password,
       redirect: false,
     });
-  } catch {
-    return { error: 'Invalid email or password.' };
+  } catch (e) {
+    // Only swallow real auth failures. Re-throw framework errors (Next's
+    // NEXT_REDIRECT, etc.) so they propagate to the runtime.
+    if (e instanceof AuthError) {
+      return { error: 'Invalid email or password.' };
+    }
+    throw e;
   }
   redirect(safeCallbackUrl(parsed.data.callbackUrl));
 }

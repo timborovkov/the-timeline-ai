@@ -61,8 +61,11 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
       return invite.teamId;
     });
   } catch (e) {
-    const reason = e instanceof Error ? e.message : 'failed';
-    redirect(`/accept-invite/${encodeURIComponent(token)}?error=${reason}`);
+    // Only known sentinel reasons get surfaced in the URL; anything else
+    // collapses to 'failed' so we never emit an unbounded error string.
+    const raw = e instanceof Error ? e.message : '';
+    const reason = raw === 'invalid' || raw === 'wrong-account' ? raw : 'failed';
+    redirect(`/accept-invite/${encodeURIComponent(token)}?error=${encodeURIComponent(reason)}`);
   }
 
   const cookieStore = await cookies();

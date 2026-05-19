@@ -31,9 +31,15 @@ export async function createTextEventAction(
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) return { error: 'No active team' };
 
+  // The form sends both a hidden 'team' default and a checked 'private' when
+  // the checkbox is on. Take the last value so the checkbox overrides the
+  // default when present, regardless of whether `get` returns the first.
+  const visibilityValues = formData.getAll('visibility');
+  const visibility = visibilityValues[visibilityValues.length - 1] ?? 'team';
+
   const parsed = createTextSchema.safeParse({
     text: formData.get('text'),
-    visibility: formData.get('visibility') ?? 'team',
+    visibility,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };

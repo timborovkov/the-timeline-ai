@@ -21,7 +21,6 @@ export function getDb(): Db {
   let url = process.env.DATABASE_URL;
   if (!url) {
     if (process.env.NODE_ENV === 'production') {
-      // eslint-disable-next-line no-console
       console.warn(
         '[db] DATABASE_URL not set; using placeholder. Queries will fail at request time.',
       );
