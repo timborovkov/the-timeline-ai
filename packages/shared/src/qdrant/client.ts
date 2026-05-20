@@ -142,11 +142,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     await ensurePromise;
   }
 
-  async function upsertVector(
-    id: string,
-    vector: number[],
-    payload: QdrantPayload,
-  ): Promise<void> {
+  async function upsertVector(id: string, vector: number[], payload: QdrantPayload): Promise<void> {
     if (vector.length !== vectorSize) {
       throw new Error(
         `Qdrant vector length ${String(vector.length)} != collection size ${String(vectorSize)} (model drift?)`,
@@ -157,9 +153,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       points: [{ id, vector, payload }],
     });
     if (res.status !== 200 && res.status !== 202) {
-      throw new Error(
-        `Qdrant upsert failed: ${String(res.status)} ${JSON.stringify(res.data)}`,
-      );
+      throw new Error(`Qdrant upsert failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
     }
   }
 
@@ -240,7 +234,9 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     if (res.status !== 200) {
       throw new Error(`Qdrant search failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
     }
-    const body = (res.data ?? {}) as { result?: { id: string; score: number; payload: QdrantPayload }[] };
+    const body = (res.data ?? {}) as {
+      result?: { id: string; score: number; payload: QdrantPayload }[];
+    };
     return (body.result ?? []).map((hit) => ({
       id: hit.id,
       score: hit.score,

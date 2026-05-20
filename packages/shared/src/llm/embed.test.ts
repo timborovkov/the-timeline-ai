@@ -40,10 +40,7 @@ afterEach(() => {
 
 describe('llm.embed', () => {
   it('returns the vector and the pinned model id', async () => {
-    const result = await embed(
-      { text: 'hello' },
-      { model: makeMockModel([[0.1, 0.2, 0.3, 0.4]]) },
-    );
+    const result = await embed({ text: 'hello' }, { model: makeMockModel([[0.1, 0.2, 0.3, 0.4]]) });
     expect(result.vector).toEqual([0.1, 0.2, 0.3, 0.4]);
     expect(result.model).toBe('openai/test-embed');
   });
@@ -51,10 +48,7 @@ describe('llm.embed', () => {
   it('falls back to text-embedding-3-small when EMBEDDING_MODEL is unset', async () => {
     delete process.env.EMBEDDING_MODEL;
     resetEnvForTests();
-    const result = await embed(
-      { text: 'hello' },
-      { model: makeMockModel([[1, 2, 3, 4]]) },
-    );
+    const result = await embed({ text: 'hello' }, { model: makeMockModel([[1, 2, 3, 4]]) });
     expect(result.model).toBe('openai/text-embedding-3-small');
   });
 

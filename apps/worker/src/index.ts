@@ -15,11 +15,7 @@ function main(): void {
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`[worker] received ${signal}, shutting down`);
     try {
-      await Promise.all([
-        transcribeWorker.close(),
-        extractWorker.close(),
-        embedWorker.close(),
-      ]);
+      await Promise.all([transcribeWorker.close(), extractWorker.close(), embedWorker.close()]);
       await queue.closeTranscribeQueue();
       await queue.closeExtractQueue();
       await queue.closeEmbedQueue();

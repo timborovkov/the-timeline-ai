@@ -24,8 +24,7 @@ function makeFetcher(initial: { collectionExists?: boolean } = {}): {
   const fetcher: typeof fetch = (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = init?.method ?? 'GET';
-    const body =
-      typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined;
+    const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined;
     calls.push({ url, method, body });
 
     // GET /collections/<name>
@@ -40,17 +39,14 @@ function makeFetcher(initial: { collectionExists?: boolean } = {}): {
     // PUT /collections/<name> — create
     if (method === 'PUT' && /\/collections\/[^/]+$/.exec(url)) {
       collectionExists = true;
-      return Promise.resolve(
-        new Response(JSON.stringify({ result: true }), { status: 200 }),
-      );
+      return Promise.resolve(new Response(JSON.stringify({ result: true }), { status: 200 }));
     }
     // PUT /collections/<name>/points — upsert
     if (method === 'PUT' && url.endsWith('/points')) {
       return Promise.resolve(
-        new Response(
-          JSON.stringify({ result: { operation_id: 1, status: 'acknowledged' } }),
-          { status: 200 },
-        ),
+        new Response(JSON.stringify({ result: { operation_id: 1, status: 'acknowledged' } }), {
+          status: 200,
+        }),
       );
     }
     // POST /collections/<name>/points/search
@@ -136,9 +132,9 @@ describe('createQdrantClient', () => {
   it('rejects vectors that disagree with the collection dimension', async () => {
     const { fetcher } = makeFetcher({ collectionExists: true });
     const client = createQdrantClient({ fetcher });
-    await expect(
-      client.upsertVector('id-1', [0.1, 0.2, 0.3], samplePayload),
-    ).rejects.toThrow(/vector length/);
+    await expect(client.upsertVector('id-1', [0.1, 0.2, 0.3], samplePayload)).rejects.toThrow(
+      /vector length/,
+    );
   });
 
   it('search filter ALWAYS includes team_id in must (load-bearing)', async () => {

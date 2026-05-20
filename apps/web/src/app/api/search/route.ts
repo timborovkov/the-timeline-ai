@@ -51,10 +51,7 @@ export async function POST(req: Request): Promise<Response> {
   }
   const env = getEnv();
   if (!env.OPENROUTER_API_KEY || !env.QDRANT_URL) {
-    return Response.json(
-      { ok: false, error: 'search_unconfigured' },
-      { status: 503 },
-    );
+    return Response.json({ ok: false, error: 'search_unconfigured' }, { status: 503 });
   }
 
   let parsedBody: unknown;

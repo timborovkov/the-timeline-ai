@@ -78,10 +78,7 @@ async function enqueueEvents(args: Args): Promise<{ scanned: number; enqueued: n
   let scanned = 0;
 
   while (enqueued < args.limit) {
-    const conditions: SQL[] = [
-      eq(rawEvents.teamId, args.teamId),
-      eq(rawEvents.visibility, 'team'),
-    ];
+    const conditions: SQL[] = [eq(rawEvents.teamId, args.teamId), eq(rawEvents.visibility, 'team')];
     if (cursor) {
       const cursorClause = or(
         sql`${rawEvents.occurredAt} > ${cursor.occurredAt.toISOString()}::timestamptz`,
@@ -124,7 +121,10 @@ async function enqueueEvents(args: Args): Promise<{ scanned: number; enqueued: n
   return { scanned, enqueued };
 }
 
-async function enqueueFacts(args: Args, remaining: number): Promise<{ scanned: number; enqueued: number }> {
+async function enqueueFacts(
+  args: Args,
+  remaining: number,
+): Promise<{ scanned: number; enqueued: number }> {
   if (remaining <= 0) return { scanned: 0, enqueued: 0 };
   const db = getDb();
   let cursor: string | null = null;

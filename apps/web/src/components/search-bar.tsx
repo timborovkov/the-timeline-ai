@@ -126,8 +126,8 @@ export function SearchBar() {
           {results.length === 0 ? (
             <Card>
               <CardContent className="py-4 text-sm text-muted-foreground">
-                No matches. Try a different phrasing — semantic search finds events by meaning,
-                not exact words.
+                No matches. Try a different phrasing — semantic search finds events by meaning, not
+                exact words.
               </CardContent>
             </Card>
           ) : (
