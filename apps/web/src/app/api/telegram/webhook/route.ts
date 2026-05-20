@@ -28,10 +28,20 @@ export async function POST(req: Request): Promise<Response> {
     ? new telegram.HttpTelegramApi(env.TELEGRAM_BOT_TOKEN)
     : new telegram.NoopTelegramApi();
 
-  // Audio ingest is only wired when both S3 and Redis are configured. With
-  // either missing, voice messages are dropped (logged) — same shape as the
-  // Phase 2 behavior for unsupported media types.
-  const audioReady = Boolean(env.S3_ENDPOINT && env.S3_BUCKET_AUDIO && env.REDIS_URL);
+  // Audio ingest is only wired when ALL required S3 credentials are present
+  // and Redis is reachable. A partial S3 config (e.g. endpoint set but no
+  // access key) used to silently fail downstream in getS3Client(); now the
+  // dispatcher just doesn't get audio deps and voice memos are dropped with
+  // a log line — the same shape as the Phase 2 behavior for unsupported
+  // media types.
+  const audioReady = Boolean(
+    env.S3_ENDPOINT &&
+    env.S3_REGION &&
+    env.S3_ACCESS_KEY_ID &&
+    env.S3_SECRET_ACCESS_KEY &&
+    env.S3_BUCKET_AUDIO &&
+    env.REDIS_URL,
+  );
   const audioDeps: telegram.AudioIngestDeps | undefined = audioReady
     ? {
         async upload(input) {

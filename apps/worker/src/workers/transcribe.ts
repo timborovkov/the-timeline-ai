@@ -1,7 +1,21 @@
 import { type Db, rawEvents } from '@timeline/db';
-import { getAudioBucket, getObjectBuffer, getS3Client, llm, queue } from '@timeline/shared';
-import { type Job, Worker } from 'bullmq';
+import {
+  getAudioBucket,
+  getObjectBuffer,
+  getS3Client,
+  headObject,
+  llm,
+  queue,
+} from '@timeline/shared';
+import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
+
+// Phase 3 cap: 25 MB. Telegram voice memos are well under this; the web
+// recorder doesn't enforce a duration cap (acceptable Phase 3 trade-off),
+// but we refuse to read a runaway upload into memory on the worker side.
+// When long-form audio lands (Phase 4+), this should be replaced with
+// streaming straight from S3 to the transcription provider.
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 
 interface TranscribeWorkerDeps {
   db: Db;
@@ -25,6 +39,16 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
       const { rawEventId, audioKey } = job.data;
       const s3 = getS3Client();
       const bucket = getAudioBucket();
+      // Bounds-check before reading the body into memory. UnrecoverableError
+      // tells BullMQ to skip retries — an oversize object will be just as
+      // oversize on the next attempt, and we don't want to repeatedly OOM
+      // the worker.
+      const head = await headObject(s3, bucket, audioKey);
+      if (head.contentLength > MAX_AUDIO_BYTES) {
+        throw new UnrecoverableError(
+          `Audio object ${audioKey} is ${head.contentLength} bytes; max is ${MAX_AUDIO_BYTES}`,
+        );
+      }
       const { body, contentType } = await getObjectBuffer(s3, bucket, audioKey);
       const filename = audioKey.split('/').pop() ?? 'audio';
       const result = await llm.transcribeAudio({
@@ -63,10 +87,13 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
     if (!job) return;
     // BullMQ retries within `attempts`; this handler fires after each
     // attempt. Only mark the row as permanently failed once the attempts
-    // budget is exhausted — otherwise transient errors (e.g. a brief
+    // budget is exhausted, OR the processor threw an UnrecoverableError
+    // (which short-circuits retries — e.g. an oversize audio object will
+    // be just as oversize next time). Otherwise transient errors (a brief
     // OpenRouter blip) would surface to the user as a hard failure.
     const maxAttempts = job.opts.attempts ?? 1;
-    if (job.attemptsMade < maxAttempts) return;
+    const unrecoverable = err instanceof UnrecoverableError;
+    if (!unrecoverable && job.attemptsMade < maxAttempts) return;
     const patch = JSON.stringify({
       transcription_failed_at: new Date().toISOString(),
       transcription_error: err.message.slice(0, 500),

@@ -1,4 +1,9 @@
-import { GetObjectCommand, PutObjectCommand, type S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  type S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export interface PutObjectInput {
@@ -6,6 +11,22 @@ export interface PutObjectInput {
   key: string;
   body: Buffer | Uint8Array;
   contentType?: string;
+}
+
+/**
+ * HEAD an object to learn its size + content type without downloading the
+ * body. Use this to bounds-check large inputs (the transcribe worker reads
+ * the whole audio file into memory; oversize uploads would OOM the process).
+ * Throws if the object doesn't exist.
+ */
+export async function headObject(
+  client: S3Client,
+  bucket: string,
+  key: string,
+): Promise<{ contentLength: number; contentType?: string }> {
+  const res = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+  const contentLength = res.ContentLength ?? 0;
+  return res.ContentType ? { contentLength, contentType: res.ContentType } : { contentLength };
 }
 
 export async function putObject(client: S3Client, input: PutObjectInput): Promise<void> {
