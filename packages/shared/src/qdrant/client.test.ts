@@ -204,6 +204,17 @@ describe('createQdrantClient', () => {
     expect(keys).toContain('entity_ids');
   });
 
+  it('requireExisting throws on missing collection instead of auto-creating', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: false });
+    const client = createQdrantClient({ fetcher, collection: 'events_v2', requireExisting: true });
+    await expect(client.ensureCollection()).rejects.toThrow(/does not exist/);
+    // Must NOT have attempted to PUT the collection.
+    const creates = calls.filter(
+      (c) => c.method === 'PUT' && c.url.endsWith('/collections/events_v2'),
+    );
+    expect(creates).toHaveLength(0);
+  });
+
   it('honors a collection override (used by the re-embed script)', async () => {
     const { fetcher, calls } = makeFetcher({ collectionExists: true });
     const client = createQdrantClient({ fetcher, collection: 'events_v2' });

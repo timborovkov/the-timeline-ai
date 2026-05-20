@@ -150,8 +150,12 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
       // LLM call BEFORE Qdrant write so a transient embedding failure
       // retries cleanly. No DB transaction is open during the network call.
       const { vector, model } = await llm.embed({ text });
+      // When a targetCollection is set (re-embed migration path), the
+      // operator must have pre-created the collection at the new dimension —
+      // requireExisting prevents a stale worker from silently auto-creating
+      // it at the OLD EMBEDDING_DIMENSIONS and corrupting the cutover.
       const client = qdrant.createQdrantClient(
-        targetCollection ? { collection: targetCollection } : {},
+        targetCollection ? { collection: targetCollection, requireExisting: true } : {},
       );
       const pointId = qdrant.buildPointId(scope, sourceId, model);
       const payload: qdrant.QdrantPayload = {
@@ -202,12 +206,19 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
       embedding_failed_at: new Date().toISOString(),
       embedding_error: err.message.slice(0, 500),
     });
+    // Guard against a stale failed-event arriving AFTER a later successful
+    // retry has stamped embedded_at: if the row is already marked embedded,
+    // do not re-stamp it as failed. BullMQ's failed/completed event ordering
+    // is not strictly causal across attempts, and we don't want a late
+    // failure to overwrite a fresh success.
     void deps.db
       .update(rawEvents)
       .set({
         sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
       })
-      .where(eq(rawEvents.id, job.data.rawEventId))
+      .where(
+        sql`${rawEvents.id} = ${job.data.rawEventId} AND NOT (COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ? 'embedded_at')`,
+      )
       .catch((updateErr: unknown) => {
         console.error('[worker:embed] failed to mark row failure', updateErr);
       });

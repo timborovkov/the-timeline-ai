@@ -57,6 +57,15 @@ export interface QdrantClientOptions {
   vectorSize?: number;
   /** Inject a fetch implementation for tests. */
   fetcher?: typeof fetch;
+  /**
+   * Require the collection to already exist; do not auto-create on 404.
+   * Used by the re-embed script when writing into a migration collection,
+   * so that a stale worker process (started before EMBEDDING_DIMENSIONS
+   * changed) cannot silently create the new collection at the old size and
+   * corrupt the cutover. The operator must follow the documented step-2
+   * explicit create.
+   */
+  requireExisting?: boolean;
 }
 
 interface QdrantHttpError extends Error {
@@ -87,6 +96,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
   const collection = opts.collection ?? env.QDRANT_COLLECTION;
   const vectorSize = opts.vectorSize ?? env.EMBEDDING_DIMENSIONS ?? 1536;
   const fetcher = opts.fetcher ?? fetch;
+  const requireExisting = opts.requireExisting ?? false;
   const headers = buildHeaders(env.QDRANT_API_KEY);
 
   let ensurePromise: Promise<void> | undefined;
@@ -122,6 +132,16 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     ensurePromise ??= (async () => {
       const head = await request('GET', `/collections/${encodeURIComponent(collection)}`);
       if (head.status === 200) return;
+      // requireExisting: used by the re-embed script's --target-collection
+      // path. The operator pre-creates the new collection at the new vector
+      // size (documented step 2). Without this guard, a worker process
+      // started before the env change would auto-create the new collection
+      // at the OLD EMBEDDING_DIMENSIONS, silently corrupting the cutover.
+      if (requireExisting) {
+        throw new Error(
+          `Qdrant collection '${collection}' does not exist and requireExisting=true. Create it explicitly per the re-embed procedure.`,
+        );
+      }
       // 404 → create. PUT is idempotent in Qdrant (returns 200 if it exists),
       // so two concurrent boots racing here is safe.
       const create = await request('PUT', `/collections/${encodeURIComponent(collection)}`, {

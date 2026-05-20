@@ -27,7 +27,7 @@
  */
 import { closeDb, facts as factsTable, getDb, rawEvents } from '@timeline/db';
 import { queue } from '@timeline/shared';
-import { and, asc, eq, gt, or, type SQL, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, isNotNull, or, type SQL, sql } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PAGE_SIZE = 500;
@@ -78,7 +78,16 @@ async function enqueueEvents(args: Args): Promise<{ scanned: number; enqueued: n
   let scanned = 0;
 
   while (enqueued < args.limit) {
-    const conditions: SQL[] = [eq(rawEvents.teamId, args.teamId), eq(rawEvents.visibility, 'team')];
+    // contentText IS NOT NULL: audio rows without a transcript yet would
+    // hit the worker, fail with UnrecoverableError ("no content_text"), and
+    // poison source_metadata with a permanent embedding_failed_at. The
+    // transcribe worker enqueues its own embed job once the transcript
+    // lands, so we don't need to track audio-pending rows here.
+    const conditions: SQL[] = [
+      eq(rawEvents.teamId, args.teamId),
+      eq(rawEvents.visibility, 'team'),
+      isNotNull(rawEvents.contentText),
+    ];
     if (cursor) {
       const cursorClause = or(
         sql`${rawEvents.occurredAt} > ${cursor.occurredAt.toISOString()}::timestamptz`,

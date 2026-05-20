@@ -156,9 +156,12 @@ reads atomically via the `QDRANT_COLLECTION` env var.
    Leave `QDRANT_COLLECTION=events` unchanged — the worker keeps writing to
    the current collection until step 5.
 
-2. **Create the new collection** with the new vector size. The wrapper's
-   `ensureCollection` would create it lazily on first write, but doing it
-   explicitly lets you confirm the size:
+2. **Create the new collection** with the new vector size. This step is
+   **mandatory** — the embed worker uses `requireExisting=true` when a
+   `targetCollection` is on the job, so a stale worker process started
+   before the env change cannot silently auto-create the new collection at
+   the OLD dimension and corrupt the cutover. The worker errors loudly if
+   the collection is missing.
    ```bash
    curl -s -X PUT "$QDRANT_URL/collections/events_v2" \
      -H "content-type: application/json" \

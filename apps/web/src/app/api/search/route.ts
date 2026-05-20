@@ -145,22 +145,19 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: true, results: [] satisfies SearchResult[] });
   }
 
-  // Bulk-load events for snippet text; each id is re-checked via withTeam's
-  // visibility filter when we look it up.
-  const accessibleEvents = await Promise.all(
-    orderedEventIds.map(async (id) => {
-      try {
-        const ev = await scope.getEvent(id);
-        return ev;
-      } catch {
-        return null;
-      }
-    }),
-  );
-  const eventMap = new Map<string, NonNullable<(typeof accessibleEvents)[number]>>();
-  for (const ev of accessibleEvents) {
-    if (ev) eventMap.set(ev.id, ev);
+  // Bulk-load events with team + visibility enforced at the SQL layer.
+  // Single round-trip instead of N getEvent() calls; rows that fail the
+  // visibility filter are silently dropped, so the returned set is the
+  // intersection of "Qdrant said it matched" and "this user can see it".
+  let accessibleEvents: Awaited<ReturnType<typeof scope.getEventsByIds>>;
+  try {
+    accessibleEvents = await scope.getEventsByIds(orderedEventIds);
+  } catch (err) {
+    console.error('[search] bulk getEventsByIds failed', err);
+    accessibleEvents = [];
   }
+  const eventMap = new Map<string, (typeof accessibleEvents)[number]>();
+  for (const ev of accessibleEvents) eventMap.set(ev.id, ev);
 
   // Build a fact-statement lookup so we can prefer fact snippets over raw
   // event text (facts are sharper and shorter). Team-scoped by query.
@@ -190,15 +187,29 @@ export async function POST(req: Request): Promise<Response> {
     if (!ev) continue; // dropped by withTeam visibility filter (defense in depth)
     const row = dedup.get(eventId);
     if (!row) continue;
-    const factSnippet = row.factIds
+    // Filter fact ids against the team-verified factMap before returning, so
+    // a cross-team fact id from a stale or buggy Qdrant write never leaks to
+    // the client. The snippet is built from the same filtered set.
+    const verifiedFactIds = row.factIds.filter((id) => factMap.has(id));
+    const factSnippet = verifiedFactIds
       .map((id) => factMap.get(id)?.statement)
       .filter((s): s is string => Boolean(s))
       .join(' · ');
     const snippet =
       factSnippet ||
       (ev.contentText ? ev.contentText.slice(0, 240) : '[audio event — no transcript]');
+    // Build the response from the PG-hydrated row, NOT the Qdrant payload —
+    // if Qdrant drifts (stale write, future visibility change without
+    // re-embed), the source-of-truth Postgres row wins. Qdrant contributes
+    // only score and the filtered fact ids for citation.
     results.push({
-      ...row,
+      eventId: ev.id,
+      factIds: verifiedFactIds,
+      score: row.score,
+      occurredAt: ev.occurredAt.toISOString(),
+      source: ev.source,
+      authorUserId: ev.authorUserId,
+      entityIds: row.entityIds, // entity ids come from fact_entities indirectly; safe to keep
       snippet,
     });
   }

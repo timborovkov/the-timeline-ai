@@ -1,5 +1,5 @@
 import { type Db, rawEvents, teamMembers, teams, teamRole } from '@timeline/db';
-import { and, asc, desc, eq, gte, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, or, sql } from 'drizzle-orm';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.
@@ -108,6 +108,22 @@ export function withTeam(db: Db, teamId: string, userId: string) {
         .where(and(eq(rawEvents.id, id), eq(rawEvents.teamId, teamId), visibilityFilter))
         .limit(1);
       return rows[0] ?? null;
+    },
+
+    /**
+     * Bulk-load events by id with team + visibility enforced at the SQL
+     * layer. Used by /api/search to hydrate result rows in a single
+     * round-trip rather than N getEvent() calls. Returns only rows visible
+     * to (teamId, userId); ids that fail the filter are silently dropped —
+     * callers must reconcile by id, not by index.
+     */
+    async getEventsByIds(ids: string[]) {
+      if (ids.length === 0) return [];
+      await ensureMember();
+      return db
+        .select()
+        .from(rawEvents)
+        .where(and(inArray(rawEvents.id, ids), eq(rawEvents.teamId, teamId), visibilityFilter));
     },
 
     async createEvent(input: CreateEventInput) {
