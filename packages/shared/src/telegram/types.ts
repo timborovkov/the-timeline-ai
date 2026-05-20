@@ -18,6 +18,14 @@ export const tgChatSchema = z.object({
   username: z.string().optional(),
 });
 
+export const tgAudioPayloadSchema = z.object({
+  file_id: z.string(),
+  file_unique_id: z.string().optional(),
+  duration: z.number().int().optional(),
+  mime_type: z.string().optional(),
+  file_size: z.number().int().optional(),
+});
+
 export const tgMessageSchema = z.object({
   message_id: z.number().int(),
   from: tgUserSchema.optional(),
@@ -36,6 +44,12 @@ export const tgMessageSchema = z.object({
       }),
     )
     .optional(),
+  // Voice memos (recorded in the Telegram client) — almost always audio/ogg
+  // with the opus codec. `audio` is set when the user attaches an audio file
+  // (e.g. an mp3 from their library). Both flow through the same audio
+  // ingest path; we keep them as separate fields so callers can see which.
+  voice: tgAudioPayloadSchema.optional(),
+  audio: tgAudioPayloadSchema.optional(),
 });
 
 export const tgCallbackQuerySchema = z.object({
@@ -52,6 +66,7 @@ export const tgUpdateSchema = z.object({
   callback_query: tgCallbackQuerySchema.optional(),
 });
 
+export type TgAudioPayload = z.infer<typeof tgAudioPayloadSchema>;
 export type TgUser = z.infer<typeof tgUserSchema>;
 export type TgChat = z.infer<typeof tgChatSchema>;
 export type TgMessage = z.infer<typeof tgMessageSchema>;

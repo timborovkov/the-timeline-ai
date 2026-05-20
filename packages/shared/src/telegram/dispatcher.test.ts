@@ -102,6 +102,20 @@ describe('tgUpdateSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts a voice memo payload', () => {
+    const result = tgUpdateSchema.safeParse({
+      update_id: 4,
+      message: {
+        message_id: 11,
+        date: 1700000200,
+        chat: { id: 42, type: 'private' },
+        from: { id: 7 },
+        voice: { file_id: 'AwACAg...', duration: 5, mime_type: 'audio/ogg', file_size: 4096 },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
   it('rejects an unknown chat.type', () => {
     const result = tgUpdateSchema.safeParse({
       update_id: 3,
@@ -126,6 +140,8 @@ describe('handleUpdate (fake-token guard)', () => {
       getChatAdministrators: () => Promise.resolve([]),
       answerCallbackQuery: () => Promise.resolve(),
       editMessageText: () => Promise.resolve(),
+      getFile: () => Promise.reject(new Error('not used')),
+      downloadFile: () => Promise.reject(new Error('not used')),
     };
     const result = await handleUpdate({ db: fakeDb, tg: fakeTg }, { not_an_update: true });
     expect(result.ok).toBe(false);

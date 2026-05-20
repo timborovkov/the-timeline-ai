@@ -7,6 +7,12 @@ export interface TelegramAdminListEntry {
   user: { id: number; username?: string };
 }
 
+export interface TelegramFileInfo {
+  file_id: string;
+  file_path: string;
+  file_size?: number;
+}
+
 export interface TelegramApi {
   sendMessage(input: {
     chat_id: number;
@@ -23,6 +29,10 @@ export interface TelegramApi {
     text: string;
     reply_markup?: unknown;
   }): Promise<void>;
+  /** Resolve a Telegram file_id to its CDN path. */
+  getFile(input: { file_id: string }): Promise<TelegramFileInfo>;
+  /** Download the bytes of a file resolved via {@link getFile}. */
+  downloadFile(filePath: string): Promise<Buffer>;
 }
 
 export class HttpTelegramApi implements TelegramApi {
@@ -66,6 +76,19 @@ export class HttpTelegramApi implements TelegramApi {
   async editMessageText(input: Parameters<TelegramApi['editMessageText']>[0]): Promise<void> {
     await this.call('editMessageText', input);
   }
+
+  async getFile(input: Parameters<TelegramApi['getFile']>[0]): Promise<TelegramFileInfo> {
+    return this.call<TelegramFileInfo>('getFile', input);
+  }
+
+  async downloadFile(filePath: string): Promise<Buffer> {
+    const res = await fetch(`https://api.telegram.org/file/bot${this.token}/${filePath}`);
+    if (!res.ok) {
+      throw new Error(`Telegram file download failed: ${res.status}`);
+    }
+    const buf = await res.arrayBuffer();
+    return Buffer.from(buf);
+  }
 }
 
 /**
@@ -84,5 +107,11 @@ export class NoopTelegramApi implements TelegramApi {
   }
   editMessageText(): Promise<void> {
     return Promise.resolve();
+  }
+  getFile(): Promise<TelegramFileInfo> {
+    return Promise.reject(new Error('TELEGRAM_BOT_TOKEN unset — cannot fetch files'));
+  }
+  downloadFile(): Promise<Buffer> {
+    return Promise.reject(new Error('TELEGRAM_BOT_TOKEN unset — cannot download files'));
   }
 }

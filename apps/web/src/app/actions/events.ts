@@ -1,6 +1,16 @@
 'use server';
 
-import { withTeam } from '@timeline/shared';
+import { randomUUID } from 'node:crypto';
+
+import { rawEvents } from '@timeline/db';
+import {
+  getAudioBucket,
+  getS3Client,
+  getSignedPutObjectUrl,
+  queue,
+  withTeam,
+} from '@timeline/shared';
+import { eq, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -56,4 +66,158 @@ export async function createTextEventAction(
 
   revalidatePath('/app/timeline');
   return { ok: true, at: Date.now() };
+}
+
+// ---------- Audio capture (Phase 3) ----------
+
+const MIME_TO_EXT_WEB: Record<string, string> = {
+  'audio/webm': 'webm',
+  'audio/ogg': 'ogg',
+  'audio/mpeg': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+};
+
+const mimeTypeSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^audio\//, 'Must be an audio MIME type');
+
+interface RequestAudioUploadResult {
+  ok: boolean;
+  error?: string;
+  url?: string;
+  key?: string;
+  contentType?: string;
+}
+
+export async function requestAudioUploadAction(
+  mimeType: string,
+): Promise<RequestAudioUploadResult> {
+  const session = await auth();
+  if (!session?.user) return { ok: false, error: 'Not signed in' };
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) return { ok: false, error: 'No active team' };
+
+  const parsedMime = mimeTypeSchema.safeParse(mimeType);
+  if (!parsedMime.success) return { ok: false, error: 'Invalid audio type' };
+
+  // Authoritative membership check before we hand out a signed URL.
+  const scope = withTeam(db, active.teamId, session.user.id);
+  await scope.requireMembership();
+
+  const ext = MIME_TO_EXT_WEB[parsedMime.data] ?? 'bin';
+  // User-scoped key prefix so a teammate who learns or guesses someone else's
+  // upload key cannot attach that object to their own event row via
+  // createAudioEventAction. The prefix check on confirm enforces the same
+  // user.id we sign here.
+  const key = `teams/${active.teamId}/web/${session.user.id}/${randomUUID()}.${ext}`;
+  const url = await getSignedPutObjectUrl(getS3Client(), getAudioBucket(), key, parsedMime.data);
+  return { ok: true, url, key, contentType: parsedMime.data };
+}
+
+const audioVisibilitySchema = z.enum(['team', 'private']).default('team');
+
+const createAudioSchema = z.object({
+  key: z.string().min(1).max(500),
+  mimeType: mimeTypeSchema,
+  durationSec: z
+    .number()
+    .int()
+    .min(0)
+    .max(60 * 60)
+    .optional(),
+  visibility: audioVisibilitySchema,
+});
+
+interface CreateAudioEventResult {
+  ok: boolean;
+  error?: string;
+  /** Soft message: row committed but a follow-up step degraded (e.g. queue
+   *  enqueue failed). Distinct from `error` so the client treats the audio
+   *  as saved and does NOT retry the upload + insert. */
+  warning?: string;
+}
+
+export async function createAudioEventAction(
+  input: z.input<typeof createAudioSchema>,
+): Promise<CreateAudioEventResult> {
+  const session = await auth();
+  if (!session?.user) return { ok: false, error: 'Not signed in' };
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) return { ok: false, error: 'No active team' };
+
+  const parsed = createAudioSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+  }
+
+  // Defense in depth: keys are issued by requestAudioUploadAction prefixed
+  // with `teams/<active>/web/<user.id>/`. Reject anything else so a caller
+  // cannot attach another user's upload (same team, different uploader) to
+  // their own event row.
+  const expectedPrefix = `teams/${active.teamId}/web/${session.user.id}/`;
+  if (!parsed.data.key.startsWith(expectedPrefix)) {
+    return { ok: false, error: 'Invalid upload key' };
+  }
+
+  const scope = withTeam(db, active.teamId, session.user.id);
+  await scope.requireMembership();
+  const sourceMetadata: Record<string, unknown> = {
+    audio_mime_type: parsed.data.mimeType,
+  };
+  if (typeof parsed.data.durationSec === 'number') {
+    sourceMetadata.audio_duration_sec = parsed.data.durationSec;
+  }
+  const event = await scope.createEvent({
+    authorUserId: session.user.id,
+    source: 'web',
+    contentText: null,
+    contentAudioUrl: parsed.data.key,
+    visibility: parsed.data.visibility,
+    sourceMetadata,
+  });
+
+  try {
+    await queue.enqueueTranscribeJob({
+      rawEventId: event.id,
+      teamId: event.teamId,
+      audioKey: parsed.data.key,
+    });
+  } catch (err) {
+    console.error('[events] failed to enqueue transcribe job', err);
+    // Row is already committed. Return ok=true so the client does not retry
+    // the upload+insert (which would create a second orphan row). There is
+    // NO automatic re-enqueue for the web path today — say so honestly.
+    // Mark the row with the same permanent-failure shape the worker writes
+    // on retry exhaustion, so the timeline UI surfaces "Transcription
+    // failed" instead of "Transcribing…" indefinitely (the recorder's
+    // soft warning is cleared on auto-reset and would otherwise leave the
+    // user with no lasting signal). The Phase 8 reconciler is the
+    // permanent fix; until then a manual replay is required.
+    const failurePatch = JSON.stringify({
+      transcription_failed_at: new Date().toISOString(),
+      transcription_error: `enqueue failed: ${err instanceof Error ? err.message.slice(0, 480) : 'unknown'}`,
+    });
+    await db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, event.id))
+      .catch((markErr: unknown) => {
+        console.error('[events] failed to mark row failure', markErr);
+      });
+    revalidatePath('/app/timeline');
+    return {
+      ok: true,
+      warning:
+        'Saved. Transcription queue is unreachable; the audio is on the timeline but the transcript needs a manual replay.',
+    };
+  }
+
+  revalidatePath('/app/timeline');
+  return { ok: true };
 }

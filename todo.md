@@ -63,14 +63,14 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 
 ## Phase 3 — Voice notes and worker infrastructure
 
-- [ ] `apps/worker`: BullMQ setup with separate queues per worker type (`transcribe`, `extract`, `embed`).
-- [ ] Worker entry points: `apps/worker/src/workers/{transcribe,extract,embed}.ts`. Each one consumes its own queue.
-- [ ] S3 client (`@aws-sdk/client-s3`) configured for RustFS with `forcePathStyle: true`. Wrapper in `packages/shared`.
-- [ ] Telegram audio handler: fetch audio file from Telegram → upload to RustFS (`timeline-audio` bucket) → create raw event → enqueue transcription job.
-- [ ] Transcription worker: pull audio from RustFS → OpenRouter `/audio/transcriptions` → update raw event with transcript → enqueue downstream jobs (extract).
-- [ ] Web UI: in-browser audio recording (MediaRecorder API). Pre-signed upload URL → direct PUT to RustFS → same downstream pipeline.
-- [ ] Timeline display: render audio playback control alongside transcript.
-- [ ] Deploy worker service to Railway staging. Configure start command per worker type.
+- [x] `apps/worker`: BullMQ setup. Queue names (`transcribe`, `extract`, `embed`) reserved in `@timeline/shared/queue`; only `transcribe` has a real consumer in Phase 3.
+- [x] Worker entry point at `apps/worker/src/workers/transcribe.ts` (extract/embed deferred to Phase 4/5; queue names already exported).
+- [x] S3 client (`@aws-sdk/client-s3`) configured for RustFS with `forcePathStyle: true`. Wrapper in `packages/shared/src/s3`.
+- [x] Telegram audio handler: voice/audio download → upload to RustFS (`timeline-audio` bucket) → create raw event → enqueue transcription job (in `packages/shared/src/telegram/dispatcher.ts`).
+- [x] Transcription worker: pull audio from RustFS → OpenRouter `/audio/transcriptions` → update raw event with transcript. Downstream extract enqueue lands in Phase 4.
+- [x] Web UI: in-browser audio recording (MediaRecorder API). Pre-signed upload URL → direct PUT to RustFS → same downstream pipeline (`apps/web/src/components/audio-recorder.tsx`).
+- [x] Timeline display: signed audio player + "Transcribing…" placeholder.
+- [ ] Deploy worker service to Railway staging. Configure start command per worker type. (Follow-up: needs Railway env vars + fresh deploy.)
 
 **Checkpoint:** Voice memo in Telegram or web → audible + readable in timeline within ~30 seconds.
 

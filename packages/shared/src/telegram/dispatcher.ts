@@ -10,11 +10,39 @@ import {
 import { and, asc, eq, sql } from 'drizzle-orm';
 
 import { type TelegramApi } from './api';
-import { tgUpdateSchema, type TgMessage, type TgUpdate, type TgUser } from './types';
+import {
+  tgUpdateSchema,
+  type TgAudioPayload,
+  type TgMessage,
+  type TgUpdate,
+  type TgUser,
+} from './types';
+
+/**
+ * Audio ingest is dependency-injected so the dispatcher stays testable
+ * (no S3 or queue connection required for text-only tests). When `audio`
+ * is undefined, voice/audio messages are silently dropped with a log line —
+ * matching the Phase 2 behavior for unsupported media types.
+ */
+export interface AudioIngestDeps {
+  /** Upload bytes to object storage; returns nothing. */
+  upload(input: { key: string; body: Buffer; contentType: string }): Promise<void>;
+  /** Enqueue a transcribe job for the freshly-inserted raw event. */
+  enqueueTranscribe(input: { rawEventId: string; teamId: string; audioKey: string }): Promise<void>;
+  /** Object key prefix builder. Implementation owns the bucket layout. */
+  buildAudioKey(input: {
+    teamId: string;
+    chatId: number;
+    messageId: number;
+    fileId: string;
+    extension: string;
+  }): string;
+}
 
 interface DispatcherDeps {
   db: Db;
   tg: TelegramApi;
+  audio?: AudioIngestDeps;
 }
 
 interface DmContext extends DispatcherDeps {
@@ -117,8 +145,42 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
   // re-running them on edit would be confusing.
   if (isEdit && command) return;
 
-  if (!text) return; // text-only ingest in Phase 2
-  await ingestDmText(ctx, text, isEdit);
+  // Audio takes precedence over text/caption: a voice memo with a caption
+  // is primarily an audio capture, and dropping the bytes to record only
+  // the caption silently loses the actual content. The caption is kept
+  // in source_metadata.tg_caption so it isn't lost either. Audio edits
+  // are skipped — Telegram lets users edit captions on media but the
+  // media bytes themselves are immutable, and the original row is already
+  // on the timeline.
+  const audio = ctx.message.voice ?? ctx.message.audio;
+  if (audio && !isEdit) {
+    if (!ctx.activeTeamId) {
+      await ctx.tg.sendMessage({
+        chat_id: ctx.message.chat.id,
+        text: 'No active team. Run /link <token> first. Your voice memo was not recorded.',
+      });
+      return;
+    }
+    await ingestAudio(
+      {
+        db: ctx.db,
+        tg: ctx.tg,
+        audio: ctx.audio,
+        message: ctx.message,
+        updateId: ctx.updateId,
+        authorUserId: ctx.tgUserRow.userId,
+        sourceUnverified: ctx.tgUserRow.userId === null,
+      },
+      audio,
+      ctx.message.voice ? 'voice' : 'audio',
+      ctx.activeTeamId,
+    );
+    return;
+  }
+
+  if (text) {
+    await ingestDmText(ctx, text, isEdit);
+  }
 }
 
 async function dispatchCommand(
@@ -445,21 +507,42 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
   }
   if (isEdit && command) return;
 
-  if (!text) return;
   // Unbound group: drop new messages silently (Phase 2 behavior). Edits
   // still flow through so an edit of a previously-recorded message can land
   // on its original team even after /unlink.
   if (!ctx.binding && !isEdit) return;
 
-  await insertEvent(ctx.db, {
-    fallbackTeamId: ctx.binding?.teamId ?? null,
-    authorUserId: ctx.tgUserRow?.userId ?? null,
-    text,
-    message: ctx.message,
-    updateId: ctx.updateId,
-    sourceUnverified: !ctx.tgUserRow?.userId,
-    isEdit,
-  });
+  // Audio takes precedence over text/caption — see handleDm for rationale.
+  const audio = ctx.message.voice ?? ctx.message.audio;
+  if (audio && !isEdit && ctx.binding) {
+    await ingestAudio(
+      {
+        db: ctx.db,
+        tg: ctx.tg,
+        audio: ctx.audio,
+        message: ctx.message,
+        updateId: ctx.updateId,
+        authorUserId: ctx.tgUserRow?.userId ?? null,
+        sourceUnverified: !ctx.tgUserRow?.userId,
+      },
+      audio,
+      ctx.message.voice ? 'voice' : 'audio',
+      ctx.binding.teamId,
+    );
+    return;
+  }
+
+  if (text) {
+    await insertEvent(ctx.db, {
+      fallbackTeamId: ctx.binding?.teamId ?? null,
+      authorUserId: ctx.tgUserRow?.userId ?? null,
+      text,
+      message: ctx.message,
+      updateId: ctx.updateId,
+      sourceUnverified: !ctx.tgUserRow?.userId,
+      isEdit,
+    });
+  }
 }
 
 async function dispatchGroupCommand(
@@ -763,14 +846,22 @@ interface InsertEventInput {
    */
   fallbackTeamId: string | null;
   authorUserId: string | null;
-  text: string;
+  text: string | null;
   message: TgMessage;
   updateId: number;
   sourceUnverified: boolean;
   isEdit: boolean;
+  /** Audio attachment: S3 object key + extra metadata to merge into source_metadata. */
+  audio?: {
+    key: string;
+    extra: Record<string, unknown>;
+  };
 }
 
-async function insertEvent(db: Db, input: InsertEventInput): Promise<void> {
+async function insertEvent(
+  db: Db,
+  input: InsertEventInput,
+): Promise<{ id: string; teamId: string } | null> {
   const metadata: Record<string, unknown> = {
     tg_chat_id: input.message.chat.id,
     tg_chat_type: input.message.chat.type,
@@ -780,6 +871,9 @@ async function insertEvent(db: Db, input: InsertEventInput): Promise<void> {
   if (input.message.from) {
     metadata.tg_user_id = input.message.from.id;
     if (input.message.from.username) metadata.tg_username = input.message.from.username;
+  }
+  if (input.audio) {
+    Object.assign(metadata, input.audio.extra);
   }
 
   let teamId: string | null = input.fallbackTeamId;
@@ -801,10 +895,10 @@ async function insertEvent(db: Db, input: InsertEventInput): Promise<void> {
     } else {
       // No original AND no current team to attribute to (e.g. edit of a
       // pre-link message after /unlink). Nothing safe to write.
-      return;
+      return null;
     }
   }
-  if (!teamId) return;
+  if (!teamId) return null;
 
   // Per-message membership check. The candidate author_user_id comes from
   // telegram_users.user_id (bound at /link time after the username-match
@@ -839,17 +933,166 @@ async function insertEvent(db: Db, input: InsertEventInput): Promise<void> {
   // retries an update because we didn't 200 in time (or the process crashed
   // mid-handler), the second insert is a silent no-op instead of a duplicate
   // row in the timeline.
-  await db
+  const inserted = await db
     .insert(rawEvents)
     .values({
       teamId,
       authorUserId,
       source: 'telegram',
       contentText: input.text,
+      contentAudioUrl: input.audio?.key ?? null,
       occurredAt: new Date(occurredAtSec * 1000),
       sourceMetadata: metadata,
     })
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
+  return inserted[0] ?? null;
+}
+
+interface AudioIngestCtx {
+  db: Db;
+  tg: TelegramApi;
+  audio: AudioIngestDeps | undefined;
+  message: TgMessage;
+  updateId: number;
+  authorUserId: string | null;
+  sourceUnverified: boolean;
+}
+
+const MIME_TO_EXT: Record<string, string> = {
+  'audio/ogg': 'ogg',
+  'audio/oga': 'ogg',
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/m4a': 'm4a',
+  'audio/wav': 'wav',
+  'audio/webm': 'webm',
+};
+
+function extForMime(mime: string | undefined, fallback: string): string {
+  if (!mime) return fallback;
+  return MIME_TO_EXT[mime.toLowerCase()] ?? fallback;
+}
+
+async function ingestAudio(
+  ctx: AudioIngestCtx,
+  payload: TgAudioPayload,
+  kind: 'voice' | 'audio',
+  teamId: string,
+): Promise<void> {
+  if (!ctx.audio) {
+    // No audio ingest deps wired (e.g. local dev without RustFS env). Phase 2
+    // behavior for unsupported media: silently drop, log so it's visible.
+    console.warn('[telegram] audio message dropped — audio ingest not configured');
+    return;
+  }
+
+  let fileInfo;
+  let bytes: Buffer;
+  try {
+    fileInfo = await ctx.tg.getFile({ file_id: payload.file_id });
+    bytes = await ctx.tg.downloadFile(fileInfo.file_path);
+  } catch (err) {
+    console.error('[telegram] audio fetch failed', err);
+    return;
+  }
+
+  const mimeType = payload.mime_type ?? (kind === 'voice' ? 'audio/ogg' : 'audio/mpeg');
+  const extension = extForMime(mimeType, kind === 'voice' ? 'ogg' : 'bin');
+  const key = ctx.audio.buildAudioKey({
+    teamId,
+    chatId: ctx.message.chat.id,
+    messageId: ctx.message.message_id,
+    fileId: payload.file_id,
+    extension,
+  });
+
+  try {
+    await ctx.audio.upload({ key, body: bytes, contentType: mimeType });
+  } catch (err) {
+    console.error('[telegram] audio upload failed', err);
+    return;
+  }
+
+  const extra: Record<string, unknown> = {
+    audio_kind: kind,
+    audio_mime_type: mimeType,
+    tg_file_id: payload.file_id,
+  };
+  if (typeof payload.duration === 'number') extra.audio_duration_sec = payload.duration;
+  if (typeof payload.file_size === 'number') extra.audio_file_size = payload.file_size;
+  // Telegram lets users attach a caption to voice/audio messages. The audio
+  // is the primary content (content_text will hold the transcript), but the
+  // caption is user-authored signal we must not drop. Stash it alongside
+  // the audio metadata so the timeline / future extraction can surface it.
+  if (ctx.message.caption) extra.tg_caption = ctx.message.caption;
+
+  const inserted = await insertEvent(ctx.db, {
+    fallbackTeamId: teamId,
+    authorUserId: ctx.authorUserId,
+    text: null,
+    message: ctx.message,
+    updateId: ctx.updateId,
+    sourceUnverified: ctx.sourceUnverified,
+    isEdit: false,
+    audio: { key, extra },
+  });
+
+  // Self-heal on retry: if `insertEvent` returned null, the row was inserted
+  // on a prior webhook delivery but our enqueue may have failed (or the
+  // process died before it could run). Look the row up by tg_update_id and
+  // try the enqueue again. BullMQ dedups on jobId=rawEventId, so this is
+  // a no-op when the original enqueue already succeeded.
+  const target = inserted ?? (await findEventByUpdateId(ctx.db, ctx.updateId));
+  if (!target) return;
+
+  try {
+    await ctx.audio.enqueueTranscribe({
+      rawEventId: target.id,
+      teamId: target.teamId,
+      audioKey: key,
+    });
+  } catch (err) {
+    console.error('[telegram] transcribe enqueue failed', err);
+    // Row is already committed with an audio key and no content_text. With
+    // no job in the queue, the worker's `failed` handler will never run
+    // either, so the timeline would otherwise show "Transcribing…"
+    // indefinitely. Mark the row inline so the UI surfaces the failure
+    // state and a future reconciler has a flag to act on. Mirrors the
+    // worker's permanent-failure shape (transcription_failed_at +
+    // transcription_error).
+    const failurePatch = JSON.stringify({
+      transcription_failed_at: new Date().toISOString(),
+      transcription_error: `enqueue failed: ${err instanceof Error ? err.message.slice(0, 480) : 'unknown'}`,
+    });
+    await ctx.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, target.id))
+      .catch((markErr: unknown) => {
+        console.error('[telegram] failed to mark row failure', markErr);
+      });
+  }
+}
+
+async function findEventByUpdateId(
+  db: Db,
+  updateId: number,
+): Promise<{ id: string; teamId: string } | null> {
+  const rows = await db
+    .select({ id: rawEvents.id, teamId: rawEvents.teamId })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.source, 'telegram'),
+        sql`(${rawEvents.sourceMetadata} ->> 'tg_update_id')::bigint = ${updateId}`,
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 async function findOriginalEvent(
