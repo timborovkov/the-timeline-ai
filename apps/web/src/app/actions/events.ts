@@ -57,12 +57,35 @@ export async function createTextEventAction(
 
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
-  await scope.createEvent({
+  const event = await scope.createEvent({
     authorUserId: session.user.id,
     source: 'web',
     contentText: parsed.data.text,
     visibility: parsed.data.visibility,
   });
+
+  try {
+    await queue.enqueueExtractJob({ rawEventId: event.id, teamId: event.teamId });
+  } catch (err) {
+    console.error('[events] failed to enqueue extract job', err);
+    // Same shape as the transcribe-enqueue failure path: mark the row so the
+    // timeline UI can surface an "extraction unavailable" state. The text
+    // event itself is committed and visible — only structured facts are
+    // missing until the queue is reachable.
+    const failurePatch = JSON.stringify({
+      extraction_failed_at: new Date().toISOString(),
+      extraction_error: `enqueue failed: ${err instanceof Error ? err.message.slice(0, 480) : 'unknown'}`,
+    });
+    await db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, event.id))
+      .catch((markErr: unknown) => {
+        console.error('[events] failed to mark extract failure', markErr);
+      });
+  }
 
   revalidatePath('/app/timeline');
   return { ok: true, at: Date.now() };

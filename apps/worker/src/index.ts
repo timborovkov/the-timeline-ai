@@ -1,18 +1,21 @@
 import { closeDb, getDb } from '@timeline/db';
 import { queue } from '@timeline/shared';
 
+import { startExtractWorker } from './workers/extract.js';
 import { startTranscribeWorker } from './workers/transcribe.js';
 
 function main(): void {
   const db = getDb();
-  const worker = startTranscribeWorker({ db });
-  console.log('[worker] transcribe worker started');
+  const transcribeWorker = startTranscribeWorker({ db });
+  const extractWorker = startExtractWorker({ db });
+  console.log('[worker] transcribe + extract workers started');
 
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`[worker] received ${signal}, shutting down`);
     try {
-      await worker.close();
+      await Promise.all([transcribeWorker.close(), extractWorker.close()]);
       await queue.closeTranscribeQueue();
+      await queue.closeExtractQueue();
       await queue.closeRedisConnection();
       await closeDb();
     } catch (err: unknown) {

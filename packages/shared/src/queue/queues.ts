@@ -60,3 +60,38 @@ export async function closeTranscribeQueue(): Promise<void> {
   _transcribeQueue = undefined;
   await q.close().catch(() => undefined);
 }
+
+export interface ExtractJobData {
+  rawEventId: string;
+  teamId: string;
+}
+
+let _extractQueue: Queue<ExtractJobData> | undefined;
+
+export function getExtractQueue(): Queue<ExtractJobData> {
+  if (_extractQueue) return _extractQueue;
+  _extractQueue = new Queue<ExtractJobData>(QUEUE_NAMES.extract, {
+    connection: getRedisConnection(),
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 2000 },
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  });
+  return _extractQueue;
+}
+
+export async function enqueueExtractJob(data: ExtractJobData): Promise<void> {
+  // Same no-jobId-dedup rationale as transcribe: row-level idempotency lives
+  // in the worker, which skips when facts for (rawEventId, modelVersion)
+  // already exist. A duplicate enqueue costs at most one extra DB lookup.
+  await getExtractQueue().add('extract', data);
+}
+
+export async function closeExtractQueue(): Promise<void> {
+  if (!_extractQueue) return;
+  const q = _extractQueue;
+  _extractQueue = undefined;
+  await q.close().catch(() => undefined);
+}

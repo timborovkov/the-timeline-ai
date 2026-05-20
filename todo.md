@@ -76,16 +76,16 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 
 ## Phase 4 — Extraction and entities
 
-- [ ] Schema: `entities` (id, team_id, type, canonical_name, aliases jsonb, metadata jsonb).
-- [ ] Schema: `facts` (id, team_id, raw_event_id, statement, confidence, extracted_at, model_version).
-- [ ] Schema: `fact_entities` (fact_id, entity_id, role) — facts reference entities with a role ("subject", "object", "topic").
-- [ ] Internal LLM wrapper in `packages/shared`: `llm.chat()`, `llm.embed()`, `llm.transcribe()`. Provider-agnostic interface.
-- [ ] Extraction prompt: given raw event text + recent context, output structured JSON with facts and entity mentions. Pin model version in config.
-- [ ] Extraction worker: triggered on raw event creation (and on transcription completion for audio). Writes facts and entity mentions. Enqueues embed job.
-- [ ] Entity resolution: for each mention, look up existing entities by name/alias within team. LLM-assisted disambiguation when ambiguous. Create new entity if no match.
-- [ ] Entity merge UI: admin can merge two entities (e.g., "Apple" and "Apple Inc"). Updates all references.
-- [ ] Entity page: profile view showing all events, facts, and related entities for one entity.
-- [ ] Re-extraction script: replay all raw events for a team through current extraction pipeline. Versioned, idempotent.
+- [x] Schema: `entities` (id, team_id, type, canonical_name, aliases jsonb, metadata jsonb, merged_into_id).
+- [x] Schema: `facts` (id, team_id, raw_event_id, statement, confidence, extracted_at, model_version).
+- [x] Schema: `fact_entities` (fact_id, entity_id, role) — facts reference entities with a role ("subject", "object", "topic").
+- [x] Internal LLM wrapper in `packages/shared`: `llm.chatStructured()`, `llm.transcribeAudio()`. `llm.embed()` reserved as stub for Phase 5.
+- [x] Extraction prompt: given raw event text + last-5-team-events context, output structured JSON with facts and entity mentions. Pin model version in config.
+- [x] Extraction worker: triggered on raw event creation (and on transcription completion for audio). Writes facts and entity mentions. Embed enqueue deferred to Phase 5.
+- [x] Entity resolution: for each mention, look up existing entities by name/alias within team. LLM-assisted disambiguation when ambiguous. Create new entity if no match. (No fuzzy/embedding dedup until Phase 5.)
+- [x] Entity merge UI: admin can merge two entities (e.g., "Apple" and "Apple Inc"). Updates all references.
+- [x] Entity page: profile view showing all events, facts, and related entities for one entity.
+- [x] Re-extraction script: replay all raw events for a team through current extraction pipeline. Versioned, idempotent.
 
 **Checkpoint:** Capture a few voice notes mentioning a person and a company. They appear as entities with auto-generated profile pages aggregating everything said about them.
 

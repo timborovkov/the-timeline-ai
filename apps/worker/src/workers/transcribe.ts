@@ -76,9 +76,21 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
           sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
         })
         .where(eq(rawEvents.id, rawEventId))
-        .returning({ id: rawEvents.id });
+        .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
       if (update.length === 0) {
         console.warn(`[worker:transcribe] raw event ${rawEventId} not found at update`);
+        return { rawEventId, model: result.model };
+      }
+      // Hand off to extraction now that text is available. A failed enqueue
+      // here is logged but does not fail the transcribe job — the transcript
+      // is the durable artifact; extraction can be replayed via reextract.
+      try {
+        const row = update[0];
+        if (row) {
+          await queue.enqueueExtractJob({ rawEventId: row.id, teamId: row.teamId });
+        }
+      } catch (enqueueErr) {
+        console.error('[worker:transcribe] failed to enqueue extract job', enqueueErr);
       }
       return { rawEventId, model: result.model };
     },
