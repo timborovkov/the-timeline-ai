@@ -39,6 +39,10 @@ export function AudioRecorder() {
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
+  // setPhase is asynchronous, so two quick clicks on Send can both enter
+  // send() before the button disappears. A ref-based latch is the only
+  // reliable in-flight guard here.
+  const sendingRef = useRef<boolean>(false);
 
   // Revoke object URL when clip changes / unmounts to avoid leaking memory.
   useEffect(() => {
@@ -135,6 +139,8 @@ export function AudioRecorder() {
 
   async function send(): Promise<void> {
     if (!clip) return;
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     setPhase('uploading');
     setError(null);
     const base = baseMimeType(clip.mimeType);
@@ -164,6 +170,8 @@ export function AudioRecorder() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
       setPhase('error');
+    } finally {
+      sendingRef.current = false;
     }
   }
 

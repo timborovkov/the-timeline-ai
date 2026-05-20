@@ -2,6 +2,7 @@
 
 import { randomUUID } from 'node:crypto';
 
+import { rawEvents } from '@timeline/db';
 import {
   getAudioBucket,
   getS3Client,
@@ -9,6 +10,7 @@ import {
   queue,
   withTeam,
 } from '@timeline/shared';
+import { eq, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -189,9 +191,25 @@ export async function createAudioEventAction(
     // Row is already committed. Return ok=true so the client does not retry
     // the upload+insert (which would create a second orphan row). There is
     // NO automatic re-enqueue for the web path today — say so honestly.
-    // The Phase 8 reconciler (scan rows with content_audio_url + null
-    // content_text + no transcription_failed_at and re-enqueue) is the
+    // Mark the row with the same permanent-failure shape the worker writes
+    // on retry exhaustion, so the timeline UI surfaces "Transcription
+    // failed" instead of "Transcribing…" indefinitely (the recorder's
+    // soft warning is cleared on auto-reset and would otherwise leave the
+    // user with no lasting signal). The Phase 8 reconciler is the
     // permanent fix; until then a manual replay is required.
+    const failurePatch = JSON.stringify({
+      transcription_failed_at: new Date().toISOString(),
+      transcription_error: `enqueue failed: ${err instanceof Error ? err.message.slice(0, 480) : 'unknown'}`,
+    });
+    await db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, event.id))
+      .catch((markErr: unknown) => {
+        console.error('[events] failed to mark row failure', markErr);
+      });
     revalidatePath('/app/timeline');
     return {
       ok: true,
