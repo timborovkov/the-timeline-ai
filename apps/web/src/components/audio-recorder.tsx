@@ -123,6 +123,8 @@ export function AudioRecorder() {
         visibility,
       });
       if (!create.ok) throw new Error(create.error ?? 'Save failed');
+      // Soft warning means the row is committed; never re-send.
+      if (create.warning) setError(create.warning);
       setPhase('done');
       // Auto-reset shortly after so the user can record another.
       setTimeout(reset, 1500);

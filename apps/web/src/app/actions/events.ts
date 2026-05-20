@@ -133,6 +133,10 @@ const createAudioSchema = z.object({
 interface CreateAudioEventResult {
   ok: boolean;
   error?: string;
+  /** Soft message: row committed but a follow-up step degraded (e.g. queue
+   *  enqueue failed). Distinct from `error` so the client treats the audio
+   *  as saved and does NOT retry the upload + insert. */
+  warning?: string;
 }
 
 export async function createAudioEventAction(
@@ -182,9 +186,15 @@ export async function createAudioEventAction(
     });
   } catch (err) {
     console.error('[events] failed to enqueue transcribe job', err);
-    // Event row is committed; transcript will need a manual replay if the
-    // queue was unreachable. Surface a soft error to the client.
-    return { ok: false, error: 'Saved, but transcription not queued' };
+    // Row is already committed. Return ok=true so the client does not retry
+    // the upload+insert (which would create a second orphan row). The
+    // transcript needs a manual replay; surface that to the user as a
+    // warning. A background reconciler script is the Phase 8 follow-up.
+    revalidatePath('/app/timeline');
+    return {
+      ok: true,
+      warning: 'Saved, but transcription queue is unreachable — transcript will be retried later.',
+    };
   }
 
   revalidatePath('/app/timeline');
