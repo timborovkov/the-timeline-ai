@@ -1055,6 +1055,26 @@ async function ingestAudio(
     });
   } catch (err) {
     console.error('[telegram] transcribe enqueue failed', err);
+    // Row is already committed with an audio key and no content_text. With
+    // no job in the queue, the worker's `failed` handler will never run
+    // either, so the timeline would otherwise show "Transcribing…"
+    // indefinitely. Mark the row inline so the UI surfaces the failure
+    // state and a future reconciler has a flag to act on. Mirrors the
+    // worker's permanent-failure shape (transcription_failed_at +
+    // transcription_error).
+    const failurePatch = JSON.stringify({
+      transcription_failed_at: new Date().toISOString(),
+      transcription_error: `enqueue failed: ${err instanceof Error ? err.message.slice(0, 480) : 'unknown'}`,
+    });
+    await ctx.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, target.id))
+      .catch((markErr: unknown) => {
+        console.error('[telegram] failed to mark row failure', markErr);
+      });
   }
 }
 

@@ -42,14 +42,22 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
       // Bounds-check before reading the body into memory. UnrecoverableError
       // tells BullMQ to skip retries — an oversize object will be just as
       // oversize on the next attempt, and we don't want to repeatedly OOM
-      // the worker.
+      // the worker. A missing Content-Length is also unrecoverable: we
+      // cannot trust an unbounded body to fit. The mid-stream cap in
+      // getObjectBuffer is defense in depth against a server that hides
+      // the header or a body that exceeds its advertised length.
       const head = await headObject(s3, bucket, audioKey);
+      if (head.contentLength === undefined) {
+        throw new UnrecoverableError(
+          `Audio object ${audioKey} has no Content-Length; cannot bounds-check`,
+        );
+      }
       if (head.contentLength > MAX_AUDIO_BYTES) {
         throw new UnrecoverableError(
           `Audio object ${audioKey} is ${head.contentLength} bytes; max is ${MAX_AUDIO_BYTES}`,
         );
       }
-      const { body, contentType } = await getObjectBuffer(s3, bucket, audioKey);
+      const { body, contentType } = await getObjectBuffer(s3, bucket, audioKey, MAX_AUDIO_BYTES);
       const filename = audioKey.split('/').pop() ?? 'audio';
       const result = await llm.transcribeAudio({
         audio: body,
