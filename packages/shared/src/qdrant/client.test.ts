@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { resetEnvForTests } from '../env';
 
-import { createQdrantClient, type QdrantPayload } from './client';
+import {
+  createQdrantClient,
+  getQdrantClient,
+  resetQdrantClientCacheForTests,
+  type QdrantPayload,
+} from './client';
 
 const ENV_BACKUP = { ...process.env };
 
@@ -87,6 +92,7 @@ beforeEach(() => {
 afterEach(() => {
   process.env = { ...ENV_BACKUP };
   resetEnvForTests();
+  resetQdrantClientCacheForTests();
 });
 
 const samplePayload: QdrantPayload = {
@@ -98,6 +104,7 @@ const samplePayload: QdrantPayload = {
   author_user_id: 'user-1',
   source: 'web',
   visibility: 'team',
+  visibility_user_ids: null,
   embedding_model: 'openai/text-embedding-3-small',
 };
 
@@ -148,14 +155,20 @@ describe('createQdrantClient', () => {
     expect(teamFilter).toEqual({ key: 'team_id', match: { value: 'team-A' } });
   });
 
-  it('search filter includes the per-user visibility branches and min_should=1', async () => {
+  it('search filter includes the per-user visibility branches (must+should default semantic)', async () => {
     const { fetcher, calls } = makeFetcher({ collectionExists: true });
     const client = createQdrantClient({ fetcher });
     await client.search('team-A', 'user-1', [0, 0, 0, 0]);
     const search = calls.find((c) => c.url.endsWith('/points/search'));
     if (!search) throw new Error('no search call captured');
-    const body = search.body as { filter: { should: unknown[]; min_should: number } };
-    expect(body.filter.min_should).toBe(1);
+    const body = search.body as {
+      filter: { should: unknown[]; min_should?: unknown };
+    };
+    // Qdrant's documented must+should default already requires at least
+    // one should-clause match when must is present. The bare integer
+    // `min_should: 1` is not valid in Qdrant's API spec — verify it is
+    // absent so a future version doesn't reject the filter.
+    expect(body.filter.min_should).toBeUndefined();
     expect(body.filter.should).toHaveLength(3);
     // Branch 2: private + own author
     expect(body.filter.should[1]).toMatchObject({
@@ -223,6 +236,27 @@ describe('createQdrantClient', () => {
     if (!search) throw new Error('no search call captured');
     expect(search.url).toContain('/collections/events_v2/points/search');
     expect(client.collectionName()).toBe('events_v2');
+  });
+
+  it('getQdrantClient memoizes by (collection, requireExisting) across calls', () => {
+    // Without a custom fetcher, the cache should return the same instance.
+    const a = getQdrantClient();
+    const b = getQdrantClient();
+    expect(a).toBe(b);
+    // Different collection → different instance.
+    const c = getQdrantClient({ collection: 'events_v2' });
+    expect(c).not.toBe(a);
+    // Same collection but requireExisting flips → different instance
+    // (auto-create vs hard-error modes are structurally distinct).
+    const d = getQdrantClient({ collection: 'events_v2', requireExisting: true });
+    expect(d).not.toBe(c);
+  });
+
+  it('getQdrantClient bypasses the cache when a custom fetcher is injected (test isolation)', () => {
+    const noopFetcher: typeof fetch = () => Promise.resolve(new Response('{}', { status: 200 }));
+    const a = getQdrantClient({ fetcher: noopFetcher });
+    const b = getQdrantClient({ fetcher: noopFetcher });
+    expect(a).not.toBe(b);
   });
 
   it('sets the api-key header when QDRANT_API_KEY is configured', async () => {

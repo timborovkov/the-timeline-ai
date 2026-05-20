@@ -19,6 +19,16 @@ export interface QdrantPayload {
   author_user_id: string | null;
   source: 'web' | 'telegram' | 'email' | 'system';
   visibility: 'team' | 'private' | 'specific_users';
+  /**
+   * Users explicitly granted visibility when `visibility === 'specific_users'`.
+   * Null for `team` and `private` rows. Phase 5 only embeds `team`-visibility
+   * rows (the privacy gate blocks the rest), so this is structurally always
+   * null today — but the wrapper's `specific_users` filter branch expects
+   * this exact field name, so we persist it on every point to keep the
+   * filter and payload shapes consistent for the day the privacy gate is
+   * relaxed. Mismatch here would silently drop search hits with no error.
+   */
+  visibility_user_ids: string[] | null;
   embedding_model: string;
 }
 
@@ -202,6 +212,13 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     // but the filter shape is correct for the day we relax that.
     const filter = {
       must: [{ key: 'team_id', match: { value: teamId } }],
+      // When `must` and `should` are both present, Qdrant's documented
+      // semantics already require ALL must clauses AND AT LEAST ONE should
+      // clause to match. No explicit `min_should` needed — and the bare
+      // integer form (`min_should: 1`) is not valid per Qdrant's API spec
+      // (which expects `{conditions: [...], min_count: N}`); the integer
+      // was either being silently ignored or risked future rejection.
+      // Dropping it leaves the correct default semantic in place.
       should: [
         { key: 'visibility', match: { value: 'team' } },
         {
@@ -218,10 +235,6 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
           ],
         },
       ],
-      // At least one of the visibility branches MUST match. Without this,
-      // a point with team_id matching but no visibility branch matching would
-      // pass the filter (because `should` is OR-with-zero-required-by-default).
-      min_should: 1,
     } as Record<string, unknown>;
 
     const extraMust: unknown[] = [];
@@ -279,6 +292,42 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     deletePoints,
     collectionName: () => collection,
   };
+}
+
+// Module-level cache so callers that hit `getQdrantClient()` repeatedly
+// (per-request in /api/search, per-job in the embed worker) reuse a single
+// client per collection. Each cached client retains its own `ensurePromise`
+// memo, so the collection-existence check fires once per process lifetime
+// per collection — not once per request/job. A reembed of thousands of
+// rows previously paid thousands of redundant HEAD requests; now it pays one.
+//
+// Keyed by `${collection}|${requireExisting ? 1 : 0}` because the two modes
+// produce structurally different clients (auto-create vs hard-error on
+// missing). Tests can pass `fetcher` to bypass the cache entirely (each
+// `createQdrantClient` call with a non-default fetcher returns a fresh
+// instance — see implementation).
+const _clientCache = new Map<string, QdrantClient>();
+
+/**
+ * Preferred entry point. Returns a process-wide cached client for the given
+ * collection/mode, falling back to `createQdrantClient` for tests that need
+ * isolation (when `fetcher` is provided, the cache is bypassed).
+ */
+export function getQdrantClient(opts: QdrantClientOptions = {}): QdrantClient {
+  if (opts.fetcher) return createQdrantClient(opts);
+  const env = getEnv();
+  const collection = opts.collection ?? env.QDRANT_COLLECTION;
+  const key = `${collection}|${opts.requireExisting ? 1 : 0}`;
+  const cached = _clientCache.get(key);
+  if (cached) return cached;
+  const client = createQdrantClient(opts);
+  _clientCache.set(key, client);
+  return client;
+}
+
+/** Test-only: clear the cache between cases. */
+export function resetQdrantClientCacheForTests(): void {
+  _clientCache.clear();
 }
 
 export { buildPointId };

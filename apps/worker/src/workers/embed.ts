@@ -15,6 +15,7 @@ interface RawEventRow {
   authorUserId: string | null;
   source: 'web' | 'telegram' | 'email' | 'system';
   visibility: 'private' | 'team' | 'specific_users';
+  visibilityUserIds: string[] | null;
   sourceMetadata: unknown;
 }
 
@@ -64,6 +65,7 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
           authorUserId: rawEvents.authorUserId,
           source: rawEvents.source,
           visibility: rawEvents.visibility,
+          visibilityUserIds: rawEvents.visibilityUserIds,
           sourceMetadata: rawEvents.sourceMetadata,
         })
         .from(rawEvents)
@@ -150,11 +152,13 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
       // LLM call BEFORE Qdrant write so a transient embedding failure
       // retries cleanly. No DB transaction is open during the network call.
       const { vector, model } = await llm.embed({ text });
-      // When a targetCollection is set (re-embed migration path), the
-      // operator must have pre-created the collection at the new dimension —
-      // requireExisting prevents a stale worker from silently auto-creating
-      // it at the OLD EMBEDDING_DIMENSIONS and corrupting the cutover.
-      const client = qdrant.createQdrantClient(
+      // getQdrantClient caches by (collection, requireExisting), so a
+      // reembed of thousands of rows pays one collection-existence check
+      // per process — not one per job. When targetCollection is set
+      // (re-embed migration path), requireExisting forces the wrapper to
+      // error rather than silently auto-create the new collection at the
+      // OLD EMBEDDING_DIMENSIONS.
+      const client = qdrant.getQdrantClient(
         targetCollection ? { collection: targetCollection, requireExisting: true } : {},
       );
       const pointId = qdrant.buildPointId(scope, sourceId, model);
@@ -167,6 +171,14 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
         author_user_id: row.authorUserId,
         source: row.source,
         visibility: row.visibility,
+        // Persist visibility_user_ids on every point so the wrapper's
+        // specific_users filter branch (which keys on this field) is
+        // structurally consistent with the payload. Today this is null
+        // because the privacy gate above blocks anything other than
+        // visibility='team' from reaching this code path, but writing it
+        // unconditionally means a future relaxation of the gate cannot
+        // silently produce points that fail the filter.
+        visibility_user_ids: row.visibilityUserIds,
         embedding_model: model,
       };
       await client.upsertVector(pointId, vector, payload);

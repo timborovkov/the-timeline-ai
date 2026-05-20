@@ -93,7 +93,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, error: 'embed_failed' }, { status: 502 });
   }
 
-  const client = qdrant.createQdrantClient();
+  const client = qdrant.getQdrantClient();
   const searchOpts: Parameters<typeof client.search>[3] = {
     limit: parsed.data.limit ?? 20,
   };
