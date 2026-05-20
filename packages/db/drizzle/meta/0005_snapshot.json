@@ -1,5 +1,5 @@
 {
-  "id": "f219fbe4-c9e3-4f83-bea1-5d770ea8d83b",
+  "id": "ad28d027-573b-4a7f-924a-aeba0fe0408e",
   "prevId": "5869d83c-4cf3-40c7-b00a-c54a6014236a",
   "version": "7",
   "dialect": "postgresql",
@@ -106,11 +106,17 @@
           "method": "btree",
           "with": {}
         },
-        "entities_team_canonical_name_unq": {
-          "name": "entities_team_canonical_name_unq",
+        "entities_team_type_canonical_name_unq": {
+          "name": "entities_team_type_canonical_name_unq",
           "columns": [
             {
               "expression": "team_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "type",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

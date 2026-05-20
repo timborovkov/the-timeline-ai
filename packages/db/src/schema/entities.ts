@@ -43,11 +43,14 @@ export const entities = pgTable(
   (table) => [
     index('entities_team_idx').on(table.teamId),
     index('entities_team_type_idx').on(table.teamId, table.type),
-    // Case-insensitive uniqueness on canonical name, scoped to team and only
-    // for active (non-merged) rows so merges don't create permanent
-    // collisions.
-    uniqueIndex('entities_team_canonical_name_unq')
-      .on(table.teamId, sql`lower(${table.canonicalName})`)
+    // Case-insensitive uniqueness on (team, type, canonical name). Scoped to
+    // active (non-merged) rows so merges don't create permanent collisions.
+    // Includes `type` so cross-type same-name entities coexist legitimately
+    // (a "person" Apple and a "company" Apple are different real-world
+    // things), and so the resolver's race-safe insert+re-SELECT can never
+    // mis-bind a mention to an entity of the wrong type.
+    uniqueIndex('entities_team_type_canonical_name_unq')
+      .on(table.teamId, table.type, sql`lower(${table.canonicalName})`)
       .where(sql`${table.mergedIntoId} IS NULL`),
     // GIN over aliases for alias-membership lookup. Team scoping happens via
     // the btree (entities_team_idx) — Postgres bitmap-ands the two.

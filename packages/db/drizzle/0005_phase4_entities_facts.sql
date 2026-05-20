@@ -38,7 +38,7 @@ ALTER TABLE "facts" ADD CONSTRAINT "facts_team_id_teams_id_fk" FOREIGN KEY ("tea
 ALTER TABLE "facts" ADD CONSTRAINT "facts_raw_event_id_raw_events_id_fk" FOREIGN KEY ("raw_event_id") REFERENCES "public"."raw_events"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "entities_team_idx" ON "entities" USING btree ("team_id");--> statement-breakpoint
 CREATE INDEX "entities_team_type_idx" ON "entities" USING btree ("team_id","type");--> statement-breakpoint
-CREATE UNIQUE INDEX "entities_team_canonical_name_unq" ON "entities" USING btree ("team_id",lower("canonical_name")) WHERE "entities"."merged_into_id" IS NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "entities_team_type_canonical_name_unq" ON "entities" USING btree ("team_id","type",lower("canonical_name")) WHERE "entities"."merged_into_id" IS NULL;--> statement-breakpoint
 CREATE INDEX "entities_aliases_gin" ON "entities" USING gin ("aliases" jsonb_path_ops);--> statement-breakpoint
 CREATE INDEX "fact_entities_entity_idx" ON "fact_entities" USING btree ("entity_id");--> statement-breakpoint
 CREATE INDEX "facts_team_idx" ON "facts" USING btree ("team_id");--> statement-breakpoint

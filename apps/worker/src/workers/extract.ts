@@ -128,14 +128,42 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
         model: modelId,
       });
 
-      // Persist everything in one transaction. Entity upserts, fact inserts,
-      // and the metadata stamp on raw_events all succeed or fail together.
+      // Resolve every mention to an entity id BEFORE we open the locked
+      // transaction. resolveEntity's insert/re-SELECT is race-safe under
+      // the (team, type, lower(name)) partial unique index, so each lookup
+      // is auto-commit-safe on its own. Doing this here means the locked
+      // write transaction holds for local DB time only, never for LLM
+      // latency (disambiguation can call chatStructured again, which would
+      // otherwise pin the connection and advisory lock for seconds).
+      const resolvedFacts: {
+        statement: string;
+        confidence: number;
+        entityIds: string[];
+        mentions: (typeof result.object.facts)[number]['mentions'];
+      }[] = [];
+      for (const fact of result.object.facts) {
+        const entityIds = await extract.resolveMentions(
+          deps.db,
+          teamId,
+          fact.mentions,
+          fact.statement,
+        );
+        resolvedFacts.push({
+          statement: fact.statement,
+          confidence: fact.confidence,
+          entityIds,
+          mentions: fact.mentions,
+        });
+      }
+
+      // Local-only writes inside the locked transaction. Entity rows already
+      // exist (resolved above); we only insert facts + fact_entities + stamp
+      // metadata. No network calls.
       let factsInserted = 0;
       await deps.db.transaction(async (tx) => {
         // Serialise across worker processes. The advisory lock auto-releases
-        // at transaction end; held only for the write phase, not the LLM
-        // call, so concurrent workers waiting here are bounded by DB write
-        // time (milliseconds) rather than LLM latency.
+        // at transaction end. Held only for local DB writes (milliseconds),
+        // never for LLM latency.
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
         // Re-check after acquiring the lock — another worker may have
         // inserted facts while we were waiting.
@@ -147,13 +175,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           )
           .limit(1);
         if (recheck.length > 0) return;
-        for (const fact of result.object.facts) {
-          const entityIds = await extract.resolveMentions(
-            tx,
-            teamId,
-            fact.mentions,
-            fact.statement,
-          );
+        for (const fact of resolvedFacts) {
           const insertedFacts = await tx
             .insert(factsTable)
             .values({
@@ -171,7 +193,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           const seen = new Set<string>();
           for (let i = 0; i < fact.mentions.length; i += 1) {
             const m = fact.mentions[i];
-            const entityId = entityIds[i];
+            const entityId = fact.entityIds[i];
             if (!m || !entityId) continue;
             const key = `${entityId}:${m.role}`;
             if (seen.has(key)) continue;
