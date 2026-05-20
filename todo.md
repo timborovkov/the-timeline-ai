@@ -40,20 +40,20 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 
 ## Phase 2 — Telegram bot (text only)
 
-- [ ] Schema: `telegram_users`, `telegram_user_teams` (with partial unique index on active), `telegram_chat_bindings`, `telegram_link_tokens`.
-- [ ] Telegram webhook endpoint at `/api/telegram/webhook`. Verify `X-Telegram-Bot-Api-Secret-Token` header on every request.
-- [ ] Set up webhook via `setWebhook` with secret token and `allowed_updates` filter.
-- [ ] `/start` command — DM welcome, group binding status.
-- [ ] Link token generation in web app (per team settings). Personal and group scopes. 15-min TTL. Single-use enforced via `consumed_at`.
-- [ ] `/link <token>` handler — DM (personal link) and group (chat binding). Scope validation; admin check for group binding.
-- [ ] Deep-link support: `t.me/YourBot?startgroup=TOKEN` for one-shot group binding.
-- [ ] `/team` command — list linked teams in DM, switch active via inline keyboard.
-- [ ] `/whereami` command — show current attribution. Works in both DMs and groups.
-- [ ] `/unlink` command — remove personal link or group binding (admin-only for groups). Confirmation required.
-- [ ] `/help` command — context-aware (DM vs group).
-- [ ] Message ingest: text messages in DMs (attributed via active team) and bound groups (attributed via binding). Write to `raw_events`.
-- [ ] Handle unlinked TG users in bound groups: attribute with `source_unverified` flag, prompt to link via DM.
-- [ ] Handle TG message edits: create new linked event, never mutate original.
+- [x] Schema: `telegram_users`, `telegram_user_teams` (with partial unique index on active), `telegram_chat_bindings`, `telegram_link_tokens`.
+- [x] Telegram webhook endpoint at `/api/telegram/webhook`. Verify `X-Telegram-Bot-Api-Secret-Token` header on every request.
+- [x] Set up webhook via `setWebhook` with secret token and `allowed_updates` filter.
+- [x] `/start` command — DM welcome, group binding status.
+- [x] Link token generation in web app (per team settings). Personal and group scopes. 15-min TTL. Single-use enforced via `consumed_at`.
+- [x] `/link <token>` handler — DM (personal link) and group (chat binding). Scope validation; admin check for group binding.
+- [x] Deep-link support: `t.me/YourBot?startgroup=TOKEN` for one-shot group binding.
+- [x] `/team` command — list linked teams in DM, switch active via inline keyboard.
+- [x] `/whereami` command — show current attribution. Works in both DMs and groups.
+- [x] `/unlink` command — remove personal link or group binding (admin-only for groups). Confirmation required.
+- [x] `/help` command — context-aware (DM vs group).
+- [x] Message ingest: text messages in DMs (attributed via active team) and bound groups (attributed via binding). Write to `raw_events`.
+- [x] Handle unlinked TG users in bound groups: attribute with `source_unverified` flag, prompt to link via DM.
+- [x] Handle TG message edits: create new linked event, never mutate original.
 
 **Checkpoint:** Users can type into Telegram and have it land in the timeline, attributed correctly. Multiple teams, switching works.
 
