@@ -513,9 +513,16 @@ async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Prom
  * when no row was inserted (dedup hit) or when the dispatcher was started
  * without an `extract` dep. Failures are logged but never bubble — text is
  * already durable; missing facts can be replayed via the reextract script.
+ *
+ * On enqueue failure we also write `extraction_failed_at` /
+ * `extraction_error` onto the row's source_metadata so the timeline UI can
+ * surface "extraction unavailable" — matching the web text action and the
+ * transcribe-worker handoff. Without this marker, a Redis outage at
+ * Telegram ingest would leave no durable signal that extraction was
+ * skipped.
  */
 async function maybeEnqueueExtract(
-  ctx: { extract?: ExtractEnqueueDeps },
+  ctx: { db: Db; extract?: ExtractEnqueueDeps },
   inserted: { id: string; teamId: string } | null,
 ): Promise<void> {
   if (!inserted || !ctx.extract) return;
@@ -523,6 +530,21 @@ async function maybeEnqueueExtract(
     await ctx.extract.enqueueExtract({ rawEventId: inserted.id, teamId: inserted.teamId });
   } catch (err) {
     console.error('[telegram] extract enqueue failed', err);
+    const failurePatch = JSON.stringify({
+      extraction_failed_at: new Date().toISOString(),
+      extraction_error: `enqueue failed: ${
+        err instanceof Error ? err.message.slice(0, 480) : 'unknown'
+      }`,
+    });
+    await ctx.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, inserted.id))
+      .catch((markErr: unknown) => {
+        console.error('[telegram] failed to mark extract failure', markErr);
+      });
   }
 }
 

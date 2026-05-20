@@ -14,7 +14,7 @@
  * Requires DATABASE_URL and REDIS_URL. OPENROUTER_API_KEY is required at
  * extraction time (in the worker), not here.
  */
-import { closeDb, facts as factsTable, getDb, rawEvents } from '@timeline/db';
+import { closeDb, getDb, rawEvents } from '@timeline/db';
 import { getEnv, queue } from '@timeline/shared';
 import { and, asc, eq, gt, isNotNull, or, type SQL, sql } from 'drizzle-orm';
 
@@ -58,7 +58,6 @@ async function main(): Promise<void> {
   const db = getDb();
   let cursor: { occurredAt: Date; id: string } | null = null;
   let enqueued = 0;
-  let skipped = 0;
   let scanned = 0;
 
   while (enqueued < limit) {
@@ -77,6 +76,14 @@ async function main(): Promise<void> {
       if (cursorClause) conditions.push(cursorClause);
     }
 
+    // Filter by the metadata stamp in SQL so we never enqueue a job the
+    // worker would just skip. Mirrors the worker's idempotency check: a row
+    // whose source_metadata.extraction_model_version already matches the
+    // current modelVersion does not need re-processing — including
+    // zero-fact runs, which a facts-existence check would falsely re-enqueue.
+    const stampCondition = sql`(${rawEvents.sourceMetadata} ->> 'extraction_model_version') IS DISTINCT FROM ${modelVersion}`;
+    conditions.push(stampCondition);
+
     const page: { id: string; occurredAt: Date }[] = await db
       .select({ id: rawEvents.id, occurredAt: rawEvents.occurredAt })
       .from(rawEvents)
@@ -88,15 +95,6 @@ async function main(): Promise<void> {
 
     for (const row of page) {
       scanned += 1;
-      const existing = await db
-        .select({ id: factsTable.id })
-        .from(factsTable)
-        .where(and(eq(factsTable.rawEventId, row.id), eq(factsTable.modelVersion, modelVersion)))
-        .limit(1);
-      if (existing.length > 0) {
-        skipped += 1;
-        continue;
-      }
       if (!dryRun) {
         await queue.enqueueExtractJob({ rawEventId: row.id, teamId });
       }
@@ -111,7 +109,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[reextract] done. scanned=${scanned} enqueued=${enqueued} skipped=${skipped}${
+    `[reextract] done. scanned=${scanned} enqueued=${enqueued}${
       dryRun ? ' (dry-run, no jobs queued)' : ''
     }`,
   );

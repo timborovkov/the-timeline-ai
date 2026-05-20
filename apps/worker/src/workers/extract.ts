@@ -14,6 +14,7 @@ interface RawEventRow {
   teamId: string;
   contentText: string | null;
   occurredAt: Date;
+  sourceMetadata: unknown;
 }
 
 /**
@@ -73,6 +74,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           teamId: rawEvents.teamId,
           contentText: rawEvents.contentText,
           occurredAt: rawEvents.occurredAt,
+          sourceMetadata: rawEvents.sourceMetadata,
         })
         .from(rawEvents)
         .where(eq(rawEvents.id, rawEventId))
@@ -93,24 +95,36 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
         );
       }
 
-      const existing = await deps.db
-        .select({ id: factsTable.id })
-        .from(factsTable)
-        .where(
-          and(eq(factsTable.rawEventId, rawEventId), eq(factsTable.modelVersion, modelVersion)),
-        )
-        .limit(1);
-      if (existing.length > 0) {
+      // Idempotency via metadata, not via facts existence. The LLM legitimately
+      // returns zero facts for some events ("Headed out"); a facts-only check
+      // would re-extract those forever. The stamp on raw_events records that
+      // we ran this row at this model_version, regardless of fact count.
+      const meta =
+        row.sourceMetadata && typeof row.sourceMetadata === 'object'
+          ? (row.sourceMetadata as Record<string, unknown>)
+          : {};
+      if (meta.extraction_model_version === modelVersion) {
         return { rawEventId, skipped: true, modelVersion };
       }
 
+      // Context fed to the LLM MUST respect row-level visibility. Without this
+      // filter, a private note by user A would be sent to OpenRouter when
+      // user B's later note triggers extraction. Worker has no per-user
+      // context, so the safest predicate is `visibility = 'team'`: drop both
+      // `private` and `specific_users` rows from the context window.
       const recentRows = (await deps.db
         .select({
           contentText: rawEvents.contentText,
           occurredAt: rawEvents.occurredAt,
         })
         .from(rawEvents)
-        .where(and(eq(rawEvents.teamId, teamId), lt(rawEvents.occurredAt, row.occurredAt)))
+        .where(
+          and(
+            eq(rawEvents.teamId, teamId),
+            lt(rawEvents.occurredAt, row.occurredAt),
+            eq(rawEvents.visibility, 'team'),
+          ),
+        )
         .orderBy(desc(rawEvents.occurredAt))
         .limit(RECENT_CONTEXT_LIMIT)) as { contentText: string | null; occurredAt: Date }[];
 
@@ -166,15 +180,18 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
         // never for LLM latency.
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
         // Re-check after acquiring the lock — another worker may have
-        // inserted facts while we were waiting.
-        const recheck = await tx
-          .select({ id: factsTable.id })
-          .from(factsTable)
-          .where(
-            and(eq(factsTable.rawEventId, rawEventId), eq(factsTable.modelVersion, modelVersion)),
-          )
-          .limit(1);
-        if (recheck.length > 0) return;
+        // finished extraction while we were waiting. Check via the
+        // metadata stamp so zero-fact runs are correctly recognised.
+        const recheck = (await tx
+          .select({ sourceMetadata: rawEvents.sourceMetadata })
+          .from(rawEvents)
+          .where(eq(rawEvents.id, rawEventId))
+          .limit(1)) as { sourceMetadata: unknown }[];
+        const recheckMeta =
+          recheck[0]?.sourceMetadata && typeof recheck[0].sourceMetadata === 'object'
+            ? (recheck[0].sourceMetadata as Record<string, unknown>)
+            : {};
+        if (recheckMeta.extraction_model_version === modelVersion) return;
         for (const fact of resolvedFacts) {
           const insertedFacts = await tx
             .insert(factsTable)
@@ -209,10 +226,13 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           extracted_at: new Date().toISOString(),
           extraction_model_version: modelVersion,
         });
+        // Strip any stale failure markers from prior enqueue failures or
+        // crashed runs — otherwise the timeline UI keeps showing
+        // "extraction unavailable" for a row that has now succeeded.
         await tx
           .update(rawEvents)
           .set({
-            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+            sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'extraction_failed_at' - 'extraction_error') || ${patch}::jsonb`,
           })
           .where(eq(rawEvents.id, rawEventId));
       });
