@@ -69,11 +69,14 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
         transcription_model: result.model,
         transcribed_at: new Date().toISOString(),
       });
+      // Clear stale failure markers on success. A row that previously failed
+      // (Redis outage, enqueue-failed) then succeeds via retry must not
+      // continue to read as failed in the timeline UI.
       const update = await deps.db
         .update(rawEvents)
         .set({
           contentText: result.text,
-          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+          sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'transcription_failed_at' - 'transcription_error') || ${patch}::jsonb`,
         })
         .where(eq(rawEvents.id, rawEventId))
         .returning({ id: rawEvents.id, teamId: rawEvents.teamId });

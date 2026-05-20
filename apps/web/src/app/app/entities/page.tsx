@@ -1,6 +1,6 @@
-import { entities } from '@timeline/db';
+import { entities, factEntities, facts as factsTable, rawEvents } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, exists, isNull, or, sql } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -27,6 +27,33 @@ export default async function EntitiesIndexPage() {
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
 
+  // Show only entities that have at least one fact tied to a raw event the
+  // caller is allowed to see. Defense in depth: Phase 4 already gates the
+  // extract worker on `visibility = 'team'` so private events should never
+  // create entities, but a stale row from before that fix (or any future
+  // path that bypasses the worker) must not surface in the shared index.
+  const visibleEntityCondition = exists(
+    db
+      .select({ one: sql<number>`1` })
+      .from(factEntities)
+      .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
+      .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
+      .where(
+        and(
+          eq(factEntities.entityId, entities.id),
+          eq(rawEvents.teamId, active.teamId),
+          or(
+            eq(rawEvents.visibility, 'team'),
+            and(eq(rawEvents.visibility, 'private'), eq(rawEvents.authorUserId, session.user.id)),
+            and(
+              eq(rawEvents.visibility, 'specific_users'),
+              sql`${session.user.id}::uuid = ANY(${rawEvents.visibilityUserIds})`,
+            ),
+          ),
+        ),
+      ),
+  );
+
   const rows = await db
     .select({
       id: entities.id,
@@ -34,7 +61,13 @@ export default async function EntitiesIndexPage() {
       canonicalName: entities.canonicalName,
     })
     .from(entities)
-    .where(and(eq(entities.teamId, active.teamId), isNull(entities.mergedIntoId)))
+    .where(
+      and(
+        eq(entities.teamId, active.teamId),
+        isNull(entities.mergedIntoId),
+        visibleEntityCondition,
+      ),
+    )
     .orderBy(asc(entities.canonicalName));
 
   const grouped = new Map<string, typeof rows>();

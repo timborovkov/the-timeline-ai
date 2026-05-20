@@ -1,8 +1,8 @@
 'use server';
 
-import { entities, factEntities, teamMembers } from '@timeline/db';
+import { entities, factEntities, facts as factsTable, rawEvents, teamMembers } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, exists, isNull, or, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -168,6 +168,31 @@ export async function searchEntitiesAction(input: {
   const limit = Math.min(Math.max(input.limit ?? 8, 1), 20);
 
   const pattern = `%${q.replace(/[%_\\]/g, '\\$&')}%`;
+  // Visibility-aware: the merge typeahead only surfaces entities backed by
+  // at least one fact whose raw_event the caller can see. Mirrors the
+  // /app/entities index filter so private-only entities (legacy or via
+  // future bypass) never appear in admin merge search.
+  const visibleEntityCondition = exists(
+    db
+      .select({ one: sql<number>`1` })
+      .from(factEntities)
+      .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
+      .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
+      .where(
+        and(
+          eq(factEntities.entityId, entities.id),
+          eq(rawEvents.teamId, active.teamId),
+          or(
+            eq(rawEvents.visibility, 'team'),
+            and(eq(rawEvents.visibility, 'private'), eq(rawEvents.authorUserId, session.user.id)),
+            and(
+              eq(rawEvents.visibility, 'specific_users'),
+              sql`${session.user.id}::uuid = ANY(${rawEvents.visibilityUserIds})`,
+            ),
+          ),
+        ),
+      ),
+  );
   const rows = await db
     .select({
       id: entities.id,
@@ -181,6 +206,7 @@ export async function searchEntitiesAction(input: {
         isNull(entities.mergedIntoId),
         excludeOk ? sql`${entities.id} <> ${input.excludeId}::uuid` : sql`true`,
         sql`lower(${entities.canonicalName}) LIKE ${pattern} ESCAPE '\\'`,
+        visibleEntityCondition,
       ),
     )
     .limit(limit);

@@ -14,6 +14,7 @@ interface RawEventRow {
   teamId: string;
   contentText: string | null;
   occurredAt: Date;
+  visibility: 'private' | 'team' | 'specific_users';
   sourceMetadata: unknown;
 }
 
@@ -74,6 +75,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           teamId: rawEvents.teamId,
           contentText: rawEvents.contentText,
           occurredAt: rawEvents.occurredAt,
+          visibility: rawEvents.visibility,
           sourceMetadata: rawEvents.sourceMetadata,
         })
         .from(rawEvents)
@@ -93,6 +95,31 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
         throw new UnrecoverableError(
           `raw event ${rawEventId} has no content_text; nothing to extract`,
         );
+      }
+
+      // Hard privacy gate. Non-team-visibility events never have their body
+      // transmitted to the LLM provider. A user who marked a note `private`
+      // or `specific_users` did so to keep its content inside the boundary
+      // they chose; sending the body to OpenRouter for extraction would
+      // violate that, AND derived entities would surface in the shared
+      // /app/entities index where everyone on the team could see them.
+      // Stamp the metadata with the skip reason so the reextract script
+      // does not re-enqueue this row on each run.
+      if (row.visibility !== 'team') {
+        const skipPatch = JSON.stringify({
+          extraction_skipped_at: new Date().toISOString(),
+          extraction_skipped_reason: `visibility=${row.visibility}`,
+          extraction_model_version: makeModelVersion(
+            env.EXTRACTION_MODEL ?? env.CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini',
+          ),
+        });
+        await deps.db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'extraction_failed_at' - 'extraction_error') || ${skipPatch}::jsonb`,
+          })
+          .where(eq(rawEvents.id, rawEventId));
+        return { rawEventId, skipped: true, reason: `visibility=${row.visibility}` };
       }
 
       // Idempotency via metadata, not via facts existence. The LLM legitimately
