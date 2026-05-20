@@ -183,19 +183,27 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
       };
       await client.upsertVector(pointId, vector, payload);
 
-      // Strip stale failure markers on success — same pattern as the
-      // transcribe and extract workers' Phase 4 PR-review fix, applied
-      // from the start here.
-      const successPatch = JSON.stringify({
-        embedded_at: new Date().toISOString(),
-        embedding_model: model,
-      });
-      await deps.db
-        .update(rawEvents)
-        .set({
-          sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'embedding_failed_at' - 'embedding_error') || ${successPatch}::jsonb`,
-        })
-        .where(eq(rawEvents.id, rawEventId));
+      // Only EVENT-scope jobs touch raw_events.source_metadata. A single
+      // raw event can spawn many embed jobs (one event-level + N fact-level
+      // for N facts), and they all share the same row. If fact-level jobs
+      // stamped `embedded_at`, a later EVENT-level failure could be silently
+      // masked by the failed-handler's `NOT ? 'embedded_at'` guard — the
+      // event body would be missing from Qdrant with no durable signal.
+      // The timeline UI only cares about per-event status; per-fact embed
+      // status is operational (worker logs + Qdrant point presence). A
+      // fact-embed failure is a backfill candidate via the reembed script.
+      if (scope === 'event') {
+        const successPatch = JSON.stringify({
+          embedded_at: new Date().toISOString(),
+          embedding_model: model,
+        });
+        await deps.db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'embedding_failed_at' - 'embedding_error') || ${successPatch}::jsonb`,
+          })
+          .where(eq(rawEvents.id, rawEventId));
+      }
 
       return { rawEventId, factId: factId ?? null, model, pointId };
     },
@@ -214,6 +222,14 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
     const maxAttempts = job.opts.attempts ?? 1;
     const unrecoverable = err instanceof UnrecoverableError;
     if (!unrecoverable && job.attemptsMade < maxAttempts) return;
+    // Symmetric with the success path: fact-scope failures are operational
+    // (visible in worker logs, recoverable via reembed). Only event-scope
+    // failures land on raw_events.source_metadata, because that's what the
+    // timeline UI surfaces. Without this scope check, a permanently-failing
+    // fact embed would stamp `embedding_failed_at` on a row whose event-body
+    // embed is healthy — the UI would show "embedding unavailable" for a
+    // searchable event.
+    if (job.data.factId) return;
     const patch = JSON.stringify({
       embedding_failed_at: new Date().toISOString(),
       embedding_error: err.message.slice(0, 500),

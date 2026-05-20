@@ -272,17 +272,36 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
       // but never fail the extract job — facts are already durable and the
       // reembed script can backfill. Stamp a marker so the timeline UI can
       // surface "embedding unavailable" the same way extract failures do.
+      // Enqueue each embed job independently — a single try/catch around the
+      // whole loop would short-circuit on the first failure and skip every
+      // subsequent fact, silently leaving them un-embedded until a reembed
+      // run. Collect failures and stamp ONE event-scope marker at the end if
+      // any of them broke; the reembed script is the durable backfill path.
+      const enqueueFailures: { factId: string | null; err: unknown }[] = [];
       try {
         await queue.enqueueEmbedJob({ rawEventId, teamId });
-        for (const factId of insertedFactIds) {
+      } catch (err) {
+        enqueueFailures.push({ factId: null, err });
+      }
+      for (const factId of insertedFactIds) {
+        try {
           await queue.enqueueEmbedJob({ rawEventId, teamId, factId });
+        } catch (err) {
+          enqueueFailures.push({ factId, err });
         }
-      } catch (enqueueErr) {
-        console.error('[worker:extract] failed to enqueue embed job(s)', enqueueErr);
+      }
+      if (enqueueFailures.length > 0) {
+        for (const f of enqueueFailures) {
+          console.error(
+            `[worker:extract] embed enqueue failed (factId=${f.factId ?? 'event'})`,
+            f.err,
+          );
+        }
+        const firstErr = enqueueFailures[0]?.err;
         const failurePatch = JSON.stringify({
           embedding_failed_at: new Date().toISOString(),
-          embedding_error: `enqueue failed: ${
-            enqueueErr instanceof Error ? enqueueErr.message.slice(0, 480) : 'unknown'
+          embedding_error: `enqueue failed (${String(enqueueFailures.length)} job(s)): ${
+            firstErr instanceof Error ? firstErr.message.slice(0, 440) : 'unknown'
           }`,
         });
         await deps.db
