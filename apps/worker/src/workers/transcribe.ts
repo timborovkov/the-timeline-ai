@@ -84,6 +84,10 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
       // Hand off to extraction now that text is available. A failed enqueue
       // here is logged but does not fail the transcribe job — the transcript
       // is the durable artifact; extraction can be replayed via reextract.
+      // Mirror the web action's pattern: mark the row so the timeline UI can
+      // surface "extraction unavailable" instead of leaving the user with no
+      // signal. Without this marker, a Redis outage at handoff produces a
+      // transcribed row that silently never gets facts.
       try {
         const row = update[0];
         if (row) {
@@ -91,6 +95,21 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
         }
       } catch (enqueueErr) {
         console.error('[worker:transcribe] failed to enqueue extract job', enqueueErr);
+        const failurePatch = JSON.stringify({
+          extraction_failed_at: new Date().toISOString(),
+          extraction_error: `enqueue failed: ${
+            enqueueErr instanceof Error ? enqueueErr.message.slice(0, 480) : 'unknown'
+          }`,
+        });
+        await deps.db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+          })
+          .where(eq(rawEvents.id, rawEventId))
+          .catch((markErr: unknown) => {
+            console.error('[worker:transcribe] failed to mark extract failure', markErr);
+          });
       }
       return { rawEventId, model: result.model };
     },

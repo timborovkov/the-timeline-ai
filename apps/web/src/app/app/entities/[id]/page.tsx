@@ -66,7 +66,6 @@ export default async function EntityPage({ params }: Props) {
     .limit(200);
 
   const eventIds = Array.from(new Set(factRows.map((f) => f.rawEventId)));
-  const factIds = factRows.map((f) => f.id);
 
   // Visibility-filtered events. Pull through the team-scope helper's filter
   // shape so private/specific_users rules are honoured automatically.
@@ -96,10 +95,14 @@ export default async function EntityPage({ params }: Props) {
       : [];
   const visibleEventIds = new Set(eventRows.map((e) => e.id));
   const visibleFacts = factRows.filter((f) => visibleEventIds.has(f.rawEventId));
+  // Co-occurring entities source from VISIBLE facts only. Using the unfiltered
+  // fact set would leak the entity graph of private events to teammates who
+  // shouldn't see them.
+  const visibleFactIds = visibleFacts.map((f) => f.id);
 
   // Co-occurring entities: other entities referenced by the same facts.
   const coRows =
-    factIds.length > 0
+    visibleFactIds.length > 0
       ? await db
           .select({
             id: entities.id,
@@ -111,7 +114,7 @@ export default async function EntityPage({ params }: Props) {
           .innerJoin(entities, eq(factEntities.entityId, entities.id))
           .where(
             and(
-              inArray(factEntities.factId, factIds),
+              inArray(factEntities.factId, visibleFactIds),
               ne(factEntities.entityId, id),
               eq(entities.teamId, active.teamId),
               isNull(entities.mergedIntoId),

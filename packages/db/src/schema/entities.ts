@@ -30,8 +30,12 @@ export const entities = pgTable(
     metadata: jsonb('metadata').notNull().default({}),
     // Soft-delete via merge: when this entity has been merged into another,
     // mergedIntoId points at the survivor. Active entities have this NULL.
+    // Restrict deletes so a hard-delete of a merge target cannot silently
+    // re-activate merged descendants (which would then collide on the
+    // partial unique index entities_team_canonical_name_unq) — callers must
+    // walk the chain deliberately.
     mergedIntoId: uuid('merged_into_id').references((): AnyPgColumn => entities.id, {
-      onDelete: 'set null',
+      onDelete: 'restrict',
     }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

@@ -1,8 +1,8 @@
 'use server';
 
-import { entities, factEntities } from '@timeline/db';
+import { entities, factEntities, teamMembers } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -51,6 +51,20 @@ export async function mergeEntityAction(
 
   try {
     await db.transaction(async (tx) => {
+      // Re-check admin role inside the tx so a role revocation between the
+      // outer check and the destructive write closes the TOCTOU window.
+      const memberRows = await tx
+        .select({ role: teamMembers.role })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, session.user.id)))
+        .limit(1);
+      const role = memberRows[0]?.role;
+      if (role !== 'admin' && role !== 'owner') throw new Error('not_admin');
+
+      // SELECT ... FOR UPDATE ordered by id. Concurrent A→B and B→A merges
+      // would otherwise both pass the `mergedIntoId IS NULL` check and write
+      // a cycle. Ordering the lock acquisition by id forces deterministic
+      // serialisation; the second tx blocks and observes the first commit.
       const rows = await tx
         .select({
           id: entities.id,
@@ -65,7 +79,9 @@ export async function mergeEntityAction(
             eq(entities.teamId, active.teamId),
             sql`${entities.id} IN (${loserParse.data}::uuid, ${winnerParse.data}::uuid)`,
           ),
-        );
+        )
+        .orderBy(asc(entities.id))
+        .for('update');
       const winner = rows.find((r) => r.id === winnerParse.data);
       const loser = rows.find((r) => r.id === loserParse.data);
       if (!winner || !loser) throw new Error('not_found');
@@ -116,6 +132,9 @@ export async function mergeEntityAction(
     }
     if (err instanceof Error && err.message === 'already_merged') {
       return { error: 'One of these entities has already been merged' };
+    }
+    if (err instanceof Error && err.message === 'not_admin') {
+      return { error: 'Admin role required' };
     }
     throw err;
   }

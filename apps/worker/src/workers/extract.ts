@@ -46,6 +46,27 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
     async (job: Job<queue.ExtractJobData>) => {
       const { rawEventId, teamId } = job.data;
 
+      const env = getEnv();
+      // Fail fast on missing key so retries don't compound under a permanent
+      // misconfiguration. Each retry would re-fetch the row and re-build the
+      // prompt only to fail at the LLM call; better to mark the row
+      // permanently failed and stop wasting cycles.
+      if (!env.OPENROUTER_API_KEY) {
+        throw new UnrecoverableError(
+          `extract: OPENROUTER_API_KEY not configured; cannot run extraction`,
+        );
+      }
+      const modelId = env.EXTRACTION_MODEL ?? env.CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini';
+      const modelVersion = makeModelVersion(modelId);
+
+      // Cross-process idempotency. Two extract workers (or two retries on
+      // different nodes) racing the same rawEventId would both pass the
+      // "existing facts?" check and both call the LLM, producing duplicate
+      // fact bundles because LLM output is non-deterministic. A Postgres
+      // advisory lock serialises by rawEventId across processes; the lock
+      // releases on transaction end so we hold it for the whole write.
+      const lockKey = sql`hashtextextended(${rawEventId}, 0)`;
+
       const rows = (await deps.db
         .select({
           id: rawEvents.id,
@@ -71,10 +92,6 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           `raw event ${rawEventId} has no content_text; nothing to extract`,
         );
       }
-
-      const env = getEnv();
-      const modelId = env.EXTRACTION_MODEL ?? env.CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini';
-      const modelVersion = makeModelVersion(modelId);
 
       const existing = await deps.db
         .select({ id: factsTable.id })
@@ -115,6 +132,21 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
       // and the metadata stamp on raw_events all succeed or fail together.
       let factsInserted = 0;
       await deps.db.transaction(async (tx) => {
+        // Serialise across worker processes. The advisory lock auto-releases
+        // at transaction end; held only for the write phase, not the LLM
+        // call, so concurrent workers waiting here are bounded by DB write
+        // time (milliseconds) rather than LLM latency.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
+        // Re-check after acquiring the lock — another worker may have
+        // inserted facts while we were waiting.
+        const recheck = await tx
+          .select({ id: factsTable.id })
+          .from(factsTable)
+          .where(
+            and(eq(factsTable.rawEventId, rawEventId), eq(factsTable.modelVersion, modelVersion)),
+          )
+          .limit(1);
+        if (recheck.length > 0) return;
         for (const fact of result.object.facts) {
           const entityIds = await extract.resolveMentions(
             tx,
