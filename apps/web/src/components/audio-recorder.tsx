@@ -47,6 +47,27 @@ export function AudioRecorder() {
     };
   }, [clip?.url]);
 
+  // Hard cleanup on unmount: stop the mic and any in-flight recorder so the
+  // browser indicator clears even if the user navigates away mid-recording.
+  // Empty deps — this only runs at unmount; per-render mic state is managed
+  // by start/stop/reset.
+  useEffect(() => {
+    return () => {
+      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+        try {
+          recorderRef.current.stop();
+        } catch {
+          // already stopped or browser threw — fall through to track stop
+        }
+      }
+      streamRef.current?.getTracks().forEach((t) => {
+        t.stop();
+      });
+      streamRef.current = null;
+      recorderRef.current = null;
+    };
+  }, []);
+
   const supported = typeof MediaRecorder !== 'undefined';
 
   async function start(): Promise<void> {
@@ -60,28 +81,40 @@ export function AudioRecorder() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      const recorder = new MediaRecorder(stream, { mimeType });
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunksRef.current.push(e.data);
-        }
-      };
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: mimeType });
-        const durationSec = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000));
-        // Stop the mic so the browser indicator clears.
-        streamRef.current?.getTracks().forEach((t) => {
+      try {
+        const recorder = new MediaRecorder(stream, { mimeType });
+        chunksRef.current = [];
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            chunksRef.current.push(e.data);
+          }
+        };
+        recorder.onstop = () => {
+          const blob = new Blob(chunksRef.current, { type: mimeType });
+          const durationSec = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000));
+          // Stop the mic so the browser indicator clears.
+          streamRef.current?.getTracks().forEach((t) => {
+            t.stop();
+          });
+          streamRef.current = null;
+          setClip({ blob, url: URL.createObjectURL(blob), mimeType, durationSec });
+          setPhase('review');
+        };
+        recorder.start();
+        recorderRef.current = recorder;
+        startedAtRef.current = Date.now();
+        setPhase('recording');
+      } catch (innerErr) {
+        // getUserMedia already opened the mic; if MediaRecorder construction
+        // or start throws (unsupported mime, hardware busy, etc.), the
+        // tracks would otherwise stay live with no UI affordance to stop
+        // them. Release immediately and rethrow into the outer catch.
+        stream.getTracks().forEach((t) => {
           t.stop();
         });
         streamRef.current = null;
-        setClip({ blob, url: URL.createObjectURL(blob), mimeType, durationSec });
-        setPhase('review');
-      };
-      recorder.start();
-      recorderRef.current = recorder;
-      startedAtRef.current = Date.now();
-      setPhase('recording');
+        throw innerErr;
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Microphone access denied');
       setPhase('error');

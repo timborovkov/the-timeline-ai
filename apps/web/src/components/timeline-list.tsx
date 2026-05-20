@@ -21,6 +21,14 @@ function formatWhen(d: Date): string {
   }).format(d);
 }
 
+function transcribeFailed(meta: unknown): boolean {
+  return (
+    typeof meta === 'object' &&
+    meta !== null &&
+    typeof (meta as Record<string, unknown>).transcription_failed_at === 'string'
+  );
+}
+
 export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
   if (events.length === 0) {
     return (
@@ -74,7 +82,13 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
                     <p className="whitespace-pre-wrap text-[15px] leading-7">{event.contentText}</p>
                   )
                 ) : event.contentAudioUrl ? (
-                  <p className="text-sm italic text-muted-foreground">Transcribing…</p>
+                  transcribeFailed(event.sourceMetadata) ? (
+                    <p className="text-sm italic text-muted-foreground">
+                      Transcription failed — voice memo is still playable.
+                    </p>
+                  ) : (
+                    <p className="text-sm italic text-muted-foreground">Transcribing…</p>
+                  )
                 ) : (
                   <p className="text-sm text-muted-foreground">[empty event]</p>
                 )}

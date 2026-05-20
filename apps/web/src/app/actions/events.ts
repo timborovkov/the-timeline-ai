@@ -187,13 +187,16 @@ export async function createAudioEventAction(
   } catch (err) {
     console.error('[events] failed to enqueue transcribe job', err);
     // Row is already committed. Return ok=true so the client does not retry
-    // the upload+insert (which would create a second orphan row). The
-    // transcript needs a manual replay; surface that to the user as a
-    // warning. A background reconciler script is the Phase 8 follow-up.
+    // the upload+insert (which would create a second orphan row). There is
+    // NO automatic re-enqueue for the web path today — say so honestly.
+    // The Phase 8 reconciler (scan rows with content_audio_url + null
+    // content_text + no transcription_failed_at and re-enqueue) is the
+    // permanent fix; until then a manual replay is required.
     revalidatePath('/app/timeline');
     return {
       ok: true,
-      warning: 'Saved, but transcription queue is unreachable — transcript will be retried later.',
+      warning:
+        'Saved. Transcription queue is unreachable; the audio is on the timeline but the transcript needs a manual replay.',
     };
   }
 

@@ -60,6 +60,26 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
 
   worker.on('failed', (job, err) => {
     console.error(`[worker:transcribe] job ${job?.id} failed:`, err.message);
+    if (!job) return;
+    // BullMQ retries within `attempts`; this handler fires after each
+    // attempt. Only mark the row as permanently failed once the attempts
+    // budget is exhausted — otherwise transient errors (e.g. a brief
+    // OpenRouter blip) would surface to the user as a hard failure.
+    const maxAttempts = job.opts.attempts ?? 1;
+    if (job.attemptsMade < maxAttempts) return;
+    const patch = JSON.stringify({
+      transcription_failed_at: new Date().toISOString(),
+      transcription_error: err.message.slice(0, 500),
+    });
+    void deps.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, job.data.rawEventId))
+      .catch((updateErr: unknown) => {
+        console.error('[worker:transcribe] failed to mark row failure', updateErr);
+      });
   });
   worker.on('completed', (job) => {
     console.log(`[worker:transcribe] job ${job.id} completed`);
