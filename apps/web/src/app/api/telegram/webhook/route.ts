@@ -61,8 +61,21 @@ export async function POST(req: Request): Promise<Response> {
       }
     : undefined;
 
+  // Extract enqueue is gated on REDIS_URL only — no S3 needed for the text
+  // path. When Redis is unreachable, text events still land; facts are
+  // missing until reextract.
+  const extractDeps: telegram.ExtractEnqueueDeps | undefined = env.REDIS_URL
+    ? {
+        async enqueueExtract(input) {
+          await queue.enqueueExtractJob(input);
+        },
+      }
+    : undefined;
+
   try {
-    const deps = audioDeps ? { db, tg: api, audio: audioDeps } : { db, tg: api };
+    const deps: Parameters<typeof telegram.handleUpdate>[0] = { db, tg: api };
+    if (audioDeps) deps.audio = audioDeps;
+    if (extractDeps) deps.extract = extractDeps;
     await telegram.handleUpdate(deps, payload);
   } catch (err) {
     // Swallow — Telegram retries non-2xx, and we never want infinite retries.

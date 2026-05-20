@@ -40,20 +40,20 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 
 ## Phase 2 — Telegram bot (text only)
 
-- [ ] Schema: `telegram_users`, `telegram_user_teams` (with partial unique index on active), `telegram_chat_bindings`, `telegram_link_tokens`.
-- [ ] Telegram webhook endpoint at `/api/telegram/webhook`. Verify `X-Telegram-Bot-Api-Secret-Token` header on every request.
-- [ ] Set up webhook via `setWebhook` with secret token and `allowed_updates` filter.
-- [ ] `/start` command — DM welcome, group binding status.
-- [ ] Link token generation in web app (per team settings). Personal and group scopes. 15-min TTL. Single-use enforced via `consumed_at`.
-- [ ] `/link <token>` handler — DM (personal link) and group (chat binding). Scope validation; admin check for group binding.
-- [ ] Deep-link support: `t.me/YourBot?startgroup=TOKEN` for one-shot group binding.
-- [ ] `/team` command — list linked teams in DM, switch active via inline keyboard.
-- [ ] `/whereami` command — show current attribution. Works in both DMs and groups.
-- [ ] `/unlink` command — remove personal link or group binding (admin-only for groups). Confirmation required.
-- [ ] `/help` command — context-aware (DM vs group).
-- [ ] Message ingest: text messages in DMs (attributed via active team) and bound groups (attributed via binding). Write to `raw_events`.
-- [ ] Handle unlinked TG users in bound groups: attribute with `source_unverified` flag, prompt to link via DM.
-- [ ] Handle TG message edits: create new linked event, never mutate original.
+- [x] Schema: `telegram_users`, `telegram_user_teams` (with partial unique index on active), `telegram_chat_bindings`, `telegram_link_tokens`.
+- [x] Telegram webhook endpoint at `/api/telegram/webhook`. Verify `X-Telegram-Bot-Api-Secret-Token` header on every request.
+- [x] Set up webhook via `setWebhook` with secret token and `allowed_updates` filter.
+- [x] `/start` command — DM welcome, group binding status.
+- [x] Link token generation in web app (per team settings). Personal and group scopes. 15-min TTL. Single-use enforced via `consumed_at`.
+- [x] `/link <token>` handler — DM (personal link) and group (chat binding). Scope validation; admin check for group binding.
+- [x] Deep-link support: `t.me/YourBot?startgroup=TOKEN` for one-shot group binding.
+- [x] `/team` command — list linked teams in DM, switch active via inline keyboard.
+- [x] `/whereami` command — show current attribution. Works in both DMs and groups.
+- [x] `/unlink` command — remove personal link or group binding (admin-only for groups). Confirmation required.
+- [x] `/help` command — context-aware (DM vs group).
+- [x] Message ingest: text messages in DMs (attributed via active team) and bound groups (attributed via binding). Write to `raw_events`.
+- [x] Handle unlinked TG users in bound groups: attribute with `source_unverified` flag, prompt to link via DM.
+- [x] Handle TG message edits: create new linked event, never mutate original.
 
 **Checkpoint:** Users can type into Telegram and have it land in the timeline, attributed correctly. Multiple teams, switching works.
 
@@ -76,16 +76,16 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 
 ## Phase 4 — Extraction and entities
 
-- [ ] Schema: `entities` (id, team_id, type, canonical_name, aliases jsonb, metadata jsonb).
-- [ ] Schema: `facts` (id, team_id, raw_event_id, statement, confidence, extracted_at, model_version).
-- [ ] Schema: `fact_entities` (fact_id, entity_id, role) — facts reference entities with a role ("subject", "object", "topic").
-- [ ] Internal LLM wrapper in `packages/shared`: `llm.chat()`, `llm.embed()`, `llm.transcribe()`. Provider-agnostic interface.
-- [ ] Extraction prompt: given raw event text + recent context, output structured JSON with facts and entity mentions. Pin model version in config.
-- [ ] Extraction worker: triggered on raw event creation (and on transcription completion for audio). Writes facts and entity mentions. Enqueues embed job.
-- [ ] Entity resolution: for each mention, look up existing entities by name/alias within team. LLM-assisted disambiguation when ambiguous. Create new entity if no match.
-- [ ] Entity merge UI: admin can merge two entities (e.g., "Apple" and "Apple Inc"). Updates all references.
-- [ ] Entity page: profile view showing all events, facts, and related entities for one entity.
-- [ ] Re-extraction script: replay all raw events for a team through current extraction pipeline. Versioned, idempotent.
+- [x] Schema: `entities` (id, team_id, type, canonical_name, aliases jsonb, metadata jsonb, merged_into_id).
+- [x] Schema: `facts` (id, team_id, raw_event_id, statement, confidence, extracted_at, model_version).
+- [x] Schema: `fact_entities` (fact_id, entity_id, role) — facts reference entities with a role ("subject", "object", "topic").
+- [x] Internal LLM wrapper in `packages/shared`: `llm.chatStructured()`, `llm.transcribeAudio()`. `llm.embed()` reserved as stub for Phase 5.
+- [x] Extraction prompt: given raw event text + last-5-team-events context, output structured JSON with facts and entity mentions. Pin model version in config.
+- [x] Extraction worker: triggered on raw event creation (and on transcription completion for audio). Writes facts and entity mentions. Embed enqueue deferred to Phase 5.
+- [x] Entity resolution: for each mention, look up existing entities by name/alias within team. LLM-assisted disambiguation when ambiguous. Create new entity if no match. (No fuzzy/embedding dedup until Phase 5.)
+- [x] Entity merge UI: admin can merge two entities (e.g., "Apple" and "Apple Inc"). Updates all references.
+- [x] Entity page: profile view showing all events, facts, and related entities for one entity.
+- [x] Re-extraction script: replay all raw events for a team through current extraction pipeline. Versioned, idempotent.
 
 **Checkpoint:** Capture a few voice notes mentioning a person and a company. They appear as entities with auto-generated profile pages aggregating everything said about them.
 

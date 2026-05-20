@@ -39,10 +39,21 @@ export interface AudioIngestDeps {
   }): string;
 }
 
+/**
+ * Extract enqueue is injected so the dispatcher can hand off to the
+ * extraction worker without depending on BullMQ directly. Optional: when
+ * undefined, text events still land but no facts are produced (timeline
+ * shows the raw text only). The web action mirrors this shape.
+ */
+export interface ExtractEnqueueDeps {
+  enqueueExtract(input: { rawEventId: string; teamId: string }): Promise<void>;
+}
+
 interface DispatcherDeps {
   db: Db;
   tg: TelegramApi;
   audio?: AudioIngestDeps;
+  extract?: ExtractEnqueueDeps;
 }
 
 interface DmContext extends DispatcherDeps {
@@ -485,7 +496,7 @@ async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Prom
     });
     return;
   }
-  await insertEvent(ctx.db, {
+  const inserted = await insertEvent(ctx.db, {
     fallbackTeamId: ctx.activeTeamId,
     authorUserId: ctx.tgUserRow.userId,
     text,
@@ -494,6 +505,47 @@ async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Prom
     sourceUnverified: ctx.tgUserRow.userId === null,
     isEdit,
   });
+  await maybeEnqueueExtract(ctx, inserted);
+}
+
+/**
+ * Hand a freshly-inserted text event off to the extraction worker. No-op
+ * when no row was inserted (dedup hit) or when the dispatcher was started
+ * without an `extract` dep. Failures are logged but never bubble — text is
+ * already durable; missing facts can be replayed via the reextract script.
+ *
+ * On enqueue failure we also write `extraction_failed_at` /
+ * `extraction_error` onto the row's source_metadata so the timeline UI can
+ * surface "extraction unavailable" — matching the web text action and the
+ * transcribe-worker handoff. Without this marker, a Redis outage at
+ * Telegram ingest would leave no durable signal that extraction was
+ * skipped.
+ */
+async function maybeEnqueueExtract(
+  ctx: { db: Db; extract?: ExtractEnqueueDeps },
+  inserted: { id: string; teamId: string } | null,
+): Promise<void> {
+  if (!inserted || !ctx.extract) return;
+  try {
+    await ctx.extract.enqueueExtract({ rawEventId: inserted.id, teamId: inserted.teamId });
+  } catch (err) {
+    console.error('[telegram] extract enqueue failed', err);
+    const failurePatch = JSON.stringify({
+      extraction_failed_at: new Date().toISOString(),
+      extraction_error: `enqueue failed: ${
+        err instanceof Error ? err.message.slice(0, 480) : 'unknown'
+      }`,
+    });
+    await ctx.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, inserted.id))
+      .catch((markErr: unknown) => {
+        console.error('[telegram] failed to mark extract failure', markErr);
+      });
+  }
 }
 
 // ---------- Group ----------
@@ -533,7 +585,7 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
   }
 
   if (text) {
-    await insertEvent(ctx.db, {
+    const inserted = await insertEvent(ctx.db, {
       fallbackTeamId: ctx.binding?.teamId ?? null,
       authorUserId: ctx.tgUserRow?.userId ?? null,
       text,
@@ -542,6 +594,7 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
       sourceUnverified: !ctx.tgUserRow?.userId,
       isEdit,
     });
+    await maybeEnqueueExtract(ctx, inserted);
   }
 }
 

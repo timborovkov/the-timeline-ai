@@ -37,6 +37,7 @@ const schema = z.object({
   EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().optional(),
   TRANSCRIPTION_MODEL: z.string().optional(),
   CHAT_MODEL_DEFAULT: z.string().optional(),
+  EXTRACTION_MODEL: z.string().optional(),
 
   // Telegram (Phase 2+)
   TELEGRAM_BOT_TOKEN: z.string().optional(),

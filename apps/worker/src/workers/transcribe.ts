@@ -69,16 +69,50 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
         transcription_model: result.model,
         transcribed_at: new Date().toISOString(),
       });
+      // Clear stale failure markers on success. A row that previously failed
+      // (Redis outage, enqueue-failed) then succeeds via retry must not
+      // continue to read as failed in the timeline UI.
       const update = await deps.db
         .update(rawEvents)
         .set({
           contentText: result.text,
-          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+          sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'transcription_failed_at' - 'transcription_error') || ${patch}::jsonb`,
         })
         .where(eq(rawEvents.id, rawEventId))
-        .returning({ id: rawEvents.id });
+        .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
       if (update.length === 0) {
         console.warn(`[worker:transcribe] raw event ${rawEventId} not found at update`);
+        return { rawEventId, model: result.model };
+      }
+      // Hand off to extraction now that text is available. A failed enqueue
+      // here is logged but does not fail the transcribe job — the transcript
+      // is the durable artifact; extraction can be replayed via reextract.
+      // Mirror the web action's pattern: mark the row so the timeline UI can
+      // surface "extraction unavailable" instead of leaving the user with no
+      // signal. Without this marker, a Redis outage at handoff produces a
+      // transcribed row that silently never gets facts.
+      try {
+        const row = update[0];
+        if (row) {
+          await queue.enqueueExtractJob({ rawEventId: row.id, teamId: row.teamId });
+        }
+      } catch (enqueueErr) {
+        console.error('[worker:transcribe] failed to enqueue extract job', enqueueErr);
+        const failurePatch = JSON.stringify({
+          extraction_failed_at: new Date().toISOString(),
+          extraction_error: `enqueue failed: ${
+            enqueueErr instanceof Error ? enqueueErr.message.slice(0, 480) : 'unknown'
+          }`,
+        });
+        await deps.db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+          })
+          .where(eq(rawEvents.id, rawEventId))
+          .catch((markErr: unknown) => {
+            console.error('[worker:transcribe] failed to mark extract failure', markErr);
+          });
       }
       return { rawEventId, model: result.model };
     },
