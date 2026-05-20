@@ -120,6 +120,14 @@ export async function POST(req: Request): Promise<Response> {
     if (existing) {
       if (hit.score > existing.score) existing.score = hit.score;
       if (factId && !existing.factIds.includes(factId)) existing.factIds.push(factId);
+      // Merge entity_ids across hits. Event-level points carry empty
+      // entity_ids; fact-level points carry the linked entities. Without
+      // this merge, an event-level hit landing first would lock in []
+      // even when a later fact-level hit on the same event has entities.
+      // Result: the UI silently drops entity badges that should be there.
+      for (const entityId of hit.payload.entity_ids) {
+        if (!existing.entityIds.includes(entityId)) existing.entityIds.push(entityId);
+      }
       continue;
     }
     dedup.set(hit.payload.event_id, {
@@ -129,7 +137,7 @@ export async function POST(req: Request): Promise<Response> {
       occurredAt: hit.payload.occurred_at,
       source: hit.payload.source,
       authorUserId: hit.payload.author_user_id,
-      entityIds: hit.payload.entity_ids,
+      entityIds: [...hit.payload.entity_ids],
       snippet: '',
     });
   }
