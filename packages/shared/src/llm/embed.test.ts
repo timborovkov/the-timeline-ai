@@ -1,0 +1,89 @@
+import { MockEmbeddingModelV3 } from 'ai/test';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { resetEnvForTests } from '../env';
+
+import { embed, embedMany } from './embed';
+
+import type { EmbeddingModel } from 'ai';
+
+const ENV_BACKUP = { ...process.env };
+
+function makeMockModel(vectors: number[][]): EmbeddingModel {
+  // The Vercel AI SDK ships MockEmbeddingModelV3 specifically for this shape.
+  // doEmbed receives { values } and must return { embeddings } of equal length.
+  return new MockEmbeddingModelV3({
+    doEmbed: (({ values }: { values: string[] }) =>
+      Promise.resolve({
+        embeddings: values.map((_, i) => vectors[i] ?? vectors[0] ?? []),
+      })) as never,
+  });
+}
+
+beforeEach(() => {
+  process.env = {
+    ...ENV_BACKUP,
+    AUTH_SECRET: 'a'.repeat(32),
+    DATABASE_URL: 'postgres://x:y@localhost:5432/x',
+    OPENROUTER_API_KEY: 'sk-test',
+    OPENROUTER_BASE_URL: 'https://example.test/v1',
+    EMBEDDING_MODEL: 'openai/test-embed',
+    EMBEDDING_DIMENSIONS: '4',
+  };
+  resetEnvForTests();
+});
+
+afterEach(() => {
+  process.env = { ...ENV_BACKUP };
+  resetEnvForTests();
+});
+
+describe('llm.embed', () => {
+  it('returns the vector and the pinned model id', async () => {
+    const result = await embed(
+      { text: 'hello' },
+      { model: makeMockModel([[0.1, 0.2, 0.3, 0.4]]) },
+    );
+    expect(result.vector).toEqual([0.1, 0.2, 0.3, 0.4]);
+    expect(result.model).toBe('openai/test-embed');
+  });
+
+  it('falls back to text-embedding-3-small when EMBEDDING_MODEL is unset', async () => {
+    delete process.env.EMBEDDING_MODEL;
+    resetEnvForTests();
+    const result = await embed(
+      { text: 'hello' },
+      { model: makeMockModel([[1, 2, 3, 4]]) },
+    );
+    expect(result.model).toBe('openai/text-embedding-3-small');
+  });
+
+  it('throws when OPENROUTER_API_KEY is missing AND no model is injected', async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    resetEnvForTests();
+    await expect(embed({ text: 'hello' })).rejects.toThrow(/OPENROUTER_API_KEY/);
+  });
+});
+
+describe('llm.embedMany', () => {
+  it('embeds many strings in one call', async () => {
+    const result = await embedMany(
+      { texts: ['a', 'b'] },
+      {
+        model: makeMockModel([
+          [1, 0, 0, 0],
+          [0, 1, 0, 0],
+        ]),
+      },
+    );
+    expect(result.vectors).toHaveLength(2);
+    expect(result.vectors[0]).toEqual([1, 0, 0, 0]);
+    expect(result.model).toBe('openai/test-embed');
+  });
+
+  it('returns empty vectors for empty input without hitting the model', async () => {
+    const result = await embedMany({ texts: [] });
+    expect(result.vectors).toEqual([]);
+    expect(result.model).toBe('openai/test-embed');
+  });
+});

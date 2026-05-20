@@ -91,14 +91,14 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 
 ## Phase 5 — Embeddings and semantic search
 
-- [ ] Qdrant client wrapper in `packages/shared`. Collection setup: one collection `events`, vector size 1536, cosine distance.
-- [ ] Pin `EMBEDDING_MODEL=openai/text-embedding-3-small` and `EMBEDDING_DIMENSIONS=1536` in env. Document re-embed procedure.
-- [ ] Embedding worker: on raw event finalization (post-transcription) and on fact extraction, embed text. Store model name in Qdrant payload.
-- [ ] Qdrant upserts with payload: `team_id`, `event_id`, `fact_id` (nullable), `entity_ids[]`, `occurred_at`, `author_user_id`, `source`, `visibility`, `embedding_model`.
-- [ ] Every Qdrant query filters on `team_id` (enforced via wrapper, no raw client access). Plus visibility filter based on calling user.
-- [ ] Search endpoint: text query → embed → Qdrant filtered search → return events/facts.
-- [ ] Web UI search bar: semantic search over team timeline. Result cards link to source event.
-- [ ] Re-embed script: same shape as re-extraction. Documented procedure, never silent.
+- [x] Qdrant client wrapper in `packages/shared`. Collection setup: one collection `events`, vector size 1536, cosine distance.
+- [x] Pin `EMBEDDING_MODEL=openai/text-embedding-3-small` and `EMBEDDING_DIMENSIONS=1536` in env. Document re-embed procedure.
+- [x] Embedding worker: on raw event finalization (post-transcription) and on fact extraction, embed text. Store model name in Qdrant payload.
+- [x] Qdrant upserts with payload: `team_id`, `event_id`, `fact_id` (nullable), `entity_ids[]`, `occurred_at`, `author_user_id`, `source`, `visibility`, `embedding_model`.
+- [x] Every Qdrant query filters on `team_id` (enforced via wrapper, no raw client access). Plus visibility filter based on calling user.
+- [x] Search endpoint: text query → embed → Qdrant filtered search → return events/facts.
+- [x] Web UI search bar: semantic search over team timeline. Result cards link to source event.
+- [x] Re-embed script: same shape as re-extraction. Documented procedure, never silent.
 
 **Checkpoint:** Search "licensing discussion with Apple" returns the right events even when the exact phrase isn't in any of them.
 

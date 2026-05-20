@@ -113,12 +113,88 @@ internal code-revision tag. When either changes, replay raw events:
 This is intentionally **manual**: extraction is the first place we burn
 tokens at scale, and silent auto-replay would surprise the bill.
 
-## Re-embed procedure (when changing `EMBEDDING_MODEL`)
+## Phase 5 verification (embeddings + semantic search)
 
-1. Update `EMBEDDING_MODEL` and `EMBEDDING_DIMENSIONS` in env.
-2. Create a new Qdrant collection at the new size.
-3. Run `pnpm --filter @timeline/worker reembed -- --collection=<new>`.
-4. Cut over read path to the new collection.
-5. Drop the old collection.
+After `OPENROUTER_API_KEY`, `REDIS_URL`, and `QDRANT_URL` are set, with the
+docker stack (`docker compose up -d`) running and both `pnpm dev` (web) and
+the worker process started:
 
-This procedure is the only safe path. Never edit embeddings in place.
+1. Post 2–3 text notes on `/app/timeline`, e.g.
+   `Met with John Ternus at Apple about SaaS licensing.` and
+   `Caught up with Apple folks on the agreement structure.`
+2. The extract worker writes facts; the embed worker writes one Qdrant point
+   per fact plus one per raw event. Confirm via:
+   ```bash
+   curl -s "$QDRANT_URL/collections/events" | jq '.result.points_count'
+   ```
+3. Use the search bar on `/app/timeline` and query
+   `licensing discussion with Apple`. The events above rank in the top results
+   even though one does not contain the word "licensing".
+4. Mark a note as `private` in the capture form before posting. The embed
+   worker stamps `embedding_skipped_reason=visibility=private` on
+   `source_metadata` and writes nothing to Qdrant. Teammates running the
+   same query do not see the private row in their search results — the
+   Qdrant wrapper's filter and `withTeam`'s second-line check both drop it.
+
+Without `OPENROUTER_API_KEY` or `QDRANT_URL`, `/api/search` returns 503 and
+the search bar shows "Search is not configured for this environment". Notes
+still capture; embeddings are deferred until config + reembed.
+
+## Re-embed procedure (when changing `EMBEDDING_MODEL` or `EMBEDDING_DIMENSIONS`)
+
+The embedding model is pinned. Changing it invalidates every vector in the
+existing collection — semantic search would silently degrade as old and new
+embeddings drift apart in vector space. The cutover below keeps the old
+collection alive (read-only) while the new one is populated, then flips
+reads atomically via the `QDRANT_COLLECTION` env var.
+
+1. **Update env** in `.env` (and staging/production):
+   ```bash
+   EMBEDDING_MODEL=openai/text-embedding-3-large
+   EMBEDDING_DIMENSIONS=3072
+   ```
+   Leave `QDRANT_COLLECTION=events` unchanged — the worker keeps writing to
+   the current collection until step 5.
+
+2. **Create the new collection** with the new vector size. The wrapper's
+   `ensureCollection` would create it lazily on first write, but doing it
+   explicitly lets you confirm the size:
+   ```bash
+   curl -s -X PUT "$QDRANT_URL/collections/events_v2" \
+     -H "content-type: application/json" \
+     -H "api-key: $QDRANT_API_KEY" \
+     -d '{"vectors":{"size":3072,"distance":"Cosine"}}'
+   ```
+
+3. **Re-embed each team** into the new collection. The worker reads
+   `targetCollection` from the job payload and writes there instead of
+   `QDRANT_COLLECTION`. The old collection is untouched.
+   ```bash
+   pnpm --filter @timeline/worker reembed -- \
+     --team=<teamId> \
+     --target-collection=events_v2
+   ```
+   Re-running is idempotent — point ids derived from
+   `(scope, sourceId, embedding_model)` are deterministic, so the same row
+   maps to the same point id and Qdrant upserts naturally.
+
+4. **Verify** spot-checks against the new collection by overriding
+   `QDRANT_COLLECTION` in a single shell before flipping production:
+   ```bash
+   QDRANT_COLLECTION=events_v2 pnpm --filter @timeline/web dev
+   ```
+
+5. **Cut over** by setting `QDRANT_COLLECTION=events_v2` everywhere and
+   restarting web + workers. The flip is atomic from the reader's
+   perspective — the next request hits the new collection.
+
+6. **Drop the old collection** after a grace period (a day is plenty;
+   rollback is just flipping `QDRANT_COLLECTION` back):
+   ```bash
+   curl -s -X DELETE "$QDRANT_URL/collections/events" \
+     -H "api-key: $QDRANT_API_KEY"
+   ```
+
+This procedure is the **only** safe path. Never edit embeddings in place —
+embedding-model drift silently corrupts semantic search, and "looks ok in
+prod" is not a reliable signal until queries start ranking the wrong things.

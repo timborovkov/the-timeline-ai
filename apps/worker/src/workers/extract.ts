@@ -201,6 +201,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
       // exist (resolved above); we only insert facts + fact_entities + stamp
       // metadata. No network calls.
       let factsInserted = 0;
+      const insertedFactIds: string[] = [];
       await deps.db.transaction(async (tx) => {
         // Serialise across worker processes. The advisory lock auto-releases
         // at transaction end. Held only for local DB writes (milliseconds),
@@ -234,6 +235,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           const factRow = insertedFacts[0];
           if (!factRow) continue; // duplicate statement under same modelVersion
           factsInserted += 1;
+          insertedFactIds.push(factRow.id);
           const seen = new Set<string>();
           for (let i = 0; i < fact.mentions.length; i += 1) {
             const m = fact.mentions[i];
@@ -263,6 +265,36 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           })
           .where(eq(rawEvents.id, rawEventId));
       });
+
+      // Enqueue embed jobs AFTER the transaction commits. One job for the
+      // raw event body (covers events with zero facts; same point id is reused
+      // on retry) and one per newly-inserted fact. Failures here are logged
+      // but never fail the extract job — facts are already durable and the
+      // reembed script can backfill. Stamp a marker so the timeline UI can
+      // surface "embedding unavailable" the same way extract failures do.
+      try {
+        await queue.enqueueEmbedJob({ rawEventId, teamId });
+        for (const factId of insertedFactIds) {
+          await queue.enqueueEmbedJob({ rawEventId, teamId, factId });
+        }
+      } catch (enqueueErr) {
+        console.error('[worker:extract] failed to enqueue embed job(s)', enqueueErr);
+        const failurePatch = JSON.stringify({
+          embedding_failed_at: new Date().toISOString(),
+          embedding_error: `enqueue failed: ${
+            enqueueErr instanceof Error ? enqueueErr.message.slice(0, 480) : 'unknown'
+          }`,
+        });
+        await deps.db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+          })
+          .where(eq(rawEvents.id, rawEventId))
+          .catch((markErr: unknown) => {
+            console.error('[worker:extract] failed to mark embed failure', markErr);
+          });
+      }
 
       return { rawEventId, factsInserted, modelVersion };
     },

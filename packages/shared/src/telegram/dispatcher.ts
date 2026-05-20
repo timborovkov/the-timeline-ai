@@ -49,11 +49,22 @@ export interface ExtractEnqueueDeps {
   enqueueExtract(input: { rawEventId: string; teamId: string }): Promise<void>;
 }
 
+/**
+ * Embed enqueue is injected for the same reason as ExtractEnqueueDeps.
+ * Optional: when undefined, text events still land and extraction still
+ * runs (extract itself enqueues per-fact embeds); only the event-body embed
+ * that covers zero-fact events is skipped. The web action mirrors this shape.
+ */
+export interface EmbedEnqueueDeps {
+  enqueueEmbed(input: { rawEventId: string; teamId: string }): Promise<void>;
+}
+
 interface DispatcherDeps {
   db: Db;
   tg: TelegramApi;
   audio?: AudioIngestDeps;
   extract?: ExtractEnqueueDeps;
+  embed?: EmbedEnqueueDeps;
 }
 
 interface DmContext extends DispatcherDeps {
@@ -506,6 +517,7 @@ async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Prom
     isEdit,
   });
   await maybeEnqueueExtract(ctx, inserted);
+  await maybeEnqueueEmbed(ctx, inserted);
 }
 
 /**
@@ -544,6 +556,40 @@ async function maybeEnqueueExtract(
       .where(eq(rawEvents.id, inserted.id))
       .catch((markErr: unknown) => {
         console.error('[telegram] failed to mark extract failure', markErr);
+      });
+  }
+}
+
+/**
+ * Sibling of `maybeEnqueueExtract` for embeddings. Independent enqueue:
+ * a failed embed enqueue must not block extraction (and vice versa), since
+ * the two workers consume independent queues and write to independent stores.
+ * Same failure-marker shape as the other paths so the timeline UI can
+ * distinguish "no extract" from "no embedding".
+ */
+async function maybeEnqueueEmbed(
+  ctx: { db: Db; embed?: EmbedEnqueueDeps },
+  inserted: { id: string; teamId: string } | null,
+): Promise<void> {
+  if (!inserted || !ctx.embed) return;
+  try {
+    await ctx.embed.enqueueEmbed({ rawEventId: inserted.id, teamId: inserted.teamId });
+  } catch (err) {
+    console.error('[telegram] embed enqueue failed', err);
+    const failurePatch = JSON.stringify({
+      embedding_failed_at: new Date().toISOString(),
+      embedding_error: `enqueue failed: ${
+        err instanceof Error ? err.message.slice(0, 480) : 'unknown'
+      }`,
+    });
+    await ctx.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, inserted.id))
+      .catch((markErr: unknown) => {
+        console.error('[telegram] failed to mark embed failure', markErr);
       });
   }
 }
@@ -595,6 +641,7 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
       isEdit,
     });
     await maybeEnqueueExtract(ctx, inserted);
+    await maybeEnqueueEmbed(ctx, inserted);
   }
 }
 
