@@ -145,14 +145,13 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
   // re-running them on edit would be confusing.
   if (isEdit && command) return;
 
-  if (text) {
-    await ingestDmText(ctx, text, isEdit);
-    return;
-  }
-  // Audio: only original sends are ingested. Telegram lets users edit a
-  // caption on a voice/audio message, but the media bytes themselves are
-  // immutable; the original is already on the timeline, so caption edits
-  // are out of scope until Phase 4 extraction wants them.
+  // Audio takes precedence over text/caption: a voice memo with a caption
+  // is primarily an audio capture, and dropping the bytes to record only
+  // the caption silently loses the actual content. The caption is kept
+  // in source_metadata.tg_caption so it isn't lost either. Audio edits
+  // are skipped — Telegram lets users edit captions on media but the
+  // media bytes themselves are immutable, and the original row is already
+  // on the timeline.
   const audio = ctx.message.voice ?? ctx.message.audio;
   if (audio && !isEdit) {
     if (!ctx.activeTeamId) {
@@ -176,6 +175,11 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
       ctx.message.voice ? 'voice' : 'audio',
       ctx.activeTeamId,
     );
+    return;
+  }
+
+  if (text) {
+    await ingestDmText(ctx, text, isEdit);
   }
 }
 
@@ -508,19 +512,7 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
   // on its original team even after /unlink.
   if (!ctx.binding && !isEdit) return;
 
-  if (text) {
-    await insertEvent(ctx.db, {
-      fallbackTeamId: ctx.binding?.teamId ?? null,
-      authorUserId: ctx.tgUserRow?.userId ?? null,
-      text,
-      message: ctx.message,
-      updateId: ctx.updateId,
-      sourceUnverified: !ctx.tgUserRow?.userId,
-      isEdit,
-    });
-    return;
-  }
-
+  // Audio takes precedence over text/caption — see handleDm for rationale.
   const audio = ctx.message.voice ?? ctx.message.audio;
   if (audio && !isEdit && ctx.binding) {
     await ingestAudio(
@@ -537,6 +529,19 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
       ctx.message.voice ? 'voice' : 'audio',
       ctx.binding.teamId,
     );
+    return;
+  }
+
+  if (text) {
+    await insertEvent(ctx.db, {
+      fallbackTeamId: ctx.binding?.teamId ?? null,
+      authorUserId: ctx.tgUserRow?.userId ?? null,
+      text,
+      message: ctx.message,
+      updateId: ctx.updateId,
+      sourceUnverified: !ctx.tgUserRow?.userId,
+      isEdit,
+    });
   }
 }
 
@@ -1017,6 +1022,11 @@ async function ingestAudio(
   };
   if (typeof payload.duration === 'number') extra.audio_duration_sec = payload.duration;
   if (typeof payload.file_size === 'number') extra.audio_file_size = payload.file_size;
+  // Telegram lets users attach a caption to voice/audio messages. The audio
+  // is the primary content (content_text will hold the transcript), but the
+  // caption is user-authored signal we must not drop. Stash it alongside
+  // the audio metadata so the timeline / future extraction can surface it.
+  if (ctx.message.caption) extra.tg_caption = ctx.message.caption;
 
   const inserted = await insertEvent(ctx.db, {
     fallbackTeamId: teamId,

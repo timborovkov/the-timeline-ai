@@ -35,10 +35,23 @@ export function getTranscribeQueue(): Queue<TranscribeJobData> {
 }
 
 export async function enqueueTranscribeJob(data: TranscribeJobData): Promise<void> {
-  // Use rawEventId as the BullMQ job id so a retried Telegram webhook (which
-  // is already idempotent at the row level via ON CONFLICT DO NOTHING) can
-  // also not double-enqueue if the producer is invoked twice.
-  await getTranscribeQueue().add('transcribe', data, { jobId: data.rawEventId });
+  // Intentionally NO jobId-based dedup. BullMQ blocks re-adds for any
+  // existing job, including ones already in the failed-and-retained state
+  // (`removeOnFail: { age: ... }`). That breaks two important paths:
+  //   1. The Telegram webhook self-heal — when the prior job exhausted its
+  //      retries and is still in failed state, the next retry would be
+  //      silently dropped.
+  //   2. A future reconciler that re-enqueues audio rows with no transcript
+  //      would hit the same wall.
+  // Idempotency lives at two other layers, which is enough:
+  //   - The raw_events row is unique per Telegram update (partial unique
+  //     index on tg_update_id), so the same physical message can produce
+  //     at most one row.
+  //   - The worker's UPDATE on raw_events.content_text is deterministic in
+  //     audio bytes, so a duplicate job overwrites with the same value.
+  // The only real cost of an accidental duplicate enqueue is one extra
+  // OpenRouter call. Acceptable.
+  await getTranscribeQueue().add('transcribe', data);
 }
 
 export async function closeTranscribeQueue(): Promise<void> {

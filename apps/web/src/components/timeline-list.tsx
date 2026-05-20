@@ -64,8 +64,15 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
                     <p className="text-xs text-muted-foreground">[audio unavailable]</p>
                   )
                 ) : null}
-                {event.contentText ? (
-                  <p className="whitespace-pre-wrap text-[15px] leading-7">{event.contentText}</p>
+                {event.contentText !== null ? (
+                  event.contentText.trim() === '' ? (
+                    // Worker successfully transcribed but the audio was silent
+                    // or had no detectable speech. Show a distinct placeholder
+                    // so the user doesn't think the transcript is still pending.
+                    <p className="text-sm italic text-muted-foreground">(no speech detected)</p>
+                  ) : (
+                    <p className="whitespace-pre-wrap text-[15px] leading-7">{event.contentText}</p>
+                  )
                 ) : event.contentAudioUrl ? (
                   <p className="text-sm italic text-muted-foreground">Transcribing…</p>
                 ) : (
