@@ -10,6 +10,8 @@ type RawEvent = InferSelectModel<typeof rawEvents>;
 interface Props {
   events: RawEvent[];
   authorMap: Map<string, { id: string; name: string | null; email: string }>;
+  /** Signed GET URLs keyed by event id. Missing entries render the player disabled. */
+  audioUrlMap?: Map<string, string>;
 }
 
 function formatWhen(d: Date): string {
@@ -19,7 +21,7 @@ function formatWhen(d: Date): string {
   }).format(d);
 }
 
-export function TimelineList({ events, authorMap }: Props) {
+export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
   if (events.length === 0) {
     return (
       <Card>
@@ -50,10 +52,22 @@ export function TimelineList({ events, authorMap }: Props) {
                     <Badge variant="secondary">private</Badge>
                   ) : null}
                 </div>
+                {event.contentAudioUrl ? (
+                  audioUrlMap?.get(event.id) ? (
+                    <audio
+                      src={audioUrlMap.get(event.id)}
+                      controls
+                      preload="metadata"
+                      className="w-full"
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">[audio unavailable]</p>
+                  )
+                ) : null}
                 {event.contentText ? (
                   <p className="whitespace-pre-wrap text-[15px] leading-7">{event.contentText}</p>
                 ) : event.contentAudioUrl ? (
-                  <p className="text-sm text-muted-foreground">[audio attachment]</p>
+                  <p className="text-sm italic text-muted-foreground">Transcribing…</p>
                 ) : (
                   <p className="text-sm text-muted-foreground">[empty event]</p>
                 )}

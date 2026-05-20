@@ -69,3 +69,11 @@ export function getEnv(): Env {
   _env = parsed.data;
   return _env;
 }
+
+/**
+ * Reset the memoised env. Intended for test setup that mutates
+ * `process.env` between cases; do not call from app code.
+ */
+export function resetEnvForTests(): void {
+  _env = undefined;
+}

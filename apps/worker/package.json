@@ -5,17 +5,20 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",
-    "bullmq": "^5.0.0"
+    "bullmq": "^5.0.0",
+    "drizzle-orm": "^0.38.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "tsx": "^4.19.0",
     "typescript": "*"
   }
 }

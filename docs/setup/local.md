@@ -62,6 +62,28 @@ Open <http://localhost:3000>.
 6. As user A, create a second team and switch via the team switcher → empty
    timeline (isolation works).
 
+## Phase 3 walkthrough (voice notes)
+
+1. `docker compose up -d` — verify `rustfs`, `redis`, and `postgres` are
+   healthy. The `rustfs-init` container should report
+   `RustFS buckets ready.`
+2. `pnpm dev` runs both Next.js and the BullMQ worker (`apps/worker`) in
+   watch mode.
+3. Open `/app/timeline`, click **Record**, speak for a few seconds, click
+   **Stop**, then **Send**. A new event lands with an audio player and a
+   "Transcribing…" placeholder.
+4. With `OPENROUTER_API_KEY` set in `.env`, the transcript replaces the
+   placeholder within ~10s (page refresh required for now — no realtime
+   pushdown yet). Without the key, the audio is still recorded and
+   playable; the worker retries the transcribe job with exponential
+   backoff until the key is provided and the worker restarts.
+5. Telegram voice memos: send a voice note to the bot in a `/link`-ed DM
+   (or bound group). The same flow runs: download → RustFS → enqueue →
+   transcribe → backfill `content_text`.
+6. Re-deliver the same Telegram webhook to confirm idempotency: the row's
+   `tg_update_id` is unique, so the second insert is a no-op and no
+   second transcribe job is enqueued.
+
 ## Useful commands
 
 ```bash

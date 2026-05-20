@@ -1,5 +1,5 @@
 import { users } from '@timeline/db';
-import { withTeam } from '@timeline/shared';
+import { getAudioBucket, getS3Client, getSignedGetObjectUrl, withTeam } from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
@@ -65,6 +65,26 @@ export default async function TimelinePage({ searchParams }: Props) {
           .where(inArray(users.id, authorIds))
       : [];
   const authorMap = new Map(authorRows.map((r) => [r.id, r] as const));
+
+  // Sign GET URLs for any audio attachments. Phase 3 generates one per render;
+  // when timeline pagination starts to matter (Phase 8) we'll cache these.
+  const audioEvents = events.filter((e) => e.contentAudioUrl);
+  const audioUrlMap = new Map<string, string>();
+  if (audioEvents.length > 0) {
+    const s3 = getS3Client();
+    const bucket = getAudioBucket();
+    const pairs = await Promise.all(
+      audioEvents.map(async (e) => {
+        try {
+          const url = await getSignedGetObjectUrl(s3, bucket, e.contentAudioUrl ?? '', 3600);
+          return [e.id, url] as const;
+        } catch {
+          return [e.id, ''] as const;
+        }
+      }),
+    );
+    for (const [id, url] of pairs) if (url) audioUrlMap.set(id, url);
+  }
 
   const members = await scope.listMembers();
   const memberIds = members.map((m) => m.userId);
@@ -137,7 +157,7 @@ export default async function TimelinePage({ searchParams }: Props) {
           </button>
         </form>
 
-        <TimelineList events={events} authorMap={authorMap} />
+        <TimelineList events={events} authorMap={authorMap} audioUrlMap={audioUrlMap} />
       </section>
     </div>
   );

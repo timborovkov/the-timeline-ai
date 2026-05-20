@@ -40,6 +40,22 @@ curl https://openrouter.ai/api/v1/chat/completions \
   -d '{"model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}'
 ```
 
+## Phase 3 verification (transcription)
+
+After setting `OPENROUTER_API_KEY` and starting `pnpm dev`:
+
+1. Record a ~5s voice memo via the web recorder on `/app/timeline`.
+2. The row appears immediately with an audio player and a "Transcribing…"
+   placeholder. The BullMQ `transcribe` worker pulls the bytes from
+   RustFS, POSTs to `${OPENROUTER_BASE_URL}/audio/transcriptions` with
+   the pinned `TRANSCRIPTION_MODEL`, and writes the result back onto
+   `content_text`.
+3. Refresh — the transcript appears.
+
+Without the key set, voice notes still record and play back; the
+transcribe job retries until the key is available (BullMQ default
+exponential backoff, 3 attempts).
+
 ## Re-embed procedure (when changing `EMBEDDING_MODEL`)
 
 1. Update `EMBEDDING_MODEL` and `EMBEDDING_DIMENSIONS` in env.

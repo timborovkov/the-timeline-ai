@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 
 import { createTextEventAction, type CreateEventState } from '@/app/actions/events';
+import { AudioRecorder } from '@/components/audio-recorder';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -29,6 +30,7 @@ export function CaptureForm() {
 
   return (
     <form ref={formRef} action={action} className="space-y-3">
+      <AudioRecorder />
       <Textarea
         name="text"
         placeholder="What happened? Drop a quick note — a meeting takeaway, a decision, a follow-up."
