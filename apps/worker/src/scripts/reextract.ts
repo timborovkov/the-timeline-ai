@@ -62,10 +62,7 @@ async function main(): Promise<void> {
   let scanned = 0;
 
   while (enqueued < limit) {
-    const conditions: SQL[] = [
-      eq(rawEvents.teamId, teamId),
-      isNotNull(rawEvents.contentText),
-    ];
+    const conditions: SQL[] = [eq(rawEvents.teamId, teamId), isNotNull(rawEvents.contentText)];
     if (cursor) {
       // Compound cursor: rows strictly after (occurredAt, id) of the last
       // row we saw. The composite ordering keeps the pagination stable
