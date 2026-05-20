@@ -1018,7 +1018,7 @@ async function ingestAudio(
   if (typeof payload.duration === 'number') extra.audio_duration_sec = payload.duration;
   if (typeof payload.file_size === 'number') extra.audio_file_size = payload.file_size;
 
-  const row = await insertEvent(ctx.db, {
+  const inserted = await insertEvent(ctx.db, {
     fallbackTeamId: teamId,
     authorUserId: ctx.authorUserId,
     text: null,
@@ -1028,17 +1028,41 @@ async function ingestAudio(
     isEdit: false,
     audio: { key, extra },
   });
-  if (!row) return; // duplicate Telegram retry — original already enqueued
+
+  // Self-heal on retry: if `insertEvent` returned null, the row was inserted
+  // on a prior webhook delivery but our enqueue may have failed (or the
+  // process died before it could run). Look the row up by tg_update_id and
+  // try the enqueue again. BullMQ dedups on jobId=rawEventId, so this is
+  // a no-op when the original enqueue already succeeded.
+  const target = inserted ?? (await findEventByUpdateId(ctx.db, ctx.updateId));
+  if (!target) return;
 
   try {
     await ctx.audio.enqueueTranscribe({
-      rawEventId: row.id,
-      teamId: row.teamId,
+      rawEventId: target.id,
+      teamId: target.teamId,
       audioKey: key,
     });
   } catch (err) {
     console.error('[telegram] transcribe enqueue failed', err);
   }
+}
+
+async function findEventByUpdateId(
+  db: Db,
+  updateId: number,
+): Promise<{ id: string; teamId: string } | null> {
+  const rows = await db
+    .select({ id: rawEvents.id, teamId: rawEvents.teamId })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.source, 'telegram'),
+        sql`(${rawEvents.sourceMetadata} ->> 'tg_update_id')::bigint = ${updateId}`,
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 async function findOriginalEvent(

@@ -107,7 +107,11 @@ export async function requestAudioUploadAction(
   await scope.requireMembership();
 
   const ext = MIME_TO_EXT_WEB[parsedMime.data] ?? 'bin';
-  const key = `teams/${active.teamId}/web/${randomUUID()}.${ext}`;
+  // User-scoped key prefix so a teammate who learns or guesses someone else's
+  // upload key cannot attach that object to their own event row via
+  // createAudioEventAction. The prefix check on confirm enforces the same
+  // user.id we sign here.
+  const key = `teams/${active.teamId}/web/${session.user.id}/${randomUUID()}.${ext}`;
   const url = await getSignedPutObjectUrl(getS3Client(), getAudioBucket(), key, parsedMime.data);
   return { ok: true, url, key, contentType: parsedMime.data };
 }
@@ -145,9 +149,10 @@ export async function createAudioEventAction(
   }
 
   // Defense in depth: keys are issued by requestAudioUploadAction prefixed
-  // with `teams/<active>/web/`. Reject anything else so a caller cannot
-  // attach an arbitrary object to a fresh event row.
-  const expectedPrefix = `teams/${active.teamId}/web/`;
+  // with `teams/<active>/web/<user.id>/`. Reject anything else so a caller
+  // cannot attach another user's upload (same team, different uploader) to
+  // their own event row.
+  const expectedPrefix = `teams/${active.teamId}/web/${session.user.id}/`;
   if (!parsed.data.key.startsWith(expectedPrefix)) {
     return { ok: false, error: 'Invalid upload key' };
   }
