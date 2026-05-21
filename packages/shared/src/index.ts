@@ -8,3 +8,4 @@ export * as queue from './queue/index';
 export * as llm from './llm/index';
 export * as extract from './extract/index';
 export * as qdrant from './qdrant/index';
+export * as agent from './agent/index';

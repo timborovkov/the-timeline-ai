@@ -25,6 +25,12 @@ export function AppShell({ active, memberships, user, children }: Props) {
           </div>
           <div className="flex items-center gap-2">
             <Link
+              href="/app/chat"
+              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Chat
+            </Link>
+            <Link
               href="/app/entities"
               className="text-sm text-muted-foreground transition-colors hover:text-foreground"
             >

@@ -1,5 +1,13 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { generateObject, type LanguageModel } from 'ai';
+import {
+  generateObject,
+  stepCountIs,
+  streamText,
+  type LanguageModel,
+  type ModelMessage,
+  type StreamTextResult,
+  type ToolSet,
+} from 'ai';
 import { type z, type ZodTypeAny } from 'zod';
 
 import { getEnv } from '../env';
@@ -26,6 +34,11 @@ export interface ChatStructuredResult<TSchema extends ZodTypeAny> {
 function resolveDefaultModelId(): string {
   const env = getEnv();
   return env.EXTRACTION_MODEL ?? env.CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini';
+}
+
+function resolveAgentModelId(): string {
+  const env = getEnv();
+  return env.AGENT_MODEL ?? env.CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini';
 }
 
 function buildDefaultModel(modelId: string): LanguageModel {
@@ -69,3 +82,46 @@ export async function chatStructured<TSchema extends ZodTypeAny>(
   });
   return { object: result.object, model: modelId };
 }
+
+export interface StreamChatInput<TTools extends ToolSet> {
+  system: string;
+  messages: ModelMessage[];
+  tools: TTools;
+  /** Override the configured agent model for this call. */
+  model?: string;
+  /** Hard cap on tool-call rounds. Default 5; matches the brief's
+   *  "agents can loop — cap turn count and bail gracefully" guidance. */
+  maxSteps?: number;
+  /** Forwarded to streamText.onFinish for usage/audit logging. */
+  onFinish?: Parameters<typeof streamText>[0]['onFinish'];
+}
+
+/**
+ * Streaming, tool-using chat against OpenRouter (OpenAI-compatible). Mirrors
+ * `chatStructured`'s env-gating, model-pinning, deps-injectable shape, but
+ * returns a `StreamTextResult` so the caller can pipe it into a Response.
+ *
+ * Tests inject `deps.model` (typically a MockLanguageModelV3 with a `doStream`
+ * implementation). When unset, the function builds a provider from env
+ * (`OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`). Use this for `/api/chat` —
+ * tool calls happen between streamed text chunks and the UI shows progress
+ * for each one.
+ */
+export function streamChat<TTools extends ToolSet>(
+  input: StreamChatInput<TTools>,
+  deps: ChatDeps = {},
+): StreamTextResult<TTools, never> {
+  const modelId = input.model ?? resolveAgentModelId();
+  const model = deps.model ?? buildDefaultModel(modelId);
+  const args: Parameters<typeof streamText>[0] = {
+    model,
+    system: input.system,
+    messages: input.messages,
+    tools: input.tools,
+    stopWhen: stepCountIs(input.maxSteps ?? 5),
+  };
+  if (input.onFinish) args.onFinish = input.onFinish;
+  return streamText(args) as unknown as StreamTextResult<TTools, never>;
+}
+
+export { resolveAgentModelId };

@@ -3,7 +3,12 @@
 A multi-tenant team memory system. Capture work as it happens — voice notes,
 text dumps, forwarded emails, Telegram messages — and the system compiles a
 searchable, queryable history of who did what, talked to whom, and decided
-what.
+what. Then ask a tool-using agent about it: every claim it surfaces links
+back to the raw event it came from. No black-box summaries.
+
+Current state: through Phase 6. Web + Telegram capture, voice transcription,
+extracted facts + entities, semantic search, and agent chat at `/app/chat`
+all working end-to-end. Email ingest (Phase 7) is next.
 
 ## Read first
 

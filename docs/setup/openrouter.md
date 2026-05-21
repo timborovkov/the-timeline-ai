@@ -32,6 +32,10 @@ CHAT_MODEL_DEFAULT=anthropic/claude-3.7-sonnet
 # Phase 4: cheap model used by the extract worker. Falls back to
 # CHAT_MODEL_DEFAULT when unset.
 EXTRACTION_MODEL=openai/gpt-4o-mini
+# Phase 6: model used by /api/chat. Lets us point chat at a stronger
+# model than extraction without changing extraction behavior. Falls back
+# to CHAT_MODEL_DEFAULT when unset.
+AGENT_MODEL=anthropic/claude-3.7-sonnet
 ```
 
 ## 3. Quick smoke test
@@ -139,6 +143,47 @@ the worker process started:
 Without `OPENROUTER_API_KEY` or `QDRANT_URL`, `/api/search` returns 503 and
 the search bar shows "Search is not configured for this environment". Notes
 still capture; embeddings are deferred until config + reembed.
+
+## Phase 6 verification (agent chat)
+
+Phase 6 adds `/app/chat` — a streaming, tool-using agent over the Phase 5
+timeline. Every claim cites the raw event via inline `[ev:<uuid>]` chips.
+The chat endpoint requires both `OPENROUTER_API_KEY` (for the model) and
+`QDRANT_URL` (the agent's `search_timeline` tool); without either,
+`/api/chat` returns 503 `chat_unconfigured` and the UI surfaces a real
+error instead of looping the agent against a broken backend.
+
+Optional env knob: `AGENT_MODEL` lets you point chat at a stronger model
+than extraction without changing extraction behavior. Resolution chain:
+`AGENT_MODEL ?? CHAT_MODEL_DEFAULT ?? openai/gpt-4o-mini`.
+
+After Phase 5 verification works end-to-end (events embedded, search bar
+returns hits), open `/app/chat` and run the three brief queries:
+
+1. **"What did the team work on yesterday?"** — exercises `list_events`
+   with a date filter. Expect a bulleted list where every bullet ends
+   with `[ev:<uuid>]`. Clicking a chip jumps to that event in the
+   timeline via `#ev-<uuid>` anchor.
+2. **"What was discussed with John Ternus last time?"** — exercises
+   `get_entity` + `search_timeline`. The chat pane shows two visible
+   tool-step chips ("Looked up entity 'John Ternus'", "Searched timeline
+   for …") above the assistant's reply.
+3. **"What's outstanding for Acme?"** — the agent infers from event
+   content; every inference still carries a citation.
+
+Adversarial checks worth running once:
+
+- Paste a UUID known to belong to another team. The agent calls
+  `get_event`, the tool returns `{ found: false }`, and the assistant
+  says "I don't have an event with that id" — never the cross-team row.
+- Ask about a team that isn't yours. The agent answers from your active
+  team only; switching teams via the team switcher swaps the agent's
+  context.
+
+The agent is capped at 5 tool turns per turn. Tool errors are caught
+inside `execute` and returned as `{ error: 'tool_failed' }` so the
+stream stays alive — the agent recovers or reports failure with a
+citation-aware message rather than crashing the response.
 
 ## Re-embed procedure (when changing `EMBEDDING_MODEL` or `EMBEDDING_DIMENSIONS`)
 
