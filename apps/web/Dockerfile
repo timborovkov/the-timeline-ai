@@ -14,7 +14,7 @@ RUN pnpm dlx turbo@2.1.0 prune @timeline/web --docker
 # ---- Deps ----
 FROM base AS deps
 COPY --from=pruner /app/out/json/ .
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
 # ---- Builder ----
