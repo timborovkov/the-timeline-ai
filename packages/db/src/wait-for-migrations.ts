@@ -34,15 +34,12 @@ interface WaitForMigrationsOptions {
  * cross-check. Counting catches the common race (worker boots before
  * migrations run) without trying to be a general consistency oracle.
  */
-export async function waitForMigrations(
-  options: WaitForMigrationsOptions = {},
-): Promise<void> {
+export async function waitForMigrations(options: WaitForMigrationsOptions = {}): Promise<void> {
   const url = options.url ?? process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is required');
 
   const here = dirname(fileURLToPath(import.meta.url));
-  const journalPath =
-    options.journalPath ?? resolve(here, '../drizzle/meta/_journal.json');
+  const journalPath = options.journalPath ?? resolve(here, '../drizzle/meta/_journal.json');
   const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as Journal;
   const expected = journal.entries.length;
 
