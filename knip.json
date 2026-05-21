@@ -19,7 +19,7 @@
       "project": ["src/**/*.ts"]
     },
     "packages/db": {
-      "entry": ["src/index.ts", "src/schema/**/*.ts"],
+      "entry": ["src/index.ts", "src/schema/**/*.ts", "src/migrate.ts"],
       "project": ["src/**/*.ts"]
     },
     "packages/shared": {
