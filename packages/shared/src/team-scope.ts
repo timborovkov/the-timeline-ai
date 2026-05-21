@@ -173,6 +173,20 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     });
   }
 
+  // Hoisted so both the public `getEventsByIds` method and `searchEvents`
+  // call one implementation. Previously `searchEvents` re-rolled the same
+  // select+where, which Bugbot flagged: two copies will drift the next time
+  // we touch the visibility filter. Single chokepoint — same idea as
+  // visibilityFilter itself.
+  async function getEventsByIdsImpl(ids: string[]) {
+    if (ids.length === 0) return [];
+    await ensureMember();
+    return db
+      .select()
+      .from(rawEvents)
+      .where(and(inArray(rawEvents.id, ids), eq(rawEvents.teamId, teamId), visibilityFilter));
+  }
+
   return {
     teamId,
     userId,
@@ -218,14 +232,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
      * to (teamId, userId); ids that fail the filter are silently dropped —
      * callers must reconcile by id, not by index.
      */
-    async getEventsByIds(ids: string[]) {
-      if (ids.length === 0) return [];
-      await ensureMember();
-      return db
-        .select()
-        .from(rawEvents)
-        .where(and(inArray(rawEvents.id, ids), eq(rawEvents.teamId, teamId), visibilityFilter));
-    },
+    getEventsByIds: getEventsByIdsImpl,
 
     async createEvent(input: CreateEventInput) {
       await ensureMember();
@@ -551,17 +558,10 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         .map((r) => r.eventId);
       if (orderedEventIds.length === 0) return [];
 
-      // Hydrate via withTeam.getEventsByIds — team + visibility enforced.
-      const accessibleEvents = await db
-        .select()
-        .from(rawEvents)
-        .where(
-          and(
-            inArray(rawEvents.id, orderedEventIds),
-            eq(rawEvents.teamId, teamId),
-            visibilityFilter,
-          ),
-        );
+      // Hydrate via the shared getEventsByIds helper — same SQL the public
+      // method runs, so the visibility filter can't drift across the two
+      // call sites.
+      const accessibleEvents = await getEventsByIdsImpl(orderedEventIds);
       const eventMap = new Map<string, (typeof accessibleEvents)[number]>();
       for (const ev of accessibleEvents) eventMap.set(ev.id, ev);
 
