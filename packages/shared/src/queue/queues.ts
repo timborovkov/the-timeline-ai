@@ -95,3 +95,45 @@ export async function closeExtractQueue(): Promise<void> {
   _extractQueue = undefined;
   await q.close().catch(() => undefined);
 }
+
+export interface EmbedJobData {
+  rawEventId: string;
+  teamId: string;
+  /** Embed a specific fact's statement rather than the raw event body. */
+  factId?: string;
+  /** Optional override used by the re-embed script to write into a new
+   *  collection during a model migration. When unset, the worker writes to
+   *  `QDRANT_COLLECTION`. */
+  targetCollection?: string;
+}
+
+let _embedQueue: Queue<EmbedJobData> | undefined;
+
+export function getEmbedQueue(): Queue<EmbedJobData> {
+  if (_embedQueue) return _embedQueue;
+  _embedQueue = new Queue<EmbedJobData>(QUEUE_NAMES.embed, {
+    connection: getRedisConnection(),
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 2000 },
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  });
+  return _embedQueue;
+}
+
+export async function enqueueEmbedJob(data: EmbedJobData): Promise<void> {
+  // Same no-jobId-dedup rationale as the other queues. Worker-side idempotency
+  // is provided by deterministic Qdrant point ids derived from
+  // (scope, sourceId, embedding_model) — duplicate enqueues upsert the same
+  // point and cost at most one embedding call.
+  await getEmbedQueue().add('embed', data);
+}
+
+export async function closeEmbedQueue(): Promise<void> {
+  if (!_embedQueue) return;
+  const q = _embedQueue;
+  _embedQueue = undefined;
+  await q.close().catch(() => undefined);
+}

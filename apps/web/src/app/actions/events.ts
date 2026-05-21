@@ -86,6 +86,28 @@ export async function createTextEventAction(
         console.error('[events] failed to mark extract failure', markErr);
       });
   }
+  // Independently enqueue an event-level embed job (Phase 5). Same
+  // independence rationale as the transcribe worker — covers events that
+  // produce zero facts, and races safely with the extract worker via
+  // deterministic Qdrant point ids.
+  try {
+    await queue.enqueueEmbedJob({ rawEventId: event.id, teamId: event.teamId });
+  } catch (err) {
+    console.error('[events] failed to enqueue embed job', err);
+    const failurePatch = JSON.stringify({
+      embedding_failed_at: new Date().toISOString(),
+      embedding_error: `enqueue failed: ${err instanceof Error ? err.message.slice(0, 480) : 'unknown'}`,
+    });
+    await db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, event.id))
+      .catch((markErr: unknown) => {
+        console.error('[events] failed to mark embed failure', markErr);
+      });
+  }
 
   revalidatePath('/app/timeline');
   return { ok: true, at: Date.now() };

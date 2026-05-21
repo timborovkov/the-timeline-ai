@@ -72,10 +72,22 @@ export async function POST(req: Request): Promise<Response> {
       }
     : undefined;
 
+  // Phase 5: embed enqueue is gated on REDIS_URL only (same as extract).
+  // Qdrant availability is checked at the worker, not here — text events
+  // still land if Qdrant is down; they get a deferred embedding via reembed.
+  const embedDeps: telegram.EmbedEnqueueDeps | undefined = env.REDIS_URL
+    ? {
+        async enqueueEmbed(input) {
+          await queue.enqueueEmbedJob(input);
+        },
+      }
+    : undefined;
+
   try {
     const deps: Parameters<typeof telegram.handleUpdate>[0] = { db, tg: api };
     if (audioDeps) deps.audio = audioDeps;
     if (extractDeps) deps.extract = extractDeps;
+    if (embedDeps) deps.embed = embedDeps;
     await telegram.handleUpdate(deps, payload);
   } catch (err) {
     // Swallow — Telegram retries non-2xx, and we never want infinite retries.

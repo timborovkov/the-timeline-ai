@@ -158,6 +158,9 @@ importers:
 
   packages/shared:
     dependencies:
+      '@ai-sdk/openai':
+        specifier: ^3.0.46
+        version: 3.0.64(zod@3.25.76)
       '@ai-sdk/openai-compatible':
         specifier: 2.0.36
         version: 2.0.36(zod@3.25.76)
@@ -212,6 +215,12 @@ packages:
 
   '@ai-sdk/openai-compatible@2.0.36':
     resolution: {integrity: sha512-YMfukkCwZ/CDj99JPVxTr7Hq1WY1nrLVlyzMTpruDzlwTaXlwHMc89ObvprQYCggSADIuto2tD4Vm1uoKY1y6Q==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/openai@3.0.64':
+    resolution: {integrity: sha512-epO4iS6QwktaY2PF6uBcPnDTJ3BxPOfsGS7/OEtBe3GtNj7C8h8gMDVtIe5K8W16HNDbn0tbR4dcQfpfs+XVFg==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -3609,6 +3618,12 @@ snapshots:
     dependencies:
       '@ai-sdk/provider': 3.0.8
       '@ai-sdk/provider-utils': 4.0.20(zod@3.25.76)
+      zod: 3.25.76
+
+  '@ai-sdk/openai@3.0.64(zod@3.25.76)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.10
+      '@ai-sdk/provider-utils': 4.0.27(zod@3.25.76)
       zod: 3.25.76
 
   '@ai-sdk/provider-utils@4.0.20(zod@3.25.76)':

@@ -1,9 +1,14 @@
+import { createOpenAI } from '@ai-sdk/openai';
+import { experimental_transcribe as aiTranscribe, type TranscriptionModel } from 'ai';
+
 import { getEnv } from '../env';
 
 export interface TranscribeInput {
+  /** Raw audio bytes. The SDK builds the multipart upload internally and
+   *  Whisper auto-detects the format, so filename/mimeType hints from the
+   *  caller are no longer needed (they were used by the previous raw-fetch
+   *  implementation). */
   audio: Buffer;
-  filename: string;
-  mimeType: string;
 }
 
 export interface TranscribeResult {
@@ -12,44 +17,55 @@ export interface TranscribeResult {
 }
 
 export interface TranscribeDeps {
-  /** Injected for tests. Defaults to the global `fetch`. */
-  fetch?: typeof fetch;
+  /**
+   * Inject a pre-built TranscriptionModel for tests. Same shape as
+   * chat.ts/embed.ts so the three LLM ops have a consistent test pattern.
+   */
+  model?: TranscriptionModel;
+}
+
+function resolveModelId(): string {
+  const env = getEnv();
+  // OpenRouter route-style id ("openai/whisper-1") is accepted by
+  // `createOpenAI({ baseURL: openrouter })` because OpenRouter forwards
+  // the multipart body untouched and uses its own model routing.
+  return env.TRANSCRIPTION_MODEL ?? 'openai/whisper-1';
+}
+
+function buildDefaultModel(modelId: string): TranscriptionModel {
+  const env = getEnv();
+  if (!env.OPENROUTER_API_KEY) {
+    throw new Error('OPENROUTER_API_KEY is required for transcription');
+  }
+  // The `@ai-sdk/openai` provider speaks the OpenAI wire format, which
+  // OpenRouter is compatible with at `/audio/transcriptions`. Pointing
+  // baseURL at OpenRouter routes the multipart upload through OpenRouter's
+  // model gateway while keeping us on the same SDK surface as chat + embed.
+  const provider = createOpenAI({
+    apiKey: env.OPENROUTER_API_KEY,
+    baseURL: env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
+  });
+  return provider.transcription(modelId);
 }
 
 /**
- * POST audio to OpenRouter's OpenAI-compatible `/audio/transcriptions`
- * endpoint and return the transcript text. Model is pinned via env
- * (`TRANSCRIPTION_MODEL`); the result includes the model name so callers
- * can persist it for future re-transcription audits.
+ * Transcribe audio via OpenRouter's OpenAI-compatible
+ * `/audio/transcriptions` endpoint. Pinned to `TRANSCRIPTION_MODEL` (env);
+ * the result includes the model name so callers can persist it for future
+ * re-transcription audits.
+ *
+ * Uses the Vercel AI SDK's `experimental_transcribe` against an OpenAI
+ * provider pointed at OpenRouter. The `@ai-sdk/openai-compatible` provider
+ * doesn't expose transcription, only chat + embed, so the OpenAI-branded
+ * provider is the simplest way to keep the three LLM ops on one SDK
+ * surface. Tests inject `deps.model`; the default builder reads env.
  */
 export async function transcribeAudio(
   input: TranscribeInput,
   deps: TranscribeDeps = {},
 ): Promise<TranscribeResult> {
-  const env = getEnv();
-  if (!env.OPENROUTER_API_KEY) {
-    throw new Error('OPENROUTER_API_KEY is required for transcription');
-  }
-  const model = env.TRANSCRIPTION_MODEL ?? 'openai/whisper-1';
-  const baseUrl = env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1';
-  const fetchImpl = deps.fetch ?? fetch;
-
-  const form = new FormData();
-  form.append('file', new Blob([input.audio], { type: input.mimeType }), input.filename);
-  form.append('model', model);
-
-  const res = await fetchImpl(`${baseUrl}/audio/transcriptions`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${env.OPENROUTER_API_KEY}` },
-    body: form,
-  });
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '');
-    throw new Error(`OpenRouter transcription failed: ${res.status} ${errBody}`);
-  }
-  const json = (await res.json()) as { text?: string };
-  if (typeof json.text !== 'string') {
-    throw new Error('OpenRouter transcription response missing `text`');
-  }
-  return { text: json.text, model };
+  const modelId = resolveModelId();
+  const model = deps.model ?? buildDefaultModel(modelId);
+  const result = await aiTranscribe({ model, audio: input.audio });
+  return { text: result.text, model: modelId };
 }

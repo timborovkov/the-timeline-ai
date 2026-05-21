@@ -57,13 +57,8 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
           `Audio object ${audioKey} is ${head.contentLength} bytes; max is ${MAX_AUDIO_BYTES}`,
         );
       }
-      const { body, contentType } = await getObjectBuffer(s3, bucket, audioKey, MAX_AUDIO_BYTES);
-      const filename = audioKey.split('/').pop() ?? 'audio';
-      const result = await llm.transcribeAudio({
-        audio: body,
-        filename,
-        mimeType: contentType ?? 'application/octet-stream',
-      });
+      const { body } = await getObjectBuffer(s3, bucket, audioKey, MAX_AUDIO_BYTES);
+      const result = await llm.transcribeAudio({ audio: body });
 
       const patch = JSON.stringify({
         transcription_model: result.model,
@@ -112,6 +107,35 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
           .where(eq(rawEvents.id, rawEventId))
           .catch((markErr: unknown) => {
             console.error('[worker:transcribe] failed to mark extract failure', markErr);
+          });
+      }
+      // Independently enqueue an event-level embed job. This covers events
+      // that produce zero facts (which would otherwise never land in Qdrant)
+      // and races safely with the extract worker's own enqueue path —
+      // deterministic point ids mean duplicate writes are no-ops. A failure
+      // here gets its own marker so the UI can distinguish "no facts" from
+      // "no embedding".
+      try {
+        const row = update[0];
+        if (row) {
+          await queue.enqueueEmbedJob({ rawEventId: row.id, teamId: row.teamId });
+        }
+      } catch (enqueueErr) {
+        console.error('[worker:transcribe] failed to enqueue embed job', enqueueErr);
+        const failurePatch = JSON.stringify({
+          embedding_failed_at: new Date().toISOString(),
+          embedding_error: `enqueue failed: ${
+            enqueueErr instanceof Error ? enqueueErr.message.slice(0, 480) : 'unknown'
+          }`,
+        });
+        await deps.db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+          })
+          .where(eq(rawEvents.id, rawEventId))
+          .catch((markErr: unknown) => {
+            console.error('[worker:transcribe] failed to mark embed failure', markErr);
           });
       }
       return { rawEventId, model: result.model };

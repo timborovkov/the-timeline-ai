@@ -4,6 +4,7 @@ import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import { CaptureForm } from '@/components/capture-form';
+import { SearchBar } from '@/components/search-bar';
 import { TimelineList } from '@/components/timeline-list';
 import { Card, CardContent } from '@/components/ui/card';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -118,6 +119,8 @@ export default async function TimelinePage({ searchParams }: Props) {
           <CaptureForm />
         </CardContent>
       </Card>
+
+      <SearchBar />
 
       <section className="space-y-4">
         <form

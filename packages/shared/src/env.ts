@@ -19,6 +19,7 @@ const schema = z.object({
   // Qdrant (Phase 5+)
   QDRANT_URL: z.string().url().optional(),
   QDRANT_API_KEY: z.string().optional(),
+  QDRANT_COLLECTION: z.string().default('events'),
 
   // S3 / RustFS (Phase 3+)
   S3_ENDPOINT: z.string().url().optional(),

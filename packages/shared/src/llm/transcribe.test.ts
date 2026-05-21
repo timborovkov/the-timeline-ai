@@ -1,14 +1,36 @@
+import { MockTranscriptionModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { resetEnvForTests } from '../env';
 
 import { transcribeAudio } from './transcribe';
 
-// Tests for the OpenRouter transcription client. Real network calls are
-// replaced with an injected `fetch` stub. AUTH_SECRET is set so the shared
-// env loader (used elsewhere in @timeline/shared) does not refuse to parse.
+import type { TranscriptionModel } from 'ai';
+
+// Tests for the transcribe wrapper. The wrapper delegates to the Vercel AI
+// SDK via the OpenAI provider pointed at OpenRouter; tests inject a mock
+// TranscriptionModel so no network call happens. AUTH_SECRET and DATABASE_URL
+// are set so the shared env loader parses cleanly.
 
 const ENV_BACKUP = { ...process.env };
+
+function makeMockModel(text: string): TranscriptionModel {
+  return new MockTranscriptionModelV3({
+    doGenerate: () =>
+      Promise.resolve({
+        text,
+        segments: [],
+        language: undefined,
+        durationInSeconds: undefined,
+        warnings: [],
+        response: {
+          timestamp: new Date(),
+          modelId: 'openai/whisper-1',
+          headers: {},
+        },
+      }),
+  });
+}
 
 beforeEach(() => {
   process.env = {
@@ -28,85 +50,38 @@ afterEach(() => {
 });
 
 describe('transcribeAudio', () => {
-  it('POSTs multipart form to the configured base URL', async () => {
-    let capturedUrl = '';
-    let capturedAuth: string | null = null;
-    let capturedBodyKind = '';
-    let capturedModel: string | null = null;
-    let capturedHasFile = false;
-
-    const stubFetch = (url: string, init?: RequestInit): Promise<Response> => {
-      capturedUrl = url;
-      const headers = new Headers(init?.headers);
-      capturedAuth = headers.get('authorization');
-      const body = init?.body;
-      capturedBodyKind = body instanceof FormData ? 'formdata' : typeof body;
-      if (body instanceof FormData) {
-        const modelField = body.get('model');
-        capturedModel = typeof modelField === 'string' ? modelField : null;
-        capturedHasFile = body.get('file') instanceof Blob;
-      }
-      return Promise.resolve(
-        new Response(JSON.stringify({ text: 'hello world' }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      );
-    };
-
+  it('returns the transcribed text and the configured model id', async () => {
     const result = await transcribeAudio(
-      {
-        audio: Buffer.from('fake-audio-bytes'),
-        filename: 'voice.ogg',
-        mimeType: 'audio/ogg',
-      },
-      { fetch: stubFetch as unknown as typeof fetch },
+      { audio: Buffer.from('fake-audio-bytes') },
+      { model: makeMockModel('hello world') },
     );
-
     expect(result).toEqual({ text: 'hello world', model: 'openai/whisper-1' });
-    expect(capturedUrl).toBe('https://example.test/v1/audio/transcriptions');
-    expect(capturedAuth).toBe('Bearer sk-test-key');
-    expect(capturedBodyKind).toBe('formdata');
-    expect(capturedModel).toBe('openai/whisper-1');
-    expect(capturedHasFile).toBe(true);
   });
 
-  it('throws when OPENROUTER_API_KEY is missing', async () => {
+  it('falls back to openai/whisper-1 when TRANSCRIPTION_MODEL is unset', async () => {
+    delete process.env.TRANSCRIPTION_MODEL;
+    resetEnvForTests();
+    const result = await transcribeAudio(
+      { audio: Buffer.from('x') },
+      { model: makeMockModel('ok') },
+    );
+    expect(result.model).toBe('openai/whisper-1');
+  });
+
+  it('throws when OPENROUTER_API_KEY is missing AND no model is injected', async () => {
     delete process.env.OPENROUTER_API_KEY;
     resetEnvForTests();
-    const stubFetch = (): Promise<Response> => Promise.reject(new Error('should not call'));
-    await expect(
-      transcribeAudio(
-        { audio: Buffer.from('x'), filename: 'x', mimeType: 'audio/ogg' },
-        { fetch: stubFetch as unknown as typeof fetch },
-      ),
-    ).rejects.toThrow(/OPENROUTER_API_KEY/);
+    await expect(transcribeAudio({ audio: Buffer.from('x') })).rejects.toThrow(
+      /OPENROUTER_API_KEY/,
+    );
   });
 
-  it('throws on non-2xx response from OpenRouter', async () => {
-    const stubFetch = (): Promise<Response> =>
-      Promise.resolve(new Response('upstream busted', { status: 502 }));
+  it('propagates SDK errors from the provider', async () => {
+    const erroringModel = new MockTranscriptionModelV3({
+      doGenerate: () => Promise.reject(new Error('upstream busted')),
+    });
     await expect(
-      transcribeAudio(
-        { audio: Buffer.from('x'), filename: 'x', mimeType: 'audio/ogg' },
-        { fetch: stubFetch as unknown as typeof fetch },
-      ),
-    ).rejects.toThrow(/502/);
-  });
-
-  it('throws when response is missing `text`', async () => {
-    const stubFetch = (): Promise<Response> =>
-      Promise.resolve(
-        new Response(JSON.stringify({}), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      );
-    await expect(
-      transcribeAudio(
-        { audio: Buffer.from('x'), filename: 'x', mimeType: 'audio/ogg' },
-        { fetch: stubFetch as unknown as typeof fetch },
-      ),
-    ).rejects.toThrow(/missing `text`/);
+      transcribeAudio({ audio: Buffer.from('x') }, { model: erroringModel }),
+    ).rejects.toThrow(/upstream busted/);
   });
 });
