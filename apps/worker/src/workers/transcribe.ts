@@ -57,13 +57,8 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
           `Audio object ${audioKey} is ${head.contentLength} bytes; max is ${MAX_AUDIO_BYTES}`,
         );
       }
-      const { body, contentType } = await getObjectBuffer(s3, bucket, audioKey, MAX_AUDIO_BYTES);
-      const filename = audioKey.split('/').pop() ?? 'audio';
-      const result = await llm.transcribeAudio({
-        audio: body,
-        filename,
-        mimeType: contentType ?? 'application/octet-stream',
-      });
+      const { body } = await getObjectBuffer(s3, bucket, audioKey, MAX_AUDIO_BYTES);
+      const result = await llm.transcribeAudio({ audio: body });
 
       const patch = JSON.stringify({
         transcription_model: result.model,
