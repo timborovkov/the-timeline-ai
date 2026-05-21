@@ -119,7 +119,7 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 - [x] Hard tool-call cap (5) via `stopWhen: stepCountIs(5)`. Tool errors are caught inside each `execute` and returned as `{ error }` so the stream stays alive.
 - [x] Agent guardrails: tool input schemas reject teamId; tests verify cross-team event_id / entity_id / alias-collision inputs resolve to null/empty.
 
-**Checkpoint:** The product is now actually useful. Test with real team usage for two weeks before continuing.
+**Checkpoint:** ✅ Shipped in PR #7 (Phase 6). Product is now actually useful. Test with real team usage for two weeks before continuing.
 
 **Carryover from Phase 6 review (file separately, do NOT solve in this PR):**
 - [ ] Persisted multi-session chat history. Today the chat is in-tab only — refresh wipes it. Decide between row-per-message in Postgres vs an event-log table that doubles as the agent's memory. Pairs with proactive-agent (Phase 8+).
