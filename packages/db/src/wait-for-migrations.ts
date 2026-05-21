@@ -1,8 +1,11 @@
+/* eslint-disable no-console -- operational status output during worker startup */
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import postgres from 'postgres';
+
+const silenceNotices = (): void => undefined;
 
 interface JournalEntry {
   idx: number;
@@ -52,10 +55,10 @@ export async function waitForMigrations(options: WaitForMigrationsOptions = {}):
   const intervalMs = options.intervalMs ?? 2_000;
   const deadline = Date.now() + timeoutMs;
 
-  const client = postgres(url, { max: 1, onnotice: () => {} });
+  const client = postgres(url, { max: 1, onnotice: silenceNotices });
+  let applied = 0;
   try {
-    while (true) {
-      let applied = 0;
+    for (;;) {
       try {
         const rows = await client<{ count: string }[]>`
           SELECT COUNT(*)::text AS count FROM drizzle.__drizzle_migrations
@@ -83,7 +86,7 @@ export async function waitForMigrations(options: WaitForMigrationsOptions = {}):
           `[db] timed out waiting for migrations after ${timeoutMs}ms (${applied}/${expected} applied)`,
         );
       }
-      await new Promise((r) => setTimeout(r, intervalMs));
+      await new Promise<void>((r) => setTimeout(r, intervalMs));
     }
   } finally {
     await client.end({ timeout: 5 });
