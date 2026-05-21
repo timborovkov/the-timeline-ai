@@ -1,5 +1,6 @@
 # ---- Claude ----
 .claude/worktrees/
+.claude/*.lock
 
 # ---- Dependencies ----
 node_modules/
