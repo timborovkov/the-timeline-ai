@@ -102,6 +102,12 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 
 **Checkpoint:** Search "licensing discussion with Apple" returns the right events even when the exact phrase isn't in any of them.
 
+**Carryover from Phase 5 review:**
+- [ ] Per-user rate limit on `/api/search`. Authenticated team members can spam the endpoint and burn OpenRouter quota + Qdrant CPU. The same fix will apply to `/api/chat` in Phase 6; solve them together.
+- [ ] Qdrant wrapper `deletePoints` treats a 404 as soft-success. Will matter when a redaction / right-to-be-forgotten path lands; today there are no callers.
+- [ ] Embedding-based fuzzy entity resolution. Phase 4 deferred this, Phase 5 laid the groundwork (vectors exist), Phase 6 may surface the need when the agent runs `get_entity` on near-duplicates. Still resolver-by-name-and-alias until then.
+- [ ] Web-path reconciler for orphaned transcribe / extract / embed jobs. Phase 3/4/5 mark rows with `*_failed_at` on enqueue failure but there's no scheduled job that retries them. Manual reextract / reembed scripts are the escape hatch.
+
 ## Phase 6 — Agent chat
 
 - [ ] Chat UI: streaming responses via Vercel AI SDK. Per-team scope.
