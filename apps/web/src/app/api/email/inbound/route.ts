@@ -51,14 +51,20 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, reason: 'invalid_json' }, { status: 200 });
   }
 
+  // Attachment uploads need S3. Audio attachments additionally need Redis
+  // to enqueue the transcribe job, but a missing Redis MUST NOT silently
+  // drop non-audio attachments — PDFs / images only touch S3. The
+  // dispatcher's per-call try/catch handles the audio path: when
+  // `enqueueTranscribe` throws (no Redis), the child raw_event gets a
+  // `transcription_failed_at` marker so the audio still lands and a future
+  // reconciler can replay the enqueue. Gate only on S3 readiness here.
   const attachmentsReady = Boolean(
     env.S3_ENDPOINT &&
     env.S3_REGION &&
     env.S3_ACCESS_KEY_ID &&
     env.S3_SECRET_ACCESS_KEY &&
     env.S3_BUCKET_ATTACHMENTS &&
-    env.S3_BUCKET_AUDIO &&
-    env.REDIS_URL,
+    env.S3_BUCKET_AUDIO,
   );
   const attachmentsDeps: email.EmailAttachmentDeps | undefined = attachmentsReady
     ? {
