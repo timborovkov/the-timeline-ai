@@ -53,18 +53,32 @@ export default async function TeamSettingsPage() {
             <p className="text-sm text-muted-foreground">
               Forward, CC, or BCC any email to this address to add it to the timeline.
             </p>
-            {/* Dev / no-own-domain mode: route via Postmark's default
-                inbound address using plus-addressing. Postmark sets
-                MailboxHash from the part after `+`; the dispatcher resolves
-                it to this team's slug. When INBOUND_EMAIL_DOMAIN is set
-                (production), the team's `inbound_email` column is the
-                primary surface and the hash form is the fallback. */}
+            {/* Address selection:
+                - Production (team owns an MX domain): `team.inbound_email` is
+                  the canonical clean address (`<slug>@<your-domain>`). Show it.
+                - Dev (only Postmark's default address is wired): the column
+                  holds the `@inbound.invalid` placeholder backfilled by the
+                  Phase 7 migration; show the plus-addressed hash form
+                  computed from POSTMARK_INBOUND_ADDRESS instead.
+                - Migration (both configured, MX provisioned + dev fallback
+                  still wired): prefer the production address. Hash form is
+                  a fallback for routing, not a preferred display.
+
+                The detection: a real `inbound_email` doesn't end in
+                `@inbound.invalid`. That sentinel only appears on legacy
+                teams backfilled by migration 0006 before they got a real
+                domain, and is never produced by `buildInboundEmail` when
+                INBOUND_EMAIL_DOMAIN is set. */}
             {(() => {
+              const productionAddr =
+                team.inboundEmail && !team.inboundEmail.endsWith('@inbound.invalid')
+                  ? team.inboundEmail
+                  : null;
               const hashAddr = composePostmarkHashAddress(
                 team.slug,
                 process.env.POSTMARK_INBOUND_ADDRESS,
               );
-              const primary = hashAddr ?? team.inboundEmail;
+              const primary = productionAddr ?? hashAddr;
               if (!primary) return null;
               return <code className="block rounded-md bg-muted px-3 py-2 text-sm">{primary}</code>;
             })()}

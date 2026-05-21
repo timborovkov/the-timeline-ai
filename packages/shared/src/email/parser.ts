@@ -10,17 +10,6 @@ export interface ParsedAddress {
   name?: string;
 }
 
-export interface ParsedAttachmentInfo {
-  filename: string;
-  contentType: string;
-  size: number;
-  /** Base64-encoded body as Postmark delivers it; the dispatcher decodes
-   *  before uploading to S3 to keep this module side-effect free. */
-  contentBase64: string;
-  /** Inline image content-id if Postmark set one; otherwise undefined. */
-  contentId?: string;
-}
-
 /**
  * Header lookup is case-insensitive — the wire format is mixed-case in
  * practice (Mail clients shotgun "Message-ID", "Message-Id", "MESSAGE-ID").
@@ -102,33 +91,23 @@ export function toParsedList(addrs: PostmarkAddress[] | undefined): ParsedAddres
 
 /**
  * Best-effort detection of audio attachments. We trust Postmark's
- * ContentType first (sender-controlled but at least parsed from MIME headers,
- * not the filename); the filename extension is only consulted when the
- * content-type is the generic `application/octet-stream` Postmark falls back
- * to for unknown parts. A file literally named `evil.mp3` carrying
+ * `ContentType` first (sender-controlled but at least parsed from MIME
+ * headers, not the filename); the filename extension is only consulted when
+ * the content-type is the generic `application/octet-stream` Postmark falls
+ * back to for unknown parts. A file literally named `evil.mp3` carrying
  * `ContentType: application/zip` is NOT treated as audio.
+ *
+ * The audio-MIME check is a single `startsWith('audio/')` because every
+ * IANA-registered audio type (and every vendor prefix we care about —
+ * `audio/x-m4a`, `audio/x-wav`, etc.) shares the `audio/` prefix. Don't add
+ * a separate "known audio types" set here; it would be redundant and
+ * silently dead.
  */
-const AUDIO_CONTENT_TYPES = new Set([
-  'audio/mpeg',
-  'audio/mp3',
-  'audio/mp4',
-  'audio/m4a',
-  'audio/x-m4a',
-  'audio/wav',
-  'audio/x-wav',
-  'audio/ogg',
-  'audio/oga',
-  'audio/webm',
-  'audio/aac',
-  'audio/flac',
-]);
-
 const AUDIO_EXTENSIONS = new Set(['mp3', 'm4a', 'wav', 'ogg', 'oga', 'webm', 'aac', 'flac']);
 
 export function isAudioAttachment(filename: string, contentType: string): boolean {
   const ct = contentType.toLowerCase().split(';')[0]?.trim() ?? '';
   if (ct.startsWith('audio/')) return true;
-  if (AUDIO_CONTENT_TYPES.has(ct)) return true;
   if (ct === 'application/octet-stream') {
     const ext = filename.toLowerCase().split('.').pop() ?? '';
     return AUDIO_EXTENSIONS.has(ext);
