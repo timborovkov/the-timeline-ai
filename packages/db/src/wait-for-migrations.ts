@@ -65,10 +65,12 @@ export async function waitForMigrations(options: WaitForMigrationsOptions = {}):
         `;
         applied = Number(rows[0]?.count ?? 0);
       } catch (err: unknown) {
-        // 42P01 = undefined_table. Means the migrate script hasn't run yet
-        // even once; keep waiting. Any other error is real, surface it.
+        // 42P01 = undefined_table (drizzle schema exists, table doesn't).
+        // 3F000 = invalid_schema_name (fresh DB, drizzle schema doesn't
+        //         exist yet). Both mean the migrate script hasn't completed
+        //         its first run — keep polling. Any other error is real.
         const code = (err as { code?: string } | null)?.code;
-        if (code !== '42P01') throw err;
+        if (code !== '42P01' && code !== '3F000') throw err;
         console.log('[db] migrations table not yet created, waiting…');
       }
 
