@@ -340,13 +340,23 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
      * resolves to the most recently updated row. Embedding-similarity match
      * remains deferred (see Phase 4/5 carryovers).
      */
-    async getEntity(idOrName: string): Promise<EntityProfile | null> {
+    async getEntity(
+      idOrName: string,
+      opts: { factLimit?: number; coOccurringLimit?: number } = {},
+    ): Promise<EntityProfile | null> {
       await ensureMember();
       const trimmed = idOrName.trim();
       if (!trimmed) return null;
+      const factLimit = opts.factLimit ?? 200;
+      const coLimit = opts.coOccurringLimit ?? 20;
 
       let entityRow: typeof entities.$inferSelect | undefined;
       if (UUID_RE.test(trimmed)) {
+        // Explicit UUID lookup. If the UUID matches no row (or matches a
+        // merged entity), do NOT fall through to name search — name
+        // matching a UUID-shaped string against canonical_name is dead
+        // code, and the fall-through used to mask "wrong team / merged"
+        // as "name not found". Be honest and return null.
         const rows = await db
           .select()
           .from(entities)
@@ -358,9 +368,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             ),
           )
           .limit(1);
+        if (!rows[0]) return null;
         entityRow = rows[0];
-      }
-      if (!entityRow) {
+      } else {
         // case-insensitive name OR alias-array contains
         const rows = await db
           .select()
@@ -377,9 +387,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           )
           .orderBy(desc(entities.updatedAt))
           .limit(1);
+        if (!rows[0]) return null;
         entityRow = rows[0];
       }
-      if (!entityRow) return null;
 
       const factRows = await db
         .select({
@@ -393,7 +403,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         .innerJoin(factEntities, eq(factEntities.factId, factsTable.id))
         .where(and(eq(factEntities.entityId, entityRow.id), eq(factsTable.teamId, teamId)))
         .orderBy(desc(factsTable.extractedAt))
-        .limit(200);
+        .limit(factLimit);
 
       const eventIds = Array.from(new Set(factRows.map((f) => f.rawEventId)));
       const eventRows =
@@ -446,7 +456,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
               )
               .groupBy(entities.id, entities.canonicalName, entities.type)
               .orderBy(sql`COUNT(*) DESC`)
-              .limit(20)
+              .limit(coLimit)
           : [];
 
       const aliases = Array.isArray(entityRow.aliases)

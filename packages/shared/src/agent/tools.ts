@@ -76,12 +76,18 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
 
     get_entity: tool({
       description:
-        "Look up one entity (person, company, project, topic) by exact UUID or canonical-name/alias match. Returns the entity, its recent facts, visibility-filtered source events with event_ids, and the top co-occurring entities. Use this for 'tell me about <name>' or to resolve a name into an entity id before searching.",
+        "Look up one entity (person, company, project, topic) by exact UUID or canonical-name/alias match. Returns the entity, its 20 most recent facts (capped — call search_timeline if you need more depth on a specific topic), its visibility-filtered source events with event_ids, and the top 10 co-occurring entities. Use this for 'tell me about <name>' or to resolve a name into an entity id before searching.",
       inputSchema: getEntityInput,
       execute: async (raw) =>
         safe('get_entity', async () => {
           const { idOrName } = getEntityInput.parse(raw);
-          const profile = await scope.getEntity(idOrName);
+          // Cap the payload for agent calls so a chatty entity doesn't blow
+          // the LLM context. 20 facts + 10 co-occurring is enough to anchor
+          // an answer; the agent can call search_timeline for breadth.
+          const profile = await scope.getEntity(idOrName, {
+            factLimit: 20,
+            coOccurringLimit: 10,
+          });
           if (!profile) return { found: false };
           return { found: true, ...profile };
         }),

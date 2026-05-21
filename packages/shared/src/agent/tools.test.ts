@@ -86,7 +86,13 @@ describe('buildAgentTools — team isolation', () => {
       opts: unknown,
     ) => Promise<unknown>;
     const result = await exec({ idOrName: TEAM_B_ENTITY_ID }, {});
-    expect(scope.getEntity).toHaveBeenCalledWith(TEAM_B_ENTITY_ID);
+    expect(scope.getEntity).toHaveBeenCalledWith(TEAM_B_ENTITY_ID, expect.any(Object));
+    // The tool passes a `{ factLimit, coOccurringLimit }` cap to bound
+    // payload size — assert that's what's flowing through (not e.g. a
+    // hostile teamId smuggled in via the options bag).
+    const opts = scope.getEntity.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(opts).not.toHaveProperty('teamId');
+    expect(opts).not.toHaveProperty('userId');
     expect(result).toEqual({ found: false });
   });
 
@@ -103,7 +109,7 @@ describe('buildAgentTools — team isolation', () => {
       opts: unknown,
     ) => Promise<unknown>;
     const result = await exec({ idOrName: 'Acme Corp' }, {});
-    expect(scope.getEntity).toHaveBeenCalledWith('Acme Corp');
+    expect(scope.getEntity).toHaveBeenCalledWith('Acme Corp', expect.any(Object));
     expect(result).toEqual({ found: false });
   });
 

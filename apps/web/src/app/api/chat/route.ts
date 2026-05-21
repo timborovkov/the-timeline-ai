@@ -1,5 +1,5 @@
 import { agent, getEnv, llm, withTeam } from '@timeline/shared';
-import { convertToModelMessages, type UIMessage } from 'ai';
+import { convertToModelMessages, safeValidateUIMessages, type UIMessage } from 'ai';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -80,7 +80,18 @@ export async function POST(req: Request): Promise<Response> {
     currentDate: new Date(),
   });
   const tools = agent.buildAgentTools(scope);
-  const messages = await convertToModelMessages(parsed.data.messages as UIMessage[]);
+
+  // Validate UIMessages BEFORE convertToModelMessages so a malformed client
+  // (or attacker poking the endpoint) gets a clean 400 instead of an
+  // unhandled rejection on the streaming path. The zod gate above only
+  // checked "array with length <= 50"; this checks each message's shape.
+  const validation = await safeValidateUIMessages<UIMessage>({
+    messages: parsed.data.messages,
+  });
+  if (!validation.success) {
+    return Response.json({ ok: false, error: 'invalid_messages' }, { status: 400 });
+  }
+  const messages = await convertToModelMessages(validation.data);
 
   const result = llm.streamChat({
     system,
