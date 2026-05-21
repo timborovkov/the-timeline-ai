@@ -110,14 +110,24 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 
 ## Phase 6 — Agent chat
 
-- [ ] Chat UI: streaming responses via Vercel AI SDK. Per-team scope.
-- [ ] Agent tools (function calls): `search_timeline(query, filters)`, `get_entity(id_or_name)`, `list_events(filters)`, `get_event(id)`. All scoped to current team at the tool implementation level.
-- [ ] Agent system prompt: enforce citations. Every claim must reference a raw event ID.
-- [ ] UI: render citations as expandable links to the source event.
-- [ ] Test cases from the brief: "What did the team work on yesterday?", "What was discussed with John Ternus last time?", "What's outstanding for Acme?".
-- [ ] Agent guardrails: reject queries that try to cross team boundaries. Verify all tool calls scope to current team.
+- [x] Chat UI: streaming responses via Vercel AI SDK (`@ai-sdk/react` `useChat` + `DefaultChatTransport`). Per-team scope, in-tab session only.
+- [x] Agent tools (function calls): `search_timeline(query, filters)`, `get_entity(id_or_name)`, `list_events(filters)`, `get_event(id)`. All scoped to current team via `withTeam(db, teamId, userId)` constructed server-side; tool input schemas have no teamId field.
+- [x] Agent system prompt: enforce citations. Every claim must reference a raw event ID. Versioned via `AGENT_PROMPT_VERSION`, stamped on every completion's log line.
+- [x] UI: render citations as `[ev:<uuid>]` / `[ent:<uuid>]` chips linking to `/app/timeline?focus=<id>` and `/app/entities/<id>`.
+- [x] `llm.streamChat()` sibling of `chatStructured` — env-gated, model-pinned (`AGENT_MODEL ?? CHAT_MODEL_DEFAULT`), deps-injectable for tests via `MockLanguageModelV3`.
+- [x] `withTeam` extended with `getEventWithFacts`, `getEntity`, `searchEvents` — `/api/search` and the entity profile page now share the same code path as the agent tools.
+- [x] Hard tool-call cap (5) via `stopWhen: stepCountIs(5)`. Tool errors are caught inside each `execute` and returned as `{ error }` so the stream stays alive.
+- [x] Agent guardrails: tool input schemas reject teamId; tests verify cross-team event_id / entity_id / alias-collision inputs resolve to null/empty.
 
 **Checkpoint:** The product is now actually useful. Test with real team usage for two weeks before continuing.
+
+**Carryover from Phase 6 review (file separately, do NOT solve in this PR):**
+- [ ] Persisted multi-session chat history. Today the chat is in-tab only — refresh wipes it. Decide between row-per-message in Postgres vs an event-log table that doubles as the agent's memory. Pairs with proactive-agent (Phase 8+).
+- [ ] Per-user rate limit on `/api/chat` AND `/api/search`. Both now hit the same code path (`withTeam.searchEvents` → embed + Qdrant), so a single token bucket keyed on (userId, route) covers both. Filed alongside the Phase 5 search rate-limit carryover.
+- [ ] Split-pane chat-with-timeline layout. v1 ships chat-only inside the existing `max-w-3xl` shell; the chosen split-pane requires widening or replacing `AppShell`. Follow-up UI task.
+- [ ] Embedding-similarity entity resolution inside `get_entity`. The tool currently does exact canonical-name / alias match (Phase 4 semantics). Near-duplicate entities will surface as separate hits and confuse the agent; revisit when it bites in dogfood.
+- [ ] Streaming abort on client disconnect. `streamText` runs to step-cap even if the user closes the tab; wire `req.signal` through to the SDK once we see real OpenRouter cost.
+- [ ] System-prompt / tool-description leakage. Any team member can probe the agent to reveal its prompt — fine for v1 (no secret in there), but worth a security review before adding tools that touch external systems.
 
 ## Phase 7 — Email ingest
 

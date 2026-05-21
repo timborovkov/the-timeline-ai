@@ -1,6 +1,4 @@
-import { facts as factsTable } from '@timeline/db';
-import { getEnv, llm, qdrant, withTeam } from '@timeline/shared';
-import { inArray } from 'drizzle-orm';
+import { getEnv, withTeam, type SearchEventResult } from '@timeline/shared';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -21,25 +19,12 @@ const searchSchema = z.object({
   limit: z.number().int().min(1).max(50).optional(),
 });
 
-interface SearchResult {
-  eventId: string;
-  factIds: string[];
-  score: number;
-  occurredAt: string;
-  source: 'web' | 'telegram' | 'email' | 'system';
-  authorUserId: string | null;
-  entityIds: string[];
-  snippet: string;
-}
-
 /**
- * Phase 5 search endpoint.
- *
- * Pipeline:
- *   auth → resolve active team → embed query → Qdrant search with
- *   (team_id + visibility) filter baked into the wrapper → hydrate events
- *   and facts via `withTeam` (which re-applies the visibility filter at the
- *   DB layer — defense in depth) → return JSON.
+ * Phase 5 search endpoint, refactored in Phase 6 to delegate to
+ * `withTeam.searchEvents`. The agent's `search_timeline` tool and this
+ * endpoint now share one implementation — dedup, hydrate, and visibility
+ * filtering live in the wrapper. Keeping two copies risked drift (Phase 5
+ * review caught dedup gaps that would have lived twice).
  *
  * Returns 503 when QDRANT_URL or OPENROUTER_API_KEY are unset so the UI can
  * show "search unavailable" rather than throwing.
@@ -73,156 +58,26 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, error: 'no_active_team' }, { status: 400 });
   }
 
-  // Membership check first — withTeam.requireMembership() throws if the
-  // session user is not on the active team. Without this, an attacker who
-  // forged an active-team cookie could trigger a Qdrant search keyed on
-  // someone else's teamId. The wrapper's team-id filter alone is not
-  // sufficient: it filters BY team, but does not authorize the caller's
-  // access to that team in the first place.
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
 
-  // Embed the query. Errors here surface as 502 — distinct from 503 above
-  // so the client can distinguish "not configured" from "transient".
-  let queryVector: number[];
+  let results: SearchEventResult[];
   try {
-    const embedded = await llm.embed({ text: parsed.data.query });
-    queryVector = embedded.vector;
+    const input: Parameters<typeof scope.searchEvents>[0] = { query: parsed.data.query };
+    if (parsed.data.from) input.from = new Date(parsed.data.from);
+    if (parsed.data.to) input.to = new Date(parsed.data.to);
+    if (parsed.data.source) input.source = parsed.data.source;
+    if (parsed.data.entityIds) input.entityIds = parsed.data.entityIds;
+    if (parsed.data.limit) input.limit = parsed.data.limit;
+    results = await scope.searchEvents(input);
   } catch (err) {
-    console.error('[search] embed failed', err);
-    return Response.json({ ok: false, error: 'embed_failed' }, { status: 502 });
-  }
-
-  const client = qdrant.getQdrantClient();
-  const searchOpts: Parameters<typeof client.search>[3] = {
-    limit: parsed.data.limit ?? 20,
-  };
-  if (parsed.data.from) searchOpts.from = new Date(parsed.data.from);
-  if (parsed.data.to) searchOpts.to = new Date(parsed.data.to);
-  if (parsed.data.source) searchOpts.source = parsed.data.source;
-  if (parsed.data.entityIds) searchOpts.entityIds = parsed.data.entityIds;
-  let hits: Awaited<ReturnType<typeof client.search>>;
-  try {
-    hits = await client.search(active.teamId, session.user.id, queryVector, searchOpts);
-  } catch (err) {
-    console.error('[search] qdrant search failed', err);
-    return Response.json({ ok: false, error: 'qdrant_failed' }, { status: 502 });
-  }
-
-  // Dedupe by event_id. Keep the highest score; collect fact_ids so the UI
-  // can cite the specific fact statements that hit. A fact-level point and
-  // its parent event-level point may both match — that's fine, both
-  // contribute to the same result row.
-  const dedup = new Map<string, SearchResult>();
-  for (const hit of hits) {
-    const existing = dedup.get(hit.payload.event_id);
-    const factId = hit.payload.fact_id;
-    if (existing) {
-      if (hit.score > existing.score) existing.score = hit.score;
-      if (factId && !existing.factIds.includes(factId)) existing.factIds.push(factId);
-      // Merge entity_ids across hits. Event-level points carry empty
-      // entity_ids; fact-level points carry the linked entities. Without
-      // this merge, an event-level hit landing first would lock in []
-      // even when a later fact-level hit on the same event has entities.
-      // Result: the UI silently drops entity badges that should be there.
-      for (const entityId of hit.payload.entity_ids) {
-        if (!existing.entityIds.includes(entityId)) existing.entityIds.push(entityId);
-      }
-      continue;
-    }
-    dedup.set(hit.payload.event_id, {
-      eventId: hit.payload.event_id,
-      factIds: factId ? [factId] : [],
-      score: hit.score,
-      occurredAt: hit.payload.occurred_at,
-      source: hit.payload.source,
-      authorUserId: hit.payload.author_user_id,
-      entityIds: [...hit.payload.entity_ids],
-      snippet: '',
-    });
-  }
-
-  // Hydrate from Postgres via withTeam — second line of defense. If Qdrant
-  // ever returned a point that shouldn't be visible to this user (drift,
-  // bug, stale cache), the DB visibility filter on getEvent() drops it.
-  const orderedEventIds = Array.from(dedup.values())
-    .sort((a, b) => b.score - a.score)
-    .map((r) => r.eventId);
-
-  if (orderedEventIds.length === 0) {
-    return Response.json({ ok: true, results: [] satisfies SearchResult[] });
-  }
-
-  // Bulk-load events with team + visibility enforced at the SQL layer.
-  // Single round-trip instead of N getEvent() calls; rows that fail the
-  // visibility filter are silently dropped, so the returned set is the
-  // intersection of "Qdrant said it matched" and "this user can see it".
-  let accessibleEvents: Awaited<ReturnType<typeof scope.getEventsByIds>>;
-  try {
-    accessibleEvents = await scope.getEventsByIds(orderedEventIds);
-  } catch (err) {
-    console.error('[search] bulk getEventsByIds failed', err);
-    accessibleEvents = [];
-  }
-  const eventMap = new Map<string, (typeof accessibleEvents)[number]>();
-  for (const ev of accessibleEvents) eventMap.set(ev.id, ev);
-
-  // Build a fact-statement lookup so we can prefer fact snippets over raw
-  // event text (facts are sharper and shorter). Team-scoped by query.
-  const allFactIds = Array.from(dedup.values()).flatMap((r) => r.factIds);
-  const factRows =
-    allFactIds.length > 0
-      ? await db
-          .select({
-            id: factsTable.id,
-            statement: factsTable.statement,
-            teamId: factsTable.teamId,
-            rawEventId: factsTable.rawEventId,
-          })
-          .from(factsTable)
-          .where(inArray(factsTable.id, allFactIds))
-      : [];
-  const factMap = new Map<string, (typeof factRows)[number]>();
-  for (const f of factRows) {
-    // Team isolation guard: never surface a fact whose teamId doesn't match
-    // the active team, even if Qdrant returned it.
-    if (f.teamId === active.teamId) factMap.set(f.id, f);
-  }
-
-  const results: SearchResult[] = [];
-  for (const eventId of orderedEventIds) {
-    const ev = eventMap.get(eventId);
-    if (!ev) continue; // dropped by withTeam visibility filter (defense in depth)
-    const row = dedup.get(eventId);
-    if (!row) continue;
-    // Filter fact ids against the team-verified factMap before returning, so
-    // a cross-team fact id from a stale or buggy Qdrant write never leaks to
-    // the client. The snippet is built from the same filtered set.
-    const verifiedFactIds = row.factIds.filter((id) => factMap.has(id));
-    const factSnippet = verifiedFactIds
-      .map((id) => factMap.get(id)?.statement)
-      .filter((s): s is string => Boolean(s))
-      .join(' · ');
-    const snippet =
-      factSnippet ||
-      (ev.contentText ? ev.contentText.slice(0, 240) : '[audio event — no transcript]');
-    // Build the response from the PG-hydrated row, NOT the Qdrant payload —
-    // if Qdrant drifts (stale write, future visibility change without
-    // re-embed), the source-of-truth Postgres row wins. Qdrant contributes
-    // only score and the filtered fact ids for citation.
-    results.push({
-      eventId: ev.id,
-      factIds: verifiedFactIds,
-      score: row.score,
-      occurredAt: ev.occurredAt.toISOString(),
-      source: ev.source,
-      authorUserId: ev.authorUserId,
-      entityIds: row.entityIds, // entity ids come from fact_entities indirectly; safe to keep
-      snippet,
-    });
+    console.error('[search] searchEvents failed', err);
+    // 502 = transient (embed or qdrant); distinct from 503 above so the
+    // client can distinguish "not configured" from "talk to ops".
+    return Response.json({ ok: false, error: 'search_failed' }, { status: 502 });
   }
 
   return Response.json({ ok: true, results, count: results.length });
 }
 
-export type { SearchResult };
+export type { SearchEventResult as SearchResult };

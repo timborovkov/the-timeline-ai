@@ -39,6 +39,12 @@ const schema = z.object({
   TRANSCRIPTION_MODEL: z.string().optional(),
   CHAT_MODEL_DEFAULT: z.string().optional(),
   EXTRACTION_MODEL: z.string().optional(),
+  /**
+   * Phase 6 agent chat model. Lets us point chat at a stronger model than
+   * extraction (e.g. `openai/gpt-4o`) without changing extraction behavior.
+   * Resolution chain: AGENT_MODEL ?? CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini'.
+   */
+  AGENT_MODEL: z.string().optional(),
 
   // Telegram (Phase 2+)
   TELEGRAM_BOT_TOKEN: z.string().optional(),

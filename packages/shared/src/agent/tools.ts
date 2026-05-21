@@ -1,0 +1,150 @@
+import { tool, type ToolSet } from 'ai';
+import { z } from 'zod';
+
+import { type TeamScope } from '../team-scope';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const searchTimelineInput = z.object({
+  query: z.string().trim().min(1).max(500),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+  source: z.enum(['web', 'telegram', 'email', 'system']).optional(),
+  entityIds: z.array(z.string().regex(UUID_RE)).max(20).optional(),
+  limit: z.number().int().min(1).max(20).optional(),
+});
+
+const getEntityInput = z.object({
+  idOrName: z.string().trim().min(1).max(200),
+});
+
+const listEventsInput = z.object({
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+  authorUserId: z.string().regex(UUID_RE).optional(),
+  source: z.enum(['web', 'telegram', 'email', 'system']).optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+
+const getEventInput = z.object({
+  id: z.string().regex(UUID_RE),
+});
+
+async function safe<T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> {
+  try {
+    return await fn();
+  } catch (err) {
+    console.error(`[agent.tool.${label}] failed`, err);
+    return { error: 'tool_failed' };
+  }
+}
+
+/**
+ * Build the agent's tool set bound to a single `TeamScope`. The scope is
+ * constructed from `(db, activeTeamId, sessionUserId)` server-side — the
+ * LLM never sees a teamId, and tool input schemas have no teamId field.
+ * Every tool is a thin wrapper over one `withTeam` method.
+ *
+ * Team isolation is enforced by construction: tools cannot reach a different
+ * team because they don't accept one. Hostile inputs (cross-team event_ids,
+ * entity_ids leaked from URLs, alias collisions) resolve to `null` or `[]`
+ * at the SQL layer via the visibility filter baked into `withTeam`.
+ *
+ * Errors are caught and returned as `{ error }` rather than thrown — keeps
+ * the stream alive so the agent can recover or report failure with a
+ * citation-aware message.
+ */
+export function buildAgentTools(scope: TeamScope): ToolSet {
+  return {
+    search_timeline: tool({
+      description:
+        "Semantic search across the current team's timeline. Returns ranked events with event_id (use for [ev:<id>] citations), fact statements, and entity_ids. Use this for 'what was discussed about X' or 'find anything mentioning Y'.",
+      inputSchema: searchTimelineInput,
+      execute: async (raw) =>
+        safe('search_timeline', async () => {
+          const input = searchTimelineInput.parse(raw);
+          const args: Parameters<typeof scope.searchEvents>[0] = { query: input.query };
+          if (input.from) args.from = new Date(input.from);
+          if (input.to) args.to = new Date(input.to);
+          if (input.source) args.source = input.source;
+          if (input.entityIds) args.entityIds = input.entityIds;
+          if (input.limit) args.limit = input.limit;
+          const results = await scope.searchEvents(args);
+          return { count: results.length, results };
+        }),
+    }),
+
+    get_entity: tool({
+      description:
+        "Look up one entity (person, company, project, topic) by exact UUID or canonical-name/alias match. Returns the entity, its recent facts, visibility-filtered source events with event_ids, and the top co-occurring entities. Use this for 'tell me about <name>' or to resolve a name into an entity id before searching.",
+      inputSchema: getEntityInput,
+      execute: async (raw) =>
+        safe('get_entity', async () => {
+          const { idOrName } = getEntityInput.parse(raw);
+          const profile = await scope.getEntity(idOrName);
+          if (!profile) return { found: false };
+          return { found: true, ...profile };
+        }),
+    }),
+
+    list_events: tool({
+      description:
+        "List raw events in reverse-chronological order. Filterable by ISO datetime range (from inclusive, to exclusive), author UUID, and source. Use this for 'what happened on <date>' or 'what did <person> post'. Returns events with event_id, occurred_at, source, author_user_id, and content_text.",
+      inputSchema: listEventsInput,
+      execute: async (raw) =>
+        safe('list_events', async () => {
+          const input = listEventsInput.parse(raw);
+          const filters: Parameters<typeof scope.listEvents>[0] = {};
+          if (input.from) filters.from = new Date(input.from);
+          if (input.to) filters.to = new Date(input.to);
+          if (input.authorUserId) filters.authorUserId = input.authorUserId;
+          if (input.limit) filters.limit = input.limit;
+          // Note: `source` not yet supported by listEvents; filter post-hoc.
+          const events = await scope.listEvents(filters);
+          const filtered = input.source ? events.filter((e) => e.source === input.source) : events;
+          return {
+            count: filtered.length,
+            events: filtered.map((e) => ({
+              event_id: e.id,
+              occurred_at: e.occurredAt.toISOString(),
+              source: e.source,
+              author_user_id: e.authorUserId,
+              content_text: e.contentText,
+              has_audio: Boolean(e.contentAudioUrl),
+            })),
+          };
+        }),
+    }),
+
+    get_event: tool({
+      description:
+        "Fetch one raw event by id, including its linked facts and entities. Use this to verify a citation or drill into a specific event_id you've already received from another tool. Returns null if the id isn't in this team or isn't visible to you.",
+      inputSchema: getEventInput,
+      execute: async (raw) =>
+        safe('get_event', async () => {
+          const { id } = getEventInput.parse(raw);
+          const result = await scope.getEventWithFacts(id);
+          if (!result) return { found: false };
+          return {
+            found: true,
+            event_id: result.event.id,
+            occurred_at: result.event.occurredAt.toISOString(),
+            source: result.event.source,
+            author_user_id: result.event.authorUserId,
+            content_text: result.event.contentText,
+            has_audio: Boolean(result.event.contentAudioUrl),
+            facts: result.facts.map((f) => ({
+              fact_id: f.id,
+              statement: f.statement,
+              confidence: f.confidence,
+            })),
+            entities: result.entities.map((e) => ({
+              entity_id: e.id,
+              name: e.canonicalName,
+              type: e.type,
+            })),
+          };
+        }),
+    }),
+  };
+}

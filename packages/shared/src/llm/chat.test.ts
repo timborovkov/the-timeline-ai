@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { resetEnvForTests } from '../env';
 
-import { chatStructured } from './chat';
+import { chatStructured, resolveAgentModelId, streamChat } from './chat';
 
 import type { LanguageModel } from 'ai';
 
@@ -82,5 +82,55 @@ describe('chatStructured', () => {
     await expect(
       chatStructured({ schema: z.object({ k: z.number() }), prompt: 'p' }),
     ).rejects.toThrow(/OPENROUTER_API_KEY/);
+  });
+});
+
+describe('resolveAgentModelId', () => {
+  it('prefers AGENT_MODEL over CHAT_MODEL_DEFAULT', () => {
+    process.env.AGENT_MODEL = 'openai/gpt-4o';
+    process.env.CHAT_MODEL_DEFAULT = 'openai/gpt-4o-mini';
+    resetEnvForTests();
+    expect(resolveAgentModelId()).toBe('openai/gpt-4o');
+  });
+  it('falls back to CHAT_MODEL_DEFAULT then the static default', () => {
+    delete process.env.AGENT_MODEL;
+    process.env.CHAT_MODEL_DEFAULT = 'anthropic/fallback';
+    resetEnvForTests();
+    expect(resolveAgentModelId()).toBe('anthropic/fallback');
+    delete process.env.CHAT_MODEL_DEFAULT;
+    resetEnvForTests();
+    expect(resolveAgentModelId()).toBe('openai/gpt-4o-mini');
+  });
+});
+
+describe('streamChat', () => {
+  it('returns a streamText result with an injected mock model', async () => {
+    // Use a fresh MockLanguageModelV3 with a minimal doStream that emits
+    // one text chunk and finishes. This proves streamChat composes — full
+    // streaming behavior is covered by Vercel's own SDK tests.
+    const model = new MockLanguageModelV3({
+      doStream: (() =>
+        Promise.resolve({
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue({ type: 'text-start', id: '1' });
+              controller.enqueue({ type: 'text-delta', id: '1', delta: 'hi' });
+              controller.enqueue({ type: 'text-end', id: '1' });
+              controller.enqueue({
+                type: 'finish',
+                finishReason: 'stop',
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              });
+              controller.close();
+            },
+          }),
+        })) as never,
+    });
+    const result = streamChat(
+      { system: 'sys', messages: [{ role: 'user', content: 'hi' }], tools: {} },
+      { model },
+    );
+    const text = await result.text;
+    expect(text).toBe('hi');
   });
 });
