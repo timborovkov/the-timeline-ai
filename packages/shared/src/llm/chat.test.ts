@@ -2,9 +2,9 @@ import { MockLanguageModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { resetEnvForTests } from '../env';
+import { resetEnvForTests } from '../env.js';
 
-import { chatStructured, resolveAgentModelId, streamChat } from './chat';
+import { chatStructured, resolveAgentModelId, streamChat } from './chat.js';
 
 import type { LanguageModel } from 'ai';
 

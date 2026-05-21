@@ -1,7 +1,7 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { embed as aiEmbed, type EmbeddingModel } from 'ai';
 
-import { getEnv } from '../env';
+import { getEnv } from '../env.js';
 
 export interface EmbedInput {
   text: string;

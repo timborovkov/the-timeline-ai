@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { type TeamScope } from '../team-scope';
+import { type TeamScope } from '../team-scope.js';
 
-import { buildAgentTools } from './tools';
+import { buildAgentTools } from './tools.js';
 
 /**
  * Team-isolation tests for the agent tools. These verify by construction

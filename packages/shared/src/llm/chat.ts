@@ -10,7 +10,7 @@ import {
 } from 'ai';
 import { type z, type ZodTypeAny } from 'zod';
 
-import { getEnv } from '../env';
+import { getEnv } from '../env.js';
 
 export interface ChatStructuredInput<TSchema extends ZodTypeAny> {
   schema: TSchema;

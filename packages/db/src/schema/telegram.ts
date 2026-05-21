@@ -11,8 +11,8 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { teams } from './teams';
-import { users } from './users';
+import { teams } from './teams.js';
+import { users } from './users.js';
 
 export const telegramLinkScope = pgEnum('telegram_link_scope', ['personal', 'group']);
 

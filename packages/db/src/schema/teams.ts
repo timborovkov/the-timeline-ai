@@ -1,6 +1,6 @@
 import { pgEnum, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-import { users } from './users';
+import { users } from './users.js';
 
 export const teamRole = pgEnum('team_role', ['owner', 'admin', 'member']);
 

@@ -1,11 +1,18 @@
-import { closeDb, getDb } from '@timeline/db';
+import { closeDb, getDb, waitForMigrations } from '@timeline/db';
 import { queue } from '@timeline/shared';
 
 import { startEmbedWorker } from './workers/embed.js';
 import { startExtractWorker } from './workers/extract.js';
 import { startTranscribeWorker } from './workers/transcribe.js';
 
-function main(): void {
+async function main(): Promise<void> {
+  // On Railway, the web service runs migrations as a preDeployCommand before
+  // its release shifts. Worker services deploy in parallel and can race that.
+  // Block here until the DB has at least as many migrations applied as the
+  // journal bundled with this image expects, so we don't crash-loop on every
+  // deploy that ships schema changes.
+  await waitForMigrations();
+
   const db = getDb();
   const transcribeWorker = startTranscribeWorker({ db });
   const extractWorker = startExtractWorker({ db });
@@ -20,10 +27,10 @@ function main(): void {
       await queue.closeExtractQueue();
       await queue.closeEmbedQueue();
       await queue.closeRedisConnection();
-      await closeDb();
     } catch (err: unknown) {
       console.error('[worker] shutdown error', err);
     } finally {
+      await closeDb().catch(() => undefined);
       process.exit(0);
     }
   };
@@ -31,9 +38,7 @@ function main(): void {
   process.on('SIGINT', () => void shutdown('SIGINT'));
 }
 
-try {
-  main();
-} catch (err: unknown) {
+main().catch((err: unknown) => {
   console.error('[worker] fatal', err);
   process.exit(1);
-}
+});

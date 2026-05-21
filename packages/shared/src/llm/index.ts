@@ -1,3 +1,3 @@
-export * from './transcribe';
-export * from './chat';
-export * from './embed';
+export * from './transcribe.js';
+export * from './chat.js';
+export * from './embed.js';

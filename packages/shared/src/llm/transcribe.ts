@@ -1,7 +1,7 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { experimental_transcribe as aiTranscribe, type TranscriptionModel } from 'ai';
 
-import { getEnv } from '../env';
+import { getEnv } from '../env.js';
 
 export interface TranscribeInput {
   /** Raw audio bytes. The SDK builds the multipart upload internally and

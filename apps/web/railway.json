@@ -5,6 +5,7 @@
     "dockerfilePath": "apps/web/Dockerfile"
   },
   "deploy": {
+    "preDeployCommand": ["node packages/db/dist/migrate.js"],
     "startCommand": "node apps/web/server.js",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 30,

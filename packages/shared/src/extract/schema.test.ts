@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractionResultSchema } from './schema';
+import { extractionResultSchema } from './schema.js';
 
 describe('extractionResultSchema', () => {
   it('accepts a well-formed extraction payload', () => {

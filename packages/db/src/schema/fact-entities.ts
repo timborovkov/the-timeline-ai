@@ -1,7 +1,7 @@
 import { index, pgEnum, pgTable, primaryKey, uuid } from 'drizzle-orm/pg-core';
 
-import { entities } from './entities';
-import { facts } from './facts';
+import { entities } from './entities.js';
+import { facts } from './facts.js';
 
 export const factEntityRole = pgEnum('fact_entity_role', ['subject', 'object', 'topic']);
 

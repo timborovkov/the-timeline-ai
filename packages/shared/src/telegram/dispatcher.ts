@@ -9,14 +9,14 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, sql } from 'drizzle-orm';
 
-import { type TelegramApi } from './api';
+import { type TelegramApi } from './api.js';
 import {
   tgUpdateSchema,
   type TgAudioPayload,
   type TgMessage,
   type TgUpdate,
   type TgUser,
-} from './types';
+} from './types.js';
 
 /**
  * Audio ingest is dependency-injected so the dispatcher stays testable

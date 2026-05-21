@@ -11,8 +11,8 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
-import { embed as defaultEmbed, type EmbedResult } from './llm/embed';
-import { getQdrantClient, type SearchHit, type SearchOpts } from './qdrant/client';
+import { embed as defaultEmbed, type EmbedResult } from './llm/embed.js';
+import { getQdrantClient, type SearchHit, type SearchOpts } from './qdrant/client.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.
