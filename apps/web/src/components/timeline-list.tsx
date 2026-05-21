@@ -29,6 +29,29 @@ function transcribeFailed(meta: unknown): boolean {
   );
 }
 
+interface EmailMeta {
+  subject?: string;
+  from?: { email: string; name?: string };
+  to?: { email: string; name?: string }[];
+  cc?: { email: string; name?: string }[];
+  thread_root_id?: string;
+  sender_unverified?: boolean;
+  forwarded_from?: { email: string; name?: string };
+  attachments?: { filename: string; content_type: string; size_bytes: number }[];
+}
+
+function emailMeta(meta: unknown): EmailMeta | null {
+  if (typeof meta !== 'object' || meta === null) return null;
+  // Shape is enforced by the email dispatcher's metadata composer; the
+  // JSONB column has no compile-time shape information here.
+  return meta;
+}
+
+function fmtAddr(a: { email: string; name?: string } | undefined): string {
+  if (!a) return '';
+  return a.name ? `${a.name} <${a.email}>` : a.email;
+}
+
 export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
   if (events.length === 0) {
     return (
@@ -44,7 +67,14 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
     <ol className="space-y-3">
       {events.map((event) => {
         const author = event.authorUserId ? authorMap.get(event.authorUserId) : null;
-        const authorLabel = author ? (author.name ?? author.email) : 'System';
+        const isEmail = event.source === 'email';
+        const em = isEmail ? emailMeta(event.sourceMetadata) : null;
+        const senderUnverified = Boolean(em?.sender_unverified);
+        const authorLabel = author
+          ? (author.name ?? author.email)
+          : isEmail && em?.from
+            ? fmtAddr(em.from)
+            : 'System';
         return (
           <li key={event.id} id={`ev-${event.id}`} className="scroll-mt-20">
             <Card>
@@ -56,10 +86,41 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
                   <Badge variant="outline" className="ml-auto">
                     {event.source}
                   </Badge>
+                  {senderUnverified ? (
+                    <Badge variant="destructive" title="From address does not match a team member">
+                      unverified sender
+                    </Badge>
+                  ) : null}
                   {event.visibility === 'private' ? (
                     <Badge variant="secondary">private</Badge>
                   ) : null}
                 </div>
+                {isEmail && em ? (
+                  <div className="space-y-1 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+                    {em.subject ? (
+                      <p className="font-medium text-foreground">{em.subject}</p>
+                    ) : null}
+                    {em.forwarded_from ? (
+                      <p className="text-muted-foreground">
+                        Forwarded from{' '}
+                        <span className="text-foreground">{fmtAddr(em.forwarded_from)}</span>
+                      </p>
+                    ) : null}
+                    {em.thread_root_id && em.thread_root_id !== event.id ? (
+                      <p className="text-muted-foreground">
+                        Thread:{' '}
+                        <a href={`#ev-${em.thread_root_id}`} className="underline">
+                          view root
+                        </a>
+                      </p>
+                    ) : null}
+                    {em.attachments && em.attachments.length > 0 ? (
+                      <p className="text-muted-foreground">
+                        {em.attachments.length} attachment{em.attachments.length === 1 ? '' : 's'}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 {event.contentAudioUrl ? (
                   audioUrlMap?.get(event.id) ? (
                     <audio

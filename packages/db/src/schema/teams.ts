@@ -8,6 +8,13 @@ export const teams = pgTable('teams', {
   id: uuid('id').defaultRandom().primaryKey(),
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
+  // Phase 7: per-team inbound email address. Format is `<slug>@<INBOUND_EMAIL_DOMAIN>`,
+  // populated at team creation. Nullable because legacy rows (created before
+  // Phase 7) backfill via migration but new teams should never be NULL — the
+  // address is the team's only inbound surface for email and absence is a bug,
+  // not a state. Unique across teams so cross-team routing in the inbound
+  // dispatcher cannot ambiguously match.
+  inboundEmail: text('inbound_email').unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

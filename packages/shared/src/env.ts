@@ -55,6 +55,26 @@ const schema = z.object({
   POSTMARK_SERVER_TOKEN: z.string().optional(),
   POSTMARK_WEBHOOK_SECRET: z.string().optional(),
   INBOUND_EMAIL_DOMAIN: z.string().optional(),
+  /**
+   * Dev / no-own-domain fallback. When set to a Postmark-default inbound
+   * address (e.g. `<hex>@inbound.postmarkapp.com`), the dispatcher routes
+   * by MailboxHash instead of by full recipient address. The hash IS the
+   * team slug — users send to `<hex>+<slug>@inbound.postmarkapp.com`.
+   *
+   * Set EITHER this OR `INBOUND_EMAIL_DOMAIN`. When both are set,
+   * MailboxHash routing wins (the explicit hash beats inferring from
+   * domain).
+   */
+  POSTMARK_INBOUND_ADDRESS: z.string().optional(),
+  /**
+   * RFC 8601 authserv-id allowlist for trusted `Authentication-Results`
+   * headers. Comma-separated; empty / unset means no AR header is trusted
+   * (From-match path falls back to dev behavior). For Postmark production,
+   * set to whatever Postmark stamps on the AR headers they generate (check
+   * a real inbound payload in the dashboard — usually a domain like
+   * `pm-inbound.postmarkapp.com` or your own MTA's hostname).
+   */
+  POSTMARK_AUTHSERV_IDS: z.string().optional(),
 
   // Sentry (optional)
   SENTRY_DSN: z.string().optional(),

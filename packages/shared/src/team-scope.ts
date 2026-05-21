@@ -42,6 +42,33 @@ export interface CreateEventInput {
   sourceMetadata?: Record<string, unknown>;
 }
 
+export interface CreateEmailEventInput {
+  authorUserId: string | null;
+  /** RFC 5322 Message-ID, normalized (no angle brackets). Drives the
+   *  per-team unique index that makes Postmark retries idempotent. */
+  messageId: string;
+  /** Optional In-Reply-To Message-ID (normalized) for direct-parent linking. */
+  inReplyTo?: string | null;
+  /** References-list (normalized). Used as the fallback chain when In-Reply-To
+   *  points at a Message-ID we never received. */
+  references?: string[];
+  contentText: string;
+  occurredAt: Date;
+  /** Full source_metadata payload to merge with the computed thread fields.
+   *  The dispatcher composes this; team-scope only adds `thread_root_id`. */
+  sourceMetadata: Record<string, unknown>;
+}
+
+export interface CreateEmailEventResult {
+  id: string;
+  teamId: string;
+  threadRootId: string;
+  /** True if the insert hit the unique index (Postmark retry / duplicate
+   *  delivery). The dispatcher should skip downstream enqueues but NOT mark
+   *  failure — the original delivery already enqueued them. */
+  deduplicated: boolean;
+}
+
 export interface SearchEventsInput {
   query: string;
   from?: Date;
@@ -253,6 +280,144 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       const row = rows[0];
       if (!row) throw new Error('Failed to create event');
       return row;
+    },
+
+    /**
+     * Phase 7 email-specific create that wraps insert + thread-root lookup
+     * in one transaction so the email dispatcher cannot bypass team isolation
+     * or forget to thread-link. Idempotent against the partial unique index
+     * on `(team_id, source_metadata->>'message_id')`: a Postmark retry returns
+     * `{ deduplicated: true }` so the dispatcher skips re-enqueueing extract /
+     * embed (the original delivery already did that).
+     *
+     * Thread linking strategy: probe in-reply-to first (direct parent), then
+     * walk references[] oldest-to-newest looking for any ancestor in this
+     * team. Inherit the *root* id from the matched ancestor so every email in
+     * the thread shares one `thread_root_id` — render is a single GROUP BY.
+     * If no ancestor exists, the new row's thread_root_id is its own id.
+     *
+     * Sender membership is NOT re-verified here (unlike the Telegram path).
+     * Email's sender_unverified semantics are decided by the dispatcher
+     * before this call, because the From address need not correspond to a
+     * team member at all — that's the whole point of the unverified-sender
+     * carve-out.
+     */
+    async createEmailEvent(input: CreateEmailEventInput): Promise<CreateEmailEventResult | null> {
+      await ensureMember();
+      return db.transaction(async (tx) => {
+        // Probe parent: in-reply-to first, then any reference we know about.
+        let parentRootId: string | null = null;
+        // Inherit the parent's unverified flag when threading. A child reply
+        // attributed to a verified member should not "launder" an unverified
+        // parent's content — the thread surfaces together in the UI and the
+        // user has to be able to see "this thread started with an unverified
+        // sender." Without this inheritance, an attacker who plants a Message-ID
+        // by guessing then catches a legitimate reply turns the whole thread
+        // into verified-looking history.
+        let inheritedUnverified = false;
+        const probeIds = [input.inReplyTo, ...(input.references ?? [])].filter(
+          (s): s is string => typeof s === 'string' && s.length > 0,
+        );
+        if (probeIds.length > 0) {
+          const probeRows = await tx
+            .select({
+              id: rawEvents.id,
+              metadata: rawEvents.sourceMetadata,
+            })
+            .from(rawEvents)
+            .where(
+              and(
+                eq(rawEvents.teamId, teamId),
+                eq(rawEvents.source, 'email'),
+                sql`(${rawEvents.sourceMetadata} ->> 'message_id') = ANY(${probeIds})`,
+              ),
+            )
+            .orderBy(asc(rawEvents.occurredAt))
+            .limit(1);
+          const parent = probeRows[0];
+          if (parent) {
+            const meta = (parent.metadata ?? {}) as Record<string, unknown>;
+            const inheritedRoot =
+              typeof meta.thread_root_id === 'string' ? meta.thread_root_id : parent.id;
+            parentRootId = inheritedRoot;
+            if (meta.sender_unverified === true) inheritedUnverified = true;
+          }
+        }
+
+        const composedMetadata: Record<string, unknown> = {
+          ...input.sourceMetadata,
+          message_id: input.messageId,
+        };
+        if (inheritedUnverified) {
+          composedMetadata.sender_unverified = true;
+          composedMetadata.unverified_inherited_from_thread = true;
+        }
+        if (input.inReplyTo) composedMetadata.in_reply_to = input.inReplyTo;
+        if (input.references && input.references.length > 0) {
+          composedMetadata.references = input.references;
+        }
+        // thread_root_id is a placeholder when there's no parent — we'll
+        // backfill it to the row's own id after insert. Setting it
+        // pre-insert lets us emit the canonical metadata shape on the
+        // ON CONFLICT path too.
+        if (parentRootId) composedMetadata.thread_root_id = parentRootId;
+
+        const inserted = await tx
+          .insert(rawEvents)
+          .values({
+            teamId,
+            authorUserId: input.authorUserId,
+            source: 'email',
+            contentText: input.contentText,
+            occurredAt: input.occurredAt,
+            visibility: 'team',
+            sourceMetadata: composedMetadata,
+          })
+          .onConflictDoNothing()
+          .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
+
+        const row = inserted[0];
+        if (!row) {
+          // Postmark retry; the original row is already on disk with its
+          // own thread_root_id. Look it up so callers can still link.
+          const existing = await tx
+            .select({ id: rawEvents.id, metadata: rawEvents.sourceMetadata })
+            .from(rawEvents)
+            .where(
+              and(
+                eq(rawEvents.teamId, teamId),
+                eq(rawEvents.source, 'email'),
+                sql`(${rawEvents.sourceMetadata} ->> 'message_id') = ${input.messageId}`,
+              ),
+            )
+            .limit(1);
+          const existingRow = existing[0];
+          if (!existingRow) return null;
+          const meta = (existingRow.metadata ?? {}) as Record<string, unknown>;
+          const rootId =
+            typeof meta.thread_root_id === 'string' ? meta.thread_root_id : existingRow.id;
+          return {
+            id: existingRow.id,
+            teamId,
+            threadRootId: rootId,
+            deduplicated: true,
+          };
+        }
+
+        const rootId = parentRootId ?? row.id;
+        if (!parentRootId) {
+          // No parent found at insert time — stamp the row as its own root
+          // so a later child can inherit it without an extra query.
+          const patch = JSON.stringify({ thread_root_id: rootId });
+          await tx
+            .update(rawEvents)
+            .set({
+              sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+            })
+            .where(eq(rawEvents.id, row.id));
+        }
+        return { id: row.id, teamId: row.teamId, threadRootId: rootId, deduplicated: false };
+      });
     },
 
     async listMembers() {

@@ -43,6 +43,13 @@
       "when": 1779287868174,
       "tag": "0005_phase4_entities_facts",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779892268174,
+      "tag": "0006_phase7_email",
+      "breakpoints": true
     }
   ]
 }

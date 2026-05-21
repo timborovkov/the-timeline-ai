@@ -1,5 +1,5 @@
 import { users } from '@timeline/db';
-import { withTeam } from '@timeline/shared';
+import { composePostmarkHashAddress, withTeam } from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -22,6 +22,7 @@ export default async function TeamSettingsPage() {
   const scope = withTeam(db, active.teamId, session.user.id);
   const role = await scope.requireMembership();
   const isAdmin = role === 'owner' || role === 'admin';
+  const team = await scope.team();
 
   const memberRows = await scope.listMembers();
   const userIds = memberRows.map((m) => m.userId);
@@ -42,6 +43,38 @@ export default async function TeamSettingsPage() {
           {active.teamName} · your role: <Badge variant="outline">{role}</Badge>
         </p>
       </header>
+
+      {team ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Email ingest</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Forward, CC, or BCC any email to this address to add it to the timeline.
+            </p>
+            {/* Dev / no-own-domain mode: route via Postmark's default
+                inbound address using plus-addressing. Postmark sets
+                MailboxHash from the part after `+`; the dispatcher resolves
+                it to this team's slug. When INBOUND_EMAIL_DOMAIN is set
+                (production), the team's `inbound_email` column is the
+                primary surface and the hash form is the fallback. */}
+            {(() => {
+              const hashAddr = composePostmarkHashAddress(
+                team.slug,
+                process.env.POSTMARK_INBOUND_ADDRESS,
+              );
+              const primary = hashAddr ?? team.inboundEmail;
+              if (!primary) return null;
+              return <code className="block rounded-md bg-muted px-3 py-2 text-sm">{primary}</code>;
+            })()}
+            <p className="text-xs text-muted-foreground">
+              Senders must match a team member&apos;s email to be attributed; unknown senders still
+              land but are tagged unverified.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

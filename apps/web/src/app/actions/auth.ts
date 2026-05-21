@@ -1,7 +1,7 @@
 'use server';
 
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
-import { hashPassword, randomSlugSuffix, slugify } from '@timeline/shared';
+import { buildInboundEmail, hashPassword, randomSlugSuffix, slugify } from '@timeline/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -88,9 +88,10 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
 
       const baseSlug = slugify(`${name}-team`) || 'team';
       const slug = `${baseSlug}-${randomSlugSuffix()}`;
+      const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
       const teamRows = await tx
         .insert(teams)
-        .values({ name: `${name}'s Team`, slug })
+        .values({ name: `${name}'s Team`, slug, inboundEmail })
         .returning({ id: teams.id });
       const teamId = teamRows[0]?.id;
       if (!teamId) throw new Error('Failed to create team');
