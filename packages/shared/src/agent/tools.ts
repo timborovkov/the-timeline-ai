@@ -1,7 +1,7 @@
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
-import { type TeamScope } from '../team-scope';
+import { type TeamScope } from '../team-scope.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

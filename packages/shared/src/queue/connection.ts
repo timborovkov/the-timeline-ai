@@ -1,6 +1,6 @@
 import IORedis, { type Redis } from 'ioredis';
 
-import { getEnv } from '../env';
+import { getEnv } from '../env.js';
 
 let _conn: Redis | undefined;
 

@@ -1,3 +1,3 @@
-export * from './schema';
-export * from './prompt';
-export * from './resolve';
+export * from './schema.js';
+export * from './prompt.js';
+export * from './resolve.js';

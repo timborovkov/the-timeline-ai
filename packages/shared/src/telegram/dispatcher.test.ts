@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { handleUpdate, parseCommand } from './dispatcher';
-import { verifyWebhookSecret } from './secret';
-import { tgUpdateSchema } from './types';
+import { handleUpdate, parseCommand } from './dispatcher.js';
+import { verifyWebhookSecret } from './secret.js';
+import { tgUpdateSchema } from './types.js';
 
 // These tests cover the pure pieces of the Telegram webhook flow:
 //  - webhook secret verification (the auth gate on the route handler)

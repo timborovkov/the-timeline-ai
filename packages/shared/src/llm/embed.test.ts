@@ -1,9 +1,9 @@
 import { MockEmbeddingModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetEnvForTests } from '../env';
+import { resetEnvForTests } from '../env.js';
 
-import { embed } from './embed';
+import { embed } from './embed.js';
 
 import type { EmbeddingModel } from 'ai';
 

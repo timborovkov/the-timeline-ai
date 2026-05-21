@@ -10,8 +10,8 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { teams } from './teams';
-import { users } from './users';
+import { teams } from './teams.js';
+import { users } from './users.js';
 
 export const eventSource = pgEnum('event_source', ['web', 'telegram', 'email', 'system']);
 

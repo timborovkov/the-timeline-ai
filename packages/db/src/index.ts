@@ -1,10 +1,11 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-import * as schema from './schema/index';
+import * as schema from './schema/index.js';
 
-export * from './schema/index';
+export * from './schema/index.js';
 export { schema };
+export { waitForMigrations } from './wait-for-migrations.js';
 export type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
 
 type Schema = typeof schema;

@@ -135,10 +135,15 @@ The `web` service verifies the `X-Telegram-Bot-Api-Secret-Token` header on every
 
 1. Push to `main` (production) or `staging` branch.
 2. Railway builds each service in parallel using its Dockerfile.
-3. Migrations: run as a release-phase pre-deploy command on the `web` service. Configure in `web/railway.json` deploy section if not already there:
+3. Migrations: run as a release-phase pre-deploy command on the `web` service. Already wired in `apps/web/railway.json`:
    ```json
-   "preDeployCommand": ["pnpm --filter @timeline/db migrate"]
+   "preDeployCommand": ["node packages/db/dist/migrate.js"]
    ```
+   The script (`packages/db/src/migrate.ts`) is built by turbo as a dep of the web build, and the entire `@timeline/db` package — including its `drizzle/*.sql` files and a self-contained `node_modules` with `postgres` + `drizzle-orm` — is copied into the runner image by the `db-deployer` stage in `apps/web/Dockerfile`. The command applies any new SQL files against `DATABASE_URL` and exits. Failure blocks the deploy.
+
+   Worker services (`worker-transcribe`, `worker-extract`, `worker-embed`) deploy in parallel with `web` and don't run migrations themselves. They call `waitForMigrations()` from `@timeline/db` at startup, which polls `drizzle.__drizzle_migrations` until the row count matches the journal bundled with the worker image. Default timeout 5 minutes. This avoids crash-looping on every deploy that ships schema changes.
+
+   **SSL note.** Inside a Railway project, `DATABASE_URL` resolves to the Postgres plugin's internal hostname and uses plain TCP. If you ever point this at the *external* Postgres proxy (e.g., to run `pnpm db:migrate` from your laptop against staging), append `?sslmode=require` to the URL — `postgres-js` follows the connection string, not an out-of-band env var.
 4. Services restart with new image. Healthcheck on `web` (`/api/health`) must pass before traffic shifts.
 5. Workers restart with same image — they share the codebase, just different entry points.
 

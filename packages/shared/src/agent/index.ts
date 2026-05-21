@@ -1,2 +1,2 @@
-export * from './system-prompt';
-export * from './tools';
+export * from './system-prompt.js';
+export * from './tools.js';

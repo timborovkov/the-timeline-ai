@@ -1,9 +1,9 @@
 import { MockTranscriptionModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetEnvForTests } from '../env';
+import { resetEnvForTests } from '../env.js';
 
-import { transcribeAudio } from './transcribe';
+import { transcribeAudio } from './transcribe.js';
 
 import type { TranscriptionModel } from 'ai';
 

@@ -11,7 +11,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { teams } from './teams';
+import { teams } from './teams.js';
 
 export const entityType = pgEnum('entity_type', ['person', 'company', 'project', 'topic', 'other']);
 

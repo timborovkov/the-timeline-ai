@@ -1,6 +1,6 @@
-import { getEnv } from '../env';
+import { getEnv } from '../env.js';
 
-import { buildPointId, type PointScope } from './point-id';
+import { buildPointId, type PointScope } from './point-id.js';
 
 /**
  * Payload schema stored alongside every vector. Every field is used by the
