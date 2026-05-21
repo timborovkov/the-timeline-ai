@@ -1,9 +1,4 @@
-import {
-  agent,
-  getEnv,
-  llm,
-  withTeam,
-} from '@timeline/shared';
+import { agent, getEnv, llm, withTeam } from '@timeline/shared';
 import { convertToModelMessages, type UIMessage } from 'ai';
 import { z } from 'zod';
 
@@ -38,7 +33,12 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, error: 'unauthenticated' }, { status: 401 });
   }
   const env = getEnv();
-  if (!env.OPENROUTER_API_KEY) {
+  // Both keys are required: OpenRouter for the model, Qdrant for
+  // search_timeline. Without Qdrant, the agent would call search_timeline,
+  // hit a thrown getQdrantClient(), get back { error: 'tool_failed' }, then
+  // retry until the step cap. Better to fail fast with a UI-readable error
+  // — matches /api/search's gate exactly.
+  if (!env.OPENROUTER_API_KEY || !env.QDRANT_URL) {
     return Response.json({ ok: false, error: 'chat_unconfigured' }, { status: 503 });
   }
 

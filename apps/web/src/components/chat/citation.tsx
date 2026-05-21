@@ -6,10 +6,7 @@ const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 // Matches [ev:<uuid>] or [ent:<uuid>]. Validating the UUID shape client-side
 // is defense-in-depth — the system prompt tells the agent never to fabricate
 // ids, but we never trust LLM output to be well-formed.
-const CITATION_RE = new RegExp(
-  `\\[(ev|ent):(${UUID_RE.source})\\]`,
-  'gi',
-);
+const CITATION_RE = new RegExp(`\\[(ev|ent):(${UUID_RE.source})\\]`, 'gi');
 
 interface Props {
   text: string;
@@ -47,7 +44,12 @@ export function CitationText({ text }: Props) {
           return (
             <Link
               key={i}
-              href={`/app/timeline?focus=${p.value}`}
+              // URL hash + `id="ev-<uuid>"` on each timeline <li> +
+              // `scroll-mt-20` for header offset. Browser handles the scroll
+              // natively — no client effect needed. If the event isn't in the
+              // first page of the timeline the user has to widen filters,
+              // which we accept for v1 (timeline lists last 200 by default).
+              href={`/app/timeline#ev-${p.value}`}
               className="mx-0.5 inline-block rounded border border-border bg-muted px-1 py-0.5 text-[10px] font-mono uppercase tracking-wide text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               title={`Event ${p.value}`}
             >

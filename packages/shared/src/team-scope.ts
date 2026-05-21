@@ -510,12 +510,16 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         // Defense in depth: Qdrant's wrapper already filters team_id, but
         // verify here so a misconfigured payload can't leak across teams.
         if (hit.payload.team_id !== teamId) continue;
+        // Qdrant payloads CAN drift — schema changes, manual point edits,
+        // older embed worker versions. Spread on undefined throws and kills
+        // the whole search. Treat each field as best-effort.
+        const entityIds = Array.isArray(hit.payload.entity_ids) ? hit.payload.entity_ids : [];
+        const factId = hit.payload.fact_id ?? null;
         const existing = dedup.get(hit.payload.event_id);
-        const factId = hit.payload.fact_id;
         if (existing) {
           if (hit.score > existing.score) existing.score = hit.score;
           if (factId && !existing.factIds.includes(factId)) existing.factIds.push(factId);
-          for (const entId of hit.payload.entity_ids) {
+          for (const entId of entityIds) {
             if (!existing.entityIds.includes(entId)) existing.entityIds.push(entId);
           }
           continue;
@@ -527,7 +531,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           occurredAt: hit.payload.occurred_at,
           source: hit.payload.source,
           authorUserId: hit.payload.author_user_id,
-          entityIds: [...hit.payload.entity_ids],
+          entityIds: [...entityIds],
           snippet: '',
         });
       }

@@ -133,10 +133,7 @@ describe('buildAgentTools — team isolation', () => {
     const scope = makeFakeScope();
     scope.listEvents.mockResolvedValue([]);
     const tools = buildAgentTools(scope as unknown as TeamScope);
-    const exec = tools.list_events?.execute as (
-      input: unknown,
-      opts: unknown,
-    ) => Promise<unknown>;
+    const exec = tools.list_events?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
     await exec({ authorUserId: '00000000-0000-0000-0000-000000000001' }, {});
     expect(scope.listEvents).toHaveBeenCalledWith(
       expect.objectContaining({ authorUserId: '00000000-0000-0000-0000-000000000001' }),

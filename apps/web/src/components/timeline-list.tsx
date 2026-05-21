@@ -46,7 +46,7 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
         const author = event.authorUserId ? authorMap.get(event.authorUserId) : null;
         const authorLabel = author ? (author.name ?? author.email) : 'System';
         return (
-          <li key={event.id}>
+          <li key={event.id} id={`ev-${event.id}`} className="scroll-mt-20">
             <Card>
               <CardContent className="space-y-2 py-4">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">

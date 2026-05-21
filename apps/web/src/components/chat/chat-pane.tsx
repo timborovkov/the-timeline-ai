@@ -77,9 +77,7 @@ export function ChatPane({ teamName }: Props) {
               </div>
             </li>
           ))}
-          {isStreaming && (
-            <li className="px-4 py-3 text-xs text-muted-foreground">Thinking…</li>
-          )}
+          {isStreaming && <li className="px-4 py-3 text-xs text-muted-foreground">Thinking…</li>}
         </ol>
       </div>
       {error && (

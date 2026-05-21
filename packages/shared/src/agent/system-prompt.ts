@@ -13,11 +13,7 @@ export interface SystemPromptInput {
   currentDate: Date;
 }
 
-export function buildSystemPrompt({
-  teamName,
-  userName,
-  currentDate,
-}: SystemPromptInput): string {
+export function buildSystemPrompt({ teamName, userName, currentDate }: SystemPromptInput): string {
   const today = currentDate.toISOString().slice(0, 10);
   return `You are the timeline agent for ${teamName}. The current user is ${userName}. Today is ${today}.
 
