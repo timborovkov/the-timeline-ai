@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { resetEnvForTests } from '../env';
 
-import { embed, embedMany } from './embed';
+import { embed } from './embed';
 
 import type { EmbeddingModel } from 'ai';
 
@@ -56,28 +56,5 @@ describe('llm.embed', () => {
     delete process.env.OPENROUTER_API_KEY;
     resetEnvForTests();
     await expect(embed({ text: 'hello' })).rejects.toThrow(/OPENROUTER_API_KEY/);
-  });
-});
-
-describe('llm.embedMany', () => {
-  it('embeds many strings in one call', async () => {
-    const result = await embedMany(
-      { texts: ['a', 'b'] },
-      {
-        model: makeMockModel([
-          [1, 0, 0, 0],
-          [0, 1, 0, 0],
-        ]),
-      },
-    );
-    expect(result.vectors).toHaveLength(2);
-    expect(result.vectors[0]).toEqual([1, 0, 0, 0]);
-    expect(result.model).toBe('openai/test-embed');
-  });
-
-  it('returns empty vectors for empty input without hitting the model', async () => {
-    const result = await embedMany({ texts: [] });
-    expect(result.vectors).toEqual([]);
-    expect(result.model).toBe('openai/test-embed');
   });
 });

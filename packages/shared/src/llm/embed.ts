@@ -1,5 +1,5 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { embed as aiEmbed, embedMany as aiEmbedMany, type EmbeddingModel } from 'ai';
+import { embed as aiEmbed, type EmbeddingModel } from 'ai';
 
 import { getEnv } from '../env';
 
@@ -9,15 +9,6 @@ export interface EmbedInput {
 
 export interface EmbedResult {
   vector: number[];
-  model: string;
-}
-
-export interface EmbedManyInput {
-  texts: string[];
-}
-
-export interface EmbedManyResult {
-  vectors: number[][];
   model: string;
 }
 
@@ -59,22 +50,4 @@ export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<Em
   const model = deps.model ?? buildDefaultModel(modelId);
   const result = await aiEmbed({ model, value: input.text });
   return { vector: Array.from(result.embedding), model: modelId };
-}
-
-/**
- * Batched embedding. The worker uses this when a single event produces
- * multiple fact statements — one HTTP call beats N round-trips.
- */
-export async function embedMany(
-  input: EmbedManyInput,
-  deps: EmbedDeps = {},
-): Promise<EmbedManyResult> {
-  const modelId = resolveModelId();
-  const model = deps.model ?? buildDefaultModel(modelId);
-  if (input.texts.length === 0) return { vectors: [], model: modelId };
-  const result = await aiEmbedMany({ model, values: input.texts });
-  return {
-    vectors: result.embeddings.map((v) => Array.from(v)),
-    model: modelId,
-  };
 }
