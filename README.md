@@ -13,7 +13,7 @@ and structured logging are in place.
 
 ## Read first
 
-- [`product-brief.md`](./product-brief.md) — what we're building and why.
+- [`docs/product-brief.html`](./docs/product-brief.html) — what we're building and why.
 - [`todo.md`](./todo.md) — ordered build plan, phased.
 - [`design.md`](./design.md) — design system, the source of truth for UI.
 

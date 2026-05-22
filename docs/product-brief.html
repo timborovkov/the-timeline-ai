@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Timeline — Product Brief</title>
+<style>
+:root{--background:hsl(40 14% 97%);--foreground:hsl(240 10% 8%);--card:#fff;--primary:hsl(30 90% 42%);--muted:hsl(240 5% 95%);--muted-foreground:hsl(240 4% 42%);--border:hsl(240 6% 89%);--radius:.75rem}
+@media (prefers-color-scheme:dark){:root{--background:hsl(240 10% 5%);--foreground:hsl(40 14% 95%);--card:hsl(240 8% 8%);--muted:hsl(240 6% 14%);--muted-foreground:hsl(240 5% 65%);--border:hsl(240 6% 18%);--primary:hsl(30 95% 55%)}}
+*{box-sizing:border-box}
+html{color-scheme:light dark}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.6;background:var(--background);color:var(--foreground)}
+.skip{position:absolute;left:-9999px}
+.skip:focus{left:1rem;top:1rem;background:var(--card);padding:.5rem 1rem;border-radius:var(--radius);z-index:10}
+main{max-width:46rem;margin:0 auto;padding:3rem 1.5rem 6rem}
+h1{font-size:2rem;line-height:1.2;margin:0 0 .5rem;letter-spacing:-.02em}
+h2{font-size:1.4rem;margin:2.5rem 0 .75rem;letter-spacing:-.01em;scroll-margin-top:1rem}
+h3{font-size:1.1rem;margin:1.75rem 0 .5rem;scroll-margin-top:1rem}
+p{margin:0 0 1rem}
+a{color:var(--primary);text-decoration:underline;text-underline-offset:2px}
+a:hover{text-decoration-thickness:2px}
+em{font-style:italic}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;background:var(--muted);padding:.1em .35em;border-radius:4px}
+pre{background:var(--muted);padding:1rem;border-radius:var(--radius);overflow-x:auto;font-size:.875rem;line-height:1.5}
+pre code{background:none;padding:0;font-size:inherit}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.92rem;background:var(--card);border-radius:var(--radius);overflow:hidden}
+th,td{text-align:left;padding:.6rem .75rem;border-bottom:1px solid var(--border);vertical-align:top}
+th{font-weight:600;background:var(--muted);font-size:.85rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-foreground)}
+tr:last-child td{border-bottom:0}
+ul,ol{padding-left:1.5rem;margin:0 0 1rem}
+li{margin:.25rem 0}
+hr{border:0;border-top:1px solid var(--border);margin:2rem 0}
+.meta{display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:center;font-size:.85rem;color:var(--muted-foreground);padding:.75rem 0;margin:0 0 1rem;border-bottom:1px solid var(--border)}
+.meta .kind{display:inline-block;padding:.15rem .55rem;background:var(--muted);border-radius:999px;color:var(--foreground);font-weight:500;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
+.tldr{font-size:1.05rem;color:var(--muted-foreground);margin:0 0 1.5rem}
+nav.toc{background:var(--muted);border-radius:var(--radius);padding:.85rem 1.1rem;margin:0 0 2.25rem;font-size:.92rem}
+nav.toc strong{display:block;margin-bottom:.4rem;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted-foreground);font-weight:600}
+nav.toc ul{list-style:none;padding:0;margin:0;columns:2;column-gap:1.5rem}
+nav.toc li{margin:.2rem 0;break-inside:avoid}
+nav.toc a{text-decoration:none;color:var(--foreground)}
+nav.toc a:hover{color:var(--primary)}
+.principle{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:.85rem 1rem;margin:.6rem 0}
+.principle b{color:var(--primary)}
+@media (max-width:640px){nav.toc ul{columns:1}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<main id="main">
+<h1>The Timeline — Product Brief</h1>
+<div class="meta"><span class="kind">Product brief</span><span>Last updated 2026-05-22</span></div>
+<p class="tldr">Multi-tenant team memory: voice-, chat-, and email-first capture, agentically compiled into a searchable history of who did what — with auditable citations on every answer.</p>
+
+<nav class="toc" aria-label="On this page">
+<strong>On this page</strong>
+<ul>
+<li><a href="#what-were-building">What we're building</a></li>
+<li><a href="#problem">Problem</a></li>
+<li><a href="#solution">Solution</a></li>
+<li><a href="#target-user">Target user</a></li>
+<li><a href="#core-principles">Core principles</a></li>
+<li><a href="#architecture-overview">Architecture overview</a></li>
+<li><a href="#data-model">Data model</a></li>
+<li><a href="#telegram-binding-model">Telegram binding model</a></li>
+<li><a href="#ai-provider-strategy">AI provider strategy</a></li>
+<li><a href="#infrastructure">Infrastructure</a></li>
+<li><a href="#out-of-scope">Out of scope for v1</a></li>
+<li><a href="#future-roadmap">Future roadmap</a></li>
+<li><a href="#risks-and-unknowns">Risks and unknowns</a></li>
+<li><a href="#success-criteria">Success criteria</a></li>
+</ul>
+</nav>
+
+<h2 id="what-were-building">What we're building</h2>
+<p>A multi-tenant team memory and object management system that replaces the patchwork of CRMs, internal wikis, FAQs, and TODO lists. Team members capture work as it happens — voice notes after a call, a forwarded email, a quick text dump at end of day — and The Timeline agentically compiles it into a searchable, queryable history of who did what, talked to whom, decided what, and what changed.</p>
+<p>The interaction model is voice-first and chat-first. People resist updating systems of record because the systems demand structure up front. The Timeline accepts unstructured capture and <em>derives</em> the structure, so the cost of contributing is near zero.</p>
+
+<h2 id="problem">Problem</h2>
+<p>Existing tools punish the act of recording. CRMs require you to know the contact, the deal stage, the next step before you can log anything. Wikis demand a page hierarchy. Ticket boards demand a project and status. The result: people don't update them, history is lost, and teammates ask each other "what happened with X" in Slack threads that themselves get lost.</p>
+<p>The cost isn't just inconvenience — it's that <em>organizational memory leaks</em>. Conversations with clients, decisions made in meetings, the reasoning behind a choice three months ago — all of it lives in people's heads or scattered across tools.</p>
+
+<h2 id="solution">Solution</h2>
+<p>One ingest pipeline, many capture surfaces. Voice notes, written notes, forwarded emails, Telegram messages, team documents, and later third-party systems all flow into the same event stream. An LLM extracts objects (people, companies, projects, deals, tasks, documents, incidents), facts ("Tim discussed SaaS licensing with John Ternus at Apple"), relationships, and changes. Documents are processed into searchable chunks with version-aware citations. Everything important is embedded and indexed. An agent answers questions over the timeline and knowledge base: <em>what did the team work on yesterday</em>, <em>what changed on the Apple licensing deal</em>, <em>what's outstanding for Acme</em>, <em>what are our office rules</em>, <em>which projects have gone stale</em>.</p>
+<p>The product is intentionally low-structure on input and high-structure on output.</p>
+
+<h2 id="target-user">Target user</h2>
+<p>Small to mid-sized teams (5–50 people) doing knowledge work where context compounds: sales, consulting, product, founding teams. The kind of team where one person being out of the loop on a client conversation creates real friction.</p>
+
+<h2 id="core-principles">Core principles</h2>
+<div class="principle"><b>Capture must be frictionless.</b> If recording a thought takes more than five seconds of overhead, people won't do it. Voice memo via Telegram in three taps is the bar.</div>
+<div class="principle"><b>Raw events are immutable.</b> Whatever was said or written goes in as-is and never changes. Derived facts can be re-extracted as models improve; the source of truth is the raw event.</div>
+<div class="principle"><b>Privacy is per-event, not per-team.</b> A team member's end-of-day brain dump might include things they don't want broadcast verbatim. Visibility lives on the event.</div>
+<div class="principle"><b>The agent's answers are auditable.</b> Every fact the agent surfaces links back to the raw event(s) it came from. No black-box summaries.</div>
+<div class="principle"><b>Re-processability is non-negotiable.</b> Extraction prompts and models will improve. Replaying historical raw events through the new pipeline must be cheap and routine.</div>
+
+<h2 id="architecture-overview">Architecture overview</h2>
+
+<h3 id="capture-surfaces">Capture surfaces</h3>
+<ul>
+<li><strong>Web/PWA</strong>: typed notes, uploaded audio, drag-and-drop documents.</li>
+<li><strong>Telegram bot</strong>: voice memos, text, forwarded messages. Personal DMs and team group chats both supported.</li>
+<li><strong>Email ingest</strong>: forward, CC, or BCC to a per-team address. Postmark handles inbound parsing.</li>
+<li><strong>Team document drive</strong>: folders, uploads, deletes, owners, timestamps, version history, and document changes.</li>
+<li><strong>Third-party integrations</strong>: Linear, GitHub, Google Drive, Slack, and CRM-style tools sync activity and changes into the same event stream.</li>
+</ul>
+
+<h3 id="processing-pipeline">Processing pipeline</h3>
+<ol>
+<li><strong>Raw event lands.</strong> Immutable record: source, author, team, timestamp, content reference (text inline, audio in RustFS).</li>
+<li><strong>Transcription</strong> (if audio). OpenRouter <code>/audio/transcriptions</code> for short memos; direct provider fallback for long-form.</li>
+<li><strong>Document processing</strong> (if file/document). Store immutable file version in RustFS, extract text, run PDF/OCR/vision processing when needed, chunk content, summarize meaningful changes, and record document activity on the timeline.</li>
+<li><strong>Extraction.</strong> LLM pulls objects/entities, facts, relationships, tasks, and changes from the transcribed/raw/document text. Output is structured JSON linked back to the raw event or document version.</li>
+<li><strong>Object resolution.</strong> New objects/entities are matched against existing ones ("Apple" vs "Apple Inc" vs "AAPL") with LLM-assisted deduplication and human override.</li>
+<li><strong>Embedding.</strong> Raw text, extracted facts, document chunks, and document change summaries are embedded via OpenRouter (pinned to <code>text-embedding-3-small</code>, 1536 dims unless changed through a re-embed procedure).</li>
+<li><strong>Indexing.</strong> Vectors land in Qdrant with team-scoped payload filters; structured facts, objects, document metadata, and version history land in Postgres.</li>
+</ol>
+
+<h3 id="query-surfaces">Query surfaces</h3>
+<ul>
+<li><strong>Timeline view.</strong> Reverse-chronological feed, filterable by entity, author, date, source.</li>
+<li><strong>Entity pages.</strong> Auto-generated profile views: a client, a project, a person. Pulls every raw event and fact tagged to that entity.</li>
+<li><strong>Document drive.</strong> Foldered team knowledge base with document owners, versions, timestamps, soft deletes, and timeline-linked change history.</li>
+<li><strong>Object boards.</strong> Kanban/table/list views over durable objects: deals, projects, people, tasks, documents, incidents, or team-defined object types.</li>
+<li><strong>Agent chat.</strong> Natural-language queries over the timeline and document base. Tool-use pattern: agent queries Qdrant for semantic context, queries Postgres for structured filters and document versions, synthesizes an answer with event/document citations.</li>
+</ul>
+
+<h3 id="stack">Stack</h3>
+<table>
+<thead><tr><th>Layer</th><th>Choice</th></tr></thead>
+<tbody>
+<tr><td>Repo</td><td>pnpm + Turborepo monorepo (<code>apps/web</code>, <code>apps/worker</code>, <code>packages/*</code>)</td></tr>
+<tr><td>Frontend</td><td>Next.js (TypeScript), PWA, Auth.js</td></tr>
+<tr><td>Backend</td><td>Next.js API routes / server actions, Node.js workers (BullMQ)</td></tr>
+<tr><td>Database</td><td>Postgres (events, facts, objects/entities, tasks, documents, versions, chunks, metadata, team membership)</td></tr>
+<tr><td>Vector store</td><td>Qdrant (shared collection with team-scoped filters)</td></tr>
+<tr><td>Object storage</td><td>RustFS, S3-compatible, AWS SDK</td></tr>
+<tr><td>Job queue</td><td>BullMQ on Redis</td></tr>
+<tr><td>Inference</td><td>OpenRouter (chat, embeddings, transcription) via OpenAI SDK and Vercel AI SDK</td></tr>
+<tr><td>Email ingest</td><td>Postmark inbound</td></tr>
+<tr><td>Messaging</td><td>Telegram Bot API</td></tr>
+<tr><td>Local dev</td><td>Docker Compose — full self-contained stack</td></tr>
+<tr><td>Hosting</td><td>Railway (staging + production environments)</td></tr>
+</tbody>
+</table>
+
+<h3 id="multi-tenancy-model">Multi-tenancy model</h3>
+<ul>
+<li><code>team_id</code> on every row, enforced at the query layer (not application logic).</li>
+<li>Qdrant: one collection with mandatory <code>team_id</code> payload filter on every query. Reviewed if cross-team query patterns prove rare and stronger isolation guarantees become necessary — at which point move to per-team collections.</li>
+<li>Row-level visibility on events (<code>private</code> / <code>team</code> / <code>specific_users</code>) layered on top of team isolation.</li>
+</ul>
+
+<h2 id="data-model">Data model (high level)</h2>
+<p><strong>Five layers, deliberately separated:</strong></p>
+<ol>
+<li><strong>Raw events</strong> — append-only. Source, author, team, timestamp, content. Audio files in RustFS, text inline.</li>
+<li><strong>Documents</strong> — team-owned files in folders, with immutable versions, owners, timestamps, visibility, extracted text/chunks, and original blobs in RustFS.</li>
+<li><strong>Extracted facts</strong> — LLM-derived, regenerable. Each fact links to the raw event(s) or document version(s) it came from and the entities it references.</li>
+<li><strong>Objects/entities</strong> — Apple, John Ternus, "SaaS licensing deal Q2", "Office rules", "Website redesign", "Renew SOC2". Stable IDs, type, status/stage, owner, relationships, deduplication, human override.</li>
+<li><strong>Object changes and tasks</strong> — structured status changes, field edits, tasks, completions, and agent-suggested updates. Manual changes are also timeline events.</li>
+</ol>
+<p>A single raw event ("Met with John from Apple about licensing") produces multiple facts (Tim met John; topic was licensing; date was today), references multiple objects (Tim, John Ternus, Apple, the licensing deal), and may suggest object changes or tasks ("send revised deck by Friday"). All linked, all auditable.</p>
+<p>Similarly, a document upload ("Office Rules.pdf") creates a document object, immutable version, timeline event, extracted chunks, embeddings, and citations. If Otto uploads a new version with a section banning TikTok at the office, the update is searchable as both document content and a timeline change.</p>
+<p>Objects are broader than CRM records. A "deal" is one object type, but so is a project, person, vendor, hiring loop, document, bug, incident, or decision. The product should feel like object relation management: anything durable can have history, relationships, current state, tasks, and a timeline.</p>
+
+<h2 id="telegram-binding-model">Telegram binding model</h2>
+<p><strong>Hybrid: groups bound, DMs have an active team pointer.</strong></p>
+<ul>
+<li><strong>Group chats</strong> are permanently bound to one team via <code>/link &lt;token&gt;</code>. The team's group chat <em>is</em> that team's. Bot must have privacy mode disabled to read non-command messages.</li>
+<li><strong>DMs</strong> have a per-user active-team pointer. Users link multiple teams and switch via <code>/team</code>. <code>/whereami</code> confirms current attribution before sending sensitive content.</li>
+<li><strong>Link tokens</strong> are scoped (<code>personal</code> or <code>group</code>), 15-minute TTL, single-use. Group tokens require team-admin issuance.</li>
+<li><strong>Deep linking</strong> via <code>t.me/YourBot?startgroup=TOKEN</code> makes "add bot to group + bind" a single action.</li>
+</ul>
+
+<h2 id="ai-provider-strategy">AI provider strategy</h2>
+<p>Single inference layer through OpenRouter wherever possible:</p>
+<ul>
+<li><strong>Chat / summarization / extraction</strong>: OpenRouter via Vercel AI SDK. Model flexibility, streaming UI, tool calls.</li>
+<li><strong>Embeddings</strong>: OpenRouter via OpenAI SDK. <strong>Pinned to one model.</strong> Changing the embedding model invalidates the entire index — done only via documented re-embed procedure.</li>
+<li><strong>Transcription</strong>: OpenRouter via OpenAI SDK. Per-request model choice fine; output is text, doesn't affect index integrity.</li>
+<li><strong>Fallback</strong>: direct provider access only for limitations OpenRouter hasn't yet covered (e.g., URL-based audio input for long recordings, if still missing).</li>
+</ul>
+<p>Internal abstraction: <code>llm.chat()</code>, <code>llm.embed()</code>, <code>llm.transcribe()</code> — keeps the rest of the codebase provider-agnostic and makes testing tractable.</p>
+
+<h2 id="infrastructure">Infrastructure</h2>
+
+<h3 id="local-development">Local development</h3>
+<p>Docker Compose brings up the full stack: Postgres, Redis, Qdrant, RustFS (with auto bucket initialization). App and workers run on the host with hot reload via <code>pnpm dev</code>. A <code>--profile app</code> flag in compose runs everything containerized when prod parity matters.</p>
+
+<h3 id="production-staging-on-railway">Production / staging on Railway</h3>
+<p>Two Railway environments per project. Each runs:</p>
+<ul>
+<li><strong><code>web</code></strong> — Next.js app, public domain, Telegram + Postmark webhook receivers.</li>
+<li><strong><code>worker-transcribe</code></strong>, <strong><code>worker-extract</code></strong>, <strong><code>worker-embed</code></strong> — separate Railway services, same Docker image, different start commands. Lets each scale independently and prevents one slow worker type from starving another.</li>
+<li><strong>Postgres</strong> — Railway managed plugin.</li>
+<li><strong>Redis</strong> — Railway managed plugin.</li>
+<li><strong>Qdrant</strong> — custom service from <code>qdrant/qdrant</code> image, persistent volume.</li>
+<li><strong>RustFS</strong> — custom service from <code>rustfs/rustfs</code> image, persistent volume.</li>
+</ul>
+<p>Service-to-service references in Railway connect everything via private networking; no public endpoints for infra services. See <a href="./railway.html">docs/railway.html</a> for the full deployment guide.</p>
+
+<h2 id="out-of-scope">What's out of scope for v1</h2>
+<ul>
+<li><strong>Full collaborative document editing.</strong> The internal drive stores and versions files; it does not replace Google Docs-style live editing.</li>
+<li><strong>System integrations</strong> (Linear, GitHub, Google Drive, Slack, HubSpot/CRM tools). Later, likely through MCPs first where they fit, then native APIs/webhooks for scale.</li>
+<li><strong>Real-time collaboration</strong> on entity pages. Later.</li>
+<li><strong>Mobile native apps.</strong> PWA covers this for v1.</li>
+<li><strong>End-to-end encryption.</strong> At-rest and in-transit encryption only; full E2EE conflicts with server-side LLM processing.</li>
+</ul>
+
+<h2 id="future-roadmap">Future roadmap</h2>
+<ul>
+<li><strong>Knowledge base</strong> on RustFS: contracts, static docs, version history. Drive-like UX.</li>
+<li><strong>Document intelligence</strong>: PDF/OCR/vision processing, version diffs, cited policy answers, and timeline events for document uploads/changes/deletes.</li>
+<li><strong>Object relation management</strong>: boards, object pages, task tracking, manual edits, status histories, and "what changed" views for projects, people, deals, vendors, incidents, documents, and team-defined object types.</li>
+<li><strong>System integrations</strong>: pull events from Linear, GitHub, Google Drive, Slack, HubSpot/CRM tools. Same pipeline, more sources. MCPs are a useful adapter layer for early integrations; native sync/webhooks can replace them for high-volume paths.</li>
+<li><strong>External knowledge sync</strong>: map selected Google Drive folders/files into the internal document model. Start with changes, comments, metadata, titles, selected document summaries, and folder/project membership. Do not vectorize whole third-party repositories by default; embed deltas and curated summaries first, then full chunks for selected scopes.</li>
+<li><strong>Proactive agent</strong>: agent notices a forgotten follow-up and surfaces it. "You said you'd send Ternus a deck by Friday."</li>
+<li><strong>Team digests</strong>: auto-generated end-of-week summaries per team or per project.</li>
+<li><strong>Export and portability</strong>: full team data export. Important for trust.</li>
+</ul>
+
+<h2 id="risks-and-unknowns">Risks and unknowns</h2>
+<ul>
+<li><strong>RustFS maturity.</strong> Young storage layer holding customer voice memos and emails. Versioning enabled day one; nightly <code>rclone sync</code> to secondary store (Backblaze B2 or similar) from Railway cron; periodic restore drills.</li>
+<li><strong>Qdrant scaling.</strong> Vectors live in RAM. Monitor RAM usage from day one; plan to shard or move to managed Qdrant Cloud past a certain team count.</li>
+<li><strong>Entity resolution quality.</strong> "Apple" vs "Apple Inc" vs random Apple in a different context. Will require human-in-the-loop merge UI early.</li>
+<li><strong>LLM cost at scale.</strong> Re-extraction on prompt improvements is expensive. Cap and batch; consider cheaper extraction models for routine re-runs.</li>
+<li><strong>Telegram privacy mode trade-off.</strong> Disabling it means the bot sees every group message. Onboarding must be explicit about this — it's a feature for capture, but users need to know.</li>
+<li><strong>Vector index drift.</strong> Embedding model upgrades over time. Documented re-embed procedure from v1; never silent migration.</li>
+<li><strong>Railway lock-in.</strong> Build files (Dockerfiles, compose) are portable; Railway-specific config is in <code>railway.json</code> files and service env vars. Migration cost to bare cloud is moderate but not zero.</li>
+</ul>
+
+<h2 id="success-criteria">Success criteria</h2>
+<ul>
+<li>A team member can record a voice note and have it queryable via the agent within 60 seconds of pressing send.</li>
+<li>"What did we talk about with X last time" returns a correct, cited answer with &gt;90% accuracy on populated teams.</li>
+<li>"What are our office rules?" returns a cited answer from the right internal document version, including who updated it and when.</li>
+<li>A team can inspect a project/deal/person/object and understand its current state, history, open tasks, and recent changes without manually maintaining a CRM.</li>
+<li>A new team member can be onboarded to a team's timeline and become productive (asking the agent useful questions) within their first day.</li>
+<li>Active teams contribute at least one event per active member per workday — capture friction is low enough that it becomes habitual.</li>
+</ul>
+</main>
+</body>
+</html>
