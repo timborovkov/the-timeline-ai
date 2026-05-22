@@ -82,4 +82,4 @@ docs/
 ```
 
 Phased build plan and current state: [todo.md](todo.md). Product vision:
-[product-brief.md](product-brief.md). Design system: [design.md](design.md).
+[docs/product-brief.html](docs/product-brief.html). Design system: [design.md](design.md).

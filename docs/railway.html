@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Railway deployment</title>
+    <style>
+      :root {
+        --background: hsl(40 14% 97%);
+        --foreground: hsl(240 10% 8%);
+        --card: #fff;
+        --primary: hsl(30 90% 42%);
+        --muted: hsl(240 5% 95%);
+        --muted-foreground: hsl(240 4% 42%);
+        --border: hsl(240 6% 89%);
+        --radius: 0.75rem;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --background: hsl(240 10% 5%);
+          --foreground: hsl(40 14% 95%);
+          --card: hsl(240 8% 8%);
+          --muted: hsl(240 6% 14%);
+          --muted-foreground: hsl(240 5% 65%);
+          --border: hsl(240 6% 18%);
+          --primary: hsl(30 95% 55%);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        font-size: 16px;
+        line-height: 1.6;
+        background: var(--background);
+        color: var(--foreground);
+      }
+      .skip {
+        position: absolute;
+        left: -9999px;
+      }
+      .skip:focus {
+        left: 1rem;
+        top: 1rem;
+        background: var(--card);
+        padding: 0.5rem 1rem;
+        border-radius: var(--radius);
+        z-index: 10;
+      }
+      main {
+        max-width: 46rem;
+        margin: 0 auto;
+        padding: 3rem 1.5rem 6rem;
+      }
+      h1 {
+        font-size: 2rem;
+        line-height: 1.2;
+        margin: 0 0 0.5rem;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        font-size: 1.4rem;
+        margin: 2.5rem 0 0.75rem;
+        letter-spacing: -0.01em;
+        scroll-margin-top: 1rem;
+      }
+      h3 {
+        font-size: 1.1rem;
+        margin: 1.75rem 0 0.5rem;
+        scroll-margin-top: 1rem;
+      }
+      p {
+        margin: 0 0 1rem;
+      }
+      a {
+        color: var(--primary);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      a:hover {
+        text-decoration-thickness: 2px;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+        background: var(--muted);
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+      pre {
+        background: var(--muted);
+        padding: 1rem;
+        border-radius: var(--radius);
+        overflow-x: auto;
+        font-size: 0.875rem;
+        line-height: 1.5;
+      }
+      pre code {
+        background: none;
+        padding: 0;
+        font-size: inherit;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 1rem 0;
+        font-size: 0.92rem;
+        background: var(--card);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.6rem 0.75rem;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th {
+        font-weight: 600;
+        background: var(--muted);
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted-foreground);
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      ul,
+      ol {
+        padding-left: 1.5rem;
+        margin: 0 0 1rem;
+      }
+      li {
+        margin: 0.25rem 0;
+      }
+      li > p {
+        margin: 0.25rem 0;
+      }
+      hr {
+        border: 0;
+        border-top: 1px solid var(--border);
+        margin: 2rem 0;
+      }
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        align-items: center;
+        font-size: 0.85rem;
+        color: var(--muted-foreground);
+        padding: 0.75rem 0;
+        margin: 0 0 1rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .meta .kind {
+        display: inline-block;
+        padding: 0.15rem 0.55rem;
+        background: var(--muted);
+        border-radius: 999px;
+        color: var(--foreground);
+        font-weight: 500;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .tldr {
+        font-size: 1.05rem;
+        color: var(--muted-foreground);
+        margin: 0 0 1.5rem;
+      }
+      nav.toc {
+        background: var(--muted);
+        border-radius: var(--radius);
+        padding: 0.85rem 1.1rem;
+        margin: 0 0 2.25rem;
+        font-size: 0.92rem;
+      }
+      nav.toc strong {
+        display: block;
+        margin-bottom: 0.4rem;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted-foreground);
+        font-weight: 600;
+      }
+      nav.toc ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        columns: 2;
+        column-gap: 1.5rem;
+      }
+      nav.toc li {
+        margin: 0.2rem 0;
+        break-inside: avoid;
+      }
+      nav.toc a {
+        text-decoration: none;
+        color: var(--foreground);
+      }
+      nav.toc a:hover {
+        color: var(--primary);
+      }
+      @media (max-width: 640px) {
+        nav.toc ul {
+          columns: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <main id="main">
+      <h1>Railway deployment</h1>
+      <div class="meta">
+        <span class="kind">Operations</span><span>Last updated 2026-05-22</span>
+      </div>
+      <p class="tldr">
+        How the Timeline's web + worker + plugin + custom services are arranged on Railway, and what
+        every service needs to come up clean.
+      </p>
+
+      <nav class="toc" aria-label="On this page">
+        <strong>On this page</strong>
+        <ul>
+          <li><a href="#services">Services</a></li>
+          <li><a href="#initial-setup">Initial setup</a></li>
+          <li><a href="#environment-variables">Environment variables</a></li>
+          <li><a href="#staging-vs-production">Staging vs production</a></li>
+          <li><a href="#volumes-and-persistence">Volumes and persistence</a></li>
+          <li><a href="#rustfs-bucket-initialization">RustFS bucket init</a></li>
+          <li><a href="#backups">Backups</a></li>
+          <li><a href="#webhooks">Webhooks</a></li>
+          <li><a href="#deploy-flow">Deploy flow</a></li>
+          <li><a href="#cost-considerations">Cost considerations</a></li>
+        </ul>
+      </nav>
+
+      <p>
+        The Timeline runs as a set of Railway services in one project, all built from this monorepo.
+      </p>
+
+      <h2 id="services">Services</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Type</th>
+            <th>Dockerfile</th>
+            <th>Start command</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>web</code></td>
+            <td>App</td>
+            <td><code>apps/web/Dockerfile</code></td>
+            <td><code>node apps/web/server.js</code></td>
+          </tr>
+          <tr>
+            <td><code>worker-transcribe</code></td>
+            <td>App</td>
+            <td><code>apps/worker/Dockerfile</code></td>
+            <td><code>node apps/worker/dist/workers/transcribe.js</code></td>
+          </tr>
+          <tr>
+            <td><code>worker-extract</code></td>
+            <td>App</td>
+            <td><code>apps/worker/Dockerfile</code></td>
+            <td><code>node apps/worker/dist/workers/extract.js</code></td>
+          </tr>
+          <tr>
+            <td><code>worker-embed</code></td>
+            <td>App</td>
+            <td><code>apps/worker/Dockerfile</code></td>
+            <td><code>node apps/worker/dist/workers/embed.js</code></td>
+          </tr>
+          <tr>
+            <td><code>postgres</code></td>
+            <td>Plugin</td>
+            <td>—</td>
+            <td>(Railway-managed)</td>
+          </tr>
+          <tr>
+            <td><code>redis</code></td>
+            <td>Plugin</td>
+            <td>—</td>
+            <td>(Railway-managed)</td>
+          </tr>
+          <tr>
+            <td><code>qdrant</code></td>
+            <td>Custom</td>
+            <td><code>infra/qdrant/Dockerfile</code></td>
+            <td>(image-based, see below)</td>
+          </tr>
+          <tr>
+            <td><code>rustfs</code></td>
+            <td>Custom</td>
+            <td><code>infra/rustfs/Dockerfile</code></td>
+            <td>(image-based, see below)</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        Railway provisions Postgres and Redis as managed plugins (one click). Qdrant and RustFS are
+        deployed as custom services using their official Docker images.
+      </p>
+
+      <h2 id="initial-setup">Initial setup</h2>
+      <ol>
+        <li>Create Railway project linked to this GitHub repo.</li>
+        <li>Add Postgres plugin. Connection string injected as <code>DATABASE_URL</code>.</li>
+        <li>Add Redis plugin. Connection string injected as <code>REDIS_URL</code>.</li>
+        <li>
+          Add Qdrant service: New Service → Docker Image → <code>qdrant/qdrant:v1.12.4</code>.
+          Persistent volume at <code>/qdrant/storage</code>. Set
+          <code>QDRANT__SERVICE__API_KEY</code> to a strong random value.
+        </li>
+        <li>
+          Add RustFS service: New Service → Docker Image → <code>rustfs/rustfs:latest</code>.
+          Persistent volume at <code>/data</code>. Set <code>RUSTFS_ROOT_USER</code> and
+          <code>RUSTFS_ROOT_PASSWORD</code>. Bucket creation: run <code>mc</code> commands once
+          after first deploy (below).
+        </li>
+        <li>
+          Add <code>web</code> service from this repo, pointing at
+          <code>apps/web/railway.json</code>.
+        </li>
+        <li>
+          Add <code>worker-*</code> services from this repo, all pointing at
+          <code>apps/worker/railway.json</code> but with overridden start commands per worker type.
+        </li>
+      </ol>
+
+      <h2 id="environment-variables">Environment variables</h2>
+      <p>
+        Each app service needs these. Railway's service-to-service references (<code
+          >${{ Postgres.DATABASE_URL }}</code
+        >) keep things DRY.
+      </p>
+      <pre><code>DATABASE_URL=${{ Postgres.DATABASE_URL }}
+REDIS_URL=${{ Redis.REDIS_URL }}
+QDRANT_URL=${{ Qdrant.RAILWAY_PRIVATE_DOMAIN }}:6333
+QDRANT_API_KEY=&lt;from Qdrant service vars&gt;
+S3_ENDPOINT=http://${{ RustFS.RAILWAY_PRIVATE_DOMAIN }}:9000
+S3_ACCESS_KEY_ID=&lt;from RustFS service vars&gt;
+S3_SECRET_ACCESS_KEY=&lt;from RustFS service vars&gt;
+S3_REGION=us-east-1
+S3_FORCE_PATH_STYLE=true
+S3_BUCKET_AUDIO=timeline-audio
+S3_BUCKET_ATTACHMENTS=timeline-attachments
+S3_BUCKET_EXPORTS=timeline-exports
+AUTH_SECRET=&lt;32-byte random, generate per env&gt;
+AUTH_URL=https://&lt;your-domain&gt;
+OPENROUTER_API_KEY=&lt;openrouter key&gt;
+EMBEDDING_MODEL=openai/text-embedding-3-small
+EMBEDDING_DIMENSIONS=1536
+TRANSCRIPTION_MODEL=openai/whisper-1
+CHAT_MODEL_DEFAULT=anthropic/claude-sonnet-4.5
+TELEGRAM_BOT_TOKEN=&lt;botfather token&gt;
+TELEGRAM_WEBHOOK_SECRET=&lt;32-byte random&gt;
+POSTMARK_SERVER_TOKEN=&lt;postmark token&gt;
+POSTMARK_WEBHOOK_SECRET=&lt;postmark secret&gt;
+INBOUND_EMAIL_DOMAIN=in.thetimeline.app
+NODE_ENV=production
+LOG_LEVEL=info
+</code></pre>
+      <p>
+        Use Railway's "shared variables" feature at the project level for anything used by 2+
+        services (everything except service-local overrides).
+      </p>
+
+      <h2 id="staging-vs-production">Staging vs production</h2>
+      <p>
+        Two Railway environments on the same project: <code>staging</code> and
+        <code>production</code>. Each gets its own Postgres, Redis, Qdrant, RustFS instances.
+        Domains:
+      </p>
+      <ul>
+        <li><code>staging.thetimeline.app</code> → staging web</li>
+        <li><code>app.thetimeline.app</code> → production web</li>
+      </ul>
+      <p>
+        Branch deploys: <code>main</code> → production, <code>staging</code> → staging. Configure
+        via Railway service settings.
+      </p>
+
+      <h2 id="volumes-and-persistence">Volumes and persistence</h2>
+      <p>
+        Critical: Qdrant and RustFS <strong>must</strong> have persistent volumes attached. Railway
+        services without volumes lose data on every deploy. Set these up at service creation time —
+        adding volumes later is more painful.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Mount path</th>
+            <th>Sized for</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Qdrant</td>
+            <td><code>/qdrant/storage</code></td>
+            <td>Start 10GB. Grows with vector count.</td>
+          </tr>
+          <tr>
+            <td>RustFS</td>
+            <td><code>/data</code></td>
+            <td>Start 50GB. Grows with audio/attachments.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Postgres and Redis volumes are managed by Railway plugins automatically.</p>
+
+      <h2 id="rustfs-bucket-initialization">RustFS bucket initialization</h2>
+      <p>After first RustFS deploy, create buckets. Run once per environment:</p>
+      <pre><code>mc alias set timeline-prod http://&lt;rustfs-host&gt;:9000 &lt;user&gt; &lt;password&gt;
+mc mb timeline-prod/timeline-audio
+mc mb timeline-prod/timeline-attachments
+mc mb timeline-prod/timeline-exports
+mc version enable timeline-prod/timeline-audio
+mc version enable timeline-prod/timeline-attachments
+</code></pre>
+      <p>
+        Versioning on audio and attachments is non-negotiable. Source-of-truth data; never overwrite
+        blindly.
+      </p>
+
+      <h2 id="backups">Backups</h2>
+      <p>
+        Railway Postgres plugin includes automated daily backups. Confirm retention period in plugin
+        settings.
+      </p>
+      <p>
+        RustFS has no built-in backup. Set up a scheduled service (Railway cron) running nightly:
+      </p>
+      <pre><code>rclone sync s3:timeline-audio backblaze-b2:timeline-backup-audio
+rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
+</code></pre>
+      <p>Backblaze B2 or any cheap S3-compatible store works. Test restores quarterly.</p>
+      <p>
+        Qdrant: nightly snapshot via Qdrant's snapshot API, uploaded to RustFS or B2. Vector data
+        can technically be regenerated by re-embedding raw events, but a snapshot avoids that cost
+        when the only failure is Qdrant data loss.
+      </p>
+
+      <h2 id="webhooks">Webhooks</h2>
+      <p>Telegram and Postmark webhooks point at the <code>web</code> service public URL:</p>
+      <ul>
+        <li>Telegram: <code>https://app.thetimeline.app/api/telegram/webhook</code></li>
+        <li>Postmark: <code>https://app.thetimeline.app/api/email/inbound</code></li>
+      </ul>
+      <p>
+        The Telegram webhook is registered automatically by the <code>web</code> service on startup.
+        The Next.js instrumentation hook at <code>apps/web/src/instrumentation.ts</code> runs once
+        per server process, reads <code>TELEGRAM_BOT_TOKEN</code>,
+        <code>TELEGRAM_WEBHOOK_SECRET</code>, and <code>AUTH_URL</code>, then always calls
+        <code>setWebhook</code> (idempotent; required to push a rotated secret since
+        <code>getWebhookInfo</code> doesn't expose Telegram's stored secret) and verifies via
+        <code>getWebhookInfo</code>. Production-only (<code>NODE_ENV=production</code>);
+        fire-and-forget so it never blocks readiness. Missing env vars → it logs a skip line and
+        continues.
+      </p>
+      <p>To register manually (e.g. from a laptop pointed at staging):</p>
+      <pre><code>curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+  -d "url=https://app.thetimeline.app/api/telegram/webhook" \
+  -d "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
+  -d "allowed_updates=[\"message\",\"edited_message\",\"callback_query\"]"
+</code></pre>
+      <p>
+        The <code>web</code> service verifies the
+        <code>X-Telegram-Bot-Api-Secret-Token</code> header on every request and rejects anything
+        that doesn't match.
+      </p>
+
+      <h2 id="deploy-flow">Deploy flow</h2>
+      <ol>
+        <li>Push to <code>main</code> (production) or <code>staging</code> branch.</li>
+        <li>Railway builds each service in parallel using its Dockerfile.</li>
+        <li>
+          Migrations: run as a release-phase pre-deploy command on the <code>web</code> service.
+          Already wired in <code>apps/web/railway.json</code>:
+          <pre><code>"preDeployCommand": ["node packages/db/dist/migrate.js"]
+</code></pre>
+          The script (<code>packages/db/src/migrate.ts</code>) is built by turbo as a dep of the web
+          build, and the entire <code>@timeline/db</code> package — including its
+          <code>drizzle/*.sql</code> files and a self-contained <code>node_modules</code> with
+          <code>postgres</code> + <code>drizzle-orm</code> — is copied into the runner image by the
+          <code>db-deployer</code> stage in <code>apps/web/Dockerfile</code>. The command applies
+          any new SQL files against <code>DATABASE_URL</code> and exits. Failure blocks the deploy.
+          <p>
+            Worker services (<code>worker-transcribe</code>, <code>worker-extract</code>,
+            <code>worker-embed</code>) deploy in parallel with <code>web</code> and don't run
+            migrations themselves. They call <code>waitForMigrations()</code> from
+            <code>@timeline/db</code> at startup, which polls
+            <code>drizzle.__drizzle_migrations</code> until the row count matches the journal
+            bundled with the worker image. Default timeout 5 minutes. This avoids crash-looping on
+            every deploy that ships schema changes.
+          </p>
+          <p>
+            <strong>SSL note.</strong> Inside a Railway project, <code>DATABASE_URL</code> resolves
+            to the Postgres plugin's internal hostname and uses plain TCP. If you ever point this at
+            the <em>external</em> Postgres proxy (e.g., to run <code>pnpm db:migrate</code> from
+            your laptop against staging), append <code>?sslmode=require</code> to the URL —
+            <code>postgres-js</code> follows the connection string, not an out-of-band env var.
+          </p>
+        </li>
+        <li>
+          Services restart with new image. Healthcheck on
+          <code>web</code> (<code>/api/health</code>) must pass before traffic shifts.
+        </li>
+        <li>
+          Workers restart with same image — they share the codebase, just different entry points.
+        </li>
+      </ol>
+
+      <h2 id="cost-considerations">Cost considerations</h2>
+      <p>
+        Railway charges per resource (CPU, RAM, network egress, volume size). At small scale this
+        stack is roughly:
+      </p>
+      <ul>
+        <li><code>web</code> service: small instance, mostly idle outside webhook spikes</li>
+        <li>3 workers: small each, most cost is during processing bursts</li>
+        <li>Postgres: small instance + storage</li>
+        <li>Redis: tiny</li>
+        <li>Qdrant: moderate RAM (vectors live in memory)</li>
+        <li>RustFS: minimal compute, most cost is volume size</li>
+      </ul>
+      <p>
+        Watch volume sizing — Railway storage is more expensive than the compute. For prod beyond a
+        few teams, consider moving RustFS data to a cheaper external S3-compatible store (Backblaze
+        B2, Cloudflare R2) and using RustFS only as a self-host fallback or dev convenience.
+      </p>
+    </main>
+  </body>
+</html>

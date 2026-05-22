@@ -13,13 +13,13 @@ and structured logging are in place.
 
 ## Read first
 
-- [`product-brief.md`](./product-brief.md) — what we're building and why.
+- [`docs/product-brief.html`](./docs/product-brief.html) — what we're building and why.
 - [`todo.md`](./todo.md) — ordered build plan, phased.
 - [`design.md`](./design.md) — design system, the source of truth for UI.
 
 ## Local development
 
-See [`docs/setup/local.md`](./docs/setup/local.md).
+See [`docs/setup/local.html`](./docs/setup/local.html).
 
 Short version:
 
@@ -39,12 +39,12 @@ Open <http://localhost:3000>.
 These live behind their own walkthroughs because every account has its own
 dashboard quirks:
 
-- [`docs/setup/telegram.md`](./docs/setup/telegram.md) — Telegram bot (Phase 2+).
-- [`docs/setup/openrouter.md`](./docs/setup/openrouter.md) — OpenRouter API
+- [`docs/setup/telegram.html`](./docs/setup/telegram.html) — Telegram bot (Phase 2+).
+- [`docs/setup/openrouter.html`](./docs/setup/openrouter.html) — OpenRouter API
   (Phase 3+).
-- [`docs/setup/postmark.md`](./docs/setup/postmark.md) — inbound email (Phase 7).
-- [`docs/setup/sentry.md`](./docs/setup/sentry.md) — error tracking.
-- [`docs/setup/railway.md`](./docs/setup/railway.md) — staging + production
+- [`docs/setup/postmark.html`](./docs/setup/postmark.html) — inbound email (Phase 7).
+- [`docs/setup/sentry.html`](./docs/setup/sentry.html) — error tracking.
+- [`docs/setup/railway.html`](./docs/setup/railway.html) — staging + production
   deploys.
 
 All env vars are documented inline in [`.env.example`](./.env.example).

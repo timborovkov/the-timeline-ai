@@ -20,8 +20,8 @@ A "handoff" means any of:
 
 `/document-release` audits every `*.md` in the repo against the diff:
 [README.md](README.md), [design.md](design.md), [todo.md](todo.md),
-[product-brief.md](product-brief.md), [RAILWAY.md](RAILWAY.md), and
-[`docs/setup/*`](docs/setup/). It catches stale facts, broken cross-references,
+[docs/product-brief.html](docs/product-brief.html), [docs/railway.html](docs/railway.html),
+and [`docs/setup/*`](docs/setup/). It catches stale facts, broken cross-references,
 missing entries in lists/tables, and architecture diagram drift. **Do not skip
 it.** A redesign that doesn't update [design.md](design.md), a new env var that
 doesn't show up in setup docs, or a finished TODO item that's still in the

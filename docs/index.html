@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>The Timeline — Docs</title>
+    <style>
+      :root {
+        --background: hsl(40 14% 97%);
+        --foreground: hsl(240 10% 8%);
+        --card: #fff;
+        --primary: hsl(30 90% 42%);
+        --muted: hsl(240 5% 95%);
+        --muted-foreground: hsl(240 4% 42%);
+        --border: hsl(240 6% 89%);
+        --radius: 0.75rem;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --background: hsl(240 10% 5%);
+          --foreground: hsl(40 14% 95%);
+          --card: hsl(240 8% 8%);
+          --muted: hsl(240 6% 14%);
+          --muted-foreground: hsl(240 5% 65%);
+          --border: hsl(240 6% 18%);
+          --primary: hsl(30 95% 55%);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        font-size: 16px;
+        line-height: 1.6;
+        background: var(--background);
+        color: var(--foreground);
+      }
+      .skip {
+        position: absolute;
+        left: -9999px;
+      }
+      .skip:focus {
+        left: 1rem;
+        top: 1rem;
+        background: var(--card);
+        padding: 0.5rem 1rem;
+        border-radius: var(--radius);
+        z-index: 10;
+      }
+      main {
+        max-width: 46rem;
+        margin: 0 auto;
+        padding: 3rem 1.5rem 6rem;
+      }
+      h1 {
+        font-size: 2.25rem;
+        line-height: 1.15;
+        margin: 0 0 0.5rem;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        font-size: 1rem;
+        margin: 2.25rem 0 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted-foreground);
+        font-weight: 600;
+      }
+      .tagline {
+        font-size: 1.1rem;
+        color: var(--muted-foreground);
+        margin: 0 0 1.5rem;
+      }
+      a {
+        color: var(--primary);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      a:hover {
+        text-decoration-thickness: 2px;
+      }
+      .intro a {
+        color: var(--foreground);
+      }
+      .group {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+      }
+      .group li {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 0.75rem 1rem;
+        transition: border-color 0.15s;
+      }
+      .group li:hover {
+        border-color: var(--primary);
+      }
+      .group a {
+        text-decoration: none;
+        color: var(--foreground);
+        font-weight: 500;
+        display: block;
+      }
+      .group a:hover {
+        color: var(--primary);
+      }
+      .group .desc {
+        display: block;
+        color: var(--muted-foreground);
+        font-size: 0.92rem;
+        font-weight: 400;
+        margin-top: 0.15rem;
+      }
+      footer {
+        margin-top: 3rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--border);
+        font-size: 0.85rem;
+        color: var(--muted-foreground);
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <main id="main">
+      <h1>The Timeline — Docs</h1>
+      <p class="tagline">Multi-tenant team memory. Capture as it happens, query with citations.</p>
+      <p class="intro">
+        Start with the <a href="../README.md">README</a> if you're new. Everything else lives below,
+        grouped by purpose.
+      </p>
+
+      <!-- docs:index:start -->
+      <h2>Product</h2>
+      <ul class="group">
+        <li>
+          <a href="./product-brief.html"
+            >Product brief<span class="desc"
+              >What we're building, why, and the architecture at a glance.</span
+            ></a
+          >
+        </li>
+      </ul>
+
+      <h2>Operations</h2>
+      <ul class="group">
+        <li>
+          <a href="./railway.html"
+            >Railway deployment<span class="desc"
+              >Service topology, env vars, volumes, deploy flow, backups.</span
+            ></a
+          >
+        </li>
+      </ul>
+
+      <h2>Setup</h2>
+      <ul class="group">
+        <li>
+          <a href="./setup/local.html"
+            >Local development<span class="desc"
+              >Docker Compose stack + pnpm dev for the app and workers.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="./setup/openrouter.html"
+            >OpenRouter<span class="desc"
+              >Chat, embeddings, transcription. Model pins and re-embed procedure.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="./setup/postmark.html"
+            >Postmark inbound email<span class="desc"
+              >Per-team inbound address, webhook auth, ingest pipeline.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="./setup/railway.html"
+            >Railway project setup<span class="desc"
+              >Project + environments + plugins + custom services.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="./setup/sentry.html"
+            >Sentry<span class="desc">Optional error tracking. Env vars accepted today.</span></a
+          >
+        </li>
+        <li>
+          <a href="./setup/telegram.html"
+            >Telegram bot<span class="desc"
+              >BotFather, privacy mode, webhook secret, end-to-end test.</span
+            ></a
+          >
+        </li>
+      </ul>
+      <!-- docs:index:end -->
+
+      <footer>
+        Design system source of truth: <a href="../design.md">design.md</a>. Build plan:
+        <a href="../todo.md">todo.md</a>.
+      </footer>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>OpenRouter setup</title>
+    <style>
+      :root {
+        --background: hsl(40 14% 97%);
+        --foreground: hsl(240 10% 8%);
+        --card: #fff;
+        --primary: hsl(30 90% 42%);
+        --muted: hsl(240 5% 95%);
+        --muted-foreground: hsl(240 4% 42%);
+        --border: hsl(240 6% 89%);
+        --radius: 0.75rem;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --background: hsl(240 10% 5%);
+          --foreground: hsl(40 14% 95%);
+          --card: hsl(240 8% 8%);
+          --muted: hsl(240 6% 14%);
+          --muted-foreground: hsl(240 5% 65%);
+          --border: hsl(240 6% 18%);
+          --primary: hsl(30 95% 55%);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        font-size: 16px;
+        line-height: 1.6;
+        background: var(--background);
+        color: var(--foreground);
+      }
+      .skip {
+        position: absolute;
+        left: -9999px;
+      }
+      .skip:focus {
+        left: 1rem;
+        top: 1rem;
+        background: var(--card);
+        padding: 0.5rem 1rem;
+        border-radius: var(--radius);
+        z-index: 10;
+      }
+      main {
+        max-width: 46rem;
+        margin: 0 auto;
+        padding: 3rem 1.5rem 6rem;
+      }
+      h1 {
+        font-size: 2rem;
+        line-height: 1.2;
+        margin: 0 0 0.5rem;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        font-size: 1.4rem;
+        margin: 2.5rem 0 0.75rem;
+        letter-spacing: -0.01em;
+        scroll-margin-top: 1rem;
+      }
+      h3 {
+        font-size: 1.1rem;
+        margin: 1.75rem 0 0.5rem;
+        scroll-margin-top: 1rem;
+      }
+      p {
+        margin: 0 0 1rem;
+      }
+      a {
+        color: var(--primary);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      em {
+        font-style: italic;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+        background: var(--muted);
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+      pre {
+        background: var(--muted);
+        padding: 1rem;
+        border-radius: var(--radius);
+        overflow-x: auto;
+        font-size: 0.875rem;
+        line-height: 1.5;
+      }
+      pre code {
+        background: none;
+        padding: 0;
+        font-size: inherit;
+      }
+      ul,
+      ol {
+        padding-left: 1.5rem;
+        margin: 0 0 1rem;
+      }
+      li {
+        margin: 0.25rem 0;
+      }
+      blockquote {
+        border-left: 3px solid var(--primary);
+        background: var(--muted);
+        padding: 0.5rem 1rem;
+        color: var(--muted-foreground);
+        margin: 1rem 0;
+        border-radius: 0 var(--radius) var(--radius) 0;
+      }
+      blockquote p {
+        margin: 0;
+      }
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        align-items: center;
+        font-size: 0.85rem;
+        color: var(--muted-foreground);
+        padding: 0.75rem 0;
+        margin: 0 0 1rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .meta .kind {
+        display: inline-block;
+        padding: 0.15rem 0.55rem;
+        background: var(--muted);
+        border-radius: 999px;
+        color: var(--foreground);
+        font-weight: 500;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .tldr {
+        font-size: 1.05rem;
+        color: var(--muted-foreground);
+        margin: 0 0 1.5rem;
+      }
+      nav.toc {
+        background: var(--muted);
+        border-radius: var(--radius);
+        padding: 0.85rem 1.1rem;
+        margin: 0 0 2.25rem;
+        font-size: 0.92rem;
+      }
+      nav.toc strong {
+        display: block;
+        margin-bottom: 0.4rem;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted-foreground);
+        font-weight: 600;
+      }
+      nav.toc ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        columns: 2;
+        column-gap: 1.5rem;
+      }
+      nav.toc li {
+        margin: 0.2rem 0;
+        break-inside: avoid;
+      }
+      nav.toc a {
+        text-decoration: none;
+        color: var(--foreground);
+      }
+      nav.toc a:hover {
+        color: var(--primary);
+      }
+      @media (max-width: 640px) {
+        nav.toc ul {
+          columns: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <main id="main">
+      <h1>OpenRouter setup</h1>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-22</span></div>
+      <blockquote>
+        <p>Used from <strong>Phase 3</strong> (transcription) and onwards.</p>
+      </blockquote>
+      <p class="tldr">
+        OpenRouter is the single provider for chat, embeddings, and transcription. The internal LLM
+        wrapper talks to it via the OpenAI SDK shape.
+      </p>
+
+      <nav class="toc" aria-label="On this page">
+        <strong>On this page</strong>
+        <ul>
+          <li><a href="#account">1. Account + API key</a></li>
+          <li><a href="#model-pins">2. Model pins</a></li>
+          <li><a href="#smoke-test">3. Quick smoke test</a></li>
+          <li><a href="#phase-3">Phase 3 — transcription</a></li>
+          <li><a href="#phase-4">Phase 4 — extraction + entities</a></li>
+          <li><a href="#phase-5">Phase 5 — embeddings + search</a></li>
+          <li><a href="#phase-6">Phase 6 — agent chat</a></li>
+          <li><a href="#reembed">Re-embed procedure</a></li>
+        </ul>
+      </nav>
+
+      <h2 id="account">1. Account + API key</h2>
+      <ol>
+        <li>Sign up at <a href="https://openrouter.ai">https://openrouter.ai</a>.</li>
+        <li>Add credits (test with $5).</li>
+        <li>Create an API key (Settings → Keys).</li>
+      </ol>
+      <p>Set in <code>.env</code>:</p>
+      <pre><code>OPENROUTER_API_KEY=sk-or-v1-...
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+</code></pre>
+
+      <h2 id="model-pins">2. Model pins</h2>
+      <p>
+        The embedding model is pinned. Changing it invalidates the entire vector index — re-embed
+        before changing.
+      </p>
+      <pre><code>EMBEDDING_MODEL=openai/text-embedding-3-small
+EMBEDDING_DIMENSIONS=1536
+TRANSCRIPTION_MODEL=openai/whisper-1
+CHAT_MODEL_DEFAULT=anthropic/claude-3.7-sonnet
+# Phase 4: cheap model used by the extract worker. Falls back to
+# CHAT_MODEL_DEFAULT when unset.
+EXTRACTION_MODEL=openai/gpt-4o-mini
+# Phase 6: model used by /api/chat. Lets us point chat at a stronger
+# model than extraction without changing extraction behavior. Falls back
+# to CHAT_MODEL_DEFAULT when unset.
+AGENT_MODEL=anthropic/claude-3.7-sonnet
+</code></pre>
+
+      <h2 id="smoke-test">3. Quick smoke test</h2>
+      <pre><code>curl https://openrouter.ai/api/v1/chat/completions \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}'
+</code></pre>
+
+      <h2 id="phase-3">Phase 3 verification (transcription)</h2>
+      <p>After setting <code>OPENROUTER_API_KEY</code> and starting <code>pnpm dev</code>:</p>
+      <ol>
+        <li>Record a ~5s voice memo via the web recorder on <code>/app/timeline</code>.</li>
+        <li>
+          The row appears immediately with an audio player and a "Transcribing…" placeholder. The
+          BullMQ <code>transcribe</code> worker pulls the bytes from RustFS, POSTs to
+          <code>${OPENROUTER_BASE_URL}/audio/transcriptions</code> with the pinned
+          <code>TRANSCRIPTION_MODEL</code>, and writes the result back onto
+          <code>content_text</code>.
+        </li>
+        <li>Refresh — the transcript appears.</li>
+      </ol>
+      <p>
+        Without the key set, voice notes still record and play back; the transcribe job retries
+        until the key is available (BullMQ default exponential backoff, 3 attempts).
+      </p>
+
+      <h2 id="phase-4">Phase 4 verification (extraction + entities)</h2>
+      <p>
+        After <code>OPENROUTER_API_KEY</code> and <code>REDIS_URL</code> are set, with
+        <code>pnpm dev</code> (web) and the worker process running:
+      </p>
+      <ol>
+        <li>
+          Post a text note on <code>/app/timeline</code> such as
+          <code>Met with John Ternus at Apple about SaaS licensing.</code>
+        </li>
+        <li>
+          Within a few seconds the extract worker should write rows into the new
+          <code>facts</code> and <code>entities</code> tables.
+        </li>
+        <li>
+          Visit <code>/app/entities</code> — <code>John Ternus</code> (person),
+          <code>Apple</code> (company), and <code>SaaS licensing</code> (topic) appear, grouped by
+          type.
+        </li>
+        <li>
+          Click into any of them to see the aggregated source events, the confidence-scored fact
+          statements, and the co-occurring entity sidebar.
+        </li>
+      </ol>
+      <p>
+        Without <code>OPENROUTER_API_KEY</code>, the text and voice notes still land on the
+        timeline. The extract worker fails (no key), and after retries are exhausted the raw event
+        row gets <code>source_metadata.extraction_failed_at</code> /
+        <code>extraction_error</code> set. Provide the key and run the re-extraction script below to
+        backfill.
+      </p>
+
+      <h3 id="entity-resolution-scope">Entity resolution scope (Phase 4)</h3>
+      <p>
+        Resolution is deterministic name + alias matching within a team. Two limitations to know
+        about:
+      </p>
+      <ul>
+        <li>
+          <strong>No fuzzy / embedding-based dedup.</strong> "Apple" and "Apple Inc" land as two
+          rows unless one already lists the other as an alias. Use the admin merge UI on
+          <code>/app/entities/[id]</code> to fold one into the other; aliases combine and all
+          <code>fact_entities</code> references rewrite atomically.
+        </li>
+        <li>
+          <strong>Same name, different team = different entity.</strong> Entity rows are team-scoped
+          by design. Cross-team resolution is intentionally out of scope.
+        </li>
+      </ul>
+      <p>
+        Phase 5+ may add embedding similarity once vectors exist; until then, merges are manual.
+      </p>
+
+      <h3 id="reextraction-procedure">
+        Re-extraction procedure (when changing the extraction prompt or model)
+      </h3>
+      <p>
+        The <code>model_version</code> written on each fact combines
+        <code>EXTRACTION_MODEL</code> with an internal code-revision tag. When either changes,
+        replay raw events:
+      </p>
+      <ol>
+        <li>Update <code>EXTRACTION_MODEL</code> in env if needed.</li>
+        <li>
+          Run for one team:
+          <pre><code>pnpm --filter @timeline/worker reextract -- --team=&lt;teamId&gt;
+</code></pre>
+        </li>
+        <li>
+          The script walks every raw event for the team, skips rows that already have facts at the
+          current <code>model_version</code>, and enqueues an <code>extract</code> job for the rest.
+          The worker is independently idempotent — re-running the script is safe.
+        </li>
+      </ol>
+      <p>
+        This is intentionally <strong>manual</strong>: extraction is the first place we burn tokens
+        at scale, and silent auto-replay would surprise the bill.
+      </p>
+
+      <h2 id="phase-5">Phase 5 verification (embeddings + semantic search)</h2>
+      <p>
+        After <code>OPENROUTER_API_KEY</code>, <code>REDIS_URL</code>, and
+        <code>QDRANT_URL</code> are set, with the docker stack (<code>docker compose up -d</code>)
+        running and both <code>pnpm dev</code> (web) and the worker process started:
+      </p>
+      <ol>
+        <li>
+          Post 2–3 text notes on <code>/app/timeline</code>, e.g.
+          <code>Met with John Ternus at Apple about SaaS licensing.</code> and
+          <code>Caught up with Apple folks on the agreement structure.</code>
+        </li>
+        <li>
+          The extract worker writes facts; the embed worker writes one Qdrant point per fact plus
+          one per raw event. Confirm via:
+          <pre><code>curl -s "$QDRANT_URL/collections/events" | jq '.result.points_count'
+</code></pre>
+        </li>
+        <li>
+          Use the search bar on <code>/app/timeline</code> and query
+          <code>licensing discussion with Apple</code>. The events above rank in the top results
+          even though one does not contain the word "licensing".
+        </li>
+        <li>
+          Mark a note as <code>private</code> in the capture form before posting. The embed worker
+          stamps <code>embedding_skipped_reason=visibility=private</code> on
+          <code>source_metadata</code> and writes nothing to Qdrant. Teammates running the same
+          query do not see the private row in their search results — the Qdrant wrapper's filter and
+          <code>withTeam</code>'s second-line check both drop it.
+        </li>
+      </ol>
+      <p>
+        Without <code>OPENROUTER_API_KEY</code> or <code>QDRANT_URL</code>,
+        <code>/api/search</code> returns 503 and the search bar shows "Search is not configured for
+        this environment". Notes still capture; embeddings are deferred until config + reembed.
+      </p>
+
+      <h2 id="phase-6">Phase 6 verification (agent chat)</h2>
+      <p>
+        Phase 6 adds <code>/app/chat</code> — a streaming, tool-using agent over the Phase 5
+        timeline. Every claim cites the raw event via inline <code>[ev:&lt;uuid&gt;]</code> chips.
+        The chat endpoint requires both <code>OPENROUTER_API_KEY</code> (for the model) and
+        <code>QDRANT_URL</code> (the agent's <code>search_timeline</code> tool); without either,
+        <code>/api/chat</code> returns 503 <code>chat_unconfigured</code> and the UI surfaces a real
+        error instead of looping the agent against a broken backend.
+      </p>
+      <p>
+        Optional env knob: <code>AGENT_MODEL</code> lets you point chat at a stronger model than
+        extraction without changing extraction behavior. Resolution chain:
+        <code>AGENT_MODEL ?? CHAT_MODEL_DEFAULT ?? openai/gpt-4o-mini</code>.
+      </p>
+      <p>
+        After Phase 5 verification works end-to-end (events embedded, search bar returns hits), open
+        <code>/app/chat</code> and run the three brief queries:
+      </p>
+      <ol>
+        <li>
+          <strong>"What did the team work on yesterday?"</strong> — exercises
+          <code>list_events</code> with a date filter. Expect a bulleted list where every bullet
+          ends with <code>[ev:&lt;uuid&gt;]</code>. Clicking a chip jumps to that event in the
+          timeline via <code>#ev-&lt;uuid&gt;</code> anchor.
+        </li>
+        <li>
+          <strong>"What was discussed with John Ternus last time?"</strong> — exercises
+          <code>get_entity</code> + <code>search_timeline</code>. The chat pane shows two visible
+          tool-step chips ("Looked up entity 'John Ternus'", "Searched timeline for …") above the
+          assistant's reply.
+        </li>
+        <li>
+          <strong>"What's outstanding for Acme?"</strong> — the agent infers from event content;
+          every inference still carries a citation.
+        </li>
+      </ol>
+      <p>Adversarial checks worth running once:</p>
+      <ul>
+        <li>
+          Paste a UUID known to belong to another team. The agent calls <code>get_event</code>, the
+          tool returns <code>{ found: false }</code>, and the assistant says "I don't have an event
+          with that id" — never the cross-team row.
+        </li>
+        <li>
+          Ask about a team that isn't yours. The agent answers from your active team only; switching
+          teams via the team switcher swaps the agent's context.
+        </li>
+      </ul>
+      <p>
+        The agent is capped at 5 tool turns per turn. Tool errors are caught inside
+        <code>execute</code> and returned as <code>{ error: 'tool_failed' }</code> so the stream
+        stays alive — the agent recovers or reports failure with a citation-aware message rather
+        than crashing the response.
+      </p>
+
+      <h2 id="reembed">
+        Re-embed procedure (when changing <code>EMBEDDING_MODEL</code> or
+        <code>EMBEDDING_DIMENSIONS</code>)
+      </h2>
+      <p>
+        The embedding model is pinned. Changing it invalidates every vector in the existing
+        collection — semantic search would silently degrade as old and new embeddings drift apart in
+        vector space. The cutover below keeps the old collection alive (read-only) while the new one
+        is populated, then flips reads atomically via the <code>QDRANT_COLLECTION</code> env var.
+      </p>
+      <ol>
+        <li>
+          <strong>Update env</strong> in <code>.env</code> (and staging/production):
+          <pre><code>EMBEDDING_MODEL=openai/text-embedding-3-large
+EMBEDDING_DIMENSIONS=3072
+</code></pre>
+          Leave <code>QDRANT_COLLECTION=events</code> unchanged — the worker keeps writing to the
+          current collection until step 5.
+        </li>
+        <li>
+          <strong>Create the new collection</strong> with the new vector size. This step is
+          <strong>mandatory</strong> — the embed worker uses <code>requireExisting=true</code> when
+          a <code>targetCollection</code> is on the job, so a stale worker process started before
+          the env change cannot silently auto-create the new collection at the OLD dimension and
+          corrupt the cutover. The worker errors loudly if the collection is missing.
+          <pre><code>curl -s -X PUT "$QDRANT_URL/collections/events_v2" \
+  -H "content-type: application/json" \
+  -H "api-key: $QDRANT_API_KEY" \
+  -d '{"vectors":{"size":3072,"distance":"Cosine"}}'
+</code></pre>
+        </li>
+        <li>
+          <strong>Re-embed each team</strong> into the new collection. The worker reads
+          <code>targetCollection</code> from the job payload and writes there instead of
+          <code>QDRANT_COLLECTION</code>. The old collection is untouched.
+          <pre><code>pnpm --filter @timeline/worker reembed -- \
+  --team=&lt;teamId&gt; \
+  --target-collection=events_v2
+</code></pre>
+          Re-running is idempotent — point ids derived from
+          <code>(scope, sourceId, embedding_model)</code> are deterministic, so the same row maps to
+          the same point id and Qdrant upserts naturally.
+        </li>
+        <li>
+          <strong>Verify</strong> spot-checks against the new collection by overriding
+          <code>QDRANT_COLLECTION</code> in a single shell before flipping production:
+          <pre><code>QDRANT_COLLECTION=events_v2 pnpm --filter @timeline/web dev
+</code></pre>
+        </li>
+        <li>
+          <strong>Cut over</strong> by setting <code>QDRANT_COLLECTION=events_v2</code> everywhere
+          and restarting web + workers. The flip is atomic from the reader's perspective — the next
+          request hits the new collection.
+        </li>
+        <li>
+          <strong>Drop the old collection</strong> after a grace period (a day is plenty; rollback
+          is just flipping <code>QDRANT_COLLECTION</code> back):
+          <pre><code>curl -s -X DELETE "$QDRANT_URL/collections/events" \
+  -H "api-key: $QDRANT_API_KEY"
+</code></pre>
+        </li>
+      </ol>
+      <p>
+        This procedure is the <strong>only</strong> safe path. Never edit embeddings in place —
+        embedding-model drift silently corrupts semantic search, and "looks ok in prod" is not a
+        reliable signal until queries start ranking the wrong things.
+      </p>
+    </main>
+  </body>
+</html>
