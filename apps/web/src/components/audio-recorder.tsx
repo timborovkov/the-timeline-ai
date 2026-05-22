@@ -51,13 +51,26 @@ export function AudioRecorder({ onClipChange, disabled = false }: AudioRecorderP
 
   // Hard cleanup on unmount: stop the mic and any in-flight recorder so the
   // browser indicator clears even if the user navigates away mid-recording.
+  //
+  // Null `onstop` before stopping the recorder. MediaRecorder.stop() queues
+  // the `stop` event asynchronously, so if we leave the handler attached, it
+  // fires after the component has already unmounted (e.g. parent bumps a
+  // `key` after a text-only Post while recording was still in progress). The
+  // handler's closure still holds the parent's `onClipChange`, so it would
+  // hand the partial blob to the parent — a "ghost clip" with no UI to see
+  // or discard it, that the next Post would silently upload. We tear down
+  // the stream tracks directly below instead of relying on `onstop`.
   useEffect(() => {
     return () => {
-      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
-        try {
-          recorderRef.current.stop();
-        } catch {
-          // already stopped or browser threw — fall through to track stop
+      const recorder = recorderRef.current;
+      if (recorder) {
+        recorder.onstop = null;
+        if (recorder.state !== 'inactive') {
+          try {
+            recorder.stop();
+          } catch {
+            // already stopped or browser threw — fall through to track stop
+          }
         }
       }
       streamRef.current?.getTracks().forEach((t) => {
