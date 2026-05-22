@@ -172,12 +172,16 @@ export async function removeRelationshipAction(input: unknown): Promise<ActionSt
   if (!parsed.success) return { error: 'Invalid id' };
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
-  await objects.removeRelationship(db, r.scope, parsed.data.id, {
-    kind: 'user',
-    userId: r.userId,
-  });
-  revalidatePath(`/app/objects/${parsed.data.entityId}`);
-  return { ok: true };
+  try {
+    await objects.removeRelationship(db, r.scope, parsed.data.id, {
+      kind: 'user',
+      userId: r.userId,
+    });
+    revalidatePath(`/app/objects/${parsed.data.entityId}`);
+    return { ok: true };
+  } catch (err) {
+    return { error: friendlyError(err, 'Failed to unlink') };
+  }
 }
 
 // ---------- Notes ----------
