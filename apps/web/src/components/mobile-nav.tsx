@@ -101,6 +101,14 @@ export function MobileNav({ active, memberships }: Props) {
                   <Link
                     key={item.href}
                     href={item.href}
+                    // Dismiss directly on click — the pathname effect only
+                    // fires when the route actually changes, so tapping
+                    // the already-active item (e.g. Timeline from
+                    // /app/timeline) would otherwise leave the sheet open
+                    // and the body scroll locked.
+                    onClick={() => {
+                      setOpen(false);
+                    }}
                     className={cn(
                       'flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
                       isActive
