@@ -87,12 +87,13 @@ export async function checkRateLimit(
   input: RateLimitInput,
   deps: { redis?: Redis; now?: () => number } = {},
 ): Promise<RateLimitResult> {
-  const conn = deps.redis ?? getRedisConnection();
   const now = deps.now?.() ?? Date.now();
   const cost = input.cost ?? 1;
   const ttl = Math.max(60, Math.ceil((input.capacity / Math.max(input.refillPerSec, 0.001)) * 2));
 
   try {
+    // Resolve connection inside try so a missing REDIS_URL also fail-opens.
+    const conn = deps.redis ?? getRedisConnection();
     ensureScript(conn);
     const raw = (await (
       conn as unknown as { tokenBucket: (...args: unknown[]) => Promise<unknown> }

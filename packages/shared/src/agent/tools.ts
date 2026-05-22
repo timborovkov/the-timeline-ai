@@ -129,7 +129,20 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             coOccurringLimit: 10,
           });
           if (!profile) return { found: false };
-          return { found: true, ...profile };
+          // Fence event contentText so prompt-injection in entity source
+          // events can't bypass Rule 8. All other tools fence the same field.
+          return {
+            found: true,
+            ...profile,
+            events: profile.events.map((e) => ({
+              ...e,
+              content_text: fenceExternalContent(e.contentText, {
+                source: e.source,
+                eventId: e.id,
+              }),
+              contentText: undefined,
+            })),
+          };
         }),
     }),
 
