@@ -43,8 +43,10 @@ interface EmailMeta {
 function emailMeta(meta: unknown): EmailMeta | null {
   if (typeof meta !== 'object' || meta === null) return null;
   // Shape is enforced by the email dispatcher's metadata composer; the
-  // JSONB column has no compile-time shape information here.
-  return meta as EmailMeta;
+  // JSONB column has no compile-time shape information here. Since every
+  // EmailMeta field is optional, an empty object satisfies the type and
+  // TS narrows `unknown → object` to a structurally compatible value.
+  return meta;
 }
 
 function fmtAddr(a: { email: string; name?: string } | undefined): string {

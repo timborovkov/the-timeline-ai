@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { CitationText } from './citation';
 import { ToolStep } from './tool-step';
 
+import { InlineSpinner } from '@/components/loading-states';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -112,9 +113,8 @@ export function ChatPane({ teamName }: Props) {
             );
           })}
           {isStreaming && (
-            <li className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
-              Thinking…
+            <li>
+              <InlineSpinner label="Thinking…" />
             </li>
           )}
         </ol>
