@@ -42,10 +42,11 @@ TELEGRAM_WEBHOOK_SECRET=<the_hex_string>
 instrumentation hook at [`apps/web/src/instrumentation.ts`](../../apps/web/src/instrumentation.ts)
 runs once per server process. In production (`NODE_ENV=production`), if
 `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, and `AUTH_URL` are all set,
-it calls `getWebhookInfo` and re-registers via `setWebhook` whenever the URL
-doesn't match or Telegram is reporting a recent delivery error. Registration
-is fire-and-forget — it never blocks server readiness. Missing env vars →
-logs a skip line and continues.
+it always calls `setWebhook` (idempotent on Telegram's side, and the only
+way to push a rotated `TELEGRAM_WEBHOOK_SECRET` since `getWebhookInfo`
+doesn't return the stored secret), then verifies via `getWebhookInfo`.
+Registration is fire-and-forget — it never blocks server readiness. Missing
+env vars → logs a skip line and continues.
 
 For local development (or to register manually):
 

@@ -46,28 +46,16 @@ async function registerWebhook(input: {
   botToken: string;
   webhookSecret: string;
   authUrl: string;
-}): Promise<{ status: 'already-registered' | 'registered' | 'error'; detail: string }> {
+}): Promise<{ status: 'registered' | 'error'; detail: string }> {
   const { botToken, webhookSecret, authUrl } = input;
   const targetUrl = `${authUrl.replace(/\/+$/, '')}/api/telegram/webhook`;
 
-  let info: WebhookInfo;
-  try {
-    info = await callTelegram<WebhookInfo>(botToken, 'getWebhookInfo');
-  } catch (err) {
-    return {
-      status: 'error',
-      detail: `getWebhookInfo failed: ${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
-
-  const needsRegister = info.url !== targetUrl || Boolean(info.last_error_message);
-  if (!needsRegister) {
-    return {
-      status: 'already-registered',
-      detail: `url=${info.url} pending=${info.pending_update_count ?? 0}`,
-    };
-  }
-
+  // Always call setWebhook on startup. It's idempotent and Telegram only
+  // stores the secret token server-side, so getWebhookInfo can't tell us
+  // whether the configured secret still matches ours. Skipping
+  // re-registration on URL match would leave a stale secret in place
+  // after a TELEGRAM_WEBHOOK_SECRET rotation, and the route would 401
+  // every incoming update until something else forced a setWebhook.
   try {
     await callTelegram(botToken, 'setWebhook', {
       url: targetUrl,
@@ -87,7 +75,7 @@ async function registerWebhook(input: {
     after = await callTelegram<WebhookInfo>(botToken, 'getWebhookInfo');
   } catch (err) {
     return {
-      status: 'registered',
+      status: 'error',
       detail: `setWebhook ok but verification failed: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
