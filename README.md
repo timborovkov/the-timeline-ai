@@ -42,7 +42,7 @@ dashboard quirks:
 - [`docs/setup/telegram.md`](./docs/setup/telegram.md) — Telegram bot (Phase 2+).
 - [`docs/setup/openrouter.html`](./docs/setup/openrouter.html) — OpenRouter API
   (Phase 3+).
-- [`docs/setup/postmark.md`](./docs/setup/postmark.md) — inbound email (Phase 7).
+- [`docs/setup/postmark.html`](./docs/setup/postmark.html) — inbound email (Phase 7).
 - [`docs/setup/sentry.md`](./docs/setup/sentry.md) — error tracking.
 - [`docs/setup/railway.md`](./docs/setup/railway.md) — staging + production
   deploys.

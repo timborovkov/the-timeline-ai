@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Postmark inbound email setup</title>
+<style>
+:root{--background:hsl(40 14% 97%);--foreground:hsl(240 10% 8%);--card:#fff;--primary:hsl(30 90% 42%);--muted:hsl(240 5% 95%);--muted-foreground:hsl(240 4% 42%);--border:hsl(240 6% 89%);--radius:.75rem}
+@media (prefers-color-scheme:dark){:root{--background:hsl(240 10% 5%);--foreground:hsl(40 14% 95%);--card:hsl(240 8% 8%);--muted:hsl(240 6% 14%);--muted-foreground:hsl(240 5% 65%);--border:hsl(240 6% 18%);--primary:hsl(30 95% 55%)}}
+*{box-sizing:border-box}
+html{color-scheme:light dark}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.6;background:var(--background);color:var(--foreground)}
+.skip{position:absolute;left:-9999px}
+.skip:focus{left:1rem;top:1rem;background:var(--card);padding:.5rem 1rem;border-radius:var(--radius);z-index:10}
+main{max-width:46rem;margin:0 auto;padding:3rem 1.5rem 6rem}
+h1{font-size:2rem;line-height:1.2;margin:0 0 .5rem;letter-spacing:-.02em}
+h2{font-size:1.4rem;margin:2.5rem 0 .75rem;letter-spacing:-.01em;scroll-margin-top:1rem}
+p{margin:0 0 1rem}
+a{color:var(--primary);text-decoration:underline;text-underline-offset:2px}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;background:var(--muted);padding:.1em .35em;border-radius:4px}
+pre{background:var(--muted);padding:1rem;border-radius:var(--radius);overflow-x:auto;font-size:.875rem;line-height:1.5}
+pre code{background:none;padding:0;font-size:inherit}
+ul,ol{padding-left:1.5rem;margin:0 0 1rem}
+li{margin:.25rem 0}
+.meta{display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:center;font-size:.85rem;color:var(--muted-foreground);padding:.75rem 0;margin:0 0 1rem;border-bottom:1px solid var(--border)}
+.meta .kind{display:inline-block;padding:.15rem .55rem;background:var(--muted);border-radius:999px;color:var(--foreground);font-weight:500;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
+.tldr{font-size:1.05rem;color:var(--muted-foreground);margin:0 0 1.5rem}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<main id="main">
+<h1>Postmark inbound email setup</h1>
+<div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-22</span></div>
+<p class="tldr">Per-team inbound address: <code>&lt;team-slug&gt;@&lt;INBOUND_EMAIL_DOMAIN&gt;</code>. Forward, CC, or BCC to it and the message lands on the timeline.</p>
+
+<p>Per-team email ingest. A team's address is <code>&lt;team-slug&gt;@&lt;INBOUND_EMAIL_DOMAIN&gt;</code>, populated automatically on team creation. Forward, CC, or BCC any mail to that address and it lands in the timeline.</p>
+
+<h2 id="account">1. Account + server</h2>
+<ol>
+<li>Sign up at <a href="https://postmarkapp.com">https://postmarkapp.com</a>.</li>
+<li>Create a <strong>server</strong> named "Timeline".</li>
+<li>Copy the <strong>Server API Token</strong>.</li>
+</ol>
+<pre><code>POSTMARK_SERVER_TOKEN=...
+</code></pre>
+<p>(Not used by the inbound webhook today — kept in env for the Phase 8 outbound work.)</p>
+
+<h2 id="inbound-stream">2. Inbound stream</h2>
+<ol>
+<li>In the server, go to <strong>Inbound</strong> → set up an inbound stream.</li>
+<li>Set the inbound webhook URL to:
+<pre><code>https://&lt;your-app-domain&gt;/api/email/inbound
+</code></pre>
+</li>
+<li>Enable <strong>Include raw email content in JSON payload</strong>.</li>
+<li>Set the <strong>Include attachments</strong> option to <strong>Yes</strong>.</li>
+</ol>
+
+<h2 id="webhook-auth">3. Webhook authentication (Basic Auth)</h2>
+<p>We verify every inbound request via HTTP Basic Auth. Postmark sends the configured user/password in the <code>Authorization</code> header; the handler compares in constant time against <code>POSTMARK_WEBHOOK_SECRET</code>.</p>
+<pre><code>openssl rand -hex 32
+</code></pre>
+<pre><code>POSTMARK_WEBHOOK_SECRET=&lt;the_hex_string&gt;
+</code></pre>
+<p>In the Postmark dashboard, set the webhook URL with credentials embedded:</p>
+<pre><code>https://postmark:&lt;the_hex_string&gt;@&lt;your-app-domain&gt;/api/email/inbound
+</code></pre>
+<p>(Either <code>user:secret</code> or <code>:secret</code> is accepted; the secret can be in either position. The matched value must equal <code>POSTMARK_WEBHOOK_SECRET</code> exactly.)</p>
+
+<h2 id="inbound-domain">4. Inbound email domain</h2>
+<p>Each team gets <code>&lt;team-slug&gt;@&lt;INBOUND_EMAIL_DOMAIN&gt;</code>. Configure MX records for that domain to point at Postmark.</p>
+<pre><code>INBOUND_EMAIL_DOMAIN=in.thetimeline.app
+</code></pre>
+<p>Teams created before Phase 7 are backfilled to <code>&lt;slug&gt;@inbound.invalid</code>. Run a one-off <code>UPDATE teams SET inbound_email = slug || '@in.thetimeline.app'</code> if you need to flip a legacy team to the production domain.</p>
+
+<h2 id="what-gets-ingested">5. What gets ingested</h2>
+<p>For each inbound delivery the dispatcher:</p>
+<ol>
+<li>Parses the Postmark payload (Zod schema).</li>
+<li>Resolves which team(s) the message was addressed to via <code>teams.inbound_email</code>. Multiple recipients land as multiple rows, one per team.</li>
+<li>Looks up the From address against <code>users.email</code> joined to <code>team_members</code>. Match → attributed to that user. No match → row lands with <code>authorUserId=null</code> and <code>source_metadata.sender_unverified=true</code>.</li>
+<li>Strips quoted-reply chains for <code>content_text</code>; preserves the original <code>TextBody</code> / <code>HtmlBody</code> in <code>source_metadata.raw_postmark</code> so re-extraction can replay against the full thread.</li>
+<li>Parses <code>In-Reply-To</code> and <code>References</code> headers and links the row to its thread via <code>source_metadata.thread_root_id</code>.</li>
+<li>Routes attachments by content-type:
+<ul>
+<li><code>audio/*</code> → <code>timeline-audio</code> bucket + a child raw_event + transcribe job.</li>
+<li>Everything else → <code>timeline-attachments</code> bucket; recorded on the parent event's <code>source_metadata.attachments[]</code>.</li>
+</ul>
+</li>
+<li>Enqueues extract + embed for the parent event.</li>
+</ol>
+<p>Idempotency: a partial unique index on <code>(team_id, source_metadata-&gt;&gt;'message_id')</code> makes Postmark retries silent no-ops.</p>
+
+<h2 id="smoke-test">6. Smoke test</h2>
+<p>Postmark dashboard has a test inbound email feature. Send a test message; the app should write a <code>raw_events</code> row with <code>source='email'</code>. The timeline UI shows the subject + from header; the entity profile pages link the new event.</p>
+</main>
+</body>
+</html>
