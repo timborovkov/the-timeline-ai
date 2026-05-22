@@ -44,7 +44,7 @@ dashboard quirks:
   (Phase 3+).
 - [`docs/setup/postmark.html`](./docs/setup/postmark.html) — inbound email (Phase 7).
 - [`docs/setup/sentry.md`](./docs/setup/sentry.md) — error tracking.
-- [`docs/setup/railway.md`](./docs/setup/railway.md) — staging + production
+- [`docs/setup/railway.html`](./docs/setup/railway.html) — staging + production
   deploys.
 
 All env vars are documented inline in [`.env.example`](./.env.example).
