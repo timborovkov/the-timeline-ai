@@ -11,7 +11,7 @@ const STALE_MS = 15 * 60 * 1000;
 /** Bound per-run cost so a reconciler crash never blows up the queue. */
 const BATCH_LIMIT = 200;
 
-export interface ReconcileResult {
+interface ReconcileResult {
   transcribeReenqueued: number;
   extractReenqueued: number;
   embedReenqueued: number;
