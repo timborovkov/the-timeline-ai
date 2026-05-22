@@ -1,8 +1,8 @@
 'use client';
 
 import { Lock, Send, Users } from 'lucide-react';
-import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { type SyntheticEvent, useRef, useState } from 'react';
 
 import {
   createAudioEventAction,
@@ -66,7 +66,7 @@ export function CaptureForm() {
     if (create.warning) setError(create.warning);
   }
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
+  async function handleSubmit(e: SyntheticEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
     if (inFlightRef.current) return;
     const text = (textareaRef.current?.value ?? '').trim();
