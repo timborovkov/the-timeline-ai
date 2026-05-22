@@ -1,6 +1,6 @@
 import { DrizzleAdapter } from '@auth/drizzle-adapter';
 import { accounts, authenticators, getDb, sessions, users, verificationTokens } from '@timeline/db';
-import { verifyPassword } from '@timeline/shared';
+import { childLogger, verifyPassword } from '@timeline/shared';
 import { eq } from 'drizzle-orm';
 import NextAuth, { type NextAuthConfig } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
@@ -11,6 +11,7 @@ import { authConfig } from '@/lib/auth.config';
 import { ensureSoloTeam } from '@/lib/default-team';
 
 const db = getDb();
+const log = childLogger('web:auth');
 
 // Lowercase the email so direct POSTs to /api/auth/callback/credentials are
 // normalized the same way as signUpAction / signInAction. Without this, a
@@ -75,8 +76,22 @@ const nextAuth = NextAuth({
       // lands on /accept-invite/<token>. Creating a solo team here would
       // leave the user in two teams forever. If invite acceptance later
       // fails, `acceptInviteAction` spins a fallback solo team for them.
-      const { readPendingInvite } = await import('@/lib/pending-invite');
-      const pendingInvite = await readPendingInvite();
+      //
+      // Best-effort cookie read: if `cookies()` throws (request-context edge
+      // case, future runtime quirk), treat as "no pending invite" and fall
+      // through to ensureSoloTeam. Letting the error propagate would break
+      // the entire OAuth signup — strictly worse than the rare two-teams
+      // outcome (user can leave the spare team via the UI).
+      let pendingInvite: string | null = null;
+      try {
+        const { readPendingInvite } = await import('@/lib/pending-invite');
+        pendingInvite = await readPendingInvite();
+      } catch (err) {
+        log.error(
+          { err: (err as Error).message, userId },
+          'createUser_pending_invite_read_failed',
+        );
+      }
       if (pendingInvite) return;
       await ensureSoloTeam(userId, { name: user.name, email: user.email });
     },

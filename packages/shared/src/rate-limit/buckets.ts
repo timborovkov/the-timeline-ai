@@ -14,5 +14,3 @@ export const RATE_LIMITS = {
   /** 401 lockout for Postmark inbound: 30/min per source IP. */
   emailInboundAuth: { capacity: 30, refillPerSec: 30 / 60 },
 } as const;
-
-export type RateLimitName = keyof typeof RATE_LIMITS;
