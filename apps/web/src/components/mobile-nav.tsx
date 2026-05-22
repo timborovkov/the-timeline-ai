@@ -1,21 +1,15 @@
 'use client';
 
-import { Clock, MessageSquare, Menu, Settings, Users, X } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import type { TeamMembership } from '@/lib/active-team';
 
+import { NAV_ITEMS, isNavItemActive } from '@/components/nav-items';
 import { TeamSwitcher } from '@/components/team-switcher';
 import { cn } from '@/lib/utils';
-
-const items = [
-  { href: '/app/timeline', label: 'Timeline', icon: Clock },
-  { href: '/app/chat', label: 'Chat', icon: MessageSquare },
-  { href: '/app/entities', label: 'Entities', icon: Users },
-  { href: '/app/team', label: 'Team', icon: Settings },
-] as const;
 
 interface Props {
   active: TeamMembership;
@@ -82,8 +76,8 @@ export function MobileNav({ active, memberships }: Props) {
               </button>
             </div>
             <nav className="mt-8 flex flex-col gap-1">
-              {items.map((item) => {
-                const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              {NAV_ITEMS.map((item) => {
+                const isActive = isNavItemActive(item, pathname);
                 const Icon = item.icon;
                 return (
                   <Link

@@ -49,10 +49,19 @@ export default async function TimelinePage({ searchParams }: Props) {
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
 
+  // Parse once so the UI and the query agree on what's actually filtered.
+  // Raw `sp.author` may contain a non-UUID, `sp.from`/`sp.to` may contain an
+  // unparseable string — those are dropped by the parsers, so the indicator
+  // must reflect the parsed values, not the raw params, or the chip would
+  // say "Filters · on" while the feed returns everything.
+  const authorFilter = parseUuid(sp.author);
+  const fromFilter = parseDate(sp.from);
+  const toFilter = parseEndOfDay(sp.to);
+
   const events = await scope.listEvents({
-    authorUserId: parseUuid(sp.author),
-    from: parseDate(sp.from),
-    to: parseEndOfDay(sp.to),
+    authorUserId: authorFilter,
+    from: fromFilter,
+    to: toFilter,
   });
 
   const authorIds = Array.from(
@@ -105,7 +114,7 @@ export default async function TimelinePage({ searchParams }: Props) {
           .where(inArray(users.id, memberIds))
       : [];
 
-  const hasFilters = Boolean(sp.author ?? sp.from ?? sp.to);
+  const hasFilters = Boolean(authorFilter ?? fromFilter ?? toFilter);
 
   return (
     <div>
