@@ -685,6 +685,11 @@ export async function addRelationship(
     toEntityId: string;
     kind: 'parent' | 'child' | 'related' | 'blocks' | 'blocked_by' | 'duplicate_of' | 'linked';
     actorUserId: string | null;
+    // Optional so existing user-driven callers (server actions) keep working
+    // without passing an actor. Agent tools that call this helper should pass
+    // `{ kind: 'agent', userId: null }` so the audit row attributes the link
+    // to the agent, not a user.
+    actor?: UpdateActor;
   },
 ): Promise<{ id: string } | null> {
   await scope.requireMembership();
@@ -755,8 +760,8 @@ export async function addRelationship(
       {
         teamId: scope.teamId,
         entityId: input.fromEntityId,
-        actorUserId: input.actorUserId,
-        actorKind: 'user',
+        actorUserId: input.actor?.userId ?? input.actorUserId,
+        actorKind: input.actor?.kind ?? 'user',
         status: 'applied',
         field: '__relationship_create__',
         previousValue: null,
@@ -766,8 +771,8 @@ export async function addRelationship(
       {
         teamId: scope.teamId,
         entityId: input.toEntityId,
-        actorUserId: input.actorUserId,
-        actorKind: 'user',
+        actorUserId: input.actor?.userId ?? input.actorUserId,
+        actorKind: input.actor?.kind ?? 'user',
         status: 'applied',
         field: '__relationship_create__',
         previousValue: null,
