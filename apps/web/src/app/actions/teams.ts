@@ -8,7 +8,13 @@ import {
   telegramUsers,
   telegramUserTeams,
 } from '@timeline/db';
-import { randomSlugSuffix, randomToken, slugify, withTeam } from '@timeline/shared';
+import {
+  buildInboundEmail,
+  randomSlugSuffix,
+  randomToken,
+  slugify,
+  withTeam,
+} from '@timeline/shared';
 import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
@@ -39,12 +45,13 @@ export async function createTeamAction(
 
   const baseSlug = slugify(parsed.data.name) || 'team';
   const slug = `${baseSlug}-${randomSlugSuffix()}`;
+  const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
   let teamId: string;
   try {
     teamId = await db.transaction(async (tx) => {
       const inserted = await tx
         .insert(teams)
-        .values({ name: parsed.data.name, slug })
+        .values({ name: parsed.data.name, slug, inboundEmail })
         .returning({ id: teams.id });
       const id = inserted[0]?.id;
       if (!id) throw new Error('insert teams returned nothing');

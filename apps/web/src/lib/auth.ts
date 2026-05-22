@@ -9,7 +9,7 @@ import {
   users,
   verificationTokens,
 } from '@timeline/db';
-import { randomSlugSuffix, slugify, verifyPassword } from '@timeline/shared';
+import { buildInboundEmail, randomSlugSuffix, slugify, verifyPassword } from '@timeline/shared';
 import { eq } from 'drizzle-orm';
 import NextAuth, { type NextAuthConfig } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
@@ -86,10 +86,11 @@ const nextAuth = NextAuth({
       if (existing.length > 0) return;
       const label = user.name ?? user.email?.split('@')[0] ?? 'team';
       const slug = `${slugify(`${label}-team`) || 'team'}-${randomSlugSuffix()}`;
+      const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
       await db.transaction(async (tx) => {
         const inserted = await tx
           .insert(teams)
-          .values({ name: `${label}'s Team`, slug })
+          .values({ name: `${label}'s Team`, slug, inboundEmail })
           .returning({ id: teams.id });
         const teamId = inserted[0]?.id;
         if (!teamId) throw new Error('Failed to create default team');

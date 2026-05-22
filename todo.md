@@ -131,16 +131,32 @@ A concise, ordered TODO list. The order matters: infra and capture pipeline firs
 
 ## Phase 7 — Email ingest
 
-- [ ] Per-team inbound email address (e.g., `<team-slug>@in.thetimeline.app`). Map in DB.
-- [ ] Postmark inbound webhook endpoint at `/api/email/inbound`. Verify Postmark signature.
-- [ ] Parser: subject, from, to, cc, body (text + HTML), attachments.
-- [ ] Sender verification: match `from` against team member emails. Unknown senders → quarantine, notify team owner.
-- [ ] Attachment handling: upload to RustFS (`timeline-attachments` bucket), link from raw event. Same audio pipeline for audio attachments.
-- [ ] CC/BCC pattern: any team member CC'ing the team address adds the thread to timeline.
-- [ ] Forward pattern: parse forwarded headers to attribute correctly.
-- [ ] Thread linking: emails in the same thread become linked events (via `In-Reply-To` and `References` headers).
+- [x] Per-team inbound email address (e.g., `<team-slug>@in.thetimeline.app`). Map in DB.
+- [x] Postmark inbound webhook endpoint at `/api/email/inbound`. Verify Postmark signature (HTTP Basic Auth, constant-time compare).
+- [x] Parser: subject, from, to, cc, body (text + HTML), attachments.
+- [x] Sender verification: match `from` against team member emails. Unknown senders → land with `sender_unverified=true` flag (matches Phase 2's `source_unverified` pattern); structured log line in lieu of a digest until outbound mail lands in Phase 8.
+- [x] Attachment handling: upload to RustFS (`timeline-attachments` bucket), link from raw event. Same audio pipeline for audio attachments — content-type routed, with extension fallback only for `application/octet-stream` so MIME spoofing can't slip into transcribe.
+- [x] CC/BCC pattern: any team member CC'ing the team address adds the thread to timeline.
+- [x] Forward pattern: parse forwarded headers (Gmail / Apple Mail / Outlook variants) into `source_metadata.forwarded_from`; team member who pressed Forward stays as `authorUserId`.
+- [x] Thread linking: emails in the same thread inherit `source_metadata.thread_root_id` via `In-Reply-To` and `References` headers (JSONB-only — no schema column, mirrors Phase 2's `edits_event_id` precedent).
 
 **Checkpoint:** Forward a sales email thread to the team address. It lands in the timeline, threaded, with all parties extracted as entities.
+
+**Carryover from Phase 7 review (file separately, do NOT solve in this PR):**
+- [ ] Per-domain sender allowlist (e.g. "anyone @apple.com is trusted for this team"). v1 requires exact email match against `users.email`; vendor reps emailing in from off-roster addresses will land as unverified.
+- [ ] Outbound email send. v1 ingest is read-only. Reply-via-email-to-comment, notification digests for unverified senders (currently a `console.warn` only), and team digests all need a sending surface.
+- [ ] HTML rendering in timeline event card. v1 displays plain-text body and an attachment count; the raw HTML is preserved in `source_metadata.html_body` for later.
+- [ ] Per-event visibility controls for email (including thread-level "private" so a sensitive forward can be scoped to specific users). Default today is `team`.
+- [ ] Retroactive clear of `sender_unverified` when an unverified sender's email later joins the team. Today the flag is sticky on already-landed rows.
+- [ ] Per-source delimited-content framing across ALL agent tool outputs (deeper prompt-injection sandbox than the v2 system prompt). Phase 6 flagged this; Phase 7 makes it load-bearing because email bodies are the first untrusted ingest the agent reads back. Today the system prompt instructs the agent to treat email content as quoted data; further hardening (markdown fencing, escape tables) is pending.
+- [ ] Per-user rate limit on `/api/email/inbound` (in addition to the existing `/api/search` + `/api/chat` carryover). Postmark itself rate-limits inbound, so lower priority than the agent endpoints.
+- [ ] Web-path reconciler for orphaned extract/embed jobs on email events. Folded into the existing Phase 3/4/5 reconciler ticket.
+- [ ] Email dedup recovery for orphan attachments / audio children. The Phase 7 dispatcher's dedup short-circuit re-enqueues extract+embed only (idempotent at worker level); attachment S3 uploads and audio-child raw_events are NOT redone because creating a duplicate child row would corrupt the timeline. The rare case "delivery #1 inserted parent + crashed BEFORE attachment uploads, Postmark retry hits dedup" leaves an orphan parent. Reconciler should periodically scan for email events whose `source_metadata.raw_postmark.Attachments` names files that have no corresponding entry in `source_metadata.attachments[]`.
+- [ ] Multi-alias-per-team inbound addresses. v1 uses a single `teams.inbound_email` column; a `team_email_aliases` table is a Phase 8 settings task.
+- [ ] MailboxHash routing trust model. `<hex>+<slug>@inbound.postmarkapp.com` lets anyone who knows a slug land mail in that team (with `sender_unverified` badge + agent prompt mitigation, but extraction/embedding still runs). Real production should use a real MX domain — `POSTMARK_INBOUND_ADDRESS` is dev-only. Phase 8: add a per-team "accept-mailbox-hash-mode" opt-in and reject MailboxHash routing for teams that haven't opted in.
+- [x] DB-outage silent drop on `/api/email/inbound`. Today every error path returns 200 so Postmark never retries. For transient infra (DB, S3, queue down) we should return 503 so Postmark retries. ✅ Closed in Bugbot round 5: `all_teams_failed` → 503 (every matched team's ingest threw); top-level crash → 503; soft logic failures (Zod, no team) stay 200.
+- [ ] Postmark IP allowlist on the inbound route. Without it, anyone with the basic-auth secret can call the webhook. Postmark publishes egress IPs; consume them at the edge (or in the route).
+- [ ] Rate-limit 401 responses on `/api/email/inbound` to slow secret brute-force.
 
 ## Phase 8 — Polish and hardening
 
