@@ -105,21 +105,27 @@ export async function handleInbound(
 
   const recipients = collectRecipients(payload);
 
-  // MailboxHash routing path: when Postmark sets a non-empty MailboxHash on
-  // the root payload, the local-part-after-`+` IS the team slug. Used in
-  // dev / no-own-domain mode where every team shares the Postmark default
-  // address. Tried first because it's unambiguous; a payload with both a
-  // matching hash AND a matching recipient lands once (the hash side wins
-  // and the recipient pass is skipped for that team).
+  // Resolve matching teams from BOTH the MailboxHash and the recipient
+  // list, then dedup by team id. A single email can address multiple
+  // teams via different mechanisms:
+  //   - Plus-addressed to team A (MailboxHash=team-a), CC'd to team B's
+  //     real `<slug>@<domain>` address. Both teams need the event.
+  //   - To: team-a@<domain>, Cc: team-b@<domain>. Both via recipient.
+  //   - Hash-only routing in dev (no inbound domain configured).
+  // Skipping the recipient pass when the hash matches would silently drop
+  // legitimate CC's to other teams — the "implicit opt-in via CC" pattern
+  // the brief calls load-bearing.
   const hashSlug = payload.MailboxHash.trim().toLowerCase();
   const matchedTeams: MatchedTeam[] = [];
   if (hashSlug) {
     const byHash = await resolveTeamBySlug(deps.db, hashSlug);
     if (byHash) matchedTeams.push(byHash);
   }
-  if (matchedTeams.length === 0 && deps.inboundDomain && recipients.length > 0) {
+  if (deps.inboundDomain && recipients.length > 0) {
     const byRecipient = await resolveTeams(deps.db, recipients, deps.inboundDomain);
-    matchedTeams.push(...byRecipient);
+    for (const t of byRecipient) {
+      if (!matchedTeams.some((m) => m.id === t.id)) matchedTeams.push(t);
+    }
   }
   if (recipients.length === 0 && !hashSlug) {
     return { ok: false, inserted: 0, reason: 'no_recipients' };

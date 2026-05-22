@@ -328,14 +328,22 @@ export function senderAuthVerdict(results: AuthResults | null): 'absent' | 'pass
  * content.
  */
 export function chooseContentText(payload: PostmarkInbound): string {
-  if (payload.StrippedTextReply.trim()) {
-    return payload.StrippedTextReply.trim();
-  }
+  // Each candidate must produce non-empty content to win. The TextBody case
+  // can strip to '' when the entire body is a quoted reply chain (every
+  // visible line gets cut by `stripQuotedReply`) — without falling through,
+  // such emails land with empty content_text even though the HtmlBody might
+  // carry the actual message the sender pasted in. The chain is:
+  //   StrippedTextReply (Postmark's tuned stripper) → stripQuotedReply(TextBody)
+  //   → htmlToText(HtmlBody) → ''.
+  const stripped = payload.StrippedTextReply.trim();
+  if (stripped) return stripped;
   if (payload.TextBody.trim()) {
-    return stripQuotedReply(payload.TextBody);
+    const out = stripQuotedReply(payload.TextBody);
+    if (out) return out;
   }
   if (payload.HtmlBody.trim()) {
-    return htmlToText(payload.HtmlBody);
+    const out = htmlToText(payload.HtmlBody);
+    if (out) return out;
   }
   return '';
 }

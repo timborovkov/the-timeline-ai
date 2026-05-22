@@ -213,6 +213,18 @@ describe('chooseContentText', () => {
   it('returns empty string when nothing usable', () => {
     expect(chooseContentText(parse({}))).toBe('');
   });
+
+  it('falls through to HTML when TextBody strips to empty', () => {
+    // The TextBody is 100% a quoted reply chain — stripQuotedReply cuts it
+    // all and returns ''. We must NOT return that empty string; the HTML
+    // body has the real content.
+    const payload = parse({
+      StrippedTextReply: '',
+      TextBody: 'On Tue, May 19, 2026 at 11:14, John wrote:\n> the whole body is quoted',
+      HtmlBody: '<p>The actual message lives only in HTML</p>',
+    });
+    expect(chooseContentText(payload)).toContain('actual message lives only in HTML');
+  });
 });
 
 describe('parseAuthenticationResults + senderAuthVerdict', () => {
