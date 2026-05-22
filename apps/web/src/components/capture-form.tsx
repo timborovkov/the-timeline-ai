@@ -83,11 +83,17 @@ export function CaptureForm() {
       // row's content_text: the transcribe worker overwrites that column
       // with the transcript on completion (transcribe.ts), which would
       // silently destroy the user's note.
+      //
+      // Two-step submit: if the text event succeeds but the audio upload
+      // then fails, clear the textarea immediately so a retry only resubmits
+      // the audio. Otherwise the user clicks Post again and we'd duplicate
+      // the (already-committed) text event on the timeline.
       if (text.length > 0) {
         const result = await submitTextOnly(text);
         if (!result.ok) {
           throw new Error(result.error ?? 'Post failed');
         }
+        if (textareaRef.current) textareaRef.current.value = '';
       }
       if (clip) {
         await submitAudio();
