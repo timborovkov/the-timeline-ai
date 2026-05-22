@@ -47,14 +47,30 @@ Goal: turn the timeline from searchable memory into an object relation managemen
 - [ ] Add object/activity notifications: "this deal changed", "this project is blocked", "a promised follow-up is overdue".
 - [ ] Add persisted chat history scoped to team and optionally linked to objects. Chats become part of the team's memory when saved.
 
-## Phase 9 — Third-Party Integrations
+## Phase 9 — Team Document Drive
+
+Goal: give each team a private Google Drive-style knowledge base before external integrations. Documents become first-class timeline sources: uploads, deletes, moves, renames, and version changes are logged, processed, embedded, and cited by the agent.
+
+- [ ] Add document storage schema: folders, documents, document versions, file blobs, document chunks, owners, visibility, timestamps, deleted_at, and source timeline event ids.
+- [ ] Add folder/document UI: upload, rename, move, delete/restore, folder tree or breadcrumb navigation, owner display, created/updated timestamps, version history.
+- [ ] Store document files in RustFS with immutable versioned object keys. Never overwrite a prior version in place.
+- [ ] Log document activity to the timeline: upload, new version, rename, move, delete, restore, owner/visibility change.
+- [ ] Add document processing workers: text extraction for text/markdown/docx where practical, PDF text extraction, OCR/AI vision for scanned PDFs/images, chunking, summarization, and embeddings.
+- [ ] Add vector payloads for documents: `team_id`, `document_id`, `document_version_id`, `chunk_id`, `folder_id`, `owner_user_id`, `visibility`, `updated_at`, `embedding_model`.
+- [ ] Add agent tools for document search and retrieval: search document chunks, get document metadata, get cited chunk/version, list recent document changes.
+- [ ] Make document citations explicit in agent answers, e.g. `[doc:<id>#v<version>:chunk:<id>]`, linking to the document and exact version/chunk where possible.
+- [ ] Add document reprocess/re-embed scripts. Changing OCR, chunking, or embedding models must be replayable and versioned.
+- [ ] Add safety rules for deletes and retention: soft delete first, admin-only hard purge later, audit trail always preserved.
+- [ ] Add initial document types/use cases to dogfood: contracts, deal docs, internal guides, policies, office rules, onboarding docs, customer notes.
+
+## Phase 10 — Third-Party Integrations
 
 Goal: sync external systems into the same timeline/object pipeline. MCPs are a good first integration layer where available; native APIs come later for higher-volume or webhook-heavy sources.
 
 - [ ] Design integration account model: provider, connected user/team, scopes, refresh tokens/secrets, sync cursor, last sync state, visibility defaults.
 - [ ] Add integration event schema: external source id, external object id, provider, event type, occurred_at, actor, raw payload pointer, sync batch id, dedup key.
-- [ ] Google Drive knowledge sync: ingest file metadata, comments/activity, shared-with changes, and document change summaries. Do not blindly vectorize whole drives by default.
-- [ ] Decide Drive vector strategy: embed object/file summaries, document titles/metadata, comments, and meaningful deltas first; embed full document chunks only for selected folders/docs.
+- [ ] Google Drive knowledge sync: map selected Drive folders/files into the internal document model. Import metadata, comments/activity, shared-with changes, document change summaries, and selected file versions.
+- [ ] Decide Drive vector strategy: reuse the internal document chunking/embedding pipeline for selected folders/docs; for broad Drive sync, embed deltas, comments, metadata, and curated summaries before full file bodies.
 - [ ] Linear sync: issues, comments, status/assignee/priority changes, project milestones, linked GitHub PRs. Map issues/projects to workspace objects.
 - [ ] GitHub sync: PRs, issues, reviews, merged commits, release notes, CI state changes. Map repos/PRs/issues/releases to workspace objects.
 - [ ] Add provider-specific backfill + incremental sync jobs. Every sync must be idempotent and resumable.
@@ -62,30 +78,31 @@ Goal: sync external systems into the same timeline/object pipeline. MCPs are a g
 - [ ] Add integration settings UI: connect/disconnect, choose folders/projects/repos, visibility defaults, sync health, last error.
 - [ ] Add integration audit log and replay: show what was imported, when, by which connector version, and allow re-sync from cursor.
 
-## Phase 10 — Polish And Hardening
+## Phase 11 — Polish And Hardening
 
-- [ ] Onboarding flow: new team creation includes Telegram bot setup, email forwarding, and first integration setup.
+- [ ] Onboarding flow: new team creation includes Telegram bot setup, email forwarding, first document upload, and first integration setup.
 - [ ] Per-event visibility controls in UI (`private` / `team` / specific users). Defaults configurable per team/source.
 - [ ] Audit log: who viewed/modified what. Useful for trust.
-- [ ] Team data export: full JSON dump including raw events, facts, objects, tasks, integrations, and signed file URLs.
+- [ ] Team data export: full JSON dump including raw events, facts, objects, tasks, documents, document versions, integrations, and signed file URLs.
 - [ ] Background job monitoring dashboard. Failed jobs queue with retry UI.
-- [ ] Performance: timeline pagination, object-page pagination, hot entity/object query caching.
-- [ ] User-facing docs for capture surfaces, boards, integrations, and object management.
+- [ ] Performance: timeline pagination, object-page pagination, document search pagination, hot entity/object query caching.
+- [ ] User-facing docs for capture surfaces, document drive, boards, integrations, and object management.
 
-## Phase 11 — Backup And Operations
+## Phase 12 — Backup And Operations
 
 - [ ] RustFS backup cron service on Railway: nightly `rclone sync` to Backblaze B2 or chosen secondary store.
 - [ ] Qdrant snapshot cron: nightly snapshot via Qdrant API, uploaded to RustFS or B2.
 - [ ] Confirm Railway Postgres backup retention and document restore procedure.
 - [ ] Run full restore drill from backups to a scratch environment. Repeat quarterly.
-- [ ] Monitoring dashboards: Railway metrics, Sentry, worker queue depth, integration sync failures, OpenRouter spend.
+- [ ] Monitoring dashboards: Railway metrics, Sentry, worker queue depth, document processing failures, integration sync failures, OpenRouter spend.
 
-## Phase 12 — Soft Launch
+## Phase 13 — Soft Launch
 
 - [ ] Closed beta with 3-5 friendly teams. Weekly feedback sessions.
 - [ ] Instrument capture friction: time from "open app" to "event recorded." Target: under 10 seconds for text, under 15 for voice.
 - [ ] Instrument agent quality: thumbs up/down on answers. Target: >85% positive.
 - [ ] Instrument object usefulness: teams should manually or automatically update tracked objects every workday.
+- [ ] Instrument document usefulness: internal-policy/document questions should return cited answers from the correct document version.
 - [ ] Iterate on extraction prompts based on misses. Re-extract historical events as prompts improve.
 - [ ] Pricing model decision: per seat, per team, usage-based, or hybrid.
 

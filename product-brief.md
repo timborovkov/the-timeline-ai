@@ -14,7 +14,7 @@ The cost isn't just inconvenience — it's that *organizational memory leaks*. C
 
 ## Solution
 
-One ingest pipeline, many capture surfaces. Voice notes, written notes, forwarded emails, Telegram messages, and later third-party systems all flow into the same event stream. An LLM extracts objects (people, companies, projects, deals, tasks, documents, incidents), facts ("Tim discussed SaaS licensing with John Ternus at Apple"), relationships, and changes. Everything important is embedded and indexed. An agent answers questions over the timeline: *what did the team work on yesterday*, *what changed on the Apple licensing deal*, *what's outstanding for Acme*, *which projects have gone stale*.
+One ingest pipeline, many capture surfaces. Voice notes, written notes, forwarded emails, Telegram messages, team documents, and later third-party systems all flow into the same event stream. An LLM extracts objects (people, companies, projects, deals, tasks, documents, incidents), facts ("Tim discussed SaaS licensing with John Ternus at Apple"), relationships, and changes. Documents are processed into searchable chunks with version-aware citations. Everything important is embedded and indexed. An agent answers questions over the timeline and knowledge base: *what did the team work on yesterday*, *what changed on the Apple licensing deal*, *what's outstanding for Acme*, *what are our office rules*, *which projects have gone stale*.
 
 The product is intentionally low-structure on input and high-structure on output.
 
@@ -41,23 +41,26 @@ Small to mid-sized teams (5–50 people) doing knowledge work where context comp
 - **Web/PWA**: typed notes, uploaded audio, drag-and-drop documents.
 - **Telegram bot**: voice memos, text, forwarded messages. Personal DMs and team group chats both supported.
 - **Email ingest**: forward, CC, or BCC to a per-team address. Postmark handles inbound parsing.
+- **Team document drive**: folders, uploads, deletes, owners, timestamps, version history, and document changes.
 - **Third-party integrations**: Linear, GitHub, Google Drive, Slack, and CRM-style tools sync activity and changes into the same event stream.
 
 ### Processing pipeline
 
 1. **Raw event lands.** Immutable record: source, author, team, timestamp, content reference (text inline, audio in RustFS).
 2. **Transcription** (if audio). OpenRouter `/audio/transcriptions` for short memos; direct provider fallback for long-form.
-3. **Extraction.** LLM pulls objects/entities, facts, relationships, tasks, and changes from the transcribed/raw text. Output is structured JSON linked back to the raw event.
-4. **Object resolution.** New objects/entities are matched against existing ones ("Apple" vs "Apple Inc" vs "AAPL") with LLM-assisted deduplication and human override.
-5. **Embedding.** Raw text and extracted facts are embedded via OpenRouter (pinned to `text-embedding-3-small`, 1536 dims).
-6. **Indexing.** Vectors land in Qdrant with team-scoped payload filters; structured facts land in Postgres.
+3. **Document processing** (if file/document). Store immutable file version in RustFS, extract text, run PDF/OCR/vision processing when needed, chunk content, summarize meaningful changes, and record document activity on the timeline.
+4. **Extraction.** LLM pulls objects/entities, facts, relationships, tasks, and changes from the transcribed/raw/document text. Output is structured JSON linked back to the raw event or document version.
+5. **Object resolution.** New objects/entities are matched against existing ones ("Apple" vs "Apple Inc" vs "AAPL") with LLM-assisted deduplication and human override.
+6. **Embedding.** Raw text, extracted facts, document chunks, and document change summaries are embedded via OpenRouter (pinned to `text-embedding-3-small`, 1536 dims unless changed through a re-embed procedure).
+7. **Indexing.** Vectors land in Qdrant with team-scoped payload filters; structured facts, objects, document metadata, and version history land in Postgres.
 
 ### Query surfaces
 
 - **Timeline view.** Reverse-chronological feed, filterable by entity, author, date, source.
 - **Entity pages.** Auto-generated profile views: a client, a project, a person. Pulls every raw event and fact tagged to that entity.
+- **Document drive.** Foldered team knowledge base with document owners, versions, timestamps, soft deletes, and timeline-linked change history.
 - **Object boards.** Kanban/table/list views over durable objects: deals, projects, people, tasks, documents, incidents, or team-defined object types.
-- **Agent chat.** Natural-language queries over the timeline. Tool-use pattern: agent queries Qdrant for semantic context, queries Postgres for structured filters, synthesizes an answer with citations.
+- **Agent chat.** Natural-language queries over the timeline and document base. Tool-use pattern: agent queries Qdrant for semantic context, queries Postgres for structured filters and document versions, synthesizes an answer with event/document citations.
 
 ### Stack
 
@@ -66,7 +69,7 @@ Small to mid-sized teams (5–50 people) doing knowledge work where context comp
 | Repo | pnpm + Turborepo monorepo (`apps/web`, `apps/worker`, `packages/*`) |
 | Frontend | Next.js (TypeScript), PWA, Auth.js |
 | Backend | Next.js API routes / server actions, Node.js workers (BullMQ) |
-| Database | Postgres (events, facts, objects/entities, tasks, metadata, team membership) |
+| Database | Postgres (events, facts, objects/entities, tasks, documents, versions, chunks, metadata, team membership) |
 | Vector store | Qdrant (shared collection with team-scoped filters) |
 | Object storage | RustFS, S3-compatible, AWS SDK |
 | Job queue | BullMQ on Redis |
@@ -84,14 +87,17 @@ Small to mid-sized teams (5–50 people) doing knowledge work where context comp
 
 ## Data model (high level)
 
-**Four layers, deliberately separated:**
+**Five layers, deliberately separated:**
 
 1. **Raw events** — append-only. Source, author, team, timestamp, content. Audio files in RustFS, text inline.
-2. **Extracted facts** — LLM-derived, regenerable. Each fact links to the raw event(s) it came from and the entities it references.
-3. **Objects/entities** — Apple, John Ternus, "SaaS licensing deal Q2", "Website redesign", "Renew SOC2". Stable IDs, type, status/stage, owner, relationships, deduplication, human override.
-4. **Object changes and tasks** — structured status changes, field edits, tasks, completions, and agent-suggested updates. Manual changes are also timeline events.
+2. **Documents** — team-owned files in folders, with immutable versions, owners, timestamps, visibility, extracted text/chunks, and original blobs in RustFS.
+3. **Extracted facts** — LLM-derived, regenerable. Each fact links to the raw event(s) or document version(s) it came from and the entities it references.
+4. **Objects/entities** — Apple, John Ternus, "SaaS licensing deal Q2", "Office rules", "Website redesign", "Renew SOC2". Stable IDs, type, status/stage, owner, relationships, deduplication, human override.
+5. **Object changes and tasks** — structured status changes, field edits, tasks, completions, and agent-suggested updates. Manual changes are also timeline events.
 
 A single raw event ("Met with John from Apple about licensing") produces multiple facts (Tim met John; topic was licensing; date was today), references multiple objects (Tim, John Ternus, Apple, the licensing deal), and may suggest object changes or tasks ("send revised deck by Friday"). All linked, all auditable.
+
+Similarly, a document upload ("Office Rules.pdf") creates a document object, immutable version, timeline event, extracted chunks, embeddings, and citations. If Otto uploads a new version with a section banning TikTok at the office, the update is searchable as both document content and a timeline change.
 
 Objects are broader than CRM records. A "deal" is one object type, but so is a project, person, vendor, hiring loop, document, bug, incident, or decision. The product should feel like object relation management: anything durable can have history, relationships, current state, tasks, and a timeline.
 
@@ -136,7 +142,7 @@ Service-to-service references in Railway connect everything via private networki
 
 ## What's out of scope for v1
 
-- **Full Drive-like document storage.** Later, on RustFS. Early Google Drive sync should prioritize activity, metadata, comments, and meaningful document changes rather than storing every file.
+- **Full collaborative document editing.** The internal drive stores and versions files; it does not replace Google Docs-style live editing.
 - **System integrations** (Linear, GitHub, Google Drive, Slack, HubSpot/CRM tools). Later, likely through MCPs first where they fit, then native APIs/webhooks for scale.
 - **Real-time collaboration** on entity pages. Later.
 - **Mobile native apps.** PWA covers this for v1.
@@ -145,9 +151,10 @@ Service-to-service references in Railway connect everything via private networki
 ## Future roadmap
 
 - **Knowledge base** on RustFS: contracts, static docs, version history. Drive-like UX.
+- **Document intelligence**: PDF/OCR/vision processing, version diffs, cited policy answers, and timeline events for document uploads/changes/deletes.
 - **Object relation management**: boards, object pages, task tracking, manual edits, status histories, and "what changed" views for projects, people, deals, vendors, incidents, documents, and team-defined object types.
 - **System integrations**: pull events from Linear, GitHub, Google Drive, Slack, HubSpot/CRM tools. Same pipeline, more sources. MCPs are a useful adapter layer for early integrations; native sync/webhooks can replace them for high-volume paths.
-- **Knowledge sync**: start with changes, comments, metadata, titles, selected document summaries, and folder/project membership. Do not vectorize whole third-party repositories by default; embed deltas and curated summaries first, then full chunks for selected scopes.
+- **External knowledge sync**: map selected Google Drive folders/files into the internal document model. Start with changes, comments, metadata, titles, selected document summaries, and folder/project membership. Do not vectorize whole third-party repositories by default; embed deltas and curated summaries first, then full chunks for selected scopes.
 - **Proactive agent**: agent notices a forgotten follow-up and surfaces it. "You said you'd send Ternus a deck by Friday."
 - **Team digests**: auto-generated end-of-week summaries per team or per project.
 - **Export and portability**: full team data export. Important for trust.
@@ -166,6 +173,7 @@ Service-to-service references in Railway connect everything via private networki
 
 - A team member can record a voice note and have it queryable via the agent within 60 seconds of pressing send.
 - "What did we talk about with X last time" returns a correct, cited answer with >90% accuracy on populated teams.
+- "What are our office rules?" returns a cited answer from the right internal document version, including who updated it and when.
 - A team can inspect a project/deal/person/object and understand its current state, history, open tasks, and recent changes without manually maintaining a CRM.
 - A new team member can be onboarded to a team's timeline and become productive (asking the agent useful questions) within their first day.
 - Active teams contribute at least one event per active member per workday — capture friction is low enough that it becomes habitual.
