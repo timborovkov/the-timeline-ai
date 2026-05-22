@@ -252,8 +252,13 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                           type="button"
                           disabled={pending}
                           onClick={() => {
+                            setError(null);
                             startTransition(async () => {
-                              await deleteNoteAction({ noteId: n.id, entityId: detail.id });
+                              const result = await deleteNoteAction({
+                                noteId: n.id,
+                                entityId: detail.id,
+                              });
+                              if ('error' in result && result.error) setError(result.error);
                             });
                           }}
                           className="text-destructive hover:underline"
@@ -417,8 +422,10 @@ export function ObjectDetailClient({ detail, userId }: Props) {
           type="button"
           disabled={pending || detail.archivedAt !== null}
           onClick={() => {
+            setError(null);
             startTransition(async () => {
-              await archiveObjectAction({ id: detail.id });
+              const result = await archiveObjectAction({ id: detail.id });
+              if ('error' in result && result.error) setError(result.error);
             });
           }}
           className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50"
