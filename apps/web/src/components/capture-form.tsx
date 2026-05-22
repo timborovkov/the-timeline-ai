@@ -31,10 +31,18 @@ export function CaptureForm() {
   const [isPrivate, setIsPrivate] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
+  // Only reset the text input, NOT the visibility pill.
+  //
+  // The same `isPrivate` drives the AudioRecorder via the `visibility` prop.
+  // If a voice clip is mid-review when a text post succeeds, flipping the
+  // pill back to "team" here would silently change the recording's
+  // visibility — a privacy leak (the user recorded under "Private" and
+  // could send a team-visible event without noticing). Leave the pill
+  // alone; it's also better UX (visibility is a sticky preference, not a
+  // per-post toggle).
   useEffect(() => {
     if (state.ok) {
       formRef.current?.reset();
-      setIsPrivate(false);
     }
   }, [state.ok, state.at]);
 

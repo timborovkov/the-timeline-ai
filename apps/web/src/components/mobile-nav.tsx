@@ -35,6 +35,24 @@ export function MobileNav({ active, memberships }: Props) {
     };
   }, [open]);
 
+  // Tailwind's `md` breakpoint is 768px. The sheet only renders below `md`
+  // via `md:hidden`. If the viewport widens past 768px while the sheet is
+  // open (rotation, resize, devtools), the overlay disappears via CSS but
+  // React state stays `open: true` — which keeps `body.overflow: hidden`
+  // applied forever. Listen for the breakpoint crossing and force-close so
+  // the cleanup effect above releases scroll.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const handler = (e: MediaQueryListEvent) => {
+      if (e.matches) setOpen(false);
+    };
+    mq.addEventListener('change', handler);
+    return () => {
+      mq.removeEventListener('change', handler);
+    };
+  }, []);
+
   return (
     <>
       <button

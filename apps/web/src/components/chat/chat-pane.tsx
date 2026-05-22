@@ -36,10 +36,17 @@ export function ChatPane({ teamName }: Props) {
     void sendMessage({ text: t });
   }
 
+  // The composer is `sticky bottom-6` (56px input + 24px offset ≈ 80px
+  // visually occluded when scrolled). Every content sibling that could be
+  // at the bottom of the visible region needs equivalent bottom padding so
+  // its trailing content sits above the pinned composer — empty-state
+  // chips, message list, and error line alike.
+  const composerClearance = 'pb-28';
+
   return (
     <div className="flex flex-col gap-8">
       {messages.length === 0 ? (
-        <div className="flex flex-col gap-6 py-8">
+        <div className={cn('flex flex-col gap-6 pt-8', composerClearance)}>
           <div>
             <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Try asking</p>
             <h2 className="mt-2 text-xl font-medium tracking-tight">
@@ -62,10 +69,7 @@ export function ChatPane({ teamName }: Props) {
           </div>
         </div>
       ) : (
-        // The composer below is `sticky bottom-6` (56px input + 24px offset
-        // ≈ 80px occluded). Without bottom padding the last message and the
-        // "Thinking…" indicator slide under the composer on long threads.
-        <ol className="flex flex-col gap-6 pb-28">
+        <ol className={cn('flex flex-col gap-6', composerClearance)}>
           {messages.map((m: UIMessage) => {
             const isUser = m.role === 'user';
             return (
@@ -124,7 +128,7 @@ export function ChatPane({ teamName }: Props) {
       )}
 
       {error && (
-        <p className="text-sm text-destructive">
+        <p className={cn('text-sm text-destructive', composerClearance)}>
           {error.message || 'Chat failed. Make sure OPENROUTER_API_KEY is configured.'}
         </p>
       )}
