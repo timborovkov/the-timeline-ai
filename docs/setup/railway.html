@@ -1,84 +1,241 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Railway deployment setup</title>
-<style>
-:root{--background:hsl(40 14% 97%);--foreground:hsl(240 10% 8%);--card:#fff;--primary:hsl(30 90% 42%);--muted:hsl(240 5% 95%);--muted-foreground:hsl(240 4% 42%);--border:hsl(240 6% 89%);--radius:.75rem}
-@media (prefers-color-scheme:dark){:root{--background:hsl(240 10% 5%);--foreground:hsl(40 14% 95%);--card:hsl(240 8% 8%);--muted:hsl(240 6% 14%);--muted-foreground:hsl(240 5% 65%);--border:hsl(240 6% 18%);--primary:hsl(30 95% 55%)}}
-*{box-sizing:border-box}
-html{color-scheme:light dark}
-body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.6;background:var(--background);color:var(--foreground)}
-.skip{position:absolute;left:-9999px}
-.skip:focus{left:1rem;top:1rem;background:var(--card);padding:.5rem 1rem;border-radius:var(--radius);z-index:10}
-main{max-width:46rem;margin:0 auto;padding:3rem 1.5rem 6rem}
-h1{font-size:2rem;line-height:1.2;margin:0 0 .5rem;letter-spacing:-.02em}
-h2{font-size:1.4rem;margin:2.5rem 0 .75rem;letter-spacing:-.01em;scroll-margin-top:1rem}
-p{margin:0 0 1rem}
-a{color:var(--primary);text-decoration:underline;text-underline-offset:2px}
-em{font-style:italic}
-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;background:var(--muted);padding:.1em .35em;border-radius:4px}
-pre{background:var(--muted);padding:1rem;border-radius:var(--radius);overflow-x:auto;font-size:.875rem;line-height:1.5}
-pre code{background:none;padding:0;font-size:inherit}
-ul,ol{padding-left:1.5rem;margin:0 0 1rem}
-li{margin:.25rem 0}
-.meta{display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:center;font-size:.85rem;color:var(--muted-foreground);padding:.75rem 0;margin:0 0 1rem;border-bottom:1px solid var(--border)}
-.meta .kind{display:inline-block;padding:.15rem .55rem;background:var(--muted);border-radius:999px;color:var(--foreground);font-weight:500;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
-.tldr{font-size:1.05rem;color:var(--muted-foreground);margin:0 0 1.5rem}
-</style>
-</head>
-<body>
-<a class="skip" href="#main">Skip to content</a>
-<main id="main">
-<h1>Railway deployment setup</h1>
-<div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-22</span></div>
-<p class="tldr">Project + environment provisioning for staging and production. For the full service architecture see <a href="../railway.html">docs/railway.html</a>.</p>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Railway deployment setup</title>
+    <style>
+      :root {
+        --background: hsl(40 14% 97%);
+        --foreground: hsl(240 10% 8%);
+        --card: #fff;
+        --primary: hsl(30 90% 42%);
+        --muted: hsl(240 5% 95%);
+        --muted-foreground: hsl(240 4% 42%);
+        --border: hsl(240 6% 89%);
+        --radius: 0.75rem;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --background: hsl(240 10% 5%);
+          --foreground: hsl(40 14% 95%);
+          --card: hsl(240 8% 8%);
+          --muted: hsl(240 6% 14%);
+          --muted-foreground: hsl(240 5% 65%);
+          --border: hsl(240 6% 18%);
+          --primary: hsl(30 95% 55%);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        font-size: 16px;
+        line-height: 1.6;
+        background: var(--background);
+        color: var(--foreground);
+      }
+      .skip {
+        position: absolute;
+        left: -9999px;
+      }
+      .skip:focus {
+        left: 1rem;
+        top: 1rem;
+        background: var(--card);
+        padding: 0.5rem 1rem;
+        border-radius: var(--radius);
+        z-index: 10;
+      }
+      main {
+        max-width: 46rem;
+        margin: 0 auto;
+        padding: 3rem 1.5rem 6rem;
+      }
+      h1 {
+        font-size: 2rem;
+        line-height: 1.2;
+        margin: 0 0 0.5rem;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        font-size: 1.4rem;
+        margin: 2.5rem 0 0.75rem;
+        letter-spacing: -0.01em;
+        scroll-margin-top: 1rem;
+      }
+      p {
+        margin: 0 0 1rem;
+      }
+      a {
+        color: var(--primary);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      em {
+        font-style: italic;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+        background: var(--muted);
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+      pre {
+        background: var(--muted);
+        padding: 1rem;
+        border-radius: var(--radius);
+        overflow-x: auto;
+        font-size: 0.875rem;
+        line-height: 1.5;
+      }
+      pre code {
+        background: none;
+        padding: 0;
+        font-size: inherit;
+      }
+      ul,
+      ol {
+        padding-left: 1.5rem;
+        margin: 0 0 1rem;
+      }
+      li {
+        margin: 0.25rem 0;
+      }
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        align-items: center;
+        font-size: 0.85rem;
+        color: var(--muted-foreground);
+        padding: 0.75rem 0;
+        margin: 0 0 1rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .meta .kind {
+        display: inline-block;
+        padding: 0.15rem 0.55rem;
+        background: var(--muted);
+        border-radius: 999px;
+        color: var(--foreground);
+        font-weight: 500;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .tldr {
+        font-size: 1.05rem;
+        color: var(--muted-foreground);
+        margin: 0 0 1.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <main id="main">
+      <h1>Railway deployment setup</h1>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-22</span></div>
+      <p class="tldr">
+        Project + environment provisioning for staging and production. For the full service
+        architecture see <a href="../railway.html">docs/railway.html</a>.
+      </p>
 
-<p>The repo ships ready-to-deploy <code>railway.json</code> files for <code>web</code> and <code>worker</code>. Provisioning the Railway project is a manual step.</p>
+      <p>
+        The repo ships ready-to-deploy <code>railway.json</code> files for <code>web</code> and
+        <code>worker</code>. Provisioning the Railway project is a manual step.
+      </p>
 
-<h2 id="project-environments">1. Project + environments</h2>
-<ol>
-<li>Create a new Railway project.</li>
-<li>In <strong>Settings → Environments</strong>, create <code>staging</code> and <code>production</code>.</li>
-<li><strong>Settings → Git</strong> — connect the repo. Branch deploys:
-<ul>
-<li><code>main</code> → <code>production</code></li>
-<li><code>staging</code> → <code>staging</code></li>
-</ul>
-</li>
-</ol>
+      <h2 id="project-environments">1. Project + environments</h2>
+      <ol>
+        <li>Create a new Railway project.</li>
+        <li>
+          In <strong>Settings → Environments</strong>, create <code>staging</code> and
+          <code>production</code>.
+        </li>
+        <li>
+          <strong>Settings → Git</strong> — connect the repo. Branch deploys:
+          <ul>
+            <li><code>main</code> → <code>production</code></li>
+            <li><code>staging</code> → <code>staging</code></li>
+          </ul>
+        </li>
+      </ol>
 
-<h2 id="managed-plugins">2. Managed plugins</h2>
-<p>Add via <strong>+ New → Database</strong>:</p>
-<ul>
-<li><strong>Postgres</strong> — Railway plugin. Copy <code>DATABASE_URL</code> from the plugin's <strong>Connect</strong> tab into the project's shared variables.</li>
-<li><strong>Redis</strong> — Railway plugin. Copy <code>REDIS_URL</code> likewise.</li>
-</ul>
+      <h2 id="managed-plugins">2. Managed plugins</h2>
+      <p>Add via <strong>+ New → Database</strong>:</p>
+      <ul>
+        <li>
+          <strong>Postgres</strong> — Railway plugin. Copy <code>DATABASE_URL</code> from the
+          plugin's <strong>Connect</strong> tab into the project's shared variables.
+        </li>
+        <li><strong>Redis</strong> — Railway plugin. Copy <code>REDIS_URL</code> likewise.</li>
+      </ul>
 
-<h2 id="custom-services">3. Custom services</h2>
-<p>Add via <strong>+ New → Empty Service</strong> (or <strong>Deploy from Docker Image</strong>):</p>
-<ul>
-<li><strong>qdrant</strong> — image <code>qdrant/qdrant:v1.12.4</code>, attach a persistent volume at <code>/qdrant/storage</code>. Expose port <code>6333</code>. Set <code>QDRANT__SERVICE__API_KEY</code> to a random value; copy to shared <code>QDRANT_API_KEY</code>. Set shared <code>QDRANT_URL</code> to the service's private URL.</li>
-<li><strong>rustfs</strong> — image <code>rustfs/rustfs:latest</code>, attach a persistent volume at <code>/data</code>. Set <code>RUSTFS_ROOT_USER</code>/<code>RUSTFS_ROOT_PASSWORD</code>. Map env to <code>S3_ACCESS_KEY_ID</code>/<code>S3_SECRET_ACCESS_KEY</code> in shared variables.</li>
-</ul>
-<p>Run a one-shot <code>minio/mc</code> job to create buckets (same commands as <code>rustfs-init</code> in <code>docker-compose.yml</code>).</p>
+      <h2 id="custom-services">3. Custom services</h2>
+      <p>
+        Add via <strong>+ New → Empty Service</strong> (or
+        <strong>Deploy from Docker Image</strong>):
+      </p>
+      <ul>
+        <li>
+          <strong>qdrant</strong> — image <code>qdrant/qdrant:v1.12.4</code>, attach a persistent
+          volume at <code>/qdrant/storage</code>. Expose port <code>6333</code>. Set
+          <code>QDRANT__SERVICE__API_KEY</code> to a random value; copy to shared
+          <code>QDRANT_API_KEY</code>. Set shared <code>QDRANT_URL</code> to the service's private
+          URL.
+        </li>
+        <li>
+          <strong>rustfs</strong> — image <code>rustfs/rustfs:latest</code>, attach a persistent
+          volume at <code>/data</code>. Set
+          <code>RUSTFS_ROOT_USER</code>/<code>RUSTFS_ROOT_PASSWORD</code>. Map env to
+          <code>S3_ACCESS_KEY_ID</code>/<code>S3_SECRET_ACCESS_KEY</code> in shared variables.
+        </li>
+      </ul>
+      <p>
+        Run a one-shot <code>minio/mc</code> job to create buckets (same commands as
+        <code>rustfs-init</code> in <code>docker-compose.yml</code>).
+      </p>
 
-<h2 id="app-services">4. App services</h2>
-<p>Add <code>web</code> and <code>worker-*</code> services pointing at this repo. Each uses the matching <code>railway.json</code> (<code>apps/web/railway.json</code>, <code>apps/worker/railway.json</code>).</p>
-<p>For workers, override the start command per worker type in service settings:</p>
-<ul>
-<li><code>worker-transcribe</code> → <code>node dist/workers/transcribe.js</code></li>
-<li><code>worker-extract</code> → <code>node dist/workers/extract.js</code></li>
-<li><code>worker-embed</code> → <code>node dist/workers/embed.js</code></li>
-</ul>
-<p>These worker entry points land in Phase 3+. For Phase 1, only the <code>web</code> service is deployed.</p>
+      <h2 id="app-services">4. App services</h2>
+      <p>
+        Add <code>web</code> and <code>worker-*</code> services pointing at this repo. Each uses the
+        matching <code>railway.json</code> (<code>apps/web/railway.json</code>,
+        <code>apps/worker/railway.json</code>).
+      </p>
+      <p>For workers, override the start command per worker type in service settings:</p>
+      <ul>
+        <li><code>worker-transcribe</code> → <code>node dist/workers/transcribe.js</code></li>
+        <li><code>worker-extract</code> → <code>node dist/workers/extract.js</code></li>
+        <li><code>worker-embed</code> → <code>node dist/workers/embed.js</code></li>
+      </ul>
+      <p>
+        These worker entry points land in Phase 3+. For Phase 1, only the <code>web</code> service
+        is deployed.
+      </p>
 
-<h2 id="shared-variables">5. Shared variables</h2>
-<p>In <strong>Settings → Variables</strong>, set everything from <code>.env.example</code> that isn't a local-only default. Mark provider tokens (OpenRouter, Telegram, Postmark, Sentry) as <strong>secret</strong>.</p>
+      <h2 id="shared-variables">5. Shared variables</h2>
+      <p>
+        In <strong>Settings → Variables</strong>, set everything from <code>.env.example</code> that
+        isn't a local-only default. Mark provider tokens (OpenRouter, Telegram, Postmark, Sentry) as
+        <strong>secret</strong>.
+      </p>
 
-<h2 id="healthchecks">6. Healthchecks</h2>
-<p>Already configured in <code>apps/web/railway.json</code> → <code>/api/health</code>. Railway will restart the service on failure.</p>
-</main>
-</body>
+      <h2 id="healthchecks">6. Healthchecks</h2>
+      <p>
+        Already configured in <code>apps/web/railway.json</code> → <code>/api/health</code>. Railway
+        will restart the service on failure.
+      </p>
+    </main>
+  </body>
 </html>
