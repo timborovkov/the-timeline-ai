@@ -141,14 +141,29 @@ export async function handleInbound(
   // addresses (rare but legitimate).
   const { decoded, dropped } = decodeAttachments(payload.Attachments);
 
+  // Per-team failure tracking. We distinguish two failure modes:
+  //   - THROWN: an infrastructure exception bubbled up (DB connection drop,
+  //     S3 timeout, transaction abort). The original delivery was NOT
+  //     durably accepted; Postmark should retry. Mapped to 5xx by the route.
+  //   - RETURNED FALSE: ingestForTeam decided not to land a row for a soft
+  //     reason (no members, missing Message-ID, createEmailEvent returned
+  //     null). Retry won't help; stays 200.
+  // If EVERY matched team threw, we report ok:false so the route surfaces
+  // a 5xx to Postmark. Earlier versions returned ok:true unconditionally
+  // and silently dropped the inbound during a total DB outage.
   let inserted = 0;
+  let threwCount = 0;
   for (const team of matchedTeams) {
     try {
       const didInsert = await ingestForTeam(deps, payload, team, decoded, dropped);
       if (didInsert) inserted += 1;
     } catch (err) {
+      threwCount += 1;
       console.error('[email] team ingest failed', { teamId: team.id, err });
     }
+  }
+  if (threwCount > 0 && threwCount === matchedTeams.length) {
+    return { ok: false, inserted: 0, reason: 'all_teams_failed' };
   }
   return { ok: true, inserted };
 }

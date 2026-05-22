@@ -14,13 +14,16 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Postmark inbound webhook. Mirrors the Phase 2 Telegram webhook shape:
+ * Postmark inbound webhook. Status-code contract:
  *   - 503 when the feature is not configured for this environment.
  *   - 401 on signature failure (constant-time compare).
- *   - 200 on any successful dispatch attempt, regardless of whether a row
- *     landed. Postmark retries on 5xx; we must not bounce a valid payload
- *     just because (say) the DB had a transient blip — the unique index
- *     on Message-ID makes those retries safe.
+ *   - 503 when EVERY matched team's ingest threw (transient DB / S3 / queue
+ *     failure) or when the top-level handler itself crashed. Postmark
+ *     retries 5xx with exponential backoff; the partial unique index on
+ *     `(team_id, message_id)` makes those retries idempotent at the DB.
+ *   - 200 on every other outcome: successful ingest, schema-invalid
+ *     payload, no recipients, no matching team, dedup hit. These are all
+ *     terminal — retry doesn't help and would just spam Postmark queues.
  *
  * Heavy work (S3 uploads, queue enqueues) runs inside the dispatcher
  * before we return; the unit of work for one inbound email is small enough
@@ -125,13 +128,24 @@ export async function POST(req: Request): Promise<Response> {
     if (extractDeps) deps.extract = extractDeps;
     if (embedDeps) deps.embed = embedDeps;
     const result = await email.handleInbound(deps, payload);
+    // 503 when EVERY matched team's ingest threw — likely a DB / S3 / queue
+    // outage that the original delivery never durably persisted. Returning
+    // 200 here would let Postmark forget the message and silently drop it.
+    // Postmark retries on 5xx with exponential backoff, which is exactly
+    // what we want for transient infra. Soft logic failures (no recipients,
+    // no matching team, schema mismatch) stay 200 — retry won't help.
+    if (result.reason === 'all_teams_failed') {
+      return Response.json({ ok: false, reason: result.reason, inserted: 0 }, { status: 503 });
+    }
     return Response.json({ ok: result.ok, inserted: result.inserted }, { status: 200 });
   } catch (err) {
-    // Belt-and-braces: handleInbound is designed not to throw, but if it
-    // ever does we still return 200 so Postmark stops retrying. The error
-    // is logged for incident review.
+    // handleInbound is designed not to throw, but if its top-level wrapper
+    // ever fails (e.g. a Zod-pre-validation crash), surface 5xx so Postmark
+    // retries. The route had previously swallowed this to 200 on the
+    // theory that retries are our problem — but without a reconciler we'd
+    // silently lose the message.
     console.error('[email] handler crash', err);
-    return Response.json({ ok: false, reason: 'handler_error' }, { status: 200 });
+    return Response.json({ ok: false, reason: 'handler_error' }, { status: 503 });
   }
 }
 
