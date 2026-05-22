@@ -1,9 +1,11 @@
 import { closeDb, getDb, waitForMigrations } from '@timeline/db';
-import { queue } from '@timeline/shared';
+import { childLogger, queue } from '@timeline/shared';
 
 import { startEmbedWorker } from './workers/embed.js';
 import { startExtractWorker } from './workers/extract.js';
 import { startTranscribeWorker } from './workers/transcribe.js';
+
+const log = childLogger('worker');
 
 async function main(): Promise<void> {
   // On Railway, the web service runs migrations as a preDeployCommand before
@@ -17,10 +19,10 @@ async function main(): Promise<void> {
   const transcribeWorker = startTranscribeWorker({ db });
   const extractWorker = startExtractWorker({ db });
   const embedWorker = startEmbedWorker({ db });
-  console.log('[worker] transcribe + extract + embed workers started');
+  log.info('transcribe + extract + embed workers started');
 
   const shutdown = async (signal: string): Promise<void> => {
-    console.log(`[worker] received ${signal}, shutting down`);
+    log.info({ signal }, 'received shutdown signal');
     try {
       await Promise.all([transcribeWorker.close(), extractWorker.close(), embedWorker.close()]);
       await queue.closeTranscribeQueue();
@@ -28,7 +30,7 @@ async function main(): Promise<void> {
       await queue.closeEmbedQueue();
       await queue.closeRedisConnection();
     } catch (err: unknown) {
-      console.error('[worker] shutdown error', err);
+      log.error({ err }, 'shutdown error');
     } finally {
       await closeDb().catch(() => undefined);
       process.exit(0);
@@ -39,6 +41,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  console.error('[worker] fatal', err);
+  log.fatal({ err }, 'fatal');
   process.exit(1);
 });

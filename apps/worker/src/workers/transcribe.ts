@@ -1,5 +1,6 @@
 import { type Db, rawEvents } from '@timeline/db';
 import {
+  childLogger,
   getAudioBucket,
   getObjectBuffer,
   getS3Client,
@@ -9,6 +10,8 @@ import {
 } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
+
+const log = childLogger('worker:transcribe');
 
 // Phase 3 cap: 25 MB. Telegram voice memos are well under this; the web
 // recorder doesn't enforce a duration cap (acceptable Phase 3 trade-off),
@@ -76,7 +79,7 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
         .where(eq(rawEvents.id, rawEventId))
         .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
       if (update.length === 0) {
-        console.warn(`[worker:transcribe] raw event ${rawEventId} not found at update`);
+        log.warn({ rawEventId }, 'raw event not found at update');
         return { rawEventId, model: result.model };
       }
       // Hand off to extraction now that text is available. A failed enqueue
@@ -92,7 +95,7 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
           await queue.enqueueExtractJob({ rawEventId: row.id, teamId: row.teamId });
         }
       } catch (enqueueErr) {
-        console.error('[worker:transcribe] failed to enqueue extract job', enqueueErr);
+        log.error({ err: enqueueErr }, 'failed to enqueue extract job');
         const failurePatch = JSON.stringify({
           extraction_failed_at: new Date().toISOString(),
           extraction_error: `enqueue failed: ${
@@ -106,7 +109,7 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
           })
           .where(eq(rawEvents.id, rawEventId))
           .catch((markErr: unknown) => {
-            console.error('[worker:transcribe] failed to mark extract failure', markErr);
+            log.error({ err: markErr }, 'failed to mark extract failure');
           });
       }
       // Independently enqueue an event-level embed job. This covers events
@@ -121,7 +124,7 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
           await queue.enqueueEmbedJob({ rawEventId: row.id, teamId: row.teamId });
         }
       } catch (enqueueErr) {
-        console.error('[worker:transcribe] failed to enqueue embed job', enqueueErr);
+        log.error({ err: enqueueErr }, 'failed to enqueue embed job');
         const failurePatch = JSON.stringify({
           embedding_failed_at: new Date().toISOString(),
           embedding_error: `enqueue failed: ${
@@ -135,7 +138,7 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
           })
           .where(eq(rawEvents.id, rawEventId))
           .catch((markErr: unknown) => {
-            console.error('[worker:transcribe] failed to mark embed failure', markErr);
+            log.error({ err: markErr }, 'failed to mark embed failure');
           });
       }
       return { rawEventId, model: result.model };
@@ -149,7 +152,7 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
   );
 
   worker.on('failed', (job, err) => {
-    console.error(`[worker:transcribe] job ${job?.id} failed:`, err.message);
+    log.error({ jobId: job?.id, err }, 'job failed');
     if (!job) return;
     // BullMQ retries within `attempts`; this handler fires after each
     // attempt. Only mark the row as permanently failed once the attempts
@@ -171,11 +174,11 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
       })
       .where(eq(rawEvents.id, job.data.rawEventId))
       .catch((updateErr: unknown) => {
-        console.error('[worker:transcribe] failed to mark row failure', updateErr);
+        log.error({ err: updateErr }, 'failed to mark row failure');
       });
   });
   worker.on('completed', (job) => {
-    console.log(`[worker:transcribe] job ${job.id} completed`);
+    log.info({ jobId: job.id }, 'job completed');
   });
 
   return worker;

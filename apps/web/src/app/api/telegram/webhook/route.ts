@@ -1,9 +1,19 @@
-import { getAudioBucket, getEnv, getS3Client, putObject, queue, telegram } from '@timeline/shared';
+import {
+  childLogger,
+  getAudioBucket,
+  getEnv,
+  getS3Client,
+  putObject,
+  queue,
+  telegram,
+} from '@timeline/shared';
 
 import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+const log = childLogger('web:api:telegram');
 
 export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
@@ -91,7 +101,7 @@ export async function POST(req: Request): Promise<Response> {
     await telegram.handleUpdate(deps, payload);
   } catch (err) {
     // Swallow — Telegram retries non-2xx, and we never want infinite retries.
-    console.error('[telegram] handler error', err);
+    log.error({ err }, 'handler error');
   }
   return Response.json({ ok: true }, { status: 200 });
 }

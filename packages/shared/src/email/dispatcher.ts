@@ -1,6 +1,7 @@
 import { type Db, rawEvents, teamMembers, teams, users } from '@timeline/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
+import { childLogger } from '../logger.js';
 import { withTeam } from '../team-scope.js';
 
 import {
@@ -22,6 +23,8 @@ import {
   type PostmarkAttachment,
   type PostmarkInbound,
 } from './postmark-schema.js';
+
+const log = childLogger('email');
 
 /**
  * Shape of an attachment upload dependency, mirroring `AudioIngestDeps` from
@@ -98,7 +101,7 @@ export async function handleInbound(
 ): Promise<HandleInboundResult> {
   const parsed = postmarkInboundSchema.safeParse(rawPayload);
   if (!parsed.success) {
-    console.warn('[email] payload failed schema validation', parsed.error.issues.slice(0, 3));
+    log.warn({ issues: parsed.error.issues.slice(0, 3) }, 'payload failed schema validation');
     return { ok: false, inserted: 0, reason: 'invalid_payload' };
   }
   const payload = parsed.data;
@@ -159,7 +162,7 @@ export async function handleInbound(
       if (didInsert) inserted += 1;
     } catch (err) {
       threwCount += 1;
-      console.error('[email] team ingest failed', { teamId: team.id, err });
+      log.error({ teamId: team.id, err }, 'team ingest failed');
     }
   }
   if (threwCount > 0 && threwCount === matchedTeams.length) {
@@ -296,7 +299,7 @@ function decodeAttachments(items: PostmarkAttachment[]): DecodeResult {
       buf = Buffer.from(a.Content, 'base64');
     } catch (err) {
       const reason = err instanceof Error ? err.message.slice(0, 200) : 'decode_failed';
-      console.warn('[email] attachment base64 decode failed', { name: a.Name, err });
+      log.warn({ name: a.Name, err }, 'attachment base64 decode failed');
       dropped.push({ filename: a.Name, reason });
       continue;
     }
@@ -349,7 +352,7 @@ async function ingestForTeam(
   const postmarkMessageId = normalizeMessageId(payload.MessageID);
   const messageId = rfcMessageId ?? postmarkMessageId;
   if (!messageId) {
-    console.warn('[email] dropping payload with no Message-ID', { teamId: team.id });
+    log.warn({ teamId: team.id }, 'dropping payload with no Message-ID');
     return false;
   }
   const headersInReplyTo = normalizeMessageId(getHeader(payload.Headers, 'In-Reply-To'));
@@ -389,12 +392,15 @@ async function ingestForTeam(
   if (senderUnverified) {
     // Structured log line — Phase 7 v1 ships this in place of an
     // owner-digest email. Future Phase 8 outbound mail subscribes here.
-    console.warn('[email] unverified sender accepted', {
-      teamId: team.id,
-      from: fromAddr?.email,
-      messageId,
-      authVerdict,
-    });
+    log.warn(
+      {
+        teamId: team.id,
+        from: fromAddr?.email,
+        messageId,
+        authVerdict,
+      },
+      'unverified sender accepted',
+    );
   }
 
   // Need a scope to use createEmailEvent; pick an arbitrary team member as
@@ -409,7 +415,7 @@ async function ingestForTeam(
     .limit(1);
   const callerUserId = memberRow[0]?.userId;
   if (!callerUserId) {
-    console.warn('[email] team has no members; cannot ingest', { teamId: team.id });
+    log.warn({ teamId: team.id }, 'team has no members; cannot ingest');
     return false;
   }
   const scope = withTeam(deps.db, team.id, callerUserId);
@@ -471,7 +477,7 @@ async function ingestForTeam(
           key,
         });
       } catch (err) {
-        console.error('[email] attachment upload failed', { teamId: team.id, key, err });
+        log.error({ teamId: team.id, key, err }, 'attachment upload failed');
         attachmentsRecords.push({
           filename: att.filename,
           content_type: att.contentType,
@@ -483,10 +489,10 @@ async function ingestForTeam(
       }
     }
   } else if (nonAudio.length > 0) {
-    console.warn('[email] dropping non-audio attachments — no upload deps wired', {
-      teamId: team.id,
-      count: nonAudio.length,
-    });
+    log.warn(
+      { teamId: team.id, count: nonAudio.length },
+      'dropping non-audio attachments — no upload deps wired',
+    );
   }
 
   // Build the email event's source_metadata. Thread fields are added by
@@ -533,7 +539,7 @@ async function ingestForTeam(
     sourceMetadata: baseMetadata,
   });
   if (!createResult) {
-    console.warn('[email] createEmailEvent returned null', { teamId: team.id, messageId });
+    log.warn({ teamId: team.id, messageId }, 'createEmailEvent returned null');
     return false;
   }
 
@@ -583,7 +589,7 @@ async function ingestForTeam(
           contentType: att.contentType,
         });
       } catch (err) {
-        console.error('[email] audio attachment upload failed', { teamId: team.id, key, err });
+        log.error({ teamId: team.id, key, err }, 'audio attachment upload failed');
         continue;
       }
       const child = await scope.createEvent({
@@ -617,7 +623,7 @@ async function ingestForTeam(
           audioKey: key,
         });
       } catch (err) {
-        console.error('[email] transcribe enqueue failed', { teamId: team.id, err });
+        log.error({ teamId: team.id, err }, 'transcribe enqueue failed');
         const failurePatch = JSON.stringify({
           transcription_failed_at: new Date().toISOString(),
           transcription_error: `enqueue failed: ${
@@ -631,7 +637,7 @@ async function ingestForTeam(
           })
           .where(eq(rawEvents.id, child.id))
           .catch((markErr: unknown) => {
-            console.error('[email] failed to mark transcribe failure', markErr);
+            log.error({ err: markErr }, 'failed to mark transcribe failure');
           });
       }
     }
@@ -646,13 +652,13 @@ async function ingestForTeam(
       })
       .where(eq(rawEvents.id, parentEventId))
       .catch((err: unknown) => {
-        console.error('[email] failed to update parent attachments[]', err);
+        log.error({ err }, 'failed to update parent attachments[]');
       });
   } else if (audioAttachments.length > 0) {
-    console.warn('[email] dropping audio attachments — no upload deps wired', {
-      teamId: team.id,
-      count: audioAttachments.length,
-    });
+    log.warn(
+      { teamId: team.id, count: audioAttachments.length },
+      'dropping audio attachments — no upload deps wired',
+    );
   }
 
   // Enqueue extract + embed for the parent email event. Audio children's
@@ -711,7 +717,7 @@ async function maybeEnqueueExtract(
   try {
     await deps.extract.enqueueExtract({ rawEventId, teamId });
   } catch (err) {
-    console.error('[email] extract enqueue failed', err);
+    log.error({ err }, 'extract enqueue failed');
     const failurePatch = JSON.stringify({
       extraction_failed_at: new Date().toISOString(),
       extraction_error: `enqueue failed: ${
@@ -725,7 +731,7 @@ async function maybeEnqueueExtract(
       })
       .where(eq(rawEvents.id, rawEventId))
       .catch((markErr: unknown) => {
-        console.error('[email] failed to mark extract failure', markErr);
+        log.error({ err: markErr }, 'failed to mark extract failure');
       });
   }
 }
@@ -739,7 +745,7 @@ async function maybeEnqueueEmbed(
   try {
     await deps.embed.enqueueEmbed({ rawEventId, teamId });
   } catch (err) {
-    console.error('[email] embed enqueue failed', err);
+    log.error({ err }, 'embed enqueue failed');
     const failurePatch = JSON.stringify({
       embedding_failed_at: new Date().toISOString(),
       embedding_error: `enqueue failed: ${
@@ -753,7 +759,7 @@ async function maybeEnqueueEmbed(
       })
       .where(eq(rawEvents.id, rawEventId))
       .catch((markErr: unknown) => {
-        console.error('[email] failed to mark embed failure', markErr);
+        log.error({ err: markErr }, 'failed to mark embed failure');
       });
   }
 }
