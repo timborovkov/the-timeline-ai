@@ -34,3 +34,9 @@ export function getAudioBucket(): string {
   if (!env.S3_BUCKET_AUDIO) throw new Error('S3_BUCKET_AUDIO is required');
   return env.S3_BUCKET_AUDIO;
 }
+
+export function getAttachmentsBucket(): string {
+  const env = getEnv();
+  if (!env.S3_BUCKET_ATTACHMENTS) throw new Error('S3_BUCKET_ATTACHMENTS is required');
+  return env.S3_BUCKET_ATTACHMENTS;
+}

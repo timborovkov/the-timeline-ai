@@ -3,6 +3,7 @@ export * from './passwords.js';
 export * from './slug.js';
 export * from './team-scope.js';
 export * as telegram from './telegram/index.js';
+export * as email from './email/index.js';
 export * from './s3/index.js';
 export * as queue from './queue/index.js';
 export * as llm from './llm/index.js';
