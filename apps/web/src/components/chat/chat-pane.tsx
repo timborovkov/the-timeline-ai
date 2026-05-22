@@ -58,87 +58,89 @@ export function ChatPane({ teamName }: Props) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-      {messages.length === 0 ? (
-        <div className="flex flex-col gap-6 pt-8">
-          <div>
-            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Try asking</p>
-            <h2 className="mt-2 text-xl font-medium tracking-tight">
-              Ask anything about {teamName}'s timeline
-            </h2>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {SUGGESTIONS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => {
-                  submit(s);
-                }}
-                className="rounded-full border bg-card px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:bg-accent/40 hover:text-foreground"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <ol className="flex flex-col gap-6">
-          {messages.map((m: UIMessage) => {
-            const isUser = m.role === 'user';
-            return (
-              <li
-                key={m.id}
-                className={cn('flex flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}
-              >
-                <span className="px-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                  {isUser ? 'You' : teamName}
-                </span>
-                <div
-                  className={cn(
-                    'max-w-[90%] rounded-2xl text-sm',
-                    isUser
-                      ? 'rounded-br-md bg-secondary px-4 py-3 text-secondary-foreground'
-                      : 'border-l-2 border-primary/60 bg-transparent py-1 pl-4 pr-1',
-                  )}
+        {messages.length === 0 ? (
+          <div className="flex flex-col gap-6 pt-8">
+            <div>
+              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                Try asking
+              </p>
+              <h2 className="mt-2 text-xl font-medium tracking-tight">
+                Ask anything about {teamName}'s timeline
+              </h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => {
+                    submit(s);
+                  }}
+                  className="rounded-full border bg-card px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:bg-accent/40 hover:text-foreground"
                 >
-                  <div className="space-y-2">
-                    {m.parts.map((part, idx) => {
-                      const key = `${m.id}-${String(idx)}`;
-                      if (part.type === 'text') {
-                        return <CitationText key={key} text={part.text} />;
-                      }
-                      if (part.type.startsWith('tool-')) {
-                        const toolPart = part as unknown as {
-                          type: string;
-                          toolCallId: string;
-                          state: string;
-                          input?: unknown;
-                          output?: unknown;
-                        };
-                        return (
-                          <ToolStep
-                            key={key}
-                            name={toolPart.type.slice('tool-'.length)}
-                            state={toolPart.state}
-                            input={toolPart.input}
-                            output={toolPart.output}
-                          />
-                        );
-                      }
-                      return null;
-                    })}
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <ol className="flex flex-col gap-6">
+            {messages.map((m: UIMessage) => {
+              const isUser = m.role === 'user';
+              return (
+                <li
+                  key={m.id}
+                  className={cn('flex flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}
+                >
+                  <span className="px-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                    {isUser ? 'You' : teamName}
+                  </span>
+                  <div
+                    className={cn(
+                      'max-w-[90%] rounded-2xl text-sm',
+                      isUser
+                        ? 'rounded-br-md bg-secondary px-4 py-3 text-secondary-foreground'
+                        : 'border-l-2 border-primary/60 bg-transparent py-1 pl-4 pr-1',
+                    )}
+                  >
+                    <div className="space-y-2">
+                      {m.parts.map((part, idx) => {
+                        const key = `${m.id}-${String(idx)}`;
+                        if (part.type === 'text') {
+                          return <CitationText key={key} text={part.text} />;
+                        }
+                        if (part.type.startsWith('tool-')) {
+                          const toolPart = part as unknown as {
+                            type: string;
+                            toolCallId: string;
+                            state: string;
+                            input?: unknown;
+                            output?: unknown;
+                          };
+                          return (
+                            <ToolStep
+                              key={key}
+                              name={toolPart.type.slice('tool-'.length)}
+                              state={toolPart.state}
+                              input={toolPart.input}
+                              output={toolPart.output}
+                            />
+                          );
+                        }
+                        return null;
+                      })}
+                    </div>
                   </div>
-                </div>
+                </li>
+              );
+            })}
+            {isStreaming && (
+              <li>
+                <InlineSpinner label="Thinking…" />
               </li>
-            );
-          })}
-          {isStreaming && (
-            <li>
-              <InlineSpinner label="Thinking…" />
-            </li>
-          )}
-        </ol>
-      )}
+            )}
+          </ol>
+        )}
       </div>
 
       {error && (
