@@ -1,4 +1,4 @@
-import { getEnv, withTeam, type SearchEventResult } from '@timeline/shared';
+import { childLogger, getEnv, withTeam, type SearchEventResult } from '@timeline/shared';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -7,6 +7,8 @@ import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+const log = childLogger('web:api:search');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -71,7 +73,7 @@ export async function POST(req: Request): Promise<Response> {
     if (parsed.data.limit) input.limit = parsed.data.limit;
     results = await scope.searchEvents(input);
   } catch (err) {
-    console.error('[search] searchEvents failed', err);
+    log.error({ err }, 'searchEvents failed');
     // 502 = transient (embed or qdrant); distinct from 503 above so the
     // client can distinguish "not configured" from "talk to ops".
     return Response.json({ ok: false, error: 'search_failed' }, { status: 502 });

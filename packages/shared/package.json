@@ -29,6 +29,8 @@
     "bullmq": "^5.0.0",
     "drizzle-orm": "^0.38.0",
     "ioredis": "^5.4.1",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {

@@ -1,7 +1,9 @@
 import { type Db, facts as factsTable, factEntities, rawEvents } from '@timeline/db';
-import { extract, getEnv, llm, queue } from '@timeline/shared';
+import { childLogger, extract, getEnv, llm, queue } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
+
+const log = childLogger('worker:extract');
 
 interface ExtractWorkerDeps {
   db: Db;
@@ -292,10 +294,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
       }
       if (enqueueFailures.length > 0) {
         for (const f of enqueueFailures) {
-          console.error(
-            `[worker:extract] embed enqueue failed (factId=${f.factId ?? 'event'})`,
-            f.err,
-          );
+          log.error({ factId: f.factId ?? 'event', err: f.err }, 'embed enqueue failed');
         }
         const firstErr = enqueueFailures[0]?.err;
         const failurePatch = JSON.stringify({
@@ -311,7 +310,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           })
           .where(eq(rawEvents.id, rawEventId))
           .catch((markErr: unknown) => {
-            console.error('[worker:extract] failed to mark embed failure', markErr);
+            log.error({ err: markErr }, 'failed to mark embed failure');
           });
       }
 
@@ -326,7 +325,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
   );
 
   worker.on('failed', (job, err) => {
-    console.error(`[worker:extract] job ${job?.id} failed:`, err.message);
+    log.error({ jobId: job?.id, err }, 'job failed');
     if (!job) return;
     const maxAttempts = job.opts.attempts ?? 1;
     const unrecoverable = err instanceof UnrecoverableError;
@@ -342,11 +341,11 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
       })
       .where(eq(rawEvents.id, job.data.rawEventId))
       .catch((updateErr: unknown) => {
-        console.error('[worker:extract] failed to mark row failure', updateErr);
+        log.error({ err: updateErr }, 'failed to mark row failure');
       });
   });
   worker.on('completed', (job) => {
-    console.log(`[worker:extract] job ${job.id} completed`);
+    log.info({ jobId: job.id }, 'job completed');
   });
 
   return worker;

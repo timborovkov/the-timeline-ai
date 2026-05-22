@@ -1,4 +1,4 @@
-import { agent, getEnv, llm, withTeam } from '@timeline/shared';
+import { agent, childLogger, getEnv, llm, withTeam } from '@timeline/shared';
 import { convertToModelMessages, safeValidateUIMessages, type UIMessage } from 'ai';
 import { z } from 'zod';
 
@@ -20,6 +20,8 @@ import { db } from '@/lib/db';
  */
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+const log = childLogger('web:api:chat');
 
 const chatRequestSchema = z.object({
   // Accept the structurally-validated UI messages from @ai-sdk/react useChat.
@@ -102,19 +104,15 @@ export async function POST(req: Request): Promise<Response> {
       // Stamp the prompt version on every completion. If a captured
       // conversation is ever persisted, this version pins which agent
       // produced it — same audit logic as Phase 4's model_version stamp
-      // on extracted facts. `console.warn` instead of `log` to satisfy
-      // the no-console rule (allowed methods: warn, error) — and an
-      // audit trail of every chat completion is exactly what `warn`
-      // is good for in this codebase's convention.
-      console.warn(
-        '[chat]',
-        agent.AGENT_PROMPT_VERSION,
-        'team=',
-        active.teamId,
-        'user=',
-        session.user.id,
-        'usage=',
-        e.usage,
+      // on extracted facts.
+      log.info(
+        {
+          promptVersion: agent.AGENT_PROMPT_VERSION,
+          teamId: active.teamId,
+          userId: session.user.id,
+          usage: e.usage,
+        },
+        'chat completion',
       );
     },
   });

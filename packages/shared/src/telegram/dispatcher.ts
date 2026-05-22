@@ -9,6 +9,7 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, sql } from 'drizzle-orm';
 
+import { childLogger } from '../logger.js';
 import { type TelegramApi } from './api.js';
 import {
   tgUpdateSchema,
@@ -17,6 +18,8 @@ import {
   type TgUpdate,
   type TgUser,
 } from './types.js';
+
+const log = childLogger('telegram');
 
 /**
  * Audio ingest is dependency-injected so the dispatcher stays testable
@@ -104,7 +107,7 @@ export async function handleUpdate(
     // callback_query: not used yet (Phase 2 has no inline keyboards
     // beyond optional /team — kept simple by replying with text).
   } catch (err) {
-    console.error('[telegram] dispatch failed', err);
+    log.error({ err }, 'dispatch failed');
     return { ok: false };
   }
   return { ok: true };
@@ -541,7 +544,7 @@ async function maybeEnqueueExtract(
   try {
     await ctx.extract.enqueueExtract({ rawEventId: inserted.id, teamId: inserted.teamId });
   } catch (err) {
-    console.error('[telegram] extract enqueue failed', err);
+    log.error({ err }, 'extract enqueue failed');
     const failurePatch = JSON.stringify({
       extraction_failed_at: new Date().toISOString(),
       extraction_error: `enqueue failed: ${
@@ -555,7 +558,7 @@ async function maybeEnqueueExtract(
       })
       .where(eq(rawEvents.id, inserted.id))
       .catch((markErr: unknown) => {
-        console.error('[telegram] failed to mark extract failure', markErr);
+        log.error({ err: markErr }, 'failed to mark extract failure');
       });
   }
 }
@@ -575,7 +578,7 @@ async function maybeEnqueueEmbed(
   try {
     await ctx.embed.enqueueEmbed({ rawEventId: inserted.id, teamId: inserted.teamId });
   } catch (err) {
-    console.error('[telegram] embed enqueue failed', err);
+    log.error({ err }, 'embed enqueue failed');
     const failurePatch = JSON.stringify({
       embedding_failed_at: new Date().toISOString(),
       embedding_error: `enqueue failed: ${
@@ -589,7 +592,7 @@ async function maybeEnqueueEmbed(
       })
       .where(eq(rawEvents.id, inserted.id))
       .catch((markErr: unknown) => {
-        console.error('[telegram] failed to mark embed failure', markErr);
+        log.error({ err: markErr }, 'failed to mark embed failure');
       });
   }
 }
@@ -1084,7 +1087,7 @@ async function ingestAudio(
   if (!ctx.audio) {
     // No audio ingest deps wired (e.g. local dev without RustFS env). Phase 2
     // behavior for unsupported media: silently drop, log so it's visible.
-    console.warn('[telegram] audio message dropped — audio ingest not configured');
+    log.warn('audio message dropped — audio ingest not configured');
     return;
   }
 
@@ -1094,7 +1097,7 @@ async function ingestAudio(
     fileInfo = await ctx.tg.getFile({ file_id: payload.file_id });
     bytes = await ctx.tg.downloadFile(fileInfo.file_path);
   } catch (err) {
-    console.error('[telegram] audio fetch failed', err);
+    log.error({ err }, 'audio fetch failed');
     return;
   }
 
@@ -1111,7 +1114,7 @@ async function ingestAudio(
   try {
     await ctx.audio.upload({ key, body: bytes, contentType: mimeType });
   } catch (err) {
-    console.error('[telegram] audio upload failed', err);
+    log.error({ err }, 'audio upload failed');
     return;
   }
 
@@ -1154,7 +1157,7 @@ async function ingestAudio(
       audioKey: key,
     });
   } catch (err) {
-    console.error('[telegram] transcribe enqueue failed', err);
+    log.error({ err }, 'transcribe enqueue failed');
     // Row is already committed with an audio key and no content_text. With
     // no job in the queue, the worker's `failed` handler will never run
     // either, so the timeline would otherwise show "Transcribing…"
@@ -1173,7 +1176,7 @@ async function ingestAudio(
       })
       .where(eq(rawEvents.id, target.id))
       .catch((markErr: unknown) => {
-        console.error('[telegram] failed to mark row failure', markErr);
+        log.error({ err: markErr }, 'failed to mark row failure');
       });
   }
 }

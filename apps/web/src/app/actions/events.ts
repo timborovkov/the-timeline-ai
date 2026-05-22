@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import { rawEvents } from '@timeline/db';
 import {
+  childLogger,
   getAudioBucket,
   getS3Client,
   getSignedPutObjectUrl,
@@ -17,6 +18,8 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+const log = childLogger('web:actions');
 
 const createTextSchema = z.object({
   text: z.string().trim().min(1, 'Write something').max(20000),
@@ -67,7 +70,7 @@ export async function createTextEventAction(
   try {
     await queue.enqueueExtractJob({ rawEventId: event.id, teamId: event.teamId });
   } catch (err) {
-    console.error('[events] failed to enqueue extract job', err);
+    log.error({ err }, 'failed to enqueue extract job');
     // Same shape as the transcribe-enqueue failure path: mark the row so the
     // timeline UI can surface an "extraction unavailable" state. The text
     // event itself is committed and visible — only structured facts are
@@ -83,7 +86,7 @@ export async function createTextEventAction(
       })
       .where(eq(rawEvents.id, event.id))
       .catch((markErr: unknown) => {
-        console.error('[events] failed to mark extract failure', markErr);
+        log.error({ err: markErr }, 'failed to mark extract failure');
       });
   }
   // Independently enqueue an event-level embed job (Phase 5). Same
@@ -93,7 +96,7 @@ export async function createTextEventAction(
   try {
     await queue.enqueueEmbedJob({ rawEventId: event.id, teamId: event.teamId });
   } catch (err) {
-    console.error('[events] failed to enqueue embed job', err);
+    log.error({ err }, 'failed to enqueue embed job');
     const failurePatch = JSON.stringify({
       embedding_failed_at: new Date().toISOString(),
       embedding_error: `enqueue failed: ${err instanceof Error ? err.message.slice(0, 480) : 'unknown'}`,
@@ -105,7 +108,7 @@ export async function createTextEventAction(
       })
       .where(eq(rawEvents.id, event.id))
       .catch((markErr: unknown) => {
-        console.error('[events] failed to mark embed failure', markErr);
+        log.error({ err: markErr }, 'failed to mark embed failure');
       });
   }
 
@@ -232,7 +235,7 @@ export async function createAudioEventAction(
       audioKey: parsed.data.key,
     });
   } catch (err) {
-    console.error('[events] failed to enqueue transcribe job', err);
+    log.error({ err }, 'failed to enqueue transcribe job');
     // Row is already committed. Return ok=true so the client does not retry
     // the upload+insert (which would create a second orphan row). There is
     // NO automatic re-enqueue for the web path today — say so honestly.
@@ -253,7 +256,7 @@ export async function createAudioEventAction(
       })
       .where(eq(rawEvents.id, event.id))
       .catch((markErr: unknown) => {
-        console.error('[events] failed to mark row failure', markErr);
+        log.error({ err: markErr }, 'failed to mark row failure');
       });
     revalidatePath('/app/timeline');
     return {
