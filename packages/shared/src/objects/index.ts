@@ -376,8 +376,11 @@ export async function getObject(
   const lastVisitedAt = viewRows[0]?.lastVisitedAt ?? null;
   // `changeRows` is capped at 50 for the recent-changes pane, so filtering it
   // would undercount once an object accumulates more than 50 changes between
-  // visits. Run a dedicated COUNT(*) instead. `noteRows` is unbounded so the
-  // in-memory filter is accurate.
+  // visits. Run a dedicated COUNT(*) instead. Notes are NOT added separately
+  // here — `createNote`/`updateNote`/`deleteNote` each write a matching
+  // `__note_create__` / `__note_update__` / `__note_delete__` row into
+  // object_changes, so they're already counted. Summing noteRows on top
+  // would double-count every new note.
   let newSinceLastVisit = 0;
   if (lastVisitedAt) {
     const countRows = await db
@@ -390,8 +393,7 @@ export async function getObject(
           gte(objectChanges.changedAt, lastVisitedAt),
         ),
       );
-    newSinceLastVisit =
-      (countRows[0]?.count ?? 0) + noteRows.filter((n) => n.createdAt > lastVisitedAt).length;
+    newSinceLastVisit = countRows[0]?.count ?? 0;
   }
 
   const base = toObjectRow(entityRow);
