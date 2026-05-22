@@ -76,6 +76,10 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
     redirect(`/accept-invite/${encodeURIComponent(token)}?error=${encodeURIComponent(reason)}`);
   }
 
+  // Drop the OAuth pending-invite breadcrumb now that we've consumed it.
+  const { clearPendingInvite } = await import('@/lib/pending-invite');
+  await clearPendingInvite();
+
   const cookieStore = await cookies();
   cookieStore.set(ACTIVE_TEAM_COOKIE, teamId, {
     httpOnly: true,

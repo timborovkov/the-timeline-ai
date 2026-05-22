@@ -33,6 +33,26 @@ const getEventInput = z.object({
   id: z.string().regex(UUID_RE),
 });
 
+/**
+ * Wrap an event's raw text in `<external_content>` tags so the model cannot
+ * confuse it with system instructions. The tag name is referenced verbatim
+ * by Rule 8 in the system prompt; do not rename without bumping
+ * AGENT_PROMPT_VERSION.
+ *
+ * Strips any nested `<external_content>` / `</external_content>` markers
+ * from the input — a malicious sender could otherwise inject a closing
+ * tag and "escape" the fence. We replace the literal closing sequence
+ * with a benign placeholder.
+ */
+function fenceExternalContent(
+  text: string | null | undefined,
+  attrs: { source: string; eventId: string },
+): string | null {
+  if (text === null || text === undefined) return null;
+  const sanitized = text.replace(/<\/?external_content[^>]*>/gi, '[fence-removed]');
+  return `<external_content source="${attrs.source}" event_id="${attrs.eventId}">${sanitized}</external_content>`;
+}
+
 async function safe<T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> {
   try {
     return await fn();
@@ -73,7 +93,13 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           if (input.entityIds) args.entityIds = input.entityIds;
           if (input.limit) args.limit = input.limit;
           const results = await scope.searchEvents(args);
-          return { count: results.length, results };
+          // Fence the snippet so a malicious search hit cannot smuggle a
+          // prompt-injection past the Rule 8 framing.
+          const fenced = results.map((r) => ({
+            ...r,
+            snippet: fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }) ?? '',
+          }));
+          return { count: fenced.length, results: fenced };
         }),
     }),
 
@@ -118,7 +144,10 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
               occurred_at: e.occurredAt.toISOString(),
               source: e.source,
               author_user_id: e.authorUserId,
-              content_text: e.contentText,
+              content_text: fenceExternalContent(e.contentText, {
+                source: e.source,
+                eventId: e.id,
+              }),
               has_audio: Boolean(e.contentAudioUrl),
             })),
           };
@@ -140,7 +169,10 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             occurred_at: result.event.occurredAt.toISOString(),
             source: result.event.source,
             author_user_id: result.event.authorUserId,
-            content_text: result.event.contentText,
+            content_text: fenceExternalContent(result.event.contentText, {
+              source: result.event.source,
+              eventId: result.event.id,
+            }),
             has_audio: Boolean(result.event.contentAudioUrl),
             facts: result.facts.map((f) => ({
               fact_id: f.id,

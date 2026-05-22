@@ -7,6 +7,7 @@ import {
   getS3Client,
   putObject,
   queue,
+  rateLimit,
 } from '@timeline/shared';
 
 import { db } from '@/lib/db';
@@ -45,8 +46,39 @@ export async function POST(req: Request): Promise<Response> {
   ) {
     return Response.json({ ok: false, reason: 'webhook_disabled' }, { status: 503 });
   }
+
+  const clientIp = email.clientIpFromHeaders(req.headers);
+
+  // Pre-auth IP filter: reject with 403 (not 401) so attackers can't probe
+  // whether they had the right Basic-Auth secret. Optional — when
+  // POSTMARK_INBOUND_IPS is unset, skip (matches the opt-in pattern used
+  // by POSTMARK_AUTHSERV_IDS).
+  if (env.POSTMARK_INBOUND_IPS) {
+    const cidrs = email.parseCidrList(env.POSTMARK_INBOUND_IPS);
+    if (!email.isIpAllowed(clientIp, cidrs)) {
+      log.warn({ clientIp }, 'inbound_ip_rejected');
+      return Response.json({ ok: false, reason: 'forbidden' }, { status: 403 });
+    }
+  }
+
   const auth = req.headers.get('authorization');
   if (!email.verifyPostmarkBasicAuth(auth, env.POSTMARK_WEBHOOK_SECRET)) {
+    // Hard-rate-limit 401s per source IP so a credential-spray attack
+    // gets locked out fast. Key on IP because the Basic-Auth header is
+    // exactly what the attacker is guessing.
+    if (clientIp) {
+      const authRl = await rateLimit.checkRateLimit({
+        key: rateLimit.rateLimitKey('email', 'auth', clientIp),
+        ...rateLimit.RATE_LIMITS.emailInboundAuth,
+      });
+      if (!authRl.ok) {
+        log.warn({ clientIp, retryAfterMs: authRl.retryAfterMs }, 'webhook_auth_lockout');
+        return Response.json(
+          { ok: false, reason: 'rate_limited' },
+          { status: 429, headers: { 'Retry-After': String(Math.ceil(authRl.retryAfterMs / 1000)) } },
+        );
+      }
+    }
     return Response.json({ ok: false, reason: 'forbidden' }, { status: 401 });
   }
 
@@ -55,6 +87,21 @@ export async function POST(req: Request): Promise<Response> {
     payload = await req.json();
   } catch {
     return Response.json({ ok: false, reason: 'invalid_json' }, { status: 200 });
+  }
+
+  // Per-From rate limit. A compromised account or a runaway forwarder
+  // shouldn't be able to flood the ingest pipeline. Return 200 so Postmark
+  // doesn't retry; the message is intentionally dropped.
+  const fromEmail = extractFromAddress(payload);
+  if (fromEmail) {
+    const rl = await rateLimit.checkRateLimit({
+      key: rateLimit.rateLimitKey('email', 'from', fromEmail.toLowerCase()),
+      ...rateLimit.RATE_LIMITS.emailInbound,
+    });
+    if (!rl.ok) {
+      log.warn({ fromEmail, retryAfterMs: rl.retryAfterMs }, 'email_rate_limited');
+      return Response.json({ ok: true, reason: 'rate_limited' }, { status: 200 });
+    }
   }
 
   // Attachment uploads need S3. Audio attachments additionally need Redis
@@ -150,6 +197,24 @@ export async function POST(req: Request): Promise<Response> {
     log.error({ err }, 'handler crash');
     return Response.json({ ok: false, reason: 'handler_error' }, { status: 503 });
   }
+}
+
+function extractFromAddress(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const p = payload as Record<string, unknown>;
+  // Prefer Postmark's pre-parsed FromFull.Email; fall back to the raw From
+  // header. Without the fallback, rate limiting silently misses payloads
+  // shaped slightly differently from the docs.
+  const fromFull = p.FromFull;
+  if (fromFull && typeof fromFull === 'object') {
+    const email = (fromFull as Record<string, unknown>).Email;
+    if (typeof email === 'string' && email.trim()) return email.trim().toLowerCase();
+  }
+  const from = p.From ?? p.from;
+  if (typeof from !== 'string') return undefined;
+  const m = /<([^>]+)>/.exec(from);
+  const addr = m?.[1] ?? from;
+  return addr.trim().toLowerCase() || undefined;
 }
 
 function safeForKey(input: string): string {

@@ -9,6 +9,7 @@ import {
   telegramUserTeams,
 } from '@timeline/db';
 import {
+  assertNotLastOwner,
   buildInboundEmail,
   randomSlugSuffix,
   randomToken,
@@ -148,18 +149,11 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
       if (!targetRole) return;
       // Admins cannot remove owners; only another owner can.
       if (targetRole === 'owner' && callerRole !== 'owner') return;
-      // Never strand a team with zero owners. SELECT FOR UPDATE on the team's
-      // owner rows so a concurrent removal of a different owner cannot also
-      // pass this check and leave the team ownerless.
+      // Never strand a team with zero owners. `assertNotLastOwner` runs
+      // SELECT FOR UPDATE on the team's owner rows so a concurrent removal
+      // of a different owner cannot also pass this check.
       if (targetRole === 'owner') {
-        const ownerRows = await tx
-          .select({ userId: teamMembers.userId })
-          .from(teamMembers)
-          .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.role, 'owner')))
-          .for('update');
-        if (ownerRows.length <= 1) {
-          throw new Error('last_owner');
-        }
+        await assertNotLastOwner(tx, active.teamId, memberUserId);
       }
       await tx
         .delete(teamMembers)
@@ -257,4 +251,162 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
     throw e;
   }
   revalidatePath('/app/team');
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const changeRoleSchema = z.object({
+  userId: z.string().regex(UUID_RE),
+  role: z.enum(['owner', 'admin', 'member']),
+});
+
+export interface ChangeMemberRoleState {
+  error?: string;
+}
+
+/**
+ * Change a member's role within the active team. Only owners can promote
+ * to or demote from `owner`. Demoting an owner is blocked when they are
+ * the last owner (assertNotLastOwner) so a team can never reach zero
+ * owners through normal flows — use transferOwnershipAction for that.
+ */
+export async function changeMemberRoleAction(
+  _prev: ChangeMemberRoleState,
+  formData: FormData,
+): Promise<ChangeMemberRoleState> {
+  const session = await auth();
+  if (!session?.user) return { error: 'Not signed in' };
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) return { error: 'No active team' };
+  const parsed = changeRoleSchema.safeParse({
+    userId: formData.get('userId'),
+    role: formData.get('role'),
+  });
+  if (!parsed.success) return { error: 'Invalid input' };
+
+  const scope = withTeam(db, active.teamId, session.user.id);
+  let callerRole: 'owner' | 'admin' | 'member';
+  try {
+    callerRole = await scope.requireMembership('admin');
+  } catch {
+    return { error: 'Not authorized' };
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      const target = await tx
+        .select({ role: teamMembers.role })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, parsed.data.userId)))
+        .limit(1);
+      const targetRole = target[0]?.role;
+      if (!targetRole) throw new Error('not_a_member');
+      if (targetRole === parsed.data.role) return;
+      // Only owners may promote-to or demote-from owner.
+      if ((targetRole === 'owner' || parsed.data.role === 'owner') && callerRole !== 'owner') {
+        throw new Error('forbidden');
+      }
+      // Demoting an owner must leave at least one owner remaining.
+      if (targetRole === 'owner' && parsed.data.role !== 'owner') {
+        await assertNotLastOwner(tx, active.teamId, parsed.data.userId);
+      }
+      await tx
+        .update(teamMembers)
+        .set({ role: parsed.data.role })
+        .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, parsed.data.userId)));
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'unknown';
+    if (msg === 'last_owner') return { error: 'Cannot demote the last owner' };
+    if (msg === 'forbidden') return { error: 'Only owners can change owner roles' };
+    if (msg === 'not_a_member') return { error: 'Not a member' };
+    return { error: 'Failed to change role' };
+  }
+  revalidatePath('/app/team');
+  return {};
+}
+
+const transferSchema = z.object({
+  targetUserId: z.string().regex(UUID_RE),
+  /** When true, the caller is demoted to admin after the transfer. */
+  stepDown: z.coerce.boolean().optional(),
+});
+
+export interface TransferOwnershipState {
+  error?: string;
+}
+
+/**
+ * Promote `targetUserId` to owner. Optionally demote the caller to admin
+ * in the same transaction (stepDown=true). The whole swap is atomic, so
+ * a crash mid-flight can't strand the team with zero owners.
+ */
+export async function transferOwnershipAction(
+  _prev: TransferOwnershipState,
+  formData: FormData,
+): Promise<TransferOwnershipState> {
+  const session = await auth();
+  if (!session?.user) return { error: 'Not signed in' };
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) return { error: 'No active team' };
+  const parsed = transferSchema.safeParse({
+    targetUserId: formData.get('targetUserId'),
+    stepDown: formData.get('stepDown') ?? undefined,
+  });
+  if (!parsed.success) return { error: 'Invalid input' };
+  if (parsed.data.targetUserId === session.user.id) return { error: 'Cannot transfer to self' };
+
+  const scope = withTeam(db, active.teamId, session.user.id);
+  let callerRole: 'owner' | 'admin' | 'member';
+  try {
+    callerRole = await scope.requireMembership('owner');
+  } catch {
+    return { error: 'Only owners can transfer ownership' };
+  }
+  if (callerRole !== 'owner') return { error: 'Only owners can transfer ownership' };
+
+  try {
+    await db.transaction(async (tx) => {
+      // Lock the owner set so a concurrent transfer can't violate the
+      // one-owner-minimum invariant. Also re-verify the caller is still an
+      // owner inside the lock — requireMembership() ran before the tx and
+      // could be stale if another admin demoted the caller in between.
+      const ownerRows = await tx
+        .select({ userId: teamMembers.userId })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.role, 'owner')))
+        .for('update');
+      if (!ownerRows.some((r) => r.userId === session.user.id)) {
+        throw new Error('forbidden');
+      }
+
+      const target = await tx
+        .select({ role: teamMembers.role })
+        .from(teamMembers)
+        .where(
+          and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, parsed.data.targetUserId)),
+        )
+        .limit(1);
+      if (!target[0]) throw new Error('not_a_member');
+
+      await tx
+        .update(teamMembers)
+        .set({ role: 'owner' })
+        .where(
+          and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, parsed.data.targetUserId)),
+        );
+      if (parsed.data.stepDown) {
+        await tx
+          .update(teamMembers)
+          .set({ role: 'admin' })
+          .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, session.user.id)));
+      }
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'unknown';
+    if (msg === 'not_a_member') return { error: 'Target is not a member' };
+    if (msg === 'forbidden') return { error: 'Only owners can transfer ownership' };
+    return { error: 'Failed to transfer ownership' };
+  }
+  revalidatePath('/app/team');
+  return {};
 }

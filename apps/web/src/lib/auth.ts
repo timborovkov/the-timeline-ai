@@ -84,6 +84,13 @@ const nextAuth = NextAuth({
         .where(eq(teamMembers.userId, userId))
         .limit(1);
       if (existing.length > 0) return;
+      // OAuth signups that arrived via an invite link must NOT get a default
+      // solo team — they'll be added to the invited team when the callback
+      // lands on /accept-invite/<token>. Creating a solo team here would
+      // leave the user in two teams forever.
+      const { readPendingInvite } = await import('@/lib/pending-invite');
+      const pendingInvite = await readPendingInvite();
+      if (pendingInvite) return;
       const label = user.name ?? user.email?.split('@')[0] ?? 'team';
       const slug = `${slugify(`${label}-team`) || 'team'}-${randomSlugSuffix()}`;
       const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
