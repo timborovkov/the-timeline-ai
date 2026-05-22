@@ -44,13 +44,23 @@ const getEventInput = z.object({
  * tag and "escape" the fence. We replace the literal closing sequence
  * with a benign placeholder.
  */
+function fenceAttr(value: string): string {
+  // Escape `"` and `>` so a future, more permissive `source` / `eventId`
+  // value can't break out of the attribute. Today both are constrained
+  // (enum + UUID), but the fence is security-critical — keep it safe
+  // regardless of upstream constraint drift.
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/>/g, '&gt;');
+}
+
 function fenceExternalContent(
   text: string | null | undefined,
   attrs: { source: string; eventId: string },
 ): string | null {
   if (text === null || text === undefined) return null;
   const sanitized = text.replace(/<\/?external_content[^>]*>/gi, '[fence-removed]');
-  return `<external_content source="${attrs.source}" event_id="${attrs.eventId}">${sanitized}</external_content>`;
+  const source = fenceAttr(attrs.source);
+  const eventId = fenceAttr(attrs.eventId);
+  return `<external_content source="${source}" event_id="${eventId}">${sanitized}</external_content>`;
 }
 
 async function safe<T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> {

@@ -1,7 +1,6 @@
 'use server';
 
-import { teamInvites, teamMembers, teams } from '@timeline/db';
-import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared';
+import { teamInvites, teamMembers } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -10,6 +9,7 @@ import { z } from 'zod';
 import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { ensureSoloTeam } from '@/lib/default-team';
 
 const acceptSchema = z.object({ token: z.string().min(1).max(256) });
 
@@ -81,7 +81,7 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
     // zero memberships and no way to self-recover — createUser doesn't refire.
     // Spin them a solo team so they have a usable workspace, then surface the
     // invite error on the accept-invite page.
-    await ensureFallbackSoloTeam(userId, session.user.name, session.user.email);
+    await ensureSoloTeam(userId, { name: session.user.name, email: session.user.email });
     await (await import('@/lib/pending-invite')).clearPendingInvite();
     redirect(`/accept-invite/${encodeURIComponent(token)}?error=${encodeURIComponent(reason)}`);
   }
@@ -98,36 +98,4 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
     maxAge: 60 * 60 * 24 * 365,
   });
   redirect('/app/timeline');
-}
-
-/**
- * Idempotently ensure a user has at least one team. No-op when membership
- * already exists (the common case for repeat-accept failures). Mirrors the
- * default-team logic in NextAuth's `createUser` event so an OAuth signup
- * stranded by a failed invite still lands on a usable workspace.
- */
-async function ensureFallbackSoloTeam(
-  userId: string,
-  name?: string | null,
-  email?: string | null,
-): Promise<void> {
-  const existing = await db
-    .select({ teamId: teamMembers.teamId })
-    .from(teamMembers)
-    .where(eq(teamMembers.userId, userId))
-    .limit(1);
-  if (existing.length > 0) return;
-
-  const label = name ?? email?.split('@')[0] ?? 'team';
-  const slug = `${slugify(`${label}-team`) || 'team'}-${randomSlugSuffix()}`;
-  const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
-  await db.transaction(async (tx) => {
-    const inserted = await tx
-      .insert(teams)
-      .values({ name: `${label}'s Team`, slug, inboundEmail })
-      .returning({ id: teams.id });
-    const teamId = inserted[0]?.id;
-    if (!teamId) throw new Error('failed to create fallback team');
-    await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
-  });
 }

@@ -141,13 +141,16 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
 
 interface QueueLike {
   getJobs: (
-    types: ('waiting' | 'active' | 'delayed' | 'failed')[],
+    types: ('waiting' | 'active' | 'delayed')[],
     start?: number,
     end?: number,
   ) => Promise<{ data: { rawEventId?: string; factId?: string } }[]>;
 }
 
 async function collectInflightRawEventIds(q: QueueLike): Promise<Set<string>> {
-  const jobs = await q.getJobs(['waiting', 'active', 'delayed', 'failed'], 0, 2000);
+  // Intentionally exclude `failed` — those jobs have exhausted retries and
+  // won't be picked up by a worker on their own. Treating them as inflight
+  // would mean the reconciler skips the exact rows it's meant to recover.
+  const jobs = await q.getJobs(['waiting', 'active', 'delayed'], 0, 2000);
   return new Set(jobs.map((j) => j.data.rawEventId).filter((id): id is string => Boolean(id)));
 }

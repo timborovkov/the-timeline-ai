@@ -1,15 +1,6 @@
 import { DrizzleAdapter } from '@auth/drizzle-adapter';
-import {
-  accounts,
-  authenticators,
-  getDb,
-  sessions,
-  teamMembers,
-  teams,
-  users,
-  verificationTokens,
-} from '@timeline/db';
-import { buildInboundEmail, randomSlugSuffix, slugify, verifyPassword } from '@timeline/shared';
+import { accounts, authenticators, getDb, sessions, users, verificationTokens } from '@timeline/db';
+import { verifyPassword } from '@timeline/shared';
 import { eq } from 'drizzle-orm';
 import NextAuth, { type NextAuthConfig } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
@@ -17,6 +8,7 @@ import GitHub from 'next-auth/providers/github';
 import { z } from 'zod';
 
 import { authConfig } from '@/lib/auth.config';
+import { ensureSoloTeam } from '@/lib/default-team';
 
 const db = getDb();
 
@@ -78,31 +70,15 @@ const nextAuth = NextAuth({
     async createUser({ user }) {
       const userId = user.id;
       if (!userId) return;
-      const existing = await db
-        .select({ teamId: teamMembers.teamId })
-        .from(teamMembers)
-        .where(eq(teamMembers.userId, userId))
-        .limit(1);
-      if (existing.length > 0) return;
       // OAuth signups that arrived via an invite link must NOT get a default
       // solo team — they'll be added to the invited team when the callback
       // lands on /accept-invite/<token>. Creating a solo team here would
-      // leave the user in two teams forever.
+      // leave the user in two teams forever. If invite acceptance later
+      // fails, `acceptInviteAction` spins a fallback solo team for them.
       const { readPendingInvite } = await import('@/lib/pending-invite');
       const pendingInvite = await readPendingInvite();
       if (pendingInvite) return;
-      const label = user.name ?? user.email?.split('@')[0] ?? 'team';
-      const slug = `${slugify(`${label}-team`) || 'team'}-${randomSlugSuffix()}`;
-      const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
-      await db.transaction(async (tx) => {
-        const inserted = await tx
-          .insert(teams)
-          .values({ name: `${label}'s Team`, slug, inboundEmail })
-          .returning({ id: teams.id });
-        const teamId = inserted[0]?.id;
-        if (!teamId) throw new Error('Failed to create default team');
-        await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
-      });
+      await ensureSoloTeam(userId, { name: user.name, email: user.email });
     },
   },
 });
