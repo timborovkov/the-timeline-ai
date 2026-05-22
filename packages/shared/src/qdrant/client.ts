@@ -317,11 +317,11 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
   async function pointsExist(ids: string[]): Promise<Set<string>> {
     if (ids.length === 0) return new Set();
     await ensureCollection();
-    const res = await request(
-      'POST',
-      `/collections/${encodeURIComponent(collection)}/points`,
-      { ids, with_payload: false, with_vector: false },
-    );
+    const res = await request('POST', `/collections/${encodeURIComponent(collection)}/points`, {
+      ids,
+      with_payload: false,
+      with_vector: false,
+    });
     const body = (res.data ?? {}) as { result?: { id: string }[] };
     return new Set((body.result ?? []).map((p) => p.id));
   }

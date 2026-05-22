@@ -296,7 +296,9 @@ export async function changeMemberRoleAction(
       const target = await tx
         .select({ role: teamMembers.role })
         .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, parsed.data.userId)))
+        .where(
+          and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, parsed.data.userId)),
+        )
         .limit(1);
       const targetRole = target[0]?.role;
       if (!targetRole) throw new Error('not_a_member');
@@ -312,7 +314,9 @@ export async function changeMemberRoleAction(
       await tx
         .update(teamMembers)
         .set({ role: parsed.data.role })
-        .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, parsed.data.userId)));
+        .where(
+          and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, parsed.data.userId)),
+        );
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'unknown';
@@ -383,7 +387,10 @@ export async function transferOwnershipAction(
         .select({ role: teamMembers.role })
         .from(teamMembers)
         .where(
-          and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, parsed.data.targetUserId)),
+          and(
+            eq(teamMembers.teamId, active.teamId),
+            eq(teamMembers.userId, parsed.data.targetUserId),
+          ),
         )
         .limit(1);
       if (!target[0]) throw new Error('not_a_member');
@@ -392,13 +399,18 @@ export async function transferOwnershipAction(
         .update(teamMembers)
         .set({ role: 'owner' })
         .where(
-          and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, parsed.data.targetUserId)),
+          and(
+            eq(teamMembers.teamId, active.teamId),
+            eq(teamMembers.userId, parsed.data.targetUserId),
+          ),
         );
       if (parsed.data.stepDown) {
         await tx
           .update(teamMembers)
           .set({ role: 'admin' })
-          .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, session.user.id)));
+          .where(
+            and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, session.user.id)),
+          );
       }
     });
   } catch (e) {

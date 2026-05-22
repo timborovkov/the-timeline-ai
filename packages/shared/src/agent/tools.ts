@@ -97,7 +97,8 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           // prompt-injection past the Rule 8 framing.
           const fenced = results.map((r) => ({
             ...r,
-            snippet: fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }) ?? '',
+            snippet:
+              fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }) ?? '',
           }));
           return { count: fenced.length, results: fenced };
         }),

@@ -27,9 +27,7 @@ export interface ReconcileResult {
  *
  * `now` is injectable so tests can scrub the staleness window.
  */
-export async function reconcileOrphanedJobs(
-  opts: { now?: Date } = {},
-): Promise<ReconcileResult> {
+export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<ReconcileResult> {
   const now = opts.now ?? new Date();
   const staleCutoff = new Date(now.getTime() - STALE_MS);
   const result: ReconcileResult = {
@@ -153,4 +151,3 @@ async function collectInflightRawEventIds(q: QueueLike): Promise<Set<string>> {
   const jobs = await q.getJobs(['waiting', 'active', 'delayed', 'failed'], 0, 2000);
   return new Set(jobs.map((j) => j.data.rawEventId).filter((id): id is string => Boolean(id)));
 }
-

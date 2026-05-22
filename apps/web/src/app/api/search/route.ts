@@ -1,10 +1,4 @@
-import {
-  childLogger,
-  getEnv,
-  rateLimit,
-  withTeam,
-  type SearchEventResult,
-} from '@timeline/shared';
+import { childLogger, getEnv, rateLimit, withTeam, type SearchEventResult } from '@timeline/shared';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';

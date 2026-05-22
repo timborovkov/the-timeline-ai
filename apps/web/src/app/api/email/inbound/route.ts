@@ -75,7 +75,10 @@ export async function POST(req: Request): Promise<Response> {
         log.warn({ clientIp, retryAfterMs: authRl.retryAfterMs }, 'webhook_auth_lockout');
         return Response.json(
           { ok: false, reason: 'rate_limited' },
-          { status: 429, headers: { 'Retry-After': String(Math.ceil(authRl.retryAfterMs / 1000)) } },
+          {
+            status: 429,
+            headers: { 'Retry-After': String(Math.ceil(authRl.retryAfterMs / 1000)) },
+          },
         );
       }
     }

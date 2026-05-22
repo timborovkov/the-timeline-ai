@@ -94,7 +94,9 @@ export async function checkRateLimit(
 
   try {
     ensureScript(conn);
-    const raw = (await (conn as unknown as { tokenBucket: (...args: unknown[]) => Promise<unknown> }).tokenBucket(
+    const raw = (await (
+      conn as unknown as { tokenBucket: (...args: unknown[]) => Promise<unknown> }
+    ).tokenBucket(
       input.key,
       String(input.capacity),
       String(input.refillPerSec),
