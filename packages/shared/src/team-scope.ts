@@ -315,6 +315,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         // by guessing then catches a legitimate reply turns the whole thread
         // into verified-looking history.
         let inheritedUnverified = false;
+        // RFC 5322 §3.6.4 priority: `In-Reply-To` names the DIRECT parent;
+        // `References` is an oldest-to-newest chain of ancestors. For
+        // `thread_root_id` inheritance any ancestor works (they all share a
+        // root), but for `sender_unverified` inheritance picking the wrong
+        // ancestor is observable — a verified deeper ancestor would clear
+        // the flag set by an unverified direct parent, defeating the
+        // sticky-unverified guarantee. Probe both, then resolve priority
+        // in memory: in-reply-to wins, then references newest-to-oldest.
         const probeIds = [input.inReplyTo, ...(input.references ?? [])].filter(
           (s): s is string => typeof s === 'string' && s.length > 0,
         );
@@ -331,10 +339,30 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
                 eq(rawEvents.source, 'email'),
                 sql`(${rawEvents.sourceMetadata} ->> 'message_id') = ANY(${probeIds})`,
               ),
-            )
-            .orderBy(asc(rawEvents.occurredAt))
-            .limit(1);
-          const parent = probeRows[0];
+            );
+          // Index by message_id so we can look up matches in priority order
+          // without re-querying. Tolerant of rows whose metadata is missing
+          // the field (shouldn't happen, but cheap defense).
+          const byMid = new Map<string, (typeof probeRows)[number]>();
+          for (const r of probeRows) {
+            const mid = ((r.metadata ?? {}) as Record<string, unknown>).message_id;
+            if (typeof mid === 'string') byMid.set(mid, r);
+          }
+          let parent: (typeof probeRows)[number] | undefined;
+          if (input.inReplyTo) parent = byMid.get(input.inReplyTo);
+          if (!parent && input.references && input.references.length > 0) {
+            // References goes oldest-first per RFC; walk reverse for newest
+            // (closest) ancestor first.
+            for (let i = input.references.length - 1; i >= 0; i--) {
+              const ref = input.references[i];
+              if (!ref) continue;
+              const hit = byMid.get(ref);
+              if (hit) {
+                parent = hit;
+                break;
+              }
+            }
+          }
           if (parent) {
             const meta = (parent.metadata ?? {}) as Record<string, unknown>;
             const inheritedRoot =

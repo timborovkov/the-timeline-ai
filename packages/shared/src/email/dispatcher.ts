@@ -317,7 +317,22 @@ async function ingestForTeam(
   attachments: DecodedAttachment[],
   droppedAttachments: { filename: string; reason: string }[],
 ): Promise<boolean> {
-  const messageId = normalizeMessageId(payload.MessageID);
+  // Two distinct identifiers travel with every inbound email:
+  //   - The RFC 5322 `Message-ID:` header — the value sending MUAs reference
+  //     in `In-Reply-To:` and `References:` for threading. Stable across
+  //     forwards, replies, and inbound delivery retries.
+  //   - Postmark's `MessageID` field — their own UUID for the delivery
+  //     event. Useful as a secondary dedup signal but irrelevant to RFC
+  //     threading (no other MUA ever sees it).
+  // We MUST store the RFC value as our `message_id` for thread linking to
+  // work; otherwise subsequent replies' `In-Reply-To` headers never match
+  // anything we've ingested. The Postmark UUID is kept alongside for audit
+  // and as a fallback when the source email omitted Message-ID entirely
+  // (RFC SHOULD, not MUST — rare in practice but happens for some
+  // transactional senders).
+  const rfcMessageId = normalizeMessageId(getHeader(payload.Headers, 'Message-ID'));
+  const postmarkMessageId = normalizeMessageId(payload.MessageID);
+  const messageId = rfcMessageId ?? postmarkMessageId;
   if (!messageId) {
     console.warn('[email] dropping payload with no Message-ID', { teamId: team.id });
     return false;
@@ -485,6 +500,13 @@ async function ingestForTeam(
   baseMetadata.auth_verdict = authVerdict;
   if (authResults) baseMetadata.auth_results = authResults;
   if (droppedAttachments.length > 0) baseMetadata.attachments_dropped = droppedAttachments;
+  // Audit trail: store Postmark's own delivery UUID separately from the RFC
+  // Message-ID. Lets us correlate raw_events back to Postmark dashboard
+  // entries even when an email is missing the RFC header (we fell back to
+  // the Postmark UUID for `message_id`).
+  if (postmarkMessageId && postmarkMessageId !== messageId) {
+    baseMetadata.postmark_message_id = postmarkMessageId;
+  }
 
   const createResult = await scope.createEmailEvent({
     authorUserId,
@@ -501,8 +523,23 @@ async function ingestForTeam(
   }
 
   if (createResult.deduplicated) {
-    // Postmark retry: the original landing already enqueued downstream
-    // work, including audio children. Skip everything else.
+    // Postmark retry path. The parent raw_event already exists, but we
+    // cannot assume the original delivery completed every downstream
+    // step — the handler may have crashed AFTER inserting the parent and
+    // BEFORE enqueueing extract/embed or uploading attachments. Mirror the
+    // Phase 2 Telegram self-heal pattern: idempotently redo the work that
+    // is safe to redo. Extract + embed enqueues are worker-side idempotent
+    // (the workers skip if facts/embeddings for this event already exist),
+    // so re-enqueueing on every retry is a no-op when nothing was missed
+    // and a recovery when something was.
+    //
+    // Attachment re-upload and audio-child creation are NOT redone here:
+    // S3 PUT to the same key is idempotent, but creating a second child
+    // raw_event for an audio attachment would duplicate the timeline row.
+    // The reconciler ticket in todo.md covers the rare "parent landed,
+    // children missing" case via a periodic scan.
+    await maybeEnqueueExtract(deps, createResult.id, team.id);
+    await maybeEnqueueEmbed(deps, createResult.id, team.id);
     return false;
   }
 
