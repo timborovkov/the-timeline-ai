@@ -6,9 +6,10 @@ searchable, queryable history of who did what, talked to whom, and decided
 what. Then ask a tool-using agent about it: every claim it surfaces links
 back to the raw event it came from. No black-box summaries.
 
-Current state: through Phase 6. Web + Telegram capture, voice transcription,
-extracted facts + entities, semantic search, and agent chat at `/app/chat`
-all working end-to-end. Email ingest (Phase 7) is next.
+Current state: through Phase 7. Web + Telegram + email capture, voice
+transcription, extracted facts + entities, semantic search, and agent chat at
+`/app/chat` all working end-to-end. Railway deployment, deploy-time migrations,
+and structured logging are in place.
 
 ## Read first
 
