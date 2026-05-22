@@ -129,18 +129,24 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             coOccurringLimit: 10,
           });
           if (!profile) return { found: false };
-          // Fence event contentText so prompt-injection in entity source
-          // events can't bypass Rule 8. All other tools fence the same field.
+          // Explicitly project event fields (allowlist) instead of spreading
+          // `...e` — keeps the LLM-visible surface in sync with list_events /
+          // get_event, and a future field added to EntityProfile.events can't
+          // silently leak. content_text is fenced so prompt-injection in
+          // entity source events can't bypass Rule 8.
           return {
             found: true,
             ...profile,
             events: profile.events.map((e) => ({
-              ...e,
+              event_id: e.id,
+              occurred_at: e.occurredAt.toISOString(),
+              source: e.source,
+              author_user_id: e.authorUserId,
               content_text: fenceExternalContent(e.contentText, {
                 source: e.source,
                 eventId: e.id,
               }),
-              contentText: undefined,
+              has_audio: Boolean(e.contentAudioUrl),
             })),
           };
         }),
