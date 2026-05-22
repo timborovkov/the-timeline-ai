@@ -219,13 +219,17 @@ export async function updateNoteAction(input: unknown): Promise<ActionState> {
   if (!parsed.success) return { error: 'Invalid input' };
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
-  const ok = await objects.updateNote(db, r.scope, {
-    noteId: parsed.data.noteId,
-    body: parsed.data.body,
-    actorUserId: r.userId,
-  });
-  revalidatePath(`/app/objects/${parsed.data.entityId}`);
-  return ok ? { ok: true } : { error: 'Note not found' };
+  try {
+    const ok = await objects.updateNote(db, r.scope, {
+      noteId: parsed.data.noteId,
+      body: parsed.data.body,
+      actorUserId: r.userId,
+    });
+    revalidatePath(`/app/objects/${parsed.data.entityId}`);
+    return ok ? { ok: true } : { error: 'Note not found' };
+  } catch (err) {
+    return { error: friendlyError(err, 'Failed to update note') };
+  }
 }
 
 export async function deleteNoteAction(input: unknown): Promise<ActionState> {
@@ -233,12 +237,16 @@ export async function deleteNoteAction(input: unknown): Promise<ActionState> {
   if (!parsed.success) return { error: 'Invalid id' };
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
-  const ok = await objects.deleteNote(db, r.scope, {
-    noteId: parsed.data.noteId,
-    actorUserId: r.userId,
-  });
-  revalidatePath(`/app/objects/${parsed.data.entityId}`);
-  return ok ? { ok: true } : { error: 'Note not found' };
+  try {
+    const ok = await objects.deleteNote(db, r.scope, {
+      noteId: parsed.data.noteId,
+      actorUserId: r.userId,
+    });
+    revalidatePath(`/app/objects/${parsed.data.entityId}`);
+    return ok ? { ok: true } : { error: 'Note not found' };
+  } catch (err) {
+    return { error: friendlyError(err, 'Failed to delete note') };
+  }
 }
 
 // ---------- Notifications ----------

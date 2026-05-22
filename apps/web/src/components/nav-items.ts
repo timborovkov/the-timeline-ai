@@ -1,12 +1,4 @@
-import {
-  Box,
-  Clock,
-  Inbox,
-  KanbanSquare,
-  MessageSquare,
-  Settings,
-  type LucideIcon,
-} from 'lucide-react';
+import { Box, Clock, Inbox, MessageSquare, Settings, type LucideIcon } from 'lucide-react';
 
 /**
  * Single source of truth for the primary app navigation.
@@ -22,11 +14,14 @@ interface NavItem {
   icon: LucideIcon;
 }
 
+// `/app/boards` is intentionally omitted: the route's data layer ships in
+// this PR but the UI is a Phase 8 follow-up (see todo.md). Adding the nav
+// item before the page exists would send users to a 404. Reintroduce it
+// alongside the boards page in the follow-up PR.
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: '/app/timeline', label: 'Timeline', icon: Clock },
   { href: '/app/chat', label: 'Chat', icon: MessageSquare },
   { href: '/app/objects', label: 'Objects', icon: Box },
-  { href: '/app/boards', label: 'Boards', icon: KanbanSquare },
   { href: '/app/inbox', label: 'Inbox', icon: Inbox },
   { href: '/app/team', label: 'Team', icon: Settings },
 ] as const;

@@ -40,7 +40,12 @@ export default async function ObjectsIndexPage({
     params.type && TYPE_LABEL[params.type] ? (params.type as objects.ObjectType) : undefined;
   const status = params.status?.trim() ?? undefined;
 
-  const filter: objects.ObjectListFilter = { limit: 500 };
+  // Default to hiding archived objects — `listObjects` only applies the
+  // archived predicate when `filter.archived` is explicitly set, so an
+  // unset value would surface archived rows in the main index and defeat
+  // the archive button on the detail page. A dedicated "Archived" filter
+  // chip (with `?archived=1`) is a future addition.
+  const filter: objects.ObjectListFilter = { limit: 500, archived: false };
   if (type) filter.type = type;
   if (status) filter.status = status;
 
