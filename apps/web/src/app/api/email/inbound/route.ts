@@ -1,4 +1,5 @@
 import {
+  childLogger,
   email,
   getAttachmentsBucket,
   getAudioBucket,
@@ -12,6 +13,8 @@ import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+const log = childLogger('web:api:email');
 
 /**
  * Postmark inbound webhook. Status-code contract:
@@ -144,7 +147,7 @@ export async function POST(req: Request): Promise<Response> {
     // retries. The route had previously swallowed this to 200 on the
     // theory that retries are our problem — but without a reconciler we'd
     // silently lose the message.
-    console.error('[email] handler crash', err);
+    log.error({ err }, 'handler crash');
     return Response.json({ ok: false, reason: 'handler_error' }, { status: 503 });
   }
 }

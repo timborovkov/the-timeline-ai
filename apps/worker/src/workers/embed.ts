@@ -1,7 +1,9 @@
 import { type Db, facts as factsTable, factEntities, rawEvents } from '@timeline/db';
-import { getEnv, llm, qdrant, queue } from '@timeline/shared';
+import { childLogger, getEnv, llm, qdrant, queue } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
+
+const log = childLogger('worker:embed');
 
 interface EmbedWorkerDeps {
   db: Db;
@@ -217,7 +219,7 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
   );
 
   worker.on('failed', (job, err) => {
-    console.error(`[worker:embed] job ${job?.id} failed:`, err.message);
+    log.error({ jobId: job?.id, err }, 'job failed');
     if (!job) return;
     const maxAttempts = job.opts.attempts ?? 1;
     const unrecoverable = err instanceof UnrecoverableError;
@@ -248,11 +250,11 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
         sql`${rawEvents.id} = ${job.data.rawEventId} AND NOT (COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ? 'embedded_at')`,
       )
       .catch((updateErr: unknown) => {
-        console.error('[worker:embed] failed to mark row failure', updateErr);
+        log.error({ err: updateErr }, 'failed to mark row failure');
       });
   });
   worker.on('completed', (job) => {
-    console.log(`[worker:embed] job ${job.id} completed`);
+    log.info({ jobId: job.id }, 'job completed');
   });
 
   return worker;

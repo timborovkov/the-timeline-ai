@@ -1,7 +1,10 @@
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
+import { childLogger } from '../logger.js';
 import { type TeamScope } from '../team-scope.js';
+
+const log = childLogger('agent:tools');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -34,7 +37,7 @@ async function safe<T>(label: string, fn: () => Promise<T>): Promise<T | { error
   try {
     return await fn();
   } catch (err) {
-    console.error(`[agent.tool.${label}] failed`, err);
+    log.error({ err, tool: label }, 'tool failed');
     return { error: 'tool_failed' };
   }
 }

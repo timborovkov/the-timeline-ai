@@ -2,7 +2,7 @@
 
 ## What we're building
 
-A multi-tenant team memory system that replaces the patchwork of CRMs, internal wikis, FAQs, and TODO lists. Team members capture work as it happens — voice notes after a call, a forwarded email, a quick text dump at end of day — and The Timeline agentically compiles it into a searchable, queryable history of who did what, talked to whom, and decided what.
+A multi-tenant team memory and object management system that replaces the patchwork of CRMs, internal wikis, FAQs, and TODO lists. Team members capture work as it happens — voice notes after a call, a forwarded email, a quick text dump at end of day — and The Timeline agentically compiles it into a searchable, queryable history of who did what, talked to whom, decided what, and what changed.
 
 The interaction model is voice-first and chat-first. People resist updating systems of record because the systems demand structure up front. The Timeline accepts unstructured capture and *derives* the structure, so the cost of contributing is near zero.
 
@@ -14,7 +14,7 @@ The cost isn't just inconvenience — it's that *organizational memory leaks*. C
 
 ## Solution
 
-One ingest pipeline, many capture surfaces. Voice notes, written notes, forwarded emails, Telegram messages all flow into the same event stream. An LLM extracts entities (people, companies, projects), facts ("Tim discussed SaaS licensing with John Ternus at Apple"), and relationships. Everything is embedded and indexed. An agent answers questions over the timeline: *what did the team work on yesterday*, *what was discussed with Ternus last time*, *what's outstanding for the Acme account*.
+One ingest pipeline, many capture surfaces. Voice notes, written notes, forwarded emails, Telegram messages, and later third-party systems all flow into the same event stream. An LLM extracts objects (people, companies, projects, deals, tasks, documents, incidents), facts ("Tim discussed SaaS licensing with John Ternus at Apple"), relationships, and changes. Everything important is embedded and indexed. An agent answers questions over the timeline: *what did the team work on yesterday*, *what changed on the Apple licensing deal*, *what's outstanding for Acme*, *which projects have gone stale*.
 
 The product is intentionally low-structure on input and high-structure on output.
 
@@ -41,13 +41,14 @@ Small to mid-sized teams (5–50 people) doing knowledge work where context comp
 - **Web/PWA**: typed notes, uploaded audio, drag-and-drop documents.
 - **Telegram bot**: voice memos, text, forwarded messages. Personal DMs and team group chats both supported.
 - **Email ingest**: forward, CC, or BCC to a per-team address. Postmark handles inbound parsing.
+- **Third-party integrations**: Linear, GitHub, Google Drive, Slack, and CRM-style tools sync activity and changes into the same event stream.
 
 ### Processing pipeline
 
 1. **Raw event lands.** Immutable record: source, author, team, timestamp, content reference (text inline, audio in RustFS).
 2. **Transcription** (if audio). OpenRouter `/audio/transcriptions` for short memos; direct provider fallback for long-form.
-3. **Extraction.** LLM pulls entities, facts, and relationships from the transcribed/raw text. Output is structured JSON linked back to the raw event.
-4. **Entity resolution.** New entities are matched against existing ones ("Apple" vs "Apple Inc" vs "AAPL") with LLM-assisted deduplication and human override.
+3. **Extraction.** LLM pulls objects/entities, facts, relationships, tasks, and changes from the transcribed/raw text. Output is structured JSON linked back to the raw event.
+4. **Object resolution.** New objects/entities are matched against existing ones ("Apple" vs "Apple Inc" vs "AAPL") with LLM-assisted deduplication and human override.
 5. **Embedding.** Raw text and extracted facts are embedded via OpenRouter (pinned to `text-embedding-3-small`, 1536 dims).
 6. **Indexing.** Vectors land in Qdrant with team-scoped payload filters; structured facts land in Postgres.
 
@@ -55,6 +56,7 @@ Small to mid-sized teams (5–50 people) doing knowledge work where context comp
 
 - **Timeline view.** Reverse-chronological feed, filterable by entity, author, date, source.
 - **Entity pages.** Auto-generated profile views: a client, a project, a person. Pulls every raw event and fact tagged to that entity.
+- **Object boards.** Kanban/table/list views over durable objects: deals, projects, people, tasks, documents, incidents, or team-defined object types.
 - **Agent chat.** Natural-language queries over the timeline. Tool-use pattern: agent queries Qdrant for semantic context, queries Postgres for structured filters, synthesizes an answer with citations.
 
 ### Stack
@@ -64,7 +66,7 @@ Small to mid-sized teams (5–50 people) doing knowledge work where context comp
 | Repo | pnpm + Turborepo monorepo (`apps/web`, `apps/worker`, `packages/*`) |
 | Frontend | Next.js (TypeScript), PWA, Auth.js |
 | Backend | Next.js API routes / server actions, Node.js workers (BullMQ) |
-| Database | Postgres (entities, events, metadata, team membership) |
+| Database | Postgres (events, facts, objects/entities, tasks, metadata, team membership) |
 | Vector store | Qdrant (shared collection with team-scoped filters) |
 | Object storage | RustFS, S3-compatible, AWS SDK |
 | Job queue | BullMQ on Redis |
@@ -82,13 +84,16 @@ Small to mid-sized teams (5–50 people) doing knowledge work where context comp
 
 ## Data model (high level)
 
-**Three layers, deliberately separated:**
+**Four layers, deliberately separated:**
 
 1. **Raw events** — append-only. Source, author, team, timestamp, content. Audio files in RustFS, text inline.
 2. **Extracted facts** — LLM-derived, regenerable. Each fact links to the raw event(s) it came from and the entities it references.
-3. **Entities** — Apple, John Ternus, "SaaS licensing deal Q2". Stable IDs, deduplication, human override.
+3. **Objects/entities** — Apple, John Ternus, "SaaS licensing deal Q2", "Website redesign", "Renew SOC2". Stable IDs, type, status/stage, owner, relationships, deduplication, human override.
+4. **Object changes and tasks** — structured status changes, field edits, tasks, completions, and agent-suggested updates. Manual changes are also timeline events.
 
-A single raw event ("Met with John from Apple about licensing") produces multiple facts (Tim met John; topic was licensing; date was today) and references multiple entities (Tim, John Ternus, Apple, the licensing deal). All linked, all auditable.
+A single raw event ("Met with John from Apple about licensing") produces multiple facts (Tim met John; topic was licensing; date was today), references multiple objects (Tim, John Ternus, Apple, the licensing deal), and may suggest object changes or tasks ("send revised deck by Friday"). All linked, all auditable.
+
+Objects are broader than CRM records. A "deal" is one object type, but so is a project, person, vendor, hiring loop, document, bug, incident, or decision. The product should feel like object relation management: anything durable can have history, relationships, current state, tasks, and a timeline.
 
 ## Telegram binding model
 
@@ -131,8 +136,8 @@ Service-to-service references in Railway connect everything via private networki
 
 ## What's out of scope for v1
 
-- **Knowledge base / Drive-like document storage.** Later, on RustFS.
-- **System integrations** (HubSpot, Linear, Notion, Google Drive, Slack). Later.
+- **Full Drive-like document storage.** Later, on RustFS. Early Google Drive sync should prioritize activity, metadata, comments, and meaningful document changes rather than storing every file.
+- **System integrations** (Linear, GitHub, Google Drive, Slack, HubSpot/CRM tools). Later, likely through MCPs first where they fit, then native APIs/webhooks for scale.
 - **Real-time collaboration** on entity pages. Later.
 - **Mobile native apps.** PWA covers this for v1.
 - **End-to-end encryption.** At-rest and in-transit encryption only; full E2EE conflicts with server-side LLM processing.
@@ -140,7 +145,9 @@ Service-to-service references in Railway connect everything via private networki
 ## Future roadmap
 
 - **Knowledge base** on RustFS: contracts, static docs, version history. Drive-like UX.
-- **System integrations**: pull events from HubSpot, Linear, Notion, Google Drive, Slack. Same pipeline, more sources.
+- **Object relation management**: boards, object pages, task tracking, manual edits, status histories, and "what changed" views for projects, people, deals, vendors, incidents, documents, and team-defined object types.
+- **System integrations**: pull events from Linear, GitHub, Google Drive, Slack, HubSpot/CRM tools. Same pipeline, more sources. MCPs are a useful adapter layer for early integrations; native sync/webhooks can replace them for high-volume paths.
+- **Knowledge sync**: start with changes, comments, metadata, titles, selected document summaries, and folder/project membership. Do not vectorize whole third-party repositories by default; embed deltas and curated summaries first, then full chunks for selected scopes.
 - **Proactive agent**: agent notices a forgotten follow-up and surfaces it. "You said you'd send Ternus a deck by Friday."
 - **Team digests**: auto-generated end-of-week summaries per team or per project.
 - **Export and portability**: full team data export. Important for trust.
@@ -159,5 +166,6 @@ Service-to-service references in Railway connect everything via private networki
 
 - A team member can record a voice note and have it queryable via the agent within 60 seconds of pressing send.
 - "What did we talk about with X last time" returns a correct, cited answer with >90% accuracy on populated teams.
+- A team can inspect a project/deal/person/object and understand its current state, history, open tasks, and recent changes without manually maintaining a CRM.
 - A new team member can be onboarded to a team's timeline and become productive (asking the agent useful questions) within their first day.
 - Active teams contribute at least one event per active member per workday — capture friction is low enough that it becomes habitual.
