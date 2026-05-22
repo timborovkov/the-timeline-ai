@@ -10,12 +10,70 @@ const log = childLogger('web:reconcile-jobs');
 const STALE_MS = 15 * 60 * 1000;
 /** Bound per-run cost so a reconciler crash never blows up the queue. */
 const BATCH_LIMIT = 200;
+/**
+ * Cap re-enqueue attempts per (row, stage). Without this, a deterministically
+ * broken row (corrupt audio, missing S3 object, model bug) would re-enqueue
+ * every 15 min forever — worker-side idempotency protects DB correctness but
+ * NOT API/LLM cost. After this many tries we stamp `reconcile_giveup_<stage>`
+ * and skip the row on subsequent runs; admin can clear the marker to retry.
+ */
+const MAX_RECONCILE_ATTEMPTS = 3;
 
 interface ReconcileResult {
   transcribeReenqueued: number;
   extractReenqueued: number;
   embedReenqueued: number;
+  /**
+   * Count of rows currently dead-lettered (any stage past
+   * MAX_RECONCILE_ATTEMPTS). Surfaced for operational dashboards — operators
+   * can clear `reconcile_giveup_<stage>` from `source_metadata` to retry.
+   */
+  deadLettered: number;
   errors: string[];
+}
+
+/**
+ * Build the SQL fragment that filters out rows past the attempt cap for a
+ * given stage. The counter lives at `source_metadata.reconcile_attempts_<stage>`
+ * as a stringified int (JSONB doesn't distinguish int from text well across
+ * dialects, so we cast explicitly).
+ */
+function attemptsBelowCap(stage: 'transcribe' | 'extract' | 'embed') {
+  const key = `reconcile_attempts_${stage}`;
+  return sql`COALESCE((${rawEvents.sourceMetadata} ->> ${key})::int, 0) < ${MAX_RECONCILE_ATTEMPTS}`;
+}
+
+/**
+ * Bump the per-stage attempt counter for a single row. Done in one UPDATE so
+ * a crash between enqueue and bump means we re-try (safer than over-counting).
+ * When the counter reaches the cap, we also stamp `reconcile_giveup_<stage>`
+ * with an ISO timestamp so operators can see when a row was dead-lettered.
+ */
+async function bumpAttempts(
+  rawEventId: string,
+  stage: 'transcribe' | 'extract' | 'embed',
+): Promise<void> {
+  const key = `reconcile_attempts_${stage}`;
+  const giveupKey = `reconcile_giveup_${stage}`;
+  // Read-modify-write in a single statement using jsonb concat. The CASE
+  // stamps a giveup marker when the bumped value equals the cap.
+  await db
+    .update(rawEvents)
+    .set({
+      sourceMetadata: sql`
+        ${rawEvents.sourceMetadata} ||
+        jsonb_build_object(
+          ${key}, COALESCE((${rawEvents.sourceMetadata} ->> ${key})::int, 0) + 1,
+          ${giveupKey},
+          CASE
+            WHEN COALESCE((${rawEvents.sourceMetadata} ->> ${key})::int, 0) + 1 >= ${MAX_RECONCILE_ATTEMPTS}
+            THEN to_jsonb(now()::text)
+            ELSE COALESCE(${rawEvents.sourceMetadata} -> ${giveupKey}, 'null'::jsonb)
+          END
+        )
+      `,
+    })
+    .where(eq(rawEvents.id, rawEventId));
 }
 
 /**
@@ -34,8 +92,25 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
     transcribeReenqueued: 0,
     extractReenqueued: 0,
     embedReenqueued: 0,
+    deadLettered: 0,
     errors: [],
   };
+
+  // One cheap query for dashboard visibility: how many rows are currently
+  // dead-lettered across any stage. Operators can clear a `reconcile_giveup_*`
+  // key from source_metadata to retry a specific row.
+  try {
+    const counted = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(rawEvents)
+      .where(
+        sql`${rawEvents.sourceMetadata} ?| array['reconcile_giveup_transcribe','reconcile_giveup_extract','reconcile_giveup_embed']`,
+      );
+    result.deadLettered = counted[0]?.count ?? 0;
+  } catch (err) {
+    // Non-fatal: visibility metric only, the actual reconcile logic still runs.
+    log.warn({ err: (err as Error).message }, 'dead_letter_count_failed');
+  }
 
   // 1. Transcribe orphans: rows with an audio key but no transcript.
   try {
@@ -47,6 +122,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
           isNotNull(rawEvents.contentAudioUrl),
           isNull(rawEvents.contentText),
           lt(rawEvents.createdAt, staleCutoff),
+          attemptsBelowCap('transcribe'),
         ),
       )
       .limit(BATCH_LIMIT);
@@ -60,6 +136,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
         teamId: row.teamId,
         audioKey: row.audioKey,
       });
+      await bumpAttempts(row.id, 'transcribe');
       result.transcribeReenqueued += 1;
     }
   } catch (err) {
@@ -83,6 +160,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
               .from(factsTable)
               .where(eq(factsTable.rawEventId, rawEvents.id)),
           ),
+          attemptsBelowCap('extract'),
         ),
       )
       .limit(BATCH_LIMIT);
@@ -92,6 +170,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
     for (const row of stuck) {
       if (inflight.has(row.id)) continue;
       await queue.enqueueExtractJob({ rawEventId: row.id, teamId: row.teamId });
+      await bumpAttempts(row.id, 'extract');
       result.extractReenqueued += 1;
     }
   } catch (err) {
@@ -115,6 +194,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
           isNotNull(rawEvents.contentText),
           lt(rawEvents.createdAt, staleCutoff),
           sql`NOT (${rawEvents.sourceMetadata} ? 'embedded_at')`,
+          attemptsBelowCap('embed'),
         ),
       )
       .limit(BATCH_LIMIT);
@@ -124,6 +204,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
     for (const row of stuck) {
       if (inflight.has(row.id)) continue;
       await queue.enqueueEmbedJob({ rawEventId: row.id, teamId: row.teamId });
+      await bumpAttempts(row.id, 'embed');
       result.embedReenqueued += 1;
     }
   } catch (err) {

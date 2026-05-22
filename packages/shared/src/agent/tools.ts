@@ -45,11 +45,17 @@ const getEventInput = z.object({
  * with a benign placeholder.
  */
 function fenceAttr(value: string): string {
-  // Escape `"` and `>` so a future, more permissive `source` / `eventId`
-  // value can't break out of the attribute. Today both are constrained
-  // (enum + UUID), but the fence is security-critical — keep it safe
-  // regardless of upstream constraint drift.
-  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/>/g, '&gt;');
+  // Escape every char that has structural meaning inside an XML/HTML-style
+  // attribute: `&` (entity start), `"` (attr terminator), `<` (rejected by
+  // strict XML attribute parsers), `>` (cosmetic — escaped for symmetry).
+  // Today `source` is an enum and `eventId` is a UUID so none of these can
+  // actually appear, but the fence is security-critical and these helpers
+  // must stay safe regardless of upstream constraint drift.
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function fenceExternalContent(

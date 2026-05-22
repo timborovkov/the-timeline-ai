@@ -252,6 +252,20 @@
         Leave <code>CRON_SECRET</code> unset to disable the endpoint (returns 503). The handler also
         accepts <code>GET</code> for cron services that don't support POST bodies.
       </p>
+      <p>
+        <strong>Dead-letter behavior.</strong> Each (row, stage) is re-enqueued at most 3 times.
+        After that the reconciler stamps
+        <code>source_metadata.reconcile_giveup_&lt;stage&gt;</code> with the giveup timestamp and
+        skips the row on subsequent runs. The response payload includes a
+        <code>deadLettered</code> count for dashboards. To retry a dead-lettered row manually, clear
+        the giveup key from <code>source_metadata</code>:
+      </p>
+      <pre><code>UPDATE raw_events
+SET source_metadata = source_metadata
+  - 'reconcile_giveup_transcribe'
+  - 'reconcile_attempts_transcribe'
+WHERE id = '&lt;uuid&gt;';
+</code></pre>
     </main>
   </body>
 </html>
