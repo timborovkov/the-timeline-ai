@@ -19,8 +19,10 @@ export default async function ChatPage() {
   const team = await scope.team();
 
   return (
-    <div>
-      <header className="mb-10">
+    // Height must match AppShell: header h-16 + main py-10 (9rem) / md:py-14 (11rem).
+    // If AppShell changes those, update here so the chat region stays viewport-bound.
+    <div className="flex h-[calc(100dvh-9rem)] flex-col md:h-[calc(100dvh-11rem)]">
+      <header className="mb-8 shrink-0">
         <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Chat</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight">Ask the timeline</h1>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -28,7 +30,9 @@ export default async function ChatPage() {
           came from — no black-box answers.
         </p>
       </header>
-      <ChatPane teamName={team?.name ?? active.teamName} />
+      <div className="flex min-h-0 flex-1 flex-col">
+        <ChatPane teamName={team?.name ?? active.teamName} />
+      </div>
     </div>
   );
 }

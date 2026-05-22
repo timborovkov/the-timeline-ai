@@ -3,7 +3,7 @@
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, type UIMessage } from 'ai';
 import { Send } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { CitationText } from './citation';
 import { ToolStep } from './tool-step';
@@ -26,109 +26,125 @@ export function ChatPane({ teamName }: Props) {
     transport: new DefaultChatTransport({ api: '/api/chat' }),
   });
   const [input, setInput] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const isStreaming = status === 'streaming' || status === 'submitted';
+
+  // Auto-scroll to bottom on new messages and streaming chunks, but only if
+  // the user is already near the bottom — otherwise they're reading earlier
+  // output and shouldn't get yanked away.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 80) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages, status]);
 
   function submit(text: string) {
     const t = text.trim();
     if (!t || isStreaming) return;
     setInput('');
     void sendMessage({ text: t });
+    // Force-jump on send so the user sees their own message and the incoming
+    // response, even if they had scrolled up before submitting.
+    requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
   }
 
-  // The composer is `sticky bottom-6` (56px input + 24px offset ≈ 80px
-  // visually occluded when scrolled). Every content sibling that could be
-  // at the bottom of the visible region needs equivalent bottom padding so
-  // its trailing content sits above the pinned composer — empty-state
-  // chips, message list, and error line alike.
-  const composerClearance = 'pb-28';
-
   return (
-    <div className="flex flex-col gap-8">
-      {messages.length === 0 ? (
-        <div className={cn('flex flex-col gap-6 pt-8', composerClearance)}>
-          <div>
-            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Try asking</p>
-            <h2 className="mt-2 text-xl font-medium tracking-tight">
-              Ask anything about {teamName}'s timeline
-            </h2>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {SUGGESTIONS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => {
-                  submit(s);
-                }}
-                className="rounded-full border bg-card px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:bg-accent/40 hover:text-foreground"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <ol className={cn('flex flex-col gap-6', composerClearance)}>
-          {messages.map((m: UIMessage) => {
-            const isUser = m.role === 'user';
-            return (
-              <li
-                key={m.id}
-                className={cn('flex flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}
-              >
-                <span className="px-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                  {isUser ? 'You' : teamName}
-                </span>
-                <div
-                  className={cn(
-                    'max-w-[90%] rounded-2xl text-sm',
-                    isUser
-                      ? 'rounded-br-md bg-secondary px-4 py-3 text-secondary-foreground'
-                      : 'border-l-2 border-primary/60 bg-transparent py-1 pl-4 pr-1',
-                  )}
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+        {messages.length === 0 ? (
+          <div className="flex flex-col gap-6 pt-8">
+            <div>
+              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                Try asking
+              </p>
+              <h2 className="mt-2 text-xl font-medium tracking-tight">
+                Ask anything about {teamName}'s timeline
+              </h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => {
+                    submit(s);
+                  }}
+                  className="rounded-full border bg-card px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:bg-accent/40 hover:text-foreground"
                 >
-                  <div className="space-y-2">
-                    {m.parts.map((part, idx) => {
-                      const key = `${m.id}-${String(idx)}`;
-                      if (part.type === 'text') {
-                        return <CitationText key={key} text={part.text} />;
-                      }
-                      if (part.type.startsWith('tool-')) {
-                        const toolPart = part as unknown as {
-                          type: string;
-                          toolCallId: string;
-                          state: string;
-                          input?: unknown;
-                          output?: unknown;
-                        };
-                        return (
-                          <ToolStep
-                            key={key}
-                            name={toolPart.type.slice('tool-'.length)}
-                            state={toolPart.state}
-                            input={toolPart.input}
-                            output={toolPart.output}
-                          />
-                        );
-                      }
-                      return null;
-                    })}
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <ol className="flex flex-col gap-6">
+            {messages.map((m: UIMessage) => {
+              const isUser = m.role === 'user';
+              return (
+                <li
+                  key={m.id}
+                  className={cn('flex flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}
+                >
+                  <span className="px-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                    {isUser ? 'You' : teamName}
+                  </span>
+                  <div
+                    className={cn(
+                      'max-w-[90%] rounded-2xl text-sm',
+                      isUser
+                        ? 'rounded-br-md bg-secondary px-4 py-3 text-secondary-foreground'
+                        : 'border-l-2 border-primary/60 bg-transparent py-1 pl-4 pr-1',
+                    )}
+                  >
+                    <div className="space-y-2">
+                      {m.parts.map((part, idx) => {
+                        const key = `${m.id}-${String(idx)}`;
+                        if (part.type === 'text') {
+                          return <CitationText key={key} text={part.text} />;
+                        }
+                        if (part.type.startsWith('tool-')) {
+                          const toolPart = part as unknown as {
+                            type: string;
+                            toolCallId: string;
+                            state: string;
+                            input?: unknown;
+                            output?: unknown;
+                          };
+                          return (
+                            <ToolStep
+                              key={key}
+                              name={toolPart.type.slice('tool-'.length)}
+                              state={toolPart.state}
+                              input={toolPart.input}
+                              output={toolPart.output}
+                            />
+                          );
+                        }
+                        return null;
+                      })}
+                    </div>
                   </div>
-                </div>
+                </li>
+              );
+            })}
+            {isStreaming && (
+              <li>
+                <InlineSpinner label="Thinking…" />
               </li>
-            );
-          })}
-          {isStreaming && (
-            <li>
-              <InlineSpinner label="Thinking…" />
-            </li>
-          )}
-        </ol>
-      )}
+            )}
+          </ol>
+        )}
+      </div>
 
       {error && (
-        <p className={cn('text-sm text-destructive', composerClearance)}>
+        <p className="shrink-0 text-sm text-destructive">
           {error.message || 'Chat failed. Make sure OPENROUTER_API_KEY is configured.'}
         </p>
       )}
@@ -138,7 +154,7 @@ export function ChatPane({ teamName }: Props) {
           e.preventDefault();
           submit(input);
         }}
-        className="sticky bottom-6 z-10"
+        className="shrink-0"
       >
         <div className="relative rounded-xl border bg-card shadow-sm">
           <input
