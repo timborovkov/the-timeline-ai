@@ -50,20 +50,20 @@ the helpers (`listObjects`, `getObject`, `createObject`, `updateObject`,
 - [x] Generalize `entities` into first-class workspace objects with type, status, owner, stage, priority, due date, custom metadata, aliases, and relationships.
 - [x] Add object pages that show timeline events, extracted facts, related objects, manual notes, status changes, open tasks, and agent-suggested changes. (`/app/objects/[id]` renders status/stage/priority/due editors, notes CRUD, related/linked objects, open tasks, and a recent-changes audit list. Timeline events for the object also land via `updateObject` writing a system raw_event per save.)
 - [x] Add manual object edits. Every manual change writes an immutable timeline event and a structured object-change record. (Verified in `updateObject` — one `raw_events` row per save, one `object_changes` row per modified field.)
-- [x] Add task objects: assignee, due date, status, source event, linked parent object. Agent can suggest tasks, humans approve/edit/complete them. (Tasks are `type='task'` with `parentObjectId` mapping to a `child` relationship. Agent suggestion surface is the `status='suggested'` + `agent_suggested=true` flag pair; UI for accept/reject pending in follow-up.)
+- [x] Add task objects: assignee, due date, status, source event, linked parent object. Agent can suggest tasks (`suggest_task` tool), humans approve/reject from the object page's "Recent changes" pane via `acceptObjectChange`/`rejectObjectChange`.
 - [x] Add "changes since last visit" summaries per object. (`object_views` upserts on visit; banner on the object page surfaces the delta.)
 - [x] Add object/activity notifications. (`notifications` table, in-process fan-out from `updateObject` to owner+assignee, `/app/inbox` page with mark-read.)
-- [x] Add persisted chat history scoped to team and optionally linked to objects. (Schema + `objects.appendChatMessages` + session/link/archive server actions shipped; wiring into `/api/chat` and the chat sidebar UI is the next follow-up below.)
-- [~] Add board views over objects: kanban by status/stage, table/list by type, saved filters. (`board_views` schema + `saveBoardViewAction`/`deleteBoardViewAction`/`listBoardViews` ready; the `/app/boards` and `/app/boards/[id]` renderers — kanban drag-to-update-status, table/list filter UI — ship in a follow-up.)
+- [x] Add persisted chat history scoped to team and optionally linked to objects. (Schema, `objects.appendChatMessages`, `/api/chat` session resolution, and the `/app/chat` two-column layout with `SessionSidebar` + pinned-object chip all ship together.)
+- [x] Add board views over objects: kanban by status/stage, table/list by type, saved filters. (`/app/boards` lists saved boards with a creation form; `/app/boards/[id]` renders kanban/table/list per `board.kind`. Kanban uses `@dnd-kit/core` with optimistic drag-to-move calling `updateObjectAction`. `/app/tasks` is a hardcoded preset.)
 
-### Phase 8 follow-ups (open)
+### Phase 8 follow-ups (shipped)
 
-- [ ] `/app/boards` + `/app/boards/[id]` UI: list saved boards, render kanban grouped by status/stage with drag-to-move, table + list variants reading the saved filter JSON. The server-side actions and `listObjects` filter shape are already in place.
-- [ ] `/app/tasks` convenience board: preset filter `{type:'task'}` grouped by status. Trivial once `/app/boards` lands.
-- [ ] `/api/chat` session persistence + chat sidebar: accept `?session=<id>`, call `objects.appendChatMessages` on `onFinish`, auto-create sessions on first message, render past sessions and pinned-object chip in `/app/chat`.
-- [ ] Agent tools: `suggest_task`, `propose_object_change`, `get_object`, `list_objects`, `list_tasks`, `recent_changes` in `packages/shared/src/agent/tools.ts`. Existing `get_entity`/`search_timeline` keep working in the meantime.
-- [ ] Overdue detector: recurring BullMQ job under `apps/worker/src/workers/` that scans `type IN ('task','follow_up') AND due_at < now() AND status NOT IN ('done','cancelled')` and emits `task_overdue`/`follow_up_overdue` notifications, deduped per-day on `(userId, entityId, kind)`.
-- [ ] Suggestion review UI: surface `object_changes WHERE status='suggested'` on object pages with accept/reject buttons that flip status and apply the change.
+- [x] `/app/boards` + `/app/boards/[id]` UI: components in `apps/web/src/components/boards/` (`kanban-board.tsx`, `object-table.tsx`, `object-list.tsx`, `board-create-form.tsx`, `delete-board-button.tsx`); server actions in `apps/web/src/app/actions/boards.ts`.
+- [x] `/app/tasks` convenience board: preset filter `{type:'task'}` grouped by status, reuses `<KanbanBoard>`.
+- [x] `/api/chat` session persistence + chat sidebar: route also accepts `?session=<uuid>` as a query-string fallback; `/app/chat` is now a two-column layout; `<ChatPane>` hydrates `initialMessages`, propagates `sessionId`, and captures the `x-tl-session-id` response header on auto-created sessions; pinned-object chip wires to `unpinChatSessionAction`.
+- [x] Agent tools: `get_object`, `list_objects`, `list_tasks`, `recent_changes`, `suggest_task`, `propose_object_change` shipped in `packages/shared/src/agent/tools.ts`. New service helpers `listObjectChanges` and `proposeObjectChange` back the read/write halves. System prompt bumped to `agent-v3-2026-05`.
+- [x] Overdue detector: hourly BullMQ repeatable (`overdue-scan` queue, `apps/worker/src/workers/overdue.ts`) scans overdue tasks/follow_ups and fans out to owner+assignee. Dedup per-day via partial unique index `notifications_overdue_dedup_idx` in migration `0008_overdue_dedup.sql`.
+- [x] Suggestion review UI: `suggested` rows in the "Recent changes" pane render Accept/Reject buttons. Accept calls `objects.acceptObjectChange` which re-uses `updateObject` so the full audit + notification path runs. A pending-suggestions banner appears on the object header when any are awaiting review.
 
 ## Phase 9 — Team Document Drive
 

@@ -2,17 +2,24 @@
 
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, type UIMessage } from 'ai';
-import { Send } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Send, X } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { CitationText } from './citation';
 import { ToolStep } from './tool-step';
 
+import { unpinChatSessionAction } from '@/app/actions/chat';
 import { InlineSpinner } from '@/components/loading-states';
 import { cn } from '@/lib/utils';
 
 interface Props {
   teamName: string;
+  sessionId: string | null;
+  initialMessages: UIMessage[];
+  pinnedEntityId: string | null;
+  pinnedEntityName: string | null;
 }
 
 const SUGGESTIONS = [
@@ -21,18 +28,79 @@ const SUGGESTIONS = [
   "What's outstanding right now?",
 ] as const;
 
-export function ChatPane({ teamName }: Props) {
-  const { messages, sendMessage, status, error } = useChat({
-    transport: new DefaultChatTransport({ api: '/api/chat' }),
+export function ChatPane({
+  teamName,
+  sessionId: initialSessionId,
+  initialMessages,
+  pinnedEntityId,
+  pinnedEntityName,
+}: Props) {
+  const router = useRouter();
+  const search = useSearchParams();
+  // Local sessionId so we can pick up an auto-created session id from the
+  // first response without forcing a full server round-trip. We then mirror
+  // it into the URL via router.replace so a reload lands on the same chat.
+  const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
+
+  // `useChat` constructs the underlying Chat (and the transport we hand it)
+  // once per mount via useRef — the transport's body/fetch closures are
+  // FROZEN to whatever `sessionId` was on first render. Without the ref
+  // mirror below, every turn after the first re-sends startNewSession=true
+  // and the server creates a fresh chat_sessions row per turn, fragmenting
+  // the conversation across rows. Mirror state into a ref so the closures
+  // always read the latest sessionId.
+  const sessionIdRef = useRef<string | null>(initialSessionId);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+  // router/search are stable references from next/navigation, but capture
+  // them in refs anyway so the transport's fetch closure doesn't snapshot
+  // a stale URLSearchParams on a query-param change.
+  const routerRef = useRef(router);
+  const searchRef = useRef(search);
+  useEffect(() => {
+    routerRef.current = router;
+    searchRef.current = search;
   });
+
+  // useMemo so the Chat instance picks up exactly one transport. The deps
+  // array is empty on purpose — we want the transport stable across renders
+  // since the closures already read via refs.
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: '/api/chat',
+        body: () => ({
+          sessionId: sessionIdRef.current ?? undefined,
+          startNewSession: sessionIdRef.current === null,
+        }),
+        fetch: async (url, init) => {
+          const res = await fetch(url, init);
+          const id = res.headers.get('x-tl-session-id');
+          if (id && id !== sessionIdRef.current) {
+            setSessionId(id);
+            // Mirror to URL without a full reload so the sidebar highlight
+            // updates and a reload hits the same session.
+            const params = new URLSearchParams(searchRef.current.toString());
+            params.set('session', id);
+            routerRef.current.replace(`/app/chat?${params.toString()}`);
+          }
+          return res;
+        },
+      }),
+    [],
+  );
+
+  const { messages, sendMessage, status, error } = useChat({
+    transport,
+    messages: initialMessages,
+  });
+
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const isStreaming = status === 'streaming' || status === 'submitted';
 
-  // Auto-scroll to bottom on new messages and streaming chunks, but only if
-  // the user is already near the bottom — otherwise they're reading earlier
-  // output and shouldn't get yanked away.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -47,8 +115,6 @@ export function ChatPane({ teamName }: Props) {
     if (!t || isStreaming) return;
     setInput('');
     void sendMessage({ text: t });
-    // Force-jump on send so the user sees their own message and the incoming
-    // response, even if they had scrolled up before submitting.
     requestAnimationFrame(() => {
       const el = scrollRef.current;
       if (el) el.scrollTop = el.scrollHeight;
@@ -57,6 +123,27 @@ export function ChatPane({ teamName }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
+      {pinnedEntityId && (
+        <div className="flex shrink-0 items-center gap-2 self-start rounded-full border border-primary/30 bg-primary/5 py-1 pl-3 pr-1 text-xs">
+          <Link href={`/app/objects/${pinnedEntityId}`} className="text-primary hover:underline">
+            pinned · {pinnedEntityName ?? pinnedEntityId}
+          </Link>
+          {sessionId && (
+            <button
+              type="button"
+              aria-label="Unpin"
+              onClick={() => {
+                void unpinChatSessionAction({ sessionId }).then(() => {
+                  router.refresh();
+                });
+              }}
+              className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      )}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         {messages.length === 0 ? (
           <div className="flex flex-col gap-6 pt-8">

@@ -4,10 +4,12 @@ import { type objects } from '@timeline/shared';
 import { useState, useTransition } from 'react';
 
 import {
+  acceptObjectChangeAction,
   addRelationshipAction,
   archiveObjectAction,
   createNoteAction,
   deleteNoteAction,
+  rejectObjectChangeAction,
   removeRelationshipAction,
   updateNoteAction,
   updateObjectAction,
@@ -90,6 +92,15 @@ export function ObjectDetailClient({ detail, userId }: Props) {
             your last visit.
           </div>
         )}
+        {(() => {
+          const pending = detail.recentChanges.filter((c) => c.status === 'suggested').length;
+          if (pending === 0) return null;
+          return (
+            <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/5 px-4 py-2 text-sm text-amber-700">
+              {pending} agent suggestion{pending === 1 ? '' : 's'} awaiting review below.
+            </div>
+          );
+        })()}
         {error && (
           <div className="mt-4 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-2 text-sm text-destructive">
             {error}
@@ -408,22 +419,67 @@ export function ObjectDetailClient({ detail, userId }: Props) {
           <p className="text-sm text-muted-foreground">No changes recorded.</p>
         ) : (
           <ul className="space-y-2 text-sm">
-            {detail.recentChanges.slice(0, 20).map((c) => (
-              <li key={c.id} className="rounded-lg border bg-card px-4 py-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{c.field}</span>
-                  <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    {c.actorKind} · {c.status}
-                  </span>
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {formatValue(c.previousValue)} → {formatValue(c.newValue)}
-                </div>
-                <div className="mt-1 text-[11px] text-muted-foreground">
-                  {new Date(c.changedAt).toLocaleString()}
-                </div>
-              </li>
-            ))}
+            {detail.recentChanges.slice(0, 20).map((c) => {
+              const isSuggested = c.status === 'suggested';
+              const isRejected = c.status === 'rejected';
+              return (
+                <li
+                  key={c.id}
+                  className={`rounded-lg border bg-card px-4 py-2 ${isSuggested ? 'border-amber-500/40 bg-amber-500/5' : ''} ${isRejected ? 'opacity-60' : ''}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{c.field}</span>
+                    <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                      {c.actorKind} · {c.status}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {formatValue(c.previousValue)} → {formatValue(c.newValue)}
+                  </div>
+                  <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>{new Date(c.changedAt).toLocaleString()}</span>
+                    {isSuggested && (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => {
+                            setError(null);
+                            startTransition(async () => {
+                              const result = await acceptObjectChangeAction({
+                                changeId: c.id,
+                                entityId: detail.id,
+                              });
+                              if ('error' in result && result.error) setError(result.error);
+                            });
+                          }}
+                          className="rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 text-primary hover:bg-primary/20 disabled:opacity-50"
+                        >
+                          Accept
+                        </button>
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => {
+                            setError(null);
+                            startTransition(async () => {
+                              const result = await rejectObjectChangeAction({
+                                changeId: c.id,
+                                entityId: detail.id,
+                              });
+                              if ('error' in result && result.error) setError(result.error);
+                            });
+                          }}
+                          className="rounded-md border px-2 py-0.5 text-muted-foreground hover:bg-accent disabled:opacity-50"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

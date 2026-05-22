@@ -266,3 +266,39 @@ export async function markAllNotificationsReadAction(): Promise<ActionState> {
   revalidatePath('/app/inbox');
   return { ok: true };
 }
+
+// ---------- Suggestion review ----------
+
+const reviewSuggestionSchema = z.object({
+  changeId: uuidSchema,
+  entityId: uuidSchema,
+});
+
+export async function acceptObjectChangeAction(input: unknown): Promise<ActionState> {
+  const parsed = reviewSuggestionSchema.safeParse(input);
+  if (!parsed.success) return { error: 'Invalid id' };
+  const r = await resolveScope();
+  if (!r.ok) return { error: r.error };
+  try {
+    const ok = await objects.acceptObjectChange(db, r.scope, parsed.data.changeId, {
+      kind: 'user',
+      userId: r.userId,
+    });
+    revalidatePath(`/app/objects/${parsed.data.entityId}`);
+    revalidatePath('/app/inbox');
+    return ok ? { ok: true } : { error: 'Suggestion no longer pending' };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to accept' };
+  }
+}
+
+export async function rejectObjectChangeAction(input: unknown): Promise<ActionState> {
+  const parsed = reviewSuggestionSchema.safeParse(input);
+  if (!parsed.success) return { error: 'Invalid id' };
+  const r = await resolveScope();
+  if (!r.ok) return { error: r.error };
+  const ok = await objects.rejectObjectChange(db, r.scope, parsed.data.changeId);
+  revalidatePath(`/app/objects/${parsed.data.entityId}`);
+  revalidatePath('/app/inbox');
+  return ok ? { ok: true } : { error: 'Suggestion no longer pending' };
+}

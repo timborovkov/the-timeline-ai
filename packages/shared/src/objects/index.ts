@@ -1594,6 +1594,237 @@ export async function saveBoardView(
   };
 }
 
+// ---------- Object changes (queries + agent suggestions + review) ----------
+
+export interface ObjectChangeRow {
+  id: string;
+  entityId: string;
+  entityName: string;
+  entityType: ObjectType;
+  field: string;
+  actorKind: ActorKind;
+  actorUserId: string | null;
+  previousValue: unknown;
+  newValue: unknown;
+  status: 'applied' | 'suggested' | 'rejected';
+  note: string | null;
+  changedAt: Date;
+}
+
+export async function listObjectChanges(
+  db: Db,
+  scope: TeamScope,
+  filter: {
+    entityId?: string;
+    status?: 'applied' | 'suggested' | 'rejected';
+    since?: Date;
+    limit?: number;
+  } = {},
+): Promise<ObjectChangeRow[]> {
+  await scope.requireMembership();
+  const conds = [eq(objectChanges.teamId, scope.teamId)];
+  if (filter.entityId && UUID_RE.test(filter.entityId)) {
+    conds.push(eq(objectChanges.entityId, filter.entityId));
+  }
+  if (filter.status) conds.push(eq(objectChanges.status, filter.status));
+  if (filter.since) conds.push(gte(objectChanges.changedAt, filter.since));
+  const rows = await db
+    .select({
+      id: objectChanges.id,
+      entityId: objectChanges.entityId,
+      entityName: entities.canonicalName,
+      entityType: entities.type,
+      field: objectChanges.field,
+      actorKind: objectChanges.actorKind,
+      actorUserId: objectChanges.actorUserId,
+      previousValue: objectChanges.previousValue,
+      newValue: objectChanges.newValue,
+      status: objectChanges.status,
+      note: objectChanges.note,
+      changedAt: objectChanges.changedAt,
+    })
+    .from(objectChanges)
+    .innerJoin(entities, eq(objectChanges.entityId, entities.id))
+    .where(and(...conds))
+    .orderBy(desc(objectChanges.changedAt))
+    .limit(Math.min(Math.max(filter.limit ?? 50, 1), 200));
+  return rows;
+}
+
+export interface ProposeObjectChangeInput {
+  entityId: string;
+  field: 'status' | 'stage' | 'priority' | 'ownerUserId' | 'assigneeUserId' | 'dueAt';
+  newValue: unknown;
+  note?: string | null;
+  actorUserId?: string | null;
+}
+
+/**
+ * Write a `suggested` row to object_changes without mutating the entity.
+ * Used by the agent's `propose_object_change` tool. A human reviews via the
+ * suggestion UI on the object page; `acceptObjectChange` applies it.
+ */
+export async function proposeObjectChange(
+  db: Db,
+  scope: TeamScope,
+  input: ProposeObjectChangeInput,
+): Promise<{ id: string }> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(input.entityId)) throw new Error('Invalid entity id');
+
+  return db.transaction(async (tx) => {
+    const entRows = await tx
+      .select()
+      .from(entities)
+      .where(
+        and(
+          eq(entities.id, input.entityId),
+          eq(entities.teamId, scope.teamId),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .limit(1);
+    const ent = entRows[0];
+    if (!ent) throw new Error('Object not found');
+
+    const previousValue = (ent as Record<string, unknown>)[input.field] ?? null;
+
+    const inserted = await tx
+      .insert(objectChanges)
+      .values({
+        teamId: scope.teamId,
+        entityId: input.entityId,
+        actorUserId: input.actorUserId ?? null,
+        actorKind: 'agent',
+        status: 'suggested',
+        field: input.field,
+        previousValue,
+        newValue: input.newValue,
+        note: input.note ?? null,
+      })
+      .returning({ id: objectChanges.id });
+    const changeId = inserted[0]?.id;
+    if (!changeId) throw new Error('Failed to record suggestion');
+
+    // Fan out to owner + assignee. Mirrors the recipient set in
+    // updateObject so assignees don't silently miss agent suggestions on
+    // objects they don't own. Dedup via Set: when owner == assignee they
+    // get one row, not two.
+    const recipients = new Set<string>();
+    if (ent.ownerUserId) recipients.add(ent.ownerUserId);
+    if (ent.assigneeUserId) recipients.add(ent.assigneeUserId);
+    if (recipients.size > 0) {
+      const summary = `Agent suggests ${input.field} → ${JSON.stringify(input.newValue)} on ${ent.canonicalName}`;
+      await tx.insert(notifications).values(
+        Array.from(recipients).map((uid) => ({
+          teamId: scope.teamId,
+          userId: uid,
+          kind: 'agent_suggestion' as const,
+          entityId: input.entityId,
+          objectChangeId: changeId,
+          summary,
+          payload: {
+            entity_id: input.entityId,
+            field: input.field,
+            new_value: input.newValue,
+          },
+        })),
+      );
+    }
+
+    return { id: changeId };
+  });
+}
+
+/**
+ * Accept a suggested change: apply it to the entity via `updateObject` so the
+ * full audit/notification path runs, then flip the suggestion row's status to
+ * `applied`. Returns false if the suggestion isn't in `suggested` state.
+ */
+export async function acceptObjectChange(
+  db: Db,
+  scope: TeamScope,
+  changeId: string,
+  actor: UpdateActor,
+): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(changeId)) return false;
+
+  const rows = await db
+    .select()
+    .from(objectChanges)
+    .where(
+      and(
+        eq(objectChanges.id, changeId),
+        eq(objectChanges.teamId, scope.teamId),
+        eq(objectChanges.status, 'suggested'),
+      ),
+    )
+    .limit(1);
+  const change = rows[0];
+  if (!change) return false;
+
+  // Build a patch object keyed by the suggestion's field. Restrict to the
+  // exact set `proposeObjectChange` accepts — guards against `__create__`
+  // and other structural-event markers, and keeps the accept surface in
+  // lockstep with the propose surface so the agent can't sneak in a
+  // canonicalName/aliases/metadata rewrite through a hand-crafted row.
+  const allowed: readonly (keyof ObjectPatch)[] = [
+    'status',
+    'stage',
+    'priority',
+    'ownerUserId',
+    'assigneeUserId',
+    'dueAt',
+  ];
+  if (!(allowed as readonly string[]).includes(change.field)) return false;
+
+  const patch: ObjectPatch = {};
+  const value = change.newValue;
+  // `dueAt` round-trips through JSON as a string — rehydrate so the diff in
+  // updateObject doesn't compare Date to string and write a phantom change.
+  if (change.field === 'dueAt') {
+    patch.dueAt = value === null ? null : new Date(value as string);
+  } else {
+    (patch as Record<string, unknown>)[change.field] = value;
+  }
+
+  await updateObject(db, scope, change.entityId, patch, actor);
+
+  // Guard the flip with `status='suggested'` so a concurrent reject (or a
+  // second accept that got past the same initial SELECT) can't clobber a
+  // terminal `rejected` row back into `applied`. The SELECT above is
+  // outside a transaction, so this WHERE is the only thing keeping the
+  // audit trail consistent under contention.
+  const flipped = await db
+    .update(objectChanges)
+    .set({ status: 'applied' })
+    .where(and(eq(objectChanges.id, changeId), eq(objectChanges.status, 'suggested')))
+    .returning({ id: objectChanges.id });
+  return flipped.length > 0;
+}
+
+export async function rejectObjectChange(
+  db: Db,
+  scope: TeamScope,
+  changeId: string,
+): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(changeId)) return false;
+  const result = await db
+    .update(objectChanges)
+    .set({ status: 'rejected' })
+    .where(
+      and(
+        eq(objectChanges.id, changeId),
+        eq(objectChanges.teamId, scope.teamId),
+        eq(objectChanges.status, 'suggested'),
+      ),
+    )
+    .returning({ id: objectChanges.id });
+  return result.length > 0;
+}
+
 export async function deleteBoardView(db: Db, scope: TeamScope, id: string): Promise<boolean> {
   await scope.requireMembership();
   if (!UUID_RE.test(id)) return false;
