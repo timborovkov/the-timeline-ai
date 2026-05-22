@@ -374,10 +374,25 @@ export async function getObject(
       : [];
 
   const lastVisitedAt = viewRows[0]?.lastVisitedAt ?? null;
-  const newSinceLastVisit = lastVisitedAt
-    ? changeRows.filter((c) => c.changedAt > lastVisitedAt).length +
-      noteRows.filter((n) => n.createdAt > lastVisitedAt).length
-    : 0;
+  // `changeRows` is capped at 50 for the recent-changes pane, so filtering it
+  // would undercount once an object accumulates more than 50 changes between
+  // visits. Run a dedicated COUNT(*) instead. `noteRows` is unbounded so the
+  // in-memory filter is accurate.
+  let newSinceLastVisit = 0;
+  if (lastVisitedAt) {
+    const countRows = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(objectChanges)
+      .where(
+        and(
+          eq(objectChanges.teamId, scope.teamId),
+          eq(objectChanges.entityId, entityRow.id),
+          gte(objectChanges.changedAt, lastVisitedAt),
+        ),
+      );
+    newSinceLastVisit =
+      (countRows[0]?.count ?? 0) + noteRows.filter((n) => n.createdAt > lastVisitedAt).length;
+  }
 
   const base = toObjectRow(entityRow);
   return {
