@@ -1,8 +1,6 @@
 import { teamMembers } from '@timeline/db';
 import { and, eq } from 'drizzle-orm';
 
-import type { TeamRole } from './team-scope.js';
-
 /**
  * Transaction-scoped utility: lock the team's owner rows and verify that
  * removing or demoting `userId` would leave at least one owner remaining.
@@ -40,12 +38,4 @@ export async function assertNotLastOwner(
   if (otherOwners.length === 0) {
     throw new Error('last_owner');
   }
-}
-
-export const ROLES_BY_PRIVILEGE: readonly TeamRole[] = ['owner', 'admin', 'member'] as const;
-
-export function canActOn(callerRole: TeamRole, targetRole: TeamRole): boolean {
-  const ci = ROLES_BY_PRIVILEGE.indexOf(callerRole);
-  const ti = ROLES_BY_PRIVILEGE.indexOf(targetRole);
-  return ci <= ti;
 }
