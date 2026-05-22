@@ -161,9 +161,7 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
                     ) : null}
                     {event.contentText !== null ? (
                       event.contentText.trim() === '' ? (
-                        <p className="text-sm italic text-muted-foreground">
-                          (no speech detected)
-                        </p>
+                        <p className="text-sm italic text-muted-foreground">(no speech detected)</p>
                       ) : (
                         <p className="whitespace-pre-wrap text-[15px] leading-7">
                           {event.contentText}

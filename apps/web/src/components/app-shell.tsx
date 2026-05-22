@@ -1,7 +1,6 @@
 import type { TeamMembership } from '@/lib/active-team';
 import type { ReactNode } from 'react';
 
-
 import { MobileNav } from '@/components/mobile-nav';
 import { SidebarNav } from '@/components/sidebar-nav';
 import { TeamSwitcher } from '@/components/team-switcher';

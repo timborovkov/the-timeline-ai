@@ -81,9 +81,7 @@ export default async function EntitiesIndexPage() {
     <div>
       <header className="mb-10">
         <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Entities</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-          People, companies & projects
-        </h1>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">People, companies & projects</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Everything extracted from this team&apos;s timeline.
         </p>
@@ -102,9 +100,7 @@ export default async function EntitiesIndexPage() {
             return (
               <section key={type}>
                 <div className="mb-3 flex items-baseline justify-between">
-                  <h2 className="text-sm font-medium tracking-tight">
-                    {TYPE_LABEL[type] ?? type}
-                  </h2>
+                  <h2 className="text-sm font-medium tracking-tight">{TYPE_LABEL[type] ?? type}</h2>
                   <span className="text-xs text-muted-foreground">{list.length}</span>
                 </div>
                 <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">

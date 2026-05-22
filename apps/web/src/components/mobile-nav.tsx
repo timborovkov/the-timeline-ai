@@ -83,8 +83,7 @@ export function MobileNav({ active, memberships }: Props) {
             </div>
             <nav className="mt-8 flex flex-col gap-1">
               {items.map((item) => {
-                const isActive =
-                  pathname === item.href || pathname.startsWith(`${item.href}/`);
+                const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 const Icon = item.icon;
                 return (
                   <Link

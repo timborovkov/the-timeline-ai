@@ -40,9 +40,7 @@ export function ChatPane({ teamName }: Props) {
       {messages.length === 0 ? (
         <div className="flex flex-col gap-6 py-8">
           <div>
-            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-              Try asking
-            </p>
+            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Try asking</p>
             <h2 className="mt-2 text-xl font-medium tracking-tight">
               Ask anything about {teamName}'s timeline
             </h2>
