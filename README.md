@@ -19,7 +19,7 @@ and structured logging are in place.
 
 ## Local development
 
-See [`docs/setup/local.md`](./docs/setup/local.md).
+See [`docs/setup/local.html`](./docs/setup/local.html).
 
 Short version:
 
