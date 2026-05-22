@@ -34,7 +34,10 @@ function lazy(resolve: () => Logger): Logger {
     get(_t, prop) {
       const real = resolve() as unknown as Record<string | symbol, unknown>;
       const value = real[prop];
-      return typeof value === 'function' ? (value as Function).bind(real) : value;
+      if (typeof value === 'function') {
+        return (value as (...args: unknown[]) => unknown).bind(real);
+      }
+      return value;
     },
   });
 }
