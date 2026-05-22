@@ -9,7 +9,100 @@
  * setWebhook (AUTH_URL would be http://localhost anyway, which Telegram
  * rejects). The instrumentation hook also runs in the edge runtime; we
  * only act in the Node.js runtime.
+ *
+ * Note: we intentionally don't import from `@timeline/shared` here. Next's
+ * webpack still statically traces dynamic imports for bundling, and the
+ * shared barrel transitively pulls in bullmq, whose Node built-in imports
+ * (net, crypto, worker_threads) blow up the build. The logic below is
+ * small enough to inline.
  */
+
+const ALLOWED_UPDATES = ['message', 'edited_message', 'callback_query'] as const;
+
+interface WebhookInfo {
+  url?: string;
+  pending_update_count?: number;
+  last_error_message?: string;
+}
+
+async function callTelegram<T>(token: string, method: string, body?: unknown): Promise<T> {
+  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: body ? JSON.stringify(body) : '{}',
+  });
+  const json = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    result?: T;
+    description?: string;
+  };
+  if (!res.ok || !json.ok) {
+    throw new Error(`Telegram ${method} failed: ${res.status} ${json.description ?? ''}`.trim());
+  }
+  return json.result as T;
+}
+
+async function registerWebhook(input: {
+  botToken: string;
+  webhookSecret: string;
+  authUrl: string;
+}): Promise<{ status: 'already-registered' | 'registered' | 'error'; detail: string }> {
+  const { botToken, webhookSecret, authUrl } = input;
+  const targetUrl = `${authUrl.replace(/\/+$/, '')}/api/telegram/webhook`;
+
+  let info: WebhookInfo;
+  try {
+    info = await callTelegram<WebhookInfo>(botToken, 'getWebhookInfo');
+  } catch (err) {
+    return {
+      status: 'error',
+      detail: `getWebhookInfo failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  const needsRegister = info.url !== targetUrl || Boolean(info.last_error_message);
+  if (!needsRegister) {
+    return {
+      status: 'already-registered',
+      detail: `url=${info.url} pending=${info.pending_update_count ?? 0}`,
+    };
+  }
+
+  try {
+    await callTelegram(botToken, 'setWebhook', {
+      url: targetUrl,
+      secret_token: webhookSecret,
+      allowed_updates: ALLOWED_UPDATES,
+      drop_pending_updates: false,
+    });
+  } catch (err) {
+    return {
+      status: 'error',
+      detail: `setWebhook failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  let after: WebhookInfo;
+  try {
+    after = await callTelegram<WebhookInfo>(botToken, 'getWebhookInfo');
+  } catch (err) {
+    return {
+      status: 'registered',
+      detail: `setWebhook ok but verification failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  if (after.url !== targetUrl) {
+    return {
+      status: 'error',
+      detail: `verification mismatch: expected ${targetUrl}, got ${after.url ?? '(none)'}`,
+    };
+  }
+  return {
+    status: 'registered',
+    detail: `url=${after.url} pending=${after.pending_update_count ?? 0}`,
+  };
+}
 
 export function register(): void {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
@@ -30,21 +123,14 @@ export function register(): void {
     return;
   }
 
-  // Fire-and-forget: must never block server readiness. Import lazily so
-  // the shared package isn't pulled into the edge bundle.
-  void (async () => {
-    try {
-      const { telegram } = await import('@timeline/shared');
-      const result = await telegram.registerTelegramWebhook({
-        botToken: token,
-        webhookSecret: secret,
-        authUrl,
-      });
+  // Fire-and-forget: must never block server readiness.
+  void registerWebhook({ botToken: token, webhookSecret: secret, authUrl })
+    .then((result) => {
       console.log(`[telegram-webhook] ${result.status}: ${result.detail}`);
-    } catch (err) {
+    })
+    .catch((err: unknown) => {
       console.warn(
         `[telegram-webhook] unexpected error: ${err instanceof Error ? err.message : String(err)}`,
       );
-    }
-  })();
+    });
 }
