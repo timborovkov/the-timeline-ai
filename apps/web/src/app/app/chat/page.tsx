@@ -19,15 +19,15 @@ export default async function ChatPage() {
   const team = await scope.team();
 
   return (
-    <div className="space-y-4">
-      <header className="flex items-baseline justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Ask the timeline</h1>
-        <span className="text-xs text-muted-foreground">{team?.name ?? active.teamName}</span>
+    <div>
+      <header className="mb-10">
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Chat</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Ask the timeline</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Ask anything about what your team has captured. Every claim links back to the event it
+          came from — no black-box answers.
+        </p>
       </header>
-      <p className="text-sm text-muted-foreground">
-        Ask anything about what your team has captured. Every claim links back to the event it came
-        from — no black-box answers.
-      </p>
       <ChatPane teamName={team?.name ?? active.teamName} />
     </div>
   );

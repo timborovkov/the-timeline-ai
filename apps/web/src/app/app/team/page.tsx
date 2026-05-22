@@ -37,10 +37,11 @@ export default async function TeamSettingsPage() {
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Team settings</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {active.teamName} · your role: <Badge variant="outline">{role}</Badge>
+      <header className="mb-2">
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Team</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{active.teamName}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Your role: <Badge variant="outline">{role}</Badge>
         </p>
       </header>
 

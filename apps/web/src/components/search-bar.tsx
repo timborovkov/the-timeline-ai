@@ -1,5 +1,6 @@
 'use client';
 
+import { Search, X } from 'lucide-react';
 import { useState, type SyntheticEvent } from 'react';
 
 import { Card, CardContent } from '@/components/ui/card';
@@ -84,35 +85,36 @@ export function SearchBar() {
 
   return (
     <section className="space-y-3">
-      <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-1 flex-col gap-1">
-          <span className="text-xs text-muted-foreground">Semantic search</span>
-          <input
-            type="search"
-            placeholder='e.g. "licensing discussion with Apple"'
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-            }}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={loading || query.trim().length === 0}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm transition-colors hover:bg-accent disabled:opacity-50"
-        >
-          {loading ? 'Searching…' : 'Search'}
-        </button>
-        {results !== null && (
+      <form onSubmit={onSubmit} className="relative">
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="search"
+          placeholder='Semantic search — e.g. "licensing discussion with Apple"'
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+          }}
+          className="h-11 w-full rounded-xl border border-input bg-card pl-10 pr-28 text-sm transition-colors focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-ring/40"
+        />
+        <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+          {results !== null && (
+            <button
+              type="button"
+              onClick={clear}
+              aria-label="Clear search"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
           <button
-            type="button"
-            onClick={clear}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm text-muted-foreground transition-colors hover:bg-accent"
+            type="submit"
+            disabled={loading || query.trim().length === 0}
+            className="h-8 rounded-md px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground disabled:opacity-40"
           >
-            Clear
+            {loading ? 'Searching…' : 'Search'}
           </button>
-        )}
+        </div>
       </form>
 
       {error && (

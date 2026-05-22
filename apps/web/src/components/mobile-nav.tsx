@@ -1,0 +1,133 @@
+'use client';
+
+import { Menu, X } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+
+import type { TeamMembership } from '@/lib/active-team';
+
+import { NAV_ITEMS, isNavItemActive } from '@/components/nav-items';
+import { TeamSwitcher } from '@/components/team-switcher';
+import { cn } from '@/lib/utils';
+
+interface Props {
+  active: TeamMembership;
+  memberships: TeamMembership[];
+}
+
+export function MobileNav({ active, memberships }: Props) {
+  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Close the sheet whenever the user navigates.
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  // Lock body scroll while the sheet is open.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
+  // Tailwind's `md` breakpoint is 768px. The sheet only renders below `md`
+  // via `md:hidden`. If the viewport widens past 768px while the sheet is
+  // open (rotation, resize, devtools), the overlay disappears via CSS but
+  // React state stays `open: true` — which keeps `body.overflow: hidden`
+  // applied forever. Listen for the breakpoint crossing and force-close so
+  // the cleanup effect above releases scroll.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const handler = (e: MediaQueryListEvent) => {
+      if (e.matches) setOpen(false);
+    };
+    mq.addEventListener('change', handler);
+    return () => {
+      mq.removeEventListener('change', handler);
+    };
+  }, []);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(true);
+        }}
+        aria-label="Open navigation"
+        className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground md:hidden"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-50 md:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Navigation"
+        >
+          <div
+            className="absolute inset-0 bg-background/70 backdrop-blur-sm"
+            onClick={() => {
+              setOpen(false);
+            }}
+          />
+          <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-border/60 bg-background px-4 py-6 shadow-xl">
+            <div className="flex items-center justify-between px-2">
+              <span className="text-sm font-semibold tracking-tight">The Timeline</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                }}
+                aria-label="Close navigation"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <nav className="mt-8 flex flex-col gap-1">
+              {NAV_ITEMS.map((item) => {
+                const isActive = isNavItemActive(item, pathname);
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    // Dismiss directly on click — the pathname effect only
+                    // fires when the route actually changes, so tapping
+                    // the already-active item (e.g. Timeline from
+                    // /app/timeline) would otherwise leave the sheet open
+                    // and the body scroll locked.
+                    onClick={() => {
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      'flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
+                      isActive
+                        ? 'bg-accent text-foreground'
+                        : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
+            <div className="mt-auto space-y-3 border-t border-border/60 pt-4">
+              <TeamSwitcher active={active} memberships={memberships} />
+            </div>
+          </aside>
+        </div>
+      )}
+    </>
+  );
+}
