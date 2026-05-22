@@ -38,7 +38,16 @@ TELEGRAM_WEBHOOK_SECRET=<the_hex_string>
 
 ## 4. Register the webhook (once per environment)
 
-Run after deploy:
+**The web service does this automatically on startup.** The Next.js
+instrumentation hook at [`apps/web/src/instrumentation.ts`](../../apps/web/src/instrumentation.ts)
+runs once per server process. In production (`NODE_ENV=production`), if
+`TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, and `AUTH_URL` are all set,
+it calls `getWebhookInfo` and re-registers via `setWebhook` whenever the URL
+doesn't match or Telegram is reporting a recent delivery error. Registration
+is fire-and-forget — it never blocks server readiness. Missing env vars →
+logs a skip line and continues.
+
+For local development (or to register manually):
 
 ```bash
 curl -F "url=https://<your-app-domain>/api/telegram/webhook" \
@@ -47,8 +56,8 @@ curl -F "url=https://<your-app-domain>/api/telegram/webhook" \
      "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook"
 ```
 
-For local development, expose the dev server via ngrok / cloudflared and point
-the webhook at the tunnel.
+Expose the dev server via ngrok / cloudflared and point the webhook at the
+tunnel.
 
 ## 5. Verify
 

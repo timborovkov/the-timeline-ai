@@ -120,13 +120,22 @@ Telegram and Postmark webhooks point at the `web` service public URL:
 - Telegram: `https://app.thetimeline.app/api/telegram/webhook`
 - Postmark: `https://app.thetimeline.app/api/email/inbound`
 
-Set the Telegram webhook with the secret token in the same call:
+The Telegram webhook is registered automatically by the `web` service on
+startup. The Next.js instrumentation hook at `apps/web/src/instrumentation.ts`
+runs once per server process, reads `TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_WEBHOOK_SECRET`, and `AUTH_URL`, calls `getWebhookInfo`, and
+re-registers via `setWebhook` whenever the URL doesn't match or Telegram
+reports a recent delivery error. Production-only (`NODE_ENV=production`);
+fire-and-forget so it never blocks readiness. Missing env vars → it logs a
+skip line and continues.
+
+To register manually (e.g. from a laptop pointed at staging):
 
 ```bash
 curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
   -d "url=https://app.thetimeline.app/api/telegram/webhook" \
   -d "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
-  -d "allowed_updates=[\"message\",\"edited_message\",\"my_chat_member\"]"
+  -d "allowed_updates=[\"message\",\"edited_message\",\"callback_query\"]"
 ```
 
 The `web` service verifies the `X-Telegram-Bot-Api-Secret-Token` header on every request and rejects anything that doesn't match.
