@@ -41,10 +41,7 @@ function lazy(resolve: () => Logger): Logger {
 
 export const logger: Logger = lazy(getRoot);
 
-export function childLogger(
-  component: string,
-  bindings: Record<string, unknown> = {},
-): Logger {
+export function childLogger(component: string, bindings: Record<string, unknown> = {}): Logger {
   return lazy(() => getRoot().child({ component, ...bindings }));
 }
 
