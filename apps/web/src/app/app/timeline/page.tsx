@@ -49,20 +49,29 @@ export default async function TimelinePage({ searchParams }: Props) {
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
 
-  // Parse once so the UI and the query agree on what's actually filtered.
-  // Raw `sp.author` may contain a non-UUID, `sp.from`/`sp.to` may contain an
-  // unparseable string — those are dropped by the parsers, so the indicator
-  // must reflect the parsed values, not the raw params, or the chip would
-  // say "Filters · on" while the feed returns everything.
+  // Parse once so the indicator chip, the open-state of <details>, the form
+  // inputs, and the actual query all agree on what's filtered. Raw
+  // `sp.author` may contain a non-UUID, `sp.from`/`sp.to` may contain an
+  // unparseable string — those are dropped by the parsers, so binding the
+  // form to raw `sp.*` would show invalid values that the feed quietly
+  // ignored. We keep two `to` variants because the query wants end-of-day
+  // (inclusive upper bound) but the <input type="date"> wants the picked
+  // day verbatim.
   const authorFilter = parseUuid(sp.author);
   const fromFilter = parseDate(sp.from);
-  const toFilter = parseEndOfDay(sp.to);
+  const toFilter = parseDate(sp.to);
+  const toQueryFilter = parseEndOfDay(sp.to);
 
   const events = await scope.listEvents({
     authorUserId: authorFilter,
     from: fromFilter,
-    to: toFilter,
+    to: toQueryFilter,
   });
+
+  // Format a Date back to the YYYY-MM-DD string the <input type="date">
+  // expects. Both `parseDate` and `toISOString()` treat the value as UTC,
+  // so this round-trips a user-picked date cleanly.
+  const toDateInputValue = (d: Date | undefined): string => (d ? d.toISOString().slice(0, 10) : '');
 
   const authorIds = Array.from(
     new Set(events.map((e) => e.authorUserId).filter((v): v is string => v !== null)),
@@ -151,7 +160,7 @@ export default async function TimelinePage({ searchParams }: Props) {
                 </span>
                 <select
                   name="author"
-                  defaultValue={sp.author ?? ''}
+                  defaultValue={authorFilter ?? ''}
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                 >
                   <option value="">Everyone</option>
@@ -169,7 +178,7 @@ export default async function TimelinePage({ searchParams }: Props) {
                 <input
                   type="date"
                   name="from"
-                  defaultValue={sp.from ?? ''}
+                  defaultValue={toDateInputValue(fromFilter)}
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                 />
               </label>
@@ -180,7 +189,7 @@ export default async function TimelinePage({ searchParams }: Props) {
                 <input
                   type="date"
                   name="to"
-                  defaultValue={sp.to ?? ''}
+                  defaultValue={toDateInputValue(toFilter)}
                   className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                 />
               </label>
