@@ -100,11 +100,18 @@ export function CaptureForm() {
         await submitAudio();
       }
       formRef.current?.reset();
-      setClip(null);
-      // Only remount the recorder when an audio clip was actually posted.
-      // A text-only Post must not bump the key — that would unmount any
-      // in-progress recording and silently destroy the user's audio.
-      if (hadClip) setRecorderKey((k) => k + 1);
+      // Only clear clip / remount the recorder when an audio clip was
+      // actually posted. A text-only Post must not touch recorder state —
+      // the user may have started (or finished) a recording during the
+      // async text submit. The Stop button stays enabled while pending, so
+      // `onstop` can fire mid-submit and push a fresh clip up via
+      // onClipChange; unconditionally nulling here would overwrite that
+      // clip in the parent while the child still shows it in review,
+      // wedging the user (next Post sees no clip).
+      if (hadClip) {
+        setClip(null);
+        setRecorderKey((k) => k + 1);
+      }
       // Keep visibility pill sticky — it's a preference, not per-post.
       router.refresh();
     } catch (err) {
