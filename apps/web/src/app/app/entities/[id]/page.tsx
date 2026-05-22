@@ -44,14 +44,17 @@ export default async function EntityPage({ params }: Props) {
   const { entity, facts: visibleFacts, events: eventRows, coOccurring: coRows } = profile;
 
   return (
-    <div className="space-y-8">
-      <header className="flex flex-col gap-2">
-        <Link href="/app/entities" className="text-xs text-muted-foreground hover:text-foreground">
+    <div>
+      <header className="mb-10 flex flex-col gap-3">
+        <Link
+          href="/app/entities"
+          className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
           ← All entities
         </Link>
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">{entity.canonicalName}</h1>
-          <span className="text-xs uppercase tracking-wide text-muted-foreground">
+        <div className="flex flex-wrap items-baseline gap-3">
+          <h1 className="text-3xl font-semibold tracking-tight">{entity.canonicalName}</h1>
+          <span className="rounded-full border bg-card px-2.5 py-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">
             {entity.type}
           </span>
         </div>
