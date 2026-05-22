@@ -165,20 +165,12 @@ export function AudioRecorder({ onClipChange, disabled = false }: AudioRecorderP
           </Button>
         ) : null}
         {phase === 'review' ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={disabled}
-            onClick={discard}
-          >
+          <Button type="button" size="sm" variant="ghost" disabled={disabled} onClick={discard}>
             Discard
           </Button>
         ) : null}
         {phase === 'review' ? (
-          <span className="text-xs text-muted-foreground">
-            Ready — press Post to send.
-          </span>
+          <span className="text-xs text-muted-foreground">Ready — press Post to send.</span>
         ) : null}
       </div>
       {clip ? (

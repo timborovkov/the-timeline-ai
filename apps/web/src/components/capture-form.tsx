@@ -142,7 +142,11 @@ export function CaptureForm() {
           {error ? <span className="text-xs text-destructive">{error}</span> : null}
           <Button type="submit" disabled={pending} className="gap-2">
             {pending ? (
-              clip ? 'Uploading…' : 'Posting…'
+              clip ? (
+                'Uploading…'
+              ) : (
+                'Posting…'
+              )
             ) : (
               <>
                 <Send className="h-3.5 w-3.5" />

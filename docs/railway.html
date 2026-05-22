@@ -385,9 +385,10 @@ LOG_LEVEL=info
       <p>
         <strong>About <code>S3_PUBLIC_ENDPOINT</code>:</strong> the browser uploads voice notes and
         fetches audio for playback directly against this URL, so it must be publicly reachable over
-        HTTPS. Expose the RustFS service via a Railway public domain (Settings → Networking → Generate
-        Domain) and set <code>S3_PUBLIC_ENDPOINT</code> to that URL. <code>S3_ENDPOINT</code> stays
-        on the private network — workers and server-side code keep using it.
+        HTTPS. Expose the RustFS service via a Railway public domain (Settings → Networking →
+        Generate Domain) and set <code>S3_PUBLIC_ENDPOINT</code> to that URL.
+        <code>S3_ENDPOINT</code> stays on the private network — workers and server-side code keep
+        using it.
       </p>
 
       <h2 id="staging-vs-production">Staging vs production</h2>

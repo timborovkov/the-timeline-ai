@@ -45,7 +45,9 @@ export function getS3PresignClient(): S3Client {
     return _presignClient;
   }
   if (!env.S3_REGION || !env.S3_ACCESS_KEY_ID || !env.S3_SECRET_ACCESS_KEY) {
-    throw new Error('S3 not configured: S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY required');
+    throw new Error(
+      'S3 not configured: S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY required',
+    );
   }
   _presignClient = new S3Client({
     endpoint: env.S3_PUBLIC_ENDPOINT,
