@@ -95,12 +95,16 @@ export function CaptureForm() {
         }
         if (textareaRef.current) textareaRef.current.value = '';
       }
+      const hadClip = clip !== null;
       if (clip) {
         await submitAudio();
       }
       formRef.current?.reset();
       setClip(null);
-      setRecorderKey((k) => k + 1);
+      // Only remount the recorder when an audio clip was actually posted.
+      // A text-only Post must not bump the key — that would unmount any
+      // in-progress recording and silently destroy the user's audio.
+      if (hadClip) setRecorderKey((k) => k + 1);
       // Keep visibility pill sticky — it's a preference, not per-post.
       router.refresh();
     } catch (err) {
