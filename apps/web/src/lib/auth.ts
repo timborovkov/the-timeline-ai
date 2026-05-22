@@ -87,10 +87,7 @@ const nextAuth = NextAuth({
         const { readPendingInvite } = await import('@/lib/pending-invite');
         pendingInvite = await readPendingInvite();
       } catch (err) {
-        log.error(
-          { err: (err as Error).message, userId },
-          'createUser_pending_invite_read_failed',
-        );
+        log.error({ err: (err as Error).message, userId }, 'createUser_pending_invite_read_failed');
       }
       if (pendingInvite) return;
       await ensureSoloTeam(userId, { name: user.name, email: user.email });
