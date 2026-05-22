@@ -23,6 +23,18 @@ const schema = z.object({
 
   // S3 / RustFS (Phase 3+)
   S3_ENDPOINT: z.string().url().optional(),
+  /**
+   * Public HTTPS endpoint used when signing browser-facing PUT/GET URLs.
+   * S3_ENDPOINT is typically Railway's private hostname (HTTP) which workers
+   * use happily but the browser blocks as mixed content. Set this to a
+   * publicly reachable HTTPS URL for the same RustFS instance. Falls back
+   * to S3_ENDPOINT when unset (fine for local dev).
+   *
+   * `preprocess` so an empty value in .env (`S3_PUBLIC_ENDPOINT=`) is read
+   * the same as "unset" — `.url()` would otherwise reject empty string and
+   * crash startup for anyone who copied .env.example verbatim.
+   */
+  S3_PUBLIC_ENDPOINT: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
   S3_REGION: z.string().optional(),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),

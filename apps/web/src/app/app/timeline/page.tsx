@@ -1,5 +1,10 @@
 import { users } from '@timeline/db';
-import { getAudioBucket, getS3Client, getSignedGetObjectUrl, withTeam } from '@timeline/shared';
+import {
+  getAudioBucket,
+  getS3PresignClient,
+  getSignedGetObjectUrl,
+  withTeam,
+} from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
@@ -95,7 +100,7 @@ export default async function TimelinePage({ searchParams }: Props) {
   const audioUrlMap = new Map<string, string>();
   if (audioEvents.length > 0) {
     try {
-      const s3 = getS3Client();
+      const s3 = getS3PresignClient();
       const bucket = getAudioBucket();
       const pairs = await Promise.all(
         audioEvents.map(async (e) => {

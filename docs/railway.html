@@ -355,6 +355,7 @@ REDIS_URL=${{ Redis.REDIS_URL }}
 QDRANT_URL=${{ Qdrant.RAILWAY_PRIVATE_DOMAIN }}:6333
 QDRANT_API_KEY=&lt;from Qdrant service vars&gt;
 S3_ENDPOINT=http://${{ RustFS.RAILWAY_PRIVATE_DOMAIN }}:9000
+S3_PUBLIC_ENDPOINT=https://&lt;rustfs-public-domain&gt;
 S3_ACCESS_KEY_ID=&lt;from RustFS service vars&gt;
 S3_SECRET_ACCESS_KEY=&lt;from RustFS service vars&gt;
 S3_REGION=us-east-1
@@ -380,6 +381,14 @@ LOG_LEVEL=info
       <p>
         Use Railway's "shared variables" feature at the project level for anything used by 2+
         services (everything except service-local overrides).
+      </p>
+      <p>
+        <strong>About <code>S3_PUBLIC_ENDPOINT</code>:</strong> the browser uploads voice notes and
+        fetches audio for playback directly against this URL, so it must be publicly reachable over
+        HTTPS. Expose the RustFS service via a Railway public domain (Settings → Networking →
+        Generate Domain) and set <code>S3_PUBLIC_ENDPOINT</code> to that URL.
+        <code>S3_ENDPOINT</code> stays on the private network — workers and server-side code keep
+        using it.
       </p>
 
       <h2 id="staging-vs-production">Staging vs production</h2>

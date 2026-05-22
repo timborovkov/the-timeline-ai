@@ -2,12 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import { createAudioEventAction, requestAudioUploadAction } from '@/app/actions/events';
 import { Button } from '@/components/ui/button';
 
-type Phase = 'idle' | 'recording' | 'review' | 'uploading' | 'done' | 'error';
+type Phase = 'idle' | 'recording' | 'review' | 'error';
 
-interface RecordedClip {
+export interface RecordedClip {
   blob: Blob;
   url: string;
   mimeType: string;
@@ -23,22 +22,18 @@ function pickSupportedMimeType(): string | undefined {
   return undefined;
 }
 
-function baseMimeType(mt: string): string {
-  // "audio/webm;codecs=opus" -> "audio/webm" (the action validates the base
-  // form against the audio/ prefix and to keep key extensions sane).
-  return mt.split(';')[0]?.trim() ?? mt;
-}
-
 interface AudioRecorderProps {
   /**
-   * Visibility for the recorded audio event. Driven by the parent capture
-   * form so a single visibility pill governs both text and voice. If
-   * omitted, defaults to 'team' for standalone usage.
+   * Reports the current clip to the parent. Parent owns submission (the
+   * surrounding form's Post button uploads the clip and creates the event)
+   * so this component only records and previews.
    */
-  visibility?: 'team' | 'private';
+  onClipChange?: (clip: RecordedClip | null) => void;
+  /** Hide controls while the parent is mid-submit. */
+  disabled?: boolean;
 }
 
-export function AudioRecorder({ visibility = 'team' }: AudioRecorderProps = {}) {
+export function AudioRecorder({ onClipChange, disabled = false }: AudioRecorderProps = {}) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [clip, setClip] = useState<RecordedClip | null>(null);
@@ -47,12 +42,7 @@ export function AudioRecorder({ visibility = 'team' }: AudioRecorderProps = {}) 
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
-  // setPhase is asynchronous, so two quick clicks on Send can both enter
-  // send() before the button disappears. A ref-based latch is the only
-  // reliable in-flight guard here.
-  const sendingRef = useRef<boolean>(false);
 
-  // Revoke object URL when clip changes / unmounts to avoid leaking memory.
   useEffect(() => {
     return () => {
       if (clip?.url) URL.revokeObjectURL(clip.url);
@@ -61,15 +51,26 @@ export function AudioRecorder({ visibility = 'team' }: AudioRecorderProps = {}) 
 
   // Hard cleanup on unmount: stop the mic and any in-flight recorder so the
   // browser indicator clears even if the user navigates away mid-recording.
-  // Empty deps — this only runs at unmount; per-render mic state is managed
-  // by start/stop/reset.
+  //
+  // Null `onstop` before stopping the recorder. MediaRecorder.stop() queues
+  // the `stop` event asynchronously, so if we leave the handler attached, it
+  // fires after the component has already unmounted (e.g. parent bumps a
+  // `key` after a text-only Post while recording was still in progress). The
+  // handler's closure still holds the parent's `onClipChange`, so it would
+  // hand the partial blob to the parent — a "ghost clip" with no UI to see
+  // or discard it, that the next Post would silently upload. We tear down
+  // the stream tracks directly below instead of relying on `onstop`.
   useEffect(() => {
     return () => {
-      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
-        try {
-          recorderRef.current.stop();
-        } catch {
-          // already stopped or browser threw — fall through to track stop
+      const recorder = recorderRef.current;
+      if (recorder) {
+        recorder.onstop = null;
+        if (recorder.state !== 'inactive') {
+          try {
+            recorder.stop();
+          } catch {
+            // already stopped or browser threw — fall through to track stop
+          }
         }
       }
       streamRef.current?.getTracks().forEach((t) => {
@@ -104,23 +105,25 @@ export function AudioRecorder({ visibility = 'team' }: AudioRecorderProps = {}) 
         recorder.onstop = () => {
           const blob = new Blob(chunksRef.current, { type: mimeType });
           const durationSec = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000));
-          // Stop the mic so the browser indicator clears.
           streamRef.current?.getTracks().forEach((t) => {
             t.stop();
           });
           streamRef.current = null;
-          setClip({ blob, url: URL.createObjectURL(blob), mimeType, durationSec });
+          const next: RecordedClip = {
+            blob,
+            url: URL.createObjectURL(blob),
+            mimeType,
+            durationSec,
+          };
+          setClip(next);
           setPhase('review');
+          onClipChange?.(next);
         };
         recorder.start();
         recorderRef.current = recorder;
         startedAtRef.current = Date.now();
         setPhase('recording');
       } catch (innerErr) {
-        // getUserMedia already opened the mic; if MediaRecorder construction
-        // or start throws (unsupported mime, hardware busy, etc.), the
-        // tracks would otherwise stay live with no UI affordance to stop
-        // them. Release immediately and rethrow into the outer catch.
         stream.getTracks().forEach((t) => {
           t.stop();
         });
@@ -138,49 +141,12 @@ export function AudioRecorder({ visibility = 'team' }: AudioRecorderProps = {}) 
     recorderRef.current = null;
   }
 
-  function reset(): void {
+  function discard(): void {
     if (clip?.url) URL.revokeObjectURL(clip.url);
     setClip(null);
     setPhase('idle');
     setError(null);
-  }
-
-  async function send(): Promise<void> {
-    if (!clip) return;
-    if (sendingRef.current) return;
-    sendingRef.current = true;
-    setPhase('uploading');
-    setError(null);
-    const base = baseMimeType(clip.mimeType);
-    try {
-      const req = await requestAudioUploadAction(base);
-      if (!req.ok || !req.url || !req.key) {
-        throw new Error(req.error ?? 'Upload request failed');
-      }
-      const put = await fetch(req.url, {
-        method: 'PUT',
-        headers: { 'content-type': req.contentType ?? base },
-        body: clip.blob,
-      });
-      if (!put.ok) throw new Error(`Upload failed: ${put.status}`);
-      const create = await createAudioEventAction({
-        key: req.key,
-        mimeType: base,
-        durationSec: clip.durationSec,
-        visibility,
-      });
-      if (!create.ok) throw new Error(create.error ?? 'Save failed');
-      // Soft warning means the row is committed; never re-send.
-      if (create.warning) setError(create.warning);
-      setPhase('done');
-      // Auto-reset shortly after so the user can record another.
-      setTimeout(reset, 1500);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
-      setPhase('error');
-    } finally {
-      sendingRef.current = false;
-    }
+    onClipChange?.(null);
   }
 
   if (!supported) {
@@ -196,7 +162,13 @@ export function AudioRecorder({ visibility = 'team' }: AudioRecorderProps = {}) 
       <div className="flex items-center gap-3">
         <span className="text-xs font-medium text-muted-foreground">Voice note</span>
         {phase === 'idle' || phase === 'error' ? (
-          <Button type="button" size="sm" onClick={() => void start()}>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={disabled}
+            onClick={() => void start()}
+          >
             Record
           </Button>
         ) : null}
@@ -206,19 +178,13 @@ export function AudioRecorder({ visibility = 'team' }: AudioRecorderProps = {}) 
           </Button>
         ) : null}
         {phase === 'review' ? (
-          <>
-            <Button type="button" size="sm" onClick={() => void send()}>
-              Send
-            </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={reset}>
-              Discard
-            </Button>
-          </>
+          <Button type="button" size="sm" variant="ghost" disabled={disabled} onClick={discard}>
+            Discard
+          </Button>
         ) : null}
-        {phase === 'uploading' ? (
-          <span className="text-xs text-muted-foreground">Uploading…</span>
+        {phase === 'review' ? (
+          <span className="text-xs text-muted-foreground">Ready — press Post to send.</span>
         ) : null}
-        {phase === 'done' ? <span className="text-xs text-emerald-600">Sent ✓</span> : null}
       </div>
       {clip ? (
         <audio src={clip.url} controls preload="metadata" className="w-full" />
