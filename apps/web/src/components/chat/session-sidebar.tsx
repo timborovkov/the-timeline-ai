@@ -13,7 +13,6 @@ interface SessionEntry {
   title: string | null;
   pinnedEntityId: string | null;
   pinnedEntityName: string | null;
-  updatedAt: string;
 }
 
 export function SessionSidebar({
