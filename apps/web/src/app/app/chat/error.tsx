@@ -17,7 +17,7 @@ export default function ChatError({
       </header>
       <ErrorState
         title="Couldn't open chat"
-        description="The chat surface failed to load. Make sure OPENROUTER_API_KEY is configured."
+        description="The chat surface failed to load. This is usually transient."
         error={error}
         reset={reset}
       />

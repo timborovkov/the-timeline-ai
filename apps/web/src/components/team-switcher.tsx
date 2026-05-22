@@ -12,15 +12,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { initials } from '@/lib/initials';
 
 interface Props {
   active: TeamMembership;
   memberships: TeamMembership[];
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() ?? '').join('') || '?';
 }
 
 export function TeamSwitcher({ active, memberships }: Props) {

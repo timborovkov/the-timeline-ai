@@ -29,11 +29,19 @@ function baseMimeType(mt: string): string {
   return mt.split(';')[0]?.trim() ?? mt;
 }
 
-export function AudioRecorder() {
+interface AudioRecorderProps {
+  /**
+   * Visibility for the recorded audio event. Driven by the parent capture
+   * form so a single visibility pill governs both text and voice. If
+   * omitted, defaults to 'team' for standalone usage.
+   */
+  visibility?: 'team' | 'private';
+}
+
+export function AudioRecorder({ visibility = 'team' }: AudioRecorderProps = {}) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [clip, setClip] = useState<RecordedClip | null>(null);
-  const [visibility, setVisibility] = useState<'team' | 'private'>('team');
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -211,17 +219,6 @@ export function AudioRecorder() {
           <span className="text-xs text-muted-foreground">Uploading…</span>
         ) : null}
         {phase === 'done' ? <span className="text-xs text-emerald-600">Sent ✓</span> : null}
-        <label className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={visibility === 'private'}
-            onChange={(e) => {
-              setVisibility(e.target.checked ? 'private' : 'team');
-            }}
-            className="h-3.5 w-3.5"
-          />
-          Private
-        </label>
       </div>
       {clip ? (
         <audio src={clip.url} controls preload="metadata" className="w-full" />

@@ -62,7 +62,10 @@ export function ChatPane({ teamName }: Props) {
           </div>
         </div>
       ) : (
-        <ol className="flex flex-col gap-6">
+        // The composer below is `sticky bottom-6` (56px input + 24px offset
+        // ≈ 80px occluded). Without bottom padding the last message and the
+        // "Thinking…" indicator slide under the composer on long threads.
+        <ol className="flex flex-col gap-6 pb-28">
           {messages.map((m: UIMessage) => {
             const isUser = m.role === 'user';
             return (

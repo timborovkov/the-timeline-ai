@@ -4,6 +4,7 @@ import { Inbox } from 'lucide-react';
 import type { rawEvents } from '@timeline/db';
 
 import { Badge } from '@/components/ui/badge';
+import { initials } from '@/lib/initials';
 
 type RawEvent = InferSelectModel<typeof rawEvents>;
 
@@ -52,15 +53,6 @@ function emailMeta(meta: unknown): EmailMeta | null {
 function fmtAddr(a: { email: string; name?: string } | undefined): string {
   if (!a) return '';
   return a.name ? `${a.name} <${a.email}>` : a.email;
-}
-
-function initials(label: string): string {
-  // Strip any "<email>" suffix so we monogram on the name (or local-part).
-  const clean = label.replace(/\s*<[^>]*>\s*$/, '').trim();
-  const base = clean.length > 0 ? clean : label.trim();
-  const parts = base.split(/\s+/).slice(0, 2);
-  const out = parts.map((p) => p[0]?.toUpperCase() ?? '').join('');
-  return out || '?';
 }
 
 export function TimelineList({ events, authorMap, audioUrlMap }: Props) {

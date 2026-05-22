@@ -53,7 +53,7 @@ export function CaptureForm() {
         required
         className="resize-none rounded-md border-0 bg-transparent p-0 text-[15px] leading-7 shadow-none ring-0 ring-offset-0 transition-colors focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:[outline:none]"
       />
-      <AudioRecorder />
+      <AudioRecorder visibility={isPrivate ? 'private' : 'team'} />
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
         <input type="hidden" name="visibility" value={isPrivate ? 'private' : 'team'} />
         <button
