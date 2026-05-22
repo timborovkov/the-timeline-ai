@@ -105,68 +105,85 @@ export default async function TimelinePage({ searchParams }: Props) {
           .where(inArray(users.id, memberIds))
       : [];
 
+  const hasFilters = Boolean(sp.author ?? sp.from ?? sp.to);
+
   return (
-    <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{active.teamName}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+    <div>
+      <header className="mb-10">
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Timeline</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{active.teamName}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
           Reverse-chronological feed of everything captured for this team.
         </p>
       </header>
 
-      <Card>
-        <CardContent className="pt-6">
+      <Card className="mb-10 transition-shadow focus-within:ring-2 focus-within:ring-ring/40">
+        <CardContent className="p-6">
           <CaptureForm />
         </CardContent>
       </Card>
 
       <SearchBar />
 
-      <section className="space-y-4">
-        <form
-          method="get"
-          className="flex flex-wrap items-end gap-3 rounded-md border border-dashed p-3 text-sm"
-        >
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted-foreground">Author</span>
-            <select
-              name="author"
-              defaultValue={sp.author ?? ''}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+      <section className="mt-10 space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium text-muted-foreground">Recent activity</h2>
+          <details className="text-sm" open={hasFilters}>
+            <summary className="cursor-pointer list-none rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground">
+              Filters{hasFilters ? ' · on' : ''}
+            </summary>
+            <form
+              method="get"
+              className="mt-3 flex flex-wrap items-end gap-3 rounded-lg border bg-card p-4 text-sm"
             >
-              <option value="">Everyone</option>
-              {memberRows.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name ?? m.email}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted-foreground">From</span>
-            <input
-              type="date"
-              name="from"
-              defaultValue={sp.from ?? ''}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted-foreground">To</span>
-            <input
-              type="date"
-              name="to"
-              defaultValue={sp.to ?? ''}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-            />
-          </label>
-          <button
-            type="submit"
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm transition-colors hover:bg-accent"
-          >
-            Filter
-          </button>
-        </form>
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Author
+                </span>
+                <select
+                  name="author"
+                  defaultValue={sp.author ?? ''}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  <option value="">Everyone</option>
+                  {memberRows.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name ?? m.email}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  From
+                </span>
+                <input
+                  type="date"
+                  name="from"
+                  defaultValue={sp.from ?? ''}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  To
+                </span>
+                <input
+                  type="date"
+                  name="to"
+                  defaultValue={sp.to ?? ''}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                />
+              </label>
+              <button
+                type="submit"
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm transition-colors hover:bg-accent"
+              >
+                Apply
+              </button>
+            </form>
+          </details>
+        </div>
 
         <TimelineList events={events} authorMap={authorMap} audioUrlMap={audioUrlMap} />
       </section>

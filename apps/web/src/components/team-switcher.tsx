@@ -4,7 +4,6 @@ import { Check, ChevronsUpDown } from 'lucide-react';
 
 import type { TeamMembership } from '@/lib/active-team';
 
-import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,16 +18,30 @@ interface Props {
   memberships: TeamMembership[];
 }
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).slice(0, 2);
+  return parts.map((p) => p[0]?.toUpperCase() ?? '').join('') || '?';
+}
+
 export function TeamSwitcher({ active, memberships }: Props) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-2">
-          <span className="max-w-40 truncate">{active.teamName}</span>
-          <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
-        </Button>
+        <button
+          type="button"
+          className="flex w-full items-center gap-3 rounded-md border border-border/70 bg-card px-3 py-2 text-left text-sm transition-colors hover:bg-accent/60"
+        >
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/12 text-[11px] font-semibold tracking-tight text-primary">
+            {initials(active.teamName)}
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col leading-tight">
+            <span className="truncate text-sm font-medium">{active.teamName}</span>
+            <span className="truncate text-[11px] text-muted-foreground">Active team</span>
+          </span>
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
+        </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
+      <DropdownMenuContent align="start" side="top" className="w-64">
         <DropdownMenuLabel>Switch team</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {memberships.map((m) => (
