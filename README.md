@@ -39,7 +39,7 @@ Open <http://localhost:3000>.
 These live behind their own walkthroughs because every account has its own
 dashboard quirks:
 
-- [`docs/setup/telegram.md`](./docs/setup/telegram.md) — Telegram bot (Phase 2+).
+- [`docs/setup/telegram.html`](./docs/setup/telegram.html) — Telegram bot (Phase 2+).
 - [`docs/setup/openrouter.html`](./docs/setup/openrouter.html) — OpenRouter API
   (Phase 3+).
 - [`docs/setup/postmark.html`](./docs/setup/postmark.html) — inbound email (Phase 7).

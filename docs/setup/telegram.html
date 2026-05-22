@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Telegram bot setup</title>
+<style>
+:root{--background:hsl(40 14% 97%);--foreground:hsl(240 10% 8%);--card:#fff;--primary:hsl(30 90% 42%);--muted:hsl(240 5% 95%);--muted-foreground:hsl(240 4% 42%);--border:hsl(240 6% 89%);--radius:.75rem}
+@media (prefers-color-scheme:dark){:root{--background:hsl(240 10% 5%);--foreground:hsl(40 14% 95%);--card:hsl(240 8% 8%);--muted:hsl(240 6% 14%);--muted-foreground:hsl(240 5% 65%);--border:hsl(240 6% 18%);--primary:hsl(30 95% 55%)}}
+*{box-sizing:border-box}
+html{color-scheme:light dark}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.6;background:var(--background);color:var(--foreground)}
+.skip{position:absolute;left:-9999px}
+.skip:focus{left:1rem;top:1rem;background:var(--card);padding:.5rem 1rem;border-radius:var(--radius);z-index:10}
+main{max-width:46rem;margin:0 auto;padding:3rem 1.5rem 6rem}
+h1{font-size:2rem;line-height:1.2;margin:0 0 .5rem;letter-spacing:-.02em}
+h2{font-size:1.4rem;margin:2.5rem 0 .75rem;letter-spacing:-.01em;scroll-margin-top:1rem}
+p{margin:0 0 1rem}
+a{color:var(--primary);text-decoration:underline;text-underline-offset:2px}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;background:var(--muted);padding:.1em .35em;border-radius:4px}
+pre{background:var(--muted);padding:1rem;border-radius:var(--radius);overflow-x:auto;font-size:.875rem;line-height:1.5}
+pre code{background:none;padding:0;font-size:inherit}
+ul,ol{padding-left:1.5rem;margin:0 0 1rem}
+li{margin:.25rem 0}
+blockquote{border-left:3px solid var(--primary);background:var(--muted);padding:.5rem 1rem;color:var(--muted-foreground);margin:1rem 0;border-radius:0 var(--radius) var(--radius) 0}
+blockquote p{margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:center;font-size:.85rem;color:var(--muted-foreground);padding:.75rem 0;margin:0 0 1rem;border-bottom:1px solid var(--border)}
+.meta .kind{display:inline-block;padding:.15rem .55rem;background:var(--muted);border-radius:999px;color:var(--foreground);font-weight:500;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
+.tldr{font-size:1.05rem;color:var(--muted-foreground);margin:0 0 1.5rem}
+nav.toc{background:var(--muted);border-radius:var(--radius);padding:.85rem 1.1rem;margin:0 0 2.25rem;font-size:.92rem}
+nav.toc strong{display:block;margin-bottom:.4rem;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted-foreground);font-weight:600}
+nav.toc ul{list-style:none;padding:0;margin:0;columns:2;column-gap:1.5rem}
+nav.toc li{margin:.2rem 0;break-inside:avoid}
+nav.toc a{text-decoration:none;color:var(--foreground)}
+nav.toc a:hover{color:var(--primary)}
+@media (max-width:640px){nav.toc ul{columns:1}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<main id="main">
+<h1>Telegram bot setup</h1>
+<div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-22</span></div>
+<blockquote><p>Bot integration ships in <strong>Phase 2</strong> (text only). Voice memos land in Phase 3.</p></blockquote>
+<p class="tldr">Create the bot, disable privacy mode so it can read group messages, point a secret-protected webhook at the web service, and link teams from inside the app.</p>
+
+<nav class="toc" aria-label="On this page">
+<strong>On this page</strong>
+<ul>
+<li><a href="#create-bot">1. Create the bot</a></li>
+<li><a href="#privacy">2. Disable privacy mode</a></li>
+<li><a href="#secret">3. Webhook secret</a></li>
+<li><a href="#register">4. Register webhook</a></li>
+<li><a href="#verify">5. Verify</a></li>
+<li><a href="#username">6. Bot username</a></li>
+<li><a href="#e2e">7. End-to-end local test</a></li>
+<li><a href="#schema">Schema reference</a></li>
+</ul>
+</nav>
+
+<h2 id="create-bot">1. Create the bot</h2>
+<ol>
+<li>Open Telegram, message <a href="https://t.me/BotFather">@BotFather</a>.</li>
+<li><code>/newbot</code> → pick a name and username (must end in <code>bot</code>).</li>
+<li>Copy the <strong>HTTP API token</strong> BotFather gives you.</li>
+</ol>
+<p>Set in <code>.env</code>:</p>
+<pre><code>TELEGRAM_BOT_TOKEN=123456:ABC-...
+</code></pre>
+
+<h2 id="privacy">2. Disable privacy mode</h2>
+<p>The bot needs to read every group message, not just <code>/commands</code>.</p>
+<ol><li>In BotFather: <code>/mybots</code> → choose your bot → <strong>Bot Settings</strong> → <strong>Group Privacy</strong> → <strong>Turn off</strong>.</li></ol>
+
+<h2 id="secret">3. Generate a webhook secret</h2>
+<p>This is a shared secret Telegram sends back in <code>X-Telegram-Bot-Api-Secret-Token</code> on every webhook call. Reject any request without it.</p>
+<pre><code>openssl rand -hex 32
+</code></pre>
+<p>Set in <code>.env</code>:</p>
+<pre><code>TELEGRAM_WEBHOOK_SECRET=&lt;the_hex_string&gt;
+</code></pre>
+
+<h2 id="register">4. Register the webhook (once per environment)</h2>
+<p><strong>The web service does this automatically on startup.</strong> The Next.js instrumentation hook at <code>apps/web/src/instrumentation.ts</code> runs once per server process. In production (<code>NODE_ENV=production</code>), if <code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_WEBHOOK_SECRET</code>, and <code>AUTH_URL</code> are all set, it always calls <code>setWebhook</code> (idempotent on Telegram's side, and the only way to push a rotated <code>TELEGRAM_WEBHOOK_SECRET</code> since <code>getWebhookInfo</code> doesn't return the stored secret), then verifies via <code>getWebhookInfo</code>. Registration is fire-and-forget — it never blocks server readiness. Missing env vars → logs a skip line and continues.</p>
+<p>For local development (or to register manually):</p>
+<pre><code>curl -F "url=https://&lt;your-app-domain&gt;/api/telegram/webhook" \
+     -F "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
+     -F 'allowed_updates=["message","edited_message","callback_query"]' \
+     "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook"
+</code></pre>
+<p>Expose the dev server via ngrok / cloudflared and point the webhook at the tunnel.</p>
+
+<h2 id="verify">5. Verify</h2>
+<pre><code>curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
+</code></pre>
+<p>Should return your URL with <code>last_error_date: 0</code>.</p>
+
+<h2 id="username">6. Optional: bot username for deep links</h2>
+<p>Set <code>TELEGRAM_BOT_USERNAME</code> (without the leading <code>@</code>) so the team settings page can render <code>t.me/&lt;bot&gt;?start=&lt;token&gt;</code> and <code>t.me/&lt;bot&gt;?startgroup=&lt;token&gt;</code> deep links. Find it in BotFather under <code>/mybots</code> → your bot.</p>
+<pre><code>TELEGRAM_BOT_USERNAME=YourBot
+</code></pre>
+
+<h2 id="e2e">7. End-to-end local test (ngrok)</h2>
+<p>The bot is gated off when <code>TELEGRAM_WEBHOOK_SECRET</code> is unset — the route at <code>/api/telegram/webhook</code> returns 503. To exercise the full flow on your machine you need a public URL.</p>
+<pre><code># Terminal 1: run the web app
+pnpm dev
+
+# Terminal 2: expose it
+ngrok http 3000
+
+# Terminal 3: register the webhook with the secret
+curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
+     -F "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
+     -F 'allowed_updates=["message","edited_message","callback_query"]' \
+     "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook"
+</code></pre>
+<p>Then in the app:</p>
+<ol>
+<li>Sign in, open <strong>Team → Manage Telegram links</strong>.</li>
+<li>Click <strong>Generate personal link</strong>. Copy the <code>/link &lt;token&gt;</code> snippet.</li>
+<li>DM your bot on Telegram, paste the snippet. The bot replies with the linked team.</li>
+<li>Send any text message. Open <code>/app/timeline</code> — it should appear, attributed to your user under the linked team.</li>
+<li><code>/whereami</code> confirms attribution; <code>/team</code> lists linked teams; <code>/team 2</code> switches to the second; the next DM message lands on the new team.</li>
+</ol>
+<p>For groups: have a team admin generate a <strong>group</strong> token, add the bot to a Telegram group, then have a group admin run <code>/link &lt;token&gt;</code> inside the group. Every subsequent text message in that group flows to the team timeline.</p>
+<p>Messages from Telegram users who have not linked yet are recorded with <code>source_metadata.source_unverified = true</code> and a null <code>author_user_id</code>.</p>
+
+<h2 id="schema">Schema reference</h2>
+<p>Phase 2 adds four tables:</p>
+<ul>
+<li><code>telegram_users</code> — one row per Telegram user the bot has seen; optional link to an app <code>users.id</code> once the user <code>/link</code>s a personal token.</li>
+<li><code>telegram_user_teams</code> — DM-time team memberships. Partial unique index guarantees exactly one <code>is_active=true</code> row per Telegram user.</li>
+<li><code>telegram_chat_bindings</code> — one row per Telegram group/supergroup chat, pointing at a single team. Permanent until <code>/unlink</code>.</li>
+<li><code>telegram_link_tokens</code> — single-use, 15-minute-TTL tokens, scoped <code>personal</code> (DM link) or <code>group</code> (group binding).</li>
+</ul>
+</main>
+</body>
+</html>
