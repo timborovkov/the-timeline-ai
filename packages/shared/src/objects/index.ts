@@ -1279,6 +1279,28 @@ export async function createChatSession(
   };
 }
 
+/**
+ * Lightweight existence + team-scope check. Use this instead of
+ * `getChatSession` when you only need to validate that a session id is
+ * legal for the current team — `getChatSession` also loads every message,
+ * which grows unbounded over the life of a conversation and turns into
+ * wasted bandwidth on every /api/chat turn.
+ */
+export async function chatSessionExists(
+  db: Db,
+  scope: TeamScope,
+  sessionId: string,
+): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(sessionId)) return false;
+  const rows = await db
+    .select({ id: chatSessions.id })
+    .from(chatSessions)
+    .where(and(eq(chatSessions.id, sessionId), eq(chatSessions.teamId, scope.teamId)))
+    .limit(1);
+  return rows.length > 0;
+}
+
 export async function getChatSession(
   db: Db,
   scope: TeamScope,

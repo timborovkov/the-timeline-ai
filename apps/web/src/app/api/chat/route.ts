@@ -114,8 +114,11 @@ export async function POST(req: Request): Promise<Response> {
     // Validate the session belongs to this team. 404 (not 403) is the
     // canonical "no resource here" — it doesn't distinguish "wrong team"
     // from "no such id," so cross-team session-id probing reveals nothing.
-    const existing = await objects.getChatSession(db, scope, sessionId);
-    if (!existing) {
+    // Cheap existence check — we only need to confirm team ownership here,
+    // not load every prior message. `getChatSession` would pull the full
+    // `chat_messages` list on every turn.
+    const exists = await objects.chatSessionExists(db, scope, sessionId);
+    if (!exists) {
       return Response.json({ ok: false, error: 'session_not_found' }, { status: 404 });
     }
   } else if (parsed.data.startNewSession) {
