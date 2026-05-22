@@ -375,8 +375,13 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                       type="button"
                       disabled={pending}
                       onClick={() => {
+                        setError(null);
                         startTransition(async () => {
-                          await removeRelationshipAction({ id: r.id, entityId: detail.id });
+                          const result = await removeRelationshipAction({
+                            id: r.id,
+                            entityId: detail.id,
+                          });
+                          if ('error' in result && result.error) setError(result.error);
                         });
                       }}
                       className="text-xs text-destructive hover:underline"
