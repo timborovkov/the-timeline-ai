@@ -1,6 +1,7 @@
 import {
   type Db,
   entities,
+  entityType,
   factEntities,
   facts as factsTable,
   rawEvents,
@@ -18,6 +19,14 @@ import { getQdrantClient, type SearchHit, type SearchOpts } from './qdrant/clien
 // the value import lets us derive the union type from the enum definition.
 const _roleValues = teamRole.enumValues;
 export type TeamRole = (typeof _roleValues)[number];
+
+/** Re-exported so callers (e.g. agent tool schemas) and downstream types in
+ *  this file share one source of truth with the Postgres enum. The
+ *  intermediate const mirrors the `_roleValues` pattern above and pins the
+ *  import as a runtime value (otherwise eslint's
+ *  `consistent-type-imports` flags it). */
+const _entityTypeValues = entityType.enumValues;
+export type EntityType = (typeof _entityTypeValues)[number];
 
 const ROLE_RANK: Record<TeamRole, number> = { member: 0, admin: 1, owner: 2 };
 
@@ -100,14 +109,27 @@ export interface EntityFact {
 export interface CoOccurringEntity {
   id: string;
   canonicalName: string;
-  type: 'person' | 'company' | 'project' | 'topic' | 'other';
+  type: EntityType;
   count: number;
 }
 
 export interface EntityProfile {
   entity: {
     id: string;
-    type: 'person' | 'company' | 'project' | 'topic' | 'other';
+    type:
+      | 'person'
+      | 'company'
+      | 'project'
+      | 'topic'
+      | 'other'
+      | 'deal'
+      | 'vendor'
+      | 'incident'
+      | 'document'
+      | 'decision'
+      | 'hiring_loop'
+      | 'task'
+      | 'follow_up';
     canonicalName: string;
     aliases: string[];
     metadata: Record<string, unknown>;

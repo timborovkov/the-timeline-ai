@@ -38,14 +38,32 @@ Open PRs not counted here yet:
 
 Goal: turn the timeline from searchable memory into an object relation management system. Not just CRM for customers: durable objects can be projects, people, deals, vendors, incidents, documents, decisions, hiring loops, or anything the team tracks.
 
-- [ ] Generalize `entities` into first-class workspace objects with type, status, owner, stage, priority, due date, custom metadata, aliases, and relationships.
-- [ ] Add object pages that show timeline events, extracted facts, related objects, manual notes, status changes, open tasks, and agent-suggested changes.
-- [ ] Add board views over objects: kanban by status/stage, table/list by type, saved filters for "deals", "projects", "people", "follow-ups", etc.
-- [ ] Add manual object edits. Every manual change writes an immutable timeline event and a structured object-change record.
-- [ ] Add task objects: assignee, due date, status, source event, linked parent object. Agent can suggest tasks, humans approve/edit/complete them.
-- [ ] Add "changes since last visit" summaries per object: new events, newly extracted facts, status changes, completed tasks, stale follow-ups.
-- [ ] Add object/activity notifications: "this deal changed", "this project is blocked", "a promised follow-up is overdue".
-- [ ] Add persisted chat history scoped to team and optionally linked to objects. Chats become part of the team's memory when saved.
+Data + server layer landed in PR #15 (migration `0007_phase8_objects.sql`). The
+`entities` table now carries `status`/`stage`/`priority`/`owner_user_id`/
+`assignee_user_id`/`due_at`/`agent_suggested`/`archived_at`, eight new tables
+back relationships, audit, notes, last-visit, boards, notifications, chat
+sessions and messages, and a new `packages/shared/src/objects` module exposes
+the helpers (`listObjects`, `getObject`, `createObject`, `updateObject`,
+`addRelationship`, `createNote`, `markVisited`, `listNotifications`,
+`saveBoardView`, `appendChatMessages`, …) all routed through `withTeam`.
+
+- [x] Generalize `entities` into first-class workspace objects with type, status, owner, stage, priority, due date, custom metadata, aliases, and relationships.
+- [x] Add object pages that show timeline events, extracted facts, related objects, manual notes, status changes, open tasks, and agent-suggested changes. (`/app/objects/[id]` renders status/stage/priority/due editors, notes CRUD, related/linked objects, open tasks, and a recent-changes audit list. Timeline events for the object also land via `updateObject` writing a system raw_event per save.)
+- [x] Add manual object edits. Every manual change writes an immutable timeline event and a structured object-change record. (Verified in `updateObject` — one `raw_events` row per save, one `object_changes` row per modified field.)
+- [x] Add task objects: assignee, due date, status, source event, linked parent object. Agent can suggest tasks, humans approve/edit/complete them. (Tasks are `type='task'` with `parentObjectId` mapping to a `child` relationship. Agent suggestion surface is the `status='suggested'` + `agent_suggested=true` flag pair; UI for accept/reject pending in follow-up.)
+- [x] Add "changes since last visit" summaries per object. (`object_views` upserts on visit; banner on the object page surfaces the delta.)
+- [x] Add object/activity notifications. (`notifications` table, in-process fan-out from `updateObject` to owner+assignee, `/app/inbox` page with mark-read.)
+- [x] Add persisted chat history scoped to team and optionally linked to objects. (Schema + `objects.appendChatMessages` + session/link/archive server actions shipped; wiring into `/api/chat` and the chat sidebar UI is the next follow-up below.)
+- [~] Add board views over objects: kanban by status/stage, table/list by type, saved filters. (`board_views` schema + `saveBoardViewAction`/`deleteBoardViewAction`/`listBoardViews` ready; the `/app/boards` and `/app/boards/[id]` renderers — kanban drag-to-update-status, table/list filter UI — ship in a follow-up.)
+
+### Phase 8 follow-ups (open)
+
+- [ ] `/app/boards` + `/app/boards/[id]` UI: list saved boards, render kanban grouped by status/stage with drag-to-move, table + list variants reading the saved filter JSON. The server-side actions and `listObjects` filter shape are already in place.
+- [ ] `/app/tasks` convenience board: preset filter `{type:'task'}` grouped by status. Trivial once `/app/boards` lands.
+- [ ] `/api/chat` session persistence + chat sidebar: accept `?session=<id>`, call `objects.appendChatMessages` on `onFinish`, auto-create sessions on first message, render past sessions and pinned-object chip in `/app/chat`.
+- [ ] Agent tools: `suggest_task`, `propose_object_change`, `get_object`, `list_objects`, `list_tasks`, `recent_changes` in `packages/shared/src/agent/tools.ts`. Existing `get_entity`/`search_timeline` keep working in the meantime.
+- [ ] Overdue detector: recurring BullMQ job under `apps/worker/src/workers/` that scans `type IN ('task','follow_up') AND due_at < now() AND status NOT IN ('done','cancelled')` and emits `task_overdue`/`follow_up_overdue` notifications, deduped per-day on `(userId, entityId, kind)`.
+- [ ] Suggestion review UI: surface `object_changes WHERE status='suggested'` on object pages with accept/reject buttons that flip status and apply the change.
 
 ## Phase 9 — Team Document Drive
 

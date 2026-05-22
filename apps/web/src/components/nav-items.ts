@@ -1,4 +1,12 @@
-import { Clock, MessageSquare, Settings, Users, type LucideIcon } from 'lucide-react';
+import {
+  Box,
+  Clock,
+  Inbox,
+  KanbanSquare,
+  MessageSquare,
+  Settings,
+  type LucideIcon,
+} from 'lucide-react';
 
 /**
  * Single source of truth for the primary app navigation.
@@ -17,7 +25,9 @@ interface NavItem {
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: '/app/timeline', label: 'Timeline', icon: Clock },
   { href: '/app/chat', label: 'Chat', icon: MessageSquare },
-  { href: '/app/entities', label: 'Entities', icon: Users },
+  { href: '/app/objects', label: 'Objects', icon: Box },
+  { href: '/app/boards', label: 'Boards', icon: KanbanSquare },
+  { href: '/app/inbox', label: 'Inbox', icon: Inbox },
   { href: '/app/team', label: 'Team', icon: Settings },
 ] as const;
 
