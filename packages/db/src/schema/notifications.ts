@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import { entities } from './entities.js';
@@ -38,13 +39,18 @@ export const notifications = pgTable(
     readAt: timestamp('read_at', { withTimezone: true }),
   },
   (table) => [
-    // Inbox query is "unread first, then newest". Putting readAt before
-    // createdAt lets the planner pick this index directly.
+    // Inbox query is "unread first, then newest". The sort directions and
+    // NULLS placement must match `listNotifications` exactly — otherwise
+    // the planner falls back to a sort node after the filter. Postgres
+    // default for ASC is NULLS LAST, but unread rows have read_at IS NULL
+    // and need to come first, so we pin NULLS FIRST. created_at is DESC
+    // so the newest unread is on top of the unread group and the newest
+    // read row leads the read group.
     index('notifications_team_user_inbox_idx').on(
-      table.teamId,
-      table.userId,
-      table.readAt,
-      table.createdAt,
+      table.teamId.asc(),
+      table.userId.asc(),
+      sql`${table.readAt} ASC NULLS FIRST`,
+      table.createdAt.desc(),
     ),
     index('notifications_team_entity_idx').on(table.teamId, table.entityId),
   ],

@@ -155,7 +155,7 @@ ALTER TABLE "notifications" ADD CONSTRAINT "notifications_team_id_teams_id_fk" F
 ALTER TABLE "notifications" ADD CONSTRAINT "notifications_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "notifications" ADD CONSTRAINT "notifications_entity_id_entities_id_fk" FOREIGN KEY ("entity_id") REFERENCES "public"."entities"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "notifications" ADD CONSTRAINT "notifications_object_change_id_object_changes_id_fk" FOREIGN KEY ("object_change_id") REFERENCES "public"."object_changes"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "notifications_team_user_inbox_idx" ON "notifications" USING btree ("team_id","user_id","read_at","created_at");--> statement-breakpoint
+CREATE INDEX "notifications_team_user_inbox_idx" ON "notifications" USING btree ("team_id" ASC, "user_id" ASC, "read_at" ASC NULLS FIRST, "created_at" DESC);--> statement-breakpoint
 CREATE INDEX "notifications_team_entity_idx" ON "notifications" USING btree ("team_id","entity_id");--> statement-breakpoint
 
 CREATE TABLE "chat_sessions" (
