@@ -22,7 +22,7 @@ type GroupKey = 'status' | 'stage' | 'priority';
 interface Props {
   rows: objects.ObjectRow[];
   groupBy?: GroupKey;
-  /** Column order; rows whose value isn't in this list go into "Other". */
+  /** Preferred column order; extra values seen on rows get appended. */
   columns?: string[];
 }
 
