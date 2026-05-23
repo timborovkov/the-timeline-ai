@@ -196,11 +196,8 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
       description:
         "Look up a workspace object (task, deal, project, person, company, follow_up, etc.) by UUID or canonical name. Returns its status/stage/owner/due_at, the most recent suggested+applied changes, any notes, related objects, and open child tasks. Use this for 'what's the status of <X>' or before proposing a change to verify the current value.",
       inputSchema: z.object({ idOrName: z.string().trim().min(1).max(200) }),
-      execute: async (raw) =>
+      execute: async ({ idOrName }) =>
         safe('get_object', async () => {
-          const { idOrName } = z
-            .object({ idOrName: z.string().trim().min(1).max(200) })
-            .parse(raw);
           const result = await objects.getObject(getDb(), scope, idOrName);
           if (!result) return { found: false };
           return {
