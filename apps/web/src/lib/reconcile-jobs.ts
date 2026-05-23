@@ -40,7 +40,11 @@ interface ReconcileResult {
  */
 function attemptsBelowCap(stage: 'transcribe' | 'extract' | 'embed') {
   const key = `reconcile_attempts_${stage}`;
-  return sql`COALESCE((${rawEvents.sourceMetadata} ->> ${key})::int, 0) < ${MAX_RECONCILE_ATTEMPTS}`;
+  // COALESCE source_metadata → '{}'::jsonb defensively. The column is
+  // declared NOT NULL with default '{}', so this is structurally impossible
+  // today — match the worker-side pattern (transcribe.ts, embed.ts) for
+  // resilience against future schema drift / pre-constraint legacy rows.
+  return sql`COALESCE((COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ->> ${key})::int, 0) < ${MAX_RECONCILE_ATTEMPTS}`;
 }
 
 /**
@@ -60,13 +64,16 @@ async function bumpAttempts(
   await db
     .update(rawEvents)
     .set({
+      // COALESCE the outer column reference too — without it, a NULL row
+      // makes the whole concat NULL and the counter never advances,
+      // silently bypassing the dead-letter cap.
       sourceMetadata: sql`
-        ${rawEvents.sourceMetadata} ||
+        COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ||
         jsonb_build_object(
-          ${key}, COALESCE((${rawEvents.sourceMetadata} ->> ${key})::int, 0) + 1,
+          ${key}, COALESCE((COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ->> ${key})::int, 0) + 1,
           ${giveupKey},
           CASE
-            WHEN COALESCE((${rawEvents.sourceMetadata} ->> ${key})::int, 0) + 1 >= ${MAX_RECONCILE_ATTEMPTS}
+            WHEN COALESCE((COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ->> ${key})::int, 0) + 1 >= ${MAX_RECONCILE_ATTEMPTS}
             THEN to_jsonb(now()::text)
             ELSE COALESCE(${rawEvents.sourceMetadata} -> ${giveupKey}, 'null'::jsonb)
           END
@@ -104,7 +111,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
       .select({ count: sql<number>`count(*)::int` })
       .from(rawEvents)
       .where(
-        sql`${rawEvents.sourceMetadata} ?| array['reconcile_giveup_transcribe','reconcile_giveup_extract','reconcile_giveup_embed']`,
+        sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ?| array['reconcile_giveup_transcribe','reconcile_giveup_extract','reconcile_giveup_embed']`,
       );
     result.deadLettered = counted[0]?.count ?? 0;
   } catch (err) {
@@ -193,7 +200,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
         and(
           isNotNull(rawEvents.contentText),
           lt(rawEvents.createdAt, staleCutoff),
-          sql`NOT (${rawEvents.sourceMetadata} ? 'embedded_at')`,
+          sql`NOT (COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ? 'embedded_at')`,
           attemptsBelowCap('embed'),
         ),
       )
