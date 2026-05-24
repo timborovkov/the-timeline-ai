@@ -2,8 +2,19 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
+import { toast } from 'sonner';
 
 import { mergeEntityAction, searchEntitiesAction } from '@/app/actions/entities';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface Props {
   entityId: string;
@@ -22,6 +33,7 @@ export function MergeEntityPanel({ entityId, entityName }: Props) {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [target, setTarget] = useState<Candidate | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -47,15 +59,8 @@ export function MergeEntityPanel({ entityId, entityName }: Props) {
     };
   }, [query, entityId, target]);
 
-  const submit = (): void => {
+  const performMerge = (): void => {
     if (!target) return;
-    if (
-      !window.confirm(
-        `Merge "${entityName}" into "${target.canonicalName}"? Facts and aliases move to the survivor. This cannot be automatically undone.`,
-      )
-    ) {
-      return;
-    }
     setError(null);
     const formData = new FormData();
     formData.set('loserId', entityId);
@@ -64,8 +69,10 @@ export function MergeEntityPanel({ entityId, entityName }: Props) {
       const result = await mergeEntityAction({}, formData);
       if (result.error) {
         setError(result.error);
+        toast.error(result.error);
         return;
       }
+      toast.success(`Merged "${entityName}" into "${target.canonicalName}"`);
       router.push(`/app/entities/${target.id}`);
     });
   };
@@ -80,7 +87,9 @@ export function MergeEntityPanel({ entityId, entityName }: Props) {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={submit}
+            onClick={() => {
+              setConfirmOpen(true);
+            }}
             disabled={pending}
             className="h-9 rounded-md bg-foreground px-3 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-50"
           >
@@ -99,6 +108,23 @@ export function MergeEntityPanel({ entityId, entityName }: Props) {
           </button>
         </div>
         {error && <p className="text-xs text-destructive">{error}</p>}
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Merge entities?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Merge &ldquo;{entityName}&rdquo; into &ldquo;{target.canonicalName}&rdquo;. Facts
+                and aliases move to the survivor. This cannot be automatically undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" onClick={performMerge}>
+                Merge
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     );
   }
