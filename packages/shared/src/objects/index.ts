@@ -288,6 +288,12 @@ export async function getObject(
         and(
           eq(entityRelationships.teamId, scope.teamId),
           eq(entityRelationships.fromEntityId, entityRow.id),
+          // Defense-in-depth: the relationship row's team_id is already
+          // pinned by the filter above and addRelationship validates both
+          // endpoints, but pinning the joined entity's team_id too means a
+          // stray cross-team edge (e.g. from a future code path that skips
+          // the endpoint check) can never leak through this view.
+          eq(entities.teamId, scope.teamId),
           isNull(entities.mergedIntoId),
         ),
       ),
@@ -305,6 +311,7 @@ export async function getObject(
         and(
           eq(entityRelationships.teamId, scope.teamId),
           eq(entityRelationships.toEntityId, entityRow.id),
+          eq(entities.teamId, scope.teamId),
           isNull(entities.mergedIntoId),
         ),
       ),
@@ -494,6 +501,25 @@ export async function createObject(
     });
 
     if (input.parentObjectId && UUID_RE.test(input.parentObjectId)) {
+      // Verify the parent belongs to this team before linking — otherwise a
+      // caller who knows (or guesses) a UUID from another team could write a
+      // cross-team edge, and the joined entity would leak through
+      // getObject's relationship panel. Mirrors the endpoint check in
+      // addRelationship.
+      const parentExists = await tx
+        .select({ id: entities.id })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.id, input.parentObjectId),
+            eq(entities.teamId, scope.teamId),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .limit(1);
+      if (parentExists.length === 0) {
+        throw new Error('Parent object does not belong to this team');
+      }
       // task → parent via `child` edge (the row reads "task is a child of parent")
       await tx
         .insert(entityRelationships)

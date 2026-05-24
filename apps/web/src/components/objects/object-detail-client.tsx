@@ -205,14 +205,20 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                           disabled={pending || !editingBody.trim()}
                           onClick={() => {
                             const body = editingBody;
+                            setError(null);
                             startTransition(async () => {
                               const result = await updateNoteAction({
                                 noteId: n.id,
                                 entityId: detail.id,
                                 body,
                               });
-                              if ('error' in result && result.error) setError(result.error);
-                              setEditingNoteId(null);
+                              if ('error' in result && result.error) {
+                                // Keep the editor open so the user can fix
+                                // their input rather than losing the draft.
+                                setError(result.error);
+                              } else {
+                                setEditingNoteId(null);
+                              }
                             });
                           }}
                           className="rounded-md border border-primary/40 bg-primary/10 px-3 py-1 text-xs text-primary hover:bg-primary/20 disabled:opacity-50"
