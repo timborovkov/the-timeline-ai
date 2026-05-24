@@ -122,6 +122,13 @@ export async function updateObjectAction(input: unknown): Promise<ActionState> {
     );
     revalidatePath('/app/objects');
     revalidatePath(`/app/objects/${id}`);
+    // Kanban drag-to-move triggers updateObjectAction from a board page.
+    // Without these the optimistic update snaps back to the stale rows
+    // prop on `router.refresh()` and the card visibly jumps back to its
+    // original column. `layout` scope covers all `/app/boards/[id]`
+    // permutations without needing the id here.
+    revalidatePath('/app/boards', 'layout');
+    revalidatePath('/app/tasks');
     return { ok: true, id };
   } catch (err) {
     return { error: friendlyError(err, 'Failed to update object') };
