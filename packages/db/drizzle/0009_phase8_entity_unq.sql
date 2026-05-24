@@ -24,5 +24,10 @@
 -- message, and the UI can disambiguate by appending a suffix. See
 -- todo.md Phase 8 follow-ups for revisiting this once we settle on
 -- the right per-type uniqueness story.
+-- `pg_catalog.lower("canonical_name"::text)` — schema-qualified to pin
+-- the built-in IMMUTABLE overload, with the explicit ::text cast so
+-- Postgres doesn't route the call through a collation-dependent
+-- (STABLE) overload. Six prior deploys on this branch failed with
+-- 42P17 trying lower(canonical_name) / pg_catalog.lower(canonical_name).
 DROP INDEX IF EXISTS "entities_team_type_canonical_name_unq";--> statement-breakpoint
-CREATE UNIQUE INDEX "entities_team_type_canonical_name_unq" ON "entities" USING btree ("team_id","type",lower("canonical_name")) WHERE "merged_into_id" IS NULL;
+CREATE UNIQUE INDEX "entities_team_type_canonical_name_unq" ON "entities" USING btree ("team_id","type",pg_catalog.lower("canonical_name"::text)) WHERE "merged_into_id" IS NULL;
