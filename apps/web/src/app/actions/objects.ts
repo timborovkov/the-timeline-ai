@@ -263,12 +263,13 @@ export async function markNotificationReadAction(id: string): Promise<ActionStat
   if (!parsed.success) return { error: 'Invalid id' };
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
-  const ok = await objects.markNotificationRead(db, r.scope, parsed.data);
-  revalidatePath('/app/inbox');
   // `markNotificationRead` returns false for both "not found" and "already
-  // read" (the SQL is guarded by `readAt IS NULL`). Either way the UI's
-  // desired state — read — is achieved, so don't surface that as an error.
-  return ok ? { ok: true } : { error: 'Notification not found or already read' };
+  // read" (the SQL is guarded by `readAt IS NULL`). Either way the user's
+  // desired state — read — is achieved, so always return ok and let the
+  // revalidation refresh whatever stale view triggered the click.
+  await objects.markNotificationRead(db, r.scope, parsed.data);
+  revalidatePath('/app/inbox');
+  return { ok: true };
 }
 
 export async function markAllNotificationsReadAction(): Promise<ActionState> {

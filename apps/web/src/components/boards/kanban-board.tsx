@@ -180,7 +180,9 @@ function Card({ row }: { row: objects.ObjectRow }) {
       <div className="mt-1 flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
         <span>{row.type}</span>
         {row.dueAt && <span>· due {new Date(row.dueAt).toLocaleDateString()}</span>}
-        {row.agentSuggested && (
+        {/* Badge tracks the live review state, not provenance. agentSuggested
+            stays true forever; status leaves 'suggested' on accept/reject. */}
+        {row.agentSuggested && row.status === 'suggested' && (
           <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-amber-700">
             suggested
           </span>

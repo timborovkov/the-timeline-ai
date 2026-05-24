@@ -134,7 +134,11 @@ export default async function ObjectsIndexPage({
                               · {o.dueAt.toLocaleDateString()}
                             </span>
                           )}
-                          {o.agentSuggested && (
+                          {/* `agentSuggested` is permanent provenance; the badge should
+                              reflect the live review state, not "this was ever proposed
+                              by the agent." Once accepted/rejected, status leaves
+                              'suggested' and the badge clears. */}
+                          {o.agentSuggested && o.status === 'suggested' && (
                             <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-700">
                               suggested
                             </span>
