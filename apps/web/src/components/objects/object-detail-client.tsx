@@ -67,10 +67,15 @@ export function ObjectDetailClient({ detail, userId }: Props) {
     if (!noteBody.trim()) return;
     setError(null);
     const body = noteBody;
-    setNoteBody('');
     startTransition(async () => {
       const result = await createNoteAction({ entityId: detail.id, body });
-      if ('error' in result && result.error) setError(result.error);
+      if ('error' in result && result.error) {
+        // Keep the textarea contents so the user can retry without
+        // re-typing — mirrors the edit-note flow.
+        setError(result.error);
+      } else {
+        setNoteBody('');
+      }
     });
   }
 
