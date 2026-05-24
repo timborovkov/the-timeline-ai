@@ -10,6 +10,12 @@
 -- Scoped to overdue kinds only so other notification kinds (object_changed,
 -- mentions, etc.) can fire multiple times per day without colliding.
 
+-- `(created_at AT TIME ZONE 'UTC')::date` rather than `created_at::date`:
+-- the bare timestamptz->date cast depends on the session's TimeZone GUC
+-- so Postgres marks it STABLE, not IMMUTABLE, and rejects it in an index
+-- expression with SQLSTATE 42P17. Pinning the conversion to UTC first
+-- yields an IMMUTABLE expression with the same dedup semantics (one row
+-- per calendar day, evaluated in UTC).
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_overdue_dedup_idx
-ON notifications (team_id, user_id, entity_id, kind, (created_at::date))
+ON notifications (team_id, user_id, entity_id, kind, ((created_at AT TIME ZONE 'UTC')::date))
 WHERE kind IN ('task_overdue', 'follow_up_overdue');
