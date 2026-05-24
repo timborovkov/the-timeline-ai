@@ -48,6 +48,12 @@ export function startOverdueWorker(deps: OverdueWorkerDeps): Worker<queue.Overdu
             sql`${entities.dueAt} < now()`,
             ne(entities.status, 'done'),
             ne(entities.status, 'cancelled'),
+            // Don't badger users about agent-suggested tasks they haven't
+            // accepted yet. The suggestion already produces an
+            // `agent_suggestion` notification via `createObject`; piling
+            // `task_overdue` on top would be noise. Once accepted the
+            // status flips to 'todo' and the overdue clock starts.
+            ne(entities.status, 'suggested'),
             isNull(entities.archivedAt),
             isNull(entities.mergedIntoId),
           ),

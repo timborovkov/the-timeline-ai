@@ -112,18 +112,26 @@ export default async function ChatPage({
   await scope.requireMembership();
   const team = await scope.team();
   const params = await searchParams;
-  const activeSessionId = params.session ?? null;
+  const requestedSessionId = params.session ?? null;
 
   const sessions = await objects.listChatSessions(db, scope, { limit: 50 });
   const pinnedIds = sessions.map((s) => s.pinnedEntityId).filter((v): v is string => v !== null);
   const pinnedNames = await loadPinnedEntity(db, active.teamId, pinnedIds);
 
+  // If the URL points at a session that no longer loads (archived,
+  // wrong team, malformed id), do NOT pass that id down to the client.
+  // The client would otherwise echo it on every /api/chat turn and the
+  // server would return session_not_found in a loop. Resolve to null
+  // and let ChatPane behave like a fresh chat — the next sendMessage
+  // will create a new session via x-tl-session-id.
+  let activeSessionId: string | null = null;
   let initialMessages: UIMessage[] = [];
   let pinnedEntityId: string | null = null;
   let pinnedEntityName: string | null = null;
-  if (activeSessionId) {
-    const loaded = await objects.getChatSession(db, scope, activeSessionId);
+  if (requestedSessionId) {
+    const loaded = await objects.getChatSession(db, scope, requestedSessionId);
     if (loaded) {
+      activeSessionId = requestedSessionId;
       initialMessages = hydrate(loaded);
       pinnedEntityId = loaded.session.pinnedEntityId;
       pinnedEntityName = pinnedEntityId ? (pinnedNames.get(pinnedEntityId) ?? null) : null;

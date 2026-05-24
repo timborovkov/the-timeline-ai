@@ -488,17 +488,49 @@ export async function createObject(
       .returning({ id: rawEvents.id });
     const sourceEventId = eventInsert[0]?.id ?? null;
 
-    await tx.insert(objectChanges).values({
-      teamId: scope.teamId,
-      entityId: row.id,
-      actorUserId: input.actor.userId ?? null,
-      actorKind: input.actor.kind,
-      status: input.agentSuggested ? 'suggested' : 'applied',
-      field: '__create__',
-      previousValue: null,
-      newValue: { type: input.type, canonicalName: name, status: row.status },
-      sourceEventId,
-    });
+    const changeInsert = await tx
+      .insert(objectChanges)
+      .values({
+        teamId: scope.teamId,
+        entityId: row.id,
+        actorUserId: input.actor.userId ?? null,
+        actorKind: input.actor.kind,
+        status: input.agentSuggested ? 'suggested' : 'applied',
+        field: '__create__',
+        previousValue: null,
+        newValue: { type: input.type, canonicalName: name, status: row.status },
+        sourceEventId,
+      })
+      .returning({ id: objectChanges.id });
+    const changeId = changeInsert[0]?.id ?? null;
+
+    // Agent-suggested creates need an inbox entry — otherwise the user
+    // never sees that the agent dropped a task into their workspace.
+    // Mirrors the fan-out shape in `proposeObjectChange`. Skip when the
+    // create came from a human (UI) since they already know.
+    if (input.agentSuggested && changeId) {
+      const recipients = new Set<string>();
+      if (input.ownerUserId) recipients.add(input.ownerUserId);
+      if (input.assigneeUserId) recipients.add(input.assigneeUserId);
+      if (recipients.size > 0) {
+        const summary = `Agent suggested ${input.type}: ${name}`;
+        await tx.insert(notifications).values(
+          Array.from(recipients).map((uid) => ({
+            teamId: scope.teamId,
+            userId: uid,
+            kind: 'agent_suggestion' as const,
+            entityId: row.id,
+            objectChangeId: changeId,
+            summary,
+            payload: {
+              entity_id: row.id,
+              type: input.type,
+              canonical_name: name,
+            },
+          })),
+        );
+      }
+    }
 
     if (input.parentObjectId && UUID_RE.test(input.parentObjectId)) {
       // Verify the parent belongs to this team before linking — otherwise a
@@ -1319,10 +1351,20 @@ export async function chatSessionExists(
 ): Promise<boolean> {
   await scope.requireMembership();
   if (!UUID_RE.test(sessionId)) return false;
+  // Archived sessions must not accept new persisted turns. Without this
+  // filter, `/api/chat` would happily route appendChatMessages into a
+  // session the user has archived from the sidebar — confusing because
+  // the chat appears "gone" from the UI but still grows in the DB.
   const rows = await db
     .select({ id: chatSessions.id })
     .from(chatSessions)
-    .where(and(eq(chatSessions.id, sessionId), eq(chatSessions.teamId, scope.teamId)))
+    .where(
+      and(
+        eq(chatSessions.id, sessionId),
+        eq(chatSessions.teamId, scope.teamId),
+        isNull(chatSessions.archivedAt),
+      ),
+    )
     .limit(1);
   return rows.length > 0;
 }
@@ -1380,10 +1422,19 @@ export async function appendChatMessages(
   if (!UUID_RE.test(sessionId)) throw new Error('Invalid sessionId');
   if (messages.length === 0) return;
   await db.transaction(async (tx) => {
+    // Reject archived sessions: belt-and-braces with `chatSessionExists`
+    // in the route. A session archived between the route's existence
+    // check and this append would otherwise grow under the user's nose.
     const sessionRows = await tx
       .select({ id: chatSessions.id })
       .from(chatSessions)
-      .where(and(eq(chatSessions.id, sessionId), eq(chatSessions.teamId, scope.teamId)))
+      .where(
+        and(
+          eq(chatSessions.id, sessionId),
+          eq(chatSessions.teamId, scope.teamId),
+          isNull(chatSessions.archivedAt),
+        ),
+      )
       .limit(1);
     if (!sessionRows[0]) throw new Error('Session not found');
     await tx.insert(chatMessages).values(
