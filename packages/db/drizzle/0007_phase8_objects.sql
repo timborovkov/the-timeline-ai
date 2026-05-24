@@ -41,8 +41,11 @@ ALTER TABLE "entities" ADD CONSTRAINT "entities_source_event_id_raw_events_id_fk
 -- human work that legitimately repeats — teams create many "follow up with
 -- Acme" tasks — so they're excluded. Drop + recreate is safe here because
 -- 0007 ships in one batch; no production rows depend on the old shape.
-DROP INDEX IF EXISTS "entities_team_type_canonical_name_unq";--> statement-breakpoint
-CREATE UNIQUE INDEX "entities_team_type_canonical_name_unq" ON "entities" USING btree ("team_id","type",lower("canonical_name")) WHERE "merged_into_id" IS NULL AND "type" IN ('person','company','project','topic','other','vendor','document','decision');--> statement-breakpoint
+-- The narrowed unique-index predicate that references the new enum values
+-- (vendor/document/decision) cannot live here: Postgres forbids using an
+-- enum value in the same transaction as the ALTER TYPE ADD VALUE that
+-- introduced it (SQLSTATE 55P04). It ships in a separate migration that
+-- runs after 0007 commits — see 0009_phase8_entity_unq.sql.
 CREATE INDEX "entities_team_type_status_idx" ON "entities" USING btree ("team_id","type","status");--> statement-breakpoint
 CREATE INDEX "entities_team_owner_idx" ON "entities" USING btree ("team_id","owner_user_id");--> statement-breakpoint
 CREATE INDEX "entities_team_assignee_idx" ON "entities" USING btree ("team_id","assignee_user_id");--> statement-breakpoint
