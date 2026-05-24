@@ -15,7 +15,7 @@ import { db } from '@/lib/db';
  * or the scope helper only touches one file.
  */
 
-export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const uuidSchema = z.string().regex(UUID_RE, 'Invalid id');
 
 export interface ActionState {
@@ -24,7 +24,7 @@ export interface ActionState {
   id?: string;
 }
 
-export type ResolvedScope =
+type ResolvedScope =
   | { ok: false; error: string }
   | { ok: true; scope: ReturnType<typeof withTeam>; userId: string };
 
