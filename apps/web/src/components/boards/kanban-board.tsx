@@ -77,11 +77,16 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
     if (!row || colValue(row, groupBy) === col) return;
     // `startTransition` is required to call setState (via useOptimistic) and
     // the server action from a non-form handler.
+    // Status is a non-null text column, so the synthetic 'unset' column
+    // would never legitimately receive a drop. Skip rather than write a
+    // bogus 'unset' string. Priority and stage are nullable — map 'unset'
+    // back to null instead of NaN/'unset'.
+    if (groupBy === 'status' && col === 'unset') return;
     startTransition(async () => {
       applyMove({ id, col });
       const patch =
         groupBy === 'priority'
-          ? { id, priority: Number(col) }
+          ? { id, priority: col === 'unset' ? null : Number(col) }
           : groupBy === 'stage'
             ? { id, stage: col === 'unset' ? null : col }
             : { id, status: col };

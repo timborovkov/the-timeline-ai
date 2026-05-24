@@ -78,6 +78,15 @@ export function ChatPane({
           const res = await fetch(url, init);
           const id = res.headers.get('x-tl-session-id');
           if (id && id !== sessionIdRef.current) {
+            // Update the ref SYNCHRONOUSLY before scheduling the
+            // setSessionId re-render. The body() closure on the next
+            // sendMessage call reads from sessionIdRef.current — if we
+            // wait for the useEffect to mirror state into the ref, a
+            // rapid second message will fire with sessionIdRef.current
+            // still null, send startNewSession=true, and the server will
+            // create a SECOND chat_sessions row that fragments the
+            // conversation.
+            sessionIdRef.current = id;
             setSessionId(id);
             // Mirror to URL without a full reload so the sidebar highlight
             // updates and a reload hits the same session.

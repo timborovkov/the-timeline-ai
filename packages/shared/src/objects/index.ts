@@ -1764,12 +1764,22 @@ export async function acceptObjectChange(
   const change = rows[0];
   if (!change) return false;
 
-  // Build a patch object keyed by the suggestion's field. Restrict to the
-  // exact set `proposeObjectChange` accepts — guards against `__create__`
-  // and other structural-event markers, and keeps the accept surface in
-  // lockstep with the propose surface so the agent can't sneak in a
-  // canonicalName/aliases/metadata rewrite through a hand-crafted row.
-  const allowed: readonly (keyof ObjectPatch)[] = [
+  // Build a patch object keyed by the suggestion's field. Two cases:
+  //
+  // 1. `__create__` — accepting an agent-suggested object (from
+  //    `suggest_task` and friends). The entity already exists with
+  //    `status='suggested'`; accepting flips it to a working status so
+  //    the object leaves the "needs review" state. We pick the default
+  //    by type so a suggested task lands in 'todo' (matches the task
+  //    status vocabulary) and other types land in 'open'.
+  //
+  // 2. A field-scoped suggestion (`status`/`stage`/...) from
+  //    `proposeObjectChange`. Restrict to the exact set the proposer
+  //    accepts so the agent can't sneak a canonicalName/aliases/metadata
+  //    rewrite through a hand-crafted row, and other structural markers
+  //    (`__relationship_create__`, `__note_update__`, ...) can never be
+  //    auto-applied.
+  const proposable: readonly (keyof ObjectPatch)[] = [
     'status',
     'stage',
     'priority',
@@ -1777,16 +1787,32 @@ export async function acceptObjectChange(
     'assigneeUserId',
     'dueAt',
   ];
-  if (!(allowed as readonly string[]).includes(change.field)) return false;
+  const isCreate = change.field === '__create__';
+  if (!isCreate && !(proposable as readonly string[]).includes(change.field)) return false;
 
   const patch: ObjectPatch = {};
-  const value = change.newValue;
-  // `dueAt` round-trips through JSON as a string — rehydrate so the diff in
-  // updateObject doesn't compare Date to string and write a phantom change.
-  if (change.field === 'dueAt') {
-    patch.dueAt = value === null ? null : new Date(value as string);
+  if (isCreate) {
+    // Read the entity's current type so we pick the right default
+    // working status. Cheap one-row lookup keyed by id+team — the
+    // updateObject call below will re-fetch with FOR UPDATE.
+    const entRows = await db
+      .select({ type: entities.type })
+      .from(entities)
+      .where(and(eq(entities.id, change.entityId), eq(entities.teamId, scope.teamId)))
+      .limit(1);
+    const entType = entRows[0]?.type;
+    if (!entType) return false;
+    patch.status = entType === 'task' || entType === 'follow_up' ? 'todo' : 'open';
   } else {
-    (patch as Record<string, unknown>)[change.field] = value;
+    const value = change.newValue;
+    // `dueAt` round-trips through JSON as a string — rehydrate so the
+    // diff in updateObject doesn't compare Date to string and write a
+    // phantom change.
+    if (change.field === 'dueAt') {
+      patch.dueAt = value === null ? null : new Date(value as string);
+    } else {
+      (patch as Record<string, unknown>)[change.field] = value;
+    }
   }
 
   await updateObject(db, scope, change.entityId, patch, actor);
