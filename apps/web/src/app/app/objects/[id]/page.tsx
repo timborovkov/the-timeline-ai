@@ -1,6 +1,7 @@
 import { objects, withTeam } from '@timeline/shared';
 import { notFound, redirect } from 'next/navigation';
 
+import { NarrowContainer } from '@/components/narrow-container';
 import { ObjectDetailClient } from '@/components/objects/object-detail-client';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -35,5 +36,9 @@ export default async function ObjectDetailPage({ params }: PageProps) {
 
   await objects.markVisited(db, scope, detail.id);
 
-  return <ObjectDetailClient detail={detail} userId={session.user.id} />;
+  return (
+    <NarrowContainer>
+      <ObjectDetailClient detail={detail} userId={session.user.id} />
+    </NarrowContainer>
+  );
 }
