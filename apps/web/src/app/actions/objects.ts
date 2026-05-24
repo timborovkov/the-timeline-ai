@@ -310,8 +310,12 @@ export async function rejectObjectChangeAction(input: unknown): Promise<ActionSt
   if (!parsed.success) return { error: 'Invalid id' };
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
-  const ok = await objects.rejectObjectChange(db, r.scope, parsed.data.changeId);
-  revalidatePath(`/app/objects/${parsed.data.entityId}`);
-  revalidatePath('/app/inbox');
-  return ok ? { ok: true } : { error: 'Suggestion no longer pending' };
+  try {
+    const ok = await objects.rejectObjectChange(db, r.scope, parsed.data.changeId);
+    revalidatePath(`/app/objects/${parsed.data.entityId}`);
+    revalidatePath('/app/inbox');
+    return ok ? { ok: true } : { error: 'Suggestion no longer pending' };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to reject' };
+  }
 }

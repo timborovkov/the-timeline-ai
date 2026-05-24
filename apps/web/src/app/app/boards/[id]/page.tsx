@@ -1,6 +1,7 @@
 import { objects, withTeam } from '@timeline/shared';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import { z } from 'zod';
 
 import { DeleteBoardButton } from '@/components/boards/delete-board-button';
 import { KanbanBoard } from '@/components/boards/kanban-board';
@@ -18,20 +19,45 @@ function isGroupKey(v: string | null | undefined): v is GroupKey {
   return v !== null && v !== undefined && (VALID_GROUP_KEYS as readonly string[]).includes(v);
 }
 
-const VALID_TYPES = new Set<string>(objects.OBJECT_TYPES);
+// `board.filter` is raw JSONB from `board_views` — every field needs to
+// survive a stale schema or a UI bug that wrote junk. Run the whole
+// payload through a tolerant zod schema (each field validated
+// independently with `.catch(undefined)`) so a bad `limit` / `archived` /
+// `dueAt` doesn't bubble up as a SQL error with no UI recovery path. The
+// `type` field is also narrowed against the live enum so a removed value
+// doesn't throw at the planner.
+const stringOrArray = z.union([z.string(), z.array(z.string())]);
+const dateLike = z
+  .union([z.string(), z.date()])
+  .transform((v) => (v instanceof Date ? v : new Date(v)))
+  .refine((d) => !Number.isNaN(d.getTime()));
+const boardFilterSchema = z
+  .object({
+    type: z.union([z.enum(objects.OBJECT_TYPES), z.array(z.enum(objects.OBJECT_TYPES))]).optional(),
+    status: stringOrArray.optional(),
+    stage: stringOrArray.optional(),
+    ownerUserId: z.union([z.string(), z.null()]).optional(),
+    assigneeUserId: z.union([z.string(), z.null()]).optional(),
+    dueBefore: dateLike.optional(),
+    dueAfter: dateLike.optional(),
+    archived: z.boolean().optional(),
+    limit: z.number().int().min(1).max(500).optional(),
+    offset: z.number().int().min(0).optional(),
+  })
+  .partial();
 
-function sanitizeBoardFilter(filter: objects.ObjectListFilter): objects.ObjectListFilter {
-  const next = { ...filter };
-  if (next.type !== undefined) {
-    const incoming = Array.isArray(next.type) ? next.type : [next.type];
-    const valid = incoming.filter((t): t is objects.ObjectType => VALID_TYPES.has(t));
-    if (valid.length === 0) {
-      delete next.type;
-    } else {
-      next.type = valid;
-    }
+function sanitizeBoardFilter(filter: Record<string, unknown>): objects.ObjectListFilter {
+  // Validate field-by-field. A single bad field shouldn't nuke the whole
+  // filter — keep the rest and drop the invalid one.
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(filter)) {
+    if (value === undefined) continue;
+    const shape = (boardFilterSchema.shape as Record<string, z.ZodTypeAny>)[key];
+    if (!shape) continue;
+    const result = shape.safeParse(value);
+    if (result.success) out[key] = result.data;
   }
-  return next;
+  return out as objects.ObjectListFilter;
 }
 
 export default async function BoardDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -45,12 +71,6 @@ export default async function BoardDetailPage({ params }: { params: Promise<{ id
   const board = await objects.getBoardView(db, scope, id);
   if (!board) notFound();
 
-  // `board.filter` is raw JSONB from `board_views` — could contain stale
-  // type values from an older schema, or junk a future UI didn't sanitize.
-  // Drop any `type` entries not in the current Postgres enum so the query
-  // doesn't throw and break the board with no UI recovery path. Other
-  // fields (status/stage strings, uuids, dates) won't cause SQL errors at
-  // worst they return no rows.
   const sanitizedFilter = sanitizeBoardFilter(board.filter);
   const rows = await objects.listObjects(db, scope, sanitizedFilter);
 
