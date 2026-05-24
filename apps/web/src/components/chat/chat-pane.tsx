@@ -53,13 +53,11 @@ export function ChatPane({
   useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
-  // router/search are stable references from next/navigation, but capture
-  // them in refs anyway so the transport's fetch closure doesn't snapshot
-  // a stale URLSearchParams on a query-param change.
-  const routerRef = useRef(router);
+  // `search` is a stable reference from next/navigation, but capture it
+  // in a ref so the transport's fetch closure doesn't snapshot a stale
+  // URLSearchParams on a query-param change.
   const searchRef = useRef(search);
   useEffect(() => {
-    routerRef.current = router;
     searchRef.current = search;
   });
 
@@ -88,11 +86,23 @@ export function ChatPane({
             // conversation.
             sessionIdRef.current = id;
             setSessionId(id);
-            // Mirror to URL without a full reload so the sidebar highlight
-            // updates and a reload hits the same session.
-            const params = new URLSearchParams(searchRef.current.toString());
-            params.set('session', id);
-            routerRef.current.replace(`/app/chat?${params.toString()}`);
+            // Update the URL via window.history.replaceState rather than
+            // router.replace: the latter triggers a Next.js server-component
+            // refetch, which would re-render the parent `/app/chat` page and
+            // recompute `activeSessionId` from the new URL. Because the
+            // parent keys ChatPane on `activeSessionId`, the change would
+            // remount ChatPane mid-stream — unmounting the useChat instance
+            // that is currently reading the response body, dropping the
+            // assistant turn, skipping onFinish, and erasing the
+            // conversation visually. window.history.replaceState only
+            // touches the address bar (still survives reload + correct
+            // deep-link); the sidebar highlight catches up on the next
+            // user-initiated navigation.
+            if (typeof window !== 'undefined') {
+              const params = new URLSearchParams(searchRef.current.toString());
+              params.set('session', id);
+              window.history.replaceState(null, '', `/app/chat?${params.toString()}`);
+            }
           }
           return res;
         },

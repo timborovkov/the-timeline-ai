@@ -98,11 +98,14 @@ export function ObjectDetailClient({ detail, userId }: Props) {
           </div>
         )}
         {(() => {
-          const pending = detail.recentChanges.filter((c) => c.status === 'suggested').length;
-          if (pending === 0) return null;
+          // Local name avoids shadowing the outer `pending` from useTransition,
+          // so future edits inside this IIFE that reach for `pending` get the
+          // transition state instead of silently grabbing the count.
+          const pendingCount = detail.recentChanges.filter((c) => c.status === 'suggested').length;
+          if (pendingCount === 0) return null;
           return (
             <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/5 px-4 py-2 text-sm text-amber-700">
-              {pending} agent suggestion{pending === 1 ? '' : 's'} awaiting review below.
+              {pendingCount} agent suggestion{pendingCount === 1 ? '' : 's'} awaiting review below.
             </div>
           );
         })()}
