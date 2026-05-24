@@ -252,11 +252,16 @@ export async function deleteNoteAction(input: unknown): Promise<ActionState> {
 // ---------- Notifications ----------
 
 export async function markNotificationReadAction(id: string): Promise<ActionState> {
+  const parsed = uuidSchema.safeParse(id);
+  if (!parsed.success) return { error: 'Invalid id' };
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
-  await objects.markNotificationRead(db, r.scope, id);
+  const ok = await objects.markNotificationRead(db, r.scope, parsed.data);
   revalidatePath('/app/inbox');
-  return { ok: true };
+  // `markNotificationRead` returns false for both "not found" and "already
+  // read" (the SQL is guarded by `readAt IS NULL`). Either way the UI's
+  // desired state — read — is achieved, so don't surface that as an error.
+  return ok ? { ok: true } : { error: 'Notification not found or already read' };
 }
 
 export async function markAllNotificationsReadAction(): Promise<ActionState> {

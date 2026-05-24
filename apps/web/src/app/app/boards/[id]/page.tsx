@@ -18,6 +18,22 @@ function isGroupKey(v: string | null | undefined): v is GroupKey {
   return v !== null && v !== undefined && (VALID_GROUP_KEYS as readonly string[]).includes(v);
 }
 
+const VALID_TYPES = new Set<string>(objects.OBJECT_TYPES);
+
+function sanitizeBoardFilter(filter: objects.ObjectListFilter): objects.ObjectListFilter {
+  const next = { ...filter };
+  if (next.type !== undefined) {
+    const incoming = Array.isArray(next.type) ? next.type : [next.type];
+    const valid = incoming.filter((t): t is objects.ObjectType => VALID_TYPES.has(t));
+    if (valid.length === 0) {
+      delete next.type;
+    } else {
+      next.type = valid;
+    }
+  }
+  return next;
+}
+
 export default async function BoardDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -29,7 +45,14 @@ export default async function BoardDetailPage({ params }: { params: Promise<{ id
   const board = await objects.getBoardView(db, scope, id);
   if (!board) notFound();
 
-  const rows = await objects.listObjects(db, scope, board.filter);
+  // `board.filter` is raw JSONB from `board_views` — could contain stale
+  // type values from an older schema, or junk a future UI didn't sanitize.
+  // Drop any `type` entries not in the current Postgres enum so the query
+  // doesn't throw and break the board with no UI recovery path. Other
+  // fields (status/stage strings, uuids, dates) won't cause SQL errors at
+  // worst they return no rows.
+  const sanitizedFilter = sanitizeBoardFilter(board.filter);
+  const rows = await objects.listObjects(db, scope, sanitizedFilter);
 
   const groupBy: GroupKey = isGroupKey(board.groupBy) ? board.groupBy : 'status';
 
