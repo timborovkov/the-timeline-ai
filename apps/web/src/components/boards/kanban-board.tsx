@@ -12,6 +12,7 @@ import {
 } from '@dnd-kit/core';
 import { type objects } from '@timeline/shared';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useOptimistic, useTransition } from 'react';
 
 import { updateObjectAction } from '@/app/actions/objects';
@@ -38,8 +39,15 @@ function colValue(row: objects.ObjectRow, key: GroupKey): string {
 
 export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
   const cols = columns ?? DEFAULT_STATUS_COLS;
-  // `useOptimistic` lets a drop apply instantly while the server action
-  // resolves; on error the next revalidate snaps it back.
+  const router = useRouter();
+  // `useOptimistic` shows the drop instantly while the server action
+  // resolves, then snaps back to the underlying `rows` prop. Because
+  // `updateObjectAction` only revalidates the object detail paths (not
+  // `/app/boards/[id]` or `/app/tasks`), we call `router.refresh()` after
+  // the action so the server component re-fetches and the new rows
+  // replace the snapped-back ones. Without the refresh, every drop
+  // visually reverts to its original column even though the DB has the
+  // new status.
   const [items, applyMove] = useOptimistic(
     rows,
     (state: objects.ObjectRow[], move: { id: string; col: string }) =>
@@ -78,6 +86,10 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
             ? { id, stage: col === 'unset' ? null : col }
             : { id, status: col };
       await updateObjectAction(patch);
+      // Refresh the server component for this route so the underlying
+      // `rows` prop reflects the new column before useOptimistic snaps
+      // back. See the `useOptimistic` comment above.
+      router.refresh();
     });
   }
 

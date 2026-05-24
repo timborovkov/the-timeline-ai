@@ -148,6 +148,13 @@ export default async function ChatPage({
         </header>
         <div className="flex min-h-0 flex-1 flex-col">
           <ChatPane
+            // Key on activeSessionId (or "new" when none) so React remounts
+            // ChatPane on every session switch. Without this, navigating from
+            // session A → B in the sidebar reconciles the same component and
+            // the underlying useChat's Chat instance (created once via
+            // useRef) keeps session A's messages alive — new messages get
+            // sent against the wrong session id even though props change.
+            key={activeSessionId ?? 'new'}
             teamName={team?.name ?? active.teamName}
             sessionId={activeSessionId}
             initialMessages={initialMessages}

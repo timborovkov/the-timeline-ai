@@ -291,16 +291,19 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             type: 'task',
             archived: false,
             limit: input.limit ?? 50,
+            // Push the default "open" status set into the DB filter as a
+            // positive allow-list rather than post-filtering in memory.
+            // Otherwise a workspace dominated by closed tasks would see
+            // `limit=50` rows fetched, most of them done/cancelled, and
+            // post-filter would leave the agent with a handful of open
+            // ones — under-reporting actual workload.
+            status: input.status ?? ['suggested', 'todo', 'doing', 'blocked'],
           };
-          if (input.status) filter.status = input.status;
           if (input.ownerUserId) filter.ownerUserId = input.ownerUserId;
           const rows = await objects.listObjects(getDb(), scope, filter);
-          const filtered = input.status
-            ? rows
-            : rows.filter((r) => r.status !== 'done' && r.status !== 'cancelled');
           return {
-            count: filtered.length,
-            tasks: filtered.map((r) => ({
+            count: rows.length,
+            tasks: rows.map((r) => ({
               id: r.id,
               name: r.canonicalName,
               status: r.status,
