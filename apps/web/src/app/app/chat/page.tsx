@@ -140,7 +140,12 @@ export default async function ChatPage({
   }
 
   return (
-    <div className="flex h-[calc(100dvh-9rem)] gap-4 md:h-[calc(100dvh-11rem)]">
+    // Escape main's px/py with negative margins so the chat fills the
+    // entire viewport minus the AppShell header (h-16 = 4rem). The chat
+    // pane has its own internal scroll, so a fixed outer height keeps the
+    // layout stable regardless of message count and the input always sits
+    // pinned at the bottom of the viewport.
+    <div className="-mx-6 -my-10 flex h-[calc(100dvh-4rem)] md:-mx-10 md:-my-14">
       <SessionSidebar
         activeSessionId={activeSessionId}
         sessions={sessions.map((s) => ({
@@ -150,7 +155,7 @@ export default async function ChatPage({
           pinnedEntityName: s.pinnedEntityId ? (pinnedNames.get(s.pinnedEntityId) ?? null) : null,
         }))}
       />
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col px-6 py-6 md:px-10 md:py-8">
         <header className="mb-6 shrink-0">
           <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Chat</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">Ask the timeline</h1>
