@@ -1300,7 +1300,13 @@ export async function listChatSessions(
   filter: { pinnedEntityId?: string; limit?: number; includeArchived?: boolean } = {},
 ): Promise<ChatSessionRow[]> {
   await scope.requireMembership();
-  const conds = [eq(chatSessions.teamId, scope.teamId)];
+  // Chat sessions are private to their creator within a team. Without
+  // the createdBy filter, every team member would see every other
+  // member's AI conversations in the sidebar and be able to read/write
+  // them. `createdBy` is set to `scope.userId` at session creation
+  // (see `createChatSession`) — every chat helper below mirrors this
+  // (createdBy + teamId) pair.
+  const conds = [eq(chatSessions.teamId, scope.teamId), eq(chatSessions.createdBy, scope.userId)];
   if (!filter.includeArchived) conds.push(isNull(chatSessions.archivedAt));
   if (filter.pinnedEntityId && UUID_RE.test(filter.pinnedEntityId)) {
     conds.push(eq(chatSessions.pinnedEntityId, filter.pinnedEntityId));
@@ -1381,6 +1387,8 @@ export async function chatSessionExists(
       and(
         eq(chatSessions.id, sessionId),
         eq(chatSessions.teamId, scope.teamId),
+        // See listChatSessions — sessions are per-user within a team.
+        eq(chatSessions.createdBy, scope.userId),
         isNull(chatSessions.archivedAt),
       ),
     )
@@ -1408,6 +1416,8 @@ export async function getChatSession(
       and(
         eq(chatSessions.id, sessionId),
         eq(chatSessions.teamId, scope.teamId),
+        // See listChatSessions — sessions are per-user within a team.
+        eq(chatSessions.createdBy, scope.userId),
         isNull(chatSessions.archivedAt),
       ),
     )
@@ -1463,6 +1473,10 @@ export async function appendChatMessages(
         and(
           eq(chatSessions.id, sessionId),
           eq(chatSessions.teamId, scope.teamId),
+          // See listChatSessions — sessions are per-user within a team.
+          // Without this, /api/chat could write a teammate's message into
+          // someone else's transcript.
+          eq(chatSessions.createdBy, scope.userId),
           isNull(chatSessions.archivedAt),
         ),
       )
@@ -1495,7 +1509,14 @@ export async function setChatSessionTitle(
   await db
     .update(chatSessions)
     .set({ title, updatedAt: new Date() })
-    .where(and(eq(chatSessions.id, sessionId), eq(chatSessions.teamId, scope.teamId)));
+    .where(
+      and(
+        eq(chatSessions.id, sessionId),
+        eq(chatSessions.teamId, scope.teamId),
+        // See listChatSessions — sessions are per-user within a team.
+        eq(chatSessions.createdBy, scope.userId),
+      ),
+    );
 }
 
 export async function linkChatSessionToObject(
@@ -1524,7 +1545,14 @@ export async function linkChatSessionToObject(
   await db
     .update(chatSessions)
     .set({ pinnedEntityId: entityId, updatedAt: new Date() })
-    .where(and(eq(chatSessions.id, sessionId), eq(chatSessions.teamId, scope.teamId)));
+    .where(
+      and(
+        eq(chatSessions.id, sessionId),
+        eq(chatSessions.teamId, scope.teamId),
+        // See listChatSessions — sessions are per-user within a team.
+        eq(chatSessions.createdBy, scope.userId),
+      ),
+    );
 }
 
 export async function archiveChatSession(
@@ -1537,7 +1565,14 @@ export async function archiveChatSession(
   await db
     .update(chatSessions)
     .set({ archivedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(chatSessions.id, sessionId), eq(chatSessions.teamId, scope.teamId)));
+    .where(
+      and(
+        eq(chatSessions.id, sessionId),
+        eq(chatSessions.teamId, scope.teamId),
+        // See listChatSessions — sessions are per-user within a team.
+        eq(chatSessions.createdBy, scope.userId),
+      ),
+    );
 }
 
 // ---------- Board views ----------
