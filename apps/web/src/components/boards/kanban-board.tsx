@@ -153,12 +153,11 @@ function Card({ row }: { row: objects.ObjectRow }) {
     >
       <Link
         href={`/app/objects/${row.id}`}
-        onPointerDown={(e) => {
-          // Stop dnd from swallowing the click when the user just wants to
-          // open the object detail. Pointer-down on the anchor still lets the
-          // browser handle the navigation if no drag started.
-          e.stopPropagation();
-        }}
+        // No `stopPropagation` on pointer-down: dnd-kit's PointerSensor uses
+        // `activationConstraint: { distance: 4 }`, so a click that doesn't
+        // move past 4px still resolves as a normal Link click and navigates.
+        // Stopping propagation here would prevent drags from initiating on
+        // the title area, which is where users naturally grab the card.
         className="block min-w-0 truncate font-medium hover:underline"
       >
         {row.canonicalName}
