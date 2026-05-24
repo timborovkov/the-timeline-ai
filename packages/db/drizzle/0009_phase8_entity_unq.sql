@@ -6,14 +6,23 @@
 -- (SQLSTATE 55P04, "unsafe use of new value"). Splitting the work
 -- across migrations lets 0007's ADD VALUE statements commit first.
 --
--- The bare text literals 'person', 'company', ... in an index predicate
--- force Postgres to call `enum_in(cstring) -> entity_type` to coerce
--- them; `enum_in` is STABLE, not IMMUTABLE, so Postgres rejects the
--- whole predicate with SQLSTATE 42P17 ("functions in index expression
--- must be marked IMMUTABLE"). Explicit `::entity_type` casts on each
--- literal turn the coercion into a parse-time constant, eliminating the
--- function call from the stored predicate. (`pg_catalog.lower` is also
--- schema-qualified for the same robustness reason — search_path can
--- otherwise pick a STABLE overload on managed Postgres.)
+-- The Phase 8 plan was to narrow the predicate to allow user-authored
+-- types (task, follow_up, deal, incident, hiring_loop) to repeat canonical
+-- names within a team. Three migration attempts hit SQLSTATE 42P17:
+-- Postgres rejects any function reference that isn't strictly IMMUTABLE
+-- in an index predicate. Both `lower(canonical_name)` and the enum
+-- coercion for `type IN ('person', ...)` (or NOT IN, or ANY(ARRAY[...]))
+-- end up routing through STABLE-marked functions on Railway's Postgres
+-- regardless of schema qualification or explicit ::entity_type casts.
+--
+-- Recreate the index without the type filter — same shape as the
+-- original 0005 index. Cross-type uniqueness is still enforced via
+-- (team_id, type, lower(canonical_name)), so a "person" Apple and a
+-- "company" Apple coexist. The only behavior loss is duplicate-named
+-- user-authored objects: createObjectAction surfaces the resulting
+-- 23505 as the friendly "An object with that name already exists"
+-- message, and the UI can disambiguate by appending a suffix. See
+-- todo.md Phase 8 follow-ups for revisiting this once we settle on
+-- the right per-type uniqueness story.
 DROP INDEX IF EXISTS "entities_team_type_canonical_name_unq";--> statement-breakpoint
-CREATE UNIQUE INDEX "entities_team_type_canonical_name_unq" ON "entities" USING btree ("team_id","type",pg_catalog.lower("canonical_name")) WHERE "merged_into_id" IS NULL AND "type" IN ('person'::entity_type,'company'::entity_type,'project'::entity_type,'topic'::entity_type,'other'::entity_type,'vendor'::entity_type,'document'::entity_type,'decision'::entity_type);
+CREATE UNIQUE INDEX "entities_team_type_canonical_name_unq" ON "entities" USING btree ("team_id","type",lower("canonical_name")) WHERE "merged_into_id" IS NULL;

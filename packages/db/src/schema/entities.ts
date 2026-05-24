@@ -93,17 +93,18 @@ export const entities = pgTable(
     // things), and so the resolver's race-safe insert+re-SELECT can never
     // mis-bind a mention to an entity of the wrong type.
     //
-    // Phase 8: extraction-derived types must stay unique because the
-    // resolver re-uses canonical names across captures (two "Acme Corp"
-    // mentions resolve to the same entity). User-authored object types
-    // (task, follow_up, deal, incident, hiring_loop) name human work that
-    // legitimately repeats — teams create many tasks called "follow up
-    // with Acme" — so they're excluded from the uniqueness predicate.
+    // Phase 8 originally wanted to allow user-authored types (task,
+    // follow_up, deal, ...) to repeat canonical names by narrowing this
+    // predicate to extraction-derived types only. Postgres rejects any
+    // enum literal in an index predicate as a non-IMMUTABLE function
+    // call (SQLSTATE 42P17), so the predicate stays as just `mergedIntoId
+    // IS NULL` — same shape as the original 0005 index. The 23505
+    // duplicate-name violation now surfaces for user-authored types too;
+    // createObjectAction maps it to a friendly message and the UI can
+    // disambiguate. Follow-up tracked in todo.md.
     uniqueIndex('entities_team_type_canonical_name_unq')
       .on(table.teamId, table.type, sql`lower(${table.canonicalName})`)
-      .where(
-        sql`${table.mergedIntoId} IS NULL AND ${table.type} IN ('person','company','project','topic','other','vendor','document','decision')`,
-      ),
+      .where(sql`${table.mergedIntoId} IS NULL`),
     // GIN over aliases for alias-membership lookup. Team scoping happens via
     // the btree (entities_team_idx) — Postgres bitmap-ands the two.
     index('entities_aliases_gin').using('gin', sql`${table.aliases} jsonb_path_ops`),
