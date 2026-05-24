@@ -1,33 +1,18 @@
--- Narrow the entities canonical-name unique index so tasks, follow-ups,
--- and deals can share names across rows. Lives in its own migration
--- because the predicate references enum values (vendor/document/decision)
--- added by 0007 — Postgres forbids using a new enum value in the same
--- transaction as the ALTER TYPE ADD VALUE that introduced it
--- (SQLSTATE 55P04, "unsafe use of new value"). Splitting the work
--- across migrations lets 0007's ADD VALUE statements commit first.
+-- No-op migration.
 --
--- The Phase 8 plan was to narrow the predicate to allow user-authored
--- types (task, follow_up, deal, incident, hiring_loop) to repeat canonical
--- names within a team. Three migration attempts hit SQLSTATE 42P17:
--- Postgres rejects any function reference that isn't strictly IMMUTABLE
--- in an index predicate. Both `lower(canonical_name)` and the enum
--- coercion for `type IN ('person', ...)` (or NOT IN, or ANY(ARRAY[...]))
--- end up routing through STABLE-marked functions on Railway's Postgres
--- regardless of schema qualification or explicit ::entity_type casts.
+-- The original Phase 8 plan was to narrow this index's WHERE predicate
+-- so user-authored object types (task, follow_up, deal, ...) could
+-- repeat canonical names within a team. Every attempt was rejected by
+-- Railway's Postgres with SQLSTATE 42P17 ("functions in index
+-- expression must be marked IMMUTABLE"), regardless of how the
+-- predicate or `lower()` expression was qualified — six consecutive
+-- deploys failed with the same root cause.
 --
--- Recreate the index without the type filter — same shape as the
--- original 0005 index. Cross-type uniqueness is still enforced via
--- (team_id, type, lower(canonical_name)), so a "person" Apple and a
--- "company" Apple coexist. The only behavior loss is duplicate-named
--- user-authored objects: createObjectAction surfaces the resulting
--- 23505 as the friendly "An object with that name already exists"
--- message, and the UI can disambiguate by appending a suffix. See
--- todo.md Phase 8 follow-ups for revisiting this once we settle on
--- the right per-type uniqueness story.
--- `pg_catalog.lower("canonical_name"::text)` — schema-qualified to pin
--- the built-in IMMUTABLE overload, with the explicit ::text cast so
--- Postgres doesn't route the call through a collation-dependent
--- (STABLE) overload. Six prior deploys on this branch failed with
--- 42P17 trying lower(canonical_name) / pg_catalog.lower(canonical_name).
-DROP INDEX IF EXISTS "entities_team_type_canonical_name_unq";--> statement-breakpoint
-CREATE UNIQUE INDEX "entities_team_type_canonical_name_unq" ON "entities" USING btree ("team_id","type",pg_catalog.lower("canonical_name"::text)) WHERE "merged_into_id" IS NULL;
+-- The index that migration 0005 created already matches the current
+-- schema definition byte-for-byte. There is nothing to recreate. This
+-- file exists only to occupy slot 0009 in the journal so future
+-- migrations stay numbered sequentially, and so existing CI/CD
+-- environments that pre-fetched this filename don't 404.
+--
+-- Follow-up to revisit per-type uniqueness is tracked in todo.md.
+SELECT 1;

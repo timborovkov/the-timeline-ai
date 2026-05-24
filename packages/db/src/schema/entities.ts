@@ -103,7 +103,7 @@ export const entities = pgTable(
     // createObjectAction maps it to a friendly message and the UI can
     // disambiguate. Follow-up tracked in todo.md.
     uniqueIndex('entities_team_type_canonical_name_unq')
-      .on(table.teamId, table.type, sql`pg_catalog.lower(${table.canonicalName}::text)`)
+      .on(table.teamId, table.type, sql`lower(${table.canonicalName})`)
       .where(sql`${table.mergedIntoId} IS NULL`),
     // GIN over aliases for alias-membership lookup. Team scoping happens via
     // the btree (entities_team_idx) — Postgres bitmap-ands the two.
