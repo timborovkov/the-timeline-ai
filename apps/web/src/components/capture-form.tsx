@@ -1,53 +1,129 @@
 'use client';
 
 import { Lock, Send, Users } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
+import { useRouter } from 'next/navigation';
+import { type SyntheticEvent, useRef, useState } from 'react';
 
-import { createTextEventAction, type CreateEventState } from '@/app/actions/events';
-import { AudioRecorder } from '@/components/audio-recorder';
+import {
+  createAudioEventAction,
+  createTextEventAction,
+  requestAudioUploadAction,
+  type CreateEventState,
+} from '@/app/actions/events';
+import { AudioRecorder, type RecordedClip } from '@/components/audio-recorder';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
-function CaptureSubmit() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" disabled={pending} className="gap-2">
-      {pending ? (
-        'Posting…'
-      ) : (
-        <>
-          <Send className="h-3.5 w-3.5" />
-          Post
-        </>
-      )}
-    </Button>
-  );
+function baseMimeType(mt: string): string {
+  return mt.split(';')[0]?.trim() ?? mt;
 }
 
 export function CaptureForm() {
-  const [state, action] = useFormState<CreateEventState, FormData>(createTextEventAction, {});
-  const [isPrivate, setIsPrivate] = useState(false);
+  const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [clip, setClip] = useState<RecordedClip | null>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Bumped on successful post; passed as `key` to AudioRecorder so React
+  // remounts it with a fresh `phase: 'idle'` / `clip: null` state. The
+  // recorder owns its own clip state internally; without remount it would
+  // still show the post-recording audio player + Discard button.
+  const [recorderKey, setRecorderKey] = useState(0);
+  // setPending is async; a quick double-click could enter submit twice before
+  // the button disables. Same in-flight latch the old AudioRecorder used.
+  const inFlightRef = useRef(false);
 
-  // Only reset the text input, NOT the visibility pill.
-  //
-  // The same `isPrivate` drives the AudioRecorder via the `visibility` prop.
-  // If a voice clip is mid-review when a text post succeeds, flipping the
-  // pill back to "team" here would silently change the recording's
-  // visibility — a privacy leak (the user recorded under "Private" and
-  // could send a team-visible event without noticing). Leave the pill
-  // alone; it's also better UX (visibility is a sticky preference, not a
-  // per-post toggle).
-  useEffect(() => {
-    if (state.ok) {
-      formRef.current?.reset();
+  async function submitTextOnly(text: string): Promise<CreateEventState> {
+    const fd = new FormData();
+    fd.set('text', text);
+    fd.set('visibility', isPrivate ? 'private' : 'team');
+    return createTextEventAction({}, fd);
+  }
+
+  async function submitAudio(): Promise<void> {
+    if (!clip) throw new Error('No clip to upload');
+    const base = baseMimeType(clip.mimeType);
+    const req = await requestAudioUploadAction(base);
+    if (!req.ok || !req.url || !req.key) {
+      throw new Error(req.error ?? 'Upload request failed');
     }
-  }, [state.ok, state.at]);
+    const put = await fetch(req.url, {
+      method: 'PUT',
+      headers: { 'content-type': req.contentType ?? base },
+      body: clip.blob,
+    });
+    if (!put.ok) throw new Error(`Upload failed: ${put.status}`);
+    const create = await createAudioEventAction({
+      key: req.key,
+      mimeType: base,
+      durationSec: clip.durationSec,
+      visibility: isPrivate ? 'private' : 'team',
+    });
+    if (!create.ok) throw new Error(create.error ?? 'Save failed');
+    if (create.warning) setError(create.warning);
+  }
+
+  async function handleSubmit(e: SyntheticEvent<HTMLFormElement>): Promise<void> {
+    e.preventDefault();
+    if (inFlightRef.current) return;
+    const text = (textareaRef.current?.value ?? '').trim();
+    if (!clip && text.length === 0) {
+      setError('Write something or record a voice note.');
+      return;
+    }
+    inFlightRef.current = true;
+    setPending(true);
+    setError(null);
+    try {
+      // Text + voice in the same Post become two separate events on the
+      // timeline. We deliberately do NOT pack typed text into the audio
+      // row's content_text: the transcribe worker overwrites that column
+      // with the transcript on completion (transcribe.ts), which would
+      // silently destroy the user's note.
+      //
+      // Two-step submit: if the text event succeeds but the audio upload
+      // then fails, clear the textarea immediately so a retry only resubmits
+      // the audio. Otherwise the user clicks Post again and we'd duplicate
+      // the (already-committed) text event on the timeline.
+      if (text.length > 0) {
+        const result = await submitTextOnly(text);
+        if (!result.ok) {
+          throw new Error(result.error ?? 'Post failed');
+        }
+        if (textareaRef.current) textareaRef.current.value = '';
+      }
+      const hadClip = clip !== null;
+      if (clip) {
+        await submitAudio();
+      }
+      formRef.current?.reset();
+      // Only clear clip / remount the recorder when an audio clip was
+      // actually posted. A text-only Post must not touch recorder state —
+      // the user may have started (or finished) a recording during the
+      // async text submit. The Stop button stays enabled while pending, so
+      // `onstop` can fire mid-submit and push a fresh clip up via
+      // onClipChange; unconditionally nulling here would overwrite that
+      // clip in the parent while the child still shows it in review,
+      // wedging the user (next Post sees no clip).
+      if (hadClip) {
+        setClip(null);
+        setRecorderKey((k) => k + 1);
+      }
+      // Keep visibility pill sticky — it's a preference, not per-post.
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Post failed');
+    } finally {
+      inFlightRef.current = false;
+      setPending(false);
+    }
+  }
 
   return (
-    <form ref={formRef} action={action} className="space-y-5">
+    <form ref={formRef} onSubmit={handleSubmit} className="space-y-5">
       <div>
         <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Capture</p>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -55,15 +131,14 @@ export function CaptureForm() {
         </p>
       </div>
       <Textarea
+        ref={textareaRef}
         name="text"
         placeholder="What happened?"
         rows={4}
-        required
         className="resize-none rounded-md border-0 bg-transparent p-0 text-[15px] leading-7 shadow-none ring-0 ring-offset-0 transition-colors focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:[outline:none]"
       />
-      <AudioRecorder visibility={isPrivate ? 'private' : 'team'} />
+      <AudioRecorder key={recorderKey} onClipChange={setClip} disabled={pending} />
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
-        <input type="hidden" name="visibility" value={isPrivate ? 'private' : 'team'} />
         <button
           type="button"
           onClick={() => {
@@ -81,8 +156,21 @@ export function CaptureForm() {
           {isPrivate ? 'Private (only me)' : 'Visible to team'}
         </button>
         <div className="flex items-center gap-3">
-          {state.error ? <span className="text-xs text-destructive">{state.error}</span> : null}
-          <CaptureSubmit />
+          {error ? <span className="text-xs text-destructive">{error}</span> : null}
+          <Button type="submit" disabled={pending} className="gap-2">
+            {pending ? (
+              clip ? (
+                'Uploading…'
+              ) : (
+                'Posting…'
+              )
+            ) : (
+              <>
+                <Send className="h-3.5 w-3.5" />
+                Post
+              </>
+            )}
+          </Button>
         </div>
       </div>
     </form>

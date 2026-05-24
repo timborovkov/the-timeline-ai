@@ -194,6 +194,17 @@
         either position. The matched value must equal <code>POSTMARK_WEBHOOK_SECRET</code> exactly.)
       </p>
 
+      <h3 id="inbound-ip-allowlist">Optional: source IP allowlist</h3>
+      <p>
+        Set <code>POSTMARK_INBOUND_IPS</code> to a comma-separated list of CIDRs (IPv4) to reject
+        requests from outside Postmark's published webhook IP ranges <em>before</em> the basic-auth
+        check. Failed-auth requests are also rate-limited per source IP (30/min) and return 429 once
+        the bucket empties, so a credential-spray attack against the basic-auth header gets locked
+        out fast. Leave unset in dev / staging to skip the IP check entirely.
+      </p>
+      <pre><code>POSTMARK_INBOUND_IPS=3.134.147.250/32,50.31.156.6/32
+</code></pre>
+
       <h2 id="inbound-domain">4. Inbound email domain</h2>
       <p>
         Each team gets <code>&lt;team-slug&gt;@&lt;INBOUND_EMAIL_DOMAIN&gt;</code>. Configure MX

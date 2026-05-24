@@ -214,6 +214,15 @@ export async function signInWithGitHubAction(formData: FormData): Promise<void> 
       ? (formData.get('callbackUrl') as string)
       : undefined,
   );
+  // If this OAuth signup is for an invite, stash the token in a signed
+  // cookie so the `createUser` event can skip the default solo-team
+  // creation. Without this the user ends up in two teams after the OAuth
+  // callback redirects to /accept-invite.
+  const inviteToken = formData.get('inviteToken');
+  if (typeof inviteToken === 'string' && inviteToken.length > 0 && inviteToken.length <= 256) {
+    const { setPendingInvite } = await import('@/lib/pending-invite');
+    await setPendingInvite(inviteToken);
+  }
   // signIn() with a non-credentials provider throws NEXT_REDIRECT on success.
   // Let it propagate; Next handles the response.
   await signIn('github', { redirectTo: callbackUrl });

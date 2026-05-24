@@ -6,7 +6,7 @@ import { rawEvents } from '@timeline/db';
 import {
   childLogger,
   getAudioBucket,
-  getS3Client,
+  getS3PresignClient,
   getSignedPutObjectUrl,
   queue,
   withTeam,
@@ -162,7 +162,12 @@ export async function requestAudioUploadAction(
   // createAudioEventAction. The prefix check on confirm enforces the same
   // user.id we sign here.
   const key = `teams/${active.teamId}/web/${session.user.id}/${randomUUID()}.${ext}`;
-  const url = await getSignedPutObjectUrl(getS3Client(), getAudioBucket(), key, parsedMime.data);
+  const url = await getSignedPutObjectUrl(
+    getS3PresignClient(),
+    getAudioBucket(),
+    key,
+    parsedMime.data,
+  );
   return { ok: true, url, key, contentType: parsedMime.data };
 }
 

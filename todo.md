@@ -25,14 +25,14 @@ Open PRs not counted here yet:
 
 ## Immediate Hardening
 
-- [ ] Add per-user rate limits for `/api/search`, `/api/chat`, and capture/webhook endpoints. Use one token-bucket design keyed by `(userId or source, route, teamId)` where possible.
-- [ ] Add Postmark IP allowlist and rate-limit 401s on `/api/email/inbound`.
-- [ ] Add owner-safety rules: a team must always have at least one owner, or ownership must be transferred explicitly.
-- [ ] Decide whether OAuth signup should honor invite tokens. Today the GitHub button is hidden on invite signup, but this comes back when more OAuth providers land.
-- [ ] Add web-path reconciler for orphaned transcribe/extract/embed jobs, including email attachment/audio child recovery where safe.
-- [ ] Review prompt-injection boundaries for all source content the agent can read back, especially email bodies. Prefer per-source fenced/tool-output framing before adding more external integrations.
-- [ ] Fix Qdrant `deletePoints` semantics before redaction/right-to-be-forgotten work. A 404 should not be blindly treated as success once deletion matters.
-- [ ] Wire streaming aborts through request disconnects to avoid unnecessary OpenRouter spend.
+- [x] Add per-user rate limits for `/api/search`, `/api/chat`, and capture/webhook endpoints. Redis token bucket in `packages/shared/src/rate-limit/`.
+- [x] Add Postmark IP allowlist and rate-limit 401s on `/api/email/inbound`. `POSTMARK_INBOUND_IPS` + per-IP 401 lockout via the shared token bucket.
+- [x] Add owner-safety rules: a team must always have at least one owner, or ownership must be transferred explicitly. Helper `assertNotLastOwner` in `packages/shared/src/team-roles.ts`; new `transferOwnershipAction` and `changeMemberRoleAction`.
+- [x] Decide whether OAuth signup should honor invite tokens. Today the GitHub button passes the token via a signed `pending_invite` cookie; `createUser` skips the default solo team when one is pending.
+- [x] Add web-path reconciler for orphaned transcribe/extract/embed jobs, including email attachment/audio child recovery where safe. `apps/web/src/lib/reconcile-jobs.ts` + `/api/cron/reconcile` gated on `CRON_SECRET`.
+- [x] Review prompt-injection boundaries for all source content the agent can read back, especially email bodies. Tool outputs now fence `content_text`/`snippet` in `<external_content>`; Rule 8 names the tag and `AGENT_PROMPT_VERSION` bumped to `agent-v3-2026-05`.
+- [x] Fix Qdrant `deletePoints` semantics before redaction/right-to-be-forgotten work. `deletePoints(ids, { verifyDeleted: true })` re-GETs each id and throws on still-present.
+- [x] Wire streaming aborts through request disconnects to avoid unnecessary OpenRouter spend. `llm.streamChat` takes `abortSignal`; `/api/chat` passes `req.signal`.
 
 ## Phase 8 — Product Surface: Objects, Boards, And Workflows
 

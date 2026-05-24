@@ -1,4 +1,12 @@
-import { agent, childLogger, getEnv, llm, objects, withTeam } from '@timeline/shared';
+import {
+  agent,
+  childLogger,
+  getEnv,
+  llm,
+  objects,
+  rateLimit,
+  withTeam,
+} from '@timeline/shared';
 import { convertToModelMessages, safeValidateUIMessages, type UIMessage } from 'ai';
 import { z } from 'zod';
 
@@ -99,6 +107,17 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, error: 'not_a_member' }, { status: 403 });
   }
 
+  const rl = await rateLimit.checkRateLimit({
+    key: rateLimit.rateLimitKey('chat', 'user', session.user.id),
+    ...rateLimit.RATE_LIMITS.chat,
+  });
+  if (!rl.ok) {
+    return Response.json(
+      { ok: false, error: 'rate_limited' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000)) } },
+    );
+  }
+
   const team = await scope.team();
   const teamName = team?.name ?? active.teamName;
   const userName = session.user.name ?? session.user.email ?? 'a teammate';
@@ -165,6 +184,10 @@ export async function POST(req: Request): Promise<Response> {
     messages,
     tools,
     maxSteps: 5,
+    // Propagate client disconnects to OpenRouter so we stop paying for
+    // tokens nobody will see. Without this, a user navigating away mid-
+    // stream still runs the model to completion.
+    abortSignal: req.signal,
     onFinish: (e) => {
       log.info(
         {

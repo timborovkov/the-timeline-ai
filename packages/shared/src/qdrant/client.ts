@@ -55,9 +55,26 @@ export interface QdrantClient {
     queryVector: number[],
     opts?: SearchOpts,
   ): Promise<SearchHit[]>;
-  deletePoints(ids: string[]): Promise<void>;
+  deletePoints(ids: string[], opts?: DeletePointsOpts): Promise<void>;
+  /**
+   * Return the subset of ids that currently exist in the collection. Used by
+   * the orphaned-job reconciler to detect facts that never made it into the
+   * vector store.
+   */
+  pointsExist(ids: string[]): Promise<Set<string>>;
   /** Test/admin-only: read the collection name this instance writes to. */
   collectionName(): string;
+}
+
+export interface DeletePointsOpts {
+  /**
+   * After deletion, GET each point id and verify it's gone. When false
+   * (default) we trust the POST and treat a 404 as success, which is right
+   * for idempotent re-deletes. Redaction / right-to-be-forgotten paths MUST
+   * set this true — silent failures there are a compliance bug, not a
+   * convenience.
+   */
+  verifyDeleted?: boolean;
 }
 
 export interface QdrantClientOptions {
@@ -277,12 +294,36 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     }));
   }
 
-  async function deletePoints(ids: string[]): Promise<void> {
+  async function deletePoints(ids: string[], opts: DeletePointsOpts = {}): Promise<void> {
     if (ids.length === 0) return;
     await ensureCollection();
     await request('POST', `/collections/${encodeURIComponent(collection)}/points/delete`, {
       points: ids,
     });
+    if (opts.verifyDeleted) {
+      // The collection-wide 404 from `request` is treated as OK, which is
+      // right for idempotent re-delete but wrong for redaction. Verify
+      // per-id via GET — Qdrant returns 200 with `result: null` (or a
+      // missing entry) when the id is absent. Throw if any still resolves.
+      const stillPresent = await pointsExist(ids);
+      if (stillPresent.size > 0) {
+        throw new Error(
+          `Qdrant deletePoints verification failed: ${stillPresent.size} of ${ids.length} ids still present`,
+        );
+      }
+    }
+  }
+
+  async function pointsExist(ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) return new Set();
+    await ensureCollection();
+    const res = await request('POST', `/collections/${encodeURIComponent(collection)}/points`, {
+      ids,
+      with_payload: false,
+      with_vector: false,
+    });
+    const body = (res.data ?? {}) as { result?: { id: string }[] };
+    return new Set((body.result ?? []).map((p) => p.id));
   }
 
   return {
@@ -290,6 +331,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     upsertVector,
     search,
     deletePoints,
+    pointsExist,
     collectionName: () => collection,
   };
 }

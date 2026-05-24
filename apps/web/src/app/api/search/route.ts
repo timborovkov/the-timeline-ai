@@ -1,4 +1,4 @@
-import { childLogger, getEnv, withTeam, type SearchEventResult } from '@timeline/shared';
+import { childLogger, getEnv, rateLimit, withTeam, type SearchEventResult } from '@timeline/shared';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -39,6 +39,17 @@ export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
   if (!env.OPENROUTER_API_KEY || !env.QDRANT_URL) {
     return Response.json({ ok: false, error: 'search_unconfigured' }, { status: 503 });
+  }
+
+  const rl = await rateLimit.checkRateLimit({
+    key: rateLimit.rateLimitKey('search', 'user', session.user.id),
+    ...rateLimit.RATE_LIMITS.search,
+  });
+  if (!rl.ok) {
+    return Response.json(
+      { ok: false, error: 'rate_limited' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000)) } },
+    );
   }
 
   let parsedBody: unknown;

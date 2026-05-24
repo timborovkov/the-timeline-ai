@@ -236,6 +236,36 @@
         Already configured in <code>apps/web/railway.json</code> → <code>/api/health</code>. Railway
         will restart the service on failure.
       </p>
+
+      <h2 id="reconcile-cron">7. Job reconciler (optional cron)</h2>
+      <p>
+        Set <code>CRON_SECRET</code> in shared variables to enable
+        <code>POST /api/cron/reconcile</code>. The endpoint re-enqueues stuck transcribe / extract /
+        embed jobs for raw events idle past 15 minutes, and is idempotent because workers are
+        deterministic on <code>raw_events</code> and Qdrant point ids. Run it from Railway's
+        scheduler (or any cron service) every few minutes:
+      </p>
+      <pre><code>curl -fsS -H "Authorization: Bearer $CRON_SECRET" \
+  https://&lt;your-app-domain&gt;/api/cron/reconcile
+</code></pre>
+      <p>
+        Leave <code>CRON_SECRET</code> unset to disable the endpoint (returns 503). The handler also
+        accepts <code>GET</code> for cron services that don't support POST bodies.
+      </p>
+      <p>
+        <strong>Dead-letter behavior.</strong> Each (row, stage) is re-enqueued at most 3 times.
+        After that the reconciler stamps
+        <code>source_metadata.reconcile_giveup_&lt;stage&gt;</code> with the giveup timestamp and
+        skips the row on subsequent runs. The response payload includes a
+        <code>deadLettered</code> count for dashboards. To retry a dead-lettered row manually, clear
+        the giveup key from <code>source_metadata</code>:
+      </p>
+      <pre><code>UPDATE raw_events
+SET source_metadata = source_metadata
+  - 'reconcile_giveup_transcribe'
+  - 'reconcile_attempts_transcribe'
+WHERE id = '&lt;uuid&gt;';
+</code></pre>
     </main>
   </body>
 </html>

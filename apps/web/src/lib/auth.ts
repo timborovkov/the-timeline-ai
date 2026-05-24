@@ -1,15 +1,6 @@
 import { DrizzleAdapter } from '@auth/drizzle-adapter';
-import {
-  accounts,
-  authenticators,
-  getDb,
-  sessions,
-  teamMembers,
-  teams,
-  users,
-  verificationTokens,
-} from '@timeline/db';
-import { buildInboundEmail, randomSlugSuffix, slugify, verifyPassword } from '@timeline/shared';
+import { accounts, authenticators, getDb, sessions, users, verificationTokens } from '@timeline/db';
+import { childLogger, verifyPassword } from '@timeline/shared';
 import { eq } from 'drizzle-orm';
 import NextAuth, { type NextAuthConfig } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
@@ -17,8 +8,10 @@ import GitHub from 'next-auth/providers/github';
 import { z } from 'zod';
 
 import { authConfig } from '@/lib/auth.config';
+import { ensureSoloTeam } from '@/lib/default-team';
 
 const db = getDb();
+const log = childLogger('web:auth');
 
 // Lowercase the email so direct POSTs to /api/auth/callback/credentials are
 // normalized the same way as signUpAction / signInAction. Without this, a
@@ -78,24 +71,26 @@ const nextAuth = NextAuth({
     async createUser({ user }) {
       const userId = user.id;
       if (!userId) return;
-      const existing = await db
-        .select({ teamId: teamMembers.teamId })
-        .from(teamMembers)
-        .where(eq(teamMembers.userId, userId))
-        .limit(1);
-      if (existing.length > 0) return;
-      const label = user.name ?? user.email?.split('@')[0] ?? 'team';
-      const slug = `${slugify(`${label}-team`) || 'team'}-${randomSlugSuffix()}`;
-      const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
-      await db.transaction(async (tx) => {
-        const inserted = await tx
-          .insert(teams)
-          .values({ name: `${label}'s Team`, slug, inboundEmail })
-          .returning({ id: teams.id });
-        const teamId = inserted[0]?.id;
-        if (!teamId) throw new Error('Failed to create default team');
-        await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
-      });
+      // OAuth signups that arrived via an invite link must NOT get a default
+      // solo team — they'll be added to the invited team when the callback
+      // lands on /accept-invite/<token>. Creating a solo team here would
+      // leave the user in two teams forever. If invite acceptance later
+      // fails, `acceptInviteAction` spins a fallback solo team for them.
+      //
+      // Best-effort cookie read: if `cookies()` throws (request-context edge
+      // case, future runtime quirk), treat as "no pending invite" and fall
+      // through to ensureSoloTeam. Letting the error propagate would break
+      // the entire OAuth signup — strictly worse than the rare two-teams
+      // outcome (user can leave the spare team via the UI).
+      let pendingInvite: string | null = null;
+      try {
+        const { readPendingInvite } = await import('@/lib/pending-invite');
+        pendingInvite = await readPendingInvite();
+      } catch (err) {
+        log.error({ err: (err as Error).message, userId }, 'createUser_pending_invite_read_failed');
+      }
+      if (pendingInvite) return;
+      await ensureSoloTeam(userId, { name: user.name, email: user.email });
     },
   },
 });

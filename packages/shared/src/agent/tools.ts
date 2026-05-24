@@ -33,6 +33,42 @@ const getEventInput = z.object({
   id: z.string().regex(UUID_RE),
 });
 
+/**
+ * Wrap an event's raw text in `<external_content>` tags so the model cannot
+ * confuse it with system instructions. The tag name is referenced verbatim
+ * by Rule 8 in the system prompt; do not rename without bumping
+ * AGENT_PROMPT_VERSION.
+ *
+ * Strips any nested `<external_content>` / `</external_content>` markers
+ * from the input — a malicious sender could otherwise inject a closing
+ * tag and "escape" the fence. We replace the literal closing sequence
+ * with a benign placeholder.
+ */
+function fenceAttr(value: string): string {
+  // Escape every char that has structural meaning inside an XML/HTML-style
+  // attribute: `&` (entity start), `"` (attr terminator), `<` (rejected by
+  // strict XML attribute parsers), `>` (cosmetic — escaped for symmetry).
+  // Today `source` is an enum and `eventId` is a UUID so none of these can
+  // actually appear, but the fence is security-critical and these helpers
+  // must stay safe regardless of upstream constraint drift.
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function fenceExternalContent(
+  text: string | null | undefined,
+  attrs: { source: string; eventId: string },
+): string | null {
+  if (text === null || text === undefined) return null;
+  const sanitized = text.replace(/<\/?external_content[^>]*>/gi, '[fence-removed]');
+  const source = fenceAttr(attrs.source);
+  const eventId = fenceAttr(attrs.eventId);
+  return `<external_content source="${source}" event_id="${eventId}">${sanitized}</external_content>`;
+}
+
 async function safe<T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> {
   try {
     return await fn();
@@ -73,7 +109,14 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           if (input.entityIds) args.entityIds = input.entityIds;
           if (input.limit) args.limit = input.limit;
           const results = await scope.searchEvents(args);
-          return { count: results.length, results };
+          // Fence the snippet so a malicious search hit cannot smuggle a
+          // prompt-injection past the Rule 8 framing.
+          const fenced = results.map((r) => ({
+            ...r,
+            snippet:
+              fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }) ?? '',
+          }));
+          return { count: fenced.length, results: fenced };
         }),
     }),
 
@@ -92,7 +135,26 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             coOccurringLimit: 10,
           });
           if (!profile) return { found: false };
-          return { found: true, ...profile };
+          // Explicitly project event fields (allowlist) instead of spreading
+          // `...e` — keeps the LLM-visible surface in sync with list_events /
+          // get_event, and a future field added to EntityProfile.events can't
+          // silently leak. content_text is fenced so prompt-injection in
+          // entity source events can't bypass Rule 8.
+          return {
+            found: true,
+            ...profile,
+            events: profile.events.map((e) => ({
+              event_id: e.id,
+              occurred_at: e.occurredAt.toISOString(),
+              source: e.source,
+              author_user_id: e.authorUserId,
+              content_text: fenceExternalContent(e.contentText, {
+                source: e.source,
+                eventId: e.id,
+              }),
+              has_audio: Boolean(e.contentAudioUrl),
+            })),
+          };
         }),
     }),
 
@@ -118,7 +180,10 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
               occurred_at: e.occurredAt.toISOString(),
               source: e.source,
               author_user_id: e.authorUserId,
-              content_text: e.contentText,
+              content_text: fenceExternalContent(e.contentText, {
+                source: e.source,
+                eventId: e.id,
+              }),
               has_audio: Boolean(e.contentAudioUrl),
             })),
           };
@@ -140,7 +205,10 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             occurred_at: result.event.occurredAt.toISOString(),
             source: result.event.source,
             author_user_id: result.event.authorUserId,
-            content_text: result.event.contentText,
+            content_text: fenceExternalContent(result.event.contentText, {
+              source: result.event.source,
+              eventId: result.event.id,
+            }),
             has_audio: Boolean(result.event.contentAudioUrl),
             facts: result.facts.map((f) => ({
               fact_id: f.id,
