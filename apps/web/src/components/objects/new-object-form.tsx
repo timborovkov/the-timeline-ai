@@ -4,22 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
 import { createObjectAction } from '@/app/actions/objects';
-
-const TYPES = [
-  'task',
-  'follow_up',
-  'deal',
-  'project',
-  'person',
-  'company',
-  'vendor',
-  'incident',
-  'document',
-  'decision',
-  'hiring_loop',
-  'topic',
-  'other',
-] as const;
+import { OBJECT_TYPES as TYPES } from '@/lib/object-types';
 
 export function NewObjectForm() {
   const router = useRouter();

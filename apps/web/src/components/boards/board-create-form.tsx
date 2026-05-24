@@ -4,25 +4,8 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
 import { saveBoardAction } from '@/app/actions/boards';
+import { OBJECT_TYPES } from '@/lib/object-types';
 
-// Mirrors the entityType enum (packages/db/src/schema/entities.ts). Inlined
-// here so the client bundle doesn't pull in `@timeline/shared`'s queue/BullMQ
-// surface (Node-only). The new-object-form does the same.
-const OBJECT_TYPES = [
-  'task',
-  'follow_up',
-  'deal',
-  'project',
-  'person',
-  'company',
-  'vendor',
-  'incident',
-  'document',
-  'decision',
-  'hiring_loop',
-  'topic',
-  'other',
-] as const;
 const KINDS = ['kanban', 'table', 'list'] as const;
 const GROUP_BY_OPTIONS = ['status', 'stage', 'priority', 'type'] as const;
 

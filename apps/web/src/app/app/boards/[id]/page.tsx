@@ -31,20 +31,21 @@ const dateLike = z
   .union([z.string(), z.date()])
   .transform((v) => (v instanceof Date ? v : new Date(v)))
   .refine((d) => !Number.isNaN(d.getTime()));
-const boardFilterSchema = z
-  .object({
-    type: z.union([z.enum(objects.OBJECT_TYPES), z.array(z.enum(objects.OBJECT_TYPES))]).optional(),
-    status: stringOrArray.optional(),
-    stage: stringOrArray.optional(),
-    ownerUserId: z.union([z.string(), z.null()]).optional(),
-    assigneeUserId: z.union([z.string(), z.null()]).optional(),
-    dueBefore: dateLike.optional(),
-    dueAfter: dateLike.optional(),
-    archived: z.boolean().optional(),
-    limit: z.number().int().min(1).max(500).optional(),
-    offset: z.number().int().min(0).optional(),
-  })
-  .partial();
+// Every field is `.optional()` already; no `.partial()` wrapper — that
+// would double-wrap each field in a second ZodOptional, which is
+// functionally harmless but misleading at the schema-reading site.
+const boardFilterSchema = z.object({
+  type: z.union([z.enum(objects.OBJECT_TYPES), z.array(z.enum(objects.OBJECT_TYPES))]).optional(),
+  status: stringOrArray.optional(),
+  stage: stringOrArray.optional(),
+  ownerUserId: z.union([z.string(), z.null()]).optional(),
+  assigneeUserId: z.union([z.string(), z.null()]).optional(),
+  dueBefore: dateLike.optional(),
+  dueAfter: dateLike.optional(),
+  archived: z.boolean().optional(),
+  limit: z.number().int().min(1).max(500).optional(),
+  offset: z.number().int().min(0).optional(),
+});
 
 function sanitizeBoardFilter(filter: Record<string, unknown>): objects.ObjectListFilter {
   // Validate field-by-field. A single bad field shouldn't nuke the whole
