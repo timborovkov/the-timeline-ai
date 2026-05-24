@@ -446,6 +446,16 @@ export async function createObject(
   const name = input.canonicalName.trim();
   if (!name) throw new Error('canonicalName is required');
 
+  // Owner/assignee FK is to `users.id` (system-wide), so the FK alone
+  // does not prove team membership. Without this gate an actor (human
+  // or agent) could plant a foreign user, and later `updateObject` fan-
+  // out would deliver a notification whose summary leaks the entity
+  // name to a non-member. Verify membership before the write.
+  if (input.ownerUserId) await scope.requireTeamMember(input.ownerUserId);
+  if (input.assigneeUserId && input.assigneeUserId !== input.ownerUserId) {
+    await scope.requireTeamMember(input.assigneeUserId);
+  }
+
   return db.transaction(async (tx) => {
     const insertRows = await tx
       .insert(entities)
@@ -591,6 +601,15 @@ export async function updateObject(
 ): Promise<{ object: ObjectRow; changedFields: string[] }> {
   await scope.requireMembership();
   if (!UUID_RE.test(entityId)) throw new Error('Invalid entity id');
+
+  // See createObject — owner/assignee FK is system-wide, so verify the
+  // referenced user actually belongs to this team before letting an
+  // edit reassign to a foreign user. Skip when the patch clears the
+  // field (`null`) — that's always safe.
+  if (patch.ownerUserId) await scope.requireTeamMember(patch.ownerUserId);
+  if (patch.assigneeUserId && patch.assigneeUserId !== patch.ownerUserId) {
+    await scope.requireTeamMember(patch.assigneeUserId);
+  }
 
   return db.transaction(async (tx) => {
     const currentRows = await tx
@@ -1723,6 +1742,65 @@ export interface ProposeObjectChangeInput {
 }
 
 /**
+ * Validate (field, value) against the same shape `updateObject` enforces
+ * when the suggestion is later accepted. Without this check, an LLM
+ * could call `propose_object_change({field:'priority', newValue:'banana'})`
+ * and the row sits in `object_changes` until a human clicks Accept —
+ * at which point `acceptObjectChange` would try `new Date('banana')`
+ * (Invalid Date) or write a string into a smallint column (22P02),
+ * surfacing as a generic 500 from the accept button with no hint that
+ * the suggestion was malformed. Reject at propose time so the agent
+ * gets immediate feedback and the inbox never shows un-acceptable rows.
+ *
+ * Returns the normalized value so the stored jsonb matches what
+ * `updateObject` will eventually write (e.g., null instead of empty
+ * string for nullable fields, ISO datetime instead of Date object).
+ */
+function normalizeProposedValue(
+  field: ProposeObjectChangeInput['field'],
+  newValue: unknown,
+): unknown {
+  switch (field) {
+    case 'status': {
+      if (typeof newValue !== 'string') throw new Error('status must be a string');
+      const trimmed = newValue.trim();
+      if (!trimmed || trimmed.length > 40) throw new Error('status: 1-40 chars');
+      return trimmed;
+    }
+    case 'stage': {
+      if (newValue === null) return null;
+      if (typeof newValue !== 'string') throw new Error('stage must be a string or null');
+      const trimmed = newValue.trim();
+      if (trimmed.length > 40) throw new Error('stage: max 40 chars');
+      return trimmed === '' ? null : trimmed;
+    }
+    case 'priority': {
+      if (newValue === null) return null;
+      if (typeof newValue !== 'number' || !Number.isInteger(newValue)) {
+        throw new Error('priority must be an integer 1-4 or null');
+      }
+      if (newValue < 1 || newValue > 4) throw new Error('priority: 1-4');
+      return newValue;
+    }
+    case 'ownerUserId':
+    case 'assigneeUserId': {
+      if (newValue === null) return null;
+      if (typeof newValue !== 'string' || !UUID_RE.test(newValue)) {
+        throw new Error(`${field} must be a UUID or null`);
+      }
+      return newValue;
+    }
+    case 'dueAt': {
+      if (newValue === null) return null;
+      if (typeof newValue !== 'string') throw new Error('dueAt must be ISO datetime or null');
+      const d = new Date(newValue);
+      if (Number.isNaN(d.getTime())) throw new Error('dueAt: invalid date');
+      return d.toISOString();
+    }
+  }
+}
+
+/**
  * Write a `suggested` row to object_changes without mutating the entity.
  * Used by the agent's `propose_object_change` tool. A human reviews via the
  * suggestion UI on the object page; `acceptObjectChange` applies it.
@@ -1734,6 +1812,21 @@ export async function proposeObjectChange(
 ): Promise<{ id: string }> {
   await scope.requireMembership();
   if (!UUID_RE.test(input.entityId)) throw new Error('Invalid entity id');
+
+  // Validate value shape against the target field BEFORE writing. See
+  // `normalizeProposedValue` doc for why this matters — without it, the
+  // failure surfaces at human-accept time as a confusing 500.
+  const normalized = normalizeProposedValue(input.field, input.newValue);
+
+  // If the proposed value is a user reference, verify team membership so
+  // the agent can't seed a foreign user that later gets pushed through
+  // updateObject and leaks via notification fan-out.
+  if (
+    (input.field === 'ownerUserId' || input.field === 'assigneeUserId') &&
+    typeof normalized === 'string'
+  ) {
+    await scope.requireTeamMember(normalized);
+  }
 
   return db.transaction(async (tx) => {
     const entRows = await tx
@@ -1762,7 +1855,7 @@ export async function proposeObjectChange(
         status: 'suggested',
         field: input.field,
         previousValue,
-        newValue: input.newValue,
+        newValue: normalized,
         note: input.note ?? null,
       })
       .returning({ id: objectChanges.id });
