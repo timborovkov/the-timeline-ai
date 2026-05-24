@@ -82,9 +82,14 @@ export default async function BoardDetailPage({ params }: { params: Promise<{ id
   const effectiveGroupBy: GroupKey =
     board.kind === 'kanban' && groupBy === 'type' ? 'status' : groupBy;
 
+  // Kanban needs a known parent height to enable per-column scroll —
+  // tasks page does the same trick. Table/list size to content and are
+  // fine in the default main flow.
+  const isKanban = board.kind === 'kanban';
+
   return (
-    <div>
-      <header className="mb-8 flex items-end justify-between gap-6">
+    <div className={isKanban ? 'flex h-[calc(100dvh-11rem)] flex-col' : undefined}>
+      <header className="mb-8 flex shrink-0 items-end justify-between gap-6">
         <div>
           <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
             <Link href="/app/boards" className="hover:underline">
@@ -101,11 +106,13 @@ export default async function BoardDetailPage({ params }: { params: Promise<{ id
         <DeleteBoardButton id={board.id} />
       </header>
 
-      {board.kind === 'kanban' && (
-        // `effectiveGroupBy` is collapsed to KanbanBoard's narrower union
-        // above when this branch runs (board.kind === 'kanban'); the cast
-        // tells TS what the runtime guarantee is.
-        <KanbanBoard rows={rows} groupBy={effectiveGroupBy as 'status' | 'stage' | 'priority'} />
+      {isKanban && (
+        <div className="min-h-0 flex-1">
+          {/* `effectiveGroupBy` is collapsed to KanbanBoard's narrower union
+              above when this branch runs (board.kind === 'kanban'); the cast
+              tells TS what the runtime guarantee is. */}
+          <KanbanBoard rows={rows} groupBy={effectiveGroupBy as 'status' | 'stage' | 'priority'} />
+        </div>
       )}
       {board.kind === 'table' && <ObjectTable rows={rows} />}
       {board.kind === 'list' && <ObjectList rows={rows} groupBy={effectiveGroupBy} />}
