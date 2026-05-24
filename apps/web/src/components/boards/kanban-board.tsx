@@ -53,11 +53,26 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
   // replace the snapped-back ones. Without the refresh, every drop
   // visually reverts to its original column even though the DB has the
   // new status.
-  const [items, applyMove] = useOptimistic(
-    rows,
-    (state: objects.ObjectRow[], move: { id: string; col: string }) =>
-      state.map((r) => (r.id === move.id ? { ...r, [groupBy]: move.col } : r)),
-  );
+  // Coerce the column id back into the row field's real shape so
+  // optimistic state matches what the server will return. `col` is always
+  // a string (droppable ids) but `priority` is `number | null` and
+  // `stage` is `string | null` — without coercion any future code that
+  // sorted by priority within a column would compare strings.
+  const applyOptimistic = (
+    state: objects.ObjectRow[],
+    move: { id: string; col: string },
+  ): objects.ObjectRow[] =>
+    state.map((r) => {
+      if (r.id !== move.id) return r;
+      if (groupBy === 'priority') {
+        return { ...r, priority: move.col === 'unset' ? null : Number(move.col) };
+      }
+      if (groupBy === 'stage') {
+        return { ...r, stage: move.col === 'unset' ? null : move.col };
+      }
+      return { ...r, status: move.col };
+    });
+  const [items, applyMove] = useOptimistic(rows, applyOptimistic);
   const [, startTransition] = useTransition();
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
