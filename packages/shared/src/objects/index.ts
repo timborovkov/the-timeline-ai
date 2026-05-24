@@ -1376,10 +1376,22 @@ export async function getChatSession(
 ): Promise<{ session: ChatSessionRow; messages: ChatMessageRow[] } | null> {
   await scope.requireMembership();
   if (!UUID_RE.test(sessionId)) return null;
+  // Archived sessions are also hidden from hydration. The chat page
+  // would otherwise render an archived transcript that the route then
+  // refuses to write to (chatSessionExists + appendChatMessages both
+  // filter archived), so the user sees old messages but every new turn
+  // returns session_not_found. Returning null here makes the page
+  // resolve activeSessionId to null and behave like a fresh chat.
   const sessionRows = await db
     .select()
     .from(chatSessions)
-    .where(and(eq(chatSessions.id, sessionId), eq(chatSessions.teamId, scope.teamId)))
+    .where(
+      and(
+        eq(chatSessions.id, sessionId),
+        eq(chatSessions.teamId, scope.teamId),
+        isNull(chatSessions.archivedAt),
+      ),
+    )
     .limit(1);
   const s = sessionRows[0];
   if (!s) return null;
