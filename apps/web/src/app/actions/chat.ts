@@ -38,18 +38,6 @@ export async function archiveChatSessionAction(input: unknown): Promise<ActionSt
   return { ok: true };
 }
 
-export async function setChatSessionTitleAction(input: unknown): Promise<ActionState> {
-  const parsed = z
-    .object({ sessionId: uuidSchema, title: z.string().trim().min(1).max(120) })
-    .safeParse(input);
-  if (!parsed.success) return { error: 'Invalid input' };
-  const r = await resolveScope();
-  if (!r.ok) return { error: r.error };
-  await objects.setChatSessionTitle(db, r.scope, parsed.data.sessionId, parsed.data.title);
-  revalidatePath('/app/chat');
-  return { ok: true };
-}
-
 export async function unpinChatSessionAction(input: unknown): Promise<ActionState> {
   const parsed = z.object({ sessionId: uuidSchema }).safeParse(input);
   if (!parsed.success) return { error: 'Invalid id' };

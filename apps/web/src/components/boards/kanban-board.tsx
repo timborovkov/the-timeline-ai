@@ -38,7 +38,12 @@ function colValue(row: objects.ObjectRow, key: GroupKey): string {
 }
 
 export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
-  const cols = columns ?? DEFAULT_STATUS_COLS;
+  // Only apply DEFAULT_STATUS_COLS when actually grouping by status — for
+  // `stage` or `priority` the default would render four empty
+  // todo/doing/done/blocked columns next to the real ones. When no
+  // explicit columns are configured for non-status groupBy, fall back to
+  // the union of values seen on rows (computed below).
+  const cols = columns ?? (groupBy === 'status' ? DEFAULT_STATUS_COLS : []);
   const router = useRouter();
   // `useOptimistic` shows the drop instantly while the server action
   // resolves, then snaps back to the underlying `rows` prop. Because

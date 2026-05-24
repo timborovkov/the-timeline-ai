@@ -1878,19 +1878,34 @@ export async function acceptObjectChange(
     }
   }
 
-  await updateObject(db, scope, change.entityId, patch, actor);
-
-  // Guard the flip with `status='suggested'` so a concurrent reject (or a
-  // second accept that got past the same initial SELECT) can't clobber a
-  // terminal `rejected` row back into `applied`. The SELECT above is
-  // outside a transaction, so this WHERE is the only thing keeping the
-  // audit trail consistent under contention.
-  const flipped = await db
+  // Claim the suggestion FIRST with an atomic CAS on status='suggested',
+  // before mutating the entity. This is the only synchronization point
+  // between accept and reject — `Db` doesn't expose `PgTransaction` so we
+  // can't wrap updateObject in an outer transaction, and a post-mutation
+  // flip would race with a concurrent reject (the user wanted to reject,
+  // but the entity already got the suggested value applied — irreversible).
+  // Claim-then-apply means a concurrent reject loses cleanly (0 rows), and
+  // a failed updateObject can revert the claim so the user can retry.
+  const claimed = await db
     .update(objectChanges)
     .set({ status: 'applied' })
     .where(and(eq(objectChanges.id, changeId), eq(objectChanges.status, 'suggested')))
     .returning({ id: objectChanges.id });
-  return flipped.length > 0;
+  if (claimed.length === 0) return false;
+
+  try {
+    await updateObject(db, scope, change.entityId, patch, actor);
+  } catch (err) {
+    // Restore the suggestion to `suggested` so the user can retry or
+    // reject. Only restore if it's still our `applied` claim — a manual
+    // status change in the meantime should win.
+    await db
+      .update(objectChanges)
+      .set({ status: 'suggested' })
+      .where(and(eq(objectChanges.id, changeId), eq(objectChanges.status, 'applied')));
+    throw err;
+  }
+  return true;
 }
 
 export async function rejectObjectChange(
