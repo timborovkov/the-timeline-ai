@@ -76,6 +76,11 @@ export default async function BoardDetailPage({ params }: { params: Promise<{ id
   const rows = await objects.listObjects(db, scope, sanitizedFilter);
 
   const groupBy: GroupKey = isGroupKey(board.groupBy) ? board.groupBy : 'status';
+  // KanbanBoard's groupBy is narrower (no 'type'). Collapse 'type' to
+  // 'status' for the kanban kind, and use the collapsed value in BOTH
+  // the header label and the prop so the UI claim matches what's shown.
+  const effectiveGroupBy: GroupKey =
+    board.kind === 'kanban' && groupBy === 'type' ? 'status' : groupBy;
 
   return (
     <div>
@@ -90,17 +95,20 @@ export default async function BoardDetailPage({ params }: { params: Promise<{ id
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">{board.name}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {rows.length} object{rows.length === 1 ? '' : 's'}
-            {board.kind !== 'table' && ` · grouped by ${groupBy}`}
+            {board.kind !== 'table' && ` · grouped by ${effectiveGroupBy}`}
           </p>
         </div>
         <DeleteBoardButton id={board.id} />
       </header>
 
       {board.kind === 'kanban' && (
-        <KanbanBoard rows={rows} groupBy={groupBy === 'type' ? 'status' : groupBy} />
+        // `effectiveGroupBy` is collapsed to KanbanBoard's narrower union
+        // above when this branch runs (board.kind === 'kanban'); the cast
+        // tells TS what the runtime guarantee is.
+        <KanbanBoard rows={rows} groupBy={effectiveGroupBy as 'status' | 'stage' | 'priority'} />
       )}
       {board.kind === 'table' && <ObjectTable rows={rows} />}
-      {board.kind === 'list' && <ObjectList rows={rows} groupBy={groupBy} />}
+      {board.kind === 'list' && <ObjectList rows={rows} groupBy={effectiveGroupBy} />}
     </div>
   );
 }
