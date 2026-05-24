@@ -60,8 +60,9 @@ export function MergeEntityPanel({ entityId, entityName }: Props) {
   }, [query, entityId, target]);
 
   const performMerge = (): void => {
-    if (!target) return;
+    if (!target || pending) return;
     setError(null);
+    setConfirmOpen(false);
     const formData = new FormData();
     formData.set('loserId', entityId);
     formData.set('winnerId', target.id);
@@ -118,9 +119,13 @@ export function MergeEntityPanel({ entityId, entityName }: Props) {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction variant="destructive" onClick={performMerge}>
-                Merge
+              <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                disabled={pending}
+                onClick={performMerge}
+              >
+                {pending ? 'Merging…' : 'Merge'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
