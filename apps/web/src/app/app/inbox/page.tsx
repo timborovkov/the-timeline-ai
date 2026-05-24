@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 
 import { MarkAllReadButton } from '@/components/inbox/mark-all-read-button';
 import { NotificationRow } from '@/components/inbox/notification-row';
+import { NarrowContainer } from '@/components/narrow-container';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -25,7 +26,7 @@ export default async function InboxPage({
   const rows = await objects.listNotifications(db, scope, { unreadOnly, limit: 200 });
 
   return (
-    <div>
+    <NarrowContainer>
       <header className="mb-10 flex items-end justify-between gap-6">
         <div>
           <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Inbox</p>
@@ -72,6 +73,6 @@ export default async function InboxPage({
           ))}
         </ul>
       )}
-    </div>
+    </NarrowContainer>
   );
 }

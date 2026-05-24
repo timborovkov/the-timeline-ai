@@ -36,9 +36,11 @@ export function AppShell({ active, memberships, user, children }: Props) {
               <UserMenu user={user} />
             </div>
           </header>
-          <main className="flex-1 px-6 py-10 md:px-10 md:py-14">
-            <div className="mx-auto w-full max-w-3xl">{children}</div>
-          </main>
+          {/* `<main>` no longer constrains content width. Prose/form pages
+              wrap themselves in <NarrowContainer> for the read-friendly
+              max-w-3xl column; wide layouts (kanban, table boards) skip
+              the wrapper and fill the full main width. */}
+          <main className="flex-1 px-6 py-10 md:px-10 md:py-14">{children}</main>
         </div>
       </div>
     </div>

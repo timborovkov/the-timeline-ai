@@ -2,6 +2,7 @@ import { objects, withTeam } from '@timeline/shared';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { NarrowContainer } from '@/components/narrow-container';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -65,7 +66,7 @@ export default async function ObjectsIndexPage({
   );
 
   return (
-    <div>
+    <NarrowContainer>
       <header className="mb-10 flex items-end justify-between gap-6">
         <div>
           <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Objects</p>
@@ -153,6 +154,6 @@ export default async function ObjectsIndexPage({
           })}
         </div>
       )}
-    </div>
+    </NarrowContainer>
   );
 }

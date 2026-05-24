@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { BoardCreateForm } from '@/components/boards/board-create-form';
+import { NarrowContainer } from '@/components/narrow-container';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -17,7 +18,7 @@ export default async function BoardsIndexPage() {
   const boards = await objects.listBoardViews(db, scope);
 
   return (
-    <div>
+    <NarrowContainer>
       <header className="mb-10">
         <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Boards</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight">Saved boards</h1>
@@ -52,6 +53,6 @@ export default async function BoardsIndexPage() {
           ))}
         </ul>
       )}
-    </div>
+    </NarrowContainer>
   );
 }
