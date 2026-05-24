@@ -8,6 +8,10 @@ export const QUEUE_NAMES = {
   // No worker process is started for these until those phases land.
   extract: 'extract',
   embed: 'embed',
+  // Phase 8: hourly scan of overdue tasks + follow_ups. Produced by the
+  // worker process itself (BullMQ repeatable on startup); consumed by
+  // startOverdueWorker.
+  overdueScan: 'overdue-scan',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -135,5 +139,53 @@ export async function closeEmbedQueue(): Promise<void> {
   if (!_embedQueue) return;
   const q = _embedQueue;
   _embedQueue = undefined;
+  await q.close().catch(() => undefined);
+}
+
+export interface OverdueScanJobData {
+  /** Empty payload: the scan walks every team's entities in one pass. */
+  triggeredAt?: string;
+}
+
+let _overdueScanQueue: Queue<OverdueScanJobData> | undefined;
+
+export function getOverdueScanQueue(): Queue<OverdueScanJobData> {
+  if (_overdueScanQueue) return _overdueScanQueue;
+  _overdueScanQueue = new Queue<OverdueScanJobData>(QUEUE_NAMES.overdueScan, {
+    connection: getRedisConnection(),
+    defaultJobOptions: {
+      // One retry — if the scan fails, the next hourly tick will pick up
+      // whatever it missed. No exponential backoff to avoid pile-up.
+      attempts: 2,
+      backoff: { type: 'fixed', delay: 60_000 },
+      removeOnComplete: { age: 3600, count: 24 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  });
+  return _overdueScanQueue;
+}
+
+/**
+ * Register the hourly repeatable. Safe to call on every worker boot — BullMQ
+ * keys repeatables by `jobId`, so duplicate calls are no-ops.
+ */
+export async function scheduleOverdueScan(): Promise<void> {
+  await getOverdueScanQueue().add(
+    'scan',
+    {},
+    {
+      // Every hour on the hour. The dedup index on notifications keys by
+      // (team, user, entity, kind, date) so repeated runs within the same
+      // calendar day are no-ops.
+      repeat: { pattern: '0 * * * *' },
+      jobId: 'overdue-scan-hourly',
+    },
+  );
+}
+
+export async function closeOverdueScanQueue(): Promise<void> {
+  if (!_overdueScanQueue) return;
+  const q = _overdueScanQueue;
+  _overdueScanQueue = undefined;
   await q.close().catch(() => undefined);
 }

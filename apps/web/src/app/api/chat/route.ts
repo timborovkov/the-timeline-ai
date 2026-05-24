@@ -85,6 +85,16 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
+  // Also accept `?session=<uuid>` as a fallback so deep-linked clients that
+  // can't yet propagate the sessionId in the request body still hit the
+  // right persistence row. Body wins if both are set.
+  if (!parsed.data.sessionId) {
+    const querySessionId = new URL(req.url).searchParams.get('session');
+    if (querySessionId && UUID_RE.test(querySessionId)) {
+      parsed.data.sessionId = querySessionId;
+    }
+  }
+
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) {
     return Response.json({ ok: false, error: 'no_active_team' }, { status: 400 });

@@ -287,7 +287,7 @@
           <li><a href="#helpers">Server-side helpers</a></li>
           <li><a href="#agent-tools">Agent tools</a></li>
           <li><a href="#routes">Web routes</a></li>
-          <li><a href="#open-followups">Open follow-ups</a></li>
+          <li><a href="#shipped-followups">Phase 8 follow-ups (shipped)</a></li>
         </ul>
       </nav>
 
@@ -618,15 +618,16 @@
 
       <h2 id="agent-tools">Agent tools</h2>
       <p>
-        Phase 8 ships the data + helpers, but the agent toolset hasn't been extended yet — the
-        existing <code>get_entity</code> / <code>search_timeline</code> /
-        <code>list_events</code> tools keep working unchanged because the underlying tables are the
-        same. The follow-up adds <code>get_object</code>, <code>list_objects</code>,
-        <code>list_tasks</code>, <code>recent_changes</code>, <code>suggest_task</code>, and
-        <code>propose_object_change</code> in
+        Phase 8 ships the data + helpers and the agent toolset in
         <a href="../packages/shared/src/agent/tools.ts"
           ><code>packages/shared/src/agent/tools.ts</code></a
-        >.
+        >. Read-side tools <code>get_object</code>, <code>list_objects</code>,
+        <code>list_tasks</code>, and <code>recent_changes</code> sit alongside the existing
+        <code>get_entity</code> / <code>search_timeline</code> / <code>list_events</code>.
+        Write-side tools <code>suggest_task</code> and <code>propose_object_change</code> never
+        mutate entities directly — they record <code>status='suggested'</code> rows that a human
+        accepts or rejects from the object page. The system prompt is at
+        <code>agent-v3-2026-05</code>.
       </p>
 
       <h2 id="routes">Web routes</h2>
@@ -663,6 +664,38 @@
             </td>
           </tr>
           <tr>
+            <td><code>/app/boards</code></td>
+            <td>
+              List of saved boards. Inline form creates a new board (name, kind, type filter,
+              groupBy). Each row links to <code>/app/boards/[id]</code>.
+            </td>
+          </tr>
+          <tr>
+            <td><code>/app/boards/[id]</code></td>
+            <td>
+              Renders one of <code>kanban</code> / <code>table</code> / <code>list</code> per
+              <code>board.kind</code> over <code>listObjects(board.filter)</code>. Kanban supports
+              drag-to-move (<code>@dnd-kit/core</code>, optimistic), backed by
+              <code>updateObjectAction</code>.
+            </td>
+          </tr>
+          <tr>
+            <td><code>/app/tasks</code></td>
+            <td>
+              Convenience kanban over <code>{type:'task', archived:false}</code> grouped by status.
+              Hardcoded, no <code>board_views</code> row required.
+            </td>
+          </tr>
+          <tr>
+            <td><code>/app/chat</code></td>
+            <td>
+              Two-column layout. Left sidebar lists past chat sessions (active highlight, archive
+              on hover). Right pane is <code>&lt;ChatPane&gt;</code> with hydrated history when
+              <code>?session=&lt;uuid&gt;</code> is set, plus the pinned-object chip when the
+              session has <code>pinned_entity_id</code>.
+            </td>
+          </tr>
+          <tr>
             <td><code>/app/entities</code>, <code>/app/entities/[id]</code></td>
             <td>Redirect to <code>/app/objects/*</code> for one release. Remove in Phase 11.</td>
           </tr>
@@ -674,32 +707,42 @@
         the design system's skeleton patterns from <a href="../design.md">design.md</a>.
       </p>
 
-      <h2 id="open-followups">Open follow-ups</h2>
+      <h2 id="shipped-followups">Phase 8 follow-ups (shipped)</h2>
       <p>
-        Tracked in <a href="../todo.md"><code>todo.md</code></a
-        >'s Phase 8 follow-ups section:
+        Originally tracked as open work in <a href="../todo.md"><code>todo.md</code></a
+        >; now all six have landed. Detail in todo.md's "Phase 8 follow-ups (shipped)" section.
       </p>
       <ul>
         <li>
-          <code>/app/boards</code> + <code>/app/boards/[id]</code> — kanban / table / list views
-          over the saved <code>board_views</code> filters.
-        </li>
-        <li><code>/app/tasks</code> — convenience board preset for <code>type='task'</code>.</li>
-        <li>
-          <code>/app/chat</code> sidebar — past sessions list, deep-link via
-          <code>?session=&lt;id&gt;</code>, pinned-object chip.
+          <strong>Boards UI</strong> — <code>/app/boards</code> and
+          <code>/app/boards/[id]</code>, kanban / table / list variants;
+          <code>@dnd-kit/core</code>-driven drag-to-move on kanban.
         </li>
         <li>
-          Agent tools — <code>get_object</code>, <code>list_objects</code>,
+          <strong>Tasks shortcut</strong> — <code>/app/tasks</code> reuses
+          <code>&lt;KanbanBoard&gt;</code> with a hardcoded <code>{type:'task'}</code> filter.
+        </li>
+        <li>
+          <strong>Chat session sidebar</strong> — <code>/app/chat</code> two-column layout, session
+          archive, pinned-object chip; <code>/api/chat</code> accepts <code>?session=&lt;uuid&gt;</code>
+          query-string fallback and returns auto-created session ids via
+          <code>x-tl-session-id</code>.
+        </li>
+        <li>
+          <strong>Agent write-side tools</strong> — <code>get_object</code>,
+          <code>list_objects</code>, <code>list_tasks</code>, <code>recent_changes</code>,
           <code>suggest_task</code>, <code>propose_object_change</code>.
         </li>
         <li>
-          Overdue detector — recurring BullMQ job that emits <code>task_overdue</code> /
-          <code>follow_up_overdue</code> notifications, dedup'd per (user, entity, kind) per day.
+          <strong>Overdue detector</strong> — hourly BullMQ repeatable
+          (<code>apps/worker/src/workers/overdue.ts</code>), per-day dedup via partial unique
+          index <code>notifications_overdue_dedup_idx</code> in migration
+          <code>0008_overdue_dedup.sql</code>.
         </li>
         <li>
-          Suggestion review UI — accept/reject buttons on object pages for
-          <code>object_changes WHERE status='suggested'</code>.
+          <strong>Suggestion review UI</strong> — Accept / Reject buttons on
+          <code>status='suggested'</code> rows in the object page's "Recent changes" pane; Accept
+          re-uses <code>updateObject</code> so the full audit + notification path runs.
         </li>
       </ul>
 
