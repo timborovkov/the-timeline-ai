@@ -5,6 +5,7 @@ import {
   getS3Client,
   putObject,
   queue,
+  rateLimit,
   telegram,
 } from '@timeline/shared';
 
@@ -32,6 +33,22 @@ export async function POST(req: Request): Promise<Response> {
     payload = await req.json();
   } catch {
     return Response.json({ ok: false, reason: 'invalid_json' }, { status: 200 });
+  }
+
+  // Rate-limit per Telegram user id. The webhook secret authenticates the
+  // *Telegram server*, not the sender, so an abusive user spamming a bot
+  // would otherwise pass. Return 200 either way so Telegram doesn't retry-
+  // storm; the dispatch is just skipped.
+  const tgUserId = extractTelegramUserId(payload);
+  if (tgUserId !== undefined) {
+    const rl = await rateLimit.checkRateLimit({
+      key: rateLimit.rateLimitKey('tg', 'user', tgUserId),
+      ...rateLimit.RATE_LIMITS.telegramWebhook,
+    });
+    if (!rl.ok) {
+      log.warn({ tgUserId, retryAfterMs: rl.retryAfterMs }, 'telegram_rate_limited');
+      return Response.json({ ok: true, reason: 'rate_limited' }, { status: 200 });
+    }
   }
 
   const api = env.TELEGRAM_BOT_TOKEN
@@ -104,4 +121,21 @@ export async function POST(req: Request): Promise<Response> {
     log.error({ err }, 'handler error');
   }
   return Response.json({ ok: true }, { status: 200 });
+}
+
+function extractTelegramUserId(payload: unknown): number | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const p = payload as Record<string, unknown>;
+  const candidates = ['message', 'edited_message', 'channel_post', 'edited_channel_post'];
+  for (const k of candidates) {
+    const msg = p[k];
+    if (msg && typeof msg === 'object') {
+      const from = (msg as Record<string, unknown>).from;
+      if (from && typeof from === 'object') {
+        const id = (from as Record<string, unknown>).id;
+        if (typeof id === 'number') return id;
+      }
+    }
+  }
+  return undefined;
 }

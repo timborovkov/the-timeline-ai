@@ -1,6 +1,7 @@
 'use server';
 
 import { teamInvites, teamMembers } from '@timeline/db';
+import { childLogger } from '@timeline/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -9,6 +10,9 @@ import { z } from 'zod';
 import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { ensureSoloTeam } from '@/lib/default-team';
+
+const log = childLogger('web:actions:invites');
 
 const acceptSchema = z.object({ token: z.string().min(1).max(256) });
 
@@ -73,8 +77,33 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
     // collapses to 'failed' so we never emit an unbounded error string.
     const raw = e instanceof Error ? e.message : '';
     const reason = raw === 'invalid' || raw === 'wrong-account' ? raw : 'failed';
+
+    // Fallback: an OAuth user who arrived via /sign-up?invite=<token> skipped
+    // the default solo-team creation in createUser. If invite acceptance then
+    // fails (expired, revoked, email mismatch), they would be stranded with
+    // zero memberships and no way to self-recover — createUser doesn't refire.
+    // Spin them a solo team so they have a usable workspace, then surface the
+    // invite error on the accept-invite page.
+    //
+    // Best-effort: a DB hiccup during the fallback must NOT mask the original
+    // invite error. Log and continue to the redirect so the user lands on a
+    // page they can act on (instead of a generic 500).
+    try {
+      await ensureSoloTeam(userId, { name: session.user.name, email: session.user.email });
+      const { clearPendingInvite } = await import('@/lib/pending-invite');
+      await clearPendingInvite();
+    } catch (fallbackErr) {
+      log.error(
+        { err: (fallbackErr as Error).message, userId, reason },
+        'invite_fallback_solo_team_failed',
+      );
+    }
     redirect(`/accept-invite/${encodeURIComponent(token)}?error=${encodeURIComponent(reason)}`);
   }
+
+  // Drop the OAuth pending-invite breadcrumb now that we've consumed it.
+  const { clearPendingInvite } = await import('@/lib/pending-invite');
+  await clearPendingInvite();
 
   const cookieStore = await cookies();
   cookieStore.set(ACTIVE_TEAM_COOKIE, teamId, {

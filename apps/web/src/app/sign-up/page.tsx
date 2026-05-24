@@ -27,7 +27,7 @@ export default async function SignUpPage({ searchParams }: Props) {
           {hasGitHubAuth ? (
             <>
               {invite ? (
-                <GitHubSignInButton callbackUrl={`/accept-invite/${invite}`} />
+                <GitHubSignInButton callbackUrl={`/accept-invite/${invite}`} inviteToken={invite} />
               ) : (
                 <GitHubSignInButton />
               )}

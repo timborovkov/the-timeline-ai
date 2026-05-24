@@ -87,6 +87,22 @@ const schema = z.object({
    * `pm-inbound.postmarkapp.com` or your own MTA's hostname).
    */
   POSTMARK_AUTHSERV_IDS: z.string().optional(),
+  /**
+   * Source-IP allowlist for `/api/email/inbound`. Comma-separated CIDRs
+   * (IPv4). When unset, IP-based filtering is skipped (dev / staging).
+   * For Postmark production, populate with their published webhook source
+   * IPs. Requests from outside the allowlist are rejected pre-auth with
+   * 403 so attackers don't see auth-failure feedback.
+   */
+  POSTMARK_INBOUND_IPS: z.string().optional(),
+
+  /**
+   * Shared secret for protected cron / admin endpoints (e.g. job reconciler).
+   * The caller passes `Authorization: Bearer <secret>`. When unset, the
+   * endpoint is gated off entirely. Set this only on environments where a
+   * cron schedule exists (Railway scheduler, GitHub Actions, etc.).
+   */
+  CRON_SECRET: z.string().optional(),
 
   // Sentry (optional)
   SENTRY_DSN: z.string().optional(),

@@ -94,6 +94,13 @@ export interface StreamChatInput<TTools extends ToolSet> {
   maxSteps?: number;
   /** Forwarded to streamText.onFinish for usage/audit logging. */
   onFinish?: Parameters<typeof streamText>[0]['onFinish'];
+  /**
+   * AbortSignal wired to the request lifecycle. The AI SDK propagates it to
+   * the underlying OpenRouter fetch, so a client disconnect stops billing
+   * for tokens we'll never deliver. Pass `req.signal` from Next.js route
+   * handlers.
+   */
+  abortSignal?: AbortSignal;
 }
 
 /**
@@ -121,6 +128,7 @@ export function streamChat<TTools extends ToolSet>(
     stopWhen: stepCountIs(input.maxSteps ?? 5),
   };
   if (input.onFinish) args.onFinish = input.onFinish;
+  if (input.abortSignal) args.abortSignal = input.abortSignal;
   return streamText(args) as unknown as StreamTextResult<TTools, never>;
 }
 
