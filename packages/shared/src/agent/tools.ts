@@ -415,13 +415,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         safe('propose_object_change', async () => {
           const input = raw as {
             entityId: string;
-            field:
-              | 'status'
-              | 'stage'
-              | 'priority'
-              | 'ownerUserId'
-              | 'assigneeUserId'
-              | 'dueAt';
+            field: 'status' | 'stage' | 'priority' | 'ownerUserId' | 'assigneeUserId' | 'dueAt';
             newValue: unknown;
             note?: string;
           };

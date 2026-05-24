@@ -18,11 +18,7 @@ function isGroupKey(v: string | null | undefined): v is GroupKey {
   return v !== null && v !== undefined && (VALID_GROUP_KEYS as readonly string[]).includes(v);
 }
 
-export default async function BoardDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function BoardDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);

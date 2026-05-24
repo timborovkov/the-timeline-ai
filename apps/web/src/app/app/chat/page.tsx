@@ -40,9 +40,7 @@ interface PersistedAssistant {
  * during the live stream. Without this, citations land in the transcript
  * but the tool invocations that produced them silently disappear.
  */
-function hydrate(
-  rows: Awaited<ReturnType<typeof objects.getChatSession>>,
-): UIMessage[] {
+function hydrate(rows: Awaited<ReturnType<typeof objects.getChatSession>>): UIMessage[] {
   if (!rows) return [];
   return rows.messages
     .map<UIMessage | null>((m) => {
@@ -66,7 +64,10 @@ function hydrate(
             // structurally, so the runtime contract holds.
             parts.push({
               type: `tool-${toolName}`,
-              toolCallId: typeof tc.toolCallId === 'string' ? tc.toolCallId : `${m.id}-${String(parts.length)}`,
+              toolCallId:
+                typeof tc.toolCallId === 'string'
+                  ? tc.toolCallId
+                  : `${m.id}-${String(parts.length)}`,
               state: output === undefined ? 'input-available' : 'output-available',
               input,
               output,

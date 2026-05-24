@@ -689,8 +689,8 @@
           <tr>
             <td><code>/app/chat</code></td>
             <td>
-              Two-column layout. Left sidebar lists past chat sessions (active highlight, archive
-              on hover). Right pane is <code>&lt;ChatPane&gt;</code> with hydrated history when
+              Two-column layout. Left sidebar lists past chat sessions (active highlight, archive on
+              hover). Right pane is <code>&lt;ChatPane&gt;</code> with hydrated history when
               <code>?session=&lt;uuid&gt;</code> is set, plus the pinned-object chip when the
               session has <code>pinned_entity_id</code>.
             </td>
@@ -714,9 +714,8 @@
       </p>
       <ul>
         <li>
-          <strong>Boards UI</strong> — <code>/app/boards</code> and
-          <code>/app/boards/[id]</code>, kanban / table / list variants;
-          <code>@dnd-kit/core</code>-driven drag-to-move on kanban.
+          <strong>Boards UI</strong> — <code>/app/boards</code> and <code>/app/boards/[id]</code>,
+          kanban / table / list variants; <code>@dnd-kit/core</code>-driven drag-to-move on kanban.
         </li>
         <li>
           <strong>Tasks shortcut</strong> — <code>/app/tasks</code> reuses
@@ -724,7 +723,8 @@
         </li>
         <li>
           <strong>Chat session sidebar</strong> — <code>/app/chat</code> two-column layout, session
-          archive, pinned-object chip; <code>/api/chat</code> accepts <code>?session=&lt;uuid&gt;</code>
+          archive, pinned-object chip; <code>/api/chat</code> accepts
+          <code>?session=&lt;uuid&gt;</code>
           query-string fallback and returns auto-created session ids via
           <code>x-tl-session-id</code>.
         </li>
@@ -735,8 +735,8 @@
         </li>
         <li>
           <strong>Overdue detector</strong> — hourly BullMQ repeatable
-          (<code>apps/worker/src/workers/overdue.ts</code>), per-day dedup via partial unique
-          index <code>notifications_overdue_dedup_idx</code> in migration
+          (<code>apps/worker/src/workers/overdue.ts</code>), per-day dedup via partial unique index
+          <code>notifications_overdue_dedup_idx</code> in migration
           <code>0008_overdue_dedup.sql</code>.
         </li>
         <li>

@@ -49,7 +49,9 @@ export function SessionSidebar({
         <ul className="flex-1 space-y-1 overflow-y-auto">
           {sessions.map((s) => {
             const isActive = s.id === activeSessionId;
-            const label = s.title ?? (s.pinnedEntityName ? `Chat about ${s.pinnedEntityName}` : 'Untitled chat');
+            const label =
+              s.title ??
+              (s.pinnedEntityName ? `Chat about ${s.pinnedEntityName}` : 'Untitled chat');
             return (
               <li key={s.id} className="group relative">
                 <Link
@@ -79,7 +81,9 @@ export function SessionSidebar({
                       if (isActive) {
                         const params = new URLSearchParams(search.toString());
                         params.delete('session');
-                        router.push(params.toString() ? `${pathname}?${params.toString()}` : pathname);
+                        router.push(
+                          params.toString() ? `${pathname}?${params.toString()}` : pathname,
+                        );
                       }
                       router.refresh();
                     });
