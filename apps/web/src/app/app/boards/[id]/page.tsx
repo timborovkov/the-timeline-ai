@@ -49,15 +49,16 @@ const boardFilterSchema = z
 function sanitizeBoardFilter(filter: Record<string, unknown>): objects.ObjectListFilter {
   // Validate field-by-field. A single bad field shouldn't nuke the whole
   // filter — keep the rest and drop the invalid one.
-  const out: Record<string, unknown> = {};
+  const shape = boardFilterSchema.shape as Record<string, z.ZodTypeAny>;
+  const out: objects.ObjectListFilter = {};
   for (const [key, value] of Object.entries(filter)) {
     if (value === undefined) continue;
-    const shape = (boardFilterSchema.shape as Record<string, z.ZodTypeAny>)[key];
-    if (!shape) continue;
-    const result = shape.safeParse(value);
-    if (result.success) out[key] = result.data;
+    const fieldSchema = shape[key];
+    if (!fieldSchema) continue;
+    const result = fieldSchema.safeParse(value);
+    if (result.success) (out as Record<string, unknown>)[key] = result.data;
   }
-  return out as objects.ObjectListFilter;
+  return out;
 }
 
 export default async function BoardDetailPage({ params }: { params: Promise<{ id: string }> }) {
