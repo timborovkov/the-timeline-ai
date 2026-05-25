@@ -65,6 +65,19 @@ the helpers (`listObjects`, `getObject`, `createObject`, `updateObject`,
 - [x] Overdue detector: hourly BullMQ repeatable (`overdue-scan` queue, `apps/worker/src/workers/overdue.ts`) scans overdue tasks/follow_ups and fans out to owner+assignee. Dedup per-day via partial unique index `notifications_overdue_dedup_idx` in migration `0008_overdue_dedup.sql`.
 - [x] Suggestion review UI: `suggested` rows in the "Recent changes" pane render Accept/Reject buttons. Accept calls `objects.acceptObjectChange` which re-uses `updateObject` so the full audit + notification path runs. A pending-suggestions banner appears on the object header when any are awaiting review.
 
+### Phase 8 follow-ups (next) — embed the rest of the object graph
+
+Today's embedding worker only covers `raw_events` (event body) and `facts` (via `fact_entities`). Phase 8's new object surface — `objects`, `object_notes`, `object_changes`, `entities` — is not in Qdrant yet. Close the gap so semantic search and the agent's retrieval tools see the full org map, not just the timeline.
+
+- [ ] Embed `objects` on insert/update: text = name + description + current state summary (status/stage/priority/owner narrative). Re-embed on every `updateObject`.
+- [ ] Embed `object_notes` on insert/update: text = note body.
+- [ ] Embed `object_changes` (narrative `summary` field only, not raw JSON diff).
+- [ ] Embed `entities` (canonical name + aliases array) for entity disambiguation retrieval.
+- [ ] Extend Qdrant payload schema in `packages/shared/src/qdrant/client.ts` with `source_kind` enum (`raw_event | fact | object | object_note | object_change | entity | document_chunk | meeting_chunk | integration_event | chat_message`) and a corresponding source-kind-specific id field, while keeping existing fields for back-compat.
+- [ ] Update the reembed script to walk every source kind, not just raw_events + facts.
+- [ ] Update agent retrieval tools (`search_*` family in `packages/shared/src/agent/tools.ts`) to accept an optional `source_kind` filter and default to all-kinds for broad search.
+- [ ] Add a coverage audit script: for each source-kind table, compare row count to payload-filtered Qdrant count and report drift.
+
 ## Phase 9 — Team Document Drive
 
 Goal: give each team a private Google Drive-style knowledge base before external integrations. Documents become first-class timeline sources: uploads, deletes, moves, renames, and version changes are logged, processed, embedded, and cited by the agent.
@@ -81,22 +94,45 @@ Goal: give each team a private Google Drive-style knowledge base before external
 - [ ] Add safety rules for deletes and retention: soft delete first, admin-only hard purge later, audit trail always preserved.
 - [ ] Add initial document types/use cases to dogfood: contracts, deal docs, internal guides, policies, office rules, onboarding docs, customer notes.
 
-## Phase 10 — Third-Party Integrations
+## Phase 10 — Meeting Bots (Google Meet, Teams, Zoom)
 
-Goal: sync external systems into the same timeline/object pipeline. MCPs are a good first integration layer where available; native APIs come later for higher-volume or webhook-heavy sources.
+Goal: let the timeline agent join Google Meet, Microsoft Teams, and Zoom calls, capture transcripts in real time, and write meeting events, notes, and extracted facts/tasks into the same pipeline as Telegram, email, and web capture. Meetings become a first-class source — searchable, embedded, cited by the agent.
+
+Default provider: **Recall.ai** (proven in the sister project Vernix at `/Users/timborovkov/Desktop/Projects/Vernix`). The adapter layer keeps it swappable for Attendee.dev (self-hosted, cost control), Meeting BaaS, or future native Meet/Teams APIs. Reusable patterns from Vernix worth borrowing: webhook → Zod validation → DB lookup by botId metadata; split signed status webhook from unsigned realtime transcript webhook; pre-built provider adapter shape. We diverge from Vernix on storage — meeting chunks go into the **shared team Qdrant collection** with `source_kind=meeting_chunk` + `meeting_id` payload, not a per-meeting collection, to keep retrieval uniform with the rest of the org map.
+
+- [ ] Pick provider — default Recall.ai. Document the per-minute cost, silent vs. recording modes, and fallbacks (Attendee.dev, Meeting BaaS, native APIs) in `docs/setup/meeting-bots.html`.
+- [ ] Add provider adapter at `packages/shared/src/meeting-bots/` with a `MeetingBotProvider` interface — `joinMeeting(url, opts)`, `leaveMeeting(botId)`, `getStatus(botId)`. Recall.ai first impl; reference Vernix `src/lib/meeting-bot/recall.ts` for shape (botId, metadata round-trip, silent/voice modes).
+- [ ] Schema: extend `raw_events.source` enum with `'meeting'`. New `meetings` table — `id, team_id, provider_id (e.g. recall:botId), meeting_url, title, status (pending|joining|active|processing|completed|failed), started_at, ended_at, participants jsonb, metadata jsonb`. New `meeting_transcript_chunks` — `id, meeting_id, speaker, text, start_ms, end_ms, raw_event_id`. Each finalized chunk produces a `raw_events` row (source=meeting) so it flows through the existing extract → embed pipeline; chunks are also embedded directly so retrieval works at speaker/utterance granularity.
+- [ ] Webhook handlers under `apps/web/src/app/api/webhooks/recall/` — split `status` (Svix-signed, bot/call lifecycle) from `transcript` (unsigned realtime, validated by Zod + botId→meeting lookup). Mirror Vernix's `src/app/api/webhooks/recall/{status,transcript}/route.ts`.
+- [ ] Bot lifecycle worker: on `bot.call_ended` flip meeting to `processing`; on `transcript.done` run end-of-meeting summary, extract action items as tasks/object updates, finalize embeddings, mark `completed`. Re-use the existing extract worker — don't fork.
+- [ ] Visibility: meetings default to `team`. Host can set `private` or `specific_users` before or during the call via the same control as other sources.
+- [ ] UI surface — "Schedule meeting bot" entry in the capture composer: paste a Meet/Teams/Zoom link, choose silent vs. recording, choose visibility, optional title/agenda. Live indicator while the bot is in the call. Meeting page shows transcript, summary, extracted facts/tasks, and the timeline events generated.
+- [ ] Calendar integration (stretch — can move to Phase 11): connect Google Calendar / Outlook so the bot auto-joins meetings on a user's calendar; opt-in per calendar.
+- [ ] Cost guardrails: per-team monthly minute cap with admin override. Track per-meeting minutes in a `meeting_usage` row (mirrors Vernix `usageEvents`).
+- [ ] Reliability: bot-failed events surface in the failed-jobs queue (Phase 12/13 monitoring dashboard) with retry/rejoin.
+- [ ] Privacy/compliance: explicit "bot is recording" notice in the meeting, retention policy for raw audio (default: discard after transcript+embed completes), team-level toggle to require host consent before the bot joins.
+
+## Phase 11 — Third-Party Integrations And Custom MCPs
+
+Goal: sync external systems into the same timeline/object pipeline. Integrations span three classes: (1) curated native connectors with provider-specific sync logic (Drive, Linear, GitHub), (2) curated MCP-backed connectors when an official MCP exists, and (3) **custom MCP servers** that any team can connect to bring their own tools and data. Reference for MCP plumbing: Vernix `src/lib/mcp/` and `src/lib/db/schema.ts` (`mcpServers`, `mcpOauthTokens`).
 
 - [ ] Design integration account model: provider, connected user/team, scopes, refresh tokens/secrets, sync cursor, last sync state, visibility defaults.
-- [ ] Add integration event schema: external source id, external object id, provider, event type, occurred_at, actor, raw payload pointer, sync batch id, dedup key.
+- [ ] Add integration event schema: external source id, external object id, provider, event type, occurred_at, actor, raw payload pointer, sync batch id, dedup key. These flow into raw_events with `source='integration'` and are embedded with `source_kind=integration_event`.
 - [ ] Google Drive knowledge sync: map selected Drive folders/files into the internal document model. Import metadata, comments/activity, shared-with changes, document change summaries, and selected file versions.
 - [ ] Decide Drive vector strategy: reuse the internal document chunking/embedding pipeline for selected folders/docs; for broad Drive sync, embed deltas, comments, metadata, and curated summaries before full file bodies.
 - [ ] Linear sync: issues, comments, status/assignee/priority changes, project milestones, linked GitHub PRs. Map issues/projects to workspace objects.
 - [ ] GitHub sync: PRs, issues, reviews, merged commits, release notes, CI state changes. Map repos/PRs/issues/releases to workspace objects.
 - [ ] Add provider-specific backfill + incremental sync jobs. Every sync must be idempotent and resumable.
-- [ ] Add MCP adapter boundary: normalize MCP tool outputs into integration events and object changes, with provider-specific rate-limit/error handling outside the core pipeline.
+- [ ] Add MCP adapter boundary (covers both curated and custom MCPs): normalize MCP tool outputs and resource subscriptions into integration events and object changes, with provider-specific rate-limit/error handling outside the core pipeline.
+- [ ] **Custom MCP server connections** — schema mirroring Vernix `mcpServers`: `id, team_id, added_by_user_id, name, url, auth_type (none|bearer|header|basic|oauth|url_key), auth_config jsonb (encrypted secrets), enabled, cached_tools jsonb, last_connected_at, last_error`. Per-team scoped (we are a team product, not solo).
+- [ ] **MCP OAuth provider** — implement `OAuthClientProvider` from the MCP SDK (reference Vernix `src/lib/mcp/oauth-provider.ts`). State JWT carries `team_id + mcp_server_id`. Pre-registered clients via env vars for popular MCPs (GitHub, Linear, Slack); dynamic client registration for arbitrary servers. Callback at `/api/mcp/oauth/callback`.
+- [ ] **Tool registry + namespaced invocation** — `McpClientManager` connects to all enabled MCP servers per team, discovers tools via `client.listTools()`, namespaces them `mcp__<server_id>__<tool_name>` to avoid collisions, caches in `mcp_servers.cached_tools` for the UI. Agent invokes via the namespaced path. Reference Vernix `src/lib/mcp/client.ts`.
+- [ ] **MCP settings UI** — connect/disconnect, list connected servers, show tool inventory per server, test-call a tool, OAuth status, last-error surfacing, enable/disable without removing.
 - [ ] Add integration settings UI: connect/disconnect, choose folders/projects/repos, visibility defaults, sync health, last error.
 - [ ] Add integration audit log and replay: show what was imported, when, by which connector version, and allow re-sync from cursor.
+- [ ] (Future, informational — no item) Vernix exposes itself as an MCP server at `/api/mcp` so external agents can query meetings/tasks. We may want to do the same later so external agents can query the timeline. Out of scope for this phase.
 
-## Phase 11 — Polish And Hardening
+## Phase 12 — Polish And Hardening
 
 - [ ] Onboarding flow: new team creation includes Telegram bot setup, email forwarding, first document upload, and first integration setup.
 - [ ] Per-event visibility controls in UI (`private` / `team` / specific users). Defaults configurable per team/source.
@@ -106,7 +142,7 @@ Goal: sync external systems into the same timeline/object pipeline. MCPs are a g
 - [ ] Performance: timeline pagination, object-page pagination, document search pagination, hot entity/object query caching.
 - [ ] User-facing docs for capture surfaces, document drive, boards, integrations, and object management.
 
-## Phase 12 — Backup And Operations
+## Phase 13 — Backup And Operations
 
 - [ ] RustFS backup cron service on Railway: nightly `rclone sync` to Backblaze B2 or chosen secondary store.
 - [ ] Qdrant snapshot cron: nightly snapshot via Qdrant API, uploaded to RustFS or B2.
@@ -114,7 +150,7 @@ Goal: sync external systems into the same timeline/object pipeline. MCPs are a g
 - [ ] Run full restore drill from backups to a scratch environment. Repeat quarterly.
 - [ ] Monitoring dashboards: Railway metrics, Sentry, worker queue depth, document processing failures, integration sync failures, OpenRouter spend.
 
-## Phase 13 — Soft Launch
+## Phase 14 — Soft Launch
 
 - [ ] Closed beta with 3-5 friendly teams. Weekly feedback sessions.
 - [ ] Instrument capture friction: time from "open app" to "event recorded." Target: under 10 seconds for text, under 15 for voice.
@@ -132,3 +168,4 @@ Goal: sync external systems into the same timeline/object pipeline. MCPs are a g
 - [ ] Security: rotate API keys quarterly, audit team isolation on every schema/integration change.
 - [ ] Re-extraction and re-embedding procedures tested quarterly even when not needed.
 - [ ] Keep Dockerfiles and `railway.json` in sync with reality.
+- [ ] **Org-wide searchable embeddings:** every team-scoped content surface — raw events, facts, entities, objects, object notes, object changes, documents, document chunks, meeting transcript chunks, meeting summaries, integration events, and (optionally) chat messages — has embeddings in the shared Qdrant collection, with payload `source_kind` identifying the kind and the source-kind-specific id. Verified by a periodic audit script that compares row counts in each source table to payload-filtered Qdrant counts.
