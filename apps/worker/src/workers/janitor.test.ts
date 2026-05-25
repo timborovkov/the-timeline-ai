@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import { type Db, documentVersions, meetings as meetingsTable } from '@timeline/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -151,9 +152,13 @@ describe('processJanitorTick — document_versions sweep', () => {
     expect(enqueueDoc).not.toHaveBeenCalled();
   });
 
-  it('re-enqueues an extracting version older than the threshold (worker died mid-job)', async () => {
+  it('re-enqueues an extracting version older than the threshold and resets status to pending', async () => {
+    // Regression: the document extract worker bails on status='extracting'
+    // under its advisory lock (documentExtract.ts:196), so the janitor
+    // must flip stuck rows back to 'pending' for the re-enqueue to land.
+    const ID = 'dddddddd-dddd-dddd-dddd-dddddddddd03';
     await seedVersion(db as never, {
-      id: 'dddddddd-dddd-dddd-dddd-dddddddddd03',
+      id: ID,
       version: 1,
       status: 'extracting',
       ageMinutes: 90,
@@ -168,6 +173,37 @@ describe('processJanitorTick — document_versions sweep', () => {
 
     expect(result.documentVersionsRequeued).toBe(1);
     expect(enqueueDoc).toHaveBeenCalledOnce();
+    const after = await (db as never as Db)
+      .select({ status: documentVersions.processingStatus })
+      .from(documentVersions)
+      .where(eq(documentVersions.id, ID));
+    expect(after[0]?.status).toBe('pending');
+  });
+
+  it('does not reset pending rows (only extracting rows need the flip)', async () => {
+    const ID = 'dddddddd-dddd-dddd-dddd-ddddddddddbb';
+    await seedVersion(db as never, {
+      id: ID,
+      version: 1,
+      status: 'pending',
+      ageMinutes: 10,
+    });
+    const enqueueDoc = vi.fn().mockResolvedValue(undefined);
+
+    await processJanitorTick({
+      db: db as never,
+      enqueueDocumentExtractJob: enqueueDoc,
+      enqueueMeetingFinalizeJob: vi.fn(),
+    });
+
+    const after = await (db as never as Db)
+      .select({
+        status: documentVersions.processingStatus,
+        error: documentVersions.processingError,
+      })
+      .from(documentVersions)
+      .where(eq(documentVersions.id, ID));
+    expect(after[0]?.status).toBe('pending');
   });
 
   it('does not re-enqueue an extracting version under the threshold (worker still working)', async () => {

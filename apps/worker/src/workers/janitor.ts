@@ -1,7 +1,7 @@
 import { type Db, documentVersions, meetings } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
 import { Worker, type Job } from 'bullmq';
-import { and, asc, eq, gt, isNotNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNotNull, or, sql } from 'drizzle-orm';
 
 // Keyset paging by id keeps memory bounded on a backlog that hasn't been
 // swept in a while. UUIDs sort lexicographically — total + stable, which
@@ -81,8 +81,16 @@ async function sweepDocumentVersions(
     // (rows allocated by requestDocumentUploadAction whose user never
     // PUT bytes). Those have no object to extract; re-enqueuing them
     // would just stamp 'failed' on the RustFS HEAD miss — wasted work.
-    const rows: { id: string; teamId: string }[] = await db
-      .select({ id: documentVersions.id, teamId: documentVersions.teamId })
+    const rows: {
+      id: string;
+      teamId: string;
+      status: 'pending' | 'extracting' | 'chunked' | 'embedded' | 'failed';
+    }[] = await db
+      .select({
+        id: documentVersions.id,
+        teamId: documentVersions.teamId,
+        status: documentVersions.processingStatus,
+      })
       .from(documentVersions)
       .where(
         and(
@@ -105,6 +113,26 @@ async function sweepDocumentVersions(
 
     if (rows.length === 0) break;
     cursor = rows[rows.length - 1]?.id ?? null;
+
+    // Stuck `extracting` rows need a CAS flip back to `pending` BEFORE the
+    // re-enqueue, otherwise the worker's under-lock status re-check sees
+    // status='extracting' and bails as `already_processed`
+    // (documentExtract.ts:196). The `WHERE status='extracting'` guard on
+    // the UPDATE is the CAS: if a worker legitimately just finished
+    // (status now 'chunked' or 'failed'), the UPDATE skips that row and
+    // the subsequent enqueue is a cheap no-op via the same gate.
+    const extractingIds = rows.filter((r) => r.status === 'extracting').map((r) => r.id);
+    if (extractingIds.length > 0) {
+      await db
+        .update(documentVersions)
+        .set({ processingStatus: 'pending', processingError: null })
+        .where(
+          and(
+            inArray(documentVersions.id, extractingIds),
+            eq(documentVersions.processingStatus, 'extracting'),
+          ),
+        );
+    }
 
     for (const r of rows) {
       if (total >= MAX_REQUEUES_PER_KIND) break;
