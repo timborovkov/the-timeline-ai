@@ -1,4 +1,12 @@
-import { type Db, facts as factsTable, factEntities, rawEvents } from '@timeline/db';
+import {
+  type Db,
+  entities as entitiesTable,
+  facts as factsTable,
+  factEntities,
+  objectChanges as objectChangesTable,
+  objectNotes as objectNotesTable,
+  rawEvents,
+} from '@timeline/db';
 import { childLogger, getEnv, llm, qdrant, queue } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
@@ -29,27 +37,77 @@ interface FactRow {
 }
 
 /**
- * Embed worker: writes one Qdrant point per (raw_event | fact) using the
- * pinned embedding model. Mirrors the extract worker's shape — privacy gate,
- * idempotency, failure-marker patterns are intentionally near-identical.
+ * Resolve the effective scope from a job. Phase 5 jobs may omit `scope`;
+ * we infer raw_event (factId unset) or fact (factId set) for back-compat.
+ */
+function resolveScope(data: queue.EmbedJobData): qdrant.PointScope {
+  const scope = 'scope' in data ? data.scope : undefined;
+  if (scope) return scope === 'raw_event' ? 'event' : scope;
+  if ('factId' in data && data.factId) return 'fact';
+  return 'event';
+}
+
+/**
+ * Build the empty/default payload used by non-event-anchored points
+ * (object, object_note, object_change, entity). All workspace-graph points
+ * are stamped visibility='team' per the Phase 8 follow-ups design decision.
+ */
+function blankNonEventPayload(args: {
+  teamId: string;
+  occurredAt: Date;
+  authorUserId: string | null;
+  model: string;
+  sourceKind: qdrant.SourceKind;
+}): qdrant.QdrantPayload {
+  return {
+    team_id: args.teamId,
+    source_kind: args.sourceKind,
+    event_id: null,
+    fact_id: null,
+    object_id: null,
+    note_id: null,
+    change_id: null,
+    entity_id: null,
+    entity_ids: [],
+    occurred_at: args.occurredAt.toISOString(),
+    author_user_id: args.authorUserId,
+    source: 'system',
+    visibility: 'team',
+    visibility_user_ids: null,
+    embedding_model: args.model,
+  };
+}
+
+interface EmbedPlan {
+  text: string;
+  scope: qdrant.PointScope;
+  sourceKind: qdrant.SourceKind;
+  sourceId: string;
+  payloadOverrides: Partial<qdrant.QdrantPayload>;
+  occurredAt: Date;
+  authorUserId: string | null;
+}
+
+/**
+ * Embed worker: writes one Qdrant point per source row using the pinned
+ * embedding model. Phase 5 covers {raw_event, fact}; Phase 8 follow-ups
+ * add {object, object_note, object_change, entity}.
  *
  * Idempotency comes from deterministic Qdrant point ids derived from
  * (scope, sourceId, embedding_model). A duplicate enqueue upserts the same
  * point and costs at most one embedding call.
  *
  * Failure modes:
- *   - `OPENROUTER_API_KEY` or `QDRANT_URL` unset → UnrecoverableError (don't
- *     burn retries on permanent misconfiguration).
- *   - Raw event missing / wrong team → UnrecoverableError.
- *   - Fact missing → UnrecoverableError.
+ *   - `OPENROUTER_API_KEY` or `QDRANT_URL` unset → UnrecoverableError.
+ *   - Source row missing / wrong team → UnrecoverableError.
  *   - Non-team visibility raw event → stamp skip reason, return success.
+ *   - Empty text (e.g. object_change with no narrative) → success no-op.
  *   - LLM or Qdrant transient errors → BullMQ retries.
  */
 export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobData> {
   const worker = new Worker<queue.EmbedJobData>(
     queue.QUEUE_NAMES.embed,
     async (job: Job<queue.EmbedJobData>) => {
-      const { rawEventId, teamId, factId, targetCollection } = job.data;
       const env = getEnv();
       if (!env.OPENROUTER_API_KEY) {
         throw new UnrecoverableError('embed: OPENROUTER_API_KEY not configured');
@@ -58,143 +116,41 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
         throw new UnrecoverableError('embed: QDRANT_URL not configured');
       }
 
-      const rows = (await deps.db
-        .select({
-          id: rawEvents.id,
-          teamId: rawEvents.teamId,
-          contentText: rawEvents.contentText,
-          occurredAt: rawEvents.occurredAt,
-          authorUserId: rawEvents.authorUserId,
-          source: rawEvents.source,
-          visibility: rawEvents.visibility,
-          visibilityUserIds: rawEvents.visibilityUserIds,
-          sourceMetadata: rawEvents.sourceMetadata,
-        })
-        .from(rawEvents)
-        .where(eq(rawEvents.id, rawEventId))
-        .limit(1)) as RawEventRow[];
-      const row = rows[0];
-      if (!row) {
-        throw new UnrecoverableError(`raw event ${rawEventId} not found`);
-      }
-      if (row.teamId !== teamId) {
-        throw new UnrecoverableError(
-          `raw event ${rawEventId} team mismatch (job=${teamId}, row=${row.teamId})`,
-        );
-      }
-
-      // Hard privacy gate — same shape and rationale as extract.ts. Non-team
-      // events never have their text or derived statements sent to OpenRouter,
-      // and they never land in Qdrant (where a future visibility relaxation
-      // could otherwise leak them into team-mate searches). Stamp the skip
-      // reason so the reembed script does not re-enqueue this row on each run.
-      if (row.visibility !== 'team') {
-        const skipPatch = JSON.stringify({
-          embedding_skipped_at: new Date().toISOString(),
-          embedding_skipped_reason: `visibility=${row.visibility}`,
-          embedding_model: env.EMBEDDING_MODEL ?? 'openai/text-embedding-3-small',
-        });
-        await deps.db
-          .update(rawEvents)
-          .set({
-            sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'embedding_failed_at' - 'embedding_error') || ${skipPatch}::jsonb`,
-          })
-          .where(eq(rawEvents.id, rawEventId));
-        return { rawEventId, skipped: true, reason: `visibility=${row.visibility}` };
-      }
-
-      // Resolve the text to embed and the entity_ids that go on the payload.
-      let text: string;
-      let scope: qdrant.PointScope;
-      let sourceId: string;
-      let entityIds: string[] = [];
-      let factIdForPayload: string | null = null;
-
-      if (factId) {
-        const factRows = (await deps.db
-          .select({
-            id: factsTable.id,
-            teamId: factsTable.teamId,
-            rawEventId: factsTable.rawEventId,
-            statement: factsTable.statement,
-          })
-          .from(factsTable)
-          .where(eq(factsTable.id, factId))
-          .limit(1)) as FactRow[];
-        const fact = factRows[0];
-        if (!fact) {
-          throw new UnrecoverableError(`fact ${factId} not found`);
-        }
-        if (fact.teamId !== teamId || fact.rawEventId !== rawEventId) {
-          throw new UnrecoverableError(
-            `fact ${factId} does not belong to (team=${teamId}, rawEvent=${rawEventId})`,
-          );
-        }
-        text = fact.statement.trim();
-        scope = 'fact';
-        sourceId = fact.id;
-        factIdForPayload = fact.id;
-        const links = await deps.db
-          .select({ entityId: factEntities.entityId })
-          .from(factEntities)
-          .where(eq(factEntities.factId, fact.id));
-        entityIds = links.map((l) => l.entityId);
-      } else {
-        const eventText = row.contentText?.trim();
-        if (!eventText) {
-          throw new UnrecoverableError(
-            `raw event ${rawEventId} has no content_text; nothing to embed`,
-          );
-        }
-        text = eventText;
-        scope = 'event';
-        sourceId = row.id;
+      const scope = resolveScope(job.data);
+      const plan = await buildPlan(deps.db, job.data, scope);
+      if (!plan) {
+        // No-op (e.g. visibility-skipped raw event already stamped, or
+        // object_change with empty summary). Success path with no Qdrant write.
+        return { skipped: true };
       }
 
       // LLM call BEFORE Qdrant write so a transient embedding failure
       // retries cleanly. No DB transaction is open during the network call.
-      const { vector, model } = await llm.embed({ text });
-      // getQdrantClient caches by (collection, requireExisting), so a
-      // reembed of thousands of rows pays one collection-existence check
-      // per process — not one per job. When targetCollection is set
-      // (re-embed migration path), requireExisting forces the wrapper to
-      // error rather than silently auto-create the new collection at the
-      // OLD EMBEDDING_DIMENSIONS.
+      const { vector, model } = await llm.embed({ text: plan.text });
       const client = qdrant.getQdrantClient(
-        targetCollection ? { collection: targetCollection, requireExisting: true } : {},
+        job.data.targetCollection
+          ? { collection: job.data.targetCollection, requireExisting: true }
+          : {},
       );
-      const pointId = qdrant.buildPointId(scope, sourceId, model);
+      const pointId = qdrant.buildPointId(plan.scope, plan.sourceId, model);
+      const basePayload = blankNonEventPayload({
+        teamId: job.data.teamId,
+        occurredAt: plan.occurredAt,
+        authorUserId: plan.authorUserId,
+        model,
+        sourceKind: plan.sourceKind,
+      });
       const payload: qdrant.QdrantPayload = {
-        team_id: teamId,
-        event_id: row.id,
-        fact_id: factIdForPayload,
-        entity_ids: entityIds,
-        occurred_at: row.occurredAt.toISOString(),
-        author_user_id: row.authorUserId,
-        source: row.source,
-        visibility: row.visibility,
-        // Persist visibility_user_ids on every point so the wrapper's
-        // specific_users filter branch (which keys on this field) is
-        // structurally consistent with the payload. Today this is null
-        // because the privacy gate above blocks anything other than
-        // visibility='team' from reaching this code path, but writing it
-        // unconditionally means a future relaxation of the gate cannot
-        // silently produce points that fail the filter.
-        visibility_user_ids: row.visibilityUserIds,
+        ...basePayload,
+        ...plan.payloadOverrides,
         embedding_model: model,
       };
       await client.upsertVector(pointId, vector, payload);
 
-      // Only EVENT-scope jobs touch raw_events.source_metadata. A single
-      // raw event can spawn many embed jobs (one event-level + N fact-level
-      // for N facts), and they all share the same row. If fact-level jobs
-      // stamped `embedded_at`, a later EVENT-level failure could be silently
-      // masked by the failed-handler's `NOT ? 'embedded_at'` guard — the
-      // event body would be missing from Qdrant with no durable signal.
-      // The timeline UI only cares about per-event status; per-fact embed
-      // status is operational (worker logs + Qdrant point presence). A
-      // fact-embed failure is a backfill candidate via the reembed script.
-      if (scope === 'event') {
+      // Only event-scope raw_events.source_metadata gets stamped — see Phase 5
+      // rationale below. Non-event scopes don't have a single canonical row to
+      // stamp; their freshness is tracked by the coverage audit script.
+      if (plan.scope === 'event' && 'rawEventId' in job.data) {
         const successPatch = JSON.stringify({
           embedded_at: new Date().toISOString(),
           embedding_model: model,
@@ -204,10 +160,10 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
           .set({
             sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'embedding_failed_at' - 'embedding_error') || ${successPatch}::jsonb`,
           })
-          .where(eq(rawEvents.id, rawEventId));
+          .where(eq(rawEvents.id, job.data.rawEventId));
       }
 
-      return { rawEventId, factId: factId ?? null, model, pointId };
+      return { scope: plan.scope, sourceId: plan.sourceId, model, pointId };
     },
     {
       connection: queue.getRedisConnection(),
@@ -224,23 +180,17 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
     const maxAttempts = job.opts.attempts ?? 1;
     const unrecoverable = err instanceof UnrecoverableError;
     if (!unrecoverable && job.attemptsMade < maxAttempts) return;
-    // Symmetric with the success path: fact-scope failures are operational
-    // (visible in worker logs, recoverable via reembed). Only event-scope
-    // failures land on raw_events.source_metadata, because that's what the
-    // timeline UI surfaces. Without this scope check, a permanently-failing
-    // fact embed would stamp `embedding_failed_at` on a row whose event-body
-    // embed is healthy — the UI would show "embedding unavailable" for a
-    // searchable event.
-    if (job.data.factId) return;
+    // Symmetric with Phase 5: only raw-event-scope failures land on
+    // raw_events.source_metadata (UI surfaces it). Fact-scope failures and
+    // the new non-event scopes are operational — visible in worker logs and
+    // recoverable via the reembed script + coverage audit.
+    const scope = resolveScope(job.data);
+    if (scope !== 'event') return;
+    if (!('rawEventId' in job.data) || !job.data.rawEventId) return;
     const patch = JSON.stringify({
       embedding_failed_at: new Date().toISOString(),
       embedding_error: err.message.slice(0, 500),
     });
-    // Guard against a stale failed-event arriving AFTER a later successful
-    // retry has stamped embedded_at: if the row is already marked embedded,
-    // do not re-stamp it as failed. BullMQ's failed/completed event ordering
-    // is not strictly causal across attempts, and we don't want a late
-    // failure to overwrite a fresh success.
     void deps.db
       .update(rawEvents)
       .set({
@@ -259,3 +209,334 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
 
   return worker;
 }
+
+/**
+ * Translate a job into a fully-resolved embedding plan. Returns null when the
+ * job is a successful no-op (visibility-skipped event, empty change summary).
+ * Throws UnrecoverableError when the source row is missing or off-team.
+ */
+async function buildPlan(
+  db: Db,
+  data: queue.EmbedJobData,
+  scope: qdrant.PointScope,
+): Promise<EmbedPlan | null> {
+  switch (scope) {
+    case 'event':
+    case 'fact':
+      return buildEventOrFactPlan(db, data, scope);
+    case 'object':
+      return buildObjectPlan(db, data);
+    case 'object_note':
+      return buildObjectNotePlan(db, data);
+    case 'object_change':
+      return buildObjectChangePlan(db, data);
+    case 'entity':
+      return buildEntityPlan(db, data);
+  }
+}
+
+async function buildEventOrFactPlan(
+  db: Db,
+  data: queue.EmbedJobData,
+  scope: 'event' | 'fact',
+): Promise<EmbedPlan | null> {
+  if (!('rawEventId' in data) || !data.rawEventId) {
+    throw new UnrecoverableError('embed: raw event scope job missing rawEventId');
+  }
+  const rawEventId = data.rawEventId;
+  const teamId = data.teamId;
+  const env = getEnv();
+
+  const rows = (await db
+    .select({
+      id: rawEvents.id,
+      teamId: rawEvents.teamId,
+      contentText: rawEvents.contentText,
+      occurredAt: rawEvents.occurredAt,
+      authorUserId: rawEvents.authorUserId,
+      source: rawEvents.source,
+      visibility: rawEvents.visibility,
+      visibilityUserIds: rawEvents.visibilityUserIds,
+      sourceMetadata: rawEvents.sourceMetadata,
+    })
+    .from(rawEvents)
+    .where(eq(rawEvents.id, rawEventId))
+    .limit(1)) as RawEventRow[];
+  const row = rows[0];
+  if (!row) throw new UnrecoverableError(`raw event ${rawEventId} not found`);
+  if (row.teamId !== teamId) {
+    throw new UnrecoverableError(
+      `raw event ${rawEventId} team mismatch (job=${teamId}, row=${row.teamId})`,
+    );
+  }
+
+  // Hard privacy gate — same rationale as Phase 5. Non-team events never have
+  // their text or derived statements sent to OpenRouter, and they never land
+  // in Qdrant. Stamp the skip reason so the reembed script does not re-enqueue.
+  if (row.visibility !== 'team') {
+    const skipPatch = JSON.stringify({
+      embedding_skipped_at: new Date().toISOString(),
+      embedding_skipped_reason: `visibility=${row.visibility}`,
+      embedding_model: env.EMBEDDING_MODEL ?? 'openai/text-embedding-3-small',
+    });
+    await db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'embedding_failed_at' - 'embedding_error') || ${skipPatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, rawEventId));
+    return null;
+  }
+
+  const payloadOverrides: Partial<qdrant.QdrantPayload> = {
+    event_id: row.id,
+    occurred_at: row.occurredAt.toISOString(),
+    author_user_id: row.authorUserId,
+    source: row.source,
+    visibility: row.visibility,
+    visibility_user_ids: row.visibilityUserIds,
+  };
+
+  if (scope === 'fact') {
+    if (!('factId' in data) || !data.factId) {
+      throw new UnrecoverableError('embed: fact scope job missing factId');
+    }
+    const factId = data.factId;
+    const factRows = (await db
+      .select({
+        id: factsTable.id,
+        teamId: factsTable.teamId,
+        rawEventId: factsTable.rawEventId,
+        statement: factsTable.statement,
+      })
+      .from(factsTable)
+      .where(eq(factsTable.id, factId))
+      .limit(1)) as FactRow[];
+    const fact = factRows[0];
+    if (!fact) throw new UnrecoverableError(`fact ${factId} not found`);
+    if (fact.teamId !== teamId || fact.rawEventId !== rawEventId) {
+      throw new UnrecoverableError(
+        `fact ${factId} does not belong to (team=${teamId}, rawEvent=${rawEventId})`,
+      );
+    }
+    const links = await db
+      .select({ entityId: factEntities.entityId })
+      .from(factEntities)
+      .where(eq(factEntities.factId, fact.id));
+    return {
+      text: fact.statement.trim(),
+      scope: 'fact',
+      sourceKind: 'fact',
+      sourceId: fact.id,
+      occurredAt: row.occurredAt,
+      authorUserId: row.authorUserId,
+      payloadOverrides: {
+        ...payloadOverrides,
+        fact_id: fact.id,
+        entity_ids: links.map((l) => l.entityId),
+      },
+    };
+  }
+
+  const eventText = row.contentText?.trim();
+  if (!eventText) {
+    throw new UnrecoverableError(`raw event ${rawEventId} has no content_text; nothing to embed`);
+  }
+  return {
+    text: eventText,
+    scope: 'event',
+    sourceKind: 'raw_event',
+    sourceId: row.id,
+    occurredAt: row.occurredAt,
+    authorUserId: row.authorUserId,
+    payloadOverrides,
+  };
+}
+
+function renderObjectNarrative(row: {
+  type: string;
+  canonicalName: string;
+  status: string;
+  stage: string | null;
+  priority: number | null;
+  aliases: unknown;
+  dueAt: Date | null;
+}): string {
+  const aliases = Array.isArray(row.aliases)
+    ? (row.aliases as unknown[]).filter((v): v is string => typeof v === 'string')
+    : [];
+  const parts = [
+    `${row.type}: ${row.canonicalName}`,
+    aliases.length > 0 ? `aka ${aliases.join(', ')}` : '',
+    `status=${row.status}`,
+    row.stage ? `stage=${row.stage}` : '',
+    row.priority !== null ? `priority=${String(row.priority)}` : '',
+    row.dueAt ? `due ${row.dueAt.toISOString()}` : '',
+  ];
+  return parts.filter((p) => p.length > 0).join(' | ');
+}
+
+async function buildObjectPlan(
+  db: Db,
+  data: queue.EmbedJobData,
+): Promise<EmbedPlan | null> {
+  if (!('objectId' in data) || !data.objectId) {
+    throw new UnrecoverableError('embed: object scope job missing objectId');
+  }
+  const rows = await db
+    .select()
+    .from(entitiesTable)
+    .where(eq(entitiesTable.id, data.objectId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) throw new UnrecoverableError(`object ${data.objectId} not found`);
+  if (row.teamId !== data.teamId) {
+    throw new UnrecoverableError(`object ${data.objectId} team mismatch`);
+  }
+  if (row.mergedIntoId) {
+    // Soft-deleted via merge — skip, the survivor will be embedded separately.
+    return null;
+  }
+  return {
+    text: renderObjectNarrative(row),
+    scope: 'object',
+    sourceKind: 'object',
+    sourceId: row.id,
+    occurredAt: row.updatedAt,
+    authorUserId: row.ownerUserId,
+    payloadOverrides: {
+      object_id: row.id,
+      entity_id: row.id,
+    },
+  };
+}
+
+async function buildObjectNotePlan(
+  db: Db,
+  data: queue.EmbedJobData,
+): Promise<EmbedPlan | null> {
+  if (!('noteId' in data) || !data.noteId) {
+    throw new UnrecoverableError('embed: object_note scope job missing noteId');
+  }
+  const rows = await db
+    .select()
+    .from(objectNotesTable)
+    .where(eq(objectNotesTable.id, data.noteId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) throw new UnrecoverableError(`object_note ${data.noteId} not found`);
+  if (row.teamId !== data.teamId) {
+    throw new UnrecoverableError(`object_note ${data.noteId} team mismatch`);
+  }
+  if (row.deletedAt) {
+    // Author soft-deleted the note. Skip embed; deletion of any existing
+    // point is tracked separately (out of scope here).
+    return null;
+  }
+  const text = row.body.trim();
+  if (!text) return null;
+  return {
+    text,
+    scope: 'object_note',
+    sourceKind: 'object_note',
+    sourceId: row.id,
+    occurredAt: row.updatedAt,
+    authorUserId: row.authorUserId,
+    payloadOverrides: {
+      object_id: row.entityId,
+      note_id: row.id,
+    },
+  };
+}
+
+async function buildObjectChangePlan(
+  db: Db,
+  data: queue.EmbedJobData,
+): Promise<EmbedPlan | null> {
+  if (!('changeId' in data) || !data.changeId) {
+    throw new UnrecoverableError('embed: object_change scope job missing changeId');
+  }
+  const rows = await db
+    .select()
+    .from(objectChangesTable)
+    .where(eq(objectChangesTable.id, data.changeId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) throw new UnrecoverableError(`object_change ${data.changeId} not found`);
+  if (row.teamId !== data.teamId) {
+    throw new UnrecoverableError(`object_change ${data.changeId} team mismatch`);
+  }
+  // Prefer the operator's prose `note`. Fall back to a compact field diff so
+  // changes are still searchable by field name. Skip pure no-op rows.
+  const note = row.note?.trim();
+  let text: string;
+  if (note) {
+    text = note;
+  } else if (row.field.startsWith('__')) {
+    // Internal markers (__create__, __note_create__, ...). The accompanying
+    // raw_events row carries the human-readable narrative, so skip the change
+    // itself to avoid embedding low-signal text.
+    return null;
+  } else {
+    // Cap each side of the diff so a metadata change with a multi-KB jsonb
+    // value can't blow past the embedding model's token budget. 1500 chars
+    // each leaves room for the field name + arrow within typical 8k-token
+    // embedding inputs.
+    const stringifyCapped = (v: unknown): string => {
+      if (v === null) return 'null';
+      const s = JSON.stringify(v);
+      return s.length > 1500 ? `${s.slice(0, 1500)}…` : s;
+    };
+    text = `${row.field}: ${stringifyCapped(row.previousValue)} → ${stringifyCapped(row.newValue)}`;
+  }
+  return {
+    text,
+    scope: 'object_change',
+    sourceKind: 'object_change',
+    sourceId: row.id,
+    occurredAt: row.changedAt,
+    authorUserId: row.actorUserId,
+    payloadOverrides: {
+      object_id: row.entityId,
+      change_id: row.id,
+    },
+  };
+}
+
+async function buildEntityPlan(
+  db: Db,
+  data: queue.EmbedJobData,
+): Promise<EmbedPlan | null> {
+  if (!('entityId' in data) || !data.entityId) {
+    throw new UnrecoverableError('embed: entity scope job missing entityId');
+  }
+  const rows = await db
+    .select()
+    .from(entitiesTable)
+    .where(eq(entitiesTable.id, data.entityId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) throw new UnrecoverableError(`entity ${data.entityId} not found`);
+  if (row.teamId !== data.teamId) {
+    throw new UnrecoverableError(`entity ${data.entityId} team mismatch`);
+  }
+  if (row.mergedIntoId) return null;
+  const aliases = Array.isArray(row.aliases)
+    ? (row.aliases as unknown[]).filter((v): v is string => typeof v === 'string')
+    : [];
+  const aliasPart = aliases.length > 0 ? ` / ${aliases.join(' / ')}` : '';
+  const text = `${row.type}: ${row.canonicalName}${aliasPart}`;
+  return {
+    text,
+    scope: 'entity',
+    sourceKind: 'entity',
+    sourceId: row.id,
+    occurredAt: row.createdAt,
+    authorUserId: null,
+    payloadOverrides: {
+      entity_id: row.id,
+      object_id: row.id,
+    },
+  };
+}
+

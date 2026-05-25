@@ -97,8 +97,13 @@ afterEach(() => {
 
 const samplePayload: QdrantPayload = {
   team_id: 'team-A',
+  source_kind: 'raw_event',
   event_id: 'ev-1',
   fact_id: null,
+  object_id: null,
+  note_id: null,
+  change_id: null,
+  entity_id: null,
   entity_ids: [],
   occurred_at: '2026-05-20T00:00:00.000Z',
   author_user_id: 'user-1',

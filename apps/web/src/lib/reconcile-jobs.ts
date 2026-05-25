@@ -232,7 +232,7 @@ interface QueueLike {
     types: ('waiting' | 'active' | 'delayed')[],
     start?: number,
     end?: number,
-  ) => Promise<{ data: { rawEventId?: string; factId?: string } }[]>;
+  ) => Promise<{ data: unknown }[]>;
 }
 
 async function collectInflightRawEventIds(q: QueueLike): Promise<Set<string>> {
@@ -240,5 +240,17 @@ async function collectInflightRawEventIds(q: QueueLike): Promise<Set<string>> {
   // won't be picked up by a worker on their own. Treating them as inflight
   // would mean the reconciler skips the exact rows it's meant to recover.
   const jobs = await q.getJobs(['waiting', 'active', 'delayed'], 0, 2000);
-  return new Set(jobs.map((j) => j.data.rawEventId).filter((id): id is string => Boolean(id)));
+  // The embed queue now carries jobs for raw-event/fact scopes alongside
+  // Phase 8 object/note/change/entity scopes. Only raw-event/fact jobs carry
+  // a `rawEventId`; the reconciler only cares about those, so filter
+  // structurally rather than narrowing the union at the type level.
+  const ids = new Set<string>();
+  for (const j of jobs) {
+    const data = j.data;
+    if (data && typeof data === 'object' && 'rawEventId' in data) {
+      const v = (data as { rawEventId?: unknown }).rawEventId;
+      if (typeof v === 'string') ids.add(v);
+    }
+  }
+  return ids;
 }

@@ -100,15 +100,63 @@ export async function closeExtractQueue(): Promise<void> {
   await q.close().catch(() => undefined);
 }
 
-export interface EmbedJobData {
-  rawEventId: string;
+/**
+ * Discriminated union of embed scopes. Phase 5 only had {raw_event, fact},
+ * both anchored to a raw_events row. Phase 8 follow-ups add {object,
+ * object_note, object_change, entity} anchored to the workspace object graph.
+ *
+ * Back-compat: jobs without an explicit `scope` field are treated as
+ * `raw_event` (if `factId` is unset) or `fact` (if set) — see the worker
+ * dispatch in apps/worker/src/workers/embed.ts.
+ */
+export type EmbedJobData =
+  | EmbedRawEventJobData
+  | EmbedFactJobData
+  | EmbedObjectJobData
+  | EmbedObjectNoteJobData
+  | EmbedObjectChangeJobData
+  | EmbedEntityJobData;
+
+interface EmbedJobBase {
   teamId: string;
-  /** Embed a specific fact's statement rather than the raw event body. */
-  factId?: string;
   /** Optional override used by the re-embed script to write into a new
    *  collection during a model migration. When unset, the worker writes to
    *  `QDRANT_COLLECTION`. */
   targetCollection?: string;
+}
+
+export interface EmbedRawEventJobData extends EmbedJobBase {
+  scope?: 'raw_event';
+  rawEventId: string;
+  /** Legacy: when present without an explicit `scope='fact'`, the worker
+   *  still treats this as fact-scope. New code should set scope explicitly. */
+  factId?: string;
+}
+
+export interface EmbedFactJobData extends EmbedJobBase {
+  scope: 'fact';
+  rawEventId: string;
+  factId: string;
+}
+
+export interface EmbedObjectJobData extends EmbedJobBase {
+  scope: 'object';
+  objectId: string;
+}
+
+export interface EmbedObjectNoteJobData extends EmbedJobBase {
+  scope: 'object_note';
+  noteId: string;
+}
+
+export interface EmbedObjectChangeJobData extends EmbedJobBase {
+  scope: 'object_change';
+  changeId: string;
+}
+
+export interface EmbedEntityJobData extends EmbedJobBase {
+  scope: 'entity';
+  entityId: string;
 }
 
 let _embedQueue: Queue<EmbedJobData> | undefined;
@@ -133,6 +181,38 @@ export async function enqueueEmbedJob(data: EmbedJobData): Promise<void> {
   // (scope, sourceId, embedding_model) — duplicate enqueues upsert the same
   // point and cost at most one embedding call.
   await getEmbedQueue().add('embed', data);
+}
+
+export async function enqueueObjectEmbedJob(
+  teamId: string,
+  objectId: string,
+  opts: { targetCollection?: string } = {},
+): Promise<void> {
+  await enqueueEmbedJob({ scope: 'object', teamId, objectId, ...opts });
+}
+
+export async function enqueueObjectNoteEmbedJob(
+  teamId: string,
+  noteId: string,
+  opts: { targetCollection?: string } = {},
+): Promise<void> {
+  await enqueueEmbedJob({ scope: 'object_note', teamId, noteId, ...opts });
+}
+
+export async function enqueueObjectChangeEmbedJob(
+  teamId: string,
+  changeId: string,
+  opts: { targetCollection?: string } = {},
+): Promise<void> {
+  await enqueueEmbedJob({ scope: 'object_change', teamId, changeId, ...opts });
+}
+
+export async function enqueueEntityEmbedJob(
+  teamId: string,
+  entityId: string,
+  opts: { targetCollection?: string } = {},
+): Promise<void> {
+  await enqueueEmbedJob({ scope: 'entity', teamId, entityId, ...opts });
 }
 
 export async function closeEmbedQueue(): Promise<void> {

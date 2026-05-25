@@ -23,7 +23,29 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
 
+import { childLogger } from '../logger.js';
+import * as embedQueue from '../queue/queues.js';
+
 import type { TeamScope } from '../team-scope.js';
+
+const embedLog = childLogger('objects:embed');
+
+/**
+ * Best-effort enqueue of a workspace-object embed job. Failures are logged
+ * and swallowed — the coverage audit script (apps/worker/src/scripts/
+ * embed-coverage.ts) catches drift and the reembed script repairs it. We
+ * deliberately do not surface enqueue failures to the caller because the
+ * write has already committed; the user shouldn't see an "object created
+ * but search is offline" error for a transient Redis hiccup.
+ */
+function fireAndForgetEmbed(
+  fn: () => Promise<void>,
+  context: Record<string, unknown>,
+): void {
+  void fn().catch((err: unknown) => {
+    embedLog.error({ err, ...context }, 'failed to enqueue embed job');
+  });
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -466,7 +488,7 @@ export async function createObject(
     await scope.requireTeamMember(input.assigneeUserId);
   }
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const insertRows = await tx
       .insert(entities)
       .values({
@@ -587,6 +609,20 @@ export async function createObject(
 
     return toObjectRow(row);
   });
+
+  // Embed AFTER the transaction commits so the worker (which reads from a
+  // separate connection) sees the row. Two points per object: the workspace
+  // narrative ('object' scope) and the entity disambiguation text ('entity'
+  // scope) — different retrieval modes share the row.
+  fireAndForgetEmbed(
+    () => embedQueue.enqueueObjectEmbedJob(scope.teamId, result.id),
+    { teamId: scope.teamId, objectId: result.id, op: 'createObject' },
+  );
+  fireAndForgetEmbed(
+    () => embedQueue.enqueueEntityEmbedJob(scope.teamId, result.id),
+    { teamId: scope.teamId, entityId: result.id, op: 'createObject' },
+  );
+  return result;
 }
 
 interface UpdateActor {
@@ -621,7 +657,7 @@ export async function updateObject(
     await scope.requireTeamMember(patch.assigneeUserId);
   }
 
-  return db.transaction(async (tx) => {
+  const txResult = await db.transaction(async (tx) => {
     const currentRows = await tx
       .select()
       .from(entities)
@@ -679,7 +715,7 @@ export async function updateObject(
     if (patch.type !== undefined) diff('type', patch.type);
 
     if (changes.length === 0) {
-      return { object: toObjectRow(current), changedFields: [] };
+      return { object: toObjectRow(current), changedFields: [], changeIds: [] as string[] };
     }
 
     const updatedRows = await tx
@@ -757,8 +793,38 @@ export async function updateObject(
     return {
       object: toObjectRow(updated),
       changedFields: changes.map((c) => c.field),
+      changeIds: changeRows.map((r) => r.id),
     };
   });
+
+  // Re-embed object + entity on every update — the narrative text bakes in
+  // status/stage/owner/etc., so any patch can shift the vector. Skip when
+  // the patch was a no-op (no actual changes).
+  if (txResult.changedFields.length > 0) {
+    fireAndForgetEmbed(
+      () => embedQueue.enqueueObjectEmbedJob(scope.teamId, entityId),
+      { teamId: scope.teamId, objectId: entityId, op: 'updateObject' },
+    );
+    // Only re-embed entity when its text inputs (canonicalName/aliases/type)
+    // actually changed — those drive the entity disambiguation point. A
+    // pure status flip doesn't need a new entity vector.
+    const entityFieldChanged = txResult.changedFields.some((f) =>
+      f === 'canonicalName' || f === 'aliases' || f === 'type',
+    );
+    if (entityFieldChanged) {
+      fireAndForgetEmbed(
+        () => embedQueue.enqueueEntityEmbedJob(scope.teamId, entityId),
+        { teamId: scope.teamId, entityId, op: 'updateObject' },
+      );
+    }
+    for (const changeId of txResult.changeIds) {
+      fireAndForgetEmbed(
+        () => embedQueue.enqueueObjectChangeEmbedJob(scope.teamId, changeId),
+        { teamId: scope.teamId, changeId, op: 'updateObject' },
+      );
+    }
+  }
+  return { object: txResult.object, changedFields: txResult.changedFields };
 }
 
 export async function archiveObject(
@@ -976,7 +1042,7 @@ export async function createNote(
   const body = input.body.trim();
   if (!body) throw new Error('Note body cannot be empty');
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     // Verify entity belongs to team before writing the note.
     const ent = await tx
       .select({ id: entities.id, canonicalName: entities.canonicalName, type: entities.type })
@@ -1033,6 +1099,12 @@ export async function createNote(
 
     return { id: noteId };
   });
+
+  fireAndForgetEmbed(
+    () => embedQueue.enqueueObjectNoteEmbedJob(scope.teamId, result.id),
+    { teamId: scope.teamId, noteId: result.id, op: 'createNote' },
+  );
+  return result;
 }
 
 export async function updateNote(
@@ -1045,7 +1117,7 @@ export async function updateNote(
   const body = input.body.trim();
   if (!body) throw new Error('Note body cannot be empty');
 
-  return db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx) => {
     // Authors-only edit. The UI hides the Edit button when authorUserId
     // doesn't match the viewer, but the action is also reachable by direct
     // POST — without this guard, any team member could rewrite anyone
@@ -1101,6 +1173,14 @@ export async function updateNote(
     });
     return true;
   });
+
+  if (updated) {
+    fireAndForgetEmbed(
+      () => embedQueue.enqueueObjectNoteEmbedJob(scope.teamId, input.noteId),
+      { teamId: scope.teamId, noteId: input.noteId, op: 'updateNote' },
+    );
+  }
+  return updated;
 }
 
 export async function deleteNote(
@@ -1873,7 +1953,7 @@ export async function proposeObjectChange(
     await scope.requireTeamMember(normalized);
   }
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const entRows = await tx
       .select()
       .from(entities)
@@ -1935,6 +2015,12 @@ export async function proposeObjectChange(
 
     return { id: changeId };
   });
+
+  fireAndForgetEmbed(
+    () => embedQueue.enqueueObjectChangeEmbedJob(scope.teamId, result.id),
+    { teamId: scope.teamId, changeId: result.id, op: 'proposeObjectChange' },
+  );
+  return result;
 }
 
 /**
