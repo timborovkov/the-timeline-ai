@@ -29,7 +29,16 @@ export function NotificationRow({ id, kind, summary, entityId, createdAt, initia
     setRead(true);
     const onUnreadFilter = search.get('unread') === '1';
     startTransition(async () => {
-      await markNotificationReadAction(id);
+      const result = await markNotificationReadAction(id);
+      if ('error' in result && result.error) {
+        // Action failed (DB blip, scope mismatch). Roll back the
+        // optimistic state so the UI reflects what the server actually
+        // recorded — otherwise the row shows as read while the server
+        // still has it as unread, and on ?unread=1 it'd linger with
+        // read styling but never drop out.
+        setRead(false);
+        return;
+      }
       // On the unread-only view, the server filter excludes read rows —
       // refresh so the now-read row drops out instead of lingering with
       // muted styling. On the All view, the optimistic state is enough.
