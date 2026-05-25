@@ -552,11 +552,20 @@ interface RunAskInput {
 }
 
 async function runAsk(input: RunAskInput): Promise<void> {
-  // Two-phase idempotency: claim with a short TTL that covers an in-flight
-  // attempt, then EXTEND on success so a completed answer isn't retried, or
-  // DELETE on caught failure so a Telegram redelivery after a crash can try
-  // again. A killed process leaves the short key behind; it expires within
-  // the retry window and the next delivery is free to run.
+  // Two-phase idempotency. Telegram redelivers the webhook on timeout, not on
+  // an HTTP 200, so:
+  //
+  //   1. Claim with a short TTL at entry — covers a concurrent retry that
+  //      arrives while the first attempt is still running.
+  //   2. Extend to a long TTL when the runner completes (success or handled
+  //      failure). Once we've paid OpenRouter, a duplicate response is worse
+  //      than a missed one; never re-run the agent for the same update_id.
+  //
+  // A killed process never reaches step 2; the short TTL expires on its own
+  // and the next redelivery is unblocked. We do NOT release the key on a
+  // caught exception: the webhook still returns 200, so Telegram won't retry
+  // anyway and a duplicate response to a manually-replayed update would be
+  // worse than the missed reply we already logged.
   const claimed = await claimAskUpdate(input.updateId, ASK_INFLIGHT_TTL_SEC);
   if (!claimed) {
     log.info({ updateId: input.updateId, tgUserId: input.tgUserId }, 'ask_update_dedup');
@@ -564,31 +573,60 @@ async function runAsk(input: RunAskInput): Promise<void> {
   }
   try {
     await runAskInner(input);
-    await extendAskClaim(input.updateId, ASK_COMPLETED_TTL_SEC).catch(() => undefined);
   } catch (err) {
-    await releaseAskClaim(input.updateId).catch(() => undefined);
-    throw err;
+    log.error(
+      { err, updateId: input.updateId, tgUserId: input.tgUserId, chatId: input.chatId },
+      'ask_failed',
+    );
+  } finally {
+    await extendAskClaim(input.updateId, ASK_COMPLETED_TTL_SEC).catch(() => undefined);
   }
+}
+
+/**
+ * Send a Telegram message with bounded retries. Used by `/ask` so a transient
+ * Bot-API hiccup doesn't lose an answer we already paid OpenRouter to produce
+ * — the webhook returns 200 either way and Telegram never automatically
+ * resends, so we have to be the one that retries.
+ */
+async function sendWithRetry(
+  tg: TelegramApi,
+  payload: { chat_id: number; text: string },
+): Promise<boolean> {
+  const delaysMs = [0, 250, 1000];
+  let lastErr: unknown;
+  for (const delayMs of delaysMs) {
+    if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    try {
+      await tg.sendMessage(payload);
+      return true;
+    } catch (err) {
+      lastErr = err;
+      log.warn({ err, chatId: payload.chat_id }, 'tg_send_retry');
+    }
+  }
+  log.error({ err: lastErr, chatId: payload.chat_id }, 'tg_send_failed');
+  return false;
 }
 
 async function runAskInner(input: RunAskInput): Promise<void> {
   const question = input.question.trim();
   if (!question) {
-    await input.tg.sendMessage({
+    await sendWithRetry(input.tg, {
       chat_id: input.chatId,
       text: 'Usage: /ask <question>. Example: /ask what did we ship this week?',
     });
     return;
   }
   if (!input.teamId) {
-    await input.tg.sendMessage({
+    await sendWithRetry(input.tg, {
       chat_id: input.chatId,
       text: 'No team to ask. Run /link <token> first.',
     });
     return;
   }
   if (!input.userId) {
-    await input.tg.sendMessage({
+    await sendWithRetry(input.tg, {
       chat_id: input.chatId,
       text:
         'Your Telegram account is not linked to a workspace user — /ask needs a verified ' +
@@ -601,7 +639,7 @@ async function runAskInner(input: RunAskInput): Promise<void> {
     ...RATE_LIMITS.telegramAsk,
   });
   if (!rl.ok) {
-    await input.tg.sendMessage({
+    await sendWithRetry(input.tg, {
       chat_id: input.chatId,
       text: `Slow down — /ask is limited to ${RATE_LIMITS.telegramAsk.capacity}/min. Try again in ${Math.ceil(
         rl.retryAfterMs / 1000,
@@ -630,10 +668,10 @@ async function runAskInner(input: RunAskInput): Promise<void> {
           : result.error === 'no_team'
             ? 'Could not load that team. Try /whereami and /team to confirm the active team.'
             : "Couldn't answer that — try again.";
-    await input.tg.sendMessage({ chat_id: input.chatId, text });
+    await sendWithRetry(input.tg, { chat_id: input.chatId, text });
     return;
   }
-  await input.tg.sendMessage({ chat_id: input.chatId, text: result.answer });
+  await sendWithRetry(input.tg, { chat_id: input.chatId, text: result.answer });
 }
 
 /**
@@ -643,15 +681,12 @@ async function runAskInner(input: RunAskInput): Promise<void> {
  *
  *   1. Claim with a short TTL (~90s) at entry. A concurrent retry while the
  *      first attempt is still running sees the key and silently drops.
- *   2. Extend to a long TTL (~10m) after the agent answer is sent. A retry
- *      that arrives later (Telegram's later attempts can come minutes apart)
- *      still sees the key and skips re-running the agent.
- *   3. If processing throws before a reply is sent, DELETE the key so a
- *      subsequent redelivery can try again — otherwise a paid /ask could end
- *      with no answer.
+ *   2. Extend to a long TTL (~10m) when the runner finishes (success or
+ *      handled error). Once OpenRouter has been billed, a duplicate response
+ *      is worse than a missed one — never re-run the agent for the same id.
  *
- * A killed process never reaches step 2 or 3; the short TTL from step 1
- * expires on its own and the next redelivery is unblocked.
+ * A killed process never reaches step 2; the short TTL expires on its own
+ * and the next redelivery is unblocked.
  *
  * Without Redis we fail-open: capture and answer keep working at the cost of
  * possible double-billing during a Redis outage.
@@ -674,11 +709,6 @@ async function claimAskUpdate(updateId: number, ttlSec: number): Promise<boolean
 async function extendAskClaim(updateId: number, ttlSec: number): Promise<void> {
   const conn = getRedisConnection();
   await conn.set(askClaimKey(updateId), '1', 'EX', ttlSec);
-}
-
-async function releaseAskClaim(updateId: number): Promise<void> {
-  const conn = getRedisConnection();
-  await conn.del(askClaimKey(updateId));
 }
 
 async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Promise<void> {
