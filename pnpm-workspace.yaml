@@ -1,3 +1,13 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+
+# Hoist all drizzle-orm/pglite/postgres-js transitives to a single
+# resolution so peer-dep variants don't fork the type identity of
+# drizzle's column types. Without this, adding @electric-sql/pglite
+# (a drizzle peer) made pnpm install two parallel drizzle-orm@0.38.4
+# instances and the nominal types from @timeline/db stopped matching
+# the ones consumed by @timeline/shared.
+dedupe-peer-dependents: true
+public-hoist-pattern:
+  - 'drizzle-orm'

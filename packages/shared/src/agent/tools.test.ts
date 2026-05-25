@@ -269,7 +269,13 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
     expect(result).toEqual({ found: false });
   });
 
-  it('get_document hydrates versions + folder path when the doc is visible', async () => {
+  it('get_document output uses snake_case keys (agent prompt contract)', async () => {
+    // The agent system prompt instructs the model to read `document_id`,
+    // `folder_path`, `version_id`, `version`, `processing_status`. A
+    // camelCase regression would silently break citations because the
+    // model would reach for `documentId` and get undefined. Lock the
+    // contract by asserting BOTH the required snake_case keys exist AND
+    // the camelCase forms do NOT — catches a one-character rename slip.
     const scope = makeFakeScope();
     scope.getDocument.mockResolvedValue({
       id: DOC_ID,
@@ -277,7 +283,7 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
       folderId: FOLDER_ID,
       name: 'Acme MSA',
       currentVersionId: VERSION_ID,
-      ownerUserId: null,
+      ownerUserId: 'owner-1',
       visibility: 'team',
       visibilityUserIds: null,
       createdAt: new Date('2026-01-01'),
@@ -294,7 +300,7 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
         byteSize: 1024,
         contentType: 'text/plain',
         checksumSha256: null,
-        uploadedByUserId: null,
+        uploadedByUserId: 'uploader-1',
         sourceEventId: 'event-1',
         processingStatus: 'chunked',
         processingError: null,
@@ -308,18 +314,44 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
     const exec = tools.get_document?.execute as (
       input: { id: string },
       opts: unknown,
-    ) => Promise<{
-      found: boolean;
-      document_id: string;
-      folder_path: string;
-      versions: { version_id: string }[];
-    }>;
+    ) => Promise<Record<string, unknown>>;
     const out = await exec({ id: DOC_ID }, {});
-    expect(out.found).toBe(true);
-    expect(out.document_id).toBe(DOC_ID);
-    expect(out.folder_path).toBe('/Deals/Acme');
-    expect(out.versions).toHaveLength(1);
-    expect(out.versions[0]?.version_id).toBe(VERSION_ID);
+    // Required snake_case fields on the top-level object.
+    const required = [
+      'found',
+      'document_id',
+      'name',
+      'folder_id',
+      'folder_path',
+      'owner_user_id',
+      'visibility',
+      'current_version_id',
+      'created_at',
+      'updated_at',
+      'versions',
+    ];
+    for (const k of required) expect(out).toHaveProperty(k);
+    // camelCase MUST NOT leak in.
+    const forbidden = ['documentId', 'folderId', 'folderPath', 'ownerUserId', 'currentVersionId'];
+    for (const k of forbidden) expect(out).not.toHaveProperty(k);
+    // The version row carries the same contract.
+    const v = (out.versions as Record<string, unknown>[])[0]!;
+    const vRequired = [
+      'version_id',
+      'version',
+      'byte_size',
+      'content_type',
+      'uploaded_by_user_id',
+      'processing_status',
+      'created_at',
+    ];
+    for (const k of vRequired) expect(v).toHaveProperty(k);
+    const vForbidden = ['id', 'documentId', 'byteSize', 'contentType', 'uploadedByUserId', 'processingStatus'];
+    for (const k of vForbidden) expect(v).not.toHaveProperty(k);
+    // Dates are serialised to ISO strings (the LLM can't parse Date objects).
+    expect(typeof out.created_at).toBe('string');
+    expect(typeof v.created_at).toBe('string');
+    expect(out.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   it('get_document_chunk fences text and returns null when chunk is not visible', async () => {
