@@ -42,7 +42,7 @@ async function pingServer(db: Db, serverId: string): Promise<{ ok: boolean; erro
   }
 }
 
-export async function processMcpHealthTick(deps: HealthDeps): Promise<HealthResult> {
+async function processMcpHealthTick(deps: HealthDeps): Promise<HealthResult> {
   const rows = await deps.db
     .select({ id: mcpServers.id })
     .from(mcpServers)

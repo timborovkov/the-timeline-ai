@@ -87,6 +87,22 @@ export default async function IntegrationsPage({
               Manage custom MCP servers
             </a>
           </li>
+          <li>
+            <a
+              className="text-signal underline-offset-4 hover:underline"
+              href="/app/me/mcp-servers"
+            >
+              My personal MCP servers
+            </a>
+          </li>
+          <li>
+            <a
+              className="text-signal underline-offset-4 hover:underline"
+              href="/app/team/mcp-share"
+            >
+              Expose this Timeline as an MCP server
+            </a>
+          </li>
         </ul>
       </section>
     </div>
