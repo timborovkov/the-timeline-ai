@@ -352,8 +352,17 @@
           version history, and document changes.
         </li>
         <li>
+          <strong>Meeting bots</strong>: the agent attends Google Meet, Microsoft Teams, and Zoom
+          calls (via Recall.ai or an equivalent provider), captures transcripts in real time, and
+          writes decisions, action items, and timeline events to the same pipeline as everything
+          else.
+        </li>
+        <li>
           <strong>Third-party integrations</strong>: Linear, GitHub, Google Drive, Slack, and
-          CRM-style tools sync activity and changes into the same event stream.
+          CRM-style tools sync activity and changes into the same event stream. Teams can also
+          connect arbitrary <strong>custom MCP servers</strong> — their own internal tools or any
+          third-party MCP — to extend the agent's reach without us shipping a bespoke connector per
+          provider.
         </li>
       </ul>
 
@@ -674,7 +683,13 @@
         <li>
           <strong>System integrations</strong>: pull events from Linear, GitHub, Google Drive,
           Slack, HubSpot/CRM tools. Same pipeline, more sources. MCPs are a useful adapter layer for
-          early integrations; native sync/webhooks can replace them for high-volume paths.
+          early integrations; native sync/webhooks can replace them for high-volume paths. Teams
+          can additionally connect arbitrary custom MCP servers to extend the agent's reach.
+        </li>
+        <li>
+          <strong>Meeting bots</strong>: join Google Meet, Microsoft Teams, and Zoom calls (default
+          provider Recall.ai), capture transcripts in real time, and write meeting events, notes,
+          and extracted action items into the timeline like any other source.
         </li>
         <li>
           <strong>External knowledge sync</strong>: map selected Google Drive folders/files into the
