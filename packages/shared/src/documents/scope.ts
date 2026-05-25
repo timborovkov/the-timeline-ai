@@ -213,35 +213,62 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     return row.name.replace(/\//g, '_');
   }
 
-  async function folderPath(folderId: string | null): Promise<string> {
-    if (!folderId) return '/';
-    const segments: string[] = [];
+  /**
+   * Walk a folder's ancestor chain (deepest → root). Returns structured
+   * `{id, name}[]` so callers can build either a path string or a
+   * breadcrumb UI from one shared walk; previously the web layer
+   * duplicated this loop with its own `breadcrumbsFor` helper. The
+   * `deletedAt IS NULL` filter applies so soft-deleted ancestors don't
+   * leak into either the path string or the breadcrumb.
+   *
+   * Walk depth is capped at 32 to bound a misconfigured cycle. Insert
+   * guards already prevent that (parent_folder_id must be a real folder;
+   * moveFolder validates descent), but defense in depth.
+   */
+  async function folderAncestry(folderId: string | null): Promise<{ id: string; name: string }[]> {
+    if (!folderId) return [];
+    const chain: { id: string; name: string }[] = [];
     let cursor: string | null = folderId;
-    // Walk up; cap depth at 32 to bound a misconfigured cycle. Insert
-    // guards against that already (parent_folder_id must be a real folder
-    // and we validate descent in moveFolder), but defense in depth.
     for (let i = 0; i < 32; i++) {
       if (!cursor) break;
       const current: string = cursor;
       const rows = await db
         .select({ id: folders.id, name: folders.name, parent: folders.parentFolderId })
         .from(folders)
-        .where(and(eq(folders.id, current), eq(folders.teamId, teamId)))
+        .where(and(eq(folders.id, current), eq(folders.teamId, teamId), isNull(folders.deletedAt)))
         .limit(1);
       const row = rows[0];
       if (!row) break;
-      segments.unshift(pathSegment(row));
+      chain.unshift({ id: row.id, name: row.name });
       cursor = row.parent ?? null;
     }
-    return '/' + segments.join('/');
+    return chain;
+  }
+
+  async function folderPath(folderId: string | null): Promise<string> {
+    if (!folderId) return '/';
+    const chain = await folderAncestry(folderId);
+    return '/' + chain.map((c) => pathSegment(c)).join('/');
   }
 
   async function getFolderRaw(id: string): Promise<FolderRow | null> {
     if (!UUID_RE.test(id)) return null;
+    // Filters soft-deleted folders in addition to team + visibility.
+    // Without this a user could navigate to /app/documents?folder=<id>
+    // of a deleted folder and see it rendered as the current folder.
+    // `restoreFolder` runs its own direct query that bypasses this
+    // helper because it needs to operate on deleted rows.
     const rows = await db
       .select()
       .from(folders)
-      .where(and(eq(folders.id, id), eq(folders.teamId, teamId), folderVisibility))
+      .where(
+        and(
+          eq(folders.id, id),
+          eq(folders.teamId, teamId),
+          folderVisibility,
+          isNull(folders.deletedAt),
+        ),
+      )
       .limit(1);
     return (rows[0] as FolderRow | undefined) ?? null;
   }
@@ -359,6 +386,18 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     async folderPath(folderId: string | null): Promise<string> {
       await ensureMember();
       return folderPath(folderId);
+    },
+
+    /**
+     * Ancestor chain of a folder as structured `{id, name}` segments,
+     * shallowest → deepest. Returns `[]` for the team root. Use this
+     * instead of `folderPath` when you need to render breadcrumbs or
+     * any other UI that links each segment — `folderPath` collapses to
+     * a slash-joined string that loses the ids.
+     */
+    async folderAncestry(folderId: string | null): Promise<{ id: string; name: string }[]> {
+      await ensureMember();
+      return folderAncestry(folderId);
     },
 
     async createFolder(input: CreateFolderInput): Promise<FolderRow> {

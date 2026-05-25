@@ -274,6 +274,38 @@ describe('document scope — soft delete + audit trail', () => {
     expect(remaining.map((d) => d.id)).toContain(created.document.id);
   });
 
+  it('soft-deleted folders are NOT reachable via getFolder (bugbot #3298903330)', async () => {
+    // Same contract as documents: a direct-by-id lookup of a soft-
+    // deleted folder must return null so the detail page, breadcrumbs,
+    // and ancestry helper all hide it. restoreFolder bypasses
+    // getFolderRaw so undelete still finds the row.
+    const scope = withTeam(db, TEAM_ID, USER_A);
+    const folder = await scope.createFolder({ name: 'Drafts' });
+    expect(await scope.getFolder(folder.id)).not.toBeNull();
+    await scope.softDeleteFolder(folder.id);
+    expect(await scope.getFolder(folder.id)).toBeNull();
+    // folderPath + folderAncestry must also hide the deleted ancestor.
+    expect(await scope.folderPath(folder.id)).toBe('/');
+    expect(await scope.folderAncestry(folder.id)).toEqual([]);
+    await scope.restoreFolder(folder.id);
+    expect(await scope.getFolder(folder.id)).not.toBeNull();
+  });
+
+  it('folderAncestry returns ancestors shallowest-first (replaces page breadcrumb walker)', async () => {
+    // Pins the contract the page's breadcrumb code relies on after the
+    // duplicated walker was removed.
+    const scope = withTeam(db, TEAM_ID, USER_A);
+    const a = await scope.createFolder({ name: 'A' });
+    const b = await scope.createFolder({ name: 'B', parentFolderId: a.id });
+    const c = await scope.createFolder({ name: 'C', parentFolderId: b.id });
+    expect(await scope.folderAncestry(c.id)).toEqual([
+      { id: a.id, name: 'A' },
+      { id: b.id, name: 'B' },
+      { id: c.id, name: 'C' },
+    ]);
+    expect(await scope.folderAncestry(null)).toEqual([]);
+  });
+
   it('soft-deleted documents are NOT reachable via getDocument (bugbot #3298769085)', async () => {
     // Pre-fix, a direct-by-id lookup still returned the row, so the
     // detail page, the agent's get_document tool, and the download

@@ -29,11 +29,17 @@ export default async function DocumentsPage({ searchParams }: Props) {
   // to root rather than rendering a "Folder not found" page that leaks
   // the existence-or-not distinction.
   const folderId = currentFolder?.id ?? null;
-  const [folders, documents, breadcrumbs] = await Promise.all([
+  const [folders, documents, ancestry] = await Promise.all([
     scope.listFolders({ parentFolderId: folderId }),
     scope.listDocuments({ folderId }),
-    breadcrumbsFor(scope, folderId),
+    scope.folderAncestry(folderId),
   ]);
+  // Prepend the root crumb. Scope returns ancestors only — the root
+  // label is a UI concern, not data.
+  const breadcrumbs: { id: string | null; name: string }[] = [
+    { id: null, name: 'Documents' },
+    ...ancestry,
+  ];
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -56,24 +62,4 @@ export default async function DocumentsPage({ searchParams }: Props) {
       />
     </div>
   );
-}
-
-async function breadcrumbsFor(
-  scope: ReturnType<typeof withTeam>,
-  folderId: string | null,
-): Promise<{ id: string | null; name: string }[]> {
-  const crumbs: { id: string | null; name: string }[] = [{ id: null, name: 'Documents' }];
-  if (!folderId) return crumbs;
-  let cursor: string | null = folderId;
-  const chain: { id: string; name: string }[] = [];
-  // Bounded walk — same defense the scope.folderPath helper uses.
-  for (let i = 0; i < 32; i++) {
-    if (!cursor) break;
-    const folder = await scope.getFolder(cursor);
-    if (!folder) break;
-    chain.unshift({ id: folder.id, name: folder.name });
-    cursor = folder.parentFolderId;
-  }
-  for (const c of chain) crumbs.push(c);
-  return crumbs;
 }
