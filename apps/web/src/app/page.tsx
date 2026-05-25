@@ -271,10 +271,9 @@ function Hero() {
               updates itself.
             </h1>
             <p className="mt-8 max-w-prose text-lg leading-relaxed text-fg-muted">
-              Voice-note after the call. Forward the email. Drop a Google Meet, Teams, or Zoom link
-              and a silent bot takes notes. The agent extracts who, what, and when — reconciled
-              against everything your team has ever said. Ask it anything; every answer cites the
-              raw event it came from.
+              Voice-note the call. Forward the email. Drop a Meet, Teams, or Zoom link. The agent
+              extracts who, what, and when — reconciled against everything your team has ever said.
+              Ask anything; every answer cites its source.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
               <Button asChild size="lg">
@@ -346,7 +345,7 @@ function Problem() {
     <Section id="problem">
       <Mono className="text-fg-muted">PROBLEM · WHY NOTHING STAYS UPDATED</Mono>
       <h2 className="mt-6 max-w-3xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
-        Every tool you have punishes the act of recording.
+        Every tool you have punishes recording.
       </h2>
 
       <div className="mt-12 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-3">
@@ -366,7 +365,7 @@ function Problem() {
 
       <p className="mt-10 max-w-prose text-base leading-[1.65] text-fg-muted">
         The result is predictable. Nobody updates the CRM. The wiki is three months stale. Half the
-        team&apos;s decisions live in Slack threads that themselves get lost. When someone asks{' '}
+        team&apos;s decisions live in Slack threads no one can find. When someone asks{' '}
         <em>&ldquo;what happened with Acme?&rdquo;</em> the only honest answer is{' '}
         <em>&ldquo;let me check with three people.&rdquo;</em>
       </p>
@@ -400,7 +399,7 @@ function Solution() {
         <Pillar
           n="02"
           title="Objects and tasks, derived from what you said."
-          body="The agent reads raw events and resolves them into durable objects — people, companies, deals, projects, documents — and the tasks that fall out of them. No forms, no schemas."
+          body="The agent reads raw events and resolves them into objects — people, companies, deals, projects, documents — plus the tasks that fall out."
         />
         <Pillar
           n="03"
@@ -794,22 +793,19 @@ function Surfaces() {
           label="TELEGRAM BOT"
           body="Voice memos and text in DMs or team groups. /ask runs the same agent as web chat."
         />
-        <SurfaceTile
-          label="EMAIL"
-          body="Forward, CC, or BCC to your team address. Postmark parses inbound."
-        />
+        <SurfaceTile label="EMAIL" body="Forward, CC, or BCC to your team address." />
         <SurfaceTile
           label="DOCUMENT DRIVE"
           body="Team folders with version history. Uploads and edits become timeline events."
         />
         <SurfaceTile
           label="MEETING BOTS"
-          body="Paste a Google Meet, Microsoft Teams, or Zoom link. A silent Recall.ai bot joins, transcribes, and drops decisions and action items on the same timeline."
+          body="Paste a Meet, Teams, or Zoom link. A silent Recall.ai bot joins, transcribes, and files decisions and tasks."
         />
         <SurfaceTile
           label="CUSTOM MCP"
           coming
-          body="Connect your own internal tools or any third-party MCP server. Extend the agent without bespoke connectors."
+          body="Connect internal tools or any third-party MCP server. No bespoke connectors."
         />
       </div>
     </Section>
@@ -842,9 +838,9 @@ function Receipts() {
             Ask. See the receipts.
           </h2>
           <p className="mt-6 max-w-prose text-base leading-[1.65] text-fg-muted">
-            The agent doesn&apos;t hand-wave. Every fact resolves to a raw event — a voice memo, an
-            email, a Telegram message, a document version — with the author, timestamp, and source
-            attached. Click the chip; the inspector shows you exactly what was said.
+            Every fact resolves to a raw event — voice memo, email, Telegram message, document
+            version — with author, timestamp, and source. Click the chip; the inspector shows
+            exactly what was said.
           </p>
           <blockquote className="mt-8 max-w-prose border-l-2 border-signal pl-5 text-lg italic leading-snug text-fg">
             Re-run the extraction with a better model tomorrow — the raw event never changes, the
@@ -946,7 +942,7 @@ function FinalCTA() {
       <div className="border-l-2 border-signal pl-6 sm:pl-10">
         <Mono className="text-signal">READY?</Mono>
         <h2 className="mt-4 max-w-3xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
-          Capture the next five days of work and let the agent show you what it saw.
+          Capture five days. See what the agent saw.
         </h2>
         <div className="mt-10 flex flex-wrap items-center gap-3">
           <Button asChild size="lg">
