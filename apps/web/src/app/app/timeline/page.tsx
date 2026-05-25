@@ -173,6 +173,10 @@ export default async function TimelinePage({ searchParams }: Props) {
               method="get"
               className="mt-3 flex flex-wrap items-end gap-3 rounded-sm border border-border bg-surface p-3 text-sm"
             >
+              {/* Preserve ⌘K's `q` across filter submissions — the form
+                  is plain GET and would otherwise drop any param it
+                  doesn't carry an input for. */}
+              {sp.q ? <input type="hidden" name="q" value={sp.q} /> : null}
               <label className="flex flex-col gap-1">
                 <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
                   Author

@@ -44,7 +44,7 @@ export function SearchBar({ initialQuery = '' }: Props) {
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const autoRanRef = useRef(false);
+  const autoRanRef = useRef<string | null>(null);
 
   async function runSearch(raw: string): Promise<void> {
     const q = raw.trim();
@@ -92,14 +92,19 @@ export function SearchBar({ initialQuery = '' }: Props) {
     await runSearch(query);
   }
 
-  // Auto-run search when arriving from the command bar (`?q=…`). Guarded
-  // by `autoRanRef` so a parent re-render that toggles `initialQuery` back
-  // to `''` doesn't wipe the current results — once the user is on the
-  // page they own the input.
+  // Auto-run search when arriving from the command bar (`?q=…`), and
+  // re-run whenever the prop changes to a new non-empty value (e.g. the
+  // user submits the ⌘K bar a second time with a different query while
+  // already on the timeline). `lastAutoRanRef` tracks the last value
+  // we've auto-run so we don't fight the user mid-typing: if they edit
+  // the input after auto-search lands, our local `query` state diverges
+  // from `initialQuery` and we leave it alone.
   useEffect(() => {
-    if (autoRanRef.current) return;
-    if (!initialQuery.trim()) return;
-    autoRanRef.current = true;
+    const trimmed = initialQuery.trim();
+    if (!trimmed) return;
+    if (autoRanRef.current === trimmed) return;
+    autoRanRef.current = trimmed;
+    setQuery(initialQuery);
     void runSearch(initialQuery);
   }, [initialQuery]);
 
