@@ -62,7 +62,7 @@ const STATUS_BADGE: Record<string, string> = {
 export function DocumentDetail({ document, versions, requestedVersion }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [downloading, setDownloading] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<readonly string[]>([]);
 
   function onRename(): void {
     const name = window.prompt('New name', document.name);
@@ -92,7 +92,7 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
   }
 
   async function onDownload(versionId: string): Promise<void> {
-    setDownloading(versionId);
+    setDownloading((prev) => (prev.includes(versionId) ? prev : [...prev, versionId]));
     try {
       const res = await getDocumentDownloadUrlAction({ versionId });
       if (!res.ok || !res.url) {
@@ -101,7 +101,7 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
       }
       window.open(res.url, '_blank', 'noopener,noreferrer');
     } finally {
-      setDownloading(null);
+      setDownloading((prev) => prev.filter((id) => id !== versionId));
     }
   }
 
@@ -188,10 +188,10 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
                     onClick={() => {
                       void onDownload(v.id);
                     }}
-                    disabled={downloading === v.id}
+                    disabled={downloading.includes(v.id)}
                   >
                     <Download className="mr-1 h-3.5 w-3.5" />
-                    {downloading === v.id ? 'Opening…' : 'Download'}
+                    {downloading.includes(v.id) ? 'Opening…' : 'Download'}
                   </Button>
                 </li>
               );
