@@ -2,17 +2,24 @@
 
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, type UIMessage } from 'ai';
-import { Send } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Send, X } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { CitationText } from './citation';
 import { ToolStep } from './tool-step';
 
+import { unpinChatSessionAction } from '@/app/actions/chat';
 import { InlineSpinner } from '@/components/loading-states';
 import { cn } from '@/lib/utils';
 
 interface Props {
   teamName: string;
+  sessionId: string | null;
+  initialMessages: UIMessage[];
+  pinnedEntityId: string | null;
+  pinnedEntityName: string | null;
 }
 
 const SUGGESTIONS = [
@@ -21,18 +28,116 @@ const SUGGESTIONS = [
   "What's outstanding right now?",
 ] as const;
 
-export function ChatPane({ teamName }: Props) {
-  const { messages, sendMessage, status, error } = useChat({
-    transport: new DefaultChatTransport({ api: '/api/chat' }),
+export function ChatPane({
+  teamName,
+  sessionId: initialSessionId,
+  initialMessages,
+  pinnedEntityId,
+  pinnedEntityName,
+}: Props) {
+  const router = useRouter();
+  const search = useSearchParams();
+  // Local sessionId so we can pick up an auto-created session id from the
+  // first response without forcing a full server round-trip. We then mirror
+  // it into the URL via router.replace so a reload lands on the same chat.
+  const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
+
+  // `useChat` constructs the underlying Chat (and the transport we hand it)
+  // once per mount via useRef — the transport's body/fetch closures are
+  // FROZEN to whatever `sessionId` was on first render. Without the ref
+  // mirror below, every turn after the first re-sends startNewSession=true
+  // and the server creates a fresh chat_sessions row per turn, fragmenting
+  // the conversation across rows. Mirror state into a ref so the closures
+  // always read the latest sessionId.
+  const sessionIdRef = useRef<string | null>(initialSessionId);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+  // `search` is a stable reference from next/navigation, but capture it
+  // in a ref so the transport's fetch closure doesn't snapshot a stale
+  // URLSearchParams on a query-param change.
+  const searchRef = useRef(search);
+  useEffect(() => {
+    searchRef.current = search;
   });
+  // Track whether we've already asked the server to create a session this
+  // ChatPane lifetime. Without this, if server-side `createChatSession`
+  // throws (pinned object missing, DB blip, etc.), the route logs and
+  // falls back to no-persistence — but `sessionIdRef.current` stays null,
+  // so the next user message would send `startNewSession: true` AGAIN,
+  // and we'd either loop on the same failure or spawn a fresh chat row
+  // per message once it recovers. After the first attempt we let
+  // persistence stay off for the rest of this ChatPane; refreshing
+  // re-tries.
+  const sessionCreateAttempted = useRef(initialSessionId !== null);
+
+  // useMemo so the Chat instance picks up exactly one transport. The deps
+  // array is empty on purpose — we want the transport stable across renders
+  // since the closures already read via refs.
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: '/api/chat',
+        body: () => {
+          // Ask the server to create a session only once per ChatPane
+          // lifetime. After the first request fires, future ones either
+          // (a) ride the session id we picked up from the response header,
+          // or (b) stream without persistence if creation failed.
+          const askForNew = sessionIdRef.current === null && !sessionCreateAttempted.current;
+          if (askForNew) sessionCreateAttempted.current = true;
+          return {
+            sessionId: sessionIdRef.current ?? undefined,
+            startNewSession: askForNew,
+          };
+        },
+        fetch: async (url, init) => {
+          const res = await fetch(url, init);
+          const id = res.headers.get('x-tl-session-id');
+          if (id && id !== sessionIdRef.current) {
+            // Update the ref SYNCHRONOUSLY before scheduling the
+            // setSessionId re-render. The body() closure on the next
+            // sendMessage call reads from sessionIdRef.current — if we
+            // wait for the useEffect to mirror state into the ref, a
+            // rapid second message will fire with sessionIdRef.current
+            // still null, send startNewSession=true, and the server will
+            // create a SECOND chat_sessions row that fragments the
+            // conversation.
+            sessionIdRef.current = id;
+            setSessionId(id);
+            // Update the URL via window.history.replaceState rather than
+            // router.replace: the latter triggers a Next.js server-component
+            // refetch, which would re-render the parent `/app/chat` page and
+            // recompute `activeSessionId` from the new URL. Because the
+            // parent keys ChatPane on `activeSessionId`, the change would
+            // remount ChatPane mid-stream — unmounting the useChat instance
+            // that is currently reading the response body, dropping the
+            // assistant turn, skipping onFinish, and erasing the
+            // conversation visually. window.history.replaceState only
+            // touches the address bar (still survives reload + correct
+            // deep-link); the sidebar highlight catches up on the next
+            // user-initiated navigation.
+            if (typeof window !== 'undefined') {
+              const params = new URLSearchParams(searchRef.current.toString());
+              params.set('session', id);
+              window.history.replaceState(null, '', `/app/chat?${params.toString()}`);
+            }
+          }
+          return res;
+        },
+      }),
+    [],
+  );
+
+  const { messages, sendMessage, status, error } = useChat({
+    transport,
+    messages: initialMessages,
+  });
+
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const isStreaming = status === 'streaming' || status === 'submitted';
 
-  // Auto-scroll to bottom on new messages and streaming chunks, but only if
-  // the user is already near the bottom — otherwise they're reading earlier
-  // output and shouldn't get yanked away.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -47,8 +152,6 @@ export function ChatPane({ teamName }: Props) {
     if (!t || isStreaming) return;
     setInput('');
     void sendMessage({ text: t });
-    // Force-jump on send so the user sees their own message and the incoming
-    // response, even if they had scrolled up before submitting.
     requestAnimationFrame(() => {
       const el = scrollRef.current;
       if (el) el.scrollTop = el.scrollHeight;
@@ -57,6 +160,27 @@ export function ChatPane({ teamName }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
+      {pinnedEntityId && (
+        <div className="flex shrink-0 items-center gap-2 self-start rounded-full border border-primary/30 bg-primary/5 py-1 pl-3 pr-1 text-xs">
+          <Link href={`/app/objects/${pinnedEntityId}`} className="text-primary hover:underline">
+            pinned · {pinnedEntityName ?? pinnedEntityId}
+          </Link>
+          {sessionId && (
+            <button
+              type="button"
+              aria-label="Unpin"
+              onClick={() => {
+                void unpinChatSessionAction({ sessionId }).then(() => {
+                  router.refresh();
+                });
+              }}
+              className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      )}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         {messages.length === 0 ? (
           <div className="flex flex-col gap-6 pt-8">

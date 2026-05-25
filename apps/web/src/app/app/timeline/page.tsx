@@ -9,6 +9,7 @@ import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import { CaptureForm } from '@/components/capture-form';
+import { NarrowContainer } from '@/components/narrow-container';
 import { SearchBar } from '@/components/search-bar';
 import { TimelineList } from '@/components/timeline-list';
 import { Card, CardContent } from '@/components/ui/card';
@@ -131,7 +132,7 @@ export default async function TimelinePage({ searchParams }: Props) {
   const hasFilters = Boolean(authorFilter ?? fromFilter ?? toFilter);
 
   return (
-    <div>
+    <NarrowContainer>
       <header className="mb-10">
         <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Timeline</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight">{active.teamName}</h1>
@@ -210,6 +211,6 @@ export default async function TimelinePage({ searchParams }: Props) {
 
         <TimelineList events={events} authorMap={authorMap} audioUrlMap={audioUrlMap} />
       </section>
-    </div>
+    </NarrowContainer>
   );
 }

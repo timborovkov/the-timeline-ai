@@ -1,0 +1,30 @@
+import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+
+import { entities } from './entities.js';
+import { teams } from './teams.js';
+import { users } from './users.js';
+
+// Persisted chat conversations. A session belongs to a team and a creator;
+// it can optionally pin to a workspace object so "ask about this deal"
+// chats group naturally on the object page.
+export const chatSessions = pgTable(
+  'chat_sessions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    title: text('title'),
+    pinnedEntityId: uuid('pinned_entity_id').references(() => entities.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('chat_sessions_team_updated_idx').on(table.teamId, table.updatedAt),
+    index('chat_sessions_team_pinned_idx').on(table.teamId, table.pinnedEntityId),
+  ],
+);

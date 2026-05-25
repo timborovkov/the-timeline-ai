@@ -1,4 +1,4 @@
-import { agent, childLogger, getEnv, llm, rateLimit, withTeam } from '@timeline/shared';
+import { agent, childLogger, getEnv, llm, objects, rateLimit, withTeam } from '@timeline/shared';
 import { convertToModelMessages, safeValidateUIMessages, type UIMessage } from 'ai';
 import { z } from 'zod';
 
@@ -7,13 +7,20 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
 /**
- * Phase 6 — agent chat endpoint.
+ * Phase 6 — agent chat endpoint. Phase 8 wires session persistence on top.
  *
  * Node runtime: tools need DB + Qdrant + OpenRouter access, none of which run
  * on Edge. Per-team scope is constructed from the authenticated session +
  * the user's active team; the agent never sees a teamId, and tool input
  * schemas have no teamId field. Hostile inputs (cross-team event ids, alias
  * collisions) resolve to null at the SQL layer.
+ *
+ * Persistence (Phase 8): when the request includes `sessionId`, the
+ * endpoint validates it belongs to the team and appends the latest user
+ * turn + final assistant turn to `chat_messages` on `onFinish`. If
+ * `sessionId` is absent, the endpoint auto-creates one and returns the new
+ * id via the `x-tl-session-id` response header so the client can pin
+ * subsequent turns to the same row.
  *
  * Returns 503 when OPENROUTER_API_KEY is unset so the UI can render
  * "chat unavailable" rather than throw — matches /api/search.
@@ -23,10 +30,30 @@ export const dynamic = 'force-dynamic';
 
 const log = childLogger('web:api:chat');
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const chatRequestSchema = z.object({
   // Accept the structurally-validated UI messages from @ai-sdk/react useChat.
   // We re-validate before forwarding to the model.
   messages: z.array(z.unknown()).max(50),
+  // Phase 8: optional persistence target. UUID-shape pre-checked here; the
+  // scope helper re-verifies the session belongs to the team before write.
+  sessionId: z.string().regex(UUID_RE).optional(),
+  // Explicit opt-in to start a new persisted session. We intentionally do
+  // NOT auto-create on bare requests: today's `useChat` UI re-POSTs the
+  // full transcript every turn without a sessionId, so silent auto-create
+  // would write one chat_sessions row per user message — useless data
+  // until the sidebar UI starts pinning a session id. When the sidebar
+  // lands it sends `startNewSession: true` on the first turn, receives the
+  // new id via the `x-tl-session-id` response header, and echoes that
+  // sessionId on subsequent turns. Until then, bare requests stream but
+  // don't persist.
+  startNewSession: z.boolean().optional(),
+  // Optional object to pin a fresh session to (e.g. "ask about this deal"
+  // from /app/objects/[id]). Only honored when startNewSession is true;
+  // ignored otherwise. When sessionId is set, the session's existing
+  // pinnedEntityId stays authoritative.
+  pinnedEntityId: z.string().regex(UUID_RE).optional(),
 });
 
 export async function POST(req: Request): Promise<Response> {
@@ -58,6 +85,16 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
+  // Also accept `?session=<uuid>` as a fallback so deep-linked clients that
+  // can't yet propagate the sessionId in the request body still hit the
+  // right persistence row. Body wins if both are set.
+  if (!parsed.data.sessionId) {
+    const querySessionId = new URL(req.url).searchParams.get('session');
+    if (querySessionId && UUID_RE.test(querySessionId)) {
+      parsed.data.sessionId = querySessionId;
+    }
+  }
+
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) {
     return Response.json({ ok: false, error: 'no_active_team' }, { status: 400 });
@@ -87,6 +124,37 @@ export async function POST(req: Request): Promise<Response> {
   const teamName = team?.name ?? active.teamName;
   const userName = session.user.name ?? session.user.email ?? 'a teammate';
 
+  // Resolve the chat session, three cases:
+  //   1. sessionId provided        → validate + persist into it.
+  //   2. startNewSession: true     → create a new session, return id via header.
+  //   3. neither                   → stream without persistence (UI hasn't
+  //                                  opted into the session model yet).
+  // See the schema comment above for why bare requests do NOT auto-create.
+  let sessionId = parsed.data.sessionId;
+  if (sessionId) {
+    // Validate the session belongs to this team. 404 (not 403) is the
+    // canonical "no resource here" — it doesn't distinguish "wrong team"
+    // from "no such id," so cross-team session-id probing reveals nothing.
+    // Cheap existence check — we only need to confirm team ownership here,
+    // not load every prior message. `getChatSession` would pull the full
+    // `chat_messages` list on every turn.
+    const exists = await objects.chatSessionExists(db, scope, sessionId);
+    if (!exists) {
+      return Response.json({ ok: false, error: 'session_not_found' }, { status: 404 });
+    }
+  } else if (parsed.data.startNewSession) {
+    try {
+      const created = await objects.createChatSession(db, scope, {
+        pinnedEntityId: parsed.data.pinnedEntityId ?? null,
+      });
+      sessionId = created.id;
+    } catch (err) {
+      // Pinned object not in this team / bad uuid. Fall back to no
+      // persistence rather than refuse the chat.
+      log.warn({ err }, 'chat session create failed');
+    }
+  }
+
   const system = agent.buildSystemPrompt({
     teamName,
     userName,
@@ -104,7 +172,14 @@ export async function POST(req: Request): Promise<Response> {
   if (!validation.success) {
     return Response.json({ ok: false, error: 'invalid_messages' }, { status: 400 });
   }
-  const messages = await convertToModelMessages(validation.data);
+  const uiMessages = validation.data;
+  const messages = await convertToModelMessages(uiMessages);
+
+  // The "latest user turn" is the trailing user message in the array. We
+  // persist only the delta (this user turn + the new assistant turn),
+  // because useChat re-sends the full transcript every request and the
+  // earlier user turns were persisted on their respective calls.
+  const latestUserMessage = [...uiMessages].reverse().find((m) => m.role === 'user') ?? null;
 
   const result = llm.streamChat({
     system,
@@ -116,21 +191,54 @@ export async function POST(req: Request): Promise<Response> {
     // stream still runs the model to completion.
     abortSignal: req.signal,
     onFinish: (e) => {
-      // Stamp the prompt version on every completion. If a captured
-      // conversation is ever persisted, this version pins which agent
-      // produced it — same audit logic as Phase 4's model_version stamp
-      // on extracted facts.
       log.info(
         {
           promptVersion: agent.AGENT_PROMPT_VERSION,
           teamId: active.teamId,
           userId: session.user.id,
+          sessionId: sessionId ?? null,
           usage: e.usage,
         },
         'chat completion',
       );
+      if (!sessionId) return;
+      // Persist after the stream resolves. Errors here must NOT crash the
+      // response — the user already saw the assistant reply and a failed
+      // append is recoverable next turn. Logged at warn so retries are
+      // observable without paging.
+      const turnsToPersist: objects.AppendChatMessageInput[] = [];
+      if (latestUserMessage) {
+        turnsToPersist.push({
+          role: 'user',
+          authorUserId: session.user.id,
+          content: { ui_message: latestUserMessage },
+        });
+      }
+      turnsToPersist.push({
+        role: 'assistant',
+        content: {
+          text: 'text' in e && typeof e.text === 'string' ? e.text : null,
+          tool_calls: 'toolCalls' in e ? e.toolCalls : undefined,
+          finish_reason: 'finishReason' in e ? e.finishReason : undefined,
+          usage: e.usage,
+          prompt_version: agent.AGENT_PROMPT_VERSION,
+        },
+      });
+      void objects
+        .appendChatMessages(db, scope, sessionId, turnsToPersist)
+        .catch((err: unknown) => {
+          log.warn(
+            { err, sessionId, teamId: active.teamId, userId: session.user.id },
+            'chat session append failed',
+          );
+        });
     },
   });
 
-  return result.toUIMessageStreamResponse();
+  const response = result.toUIMessageStreamResponse();
+  // Surface the (possibly auto-created) session id so the client can pin
+  // subsequent turns to this row. Header form is read-only metadata —
+  // doesn't conflict with the AI-SDK stream body.
+  if (sessionId) response.headers.set('x-tl-session-id', sessionId);
+  return response;
 }

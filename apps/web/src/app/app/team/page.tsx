@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { removeMemberAction } from '@/app/actions/teams';
+import { NarrowContainer } from '@/components/narrow-container';
 import { CreateTeamForm, InviteMemberForm } from '@/components/team-forms';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -36,25 +37,26 @@ export default async function TeamSettingsPage() {
   const userMap = new Map(userInfo.map((u) => [u.id, u] as const));
 
   return (
-    <div className="space-y-8">
-      <header className="mb-2">
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Team</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{active.teamName}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Your role: <Badge variant="outline">{role}</Badge>
-        </p>
-      </header>
+    <NarrowContainer>
+      <div className="space-y-8">
+        <header className="mb-2">
+          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Team</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">{active.teamName}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Your role: <Badge variant="outline">{role}</Badge>
+          </p>
+        </header>
 
-      {team ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Email ingest</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              Forward, CC, or BCC any email to this address to add it to the timeline.
-            </p>
-            {/* Address selection:
+        {team ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Email ingest</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Forward, CC, or BCC any email to this address to add it to the timeline.
+              </p>
+              {/* Address selection:
                 - Production (team owns an MX domain): `team.inbound_email` is
                   the canonical clean address (`<slug>@<your-domain>`). Show it.
                 - Dev (only Postmark's default address is wired): the column
@@ -70,94 +72,97 @@ export default async function TeamSettingsPage() {
                 teams backfilled by migration 0006 before they got a real
                 domain, and is never produced by `buildInboundEmail` when
                 INBOUND_EMAIL_DOMAIN is set. */}
-            {(() => {
-              const productionAddr =
-                team.inboundEmail && !team.inboundEmail.endsWith('@inbound.invalid')
-                  ? team.inboundEmail
-                  : null;
-              const hashAddr = composePostmarkHashAddress(
-                team.slug,
-                process.env.POSTMARK_INBOUND_ADDRESS,
-              );
-              const primary = productionAddr ?? hashAddr;
-              if (!primary) return null;
-              return <code className="block rounded-md bg-muted px-3 py-2 text-sm">{primary}</code>;
-            })()}
-            <p className="text-xs text-muted-foreground">
-              Senders must match a team member&apos;s email to be attributed; unknown senders still
-              land but are tagged unverified.
-            </p>
-          </CardContent>
-        </Card>
-      ) : null}
+              {(() => {
+                const productionAddr =
+                  team.inboundEmail && !team.inboundEmail.endsWith('@inbound.invalid')
+                    ? team.inboundEmail
+                    : null;
+                const hashAddr = composePostmarkHashAddress(
+                  team.slug,
+                  process.env.POSTMARK_INBOUND_ADDRESS,
+                );
+                const primary = productionAddr ?? hashAddr;
+                if (!primary) return null;
+                return (
+                  <code className="block rounded-md bg-muted px-3 py-2 text-sm">{primary}</code>
+                );
+              })()}
+              <p className="text-xs text-muted-foreground">
+                Senders must match a team member&apos;s email to be attributed; unknown senders
+                still land but are tagged unverified.
+              </p>
+            </CardContent>
+          </Card>
+        ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Members</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ul className="divide-y">
-            {memberRows.map((m) => {
-              const u = userMap.get(m.userId);
-              return (
-                <li key={m.userId} className="flex items-center justify-between py-3">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium">{u?.name ?? u?.email ?? m.userId}</span>
-                    <span className="text-xs text-muted-foreground">{u?.email}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Badge variant="outline">{m.role}</Badge>
-                    {isAdmin && m.userId !== session.user.id && m.role !== 'owner' ? (
-                      <form action={removeMemberAction}>
-                        <input type="hidden" name="userId" value={m.userId} />
-                        <Button type="submit" variant="ghost" size="sm">
-                          Remove
-                        </Button>
-                      </form>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </CardContent>
-      </Card>
-
-      {isAdmin ? (
         <Card>
           <CardHeader>
-            <CardTitle>Invite a teammate</CardTitle>
+            <CardTitle>Members</CardTitle>
           </CardHeader>
           <CardContent>
-            <InviteMemberForm />
-            <p className="mt-3 text-xs text-muted-foreground">
-              Email delivery lands in Phase 7. For now the invite link is shown here — copy and
-              share it manually.
-            </p>
+            <ul className="divide-y">
+              {memberRows.map((m) => {
+                const u = userMap.get(m.userId);
+                return (
+                  <li key={m.userId} className="flex items-center justify-between py-3">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium">{u?.name ?? u?.email ?? m.userId}</span>
+                      <span className="text-xs text-muted-foreground">{u?.email}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge variant="outline">{m.role}</Badge>
+                      {isAdmin && m.userId !== session.user.id && m.role !== 'owner' ? (
+                        <form action={removeMemberAction}>
+                          <input type="hidden" name="userId" value={m.userId} />
+                          <Button type="submit" variant="ghost" size="sm">
+                            Remove
+                          </Button>
+                        </form>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </CardContent>
         </Card>
-      ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Telegram</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <p className="text-muted-foreground">Capture from Telegram DMs and group chats.</p>
-          <Link href="/app/team/telegram" className="underline">
-            Manage Telegram links →
-          </Link>
-        </CardContent>
-      </Card>
+        {isAdmin ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Invite a teammate</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <InviteMemberForm />
+              <p className="mt-3 text-xs text-muted-foreground">
+                Email delivery lands in Phase 7. For now the invite link is shown here — copy and
+                share it manually.
+              </p>
+            </CardContent>
+          </Card>
+        ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Create another team</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <CreateTeamForm />
-        </CardContent>
-      </Card>
-    </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Telegram</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p className="text-muted-foreground">Capture from Telegram DMs and group chats.</p>
+            <Link href="/app/team/telegram" className="underline">
+              Manage Telegram links →
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Create another team</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CreateTeamForm />
+          </CardContent>
+        </Card>
+      </div>
+    </NarrowContainer>
   );
 }

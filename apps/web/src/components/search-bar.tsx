@@ -152,7 +152,7 @@ export function SearchBar() {
                       {r.entityIds.map((id) => (
                         <a
                           key={id}
-                          href={`/app/entities/${id}`}
+                          href={`/app/objects/${id}`}
                           className="rounded-full border border-input px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent"
                         >
                           entity

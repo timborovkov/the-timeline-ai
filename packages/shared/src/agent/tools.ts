@@ -1,7 +1,9 @@
+import { getDb } from '@timeline/db';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
 import { childLogger } from '../logger.js';
+import * as objects from '../objects/index.js';
 import { type TeamScope } from '../team-scope.js';
 
 const log = childLogger('agent:tools');
@@ -186,6 +188,247 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
               }),
               has_audio: Boolean(e.contentAudioUrl),
             })),
+          };
+        }),
+    }),
+
+    get_object: tool({
+      description:
+        "Look up a workspace object (task, deal, project, person, company, follow_up, etc.) by UUID or canonical name. Returns its status/stage/owner/due_at, the most recent suggested+applied changes, any notes, related objects, and open child tasks. Use this for 'what's the status of <X>' or before proposing a change to verify the current value.",
+      inputSchema: z.object({ idOrName: z.string().trim().min(1).max(200) }),
+      execute: async ({ idOrName }) =>
+        safe('get_object', async () => {
+          const result = await objects.getObject(getDb(), scope, idOrName);
+          if (!result) return { found: false };
+          return {
+            found: true,
+            id: result.id,
+            type: result.type,
+            name: result.canonicalName,
+            status: result.status,
+            stage: result.stage,
+            priority: result.priority,
+            owner_user_id: result.ownerUserId,
+            assignee_user_id: result.assigneeUserId,
+            due_at: result.dueAt?.toISOString() ?? null,
+            agent_suggested: result.agentSuggested,
+            archived: result.archivedAt !== null,
+            notes: result.notes.slice(0, 10).map((n) => ({ id: n.id, body: n.body })),
+            recent_changes: result.recentChanges.slice(0, 20).map((c) => ({
+              id: c.id,
+              field: c.field,
+              status: c.status,
+              actor_kind: c.actorKind,
+              changed_at: c.changedAt.toISOString(),
+            })),
+            open_tasks: result.openTasks.slice(0, 20).map((t) => ({
+              id: t.id,
+              name: t.canonicalName,
+              status: t.status,
+            })),
+          };
+        }),
+    }),
+
+    list_objects: tool({
+      description:
+        "List workspace objects with optional filters. Use this for 'what deals are open' or 'show me suggested tasks'. Returns id, name, type, status, stage, owner, and due_at for each match. Capped at 50; narrow the filter if you need fewer.",
+      inputSchema: z.object({
+        type: z.string().max(40).optional(),
+        status: z.string().max(40).optional(),
+        stage: z.string().max(40).optional(),
+        ownerUserId: z.string().regex(UUID_RE).optional(),
+        archived: z.boolean().optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      }),
+      execute: async (raw) =>
+        safe('list_objects', async () => {
+          const input = raw as {
+            type?: string;
+            status?: string;
+            stage?: string;
+            ownerUserId?: string;
+            archived?: boolean;
+            limit?: number;
+          };
+          const filter: objects.ObjectListFilter = { limit: input.limit ?? 50 };
+          if (input.type && (objects.OBJECT_TYPES as readonly string[]).includes(input.type)) {
+            filter.type = input.type as objects.ObjectType;
+          }
+          if (input.status) filter.status = input.status;
+          if (input.stage) filter.stage = input.stage;
+          if (input.ownerUserId) filter.ownerUserId = input.ownerUserId;
+          if (input.archived !== undefined) filter.archived = input.archived;
+          const rows = await objects.listObjects(getDb(), scope, filter);
+          return {
+            count: rows.length,
+            objects: rows.map((r) => ({
+              id: r.id,
+              name: r.canonicalName,
+              type: r.type,
+              status: r.status,
+              stage: r.stage,
+              owner_user_id: r.ownerUserId,
+              due_at: r.dueAt?.toISOString() ?? null,
+              agent_suggested: r.agentSuggested,
+            })),
+          };
+        }),
+    }),
+
+    list_tasks: tool({
+      description:
+        "Convenience over list_objects for tasks. Filters by status (default: not 'done' and not 'cancelled') and optionally by ownerUserId. Use for 'what's on my plate' or 'what tasks are blocked'.",
+      inputSchema: z.object({
+        status: z.string().max(40).optional(),
+        ownerUserId: z.string().regex(UUID_RE).optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      }),
+      execute: async (raw) =>
+        safe('list_tasks', async () => {
+          const input = raw as { status?: string; ownerUserId?: string; limit?: number };
+          const filter: objects.ObjectListFilter = {
+            type: 'task',
+            archived: false,
+            limit: input.limit ?? 50,
+            // Push the default "active" status set into the DB filter as
+            // a positive allow-list rather than post-filtering in memory.
+            // Otherwise a workspace dominated by closed tasks would see
+            // `limit=50` rows fetched, most of them done/cancelled, and
+            // post-filter would leave the agent with a handful of active
+            // ones — under-reporting actual workload.
+            //
+            // `open` is included because that's what `createObject`
+            // defaults to when a user creates a task via /app/objects/new
+            // (versus 'suggested' for agent-created or 'todo' once it
+            // moves into the workflow). Excluding it would silently hide
+            // freshly-created human tasks from the agent.
+            status: input.status ?? ['suggested', 'open', 'todo', 'doing', 'blocked'],
+          };
+          if (input.ownerUserId) filter.ownerUserId = input.ownerUserId;
+          const rows = await objects.listObjects(getDb(), scope, filter);
+          return {
+            count: rows.length,
+            tasks: rows.map((r) => ({
+              id: r.id,
+              name: r.canonicalName,
+              status: r.status,
+              owner_user_id: r.ownerUserId,
+              due_at: r.dueAt?.toISOString() ?? null,
+            })),
+          };
+        }),
+    }),
+
+    recent_changes: tool({
+      description:
+        "Recent applied or suggested changes to workspace objects. Use this for 'what changed today' or to find suggestions awaiting review. Filter by entityId, status, or since (ISO datetime).",
+      inputSchema: z.object({
+        entityId: z.string().regex(UUID_RE).optional(),
+        status: z.enum(['applied', 'suggested', 'rejected']).optional(),
+        since: z.string().datetime().optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      }),
+      execute: async (raw) =>
+        safe('recent_changes', async () => {
+          const input = raw as {
+            entityId?: string;
+            status?: 'applied' | 'suggested' | 'rejected';
+            since?: string;
+            limit?: number;
+          };
+          const filter: Parameters<typeof objects.listObjectChanges>[2] = {
+            limit: input.limit ?? 30,
+          };
+          if (input.entityId) filter.entityId = input.entityId;
+          if (input.status) filter.status = input.status;
+          if (input.since) filter.since = new Date(input.since);
+          const rows = await objects.listObjectChanges(getDb(), scope, filter);
+          return {
+            count: rows.length,
+            changes: rows.map((c) => ({
+              id: c.id,
+              entity_id: c.entityId,
+              entity_name: c.entityName,
+              field: c.field,
+              status: c.status,
+              actor_kind: c.actorKind,
+              previous_value: c.previousValue,
+              new_value: c.newValue,
+              changed_at: c.changedAt.toISOString(),
+            })),
+          };
+        }),
+    }),
+
+    suggest_task: tool({
+      description:
+        "Propose a new task. The task is created with status='suggested' and agent_suggested=true; a human reviews on the object page or inbox. Use sparingly — only when the conversation reveals a concrete next action that nobody has captured. Set parentObjectId to link the task to a relevant deal/project/person.",
+      inputSchema: z.object({
+        title: z.string().trim().min(1).max(200),
+        dueAt: z.string().datetime().optional(),
+        ownerUserId: z.string().regex(UUID_RE).optional(),
+        note: z.string().trim().max(1000).optional(),
+        parentObjectId: z.string().regex(UUID_RE).optional(),
+        sourceEventId: z.string().regex(UUID_RE).optional(),
+      }),
+      execute: async (raw) =>
+        safe('suggest_task', async () => {
+          const input = raw as {
+            title: string;
+            dueAt?: string;
+            ownerUserId?: string;
+            note?: string;
+            parentObjectId?: string;
+            sourceEventId?: string;
+          };
+          const created = await objects.createObject(getDb(), scope, {
+            type: 'task',
+            canonicalName: input.title,
+            dueAt: input.dueAt ? new Date(input.dueAt) : null,
+            ownerUserId: input.ownerUserId ?? null,
+            parentObjectId: input.parentObjectId ?? null,
+            sourceEventId: input.sourceEventId ?? null,
+            agentSuggested: true,
+            metadata: input.note ? { agent_note: input.note } : {},
+            actor: { kind: 'agent', userId: null },
+          });
+          return {
+            ok: true,
+            id: created.id,
+            status: created.status,
+            message: `Suggested task created. A teammate can accept it from /app/objects/${created.id}.`,
+          };
+        }),
+    }),
+
+    propose_object_change: tool({
+      description:
+        "Propose a change to an existing object's field (status, stage, priority, ownerUserId, assigneeUserId, dueAt). Writes a 'suggested' row to object_changes WITHOUT mutating the entity; a human accepts/rejects from the object page. Use after get_object verifies the current value.",
+      inputSchema: z.object({
+        entityId: z.string().regex(UUID_RE),
+        field: z.enum(['status', 'stage', 'priority', 'ownerUserId', 'assigneeUserId', 'dueAt']),
+        newValue: z.unknown(),
+        note: z.string().trim().max(500).optional(),
+      }),
+      execute: async (raw) =>
+        safe('propose_object_change', async () => {
+          const input = raw as {
+            entityId: string;
+            field: 'status' | 'stage' | 'priority' | 'ownerUserId' | 'assigneeUserId' | 'dueAt';
+            newValue: unknown;
+            note?: string;
+          };
+          const proposed = await objects.proposeObjectChange(getDb(), scope, {
+            entityId: input.entityId,
+            field: input.field,
+            newValue: input.newValue,
+            note: input.note ?? null,
+          });
+          return {
+            ok: true,
+            change_id: proposed.id,
+            message: 'Suggestion recorded. A teammate will review on the object page.',
           };
         }),
     }),

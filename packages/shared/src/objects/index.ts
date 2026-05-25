@@ -1,0 +1,2210 @@
+/**
+ * Phase 8 — workspace object helpers.
+ *
+ * All public functions take a `TeamScope` constructed via `withTeam`, so
+ * team isolation + membership are already enforced upstream. The helpers
+ * never read the team_id off the function argument — they read it off the
+ * scope. That's the chokepoint that keeps a typo in a caller from leaking
+ * across teams.
+ */
+import {
+  type Db,
+  boardViews,
+  chatMessages,
+  chatSessions,
+  entities,
+  entityRelationships,
+  entityType,
+  factEntities,
+  notificationKind,
+  notifications,
+  objectChanges,
+  objectNotes,
+  objectViews,
+  rawEvents,
+} from '@timeline/db';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
+
+import type { TeamScope } from '../team-scope.js';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Order-stable JSON serialization. Used by `updateObject` to decide whether
+ * a patch actually changes a jsonb column — without sorted keys, a form
+ * that posts `{a:1,b:2}` and a backend that round-trips it as `{b:2,a:1}`
+ * would register as a change on every save and write phantom audit rows.
+ */
+function stableStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, val: unknown) => {
+    if (val && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+      const record = val as Record<string, unknown>;
+      const sorted: Record<string, unknown> = {};
+      for (const k of Object.keys(record).sort()) {
+        sorted[k] = record[k];
+      }
+      return sorted;
+    }
+    return val;
+  });
+}
+
+// Derive from the drizzle enum so adding a new type only requires touching
+// the schema + migration. The previous shape duplicated the union here, in
+// `team-scope.ts`, and in the server action — three places to forget.
+export type ObjectType = (typeof entityType.enumValues)[number];
+
+/** The exhaustive runtime list of object types (mirrors the Postgres enum). */
+export const OBJECT_TYPES = entityType.enumValues;
+
+export type ActorKind = 'user' | 'agent' | 'system';
+
+export interface ObjectListFilter {
+  type?: ObjectType | ObjectType[];
+  status?: string | string[];
+  stage?: string | string[];
+  ownerUserId?: string | null;
+  assigneeUserId?: string | null;
+  dueBefore?: Date;
+  dueAfter?: Date;
+  archived?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ObjectRow {
+  id: string;
+  type: ObjectType;
+  canonicalName: string;
+  status: string;
+  stage: string | null;
+  priority: number | null;
+  ownerUserId: string | null;
+  assigneeUserId: string | null;
+  dueAt: Date | null;
+  agentSuggested: boolean;
+  archivedAt: Date | null;
+  aliases: string[];
+  metadata: Record<string, unknown>;
+  updatedAt: Date;
+  createdAt: Date;
+}
+
+/** Mutable fields a caller may patch via `updateObject`. */
+export interface ObjectPatch {
+  canonicalName?: string;
+  status?: string;
+  stage?: string | null;
+  priority?: number | null;
+  ownerUserId?: string | null;
+  assigneeUserId?: string | null;
+  dueAt?: Date | null;
+  aliases?: string[];
+  metadata?: Record<string, unknown>;
+  archivedAt?: Date | null;
+  /** Allowed only on create or on agent-suggested rows that humans accept. */
+  type?: ObjectType;
+}
+
+type EntityRow = typeof entities.$inferSelect;
+
+function toObjectRow(row: EntityRow): ObjectRow {
+  const aliases = Array.isArray(row.aliases)
+    ? (row.aliases as unknown[]).filter((v): v is string => typeof v === 'string')
+    : [];
+  const metadata =
+    row.metadata && typeof row.metadata === 'object'
+      ? (row.metadata as Record<string, unknown>)
+      : {};
+  return {
+    id: row.id,
+    type: row.type,
+    canonicalName: row.canonicalName,
+    status: row.status,
+    stage: row.stage,
+    priority: row.priority,
+    ownerUserId: row.ownerUserId,
+    assigneeUserId: row.assigneeUserId,
+    dueAt: row.dueAt,
+    agentSuggested: row.agentSuggested,
+    archivedAt: row.archivedAt,
+    aliases,
+    metadata,
+    updatedAt: row.updatedAt,
+    createdAt: row.createdAt,
+  };
+}
+
+function toArray<T>(v: T | T[] | undefined): T[] | undefined {
+  if (v === undefined) return undefined;
+  return Array.isArray(v) ? v : [v];
+}
+
+export async function listObjects(
+  db: Db,
+  scope: TeamScope,
+  filter: ObjectListFilter = {},
+): Promise<ObjectRow[]> {
+  await scope.requireMembership();
+  const conds = [eq(entities.teamId, scope.teamId), isNull(entities.mergedIntoId)];
+
+  const types = toArray(filter.type);
+  if (types && types.length > 0) conds.push(inArray(entities.type, types));
+
+  const statuses = toArray(filter.status);
+  if (statuses && statuses.length > 0) conds.push(inArray(entities.status, statuses));
+
+  const stages = toArray(filter.stage);
+  if (stages && stages.length > 0) {
+    // `stage` is nullable — only filter when caller asked for non-null stages.
+    conds.push(inArray(entities.stage, stages));
+  }
+
+  if (filter.ownerUserId === null) conds.push(isNull(entities.ownerUserId));
+  else if (filter.ownerUserId) conds.push(eq(entities.ownerUserId, filter.ownerUserId));
+
+  if (filter.assigneeUserId === null) conds.push(isNull(entities.assigneeUserId));
+  else if (filter.assigneeUserId) conds.push(eq(entities.assigneeUserId, filter.assigneeUserId));
+
+  if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));
+  if (filter.dueAfter) conds.push(gte(entities.dueAt, filter.dueAfter));
+
+  if (filter.archived === true) conds.push(isNotNull(entities.archivedAt));
+  else if (filter.archived !== undefined) conds.push(isNull(entities.archivedAt));
+
+  const limit = Math.min(Math.max(filter.limit ?? 100, 1), 500);
+  const offset = Math.max(filter.offset ?? 0, 0);
+
+  const rows = await db
+    .select()
+    .from(entities)
+    .where(and(...conds))
+    .orderBy(desc(entities.updatedAt))
+    .limit(limit)
+    .offset(offset);
+  return rows.map(toObjectRow);
+}
+
+export interface ObjectDetail extends ObjectRow {
+  notes: {
+    id: string;
+    body: string;
+    authorUserId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }[];
+  relationships: {
+    id: string;
+    direction: 'out' | 'in';
+    kind: string;
+    otherId: string;
+    otherName: string;
+    otherType: ObjectType;
+  }[];
+  recentChanges: {
+    id: string;
+    field: string;
+    actorKind: ActorKind;
+    actorUserId: string | null;
+    previousValue: unknown;
+    newValue: unknown;
+    status: 'applied' | 'suggested' | 'rejected';
+    note: string | null;
+    changedAt: Date;
+  }[];
+  openTasks: ObjectRow[];
+  /** Count of object_changes and notes since the caller's last visit. */
+  newSinceLastVisit: number;
+  lastVisitedAt: Date | null;
+}
+
+export async function getObject(
+  db: Db,
+  scope: TeamScope,
+  idOrName: string,
+): Promise<ObjectDetail | null> {
+  await scope.requireMembership();
+  const trimmed = idOrName.trim();
+  if (!trimmed) return null;
+
+  let entityRow: EntityRow | undefined;
+  if (UUID_RE.test(trimmed)) {
+    const rows = await db
+      .select()
+      .from(entities)
+      .where(
+        and(
+          eq(entities.id, trimmed),
+          eq(entities.teamId, scope.teamId),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .limit(1);
+    entityRow = rows[0];
+  } else {
+    const rows = await db
+      .select()
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          isNull(entities.mergedIntoId),
+          sql`lower(${entities.canonicalName}) = lower(${trimmed})`,
+        ),
+      )
+      .orderBy(desc(entities.updatedAt))
+      .limit(1);
+    entityRow = rows[0];
+  }
+  if (!entityRow) return null;
+
+  const [noteRows, outRows, inRows, changeRows, taskRows, viewRows] = await Promise.all([
+    db
+      .select({
+        id: objectNotes.id,
+        body: objectNotes.body,
+        authorUserId: objectNotes.authorUserId,
+        createdAt: objectNotes.createdAt,
+        updatedAt: objectNotes.updatedAt,
+      })
+      .from(objectNotes)
+      .where(
+        and(
+          eq(objectNotes.teamId, scope.teamId),
+          eq(objectNotes.entityId, entityRow.id),
+          isNull(objectNotes.deletedAt),
+        ),
+      )
+      .orderBy(desc(objectNotes.createdAt)),
+    db
+      .select({
+        id: entityRelationships.id,
+        kind: entityRelationships.kind,
+        otherId: entities.id,
+        otherName: entities.canonicalName,
+        otherType: entities.type,
+      })
+      .from(entityRelationships)
+      .innerJoin(entities, eq(entityRelationships.toEntityId, entities.id))
+      .where(
+        and(
+          eq(entityRelationships.teamId, scope.teamId),
+          eq(entityRelationships.fromEntityId, entityRow.id),
+          // Defense-in-depth: the relationship row's team_id is already
+          // pinned by the filter above and addRelationship validates both
+          // endpoints, but pinning the joined entity's team_id too means a
+          // stray cross-team edge (e.g. from a future code path that skips
+          // the endpoint check) can never leak through this view.
+          eq(entities.teamId, scope.teamId),
+          isNull(entities.mergedIntoId),
+        ),
+      ),
+    db
+      .select({
+        id: entityRelationships.id,
+        kind: entityRelationships.kind,
+        otherId: entities.id,
+        otherName: entities.canonicalName,
+        otherType: entities.type,
+      })
+      .from(entityRelationships)
+      .innerJoin(entities, eq(entityRelationships.fromEntityId, entities.id))
+      .where(
+        and(
+          eq(entityRelationships.teamId, scope.teamId),
+          eq(entityRelationships.toEntityId, entityRow.id),
+          eq(entities.teamId, scope.teamId),
+          isNull(entities.mergedIntoId),
+        ),
+      ),
+    db
+      .select({
+        id: objectChanges.id,
+        field: objectChanges.field,
+        actorKind: objectChanges.actorKind,
+        actorUserId: objectChanges.actorUserId,
+        previousValue: objectChanges.previousValue,
+        newValue: objectChanges.newValue,
+        status: objectChanges.status,
+        note: objectChanges.note,
+        changedAt: objectChanges.changedAt,
+      })
+      .from(objectChanges)
+      .where(and(eq(objectChanges.teamId, scope.teamId), eq(objectChanges.entityId, entityRow.id)))
+      .orderBy(desc(objectChanges.changedAt))
+      .limit(50),
+    // "Open tasks linked via parent relationship". We model task→parent as a
+    // `child` edge from the task to the parent, OR a `parent` edge from the
+    // parent to the task. For simplicity, surface tasks where the parent is
+    // this object via the `child` edge (task → parent).
+    db
+      .select({ taskId: entityRelationships.fromEntityId })
+      .from(entityRelationships)
+      .where(
+        and(
+          eq(entityRelationships.teamId, scope.teamId),
+          eq(entityRelationships.toEntityId, entityRow.id),
+          eq(entityRelationships.kind, 'child'),
+        ),
+      ),
+    db
+      .select({ lastVisitedAt: objectViews.lastVisitedAt })
+      .from(objectViews)
+      .where(
+        and(
+          eq(objectViews.teamId, scope.teamId),
+          eq(objectViews.userId, scope.userId),
+          eq(objectViews.entityId, entityRow.id),
+        ),
+      )
+      .limit(1),
+  ]);
+
+  const taskIds = taskRows.map((r) => r.taskId);
+  const tasks: ObjectRow[] =
+    taskIds.length > 0
+      ? (
+          await db
+            .select()
+            .from(entities)
+            .where(
+              and(
+                eq(entities.teamId, scope.teamId),
+                inArray(entities.id, taskIds),
+                eq(entities.type, 'task'),
+                isNull(entities.archivedAt),
+                isNull(entities.mergedIntoId),
+                ne(entities.status, 'done'),
+                ne(entities.status, 'cancelled'),
+              ),
+            )
+            .orderBy(desc(entities.updatedAt))
+        ).map(toObjectRow)
+      : [];
+
+  const lastVisitedAt = viewRows[0]?.lastVisitedAt ?? null;
+  // `changeRows` is capped at 50 for the recent-changes pane, so filtering it
+  // would undercount once an object accumulates more than 50 changes between
+  // visits. Run a dedicated COUNT(*) instead. Notes are NOT added separately
+  // here — `createNote`/`updateNote`/`deleteNote` each write a matching
+  // `__note_create__` / `__note_update__` / `__note_delete__` row into
+  // object_changes, so they're already counted. Summing noteRows on top
+  // would double-count every new note.
+  let newSinceLastVisit = 0;
+  if (lastVisitedAt) {
+    const countRows = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(objectChanges)
+      .where(
+        and(
+          eq(objectChanges.teamId, scope.teamId),
+          eq(objectChanges.entityId, entityRow.id),
+          gte(objectChanges.changedAt, lastVisitedAt),
+        ),
+      );
+    newSinceLastVisit = countRows[0]?.count ?? 0;
+  }
+
+  const base = toObjectRow(entityRow);
+  return {
+    ...base,
+    notes: noteRows,
+    relationships: [
+      ...outRows.map((r) => ({ ...r, direction: 'out' as const })),
+      ...inRows.map((r) => ({ ...r, direction: 'in' as const })),
+    ],
+    recentChanges: changeRows,
+    openTasks: tasks,
+    newSinceLastVisit,
+    lastVisitedAt,
+  };
+}
+
+export interface CreateObjectInput {
+  type: ObjectType;
+  canonicalName: string;
+  status?: string;
+  stage?: string | null;
+  priority?: number | null;
+  ownerUserId?: string | null;
+  assigneeUserId?: string | null;
+  dueAt?: Date | null;
+  aliases?: string[];
+  metadata?: Record<string, unknown>;
+  sourceEventId?: string | null;
+  agentSuggested?: boolean;
+  parentObjectId?: string | null;
+  /** Who/what created this. Users go through server actions; agents through
+   *  `propose_object_change`/`suggest_task` tools. */
+  actor: { kind: ActorKind; userId?: string | null };
+}
+
+export async function createObject(
+  db: Db,
+  scope: TeamScope,
+  input: CreateObjectInput,
+): Promise<ObjectRow> {
+  await scope.requireMembership();
+  const name = input.canonicalName.trim();
+  if (!name) throw new Error('canonicalName is required');
+
+  // Owner/assignee FK is to `users.id` (system-wide), so the FK alone
+  // does not prove team membership. Without this gate an actor (human
+  // or agent) could plant a foreign user, and later `updateObject` fan-
+  // out would deliver a notification whose summary leaks the entity
+  // name to a non-member. Verify membership before the write.
+  if (input.ownerUserId) await scope.requireTeamMember(input.ownerUserId);
+  if (input.assigneeUserId && input.assigneeUserId !== input.ownerUserId) {
+    await scope.requireTeamMember(input.assigneeUserId);
+  }
+
+  return db.transaction(async (tx) => {
+    const insertRows = await tx
+      .insert(entities)
+      .values({
+        teamId: scope.teamId,
+        type: input.type,
+        canonicalName: name,
+        status: input.status ?? (input.agentSuggested ? 'suggested' : 'open'),
+        stage: input.stage ?? null,
+        priority: input.priority ?? null,
+        ownerUserId: input.ownerUserId ?? null,
+        assigneeUserId: input.assigneeUserId ?? null,
+        dueAt: input.dueAt ?? null,
+        aliases: input.aliases ?? [],
+        metadata: input.metadata ?? {},
+        sourceEventId: input.sourceEventId ?? null,
+        agentSuggested: input.agentSuggested ?? false,
+      })
+      .returning();
+    const row = insertRows[0];
+    if (!row) throw new Error('Failed to create object');
+
+    // Audit event for the create itself. One row per object, field='__create__'
+    // so the UI can group create/edit/archive consistently.
+    const eventInsert = await tx
+      .insert(rawEvents)
+      .values({
+        teamId: scope.teamId,
+        authorUserId: input.actor.kind === 'user' ? (input.actor.userId ?? null) : null,
+        source: 'system',
+        contentText: `${input.actor.kind === 'agent' ? 'Agent suggested' : 'Created'} ${input.type}: ${name}`,
+        occurredAt: new Date(),
+        visibility: 'team',
+        sourceMetadata: {
+          kind: 'object_create',
+          entity_id: row.id,
+          actor_kind: input.actor.kind,
+        },
+      })
+      .returning({ id: rawEvents.id });
+    const sourceEventId = eventInsert[0]?.id ?? null;
+
+    const changeInsert = await tx
+      .insert(objectChanges)
+      .values({
+        teamId: scope.teamId,
+        entityId: row.id,
+        actorUserId: input.actor.userId ?? null,
+        actorKind: input.actor.kind,
+        status: input.agentSuggested ? 'suggested' : 'applied',
+        field: '__create__',
+        previousValue: null,
+        newValue: { type: input.type, canonicalName: name, status: row.status },
+        sourceEventId,
+      })
+      .returning({ id: objectChanges.id });
+    const changeId = changeInsert[0]?.id ?? null;
+
+    // Agent-suggested creates need an inbox entry — otherwise the user
+    // never sees that the agent dropped a task into their workspace.
+    // Mirrors the fan-out shape in `proposeObjectChange`. Skip when the
+    // create came from a human (UI) since they already know.
+    if (input.agentSuggested && changeId) {
+      const recipients = new Set<string>();
+      if (input.ownerUserId) recipients.add(input.ownerUserId);
+      if (input.assigneeUserId) recipients.add(input.assigneeUserId);
+      if (recipients.size > 0) {
+        const summary = `Agent suggested ${input.type}: ${name}`;
+        await tx.insert(notifications).values(
+          Array.from(recipients).map((uid) => ({
+            teamId: scope.teamId,
+            userId: uid,
+            kind: 'agent_suggestion' as const,
+            entityId: row.id,
+            objectChangeId: changeId,
+            summary,
+            payload: {
+              entity_id: row.id,
+              type: input.type,
+              canonical_name: name,
+            },
+          })),
+        );
+      }
+    }
+
+    if (input.parentObjectId && UUID_RE.test(input.parentObjectId)) {
+      // Verify the parent belongs to this team before linking — otherwise a
+      // caller who knows (or guesses) a UUID from another team could write a
+      // cross-team edge, and the joined entity would leak through
+      // getObject's relationship panel. Mirrors the endpoint check in
+      // addRelationship.
+      const parentExists = await tx
+        .select({ id: entities.id })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.id, input.parentObjectId),
+            eq(entities.teamId, scope.teamId),
+            isNull(entities.mergedIntoId),
+          ),
+        )
+        .limit(1);
+      if (parentExists.length === 0) {
+        throw new Error('Parent object does not belong to this team');
+      }
+      // task → parent via `child` edge (the row reads "task is a child of parent")
+      await tx
+        .insert(entityRelationships)
+        .values({
+          teamId: scope.teamId,
+          fromEntityId: row.id,
+          toEntityId: input.parentObjectId,
+          kind: 'child',
+          createdBy: input.actor.userId ?? null,
+        })
+        .onConflictDoNothing();
+    }
+
+    return toObjectRow(row);
+  });
+}
+
+interface UpdateActor {
+  kind: ActorKind;
+  userId: string | null;
+}
+
+/**
+ * Apply a patch to an object. Each changed field gets its own immutable
+ * `object_changes` row; a single `raw_events` row anchors the whole patch
+ * so the timeline shows one entry per save (not one per field). Owner and
+ * assignee receive an `object_changed` notification — fan-out is in-process
+ * for v1 and out-of-scope for fan-out queues. Returns the updated row plus
+ * the list of fields that actually changed (no-op patches return `[]`).
+ */
+export async function updateObject(
+  db: Db,
+  scope: TeamScope,
+  entityId: string,
+  patch: ObjectPatch,
+  actor: UpdateActor,
+): Promise<{ object: ObjectRow; changedFields: string[] }> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(entityId)) throw new Error('Invalid entity id');
+
+  // See createObject — owner/assignee FK is system-wide, so verify the
+  // referenced user actually belongs to this team before letting an
+  // edit reassign to a foreign user. Skip when the patch clears the
+  // field (`null`) — that's always safe.
+  if (patch.ownerUserId) await scope.requireTeamMember(patch.ownerUserId);
+  if (patch.assigneeUserId && patch.assigneeUserId !== patch.ownerUserId) {
+    await scope.requireTeamMember(patch.assigneeUserId);
+  }
+
+  return db.transaction(async (tx) => {
+    const currentRows = await tx
+      .select()
+      .from(entities)
+      .where(
+        and(
+          eq(entities.id, entityId),
+          eq(entities.teamId, scope.teamId),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .for('update')
+      .limit(1);
+    const currentRow = currentRows[0];
+    if (!currentRow) throw new Error('Object not found');
+    const current: EntityRow = currentRow;
+
+    const changes: {
+      field: string;
+      previousValue: unknown;
+      newValue: unknown;
+    }[] = [];
+    const next: Record<string, unknown> = {};
+
+    function diff<K extends keyof EntityRow>(field: K, candidate: EntityRow[K] | undefined): void {
+      if (candidate === undefined) return;
+      const before = current[field];
+      // Date comparison: equal-by-time wins; otherwise stable-stringify so
+      // metadata `{a:1,b:2}` and `{b:2,a:1}` aren't reported as a change.
+      // A naive JSON.stringify treats key order as significant and would
+      // spam `object_changes`/`raw_events` with phantom rows every time
+      // the form serializes metadata in a different order.
+      const equal =
+        before instanceof Date && candidate instanceof Date
+          ? before.getTime() === candidate.getTime()
+          : stableStringify(before) === stableStringify(candidate);
+      if (equal) return;
+      changes.push({ field: field, previousValue: before, newValue: candidate });
+      next[field] = candidate;
+    }
+
+    if (patch.canonicalName !== undefined) {
+      const trimmed = patch.canonicalName.trim();
+      if (!trimmed) throw new Error('canonicalName cannot be empty');
+      diff('canonicalName', trimmed);
+    }
+    if (patch.status !== undefined) diff('status', patch.status);
+    if (patch.stage !== undefined) diff('stage', patch.stage);
+    if (patch.priority !== undefined) diff('priority', patch.priority);
+    if (patch.ownerUserId !== undefined) diff('ownerUserId', patch.ownerUserId);
+    if (patch.assigneeUserId !== undefined) diff('assigneeUserId', patch.assigneeUserId);
+    if (patch.dueAt !== undefined) diff('dueAt', patch.dueAt);
+    if (patch.aliases !== undefined) diff('aliases', patch.aliases);
+    if (patch.metadata !== undefined) diff('metadata', patch.metadata);
+    if (patch.archivedAt !== undefined) diff('archivedAt', patch.archivedAt);
+    if (patch.type !== undefined) diff('type', patch.type);
+
+    if (changes.length === 0) {
+      return { object: toObjectRow(current), changedFields: [] };
+    }
+
+    const updatedRows = await tx
+      .update(entities)
+      .set({ ...next, updatedAt: new Date() })
+      .where(eq(entities.id, entityId))
+      .returning();
+    const updated = updatedRows[0];
+    if (!updated) throw new Error('Update failed');
+
+    const summary = changes
+      .map((c) => `${c.field}: ${JSON.stringify(c.previousValue)} → ${JSON.stringify(c.newValue)}`)
+      .join('; ');
+    const eventInsert = await tx
+      .insert(rawEvents)
+      .values({
+        teamId: scope.teamId,
+        authorUserId: actor.kind === 'user' ? actor.userId : null,
+        source: 'system',
+        contentText: `${actor.kind === 'agent' ? 'Agent applied' : 'Updated'} ${updated.type}: ${updated.canonicalName} — ${summary}`,
+        occurredAt: new Date(),
+        visibility: 'team',
+        sourceMetadata: {
+          kind: 'object_update',
+          entity_id: entityId,
+          actor_kind: actor.kind,
+          changed_fields: changes.map((c) => c.field),
+        },
+      })
+      .returning({ id: rawEvents.id });
+    const sourceEventId = eventInsert[0]?.id ?? null;
+
+    const changeRows = await tx
+      .insert(objectChanges)
+      .values(
+        changes.map((c) => ({
+          teamId: scope.teamId,
+          entityId,
+          actorUserId: actor.userId,
+          actorKind: actor.kind,
+          status: 'applied' as const,
+          field: c.field,
+          previousValue: c.previousValue as never,
+          newValue: c.newValue as never,
+          sourceEventId,
+        })),
+      )
+      .returning({ id: objectChanges.id });
+
+    // Fan out to owner + assignee. The actor shouldn't notify themselves on
+    // their own change, so we filter actor.userId out. Dedup by recipient so
+    // when owner == assignee they get one row, not two.
+    const recipients = new Set<string>();
+    if (updated.ownerUserId) recipients.add(updated.ownerUserId);
+    if (updated.assigneeUserId) recipients.add(updated.assigneeUserId);
+    if (actor.userId) recipients.delete(actor.userId);
+    const firstChangeId = changeRows[0]?.id ?? null;
+    if (recipients.size > 0 && firstChangeId) {
+      await tx.insert(notifications).values(
+        Array.from(recipients).map((uid) => ({
+          teamId: scope.teamId,
+          userId: uid,
+          kind: 'object_changed' as const,
+          entityId,
+          objectChangeId: firstChangeId,
+          summary: `${updated.canonicalName}: ${summary}`,
+          payload: {
+            entity_id: entityId,
+            changed_fields: changes.map((c) => c.field),
+          },
+        })),
+      );
+    }
+
+    return {
+      object: toObjectRow(updated),
+      changedFields: changes.map((c) => c.field),
+    };
+  });
+}
+
+export async function archiveObject(
+  db: Db,
+  scope: TeamScope,
+  entityId: string,
+  actor: UpdateActor,
+): Promise<ObjectRow> {
+  const result = await updateObject(db, scope, entityId, { archivedAt: new Date() }, actor);
+  return result.object;
+}
+
+export async function unarchiveObject(
+  db: Db,
+  scope: TeamScope,
+  entityId: string,
+  actor: UpdateActor,
+): Promise<ObjectRow> {
+  const result = await updateObject(db, scope, entityId, { archivedAt: null }, actor);
+  return result.object;
+}
+
+/**
+ * Fold one object (loser) into another (winner) for the active team.
+ * Mirrors the Phase 4 `mergeEntityAction` removed when entities became
+ * workspace objects — the underlying SQL is identical:
+ *
+ *   - all `fact_entities` rows referencing the loser are rewritten to
+ *     the winner; on-conflict (same fact + same role) the loser row is
+ *     dropped instead of UPDATE-then-PK-violation;
+ *   - the loser's canonicalName + aliases are folded into the winner's
+ *     aliases, de-duped case-insensitively;
+ *   - the loser is soft-deleted by setting `merged_into_id = winner`.
+ *
+ * Admin-only — re-checks the role inside the transaction to close the
+ * TOCTOU between the outer guard and the destructive write. SELECT FOR
+ * UPDATE ordered by id serializes concurrent A→B / B→A attempts so we
+ * never create a merge cycle.
+ */
+export async function mergeObject(
+  db: Db,
+  scope: TeamScope,
+  input: { winnerId: string; loserId: string },
+): Promise<void> {
+  await scope.requireMembership('admin');
+  if (!UUID_RE.test(input.winnerId) || !UUID_RE.test(input.loserId)) {
+    throw new Error('Invalid entity id');
+  }
+  if (input.winnerId === input.loserId) {
+    throw new Error('Cannot merge an object into itself');
+  }
+
+  await db.transaction(async (tx) => {
+    // Re-check admin role inside the tx so a role revocation between the
+    // outer guard and the destructive write closes the TOCTOU window.
+    const role = await scope.requireMembership('admin');
+    if (role !== 'admin' && role !== 'owner') throw new Error('Admin role required');
+
+    const rows = await tx
+      .select({
+        id: entities.id,
+        canonicalName: entities.canonicalName,
+        aliases: entities.aliases,
+        mergedIntoId: entities.mergedIntoId,
+      })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          inArray(entities.id, [input.winnerId, input.loserId]),
+        ),
+      )
+      .orderBy(asc(entities.id))
+      .for('update');
+    const winner = rows.find((r) => r.id === input.winnerId);
+    const loser = rows.find((r) => r.id === input.loserId);
+    if (!winner || !loser) throw new Error('Object not found');
+    if (winner.mergedIntoId || loser.mergedIntoId) {
+      throw new Error('One of these objects has already been merged');
+    }
+
+    // Move fact_entities to the winner. The (fact_id, entity_id, role)
+    // composite PK can collide when the winner is already referenced
+    // from the same fact in the same role — skip those rows in the
+    // UPDATE and drop them with the trailing DELETE.
+    await tx.execute(sql`
+      UPDATE ${factEntities} AS fe
+      SET entity_id = ${input.winnerId}::uuid
+      WHERE fe.entity_id = ${input.loserId}::uuid
+        AND NOT EXISTS (
+          SELECT 1 FROM ${factEntities} fe2
+          WHERE fe2.fact_id = fe.fact_id
+            AND fe2.entity_id = ${input.winnerId}::uuid
+            AND fe2.role = fe.role
+        )
+    `);
+    await tx.delete(factEntities).where(eq(factEntities.entityId, input.loserId));
+
+    const existingAliases = Array.isArray(winner.aliases)
+      ? (winner.aliases as unknown[]).filter((v): v is string => typeof v === 'string')
+      : [];
+    const incomingAliases = Array.isArray(loser.aliases)
+      ? (loser.aliases as unknown[]).filter((v): v is string => typeof v === 'string')
+      : [];
+    const candidate = [loser.canonicalName, ...incomingAliases];
+    const merged = [...existingAliases];
+    for (const a of candidate) {
+      if (!merged.some((e) => e.toLowerCase() === a.toLowerCase())) merged.push(a);
+    }
+
+    await tx
+      .update(entities)
+      .set({ aliases: merged, updatedAt: new Date() })
+      .where(eq(entities.id, input.winnerId));
+    await tx
+      .update(entities)
+      .set({ mergedIntoId: input.winnerId, updatedAt: new Date() })
+      .where(eq(entities.id, input.loserId));
+  });
+}
+
+/**
+ * Search candidate merge targets by case-insensitive canonical name.
+ * Scoped to the active team and excludes already-merged rows; the
+ * caller passes its own id as `excludeId` so the source object can't
+ * pick itself.
+ */
+export async function searchObjects(
+  db: Db,
+  scope: TeamScope,
+  input: { query: string; excludeId?: string; limit?: number },
+): Promise<{ id: string; canonicalName: string; type: ObjectType }[]> {
+  await scope.requireMembership();
+  const q = input.query.trim().toLowerCase();
+  if (q.length === 0) return [];
+  const limit = Math.min(Math.max(input.limit ?? 8, 1), 20);
+  const excludeOk = input.excludeId && UUID_RE.test(input.excludeId);
+  // `\` escapes the LIKE metacharacters so a user typing "50%" doesn't
+  // get a wildcard match.
+  const pattern = `%${q.replace(/[%_\\]/g, '\\$&')}%`;
+  const rows = await db
+    .select({
+      id: entities.id,
+      canonicalName: entities.canonicalName,
+      type: entities.type,
+    })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, scope.teamId),
+        isNull(entities.mergedIntoId),
+        excludeOk ? sql`${entities.id} <> ${input.excludeId}::uuid` : sql`true`,
+        sql`lower(${entities.canonicalName}) LIKE ${pattern} ESCAPE '\\'`,
+      ),
+    )
+    .orderBy(asc(entities.canonicalName))
+    .limit(limit);
+  return rows;
+}
+
+export async function addRelationship(
+  db: Db,
+  scope: TeamScope,
+  input: {
+    fromEntityId: string;
+    toEntityId: string;
+    kind: 'parent' | 'child' | 'related' | 'blocks' | 'blocked_by' | 'duplicate_of' | 'linked';
+    actorUserId: string | null;
+    // Optional so existing user-driven callers (server actions) keep working
+    // without passing an actor. Agent tools that call this helper should pass
+    // `{ kind: 'agent', userId: null }` so the audit row attributes the link
+    // to the agent, not a user.
+    actor?: UpdateActor;
+  },
+): Promise<{ id: string } | null> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(input.fromEntityId) || !UUID_RE.test(input.toEntityId)) {
+    throw new Error('Invalid entity id');
+  }
+  if (input.fromEntityId === input.toEntityId) {
+    throw new Error('Cannot link an object to itself');
+  }
+
+  return db.transaction(async (tx) => {
+    // Both endpoints must belong to this team. Re-select to validate.
+    const ends = await tx
+      .select({ id: entities.id, canonicalName: entities.canonicalName, type: entities.type })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          inArray(entities.id, [input.fromEntityId, input.toEntityId]),
+          isNull(entities.mergedIntoId),
+        ),
+      );
+    if (ends.length !== 2) throw new Error('Both objects must belong to this team');
+
+    const inserted = await tx
+      .insert(entityRelationships)
+      .values({
+        teamId: scope.teamId,
+        fromEntityId: input.fromEntityId,
+        toEntityId: input.toEntityId,
+        kind: input.kind,
+        createdBy: input.actorUserId,
+      })
+      .onConflictDoNothing()
+      .returning({ id: entityRelationships.id });
+    const row = inserted[0] ?? null;
+    // onConflictDoNothing returns nothing on a duplicate; skip audit writes
+    // in that case — the relationship already existed and the prior insert
+    // logged it. Mirrors the email-event dedup path.
+    if (!row) return null;
+
+    const fromEnt = ends.find((e) => e.id === input.fromEntityId);
+    const toEnt = ends.find((e) => e.id === input.toEntityId);
+    const summary = `Linked ${fromEnt?.canonicalName ?? input.fromEntityId} → ${toEnt?.canonicalName ?? input.toEntityId} (${input.kind})`;
+
+    const ev = await tx
+      .insert(rawEvents)
+      .values({
+        teamId: scope.teamId,
+        authorUserId: input.actorUserId,
+        source: 'system',
+        contentText: summary,
+        occurredAt: new Date(),
+        visibility: 'team',
+        sourceMetadata: {
+          kind: 'relationship_create',
+          relationship_id: row.id,
+          from_entity_id: input.fromEntityId,
+          to_entity_id: input.toEntityId,
+          relationship_kind: input.kind,
+        },
+      })
+      .returning({ id: rawEvents.id });
+
+    // Write one object_change row per endpoint so both object pages surface
+    // the link in their "Recent changes" pane. Newer-first sorts naturally.
+    await tx.insert(objectChanges).values([
+      {
+        teamId: scope.teamId,
+        entityId: input.fromEntityId,
+        actorUserId: input.actor?.userId ?? input.actorUserId,
+        actorKind: input.actor?.kind ?? 'user',
+        status: 'applied',
+        field: '__relationship_create__',
+        previousValue: null,
+        newValue: { relationship_id: row.id, to: input.toEntityId, kind: input.kind },
+        sourceEventId: ev[0]?.id ?? null,
+      },
+      {
+        teamId: scope.teamId,
+        entityId: input.toEntityId,
+        actorUserId: input.actor?.userId ?? input.actorUserId,
+        actorKind: input.actor?.kind ?? 'user',
+        status: 'applied',
+        field: '__relationship_create__',
+        previousValue: null,
+        newValue: { relationship_id: row.id, from: input.fromEntityId, kind: input.kind },
+        sourceEventId: ev[0]?.id ?? null,
+      },
+    ]);
+
+    return row;
+  });
+}
+
+export async function removeRelationship(
+  db: Db,
+  scope: TeamScope,
+  relationshipId: string,
+  actor: UpdateActor = { kind: 'user', userId: null },
+): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(relationshipId)) return false;
+
+  return db.transaction(async (tx) => {
+    // Capture endpoints + kind before delete so the audit row has full
+    // context. SELECT FOR UPDATE pins the row against a concurrent delete
+    // (which would otherwise turn this into a no-op silently).
+    const existing = await tx
+      .select()
+      .from(entityRelationships)
+      .where(
+        and(
+          eq(entityRelationships.id, relationshipId),
+          eq(entityRelationships.teamId, scope.teamId),
+        ),
+      )
+      .for('update')
+      .limit(1);
+    const rel = existing[0];
+    if (!rel) return false;
+
+    await tx.delete(entityRelationships).where(eq(entityRelationships.id, relationshipId));
+
+    const ev = await tx
+      .insert(rawEvents)
+      .values({
+        teamId: scope.teamId,
+        authorUserId: actor.userId,
+        source: 'system',
+        contentText: `Removed link (${rel.kind})`,
+        occurredAt: new Date(),
+        visibility: 'team',
+        sourceMetadata: {
+          kind: 'relationship_delete',
+          relationship_id: rel.id,
+          from_entity_id: rel.fromEntityId,
+          to_entity_id: rel.toEntityId,
+          relationship_kind: rel.kind,
+        },
+      })
+      .returning({ id: rawEvents.id });
+
+    await tx.insert(objectChanges).values([
+      {
+        teamId: scope.teamId,
+        entityId: rel.fromEntityId,
+        actorUserId: actor.userId,
+        actorKind: actor.kind,
+        status: 'applied',
+        field: '__relationship_delete__',
+        previousValue: { relationship_id: rel.id, to: rel.toEntityId, kind: rel.kind },
+        newValue: null,
+        sourceEventId: ev[0]?.id ?? null,
+      },
+      {
+        teamId: scope.teamId,
+        entityId: rel.toEntityId,
+        actorUserId: actor.userId,
+        actorKind: actor.kind,
+        status: 'applied',
+        field: '__relationship_delete__',
+        previousValue: { relationship_id: rel.id, from: rel.fromEntityId, kind: rel.kind },
+        newValue: null,
+        sourceEventId: ev[0]?.id ?? null,
+      },
+    ]);
+    return true;
+  });
+}
+
+/** Notes are mutable; every CRUD writes raw_events + object_changes for audit. */
+export async function createNote(
+  db: Db,
+  scope: TeamScope,
+  input: { entityId: string; body: string; authorUserId: string },
+): Promise<{ id: string }> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(input.entityId)) throw new Error('Invalid entity id');
+  const body = input.body.trim();
+  if (!body) throw new Error('Note body cannot be empty');
+
+  return db.transaction(async (tx) => {
+    // Verify entity belongs to team before writing the note.
+    const ent = await tx
+      .select({ id: entities.id, canonicalName: entities.canonicalName, type: entities.type })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.id, input.entityId),
+          eq(entities.teamId, scope.teamId),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .limit(1);
+    if (!ent[0]) throw new Error('Object not found');
+
+    const noteRows = await tx
+      .insert(objectNotes)
+      .values({
+        teamId: scope.teamId,
+        entityId: input.entityId,
+        authorUserId: input.authorUserId,
+        body,
+      })
+      .returning({ id: objectNotes.id });
+    const noteId = noteRows[0]?.id;
+    if (!noteId) throw new Error('Failed to insert note');
+
+    const ev = await tx
+      .insert(rawEvents)
+      .values({
+        teamId: scope.teamId,
+        authorUserId: input.authorUserId,
+        source: 'system',
+        contentText: `Note on ${ent[0].type} "${ent[0].canonicalName}": ${body}`,
+        occurredAt: new Date(),
+        visibility: 'team',
+        sourceMetadata: {
+          kind: 'object_note_create',
+          entity_id: input.entityId,
+          note_id: noteId,
+        },
+      })
+      .returning({ id: rawEvents.id });
+    await tx.insert(objectChanges).values({
+      teamId: scope.teamId,
+      entityId: input.entityId,
+      actorUserId: input.authorUserId,
+      actorKind: 'user',
+      status: 'applied',
+      field: '__note_create__',
+      previousValue: null,
+      newValue: { note_id: noteId, body },
+      sourceEventId: ev[0]?.id ?? null,
+    });
+
+    return { id: noteId };
+  });
+}
+
+export async function updateNote(
+  db: Db,
+  scope: TeamScope,
+  input: { noteId: string; body: string; actorUserId: string },
+): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(input.noteId)) return false;
+  const body = input.body.trim();
+  if (!body) throw new Error('Note body cannot be empty');
+
+  return db.transaction(async (tx) => {
+    // Authors-only edit. The UI hides the Edit button when authorUserId
+    // doesn't match the viewer, but the action is also reachable by direct
+    // POST — without this guard, any team member could rewrite anyone
+    // else's notes. Returning false (not throw) so a hostile actor can't
+    // probe note-id existence by error class.
+    const existing = await tx
+      .select()
+      .from(objectNotes)
+      .where(
+        and(
+          eq(objectNotes.id, input.noteId),
+          eq(objectNotes.teamId, scope.teamId),
+          eq(objectNotes.authorUserId, input.actorUserId),
+          isNull(objectNotes.deletedAt),
+        ),
+      )
+      .limit(1);
+    const note = existing[0];
+    if (!note) return false;
+    if (note.body === body) return true;
+
+    await tx
+      .update(objectNotes)
+      .set({ body, updatedAt: new Date() })
+      .where(eq(objectNotes.id, input.noteId));
+
+    const ev = await tx
+      .insert(rawEvents)
+      .values({
+        teamId: scope.teamId,
+        authorUserId: input.actorUserId,
+        source: 'system',
+        contentText: `Note edited: ${body}`,
+        occurredAt: new Date(),
+        visibility: 'team',
+        sourceMetadata: {
+          kind: 'object_note_update',
+          entity_id: note.entityId,
+          note_id: note.id,
+        },
+      })
+      .returning({ id: rawEvents.id });
+    await tx.insert(objectChanges).values({
+      teamId: scope.teamId,
+      entityId: note.entityId,
+      actorUserId: input.actorUserId,
+      actorKind: 'user',
+      status: 'applied',
+      field: '__note_update__',
+      previousValue: { note_id: note.id, body: note.body },
+      newValue: { note_id: note.id, body },
+      sourceEventId: ev[0]?.id ?? null,
+    });
+    return true;
+  });
+}
+
+export async function deleteNote(
+  db: Db,
+  scope: TeamScope,
+  input: { noteId: string; actorUserId: string },
+): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(input.noteId)) return false;
+
+  return db.transaction(async (tx) => {
+    // Authors-only delete. Same threat model as updateNote — UI hides the
+    // button for non-authors, but the action is reachable by direct POST.
+    const existing = await tx
+      .select()
+      .from(objectNotes)
+      .where(
+        and(
+          eq(objectNotes.id, input.noteId),
+          eq(objectNotes.teamId, scope.teamId),
+          eq(objectNotes.authorUserId, input.actorUserId),
+          isNull(objectNotes.deletedAt),
+        ),
+      )
+      .limit(1);
+    const note = existing[0];
+    if (!note) return false;
+
+    await tx
+      .update(objectNotes)
+      .set({ deletedAt: new Date() })
+      .where(eq(objectNotes.id, input.noteId));
+
+    const ev = await tx
+      .insert(rawEvents)
+      .values({
+        teamId: scope.teamId,
+        authorUserId: input.actorUserId,
+        source: 'system',
+        contentText: `Note deleted`,
+        occurredAt: new Date(),
+        visibility: 'team',
+        sourceMetadata: {
+          kind: 'object_note_delete',
+          entity_id: note.entityId,
+          note_id: note.id,
+        },
+      })
+      .returning({ id: rawEvents.id });
+    await tx.insert(objectChanges).values({
+      teamId: scope.teamId,
+      entityId: note.entityId,
+      actorUserId: input.actorUserId,
+      actorKind: 'user',
+      status: 'applied',
+      field: '__note_delete__',
+      previousValue: { note_id: note.id, body: note.body },
+      newValue: null,
+      sourceEventId: ev[0]?.id ?? null,
+    });
+    return true;
+  });
+}
+
+export async function markVisited(db: Db, scope: TeamScope, entityId: string): Promise<void> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(entityId)) return;
+  await db
+    .insert(objectViews)
+    .values({
+      teamId: scope.teamId,
+      userId: scope.userId,
+      entityId,
+      lastVisitedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [objectViews.teamId, objectViews.userId, objectViews.entityId],
+      set: { lastVisitedAt: new Date() },
+    });
+}
+
+// ---------- Notifications ----------
+
+// Derive from the drizzle enum so a new notification_kind value added
+// in the schema can't drift past this union silently. `NOTIFICATION_KINDS`
+// is a runtime const re-export so this `notificationKind` import stays a
+// value use (eslint's consistent-type-imports doesn't recognise `typeof`
+// queries on imports as value usage).
+export const NOTIFICATION_KINDS = notificationKind.enumValues;
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
+
+export interface NotificationRow {
+  id: string;
+  kind: NotificationKind;
+  entityId: string | null;
+  objectChangeId: string | null;
+  summary: string;
+  payload: Record<string, unknown>;
+  createdAt: Date;
+  readAt: Date | null;
+}
+
+export async function listNotifications(
+  db: Db,
+  scope: TeamScope,
+  filter: { unreadOnly?: boolean; limit?: number } = {},
+): Promise<NotificationRow[]> {
+  await scope.requireMembership();
+  const conds = [eq(notifications.teamId, scope.teamId), eq(notifications.userId, scope.userId)];
+  if (filter.unreadOnly) conds.push(isNull(notifications.readAt));
+  // Unread-first, then newest. Matches the shape of
+  // `notifications_team_user_inbox_idx` (team_id, user_id, read_at,
+  // created_at) so the planner can satisfy the inbox query directly from
+  // the index without re-sorting. Postgres default for ASC is NULLS LAST,
+  // but we want unread (NULL read_at) at the TOP — hence the explicit
+  // NULLS FIRST.
+  const rows = await db
+    .select()
+    .from(notifications)
+    .where(and(...conds))
+    .orderBy(sql`${notifications.readAt} ASC NULLS FIRST`, desc(notifications.createdAt))
+    .limit(Math.min(Math.max(filter.limit ?? 100, 1), 500));
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    entityId: r.entityId,
+    objectChangeId: r.objectChangeId,
+    summary: r.summary,
+    payload: (r.payload ?? {}) as Record<string, unknown>,
+    createdAt: r.createdAt,
+    readAt: r.readAt,
+  }));
+}
+
+export async function unreadNotificationCount(db: Db, scope: TeamScope): Promise<number> {
+  await scope.requireMembership();
+  const rows = await db
+    .select({ c: sql<number>`COUNT(*)::int` })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.teamId, scope.teamId),
+        eq(notifications.userId, scope.userId),
+        isNull(notifications.readAt),
+      ),
+    );
+  return rows[0]?.c ?? 0;
+}
+
+export async function markNotificationRead(
+  db: Db,
+  scope: TeamScope,
+  notificationId: string,
+): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(notificationId)) return false;
+  const result = await db
+    .update(notifications)
+    .set({ readAt: new Date() })
+    .where(
+      and(
+        eq(notifications.id, notificationId),
+        eq(notifications.teamId, scope.teamId),
+        eq(notifications.userId, scope.userId),
+        isNull(notifications.readAt),
+      ),
+    )
+    .returning({ id: notifications.id });
+  return result.length > 0;
+}
+
+export async function markAllNotificationsRead(db: Db, scope: TeamScope): Promise<number> {
+  await scope.requireMembership();
+  const result = await db
+    .update(notifications)
+    .set({ readAt: new Date() })
+    .where(
+      and(
+        eq(notifications.teamId, scope.teamId),
+        eq(notifications.userId, scope.userId),
+        isNull(notifications.readAt),
+      ),
+    )
+    .returning({ id: notifications.id });
+  return result.length;
+}
+
+// ---------- Chat sessions ----------
+
+export interface ChatSessionRow {
+  id: string;
+  title: string | null;
+  pinnedEntityId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ChatMessageRow {
+  id: string;
+  role: 'user' | 'assistant' | 'tool' | 'system';
+  authorUserId: string | null;
+  content: unknown;
+  createdAt: Date;
+}
+
+export async function listChatSessions(
+  db: Db,
+  scope: TeamScope,
+  filter: { pinnedEntityId?: string; limit?: number; includeArchived?: boolean } = {},
+): Promise<ChatSessionRow[]> {
+  await scope.requireMembership();
+  // Chat sessions are private to their creator within a team. Without
+  // the createdBy filter, every team member would see every other
+  // member's AI conversations in the sidebar and be able to read/write
+  // them. `createdBy` is set to `scope.userId` at session creation
+  // (see `createChatSession`) — every chat helper below mirrors this
+  // (createdBy + teamId) pair.
+  const conds = [eq(chatSessions.teamId, scope.teamId), eq(chatSessions.createdBy, scope.userId)];
+  if (!filter.includeArchived) conds.push(isNull(chatSessions.archivedAt));
+  if (filter.pinnedEntityId && UUID_RE.test(filter.pinnedEntityId)) {
+    conds.push(eq(chatSessions.pinnedEntityId, filter.pinnedEntityId));
+  }
+  const rows = await db
+    .select()
+    .from(chatSessions)
+    .where(and(...conds))
+    .orderBy(desc(chatSessions.updatedAt))
+    .limit(Math.min(Math.max(filter.limit ?? 50, 1), 200));
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    pinnedEntityId: r.pinnedEntityId,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  }));
+}
+
+export async function createChatSession(
+  db: Db,
+  scope: TeamScope,
+  input: { title?: string | null; pinnedEntityId?: string | null } = {},
+): Promise<ChatSessionRow> {
+  await scope.requireMembership();
+  // If pinnedEntityId is given, verify team membership of that object.
+  if (input.pinnedEntityId) {
+    if (!UUID_RE.test(input.pinnedEntityId)) throw new Error('Invalid pinnedEntityId');
+    const ent = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(and(eq(entities.id, input.pinnedEntityId), eq(entities.teamId, scope.teamId)))
+      .limit(1);
+    if (!ent[0]) throw new Error('Pinned object not in this team');
+  }
+  const rows = await db
+    .insert(chatSessions)
+    .values({
+      teamId: scope.teamId,
+      createdBy: scope.userId,
+      title: input.title ?? null,
+      pinnedEntityId: input.pinnedEntityId ?? null,
+    })
+    .returning();
+  const r = rows[0];
+  if (!r) throw new Error('Failed to create chat session');
+  return {
+    id: r.id,
+    title: r.title,
+    pinnedEntityId: r.pinnedEntityId,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
+}
+
+/**
+ * Lightweight existence + team-scope check. Use this instead of
+ * `getChatSession` when you only need to validate that a session id is
+ * legal for the current team — `getChatSession` also loads every message,
+ * which grows unbounded over the life of a conversation and turns into
+ * wasted bandwidth on every /api/chat turn.
+ */
+export async function chatSessionExists(
+  db: Db,
+  scope: TeamScope,
+  sessionId: string,
+): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(sessionId)) return false;
+  // Archived sessions must not accept new persisted turns. Without this
+  // filter, `/api/chat` would happily route appendChatMessages into a
+  // session the user has archived from the sidebar — confusing because
+  // the chat appears "gone" from the UI but still grows in the DB.
+  const rows = await db
+    .select({ id: chatSessions.id })
+    .from(chatSessions)
+    .where(
+      and(
+        eq(chatSessions.id, sessionId),
+        eq(chatSessions.teamId, scope.teamId),
+        // See listChatSessions — sessions are per-user within a team.
+        eq(chatSessions.createdBy, scope.userId),
+        isNull(chatSessions.archivedAt),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+export async function getChatSession(
+  db: Db,
+  scope: TeamScope,
+  sessionId: string,
+): Promise<{ session: ChatSessionRow; messages: ChatMessageRow[] } | null> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(sessionId)) return null;
+  // Archived sessions are also hidden from hydration. The chat page
+  // would otherwise render an archived transcript that the route then
+  // refuses to write to (chatSessionExists + appendChatMessages both
+  // filter archived), so the user sees old messages but every new turn
+  // returns session_not_found. Returning null here makes the page
+  // resolve activeSessionId to null and behave like a fresh chat.
+  const sessionRows = await db
+    .select()
+    .from(chatSessions)
+    .where(
+      and(
+        eq(chatSessions.id, sessionId),
+        eq(chatSessions.teamId, scope.teamId),
+        // See listChatSessions — sessions are per-user within a team.
+        eq(chatSessions.createdBy, scope.userId),
+        isNull(chatSessions.archivedAt),
+      ),
+    )
+    .limit(1);
+  const s = sessionRows[0];
+  if (!s) return null;
+  const msgs = await db
+    .select()
+    .from(chatMessages)
+    .where(and(eq(chatMessages.sessionId, sessionId), eq(chatMessages.teamId, scope.teamId)))
+    .orderBy(chatMessages.createdAt);
+  return {
+    session: {
+      id: s.id,
+      title: s.title,
+      pinnedEntityId: s.pinnedEntityId,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+    },
+    messages: msgs.map((m) => ({
+      id: m.id,
+      role: m.role,
+      authorUserId: m.authorUserId,
+      content: m.content,
+      createdAt: m.createdAt,
+    })),
+  };
+}
+
+export interface AppendChatMessageInput {
+  role: 'user' | 'assistant' | 'tool' | 'system';
+  content: unknown;
+  authorUserId?: string | null;
+}
+
+export async function appendChatMessages(
+  db: Db,
+  scope: TeamScope,
+  sessionId: string,
+  messages: AppendChatMessageInput[],
+): Promise<void> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(sessionId)) throw new Error('Invalid sessionId');
+  if (messages.length === 0) return;
+  await db.transaction(async (tx) => {
+    // Reject archived sessions: belt-and-braces with `chatSessionExists`
+    // in the route. A session archived between the route's existence
+    // check and this append would otherwise grow under the user's nose.
+    const sessionRows = await tx
+      .select({ id: chatSessions.id })
+      .from(chatSessions)
+      .where(
+        and(
+          eq(chatSessions.id, sessionId),
+          eq(chatSessions.teamId, scope.teamId),
+          // See listChatSessions — sessions are per-user within a team.
+          // Without this, /api/chat could write a teammate's message into
+          // someone else's transcript.
+          eq(chatSessions.createdBy, scope.userId),
+          isNull(chatSessions.archivedAt),
+        ),
+      )
+      .limit(1);
+    if (!sessionRows[0]) throw new Error('Session not found');
+    await tx.insert(chatMessages).values(
+      messages.map((m) => ({
+        teamId: scope.teamId,
+        sessionId,
+        role: m.role,
+        authorUserId: m.authorUserId ?? null,
+        content: m.content as never,
+      })),
+    );
+    await tx
+      .update(chatSessions)
+      .set({ updatedAt: new Date() })
+      .where(eq(chatSessions.id, sessionId));
+  });
+}
+
+export async function setChatSessionTitle(
+  db: Db,
+  scope: TeamScope,
+  sessionId: string,
+  title: string,
+): Promise<void> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(sessionId)) return;
+  await db
+    .update(chatSessions)
+    .set({ title, updatedAt: new Date() })
+    .where(
+      and(
+        eq(chatSessions.id, sessionId),
+        eq(chatSessions.teamId, scope.teamId),
+        // See listChatSessions — sessions are per-user within a team.
+        eq(chatSessions.createdBy, scope.userId),
+      ),
+    );
+}
+
+export async function linkChatSessionToObject(
+  db: Db,
+  scope: TeamScope,
+  sessionId: string,
+  entityId: string | null,
+): Promise<void> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(sessionId)) return;
+  if (entityId !== null && !UUID_RE.test(entityId)) return;
+  // Verify the entity belongs to this team before pinning. The WHERE on
+  // chat_sessions only checks the session's team; without this re-select a
+  // caller could pin a session to another team's entity UUID, and the
+  // session page would render an object id that resolves to nothing (or
+  // worse — to that entity, if a future tool walks the pinned id without
+  // its own team check). Mirror the guard from `createChatSession`.
+  if (entityId !== null) {
+    const ent = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(and(eq(entities.id, entityId), eq(entities.teamId, scope.teamId)))
+      .limit(1);
+    if (!ent[0]) throw new Error('Pinned object not in this team');
+  }
+  await db
+    .update(chatSessions)
+    .set({ pinnedEntityId: entityId, updatedAt: new Date() })
+    .where(
+      and(
+        eq(chatSessions.id, sessionId),
+        eq(chatSessions.teamId, scope.teamId),
+        // See listChatSessions — sessions are per-user within a team.
+        eq(chatSessions.createdBy, scope.userId),
+      ),
+    );
+}
+
+export async function archiveChatSession(
+  db: Db,
+  scope: TeamScope,
+  sessionId: string,
+): Promise<void> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(sessionId)) return;
+  await db
+    .update(chatSessions)
+    .set({ archivedAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(chatSessions.id, sessionId),
+        eq(chatSessions.teamId, scope.teamId),
+        // See listChatSessions — sessions are per-user within a team.
+        eq(chatSessions.createdBy, scope.userId),
+      ),
+    );
+}
+
+// ---------- Board views ----------
+
+export interface BoardViewRow {
+  id: string;
+  name: string;
+  kind: 'kanban' | 'table' | 'list';
+  filter: Record<string, unknown>;
+  groupBy: string | null;
+  sort: Record<string, unknown>;
+  isShared: boolean;
+  createdBy: string | null;
+  updatedAt: Date;
+}
+
+export async function listBoardViews(db: Db, scope: TeamScope): Promise<BoardViewRow[]> {
+  await scope.requireMembership();
+  const rows = await db
+    .select()
+    .from(boardViews)
+    .where(eq(boardViews.teamId, scope.teamId))
+    .orderBy(desc(boardViews.updatedAt));
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    kind: r.kind,
+    filter: (r.filter ?? {}) as Record<string, unknown>,
+    groupBy: r.groupBy,
+    sort: (r.sort ?? {}) as Record<string, unknown>,
+    isShared: r.isShared,
+    createdBy: r.createdBy,
+    updatedAt: r.updatedAt,
+  }));
+}
+
+export async function getBoardView(
+  db: Db,
+  scope: TeamScope,
+  id: string,
+): Promise<BoardViewRow | null> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(id)) return null;
+  const rows = await db
+    .select()
+    .from(boardViews)
+    .where(and(eq(boardViews.id, id), eq(boardViews.teamId, scope.teamId)))
+    .limit(1);
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    id: r.id,
+    name: r.name,
+    kind: r.kind,
+    filter: (r.filter ?? {}) as Record<string, unknown>,
+    groupBy: r.groupBy,
+    sort: (r.sort ?? {}) as Record<string, unknown>,
+    isShared: r.isShared,
+    createdBy: r.createdBy,
+    updatedAt: r.updatedAt,
+  };
+}
+
+export async function saveBoardView(
+  db: Db,
+  scope: TeamScope,
+  input: {
+    id?: string;
+    name: string;
+    kind: 'kanban' | 'table' | 'list';
+    filter: Record<string, unknown>;
+    groupBy?: string | null;
+    sort?: Record<string, unknown>;
+    isShared?: boolean;
+  },
+): Promise<BoardViewRow> {
+  await scope.requireMembership();
+  const name = input.name.trim();
+  if (!name) throw new Error('Board name required');
+
+  if (input.id) {
+    if (!UUID_RE.test(input.id)) throw new Error('Invalid id');
+    const rows = await db
+      .update(boardViews)
+      .set({
+        name,
+        kind: input.kind,
+        filter: input.filter,
+        groupBy: input.groupBy ?? null,
+        sort: input.sort ?? {},
+        isShared: input.isShared ?? true,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(boardViews.id, input.id), eq(boardViews.teamId, scope.teamId)))
+      .returning();
+    const r = rows[0];
+    if (!r) throw new Error('Board not found');
+    return {
+      id: r.id,
+      name: r.name,
+      kind: r.kind,
+      filter: (r.filter ?? {}) as Record<string, unknown>,
+      groupBy: r.groupBy,
+      sort: (r.sort ?? {}) as Record<string, unknown>,
+      isShared: r.isShared,
+      createdBy: r.createdBy,
+      updatedAt: r.updatedAt,
+    };
+  }
+
+  const rows = await db
+    .insert(boardViews)
+    .values({
+      teamId: scope.teamId,
+      createdBy: scope.userId,
+      name,
+      kind: input.kind,
+      filter: input.filter,
+      groupBy: input.groupBy ?? null,
+      sort: input.sort ?? {},
+      isShared: input.isShared ?? true,
+    })
+    .returning();
+  const r = rows[0];
+  if (!r) throw new Error('Failed to insert board');
+  return {
+    id: r.id,
+    name: r.name,
+    kind: r.kind,
+    filter: (r.filter ?? {}) as Record<string, unknown>,
+    groupBy: r.groupBy,
+    sort: (r.sort ?? {}) as Record<string, unknown>,
+    isShared: r.isShared,
+    createdBy: r.createdBy,
+    updatedAt: r.updatedAt,
+  };
+}
+
+// ---------- Object changes (queries + agent suggestions + review) ----------
+
+export interface ObjectChangeRow {
+  id: string;
+  entityId: string;
+  entityName: string;
+  entityType: ObjectType;
+  field: string;
+  actorKind: ActorKind;
+  actorUserId: string | null;
+  previousValue: unknown;
+  newValue: unknown;
+  status: 'applied' | 'suggested' | 'rejected';
+  note: string | null;
+  changedAt: Date;
+}
+
+export async function listObjectChanges(
+  db: Db,
+  scope: TeamScope,
+  filter: {
+    entityId?: string;
+    status?: 'applied' | 'suggested' | 'rejected';
+    since?: Date;
+    limit?: number;
+  } = {},
+): Promise<ObjectChangeRow[]> {
+  await scope.requireMembership();
+  const conds = [eq(objectChanges.teamId, scope.teamId)];
+  if (filter.entityId && UUID_RE.test(filter.entityId)) {
+    conds.push(eq(objectChanges.entityId, filter.entityId));
+  }
+  if (filter.status) conds.push(eq(objectChanges.status, filter.status));
+  if (filter.since) conds.push(gte(objectChanges.changedAt, filter.since));
+  const rows = await db
+    .select({
+      id: objectChanges.id,
+      entityId: objectChanges.entityId,
+      entityName: entities.canonicalName,
+      entityType: entities.type,
+      field: objectChanges.field,
+      actorKind: objectChanges.actorKind,
+      actorUserId: objectChanges.actorUserId,
+      previousValue: objectChanges.previousValue,
+      newValue: objectChanges.newValue,
+      status: objectChanges.status,
+      note: objectChanges.note,
+      changedAt: objectChanges.changedAt,
+    })
+    .from(objectChanges)
+    .innerJoin(entities, eq(objectChanges.entityId, entities.id))
+    .where(and(...conds))
+    .orderBy(desc(objectChanges.changedAt))
+    .limit(Math.min(Math.max(filter.limit ?? 50, 1), 200));
+  return rows;
+}
+
+export interface ProposeObjectChangeInput {
+  entityId: string;
+  field: 'status' | 'stage' | 'priority' | 'ownerUserId' | 'assigneeUserId' | 'dueAt';
+  newValue: unknown;
+  note?: string | null;
+  actorUserId?: string | null;
+}
+
+/**
+ * Validate (field, value) against the same shape `updateObject` enforces
+ * when the suggestion is later accepted. Without this check, an LLM
+ * could call `propose_object_change({field:'priority', newValue:'banana'})`
+ * and the row sits in `object_changes` until a human clicks Accept —
+ * at which point `acceptObjectChange` would try `new Date('banana')`
+ * (Invalid Date) or write a string into a smallint column (22P02),
+ * surfacing as a generic 500 from the accept button with no hint that
+ * the suggestion was malformed. Reject at propose time so the agent
+ * gets immediate feedback and the inbox never shows un-acceptable rows.
+ *
+ * Returns the normalized value so the stored jsonb matches what
+ * `updateObject` will eventually write (e.g., null instead of empty
+ * string for nullable fields, ISO datetime instead of Date object).
+ */
+function normalizeProposedValue(
+  field: ProposeObjectChangeInput['field'],
+  newValue: unknown,
+): unknown {
+  switch (field) {
+    case 'status': {
+      if (typeof newValue !== 'string') throw new Error('status must be a string');
+      const trimmed = newValue.trim();
+      if (!trimmed || trimmed.length > 40) throw new Error('status: 1-40 chars');
+      return trimmed;
+    }
+    case 'stage': {
+      if (newValue === null) return null;
+      if (typeof newValue !== 'string') throw new Error('stage must be a string or null');
+      const trimmed = newValue.trim();
+      if (trimmed.length > 40) throw new Error('stage: max 40 chars');
+      return trimmed === '' ? null : trimmed;
+    }
+    case 'priority': {
+      if (newValue === null) return null;
+      if (typeof newValue !== 'number' || !Number.isInteger(newValue)) {
+        throw new Error('priority must be an integer 1-4 or null');
+      }
+      if (newValue < 1 || newValue > 4) throw new Error('priority: 1-4');
+      return newValue;
+    }
+    case 'ownerUserId':
+    case 'assigneeUserId': {
+      if (newValue === null) return null;
+      if (typeof newValue !== 'string' || !UUID_RE.test(newValue)) {
+        throw new Error(`${field} must be a UUID or null`);
+      }
+      return newValue;
+    }
+    case 'dueAt': {
+      if (newValue === null) return null;
+      if (typeof newValue !== 'string') throw new Error('dueAt must be ISO datetime or null');
+      const d = new Date(newValue);
+      if (Number.isNaN(d.getTime())) throw new Error('dueAt: invalid date');
+      return d.toISOString();
+    }
+  }
+}
+
+/**
+ * Write a `suggested` row to object_changes without mutating the entity.
+ * Used by the agent's `propose_object_change` tool. A human reviews via the
+ * suggestion UI on the object page; `acceptObjectChange` applies it.
+ */
+export async function proposeObjectChange(
+  db: Db,
+  scope: TeamScope,
+  input: ProposeObjectChangeInput,
+): Promise<{ id: string }> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(input.entityId)) throw new Error('Invalid entity id');
+
+  // Validate value shape against the target field BEFORE writing. See
+  // `normalizeProposedValue` doc for why this matters — without it, the
+  // failure surfaces at human-accept time as a confusing 500.
+  const normalized = normalizeProposedValue(input.field, input.newValue);
+
+  // If the proposed value is a user reference, verify team membership so
+  // the agent can't seed a foreign user that later gets pushed through
+  // updateObject and leaks via notification fan-out.
+  if (
+    (input.field === 'ownerUserId' || input.field === 'assigneeUserId') &&
+    typeof normalized === 'string'
+  ) {
+    await scope.requireTeamMember(normalized);
+  }
+
+  return db.transaction(async (tx) => {
+    const entRows = await tx
+      .select()
+      .from(entities)
+      .where(
+        and(
+          eq(entities.id, input.entityId),
+          eq(entities.teamId, scope.teamId),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .limit(1);
+    const ent = entRows[0];
+    if (!ent) throw new Error('Object not found');
+
+    const previousValue = (ent as Record<string, unknown>)[input.field] ?? null;
+
+    const inserted = await tx
+      .insert(objectChanges)
+      .values({
+        teamId: scope.teamId,
+        entityId: input.entityId,
+        actorUserId: input.actorUserId ?? null,
+        actorKind: 'agent',
+        status: 'suggested',
+        field: input.field,
+        previousValue,
+        newValue: normalized,
+        note: input.note ?? null,
+      })
+      .returning({ id: objectChanges.id });
+    const changeId = inserted[0]?.id;
+    if (!changeId) throw new Error('Failed to record suggestion');
+
+    // Fan out to owner + assignee. Mirrors the recipient set in
+    // updateObject so assignees don't silently miss agent suggestions on
+    // objects they don't own. Dedup via Set: when owner == assignee they
+    // get one row, not two.
+    const recipients = new Set<string>();
+    if (ent.ownerUserId) recipients.add(ent.ownerUserId);
+    if (ent.assigneeUserId) recipients.add(ent.assigneeUserId);
+    if (recipients.size > 0) {
+      const summary = `Agent suggests ${input.field} → ${JSON.stringify(input.newValue)} on ${ent.canonicalName}`;
+      await tx.insert(notifications).values(
+        Array.from(recipients).map((uid) => ({
+          teamId: scope.teamId,
+          userId: uid,
+          kind: 'agent_suggestion' as const,
+          entityId: input.entityId,
+          objectChangeId: changeId,
+          summary,
+          payload: {
+            entity_id: input.entityId,
+            field: input.field,
+            new_value: input.newValue,
+          },
+        })),
+      );
+    }
+
+    return { id: changeId };
+  });
+}
+
+/**
+ * Accept a suggested change: apply it to the entity via `updateObject` so the
+ * full audit/notification path runs, then flip the suggestion row's status to
+ * `applied`. Returns false if the suggestion isn't in `suggested` state.
+ */
+export async function acceptObjectChange(
+  db: Db,
+  scope: TeamScope,
+  changeId: string,
+  actor: UpdateActor,
+): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(changeId)) return false;
+
+  const rows = await db
+    .select()
+    .from(objectChanges)
+    .where(
+      and(
+        eq(objectChanges.id, changeId),
+        eq(objectChanges.teamId, scope.teamId),
+        eq(objectChanges.status, 'suggested'),
+      ),
+    )
+    .limit(1);
+  const change = rows[0];
+  if (!change) return false;
+
+  // Build a patch object keyed by the suggestion's field. Two cases:
+  //
+  // 1. `__create__` — accepting an agent-suggested object (from
+  //    `suggest_task` and friends). The entity already exists with
+  //    `status='suggested'`; accepting flips it to a working status so
+  //    the object leaves the "needs review" state. We pick the default
+  //    by type so a suggested task lands in 'todo' (matches the task
+  //    status vocabulary) and other types land in 'open'.
+  //
+  // 2. A field-scoped suggestion (`status`/`stage`/...) from
+  //    `proposeObjectChange`. Restrict to the exact set the proposer
+  //    accepts so the agent can't sneak a canonicalName/aliases/metadata
+  //    rewrite through a hand-crafted row, and other structural markers
+  //    (`__relationship_create__`, `__note_update__`, ...) can never be
+  //    auto-applied.
+  const proposable: readonly (keyof ObjectPatch)[] = [
+    'status',
+    'stage',
+    'priority',
+    'ownerUserId',
+    'assigneeUserId',
+    'dueAt',
+  ];
+  const isCreate = change.field === '__create__';
+  if (!isCreate && !(proposable as readonly string[]).includes(change.field)) return false;
+
+  const patch: ObjectPatch = {};
+  if (isCreate) {
+    // Read the entity's current type so we pick the right default
+    // working status. Cheap one-row lookup keyed by id+team — the
+    // updateObject call below will re-fetch with FOR UPDATE.
+    const entRows = await db
+      .select({ type: entities.type })
+      .from(entities)
+      .where(and(eq(entities.id, change.entityId), eq(entities.teamId, scope.teamId)))
+      .limit(1);
+    const entType = entRows[0]?.type;
+    if (!entType) return false;
+    patch.status = entType === 'task' || entType === 'follow_up' ? 'todo' : 'open';
+  } else {
+    const value = change.newValue;
+    // `dueAt` round-trips through JSON as a string — rehydrate so the
+    // diff in updateObject doesn't compare Date to string and write a
+    // phantom change.
+    if (change.field === 'dueAt') {
+      patch.dueAt = value === null ? null : new Date(value as string);
+    } else {
+      (patch as Record<string, unknown>)[change.field] = value;
+    }
+  }
+
+  // Claim the suggestion FIRST with an atomic CAS on status='suggested',
+  // before mutating the entity. This is the only synchronization point
+  // between accept and reject — `Db` doesn't expose `PgTransaction` so we
+  // can't wrap updateObject in an outer transaction, and a post-mutation
+  // flip would race with a concurrent reject (the user wanted to reject,
+  // but the entity already got the suggested value applied — irreversible).
+  // Claim-then-apply means a concurrent reject loses cleanly (0 rows), and
+  // a failed updateObject can revert the claim so the user can retry.
+  const claimed = await db
+    .update(objectChanges)
+    .set({ status: 'applied' })
+    .where(and(eq(objectChanges.id, changeId), eq(objectChanges.status, 'suggested')))
+    .returning({ id: objectChanges.id });
+  if (claimed.length === 0) return false;
+
+  try {
+    await updateObject(db, scope, change.entityId, patch, actor);
+  } catch (err) {
+    // Restore the suggestion to `suggested` so the user can retry or
+    // reject. Only restore if it's still our `applied` claim — a manual
+    // status change in the meantime should win.
+    await db
+      .update(objectChanges)
+      .set({ status: 'suggested' })
+      .where(and(eq(objectChanges.id, changeId), eq(objectChanges.status, 'applied')));
+    throw err;
+  }
+  return true;
+}
+
+export async function rejectObjectChange(
+  db: Db,
+  scope: TeamScope,
+  changeId: string,
+): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(changeId)) return false;
+  const result = await db
+    .update(objectChanges)
+    .set({ status: 'rejected' })
+    .where(
+      and(
+        eq(objectChanges.id, changeId),
+        eq(objectChanges.teamId, scope.teamId),
+        eq(objectChanges.status, 'suggested'),
+      ),
+    )
+    .returning({ id: objectChanges.id });
+  return result.length > 0;
+}
+
+export async function deleteBoardView(db: Db, scope: TeamScope, id: string): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(id)) return false;
+  const rows = await db
+    .delete(boardViews)
+    .where(and(eq(boardViews.id, id), eq(boardViews.teamId, scope.teamId)))
+    .returning({ id: boardViews.id });
+  return rows.length > 0;
+}

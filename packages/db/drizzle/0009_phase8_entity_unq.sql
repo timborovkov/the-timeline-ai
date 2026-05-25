@@ -1,0 +1,18 @@
+-- No-op migration.
+--
+-- The original Phase 8 plan was to narrow this index's WHERE predicate
+-- so user-authored object types (task, follow_up, deal, ...) could
+-- repeat canonical names within a team. Every attempt was rejected by
+-- Railway's Postgres with SQLSTATE 42P17 ("functions in index
+-- expression must be marked IMMUTABLE"), regardless of how the
+-- predicate or `lower()` expression was qualified — six consecutive
+-- deploys failed with the same root cause.
+--
+-- The index that migration 0005 created already matches the current
+-- schema definition byte-for-byte. There is nothing to recreate. This
+-- file exists only to occupy slot 0009 in the journal so future
+-- migrations stay numbered sequentially, and so existing CI/CD
+-- environments that pre-fetched this filename don't 404.
+--
+-- Follow-up to revisit per-type uniqueness is tracked in todo.md.
+SELECT 1;

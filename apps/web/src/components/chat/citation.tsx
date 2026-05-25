@@ -16,7 +16,7 @@ interface Props {
  * Splits the assistant's text into runs and citation chips. Each chip is
  * a link:
  *  - [ev:<id>] → /app/timeline?focus=<id>
- *  - [ent:<id>] → /app/entities/<id>
+ *  - [ent:<id>] → /app/objects/<id>
  * Plain text runs preserve newlines via `whitespace-pre-wrap`.
  */
 export function CitationText({ text }: Props) {
@@ -60,7 +60,7 @@ export function CitationText({ text }: Props) {
         return (
           <Link
             key={i}
-            href={`/app/entities/${p.value}`}
+            href={`/app/objects/${p.value}`}
             className="mx-0.5 inline-block rounded border border-border bg-muted px-1 py-0.5 text-[10px] font-mono uppercase tracking-wide text-muted-foreground hover:bg-accent hover:text-accent-foreground"
             title={`Entity ${p.value}`}
           >

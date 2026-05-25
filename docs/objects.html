@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>The Timeline — Workspace objects</title>
+    <style>
+      :root {
+        --background: hsl(40 14% 97%);
+        --foreground: hsl(240 10% 8%);
+        --card: #fff;
+        --primary: hsl(30 90% 42%);
+        --muted: hsl(240 5% 95%);
+        --muted-foreground: hsl(240 4% 42%);
+        --border: hsl(240 6% 89%);
+        --radius: 0.75rem;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --background: hsl(240 10% 5%);
+          --foreground: hsl(40 14% 95%);
+          --card: hsl(240 8% 8%);
+          --muted: hsl(240 6% 14%);
+          --muted-foreground: hsl(240 5% 65%);
+          --border: hsl(240 6% 18%);
+          --primary: hsl(30 95% 55%);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        font-size: 16px;
+        line-height: 1.6;
+        background: var(--background);
+        color: var(--foreground);
+      }
+      .skip {
+        position: absolute;
+        left: -9999px;
+      }
+      .skip:focus {
+        left: 1rem;
+        top: 1rem;
+        background: var(--card);
+        padding: 0.5rem 1rem;
+        border-radius: var(--radius);
+        z-index: 10;
+      }
+      main {
+        max-width: 46rem;
+        margin: 0 auto;
+        padding: 3rem 1.5rem 6rem;
+      }
+      h1 {
+        font-size: 2rem;
+        line-height: 1.2;
+        margin: 0 0 0.5rem;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        font-size: 1.4rem;
+        margin: 2.5rem 0 0.75rem;
+        letter-spacing: -0.01em;
+        scroll-margin-top: 1rem;
+      }
+      h3 {
+        font-size: 1.1rem;
+        margin: 1.75rem 0 0.5rem;
+        scroll-margin-top: 1rem;
+      }
+      p {
+        margin: 0 0 1rem;
+      }
+      a {
+        color: var(--primary);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      a:hover {
+        text-decoration-thickness: 2px;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+        background: var(--muted);
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+      pre {
+        background: var(--muted);
+        padding: 1rem;
+        border-radius: var(--radius);
+        overflow-x: auto;
+        font-size: 0.875rem;
+        line-height: 1.5;
+      }
+      pre code {
+        background: none;
+        padding: 0;
+        font-size: inherit;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 1rem 0;
+        font-size: 0.92rem;
+        background: var(--card);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.6rem 0.75rem;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th {
+        font-weight: 600;
+        background: var(--muted);
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted-foreground);
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      ul,
+      ol {
+        padding-left: 1.5rem;
+        margin: 0 0 1rem;
+      }
+      li {
+        margin: 0.25rem 0;
+      }
+      hr {
+        border: 0;
+        border-top: 1px solid var(--border);
+        margin: 2rem 0;
+      }
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        align-items: center;
+        font-size: 0.85rem;
+        color: var(--muted-foreground);
+        padding: 0.75rem 0;
+        margin: 0 0 1rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .meta .kind {
+        display: inline-block;
+        padding: 0.15rem 0.55rem;
+        background: var(--muted);
+        border-radius: 999px;
+        color: var(--foreground);
+        font-weight: 500;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .tldr {
+        font-size: 1.05rem;
+        color: var(--muted-foreground);
+        margin: 0 0 1.5rem;
+      }
+      nav.toc {
+        background: var(--muted);
+        border-radius: var(--radius);
+        padding: 0.85rem 1.1rem;
+        margin: 0 0 2.25rem;
+        font-size: 0.92rem;
+      }
+      nav.toc strong {
+        display: block;
+        margin-bottom: 0.4rem;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted-foreground);
+        font-weight: 600;
+      }
+      nav.toc ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        columns: 2;
+        column-gap: 1.5rem;
+      }
+      nav.toc li {
+        margin: 0.2rem 0;
+        break-inside: avoid;
+      }
+      nav.toc a {
+        text-decoration: none;
+        color: var(--foreground);
+      }
+      nav.toc a:hover {
+        color: var(--primary);
+      }
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+        gap: 0.6rem;
+        margin: 0.75rem 0 1.25rem;
+      }
+      .stat {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 0.7rem 0.85rem;
+      }
+      .stat b {
+        display: block;
+        font-size: 1.15rem;
+        line-height: 1.2;
+      }
+      .stat span {
+        color: var(--muted-foreground);
+        font-size: 0.82rem;
+      }
+      .callout {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--primary);
+        border-radius: var(--radius);
+        padding: 0.85rem 1rem;
+        margin: 1rem 0;
+        font-size: 0.95rem;
+      }
+      .callout b {
+        color: var(--primary);
+      }
+      .pill {
+        display: inline-block;
+        font-size: 0.75rem;
+        padding: 0.1em 0.55em;
+        border-radius: 999px;
+        background: var(--muted);
+        color: var(--muted-foreground);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      @media (max-width: 640px) {
+        nav.toc ul {
+          columns: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <main id="main">
+      <h1>Workspace objects</h1>
+      <div class="meta">
+        <span class="kind">Architecture</span><span>Last updated 2026-05-22</span>
+      </div>
+      <p class="tldr">
+        Phase 8 turned <code>entities</code> from an extraction artifact into the workspace's
+        durable object model. Every deal, task, follow-up, decision, person, document, and incident
+        a team tracks lives in the same table, behind the same <code>withTeam</code> scope, with the
+        same agent tools, with one immutable audit trail.
+      </p>
+
+      <nav class="toc" aria-label="On this page">
+        <strong>On this page</strong>
+        <ul>
+          <li><a href="#what-changed">What changed</a></li>
+          <li><a href="#data-model">Data model</a></li>
+          <li><a href="#object-types">Object types</a></li>
+          <li><a href="#status-and-stage">Status, stage, priority, due</a></li>
+          <li><a href="#audit-trail">Audit trail</a></li>
+          <li><a href="#notifications">Notifications</a></li>
+          <li><a href="#since-last-visit">Since last visit</a></li>
+          <li><a href="#chat-sessions">Persisted chat sessions</a></li>
+          <li><a href="#helpers">Server-side helpers</a></li>
+          <li><a href="#agent-tools">Agent tools</a></li>
+          <li><a href="#routes">Web routes</a></li>
+          <li><a href="#shipped-followups">Phase 8 follow-ups (shipped)</a></li>
+        </ul>
+      </nav>
+
+      <h2 id="what-changed">What changed</h2>
+      <p>
+        Before Phase 8 the timeline was searchable memory — capture events, extract facts, resolve
+        entities, ask the agent. Useful, but passive. Teams couldn't say "this is a deal", "I own
+        this", "due Thursday", "blocked by that". Phase 8 keeps the timeline as the substrate and
+        layers an <em>object relation management system</em> on top. Not just CRM for customers; the
+        same model holds projects, vendors, incidents, hiring loops, decisions, and tasks.
+      </p>
+      <div class="stat-grid">
+        <div class="stat"><b>13</b><span>object types in the enum</span></div>
+        <div class="stat"><b>8</b><span>new tables</span></div>
+        <div class="stat"><b>1</b><span>shared module (<code>objects</code>)</span></div>
+        <div class="stat"><b>0</b><span>data migrations needed</span></div>
+      </div>
+      <p>
+        Everything routes through <code>withTeam(db, teamId, userId)</code> — the single chokepoint
+        for team isolation. The new <code>objects</code> module composes on top of
+        <code>TeamScope</code> rather than replacing it.
+      </p>
+
+      <h2 id="data-model">Data model</h2>
+      <p>
+        <code>entities</code> was widened in place. Existing rows default safely
+        (<code>status='open'</code>, <code>agent_suggested=false</code>,
+        <code>archived_at=NULL</code>), and the resolver keeps using the same canonical-name lookup
+        it always has.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Table</th>
+            <th>Purpose</th>
+            <th>Key columns</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>entities</code> (extended)</td>
+            <td>Workspace objects of any kind.</td>
+            <td>
+              <code>status</code>, <code>stage</code>, <code>priority</code>,
+              <code>owner_user_id</code>, <code>assignee_user_id</code>, <code>due_at</code>,
+              <code>source_event_id</code>, <code>agent_suggested</code>, <code>archived_at</code>
+            </td>
+          </tr>
+          <tr>
+            <td><code>entity_relationships</code></td>
+            <td>Explicit, human/agent-authored links between objects.</td>
+            <td>
+              <code>(from_entity_id, to_entity_id, kind)</code> unique; kinds: <code>parent</code>,
+              <code>child</code>, <code>related</code>, <code>blocks</code>,
+              <code>blocked_by</code>, <code>duplicate_of</code>,
+              <code>linked</code>
+            </td>
+          </tr>
+          <tr>
+            <td><code>object_changes</code></td>
+            <td>Immutable audit log — one row per modified field per save.</td>
+            <td>
+              <code>actor_kind</code> (user/agent/system),
+              <code>status</code> (applied/suggested/rejected), <code>previous_value</code>,
+              <code>new_value</code>,
+              <code>source_event_id</code>
+            </td>
+          </tr>
+          <tr>
+            <td><code>object_notes</code></td>
+            <td>Mutable, author-owned notes attached to an object.</td>
+            <td><code>author_user_id</code>, <code>body</code>, soft <code>deleted_at</code></td>
+          </tr>
+          <tr>
+            <td><code>object_views</code></td>
+            <td>Per-user, per-object last-visit timestamp. Drives "since your last visit".</td>
+            <td>PK <code>(team_id, user_id, entity_id)</code></td>
+          </tr>
+          <tr>
+            <td><code>board_views</code></td>
+            <td>Saved kanban/table/list configurations with JSON filter + groupBy.</td>
+            <td>
+              <code>kind</code>, <code>filter</code> (jsonb), <code>group_by</code>,
+              <code>is_shared</code>
+            </td>
+          </tr>
+          <tr>
+            <td><code>notifications</code></td>
+            <td>In-app inbox. v1 fan-out is in-process inside <code>updateObject</code>.</td>
+            <td>
+              <code>kind</code>, <code>entity_id</code>, <code>object_change_id</code>,
+              <code>summary</code>, <code>read_at</code>
+            </td>
+          </tr>
+          <tr>
+            <td><code>chat_sessions</code></td>
+            <td>Persisted conversations, optionally pinned to an object.</td>
+            <td>
+              <code>created_by</code>, <code>pinned_entity_id</code>, <code>archived_at</code>
+            </td>
+          </tr>
+          <tr>
+            <td><code>chat_messages</code></td>
+            <td>One row per role transition. <code>content</code> is structured JSON.</td>
+            <td><code>session_id</code>, <code>role</code>, <code>content</code> (jsonb)</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        See migration
+        <a href="../packages/db/drizzle/0007_phase8_objects.sql"
+          ><code>0007_phase8_objects.sql</code></a
+        >
+        for the exact DDL.
+      </p>
+
+      <h2 id="object-types">Object types</h2>
+      <p>
+        The Postgres enum <code>entity_type</code> is the single source of truth. Use
+        <code>objects.OBJECT_TYPES</code> at runtime and <code>objects.ObjectType</code> at the type
+        level — derived from the drizzle enum so adding a new type requires only a schema +
+        migration change.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Origin</th>
+            <th>Types</th>
+            <th>Naming uniqueness</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Extraction-derived</td>
+            <td>
+              <code>person</code>, <code>company</code>, <code>project</code>, <code>topic</code>,
+              <code>other</code>, <code>vendor</code>, <code>document</code>, <code>decision</code>
+            </td>
+            <td>
+              Case-insensitive unique per <code>(team, type, name)</code>. The resolver re-uses
+              canonical names across captures.
+            </td>
+          </tr>
+          <tr>
+            <td>User-authored work</td>
+            <td>
+              <code>task</code>, <code>follow_up</code>, <code>deal</code>, <code>incident</code>,
+              <code>hiring_loop</code>
+            </td>
+            <td>
+              Excluded from the uniqueness predicate. Teams legitimately reuse names ("follow up
+              with Acme").
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="status-and-stage">Status, stage, priority, due</h2>
+      <p>
+        Status vocabularies are <em>free-form text</em>, validated at the app layer because they
+        differ by type. The UI ships per-type dropdowns:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Status options (default)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>deal</code></td>
+            <td>open · qualified · proposal · won · lost</td>
+          </tr>
+          <tr>
+            <td><code>task</code></td>
+            <td>suggested · todo · doing · done · blocked · cancelled</td>
+          </tr>
+          <tr>
+            <td><code>follow_up</code></td>
+            <td>todo · doing · done · cancelled</td>
+          </tr>
+          <tr>
+            <td><code>project</code></td>
+            <td>planning · active · on_hold · shipped · cancelled</td>
+          </tr>
+          <tr>
+            <td><code>incident</code></td>
+            <td>open · mitigated · resolved · postmortem</td>
+          </tr>
+          <tr>
+            <td><code>hiring_loop</code></td>
+            <td>sourcing · interviewing · offer · hired · closed</td>
+          </tr>
+          <tr>
+            <td><code>decision</code></td>
+            <td>draft · proposed · accepted · rejected</td>
+          </tr>
+          <tr>
+            <td><em>everything else</em></td>
+            <td>open · active · archived</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        <code>stage</code> is opt-in (used by kanban boards), <code>priority</code> is a smallint
+        1–4 with 1 = urgent, and <code>due_at</code> is a tz-aware timestamp.
+      </p>
+
+      <h2 id="audit-trail">Audit trail</h2>
+      <p>
+        Every manual change — to an object's fields, to its notes, to its relationships — writes two
+        rows in one transaction: a system-source <code>raw_events</code> row (so the change appears
+        on the team timeline) and one <code>object_changes</code> row per modified field (so the
+        object page's "Recent changes" pane has structured data). The
+        <code>raw_events.id</code> threads through both as <code>source_event_id</code>.
+      </p>
+      <div class="callout">
+        <b>Why two writes per change.</b> The timeline view treats events as the unit; the object
+        page treats fields as the unit. One save updates both, atomically.
+        <code>raw_events</code> stays append-only — even note edits write a <em>new</em> event with
+        the new body.
+      </div>
+      <p>
+        Agent-proposed changes land as <code>object_changes.status = 'suggested'</code>. A human
+        accepts (flips to <code>applied</code> and runs the update) or rejects (terminal). The
+        rejected rows stay visible so agent quality is measurable over time.
+      </p>
+
+      <h2 id="notifications">Notifications</h2>
+      <p>
+        Inside <code>updateObject</code>, after the entity + audit writes commit, the helper inserts
+        <code>object_changed</code> notifications for the owner and assignee (deduped, and skipping
+        the actor themselves). Fan-out is in-process for v1; if volume grows, the same helper can
+        switch to a <code>notify</code> BullMQ queue without changing callers.
+      </p>
+      <p>
+        The inbox view (<code>/app/inbox</code>) sorts by
+        <code>(read_at NULLS FIRST, created_at DESC)</code> — backed by the
+        <code>notifications_team_user_inbox_idx</code> index so unread-first queries are direct.
+      </p>
+
+      <h2 id="since-last-visit">Since last visit</h2>
+      <p>
+        Each object page write a row to <code>object_views</code> when the current user opens it.
+        The render computes <code>newSinceLastVisit</code> by counting
+        <code>object_changes</code> and <code>object_notes</code> created after the user's previous
+        <code>last_visited_at</code>, <em>before</em> stamping the new visit. Order matters — moving
+        the visit-stamp ahead of the page read would zero the banner forever after the first load.
+      </p>
+
+      <h2 id="chat-sessions">Persisted chat sessions</h2>
+      <p>
+        <code>/api/chat</code> accepts an optional <code>sessionId</code> in the request body. If
+        absent, the endpoint auto-creates a session (optionally pinned to an object via
+        <code>pinnedEntityId</code>) and returns the new id via the
+        <code>x-tl-session-id</code> response header. On stream finalize, the endpoint persists the
+        latest user turn and the assistant turn (text + tool calls + finish reason + usage + prompt
+        version) into <code>chat_messages</code> — the delta only, since
+        <code>useChat</code> re-sends the whole transcript on every request.
+      </p>
+      <p>
+        Persistence failures are warn-logged, not surfaced to the user — the assistant reply has
+        already streamed by the time the write attempts.
+      </p>
+
+      <h2 id="helpers">Server-side helpers</h2>
+      <p>
+        All in
+        <a href="../packages/shared/src/objects/index.ts"
+          ><code>packages/shared/src/objects/index.ts</code></a
+        >. Every public function takes a <code>TeamScope</code>; the helpers read
+        <code>scope.teamId</code> and never accept it as a parameter — that's the chokepoint that
+        keeps a caller typo from leaking across teams.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Domain</th>
+            <th>Helpers</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Objects</td>
+            <td>
+              <code>listObjects</code>, <code>getObject</code>, <code>createObject</code>,
+              <code>updateObject</code>, <code>archiveObject</code>, <code>unarchiveObject</code>
+            </td>
+          </tr>
+          <tr>
+            <td>Relationships</td>
+            <td><code>addRelationship</code>, <code>removeRelationship</code></td>
+          </tr>
+          <tr>
+            <td>Notes</td>
+            <td><code>createNote</code>, <code>updateNote</code>, <code>deleteNote</code></td>
+          </tr>
+          <tr>
+            <td>Visit tracking</td>
+            <td><code>markVisited</code></td>
+          </tr>
+          <tr>
+            <td>Notifications</td>
+            <td>
+              <code>listNotifications</code>, <code>unreadNotificationCount</code>,
+              <code>markNotificationRead</code>, <code>markAllNotificationsRead</code>
+            </td>
+          </tr>
+          <tr>
+            <td>Chat sessions</td>
+            <td>
+              <code>listChatSessions</code>, <code>createChatSession</code>,
+              <code>getChatSession</code>, <code>appendChatMessages</code>,
+              <code>setChatSessionTitle</code>, <code>linkChatSessionToObject</code>,
+              <code>archiveChatSession</code>
+            </td>
+          </tr>
+          <tr>
+            <td>Board views</td>
+            <td>
+              <code>listBoardViews</code>, <code>getBoardView</code>, <code>saveBoardView</code>,
+              <code>deleteBoardView</code>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="agent-tools">Agent tools</h2>
+      <p>
+        Phase 8 ships the data + helpers and the agent toolset in
+        <a href="../packages/shared/src/agent/tools.ts"
+          ><code>packages/shared/src/agent/tools.ts</code></a
+        >. Read-side tools <code>get_object</code>, <code>list_objects</code>,
+        <code>list_tasks</code>, and <code>recent_changes</code> sit alongside the existing
+        <code>get_entity</code> / <code>search_timeline</code> / <code>list_events</code>.
+        Write-side tools <code>suggest_task</code> and <code>propose_object_change</code> never
+        mutate entities directly — they record <code>status='suggested'</code> rows that a human
+        accepts or rejects from the object page. The system prompt is at
+        <code>agent-v3-2026-05</code>.
+      </p>
+
+      <h2 id="routes">Web routes</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Route</th>
+            <th>What it shows</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>/app/objects</code></td>
+            <td>Index grouped by type. Type-filter chips along the top, "New object" CTA.</td>
+          </tr>
+          <tr>
+            <td><code>/app/objects/new</code></td>
+            <td>Minimal create form (type, name, optional due date).</td>
+          </tr>
+          <tr>
+            <td><code>/app/objects/[id]</code></td>
+            <td>
+              Editable status/stage/priority/due, notes CRUD, related objects with kind chips +
+              unlink, open tasks, recent changes audit list, "since your last visit" banner, archive
+              button.
+            </td>
+          </tr>
+          <tr>
+            <td><code>/app/inbox</code></td>
+            <td>
+              Notifications with unread-first sort. <span class="pill">all</span> /
+              <span class="pill">unread</span> tabs, per-row mark-read (optimistic, hover or click),
+              mark-all button.
+            </td>
+          </tr>
+          <tr>
+            <td><code>/app/boards</code></td>
+            <td>
+              List of saved boards. Inline form creates a new board (name, kind, type filter,
+              groupBy). Each row links to <code>/app/boards/[id]</code>.
+            </td>
+          </tr>
+          <tr>
+            <td><code>/app/boards/[id]</code></td>
+            <td>
+              Renders one of <code>kanban</code> / <code>table</code> / <code>list</code> per
+              <code>board.kind</code> over <code>listObjects(board.filter)</code>. Kanban supports
+              drag-to-move (<code>@dnd-kit/core</code>, optimistic), backed by
+              <code>updateObjectAction</code>.
+            </td>
+          </tr>
+          <tr>
+            <td><code>/app/tasks</code></td>
+            <td>
+              Convenience kanban over <code>{type:'task', archived:false}</code> grouped by status.
+              Hardcoded, no <code>board_views</code> row required.
+            </td>
+          </tr>
+          <tr>
+            <td><code>/app/chat</code></td>
+            <td>
+              Two-column layout. Left sidebar lists past chat sessions (active highlight, archive on
+              hover). Right pane is <code>&lt;ChatPane&gt;</code> with hydrated history when
+              <code>?session=&lt;uuid&gt;</code> is set, plus the pinned-object chip when the
+              session has <code>pinned_entity_id</code>.
+            </td>
+          </tr>
+          <tr>
+            <td><code>/app/entities</code>, <code>/app/entities/[id]</code></td>
+            <td>Redirect to <code>/app/objects/*</code> for one release. Remove in Phase 11.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        Loading skeletons at <code>/app/objects/loading.tsx</code>,
+        <code>/app/objects/[id]/loading.tsx</code>, and <code>/app/inbox/loading.tsx</code> mirror
+        the design system's skeleton patterns from <a href="../design.md">design.md</a>.
+      </p>
+
+      <h2 id="shipped-followups">Phase 8 follow-ups (shipped)</h2>
+      <p>
+        Originally tracked as open work in <a href="../todo.md"><code>todo.md</code></a
+        >; now all six have landed. Detail in todo.md's "Phase 8 follow-ups (shipped)" section.
+      </p>
+      <ul>
+        <li>
+          <strong>Boards UI</strong> — <code>/app/boards</code> and <code>/app/boards/[id]</code>,
+          kanban / table / list variants; <code>@dnd-kit/core</code>-driven drag-to-move on kanban.
+        </li>
+        <li>
+          <strong>Tasks shortcut</strong> — <code>/app/tasks</code> reuses
+          <code>&lt;KanbanBoard&gt;</code> with a hardcoded <code>{type:'task'}</code> filter.
+        </li>
+        <li>
+          <strong>Chat session sidebar</strong> — <code>/app/chat</code> two-column layout, session
+          archive, pinned-object chip; <code>/api/chat</code> accepts
+          <code>?session=&lt;uuid&gt;</code>
+          query-string fallback and returns auto-created session ids via
+          <code>x-tl-session-id</code>.
+        </li>
+        <li>
+          <strong>Agent write-side tools</strong> — <code>get_object</code>,
+          <code>list_objects</code>, <code>list_tasks</code>, <code>recent_changes</code>,
+          <code>suggest_task</code>, <code>propose_object_change</code>.
+        </li>
+        <li>
+          <strong>Overdue detector</strong> — hourly BullMQ repeatable
+          (<code>apps/worker/src/workers/overdue.ts</code>), per-day dedup via partial unique index
+          <code>notifications_overdue_dedup_idx</code> in migration
+          <code>0008_overdue_dedup.sql</code>.
+        </li>
+        <li>
+          <strong>Suggestion review UI</strong> — Accept / Reject buttons on
+          <code>status='suggested'</code> rows in the object page's "Recent changes" pane; Accept
+          re-uses <code>updateObject</code> so the full audit + notification path runs.
+        </li>
+      </ul>
+
+      <hr />
+      <p style="font-size: 0.85rem; color: var(--muted-foreground)">
+        See also: <a href="./product-brief.html">product brief</a>,
+        <a href="../todo.md">build plan</a>, <a href="../design.md">design system</a>.
+      </p>
+    </main>
+  </body>
+</html>
