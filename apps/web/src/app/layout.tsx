@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
+import { getSiteUrl } from '@/lib/site-url';
 
 import './globals.css';
 
@@ -48,8 +49,18 @@ const commitMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'The Timeline',
-  description: 'Team memory, captured.',
+  metadataBase: new URL(getSiteUrl()),
+  title: {
+    default: 'The Timeline — The operations log your team can talk to',
+    template: '%s · The Timeline',
+  },
+  description:
+    'Voice-, chat-, and email-first capture, agentically compiled into a searchable team history with auditable citations on every answer.',
+  applicationName: 'The Timeline',
+  authors: [{ name: 'The Timeline' }],
+  creator: 'The Timeline',
+  publisher: 'The Timeline',
+  formatDetection: { telephone: false, email: false, address: false },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
