@@ -15,3 +15,5 @@ export * from './chat-sessions.js';
 export * from './chat-messages.js';
 export * from './documents.js';
 export * from './meetings.js';
+export * from './integrations.js';
+export * from './mcp.js';

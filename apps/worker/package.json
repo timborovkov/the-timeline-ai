@@ -12,6 +12,7 @@
     "embed-coverage": "tsx src/scripts/embed-coverage.ts",
     "redocument-extract": "tsx src/scripts/redocument-extract.ts",
     "redocument-embed": "tsx src/scripts/redocument-embed.ts",
+    "integration-resync": "tsx src/scripts/integration-resync.ts",
     "lint": "eslint src",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"

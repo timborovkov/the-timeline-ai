@@ -24,7 +24,14 @@ export type SourceKind =
   // so retrieval can match an individual speaker turn at the chunk level
   // (in addition to the per-utterance raw_event point written via the
   // standard 'raw_event' scope).
-  | 'meeting_chunk';
+  | 'meeting_chunk'
+  // Phase 11: third-party integration events (Drive activity, Linear
+  // issue changes, GitHub PR/issue/release events, MCP-tool-derived
+  // events). Each integration event is anchored to a raw_events row
+  // (source='integration') so this point gets the same payload shape
+  // as raw_event; the source_kind discriminator lets the agent narrow
+  // searches to integration-only hits.
+  | 'integration_event';
 
 export interface QdrantPayload {
   team_id: string;
@@ -58,7 +65,7 @@ export interface QdrantPayload {
   entity_ids: string[];
   occurred_at: string;
   author_user_id: string | null;
-  source: 'web' | 'telegram' | 'email' | 'system' | 'document' | 'meeting';
+  source: 'web' | 'telegram' | 'email' | 'system' | 'document' | 'meeting' | 'integration';
   visibility: 'team' | 'private' | 'specific_users';
   /**
    * Users explicitly granted visibility when `visibility === 'specific_users'`.

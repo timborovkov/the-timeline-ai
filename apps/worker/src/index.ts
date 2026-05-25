@@ -4,6 +4,7 @@ import { childLogger, queue } from '@timeline/shared';
 import { startDocumentExtractWorker } from './workers/documentExtract.js';
 import { startEmbedWorker } from './workers/embed.js';
 import { startExtractWorker } from './workers/extract.js';
+import { startIntegrationSyncWorker } from './workers/integrationSync.js';
 import { startJanitorWorker } from './workers/janitor.js';
 import { startMeetingFinalizeWorker } from './workers/meetingFinalize.js';
 import { startOverdueWorker } from './workers/overdue.js';
@@ -27,12 +28,17 @@ async function main(): Promise<void> {
   const documentExtractWorker = startDocumentExtractWorker({ db });
   const meetingFinalizeWorker = startMeetingFinalizeWorker({ db });
   const janitorWorker = startJanitorWorker({ db });
+  const integrationSyncWorker = startIntegrationSyncWorker({ db });
   // Register the hourly repeatables. BullMQ keys by jobId so a
   // duplicate call on the next deploy is a no-op.
   await queue.scheduleOverdueScan();
   await queue.scheduleJanitorSweep();
+  // Phase 11: 5-minute integration sync tick fans out incremental syncs
+  // to every enabled integration. Same idempotency story — BullMQ dedups
+  // by jobId.
+  await queue.scheduleIntegrationIncrementalSync();
   log.info(
-    'transcribe + extract + embed + overdue + document-extract + meeting-finalize + janitor workers started',
+    'transcribe + extract + embed + overdue + document-extract + meeting-finalize + janitor + integration-sync workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -46,6 +52,7 @@ async function main(): Promise<void> {
         documentExtractWorker.close(),
         meetingFinalizeWorker.close(),
         janitorWorker.close(),
+        integrationSyncWorker.close(),
       ]);
       await queue.closeTranscribeQueue();
       await queue.closeExtractQueue();
@@ -54,6 +61,7 @@ async function main(): Promise<void> {
       await queue.closeDocumentExtractQueue();
       await queue.closeMeetingFinalizeQueue();
       await queue.closeJanitorQueue();
+      await queue.closeIntegrationSyncQueue();
       await queue.closeRedisConnection();
     } catch (err: unknown) {
       log.error({ err }, 'shutdown error');

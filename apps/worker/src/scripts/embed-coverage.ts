@@ -153,6 +153,12 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
     entity: entityCount,
     doc_chunk: docChunkRows[0]?.n ?? 0,
     meeting_chunk: meetingChunkRows[0]?.n ?? 0,
+    // Phase 11: integration events are anchored to raw_events rows
+    // (source='integration'), which are already counted under raw_event.
+    // We track Qdrant separately by source_kind='integration_event' for
+    // drift detection on this kind specifically — the row count is the
+    // subset of raw_events with that source.
+    integration_event: 0,
   };
 }
 

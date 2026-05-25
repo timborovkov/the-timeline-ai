@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Integrations &amp; custom MCPs (Phase 11)</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <main id="main">
+      <h1>Integrations &amp; custom MCPs</h1>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-25</span></div>
+      <p class="tldr">
+        Connect Google Drive, Linear, and GitHub from <code>/app/team/integrations</code>, or plug
+        arbitrary custom MCP servers in at <code>/app/team/mcp-servers</code>. Every synced external
+        event lands on the timeline as <code>source='integration'</code> and becomes searchable and
+        citable by the agent.
+      </p>
+
+      <h2 id="secrets">Encryption key (required first)</h2>
+      <p>
+        All integration auth (OAuth refresh + access tokens, bearer tokens, custom-header values,
+        basic-auth credentials, MCP dynamic-client secrets) is encrypted at rest with AES-256-GCM in
+        <code>packages/shared/src/crypto/secrets.ts</code>. Generate a 32-byte key and set
+        <code>SECRETS_ENCRYPTION_KEY</code> in your environment:
+      </p>
+      <pre><code>node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"</code></pre>
+      <p>
+        The first <code>encryptSecret()</code> call throws with a clear message if the key is
+        missing or the wrong length, so worker boot fails fast instead of writing plaintext.
+      </p>
+
+      <h2 id="google-drive">Google Drive</h2>
+      <ol>
+        <li>
+          Create an OAuth 2.0 client at
+          <a href="https://console.cloud.google.com/apis/credentials">console.cloud.google.com</a>
+          (type: <em>Web application</em>).
+        </li>
+        <li>
+          Add the redirect URI:
+          <code>{AUTH_URL}/api/integrations/google_drive/callback</code>.
+        </li>
+        <li>Enable the Google Drive API for the project.</li>
+        <li>
+          Set:
+          <pre><code>GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...</code></pre>
+        </li>
+        <li>
+          Restart the web + worker services. The card on <code>/app/team/integrations</code> turns
+          from <em>Not configured</em> to <em>Connect</em>.
+        </li>
+        <li>
+          (Optional) Register a Drive push-notification channel keyed on the integration row's id;
+          route hits <code>/api/webhooks/google-drive</code>.
+        </li>
+      </ol>
+
+      <h2 id="linear">Linear</h2>
+      <ol>
+        <li>
+          Create an OAuth application at
+          <a href="https://linear.app/settings/api/applications"
+            >linear.app/settings/api/applications</a
+          >.
+        </li>
+        <li>Redirect URI: <code>{AUTH_URL}/api/integrations/linear/callback</code>.</li>
+        <li>
+          Set:
+          <pre><code>LINEAR_CLIENT_ID=...
+LINEAR_CLIENT_SECRET=...
+LINEAR_WEBHOOK_SECRET=...</code></pre>
+        </li>
+        <li>
+          In Linear Settings → API → Webhooks, point the webhook at
+          <code>{AUTH_URL}/api/webhooks/linear</code> with the secret above.
+        </li>
+      </ol>
+
+      <h2 id="github">GitHub</h2>
+      <ol>
+        <li>
+          Create an OAuth App (or a GitHub App with OAuth) at
+          <a href="https://github.com/settings/developers">github.com/settings/developers</a>.
+        </li>
+        <li>Callback URL: <code>{AUTH_URL}/api/integrations/github/callback</code>.</li>
+        <li>
+          Set:
+          <pre><code>GITHUB_APP_CLIENT_ID=...
+GITHUB_APP_CLIENT_SECRET=...
+GITHUB_WEBHOOK_SECRET=...</code></pre>
+        </li>
+        <li>
+          Add a webhook on each repo / org pointing at <code>{AUTH_URL}/api/webhooks/github</code>.
+          Content type <em>application/json</em>; secret matches the env var; subscribe to
+          <em>Pull requests</em> and <em>Issues</em>.
+        </li>
+      </ol>
+
+      <h2 id="mcp">Custom MCP servers</h2>
+      <p>Visit <code>/app/team/mcp-servers</code> → <em>Add server</em>. Pick an auth mode:</p>
+      <ul>
+        <li><strong>None</strong> — public MCP servers with no auth.</li>
+        <li><strong>Bearer token</strong> — API keys / personal access tokens.</li>
+        <li><strong>Custom header</strong> — arbitrary header name + value.</li>
+        <li>
+          <strong>OAuth</strong> — server speaks the MCP OAuth dance; state JWT-equivalent is
+          HS256-signed with <code>MCP_OAUTH_STATE_SECRET</code> (falls back to
+          <code>AUTH_SECRET</code>).
+        </li>
+      </ul>
+      <p>
+        Discovered tools appear under the server with a <em>Test call</em> button. Tools are
+        namespaced as <code>mcp__&lt;serverIdCompact&gt;__&lt;toolName&gt;</code> and merged into
+        the agent's toolset on every <code>/api/chat</code> request. Outputs are fenced through
+        <code>fenceExternalContent</code> so the agent treats them as untrusted data per Rule 8 of
+        the system prompt.
+      </p>
+
+      <h2 id="sync">How sync runs</h2>
+      <p>
+        A BullMQ repeatable enqueues an <code>integration-sync</code> tick every 5 minutes. The
+        worker fans out to every enabled integration and runs <code>incrementalSync()</code> on each
+        provider, using the per-resource cursor in <code>integration_sync_state</code>. Webhook hits
+        enqueue an extra one-shot incremental for the same integration.
+      </p>
+      <p>Manual full backfill from the CLI:</p>
+      <pre><code>pnpm --filter @timeline/worker integration-resync -- --team=&lt;uuid&gt; --from-zero</code></pre>
+
+      <h2 id="audit">Audit log</h2>
+      <p>
+        Every connect, sync start, sync finish, sync error, and replay writes a row in
+        <code>integration_audit_log</code>. <code>/app/team/integrations/audit</code> renders the
+        most recent 200 rows. The agent's <code>list_integrations</code> tool also surfaces
+        connected providers + their <code>last_synced_at</code>.
+      </p>
+
+      <h2 id="troubleshooting">Troubleshooting</h2>
+      <dl>
+        <dt>Webhook returns <code>bad_signature</code></dt>
+        <dd>
+          Check the secret env var matches what the provider's webhook UI shows. The signing
+          algorithm is HMAC-SHA256 over the raw body — make sure the provider hasn't re-serialised
+          the JSON in transit.
+        </dd>
+        <dt>Connect button stays disabled</dt>
+        <dd>
+          The provider's OAuth client env pair is missing or empty. Set both
+          <code>CLIENT_ID</code> and <code>CLIENT_SECRET</code> and restart.
+        </dd>
+        <dt>Sync runs but no timeline events</dt>
+        <dd>
+          The agent's dedup_key partial unique index makes replay a no-op. Use
+          <code>--from-zero</code> on the resync script to wipe the cursor and re-walk from provider
+          epoch.
+        </dd>
+      </dl>
+    </main>
+  </body>
+</html>

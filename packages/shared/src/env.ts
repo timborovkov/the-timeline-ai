@@ -138,6 +138,39 @@ const schema = z.object({
    * generic provider name.
    */
   RECALL_BOT_DISPLAY_NAME: z.string().default('Timeline'),
+
+  // Phase 11 — Third-party integrations + custom MCPs.
+  //
+  // AES-256-GCM key (32 bytes, base64) used by
+  // `packages/shared/src/crypto/secrets.ts` to encrypt every integration
+  // auth secret (OAuth refresh+access tokens, bearer tokens, header
+  // values, basic auth, MCP dynamic-client secrets) at rest. Required
+  // when ANY integration or MCP server is configured. The helper throws
+  // on first encrypt/decrypt if unset.
+  //
+  // Generate with:
+  //   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  SECRETS_ENCRYPTION_KEY: z.string().optional(),
+
+  // Per-team integrations. The catalog hides any provider whose
+  // credentials aren't set; webhook secrets gate signature verification
+  // on the corresponding /api/webhooks/* endpoint.
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  LINEAR_CLIENT_ID: z.string().optional(),
+  LINEAR_CLIENT_SECRET: z.string().optional(),
+  LINEAR_WEBHOOK_SECRET: z.string().optional(),
+  GITHUB_APP_ID: z.string().optional(),
+  GITHUB_APP_PRIVATE_KEY: z.string().optional(),
+  GITHUB_APP_CLIENT_ID: z.string().optional(),
+  GITHUB_APP_CLIENT_SECRET: z.string().optional(),
+  GITHUB_WEBHOOK_SECRET: z.string().optional(),
+
+  // Custom MCP servers. The state JWT carries (team_id, mcp_server_id)
+  // through the OAuth dance and is HS256-signed with this secret. Falls
+  // back to `AUTH_SECRET` when unset so dev environments work without
+  // extra setup.
+  MCP_OAUTH_STATE_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema>;

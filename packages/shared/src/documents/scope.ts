@@ -137,6 +137,9 @@ export interface CreateDocumentInput {
   contentType: string;
   visibility?: Visibility;
   visibilityUserIds?: string[] | null;
+  /** Phase 11: free-form provenance for integration harvest. Persisted on
+   *  the documents.metadata jsonb so the next sync can update-in-place. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface CreateDocumentResult {
@@ -539,6 +542,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
             ownerUserId: userId,
             visibility: input.visibility ?? 'team',
             visibilityUserIds: input.visibilityUserIds ?? null,
+            metadata: input.metadata ?? {},
           })
           .returning();
         const document = docRows[0] as DocumentRow | undefined;

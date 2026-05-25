@@ -160,7 +160,10 @@ export async function POST(req: Request): Promise<Response> {
     userName,
     currentDate: new Date(),
   });
-  const tools = agent.buildAgentTools(scope);
+  // Phase 11 — merge any custom MCP tools the team has connected. The
+  // MCP manager caches per-team for 5 min so this is cheap on hot paths.
+  const mcpTools = await agent.buildMcpTools(scope).catch(() => ({}));
+  const tools = { ...agent.buildAgentTools(scope), ...mcpTools };
 
   // Validate UIMessages BEFORE convertToModelMessages so a malformed client
   // (or attacker poking the endpoint) gets a clean 400 instead of an

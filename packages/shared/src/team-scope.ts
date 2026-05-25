@@ -14,7 +14,9 @@ import {
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import { createDocumentScope } from './documents/scope.js';
+import { createIntegrationScope } from './integrations/scope.js';
 import { embed as defaultEmbed, type EmbedResult } from './llm/embed.js';
+import { createMcpScope } from './mcp/scope.js';
 import { createMeetingScope } from './meetings/scope.js';
 import {
   getQdrantClient,
@@ -98,7 +100,7 @@ export interface SearchEventsInput {
   query: string;
   from?: Date;
   to?: Date;
-  source?: 'web' | 'telegram' | 'email' | 'system';
+  source?: 'web' | 'telegram' | 'email' | 'system' | 'integration' | 'document' | 'meeting';
   entityIds?: string[];
   /**
    * Narrow vector search to a subset of Qdrant source kinds. Phase 8 adds
@@ -315,9 +317,25 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     ensureMember,
   });
 
+  const integrationScope = createIntegrationScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+
+  const mcpScope = createMcpScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+
   return {
     ...documentScope,
     ...meetingScope,
+    integrations: integrationScope,
+    mcp: mcpScope,
     teamId,
     userId,
 

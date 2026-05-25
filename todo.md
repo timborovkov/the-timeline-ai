@@ -4,14 +4,16 @@ Ordered roadmap. Keep this file short: shipped work is bundled, open work is act
 
 ## Current Status
 
-Phases 0-9 are shipped on `main`. Phase 10 (Meeting Bots — Recall.ai) is in
-review on this branch: provider adapter + schema + webhooks + scope helpers
-+ worker + UI + docs, full build/lint/format green, 230 tests across
-`@timeline/shared`, `@timeline/worker`, and `@timeline/web`.
+Phases 0-10 are shipped on `main`. Phase 11 (Third-Party Integrations +
+Custom MCPs) is in review on this branch: migration `0012`, AES-256-GCM
+secrets, integrations module + scope helpers, Drive/Linear/GitHub provider
+adapters, MCP client manager + team-scoped CRUD + namespaced agent tools,
+sync worker + 5-minute repeatable, settings UI + audit log, SVG connector
+logos, and docs.
 
 Open PRs not counted here yet:
 
-- Phase 10 — Meeting Bots (this branch).
+- Phase 11 — Third-Party Integrations + Custom MCPs (this branch).
 
 ## Completed Bundle
 
@@ -124,23 +126,33 @@ in a follow-up phase if/when there's demand).
 
 ## Phase 11 — Third-Party Integrations And Custom MCPs
 
-Goal: sync external systems into the same timeline/object pipeline. Integrations span three classes: (1) curated native connectors with provider-specific sync logic (Drive, Linear, GitHub), (2) curated MCP-backed connectors when an official MCP exists, and (3) **custom MCP servers** that any team can connect to bring their own tools and data. Reference for MCP plumbing: Vernix `src/lib/mcp/` and `src/lib/db/schema.ts` (`mcpServers`, `mcpOauthTokens`).
+Goal: sync external systems into the same timeline/object pipeline. Integrations span three classes: (1) curated native connectors with provider-specific sync logic (Drive, Linear, GitHub), (2) curated MCP-backed connectors when an official MCP exists, and (3) **custom MCP servers** that any team can connect to bring their own tools and data.
 
-- [ ] Design integration account model: provider, connected user/team, scopes, refresh tokens/secrets, sync cursor, last sync state, visibility defaults.
-- [ ] Add integration event schema: external source id, external object id, provider, event type, occurred_at, actor, raw payload pointer, sync batch id, dedup key. These flow into raw_events with `source='integration'` and are embedded with `source_kind=integration_event`.
-- [ ] Google Drive knowledge sync: map selected Drive folders/files into the internal document model. Import metadata, comments/activity, shared-with changes, document change summaries, and selected file versions.
-- [ ] Decide Drive vector strategy: reuse the internal document chunking/embedding pipeline for selected folders/docs; for broad Drive sync, embed deltas, comments, metadata, and curated summaries before full file bodies.
-- [ ] Linear sync: issues, comments, status/assignee/priority changes, project milestones, linked GitHub PRs. Map issues/projects to workspace objects.
-- [ ] GitHub sync: PRs, issues, reviews, merged commits, release notes, CI state changes. Map repos/PRs/issues/releases to workspace objects.
-- [ ] Add provider-specific backfill + incremental sync jobs. Every sync must be idempotent and resumable.
-- [ ] Add MCP adapter boundary (covers both curated and custom MCPs): normalize MCP tool outputs and resource subscriptions into integration events and object changes, with provider-specific rate-limit/error handling outside the core pipeline.
-- [ ] **Custom MCP server connections** — schema mirroring Vernix `mcpServers`: `id, team_id, added_by_user_id, name, url, auth_type (none|bearer|header|basic|oauth|url_key), auth_config jsonb (encrypted secrets), enabled, cached_tools jsonb, last_connected_at, last_error`. Per-team scoped (we are a team product, not solo).
-- [ ] **MCP OAuth provider** — implement `OAuthClientProvider` from the MCP SDK (reference Vernix `src/lib/mcp/oauth-provider.ts`). State JWT carries `team_id + mcp_server_id`. Pre-registered clients via env vars for popular MCPs (GitHub, Linear, Slack); dynamic client registration for arbitrary servers. Callback at `/api/mcp/oauth/callback`.
-- [ ] **Tool registry + namespaced invocation** — `McpClientManager` connects to all enabled MCP servers per team, discovers tools via `client.listTools()`, namespaces them `mcp__<server_id>__<tool_name>` to avoid collisions, caches in `mcp_servers.cached_tools` for the UI. Agent invokes via the namespaced path. Reference Vernix `src/lib/mcp/client.ts`.
-- [ ] **MCP settings UI** — connect/disconnect, list connected servers, show tool inventory per server, test-call a tool, OAuth status, last-error surfacing, enable/disable without removing.
-- [ ] Add integration settings UI: connect/disconnect, choose folders/projects/repos, visibility defaults, sync health, last error.
-- [ ] Add integration audit log and replay: show what was imported, when, by which connector version, and allow re-sync from cursor.
-- [ ] (Future, informational — no item) Vernix exposes itself as an MCP server at `/api/mcp` so external agents can query meetings/tasks. We may want to do the same later so external agents can query the timeline. Out of scope for this phase.
+Shipped together on this branch. Migration `0012_phase11_integrations.sql`
+adds `integrations`, `integration_sync_state`, `integration_selections`,
+`integration_audit_log`, `mcp_servers`, `mcp_oauth_tokens`, and extends
+`event_source` with `'integration'`. All auth material is AES-256-GCM
+encrypted at rest via [`packages/shared/src/crypto/secrets.ts`](packages/shared/src/crypto/secrets.ts)
+using the new `SECRETS_ENCRYPTION_KEY` env var. Per-team helpers in
+[`packages/shared/src/integrations/`](packages/shared/src/integrations) and
+[`packages/shared/src/mcp/`](packages/shared/src/mcp) are spread into
+`withTeam` as `.integrations` and `.mcp`.
+
+- [x] Integration account model — [`packages/db/src/schema/integrations.ts`](packages/db/src/schema/integrations.ts) + [`packages/shared/src/integrations/scope.ts`](packages/shared/src/integrations/scope.ts). One row per (team, provider, externalAccountId); tokens encrypted.
+- [x] Integration event schema — `raw_events.source='integration'` plus structured `source_metadata.{provider, external_object_id, event_type, dedup_key, actor, ...}`. Partial unique index `raw_events_integration_dedup_unq` per team. Embedded with `source_kind='integration_event'` via [`packages/shared/src/qdrant/client.ts`](packages/shared/src/qdrant/client.ts) extension.
+- [x] Google Drive sync — OAuth2 + Drive `changes.list` cursor in [`packages/shared/src/integrations/providers/google-drive.ts`](packages/shared/src/integrations/providers/google-drive.ts). Push-notification wake-up at `/api/webhooks/google-drive`.
+- [x] Drive vector strategy — change-feed metadata events embed via the standard raw_event path (`source_kind='integration_event'`). Importing a Drive file body into the team document drive reuses the Phase 9 `documentExtract` pipeline; aggressive full-file harvest stays as a follow-up.
+- [x] Linear sync — OAuth2 + GraphQL `issues(filter: { updatedAt: { gt: $since } })` cursor in [`packages/shared/src/integrations/providers/linear.ts`](packages/shared/src/integrations/providers/linear.ts). HMAC-signed webhook at `/api/webhooks/linear`.
+- [x] GitHub sync — OAuth + REST cursor over PRs and issues per repo in [`packages/shared/src/integrations/providers/github.ts`](packages/shared/src/integrations/providers/github.ts). HMAC-signed webhook at `/api/webhooks/github`.
+- [x] Backfill + incremental sync jobs — `integration-sync` queue + worker at [`apps/worker/src/workers/integrationSync.ts`](apps/worker/src/workers/integrationSync.ts). 5-minute repeatable tick fans incremental syncs out to every enabled integration. Idempotent under the dedup-key index.
+- [x] MCP adapter boundary — [`packages/shared/src/mcp/client.ts`](packages/shared/src/mcp/client.ts) speaks JSON-RPC 2.0 over the MCP streamable-HTTP transport (`initialize`, `tools/list`, `tools/call`). Outputs run through `fenceExternalContent` before the agent sees them.
+- [x] Custom MCP server connections — `mcp_servers` per-team with AES-GCM `auth_config`, plus `mcp_oauth_tokens` for OAuth tokens + dynamic-client metadata. CRUD via `/api/team/mcp-servers[/:id]` and `withTeam(...).mcp`.
+- [x] MCP OAuth state — HMAC-signed state at [`packages/shared/src/mcp/oauth-state.ts`](packages/shared/src/mcp/oauth-state.ts) carrying `(teamId, mcpServerId, userId)`; 15-min TTL.
+- [x] Tool registry + namespaced invocation — `McpClientManager` (5-min cache + pending-dedup) discovers tools per team and namespaces them `mcp__<serverIdCompact>__<toolName>`. `buildMcpTools` merges them into the agent's toolset in [`packages/shared/src/agent/tools.ts`](packages/shared/src/agent/tools.ts). Agent prompt bumped to `agent-v6-2026-05`.
+- [x] MCP settings UI — `/app/team/mcp-servers` lists connected servers, lets admins enable/disable, shows tool inventory, supports a `Test call` button per tool.
+- [x] Integration settings UI — `/app/team/integrations` renders the catalog (Drive/Linear/GitHub with SVG logos) + connected list with sync-now + disconnect + last-error inline.
+- [x] Integration audit log + replay — every connect/sync/error writes a row in `integration_audit_log`, surfaced at `/app/team/integrations/audit`; admin replay via `pnpm --filter @timeline/worker integration-resync -- --team=<uuid> [--from-zero]`.
+- [ ] (Future) Vernix-style outbound MCP server at `/api/mcp` so external agents can query timeline / tasks. Out of scope for this phase.
 
 ## Phase 12 — Polish And Hardening
 
