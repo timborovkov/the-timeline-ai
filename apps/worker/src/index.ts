@@ -4,6 +4,7 @@ import { childLogger, queue } from '@timeline/shared';
 import { startDocumentExtractWorker } from './workers/documentExtract.js';
 import { startEmbedWorker } from './workers/embed.js';
 import { startExtractWorker } from './workers/extract.js';
+import { startJanitorWorker } from './workers/janitor.js';
 import { startMeetingFinalizeWorker } from './workers/meetingFinalize.js';
 import { startOverdueWorker } from './workers/overdue.js';
 import { startTranscribeWorker } from './workers/transcribe.js';
@@ -25,11 +26,13 @@ async function main(): Promise<void> {
   const overdueWorker = startOverdueWorker({ db });
   const documentExtractWorker = startDocumentExtractWorker({ db });
   const meetingFinalizeWorker = startMeetingFinalizeWorker({ db });
-  // Register the hourly overdue-scan repeatable. BullMQ keys by jobId so a
+  const janitorWorker = startJanitorWorker({ db });
+  // Register the hourly repeatables. BullMQ keys by jobId so a
   // duplicate call on the next deploy is a no-op.
   await queue.scheduleOverdueScan();
+  await queue.scheduleJanitorSweep();
   log.info(
-    'transcribe + extract + embed + overdue + document-extract + meeting-finalize workers started',
+    'transcribe + extract + embed + overdue + document-extract + meeting-finalize + janitor workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -42,6 +45,7 @@ async function main(): Promise<void> {
         overdueWorker.close(),
         documentExtractWorker.close(),
         meetingFinalizeWorker.close(),
+        janitorWorker.close(),
       ]);
       await queue.closeTranscribeQueue();
       await queue.closeExtractQueue();
@@ -49,6 +53,7 @@ async function main(): Promise<void> {
       await queue.closeOverdueScanQueue();
       await queue.closeDocumentExtractQueue();
       await queue.closeMeetingFinalizeQueue();
+      await queue.closeJanitorQueue();
       await queue.closeRedisConnection();
     } catch (err: unknown) {
       log.error({ err }, 'shutdown error');

@@ -20,6 +20,11 @@ export const QUEUE_NAMES = {
   // extraction, usage recording. Triggered by the Recall status webhook
   // on `bot.call_ended` / `transcript.done`.
   meetingFinalize: 'meeting-finalize',
+  // Hourly janitor: re-enqueues async-pipeline rows stuck in intermediate
+  // states (the enqueue-after-commit pattern in the upload action isn't
+  // atomic — if Redis hiccups after the DB write, the job is lost). Mirrors
+  // overdueScan: BullMQ repeatable, singleton consumer.
+  janitor: 'janitor',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -394,5 +399,53 @@ export async function closeMeetingFinalizeQueue(): Promise<void> {
   if (!_meetingFinalizeQueue) return;
   const q = _meetingFinalizeQueue;
   _meetingFinalizeQueue = undefined;
+  await q.close().catch(() => undefined);
+}
+
+export interface JanitorJobData {
+  /** Empty payload: the sweep walks every team's stuck rows in one pass. */
+  triggeredAt?: string;
+}
+
+let _janitorQueue: Queue<JanitorJobData> | undefined;
+
+export function getJanitorQueue(): Queue<JanitorJobData> {
+  if (_janitorQueue) return _janitorQueue;
+  _janitorQueue = new Queue<JanitorJobData>(QUEUE_NAMES.janitor, {
+    connection: getRedisConnection(),
+    defaultJobOptions: {
+      // One retry — the next hourly tick covers a missed sweep, and the
+      // re-enqueue actions are themselves idempotent (worker advisory
+      // locks bail under-lock).
+      attempts: 2,
+      backoff: { type: 'fixed', delay: 60_000 },
+      removeOnComplete: { age: 3600, count: 24 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  });
+  return _janitorQueue;
+}
+
+/**
+ * Register the hourly janitor repeatable. Safe to call on every worker
+ * boot — BullMQ keys repeatables by `jobId`, so duplicate calls are no-ops.
+ */
+export async function scheduleJanitorSweep(): Promise<void> {
+  await getJanitorQueue().add(
+    'sweep',
+    {},
+    {
+      // Every hour on the half-hour so it doesn't fight the on-the-hour
+      // overdue scan for the same DB connections.
+      repeat: { pattern: '30 * * * *' },
+      jobId: 'janitor-hourly',
+    },
+  );
+}
+
+export async function closeJanitorQueue(): Promise<void> {
+  if (!_janitorQueue) return;
+  const q = _janitorQueue;
+  _janitorQueue = undefined;
   await q.close().catch(() => undefined);
 }
