@@ -37,8 +37,12 @@ export function InspectorProvider({ children }: { children: ReactNode }) {
     setContent(next);
     setOpen(true);
   }, []);
-  const hide = useCallback(() => setOpen(false), []);
-  const toggle = useCallback(() => setOpen((o) => !o), []);
+  const hide = useCallback(() => {
+    setOpen(false);
+  }, []);
+  const toggle = useCallback(() => {
+    setOpen((o) => !o);
+  }, []);
 
   // Close on Escape when the inspector is open
   useEffect(() => {
@@ -50,7 +54,9 @@ export function InspectorProvider({ children }: { children: ReactNode }) {
       }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
   }, [open, hide]);
 
   const value = useMemo(

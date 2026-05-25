@@ -58,14 +58,18 @@ export function MobileNav({ active, memberships }: Props) {
       if (e.key === 'Escape') setOpen(false);
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
   }, [open]);
 
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setOpen(true);
+        }}
         aria-label="Open navigation"
         aria-expanded={open}
         className="grid size-9 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg md:hidden"
@@ -82,7 +86,9 @@ export function MobileNav({ active, memberships }: Props) {
         >
           <div
             className="absolute inset-0 bg-bg/70 backdrop-blur-sm"
-            onClick={() => setOpen(false)}
+            onClick={() => {
+              setOpen(false);
+            }}
           />
           <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-border bg-bg px-4 py-5">
             <div className="flex items-center justify-between px-2">
@@ -91,7 +97,9 @@ export function MobileNav({ active, memberships }: Props) {
               </span>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  setOpen(false);
+                }}
                 aria-label="Close navigation"
                 className="grid size-8 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
               >
@@ -107,7 +115,9 @@ export function MobileNav({ active, memberships }: Props) {
                     key={item.href}
                     href={item.href}
                     aria-current={isActive ? 'page' : undefined}
-                    onClick={() => setOpen(false)}
+                    onClick={() => {
+                      setOpen(false);
+                    }}
                     className={cn(
                       'flex items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors',
                       isActive

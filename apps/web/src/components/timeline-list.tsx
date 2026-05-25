@@ -89,8 +89,7 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
           : isEmail && em?.from
             ? fmtAddr(em.from)
             : 'system';
-        const sourceLabel =
-          SOURCE_LABEL[event.source ?? 'system'] ?? event.source?.toUpperCase() ?? 'SYS';
+        const sourceLabel = SOURCE_LABEL[event.source] ?? event.source.toUpperCase();
         return (
           <li
             key={event.id}

@@ -38,7 +38,15 @@ export function ErrorState({
         ) : null}
       </div>
       {reset ? (
-        <Button type="button" variant="outline" size="sm" onClick={() => reset()} className="gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            reset();
+          }}
+          className="gap-2"
+        >
           <RotateCw className="size-3.5" />
           Try again
         </Button>

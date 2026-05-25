@@ -25,6 +25,7 @@
   --color-ring: var(--ring);
 
   /* Operational Archive canonical names — prefer these in new code */
+  --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-border-strong: var(--border-strong);

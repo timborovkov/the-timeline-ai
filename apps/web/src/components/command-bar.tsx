@@ -37,7 +37,9 @@ export function CommandBar({
       }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
   }, []);
 
   return (
@@ -71,7 +73,9 @@ export function CommandBar({
         ref={inputRef}
         type="search"
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={(e) => {
+          setQuery(e.target.value);
+        }}
         placeholder={placeholder}
         className="flex-1 bg-transparent font-mono text-xs text-fg placeholder:text-fg-dim focus:outline-none"
       />

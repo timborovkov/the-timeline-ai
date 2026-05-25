@@ -21,10 +21,13 @@ const OPTIONS = [
 export function ThemeToggle({ className }: { className?: string }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
-  const ActiveIcon =
-    (mounted && OPTIONS.find((o) => o.value === (resolvedTheme ?? 'light'))?.icon) || Sun;
+  const ActiveIcon = mounted
+    ? (OPTIONS.find((o) => o.value === (resolvedTheme ?? 'light'))?.icon ?? Sun)
+    : Sun;
 
   return (
     <DropdownMenu>
@@ -37,7 +40,9 @@ export function ThemeToggle({ className }: { className?: string }) {
         {OPTIONS.map(({ value, label, icon: Icon }) => (
           <DropdownMenuItem
             key={value}
-            onSelect={() => setTheme(value)}
+            onSelect={() => {
+              setTheme(value);
+            }}
             className="font-mono text-xs uppercase tracking-wider"
           >
             <Icon className="mr-2 size-3.5" />

@@ -1,7 +1,7 @@
 'use client';
 
 import { Search, X } from 'lucide-react';
-import { useState, type SyntheticEvent } from 'react';
+import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -28,16 +28,26 @@ interface ApiResponse {
  * empty query renders nothing (the existing reverse-chron timeline shows
  * underneath). Non-empty queries POST to /api/search and render result
  * cards. Streaming is intentionally not implemented here — Phase 6.
+ *
+ * `initialQuery` prefills the input AND auto-runs the search on mount.
+ * Used by the ⌘K command bar route `/app/timeline?q=…` so submitting a
+ * query from anywhere in the app lands on the timeline with results
+ * already rendered. Auto-search runs once per mounted instance, even if
+ * the prop is later cleared, so the user can still erase and retry.
  */
-export function SearchBar() {
-  const [query, setQuery] = useState('');
+interface Props {
+  initialQuery?: string;
+}
+
+export function SearchBar({ initialQuery = '' }: Props) {
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoRanRef = useRef(false);
 
-  async function onSubmit(e: SyntheticEvent<HTMLFormElement>): Promise<void> {
-    e.preventDefault();
-    const q = query.trim();
+  async function runSearch(raw: string): Promise<void> {
+    const q = raw.trim();
     if (!q) {
       setResults(null);
       setError(null);
@@ -76,6 +86,22 @@ export function SearchBar() {
       setLoading(false);
     }
   }
+
+  async function onSubmit(e: SyntheticEvent<HTMLFormElement>): Promise<void> {
+    e.preventDefault();
+    await runSearch(query);
+  }
+
+  // Auto-run search when arriving from the command bar (`?q=…`). Guarded
+  // by `autoRanRef` so a parent re-render that toggles `initialQuery` back
+  // to `''` doesn't wipe the current results — once the user is on the
+  // page they own the input.
+  useEffect(() => {
+    if (autoRanRef.current) return;
+    if (!initialQuery.trim()) return;
+    autoRanRef.current = true;
+    void runSearch(initialQuery);
+  }, [initialQuery]);
 
   function clear(): void {
     setQuery('');

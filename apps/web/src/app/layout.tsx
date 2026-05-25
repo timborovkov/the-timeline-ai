@@ -1,5 +1,6 @@
-import type { Metadata } from 'next';
 import localFont from 'next/font/local';
+
+import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 import { ThemeProvider } from '@/components/theme-provider';

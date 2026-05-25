@@ -2,8 +2,8 @@ import type { TeamMembership } from '@/lib/active-team';
 import type { ReactNode } from 'react';
 
 import { CommandBar } from '@/components/command-bar';
-import { InspectorPane } from '@/components/inspector-pane';
 import { InspectorProvider } from '@/components/inspector-context';
+import { InspectorPane } from '@/components/inspector-pane';
 import { InspectorToggle } from '@/components/inspector-pane';
 import { MobileNav } from '@/components/mobile-nav';
 import { RailNav } from '@/components/rail-nav';

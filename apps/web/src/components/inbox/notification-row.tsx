@@ -68,7 +68,6 @@ export function NotificationRow({ id, kind, summary, entityId, createdAt, initia
 
   return (
     <li
-      onMouseEnter={markRead}
       className={cn(
         'grid grid-cols-[18ch_1fr_auto] gap-x-4 gap-y-1 border-b border-border px-1 py-3 text-sm transition-colors hover:bg-surface',
         read ? 'opacity-70' : 'opacity-100',

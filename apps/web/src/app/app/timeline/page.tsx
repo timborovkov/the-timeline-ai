@@ -17,7 +17,13 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
 interface Props {
-  searchParams: Promise<{ author?: string; from?: string; to?: string }>;
+  searchParams: Promise<{
+    author?: string;
+    from?: string;
+    to?: string;
+    /** Prefilled by the ⌘K command bar. SearchBar reads it and auto-runs. */
+    q?: string;
+  }>;
 }
 
 function parseDate(input: string | undefined): Date | undefined {
@@ -152,7 +158,7 @@ export default async function TimelinePage({ searchParams }: Props) {
         <CaptureForm />
       </section>
 
-      <SearchBar />
+      <SearchBar initialQuery={sp.q ?? ''} />
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
