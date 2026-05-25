@@ -1,5 +1,7 @@
 import Link from 'next/link';
 
+import { AssociationLine } from './_concept-association-line';
+
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
@@ -395,8 +397,8 @@ function Solution() {
         />
         <Pillar
           n="02"
-          title="Structure is derived, not demanded."
-          body="The agent extracts people, companies, projects, deals, decisions, and tasks from raw input — reconciled against everything your team has ever said."
+          title="Objects and tasks, derived from what you said."
+          body="The agent reads raw events and resolves them into durable objects — people, companies, deals, projects, documents — and the tasks that fall out of them. No forms, no schemas."
         />
         <Pillar
           n="03"
@@ -404,9 +406,328 @@ function Solution() {
           body="No black-box summaries. Click any claim, see the raw event it came from with author, timestamp, and source."
         />
       </div>
+
+      <div className="mt-20">
+        <IndexStrip>CONCEPTS · HOW IT FITS TOGETHER</IndexStrip>
+        <ConceptDiagram />
+
+        <div className="mt-10 max-w-3xl border-l-2 border-signal pl-5">
+          <Mono className="text-signal">THE PAYOFF</Mono>
+          <p className="mt-4 text-lg leading-snug text-fg">
+            The output looks like a CRM, a project tracker, and a doc index — current, queryable,
+            cited. You just never had to update it.
+          </p>
+        </div>
+      </div>
     </Section>
   );
 }
+
+const INPUTS = [
+  'TELEGRAM',
+  'GOOGLE MEET',
+  'EMAIL',
+  'WEB / PWA',
+  'DRIVE UPLOAD',
+  'MCP / CRM',
+  'ZOOM / TEAMS',
+] as const;
+
+const WORKSPACE_OBJECTS = [
+  { chip: 'obj:apple-q2', name: 'Apple', type: 'DEAL' },
+  { chip: 'obj:john-ternus', name: 'John Ternus', type: 'PERSON' },
+  { chip: 'task:revise-deck', name: 'Revise deck by Fri', type: 'TASK' },
+  { chip: 'obj:office-rules', name: 'Office Rules', type: 'DOCUMENT' },
+] as const;
+
+function ConceptDiagram() {
+  return (
+    <div aria-hidden className="cdg-root mt-10 border border-border bg-bg">
+      {/* Top row: inputs · pipeline · workspace */}
+      <div className="relative grid gap-px bg-border sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
+        {/* INPUTS */}
+        <div className="relative z-[1] bg-bg p-6 sm:p-7">
+          <Mono>INPUTS</Mono>
+          <ul className="mt-5 space-y-2.5">
+            {INPUTS.map((label, i) => (
+              <li
+                key={label}
+                className="flex items-center justify-between gap-3 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-muted"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-fg-dim" />
+                  {label}
+                </span>
+                <span
+                  className="cdg-pulse inline-block h-1.5 w-1.5 rounded-full bg-signal"
+                  style={{ animationDelay: `${i * 0.45}s` }}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* PIPELINE */}
+        <div className="relative z-[1] flex items-center justify-center bg-bg p-6 sm:p-7">
+          <div className="inline-flex flex-col items-center gap-3 border border-border bg-surface px-6 py-5">
+            <Mono className="text-signal">EXTRACT · AGENT</Mono>
+            <div className="font-mono text-base text-fg-muted">
+              <span className="cdg-dot" style={{ animationDelay: '0s' }}>
+                ◇
+              </span>{' '}
+              <span className="cdg-dot" style={{ animationDelay: '0.3s' }}>
+                ◇
+              </span>{' '}
+              <span className="cdg-dot" style={{ animationDelay: '0.6s' }}>
+                ◇
+              </span>
+            </div>
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
+              llm.chat · llm.embed · llm.transcribe
+            </span>
+          </div>
+        </div>
+
+        {/* WORKSPACE */}
+        <div className="relative z-[1] bg-bg p-6 sm:p-7">
+          <Mono>WORKSPACE</Mono>
+
+          {/* TIMELINE */}
+          <LitRow delay={3.0} className="mt-5">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+                ▤ TIMELINE
+              </span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+                2,847 EVENTS · CITED
+              </span>
+            </div>
+          </LitRow>
+
+          {/* OBJECTS group */}
+          <div className="mt-4">
+            <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+              ◆ OBJECTS
+            </div>
+            <div data-cdg-objects="" className="relative mt-2 space-y-1.5 pl-3">
+              {WORKSPACE_OBJECTS.map((o, i) => (
+                <LitRow
+                  key={o.chip}
+                  id={`cdg-row-${o.chip.replace(/[^a-zA-Z0-9]/g, '-')}`}
+                  delay={3.5 + i * 0.45}
+                  dense
+                >
+                  <div className="flex items-center gap-2 text-sm">
+                    <CitationChipStatic id={o.chip} />
+                    <span className="text-fg">{o.name}</span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
+                      · {o.type}
+                    </span>
+                  </div>
+                </LitRow>
+              ))}
+              {/* Association line: measured at runtime between the two row IDs;
+                  resilient to LitRow padding changes. */}
+              <AssociationLine
+                fromId="cdg-row-obj-apple-q2"
+                toId="cdg-row-obj-john-ternus"
+                containerSelector="[data-cdg-objects]"
+                label="↳ related"
+              />
+            </div>
+          </div>
+
+          {/* AGENT Q&A */}
+          <LitRow delay={5.8} className="mt-4">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+                ⌬ AGENT Q&A
+              </span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+                /ASK · CITED ANSWERS
+              </span>
+            </div>
+          </LitRow>
+        </div>
+
+        {/* Sweep line — sits behind content, crosses the full top row */}
+        <span className="cdg-sweep" />
+      </div>
+
+      {/* Drop connectors — animate "everything settles into the drive".
+          Mobile: single grouped line. Desktop: three columns. */}
+      <div className="relative h-6 bg-bg sm:hidden">
+        <span
+          className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
+          style={{ animationDelay: '5.6s' }}
+        />
+      </div>
+      <div className="relative hidden h-6 gap-px bg-border sm:grid sm:grid-cols-3">
+        <div className="relative bg-bg">
+          <span
+            className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
+            style={{ animationDelay: '5.5s' }}
+          />
+        </div>
+        <div className="relative bg-bg">
+          <span
+            className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
+            style={{ animationDelay: '5.7s' }}
+          />
+        </div>
+        <div className="relative bg-bg">
+          <span
+            className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
+            style={{ animationDelay: '5.9s' }}
+          />
+        </div>
+      </div>
+
+      {/* DRIVE foundation strip */}
+      <div className="border-t border-border bg-surface px-6 py-5 sm:px-7">
+        <div className="flex flex-wrap items-baseline justify-between gap-4">
+          <Mono className="text-fg">▣ TEAM DOCUMENT DRIVE</Mono>
+          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
+            FOUNDATION · TEAM-SCOPED
+          </span>
+        </div>
+        <p className="mt-2 text-sm leading-[1.6] text-fg-muted">
+          Immutable raw events · versioned blobs · vectors · the storage layer everything else rests
+          on.
+        </p>
+      </div>
+
+      <style>{CDG_STYLES}</style>
+    </div>
+  );
+}
+
+function LitRow({
+  id,
+  children,
+  delay,
+  dense,
+  className,
+}: {
+  id?: string;
+  children: ReactNode;
+  delay: number;
+  dense?: boolean;
+  className?: string;
+}) {
+  return (
+    <div id={id} className={cn('relative', className)}>
+      <div
+        className="cdg-lit pointer-events-none absolute inset-0 border border-signal/30 bg-signal-soft"
+        style={{ animationDelay: `${delay}s` }}
+      />
+      <div className={cn('relative', dense ? 'px-2 py-1' : 'px-3 py-2')}>{children}</div>
+    </div>
+  );
+}
+
+const CDG_STYLES = `
+  .cdg-root { position: relative; overflow: hidden; }
+
+  /* Default (and reduced-motion) state: everything reads as "settled / lit". */
+  .cdg-lit { opacity: 1; }
+  .cdg-assoc { opacity: 1; }
+  .cdg-assoc-label { opacity: 1; }
+  .cdg-drop { opacity: 0.55; }
+  .cdg-sweep { display: none; }
+  .cdg-pulse { opacity: 0.35; }
+  .cdg-dot { opacity: 1; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cdg-sweep {
+      display: block;
+      position: absolute;
+      top: 0; bottom: 0;
+      left: 0;
+      width: 72px;
+      pointer-events: none;
+      background: linear-gradient(
+        to right,
+        transparent,
+        color-mix(in oklch, var(--signal) 55%, transparent),
+        transparent
+      );
+      animation: cdg-sweep 10s infinite linear;
+      will-change: transform;
+      z-index: 0;
+    }
+
+    .cdg-lit {
+      opacity: 0;
+      animation: cdg-lit 10s infinite ease-out;
+    }
+    .cdg-assoc {
+      opacity: 0;
+      animation: cdg-assoc 10s infinite ease-out;
+    }
+    .cdg-assoc-label {
+      opacity: 0;
+      animation: cdg-assoc 10s infinite ease-out;
+    }
+    .cdg-drop {
+      opacity: 0;
+      animation: cdg-drop 10s infinite ease-out;
+    }
+    .cdg-pulse {
+      opacity: 0;
+      animation: cdg-pulse 10s infinite ease-out;
+    }
+    .cdg-dot {
+      animation: cdg-dotblink 10s infinite ease-in-out;
+    }
+  }
+
+  /* translateX(N * 100cqw) requires container-query units; using vw is fine
+     because the diagram never exceeds viewport width. Compositor-only. */
+  @keyframes cdg-sweep {
+    0%   { transform: translateX(-72px); opacity: 0; }
+    8%   { opacity: 1; }
+    35%  { opacity: 1; }
+    45%  { transform: translateX(100vw); opacity: 0; }
+    100% { transform: translateX(100vw); opacity: 0; }
+  }
+
+  @keyframes cdg-lit {
+    0%, 28%   { opacity: 0; }
+    34%       { opacity: 1; }
+    92%       { opacity: 1; }
+    98%, 100% { opacity: 0; }
+  }
+
+  @keyframes cdg-assoc {
+    0%, 52%   { opacity: 0; }
+    58%       { opacity: 1; }
+    92%       { opacity: 1; }
+    98%, 100% { opacity: 0; }
+  }
+
+  @keyframes cdg-drop {
+    0%, 52%   { opacity: 0; }
+    62%       { opacity: 0.55; }
+    92%       { opacity: 0.55; }
+    98%, 100% { opacity: 0; }
+  }
+
+  @keyframes cdg-pulse {
+    0%, 4%    { opacity: 0; transform: scale(0.4); }
+    8%        { opacity: 1; transform: scale(1); }
+    18%       { opacity: 0; transform: scale(0.4); }
+    100%      { opacity: 0; transform: scale(0.4); }
+  }
+
+  @keyframes cdg-dotblink {
+    0%, 12%   { opacity: 0.25; }
+    20%       { opacity: 1; }
+    40%       { opacity: 0.4; }
+    50%       { opacity: 1; }
+    100%      { opacity: 0.4; }
+  }
+`;
 
 function Pillar({ n, title, body }: { n: string; title: string; body: string }) {
   return (
