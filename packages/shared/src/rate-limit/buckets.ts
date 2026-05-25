@@ -9,6 +9,9 @@ export const RATE_LIMITS = {
   chat: { capacity: 20, refillPerSec: 20 / 60 },
   /** Telegram webhook: 60/min per tg_user_id. */
   telegramWebhook: { capacity: 60, refillPerSec: 60 / 60 },
+  /** Telegram /ask: 10/min per tg_user_id. Tighter than the webhook bucket
+   *  because each /ask invokes the agent (OpenRouter spend). */
+  telegramAsk: { capacity: 10, refillPerSec: 10 / 60 },
   /** Postmark inbound: 120/min per From address. */
   emailInbound: { capacity: 120, refillPerSec: 120 / 60 },
   /** 401 lockout for Postmark inbound: 30/min per source IP. */

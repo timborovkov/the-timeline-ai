@@ -9,7 +9,9 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, sql } from 'drizzle-orm';
 
+import { askAgent } from '../agent/ask.js';
 import { childLogger } from '../logger.js';
+import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '../rate-limit/index.js';
 
 import { type TelegramApi } from './api.js';
 import {
@@ -231,6 +233,9 @@ async function dispatchCommand(
       return;
     case '/help':
       await cmdHelpDm(ctx);
+      return;
+    case '/ask':
+      await cmdAskDm(ctx, command.arg);
       return;
     default:
       await ctx.tg.sendMessage({
@@ -491,13 +496,117 @@ async function cmdHelpDm(ctx: DmContext): Promise<void> {
   await ctx.tg.sendMessage({
     chat_id: ctx.message.chat.id,
     text:
+      `Plain messages here are saved to your team's timeline (👀 = received).\n` +
+      `Use /ask to query the timeline.\n\n` +
       `Commands (DM):\n` +
-      `/link <token>   connect this DM to a team\n` +
-      `/team           list linked teams; /team N switches\n` +
-      `/whereami       show current active team\n` +
-      `/unlink         disconnect all teams\n` +
-      `/help           this message`,
+      `/ask <question>  ask the timeline (e.g. /ask what did we ship this week?)\n` +
+      `/link <token>    connect this DM to a team\n` +
+      `/team            list linked teams; /team N switches\n` +
+      `/whereami        show current active team\n` +
+      `/unlink          disconnect all teams\n` +
+      `/help            this message`,
   });
+}
+
+async function cmdAskDm(ctx: DmContext, arg: string): Promise<void> {
+  await runAsk({
+    tg: ctx.tg,
+    db: ctx.db,
+    chatId: ctx.message.chat.id,
+    tgUserId: ctx.tgUser.id,
+    teamId: ctx.activeTeamId,
+    userId: ctx.tgUserRow.userId,
+    userName: tgDisplayName(ctx.tgUser),
+    question: arg,
+  });
+}
+
+function tgDisplayName(u: TgUser): string {
+  const parts = [u.first_name, u.last_name].filter((p): p is string => !!p && p.length > 0);
+  if (parts.length > 0) return parts.join(' ');
+  if (u.username) return `@${u.username}`;
+  return 'a teammate';
+}
+
+/**
+ * Shared `/ask` runner used by both DM and group dispatchers. Validates that
+ * the chat has a team to answer against and that the sender is a known user
+ * (TeamScope requires a real userId — unverified senders can't pose as a
+ * teammate). Per-user rate-limited tighter than ingest because each call hits
+ * OpenRouter.
+ */
+async function runAsk(input: {
+  tg: TelegramApi;
+  db: Db;
+  chatId: number;
+  tgUserId: number;
+  teamId: string | null;
+  userId: string | null;
+  userName: string;
+  question: string;
+}): Promise<void> {
+  const question = input.question.trim();
+  if (!question) {
+    await input.tg.sendMessage({
+      chat_id: input.chatId,
+      text: 'Usage: /ask <question>. Example: /ask what did we ship this week?',
+    });
+    return;
+  }
+  if (!input.teamId) {
+    await input.tg.sendMessage({
+      chat_id: input.chatId,
+      text: 'No team to ask. Run /link <token> first.',
+    });
+    return;
+  }
+  if (!input.userId) {
+    await input.tg.sendMessage({
+      chat_id: input.chatId,
+      text:
+        'Your Telegram account is not linked to a workspace user — /ask needs a verified ' +
+        'identity. Re-run /link to attach this chat.',
+    });
+    return;
+  }
+  const rl = await checkRateLimit({
+    key: rateLimitKey('tg', 'ask', input.tgUserId),
+    ...RATE_LIMITS.telegramAsk,
+  });
+  if (!rl.ok) {
+    await input.tg.sendMessage({
+      chat_id: input.chatId,
+      text: `Slow down — /ask is limited to ${RATE_LIMITS.telegramAsk.capacity}/min. Try again in ${Math.ceil(
+        rl.retryAfterMs / 1000,
+      )}s.`,
+    });
+    return;
+  }
+  // Best-effort typing indicator while the agent runs. Don't await the
+  // promise's failure path — a chat-action error must not block the answer.
+  void input.tg.sendChatAction({ chat_id: input.chatId, action: 'typing' }).catch(() => {
+    /* ignore */
+  });
+  const result = await askAgent({
+    db: input.db,
+    teamId: input.teamId,
+    userId: input.userId,
+    userName: input.userName,
+    question,
+  });
+  if (!result.ok) {
+    const text =
+      result.error === 'unconfigured'
+        ? 'Chat is not configured on this server (missing OPENROUTER_API_KEY or QDRANT_URL).'
+        : result.error === 'not_a_member'
+          ? 'Your linked workspace user is no longer a member of this team. Ask a teammate to re-invite you.'
+          : result.error === 'no_team'
+            ? 'Could not load that team. Try /whereami and /team to confirm the active team.'
+            : "Couldn't answer that — try again.";
+    await input.tg.sendMessage({ chat_id: input.chatId, text });
+    return;
+  }
+  await input.tg.sendMessage({ chat_id: input.chatId, text: result.answer });
 }
 
 async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Promise<void> {
@@ -522,6 +631,22 @@ async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Prom
   });
   await maybeEnqueueExtract(ctx, inserted);
   await maybeEnqueueEmbed(ctx, inserted);
+  if (inserted && !isEdit) {
+    await ackReaction(ctx.tg, ctx.message.chat.id, ctx.message.message_id);
+  }
+}
+
+/**
+ * Best-effort ingest ack. We don't await failures because a missing reaction
+ * is a UX nicety, not a correctness signal — the event itself is already
+ * durable in `raw_events`.
+ */
+async function ackReaction(tg: TelegramApi, chatId: number, messageId: number): Promise<void> {
+  try {
+    await tg.setMessageReaction({ chat_id: chatId, message_id: messageId, emoji: '👀' });
+  } catch (err) {
+    log.warn({ err }, 'setMessageReaction failed');
+  }
 }
 
 /**
@@ -646,6 +771,9 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
     });
     await maybeEnqueueExtract(ctx, inserted);
     await maybeEnqueueEmbed(ctx, inserted);
+    if (inserted && !isEdit) {
+      await ackReaction(ctx.tg, ctx.message.chat.id, ctx.message.message_id);
+    }
   }
 }
 
@@ -683,11 +811,33 @@ async function dispatchGroupCommand(
       await ctx.tg.sendMessage({
         chat_id: ctx.message.chat.id,
         text:
+          `Plain messages here are saved to the bound team's timeline (👀 = received).\n` +
+          `Use /ask to query the timeline.\n\n` +
           `Commands (group):\n` +
-          `/link <token>   bind this group to a team (admin only)\n` +
-          `/whereami       show the bound team\n` +
-          `/unlink         unbind (admin only)\n` +
-          `/help           this message`,
+          `/ask <question>  ask the timeline\n` +
+          `/link <token>    bind this group to a team (admin only)\n` +
+          `/whereami        show the bound team\n` +
+          `/unlink          unbind (admin only)\n` +
+          `/help            this message`,
+      });
+      return;
+    case '/ask':
+      if (!ctx.tgUser || !ctx.tgUserRow) {
+        await ctx.tg.sendMessage({
+          chat_id: ctx.message.chat.id,
+          text: 'Cannot identify the sender. /ask needs a verified Telegram user.',
+        });
+        return;
+      }
+      await runAsk({
+        tg: ctx.tg,
+        db: ctx.db,
+        chatId: ctx.message.chat.id,
+        tgUserId: ctx.tgUser.id,
+        teamId: ctx.binding?.teamId ?? null,
+        userId: ctx.tgUserRow.userId,
+        userName: tgDisplayName(ctx.tgUser),
+        question: command.arg,
       });
       return;
     case '/team':

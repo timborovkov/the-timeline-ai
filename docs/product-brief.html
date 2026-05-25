@@ -117,7 +117,9 @@
         <li><strong>Web/PWA</strong>: typed notes, uploaded audio, drag-and-drop documents.</li>
         <li>
           <strong>Telegram bot</strong>: voice memos, text, forwarded messages. Personal DMs and
-          team group chats both supported.
+          team group chats both supported. Plain messages land as timeline notes (acknowledged with
+          a <code>👀</code> reaction so capture is visible); <code>/ask &lt;question&gt;</code>
+          runs the same agent as the web chat and replies in-thread.
         </li>
         <li>
           <strong>Email ingest</strong>: forward, CC, or BCC to a per-team address. Postmark handles
@@ -201,7 +203,9 @@
           <strong>Agent chat.</strong> Natural-language queries over the timeline and document base.
           Tool-use pattern: agent queries Qdrant for semantic context, queries Postgres for
           structured filters and document versions, synthesizes an answer with event/document
-          citations.
+          citations. Available in the web app at <code>/app/chat</code> and in Telegram via
+          <code>/ask &lt;question&gt;</code> — both surfaces share the same system prompt, tool
+          set, and team scope.
         </li>
       </ul>
 

@@ -33,6 +33,24 @@ export interface TelegramApi {
   getFile(input: { file_id: string }): Promise<TelegramFileInfo>;
   /** Download the bytes of a file resolved via {@link getFile}. */
   downloadFile(filePath: string): Promise<Buffer>;
+  /**
+   * React to a message with a single emoji. Best-effort: callers should swallow
+   * errors so a failed reaction never breaks the surrounding flow (ingest, ack).
+   */
+  setMessageReaction(input: {
+    chat_id: number;
+    message_id: number;
+    emoji: string;
+  }): Promise<void>;
+  /**
+   * Show a typing indicator in the chat. Auto-expires after ~5s on Telegram's
+   * side. Used to acknowledge expensive commands like `/ask` while the agent
+   * runs.
+   */
+  sendChatAction(input: {
+    chat_id: number;
+    action: 'typing' | 'upload_photo' | 'record_voice' | 'upload_voice';
+  }): Promise<void>;
 }
 
 export class HttpTelegramApi implements TelegramApi {
@@ -81,6 +99,20 @@ export class HttpTelegramApi implements TelegramApi {
     return this.call<TelegramFileInfo>('getFile', input);
   }
 
+  async setMessageReaction(
+    input: Parameters<TelegramApi['setMessageReaction']>[0],
+  ): Promise<void> {
+    await this.call('setMessageReaction', {
+      chat_id: input.chat_id,
+      message_id: input.message_id,
+      reaction: [{ type: 'emoji', emoji: input.emoji }],
+    });
+  }
+
+  async sendChatAction(input: Parameters<TelegramApi['sendChatAction']>[0]): Promise<void> {
+    await this.call('sendChatAction', input);
+  }
+
   async downloadFile(filePath: string): Promise<Buffer> {
     const res = await fetch(`https://api.telegram.org/file/bot${this.token}/${filePath}`);
     if (!res.ok) {
@@ -110,6 +142,12 @@ export class NoopTelegramApi implements TelegramApi {
   }
   getFile(): Promise<TelegramFileInfo> {
     return Promise.reject(new Error('TELEGRAM_BOT_TOKEN unset — cannot fetch files'));
+  }
+  setMessageReaction(): Promise<void> {
+    return Promise.resolve();
+  }
+  sendChatAction(): Promise<void> {
+    return Promise.resolve();
   }
   downloadFile(): Promise<Buffer> {
     return Promise.reject(new Error('TELEGRAM_BOT_TOKEN unset — cannot download files'));
