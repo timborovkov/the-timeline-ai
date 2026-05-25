@@ -124,11 +124,10 @@ export function CaptureForm() {
 
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="space-y-5">
-      <div>
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Capture</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          A quick note — a meeting takeaway, a decision, a follow-up.
-        </p>
+      <div className="flex items-baseline gap-x-3 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+        <span className="text-fg">CAPTURE</span>
+        <span className="text-fg-dim">·</span>
+        <span>quick note · meeting takeaway · decision · follow-up</span>
       </div>
       <Textarea
         ref={textareaRef}

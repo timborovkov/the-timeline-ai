@@ -1,21 +1,70 @@
 import { Skeleton } from '@/components/ui/skeleton';
 
+/**
+ * Index-strip skeleton — the mono one-liner that opens every operational
+ * surface. Match the heights and widths of the real `<IndexStrip>` so CLS
+ * stays zero.
+ */
 export function PageHeaderSkeleton() {
   return (
-    <header className="mb-10 space-y-3">
+    <div
+      className="flex items-baseline gap-x-4 border-y border-border py-3"
+      aria-busy="true"
+      aria-label="Loading"
+    >
+      <Skeleton className="h-3 w-24" />
+      <Skeleton className="h-3 w-16" />
       <Skeleton className="h-3 w-20" />
-      <Skeleton className="h-9 w-64" />
-      <Skeleton className="h-4 w-80" />
-    </header>
+      <Skeleton className="h-3 w-12" />
+    </div>
   );
 }
 
+/**
+ * Flat-row skeleton matching the new `<TimelineList>` shape:
+ *   [mono ts] [body] [source]
+ */
+export function TimelineRowSkeleton() {
+  return (
+    <li className="grid grid-cols-[18ch_1fr] gap-x-4 gap-y-2 border-b border-border py-3 md:grid-cols-[18ch_1fr_10ch]">
+      <Skeleton className="h-3 w-[16ch]" />
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-3 w-11/12" />
+        <Skeleton className="h-3 w-3/4" />
+      </div>
+      <Skeleton className="hidden h-3 w-12 justify-self-end md:block" />
+    </li>
+  );
+}
+
+export function TimelineFeedSkeleton({ count = 4 }: { count?: number }) {
+  return (
+    <ol
+      className="border-t border-border"
+      aria-busy="true"
+      aria-label="Loading timeline"
+    >
+      {Array.from({ length: count }).map((_, i) => (
+        <TimelineRowSkeleton key={i} />
+      ))}
+    </ol>
+  );
+}
+
+/**
+ * Generic card skeleton — kept for non-timeline surfaces (objects, boards)
+ * that haven't migrated to flat rows. Tighter chrome than v1.
+ */
 export function CardSkeleton({ className }: { className?: string }) {
   return (
-    <div className={`rounded-xl border bg-card p-6 ${className ?? ''}`}>
+    <div
+      className={`rounded-sm border border-border bg-surface p-4 ${className ?? ''}`}
+      aria-busy="true"
+    >
       <div className="flex items-start gap-3">
-        <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
-        <div className="flex-1 space-y-3">
+        <Skeleton className="size-7 shrink-0 rounded-sm" />
+        <div className="flex-1 space-y-2">
           <div className="flex items-center gap-2">
             <Skeleton className="h-4 w-24" />
             <Skeleton className="h-3 w-32" />
@@ -29,25 +78,17 @@ export function CardSkeleton({ className }: { className?: string }) {
   );
 }
 
-export function TimelineFeedSkeleton({ count = 3 }: { count?: number }) {
-  return (
-    <ol className="space-y-4">
-      {Array.from({ length: count }).map((_, i) => (
-        <li key={i}>
-          <CardSkeleton />
-        </li>
-      ))}
-    </ol>
-  );
-}
-
 export function EntityGridSkeleton({ count = 6 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div
+      className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+      aria-busy="true"
+      aria-label="Loading entities"
+    >
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
-          className="flex items-center justify-between rounded-lg border bg-card px-4 py-3"
+          className="flex items-center justify-between rounded-sm border border-border bg-surface px-3 py-2"
         >
           <Skeleton className="h-4 w-32" />
           <Skeleton className="h-3 w-12" />
@@ -57,10 +98,40 @@ export function EntityGridSkeleton({ count = 6 }: { count?: number }) {
   );
 }
 
+export function BoardSkeleton({ columns = 4 }: { columns?: number }) {
+  return (
+    <div
+      className="grid grid-cols-2 gap-3 lg:grid-cols-4"
+      aria-busy="true"
+      aria-label="Loading board"
+    >
+      {Array.from({ length: columns }).map((_, c) => (
+        <div
+          key={c}
+          className="rounded-sm border border-border bg-surface p-3"
+        >
+          <Skeleton className="mb-3 h-3 w-16" />
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-sm" />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function InlineSpinner({ label = 'Loading…' }: { label?: string }) {
   return (
-    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+    <div
+      className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
+      aria-live="polite"
+    >
+      <span
+        aria-hidden="true"
+        className="size-1.5 animate-pulse rounded-sm bg-signal"
+      />
       {label}
     </div>
   );

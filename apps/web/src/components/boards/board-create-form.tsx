@@ -39,11 +39,13 @@ export function BoardCreateForm() {
   }
 
   return (
-    <div className="rounded-xl border bg-card p-5">
-      <h2 className="mb-4 text-sm font-medium tracking-tight">New board</h2>
+    <div>
+      <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+        New board
+      </h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block">
-          <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
+          <span className="mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
             Name
           </span>
           <input
@@ -52,11 +54,11 @@ export function BoardCreateForm() {
               setName(e.target.value);
             }}
             placeholder="e.g. Active deals"
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
           />
         </label>
         <label className="block">
-          <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
+          <span className="mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
             Layout
           </span>
           <select
@@ -64,7 +66,7 @@ export function BoardCreateForm() {
             onChange={(e) => {
               setKind(e.target.value as (typeof KINDS)[number]);
             }}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
           >
             {KINDS.map((k) => (
               <option key={k} value={k}>
@@ -74,7 +76,7 @@ export function BoardCreateForm() {
           </select>
         </label>
         <label className="block">
-          <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
+          <span className="mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
             Filter: type
           </span>
           <select
@@ -82,7 +84,7 @@ export function BoardCreateForm() {
             onChange={(e) => {
               setFilterType(e.target.value);
             }}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
           >
             <option value="">Any</option>
             {OBJECT_TYPES.map((t) => (
@@ -94,7 +96,7 @@ export function BoardCreateForm() {
         </label>
         {kind !== 'table' && (
           <label className="block">
-            <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
+            <span className="mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
               Group by
             </span>
             <select
@@ -102,7 +104,7 @@ export function BoardCreateForm() {
               onChange={(e) => {
                 setGroupBy(e.target.value as (typeof GROUP_BY_OPTIONS)[number]);
               }}
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
             >
               {GROUP_BY_OPTIONS.map((g) => (
                 <option key={g} value={g}>
@@ -113,12 +115,16 @@ export function BoardCreateForm() {
           </label>
         )}
       </div>
-      {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-danger">
+          {error}
+        </p>
+      )}
       <button
         type="button"
         onClick={submit}
         disabled={pending || !name.trim()}
-        className="mt-4 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary/20 disabled:opacity-50"
+        className="mt-4 rounded-sm bg-signal px-3 py-1.5 text-sm font-medium text-signal-fg hover:opacity-90 disabled:opacity-40"
       >
         {pending ? 'Creating…' : 'Create board'}
       </button>

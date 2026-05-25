@@ -2,9 +2,9 @@ import { objects, withTeam } from '@timeline/shared';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { IndexStrip } from '@/components/index-strip';
 import { MarkAllReadButton } from '@/components/inbox/mark-all-read-button';
 import { NotificationRow } from '@/components/inbox/notification-row';
-import { NarrowContainer } from '@/components/narrow-container';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -23,43 +23,52 @@ export default async function InboxPage({
   const params = await searchParams;
   const unreadOnly = params.unread === '1';
 
-  const rows = await objects.listNotifications(db, scope, { unreadOnly, limit: 200 });
+  const rows = await objects.listNotifications(db, scope, {
+    unreadOnly,
+    limit: 200,
+  });
+  const unreadCount = rows.filter((r) => r.readAt === null).length;
 
   return (
-    <NarrowContainer>
-      <header className="mb-10 flex items-end justify-between gap-6">
-        <div>
-          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Inbox</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Notifications</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Changes to objects you own or are assigned to. Overdue tasks and agent suggestions also
-            land here.
-          </p>
-        </div>
-        <MarkAllReadButton hasUnread={rows.some((r) => r.readAt === null)} />
-      </header>
+    <div className="mx-auto max-w-4xl space-y-6">
+      <IndexStrip
+        srLabel={`Inbox · ${rows.length} notifications · ${unreadCount} unread${unreadOnly ? ' · unread filter on' : ''}`}
+        segments={[
+          { value: 'INBOX' },
+          { label: 'total', value: rows.length },
+          { label: 'unread', value: unreadCount, signal: unreadCount > 0 },
+        ]}
+        trailing={<MarkAllReadButton hasUnread={unreadCount > 0} />}
+      />
 
-      <nav className="mb-6 flex gap-2 text-xs">
+      <nav
+        aria-label="Filter notifications"
+        className="flex gap-1.5 font-mono text-[11px] uppercase tracking-[0.12em]"
+      >
         <Link
           href="/app/inbox"
-          className={`rounded-full border px-3 py-1 ${!unreadOnly ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`}
+          aria-current={!unreadOnly ? 'page' : undefined}
+          className={`rounded-sm border px-2.5 py-1 transition-colors ${!unreadOnly ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
         >
           All
         </Link>
         <Link
           href="/app/inbox?unread=1"
-          className={`rounded-full border px-3 py-1 ${unreadOnly ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`}
+          aria-current={unreadOnly ? 'page' : undefined}
+          className={`rounded-sm border px-2.5 py-1 transition-colors ${unreadOnly ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
         >
           Unread
         </Link>
       </nav>
 
       {rows.length === 0 ? (
-        <div className="rounded-xl border border-dashed bg-card/40 px-6 py-16 text-center text-sm text-muted-foreground">
-          {unreadOnly ? 'No unread notifications.' : 'No notifications yet.'}
+        <div className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
+          {unreadOnly
+            ? 'NO UNREAD NOTIFICATIONS'
+            : 'NO NOTIFICATIONS YET → CHANGES TO OBJECTS YOU OWN WILL LAND HERE'}
         </div>
       ) : (
-        <ul className="space-y-2">
+        <ul className="border-t border-border">
           {rows.map((n) => (
             <NotificationRow
               key={n.id}
@@ -73,6 +82,6 @@ export default async function InboxPage({
           ))}
         </ul>
       )}
-    </NarrowContainer>
+    </div>
   );
 }

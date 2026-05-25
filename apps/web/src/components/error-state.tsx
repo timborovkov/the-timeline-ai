@@ -18,15 +18,23 @@ export function ErrorState({
   reset,
 }: Props) {
   return (
-    <div className="flex flex-col items-center gap-4 rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-12 text-center">
-      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/15 text-destructive">
-        <AlertTriangle className="h-5 w-5" />
+    <div
+      role="alert"
+      className="flex flex-col items-center gap-4 rounded-sm border border-danger/30 bg-bg px-6 py-12 text-center"
+    >
+      <span
+        aria-hidden="true"
+        className="grid size-9 place-items-center rounded-sm border border-danger/30 text-danger"
+      >
+        <AlertTriangle className="size-5" />
       </span>
       <div className="space-y-1">
-        <h2 className="text-base font-medium">{title}</h2>
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <h2 className="text-base font-medium text-fg">{title}</h2>
+        <p className="text-sm text-fg-muted">{description}</p>
         {error?.digest ? (
-          <p className="font-mono text-[11px] text-muted-foreground">ref: {error.digest}</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+            ref: {error.digest}
+          </p>
         ) : null}
       </div>
       {reset ? (
@@ -34,12 +42,10 @@ export function ErrorState({
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => {
-            reset();
-          }}
+          onClick={() => reset()}
           className="gap-2"
         >
-          <RotateCw className="h-3.5 w-3.5" />
+          <RotateCw className="size-3.5" />
           Try again
         </Button>
       ) : null}

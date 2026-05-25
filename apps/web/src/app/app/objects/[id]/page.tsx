@@ -1,7 +1,6 @@
 import { objects, withTeam } from '@timeline/shared';
 import { notFound, redirect } from 'next/navigation';
 
-import { NarrowContainer } from '@/components/narrow-container';
 import { ObjectDetailClient } from '@/components/objects/object-detail-client';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -27,18 +26,19 @@ export default async function ObjectDetailPage({ params }: PageProps) {
   // match the URL segment.
   if (!UUID_RE.test(id)) notFound();
   const scope = withTeam(db, active.teamId, session.user.id);
-  // ORDER MATTERS: getObject reads the previous `lastVisitedAt` to compute
-  // `newSinceLastVisit` for the banner. markVisited is called AFTER so the
-  // banner reflects "changes since the previous visit." Moving markVisited
-  // above getObject would zero the banner forever after the first load.
+  // ORDER MATTERS: getObject reads the previous `lastVisitedAt` to
+  // compute `newSinceLastVisit` for the banner. markVisited is called
+  // AFTER so the banner reflects "changes since the previous visit."
+  // Moving markVisited above getObject would zero the banner forever
+  // after the first load.
   const detail = await objects.getObject(db, scope, id);
   if (!detail) notFound();
 
   await objects.markVisited(db, scope, detail.id);
 
   return (
-    <NarrowContainer>
+    <div className="mx-auto max-w-4xl">
       <ObjectDetailClient detail={detail} userId={session.user.id} />
-    </NarrowContainer>
+    </div>
   );
 }

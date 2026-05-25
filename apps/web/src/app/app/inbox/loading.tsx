@@ -1,31 +1,28 @@
-import { NarrowContainer } from '@/components/narrow-container';
+import { PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function InboxLoading() {
   return (
-    <NarrowContainer>
-      <header className="mb-10 flex items-end justify-between gap-6">
-        <div className="space-y-2">
-          <Skeleton className="h-3 w-12" />
-          <Skeleton className="h-9 w-56" />
-          <Skeleton className="h-4 w-80" />
-        </div>
-        <Skeleton className="h-8 w-28 rounded-md" />
-      </header>
-
-      <nav className="mb-6 flex gap-2">
-        <Skeleton className="h-7 w-12 rounded-full" />
-        <Skeleton className="h-7 w-16 rounded-full" />
+    <div className="mx-auto max-w-4xl space-y-6" aria-busy="true">
+      <PageHeaderSkeleton />
+      <nav className="flex gap-1.5" aria-label="Loading inbox filters">
+        <Skeleton className="h-6 w-12 rounded-sm" />
+        <Skeleton className="h-6 w-16 rounded-sm" />
       </nav>
-
-      <ul className="space-y-2">
+      <ul className="border-t border-border">
         {Array.from({ length: 6 }).map((_, i) => (
-          <li key={i} className="rounded-lg border bg-card px-4 py-3">
-            <Skeleton className="h-3 w-24" />
-            <Skeleton className="mt-2 h-4 w-2/3" />
+          <li
+            key={i}
+            className="grid grid-cols-[18ch_1fr] gap-x-4 gap-y-1 border-b border-border py-3"
+          >
+            <Skeleton className="h-3 w-[16ch]" />
+            <div className="space-y-1.5">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-4 w-2/3" />
+            </div>
           </li>
         ))}
       </ul>
-    </NarrowContainer>
+    </div>
   );
 }

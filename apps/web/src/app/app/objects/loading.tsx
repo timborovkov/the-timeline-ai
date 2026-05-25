@@ -1,41 +1,29 @@
-import { EntityGridSkeleton } from '@/components/loading-states';
-import { NarrowContainer } from '@/components/narrow-container';
+import { EntityGridSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function ObjectsLoading() {
   return (
-    <NarrowContainer>
-      <header className="mb-10 flex items-end justify-between gap-6">
-        <div className="space-y-2">
-          <Skeleton className="h-3 w-16" />
-          <Skeleton className="h-9 w-64" />
-          <Skeleton className="h-4 w-80" />
-        </div>
-        <Skeleton className="h-9 w-28 rounded-lg" />
-      </header>
-
-      <nav className="mb-8 flex flex-wrap gap-2">
+    <div className="mx-auto max-w-5xl space-y-6" aria-busy="true">
+      <PageHeaderSkeleton />
+      <nav
+        className="flex flex-wrap gap-1.5"
+        aria-label="Loading object type filters"
+      >
         {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="h-7 w-16 rounded-full" />
+          <Skeleton key={i} className="h-6 w-16 rounded-sm" />
         ))}
       </nav>
-
-      <div className="space-y-10">
-        <section>
-          <div className="mb-3 flex items-baseline justify-between">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-3 w-6" />
-          </div>
-          <EntityGridSkeleton count={6} />
-        </section>
-        <section>
-          <div className="mb-3 flex items-baseline justify-between">
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="h-3 w-6" />
-          </div>
-          <EntityGridSkeleton count={4} />
-        </section>
+      <div className="space-y-8">
+        {[6, 4].map((count, s) => (
+          <section key={s}>
+            <div className="mb-3 flex items-baseline justify-between border-b border-border pb-1.5">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-3 w-6" />
+            </div>
+            <EntityGridSkeleton count={count} />
+          </section>
+        ))}
       </div>
-    </NarrowContainer>
+    </div>
   );
 }

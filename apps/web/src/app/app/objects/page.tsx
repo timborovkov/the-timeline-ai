@@ -2,7 +2,7 @@ import { objects, withTeam } from '@timeline/shared';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { NarrowContainer } from '@/components/narrow-container';
+import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -36,9 +36,10 @@ export default async function ObjectsIndexPage({
   const scope = withTeam(db, active.teamId, session.user.id);
   const params = await searchParams;
 
-  // Anything in TYPE_LABEL is a valid filter; otherwise show all.
   const type =
-    params.type && TYPE_LABEL[params.type] ? (params.type as objects.ObjectType) : undefined;
+    params.type && TYPE_LABEL[params.type]
+      ? (params.type as objects.ObjectType)
+      : undefined;
   const status = params.status?.trim() ?? undefined;
 
   // Default to hiding archived objects — `listObjects` only applies the
@@ -52,8 +53,6 @@ export default async function ObjectsIndexPage({
 
   const rows = await objects.listObjects(db, scope, filter);
 
-  // Group by type for the index view. Tasks and follow-ups deserve their own
-  // headings since teams are likely to scan them as workstreams.
   const grouped = new Map<string, typeof rows>();
   for (const row of rows) {
     const list = grouped.get(row.type) ?? [];
@@ -66,27 +65,34 @@ export default async function ObjectsIndexPage({
   );
 
   return (
-    <NarrowContainer>
-      <header className="mb-10 flex items-end justify-between gap-6">
-        <div>
-          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Objects</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Workspace objects</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            People, companies, deals, tasks, decisions, and everything else this team tracks.
-          </p>
-        </div>
-        <Link
-          href="/app/objects/new"
-          className="rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/20"
-        >
-          New object
-        </Link>
-      </header>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <IndexStrip
+        srLabel={`Objects · ${rows.length} total${type ? ` · filtered to ${TYPE_LABEL[type] ?? type}` : ''}`}
+        segments={[
+          { value: 'OBJECTS' },
+          { label: 'total', value: rows.length },
+          ...(type
+            ? ([{ label: 'type', value: TYPE_LABEL[type] ?? type, signal: true }] as const)
+            : ([] as const)),
+        ]}
+        trailing={
+          <Link
+            href="/app/objects/new"
+            className="font-mono text-[11px] uppercase tracking-[0.12em] text-signal hover:underline"
+          >
+            new →
+          </Link>
+        }
+      />
 
-      <nav className="mb-8 flex flex-wrap gap-2 text-xs">
+      <nav
+        aria-label="Filter by type"
+        className="flex flex-wrap gap-1.5 font-mono text-[11px] uppercase tracking-[0.12em]"
+      >
         <Link
           href="/app/objects"
-          className={`rounded-full border px-3 py-1 ${!type ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}
+          aria-current={!type ? 'page' : undefined}
+          className={`rounded-sm border px-2.5 py-1 transition-colors ${!type ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
         >
           All
         </Link>
@@ -94,7 +100,8 @@ export default async function ObjectsIndexPage({
           <Link
             key={key}
             href={`/app/objects?type=${key}`}
-            className={`rounded-full border px-3 py-1 ${type === key ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}
+            aria-current={type === key ? 'page' : undefined}
+            className={`rounded-sm border px-2.5 py-1 transition-colors ${type === key ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
           >
             {label}
           </Link>
@@ -102,48 +109,54 @@ export default async function ObjectsIndexPage({
       </nav>
 
       {rows.length === 0 ? (
-        <div className="rounded-xl border border-dashed bg-card/40 px-6 py-16 text-center text-sm text-muted-foreground">
-          No objects match this filter yet. Create one above, or capture a note and the extraction
-          worker will surface entities here.
+        <div className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
+          NO OBJECTS MATCH THIS FILTER →{' '}
+          <Link href="/app/objects/new" className="text-signal underline">
+            create one
+          </Link>{' '}
+          OR CAPTURE A NOTE
         </div>
       ) : (
-        <div className="space-y-10">
+        <div className="space-y-8">
           {typeKeys.map((typeKey) => {
             const list = grouped.get(typeKey) ?? [];
             return (
-              <section key={typeKey}>
-                <div className="mb-3 flex items-baseline justify-between">
-                  <h2 className="text-sm font-medium tracking-tight">
+              <section key={typeKey} aria-label={TYPE_LABEL[typeKey] ?? typeKey}>
+                <div className="mb-3 flex items-baseline justify-between border-b border-border pb-1.5">
+                  <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
                     {TYPE_LABEL[typeKey] ?? typeKey}
                   </h2>
-                  <span className="text-xs text-muted-foreground">{list.length}</span>
+                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                    {list.length}
+                  </span>
                 </div>
-                <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <ul className="grid grid-cols-1 gap-px overflow-hidden border border-border sm:grid-cols-2">
                   {list.map((o) => (
-                    <li key={o.id}>
+                    <li key={o.id} className="bg-bg">
                       <Link
                         href={`/app/objects/${o.id}`}
-                        className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 text-sm transition-colors hover:border-primary/30 hover:bg-accent/40"
+                        className="flex items-center justify-between px-3 py-2.5 text-sm transition-colors hover:bg-surface"
                       >
-                        <span className="min-w-0 flex-1 truncate font-medium">
+                        <span className="min-w-0 flex-1 truncate font-medium text-fg">
                           {o.canonicalName}
                         </span>
-                        <span className="ml-3 flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+                        <span className="ml-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                           <span>{o.status}</span>
-                          {o.dueAt && (
+                          {o.dueAt ? (
                             <span title={o.dueAt.toISOString()}>
-                              · {o.dueAt.toLocaleDateString()}
+                              · {o.dueAt.toLocaleDateString('en-CA')}
                             </span>
-                          )}
-                          {/* `agentSuggested` is permanent provenance; the badge should
-                              reflect the live review state, not "this was ever proposed
-                              by the agent." Once accepted/rejected, status leaves
+                          ) : null}
+                          {/* `agentSuggested` is permanent provenance; the
+                              badge should reflect the live review state,
+                              not "this was ever proposed by the agent."
+                              Once accepted/rejected, status leaves
                               'suggested' and the badge clears. */}
-                          {o.agentSuggested && o.status === 'suggested' && (
-                            <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-700">
+                          {o.agentSuggested && o.status === 'suggested' ? (
+                            <span className="rounded-sm border border-signal/40 bg-signal-soft px-1.5 py-0.5 text-signal">
                               suggested
                             </span>
-                          )}
+                          ) : null}
                         </span>
                       </Link>
                     </li>
@@ -154,6 +167,6 @@ export default async function ObjectsIndexPage({
           })}
         </div>
       )}
-    </NarrowContainer>
+    </div>
   );
 }

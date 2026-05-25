@@ -9,10 +9,9 @@ import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import { CaptureForm } from '@/components/capture-form';
-import { NarrowContainer } from '@/components/narrow-container';
+import { IndexStrip } from '@/components/index-strip';
 import { SearchBar } from '@/components/search-bar';
 import { TimelineList } from '@/components/timeline-list';
-import { Card, CardContent } from '@/components/ui/card';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -130,44 +129,52 @@ export default async function TimelinePage({ searchParams }: Props) {
       : [];
 
   const hasFilters = Boolean(authorFilter ?? fromFilter ?? toFilter);
+  const eventCount = events.length;
 
   return (
-    <NarrowContainer>
-      <header className="mb-10">
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Timeline</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{active.teamName}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Reverse-chronological feed of everything captured for this team.
-        </p>
-      </header>
+    <div className="mx-auto max-w-5xl space-y-8">
+      <IndexStrip
+        srLabel={`Timeline · ${active.teamName} · ${eventCount} event${eventCount === 1 ? '' : 's'}${hasFilters ? ' · filters on' : ''}`}
+        segments={[
+          { value: 'TIMELINE' },
+          { label: 'team', value: active.teamName },
+          { label: 'events', value: eventCount },
+          ...(hasFilters
+            ? ([{ label: 'filter', value: 'ON', signal: true }] as const)
+            : ([] as const)),
+        ]}
+      />
 
-      <Card className="mb-10 transition-shadow focus-within:ring-2 focus-within:ring-ring/40">
-        <CardContent className="p-6">
-          <CaptureForm />
-        </CardContent>
-      </Card>
+      <section
+        aria-label="Capture"
+        className="rounded-sm border border-border bg-surface p-4 focus-within:border-border-strong"
+      >
+        <CaptureForm />
+      </section>
 
       <SearchBar />
 
-      <section className="mt-10 space-y-5">
+      <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-muted-foreground">Recent activity</h2>
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+            Recent activity
+          </h2>
           <details className="text-sm" open={hasFilters}>
-            <summary className="cursor-pointer list-none rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground">
-              Filters{hasFilters ? ' · on' : ''}
+            <summary className="cursor-pointer list-none rounded-sm px-2 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg">
+              Filters{hasFilters ? ' · ON' : ''}
             </summary>
             <form
               method="get"
-              className="mt-3 flex flex-wrap items-end gap-3 rounded-lg border bg-card p-4 text-sm"
+              className="mt-3 flex flex-wrap items-end gap-3 rounded-sm border border-border bg-surface p-3 text-sm"
             >
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
                   Author
                 </span>
                 <select
                   name="author"
                   defaultValue={authorFilter ?? ''}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                  className="h-9 rounded-sm border border-border bg-bg px-2 text-sm focus:border-border-strong focus:outline-none"
                 >
                   <option value="">Everyone</option>
                   {memberRows.map((m) => (
@@ -178,30 +185,30 @@ export default async function TimelinePage({ searchParams }: Props) {
                 </select>
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
                   From
                 </span>
                 <input
                   type="date"
                   name="from"
                   defaultValue={toDateInputValue(fromFilter)}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                  className="h-9 rounded-sm border border-border bg-bg px-2 text-sm font-mono focus:border-border-strong focus:outline-none"
                 />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
                   To
                 </span>
                 <input
                   type="date"
                   name="to"
                   defaultValue={toDateInputValue(toFilter)}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                  className="h-9 rounded-sm border border-border bg-bg px-2 text-sm font-mono focus:border-border-strong focus:outline-none"
                 />
               </label>
               <button
                 type="submit"
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm transition-colors hover:bg-accent"
+                className="h-9 rounded-sm border border-border bg-bg px-3 text-sm transition-colors hover:border-border-strong hover:bg-surface-2"
               >
                 Apply
               </button>
@@ -209,8 +216,12 @@ export default async function TimelinePage({ searchParams }: Props) {
           </details>
         </div>
 
-        <TimelineList events={events} authorMap={authorMap} audioUrlMap={audioUrlMap} />
+        <TimelineList
+          events={events}
+          authorMap={authorMap}
+          audioUrlMap={audioUrlMap}
+        />
       </section>
-    </NarrowContainer>
+    </div>
   );
 }

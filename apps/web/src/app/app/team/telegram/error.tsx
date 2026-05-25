@@ -1,6 +1,7 @@
 'use client';
 
 import { ErrorState } from '@/components/error-state';
+import { IndexStrip } from '@/components/index-strip';
 
 export default function TelegramError({
   error,
@@ -10,14 +11,17 @@ export default function TelegramError({
   reset: () => void;
 }) {
   return (
-    <div>
-      <header className="mb-10">
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Telegram</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Telegram</h1>
-      </header>
+    <div className="mx-auto max-w-3xl space-y-8">
+      <IndexStrip
+        srLabel="Team / Telegram · error"
+        segments={[
+          { value: 'TEAM / TELEGRAM' },
+          { label: 'status', value: 'ERROR', danger: true },
+        ]}
+      />
       <ErrorState
         title="Couldn't load Telegram links"
-        description="The Telegram integration page failed to load."
+        description="The Telegram integration page failed to load. This is usually transient."
         error={error}
         reset={reset}
       />

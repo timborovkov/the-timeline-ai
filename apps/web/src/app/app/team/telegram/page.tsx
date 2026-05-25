@@ -10,7 +10,7 @@ import { and, desc, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import { revokeLinkTokenAction, unbindChatAction } from '@/app/actions/telegram';
-import { NarrowContainer } from '@/components/narrow-container';
+import { IndexStrip } from '@/components/index-strip';
 import { GenerateGroupTokenForm, GeneratePersonalTokenForm } from '@/components/telegram-forms';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -93,15 +93,16 @@ export default async function TelegramSettingsPage() {
   const userMap = new Map(userRows.map((u) => [u.id, u] as const));
 
   return (
-    <NarrowContainer>
-      <div className="space-y-8">
-        <header>
-          <h1 className="text-2xl font-semibold tracking-tight">Telegram</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Connect Telegram DMs and group chats to {active.teamName}. Text messages land in the
-            timeline.
-          </p>
-        </header>
+    <div className="mx-auto max-w-3xl space-y-6">
+      <IndexStrip
+        srLabel={`Telegram integration for ${active.teamName} · ${bindings.length} bound groups · ${linkedTgUsers.length} linked users`}
+        segments={[
+          { value: 'TEAM / TELEGRAM' },
+          { label: 'team', value: active.teamName, signal: true },
+          { label: 'groups', value: bindings.length },
+          { label: 'users', value: linkedTgUsers.length },
+        ]}
+      />
 
         {!webhookConfigured ? (
           <Card>
@@ -251,7 +252,6 @@ export default async function TelegramSettingsPage() {
             )}
           </CardContent>
         </Card>
-      </div>
-    </NarrowContainer>
+    </div>
   );
 }

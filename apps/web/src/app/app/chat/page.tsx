@@ -149,24 +149,33 @@ export default async function ChatPage({
 
   return (
     // Escape main's px/py with negative margins so the chat fills the
-    // entire viewport minus the AppShell header (h-16 = 4rem). The chat
+    // entire viewport minus the AppShell header (h-14 = 3.5rem). The chat
     // pane has its own internal scroll, so a fixed outer height keeps the
-    // layout stable regardless of message count and the input always sits
-    // pinned at the bottom of the viewport.
-    <div className="-mx-6 -my-10 flex h-[calc(100dvh-4rem)] md:-mx-10 md:-my-14">
+    // layout stable regardless of message count.
+    <div className="-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] md:-mx-8 md:-my-8">
       <SessionSidebar
         activeSessionId={activeSessionId}
         sessions={sessions.map((s) => ({
           id: s.id,
           title: s.title,
           pinnedEntityId: s.pinnedEntityId,
-          pinnedEntityName: s.pinnedEntityId ? (pinnedNames.get(s.pinnedEntityId) ?? null) : null,
+          pinnedEntityName: s.pinnedEntityId
+            ? (pinnedNames.get(s.pinnedEntityId) ?? null)
+            : null,
         }))}
       />
-      <div className="flex min-h-0 flex-1 flex-col px-6 py-6 md:px-10 md:py-8">
-        <header className="mb-6 shrink-0">
-          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Chat</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Ask the timeline</h1>
+      <div className="flex min-h-0 flex-1 flex-col px-4 py-5 md:px-8 md:py-6">
+        <header
+          className="mb-5 flex shrink-0 items-baseline gap-x-4 border-y border-border py-3 font-mono text-xs uppercase tracking-[0.12em] text-fg-muted"
+          aria-label={`Chat with ${team?.name ?? active.teamName}'s timeline`}
+        >
+          <span className="text-fg">CHAT</span>
+          <span aria-hidden="true" className="text-fg-dim">
+            ask the timeline
+          </span>
+          <span className="ml-auto text-fg-dim">
+            <span aria-hidden="true">{sessions.length} sessions</span>
+          </span>
         </header>
         <div className="flex min-h-0 flex-1 flex-col">
           <ChatPane

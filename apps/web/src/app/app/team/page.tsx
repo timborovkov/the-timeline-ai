@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { removeMemberAction } from '@/app/actions/teams';
-import { NarrowContainer } from '@/components/narrow-container';
+import { IndexStrip } from '@/components/index-strip';
 import { CreateTeamForm, InviteMemberForm } from '@/components/team-forms';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -37,15 +37,16 @@ export default async function TeamSettingsPage() {
   const userMap = new Map(userInfo.map((u) => [u.id, u] as const));
 
   return (
-    <NarrowContainer>
-      <div className="space-y-8">
-        <header className="mb-2">
-          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Team</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">{active.teamName}</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Your role: <Badge variant="outline">{role}</Badge>
-          </p>
-        </header>
+    <div className="mx-auto max-w-3xl space-y-6">
+      <IndexStrip
+        srLabel={`Team ${active.teamName} · your role: ${role} · ${memberRows.length} members`}
+        segments={[
+          { value: 'TEAM' },
+          { label: 'name', value: active.teamName, signal: true },
+          { label: 'role', value: role },
+          { label: 'members', value: memberRows.length },
+        ]}
+      />
 
         {team ? (
           <Card>
@@ -162,7 +163,6 @@ export default async function TeamSettingsPage() {
             <CreateTeamForm />
           </CardContent>
         </Card>
-      </div>
-    </NarrowContainer>
+    </div>
   );
 }

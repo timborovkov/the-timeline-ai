@@ -1,10 +1,6 @@
 import { type InferSelectModel } from '@timeline/db';
-import { Inbox } from 'lucide-react';
 
 import type { rawEvents } from '@timeline/db';
-
-import { Badge } from '@/components/ui/badge';
-import { initials } from '@/lib/initials';
 
 type RawEvent = InferSelectModel<typeof rawEvents>;
 
@@ -15,18 +11,25 @@ interface Props {
   audioUrlMap?: Map<string, string>;
 }
 
-function formatWhen(d: Date): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(d);
+// Mono ISO-ish timestamp for the left column. We render local time so the
+// 8-char clock face stays consistent across rows; the inspector pane shows
+// the full UTC ISO string for forensic correctness.
+function formatTimestamp(d: Date): string {
+  const date = d.toLocaleDateString('en-CA'); // YYYY-MM-DD
+  const time = d.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return `${date} ${time}`;
 }
 
 function transcribeFailed(meta: unknown): boolean {
   return (
     typeof meta === 'object' &&
     meta !== null &&
-    typeof (meta as Record<string, unknown>).transcription_failed_at === 'string'
+    typeof (meta as Record<string, unknown>).transcription_failed_at ===
+      'string'
   );
 }
 
@@ -43,10 +46,6 @@ interface EmailMeta {
 
 function emailMeta(meta: unknown): EmailMeta | null {
   if (typeof meta !== 'object' || meta === null) return null;
-  // Shape is enforced by the email dispatcher's metadata composer; the
-  // JSONB column has no compile-time shape information here. Since every
-  // EmailMeta field is optional, an empty object satisfies the type and
-  // TS narrows `unknown → object` to a structurally compatible value.
   return meta;
 }
 
@@ -55,22 +54,39 @@ function fmtAddr(a: { email: string; name?: string } | undefined): string {
   return a.name ? `${a.name} <${a.email}>` : a.email;
 }
 
+const SOURCE_LABEL: Record<string, string> = {
+  email: 'EMAIL',
+  telegram: 'TG',
+  voice: 'VOICE',
+  text: 'TEXT',
+  system: 'SYS',
+};
+
+/**
+ * Operational Archive flat timeline. Each event is an indexed row, not a
+ * card. Three columns: mono timestamp · body · source label.
+ *
+ *   2026-05-25 14:02   miriam · "ship tomorrow"               EMAIL
+ *   2026-05-25 13:48   jay · voice 2m11s · "cut docs"         VOICE
+ */
 export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
   if (events.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed bg-card/40 px-6 py-16 text-center">
-        <Inbox className="h-6 w-6 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">
-          Nothing here yet. Capture a note above to start your timeline.
-        </p>
+      <div className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
+        NO EVENTS YET → CAPTURE FROM ABOVE
       </div>
     );
   }
 
   return (
-    <ol className="space-y-4">
+    <ol
+      className="border-t border-border"
+      aria-label="Captured events, most recent first"
+    >
       {events.map((event) => {
-        const author = event.authorUserId ? authorMap.get(event.authorUserId) : null;
+        const author = event.authorUserId
+          ? authorMap.get(event.authorUserId)
+          : null;
         const isEmail = event.source === 'email';
         const em = isEmail ? emailMeta(event.sourceMetadata) : null;
         const senderUnverified = Boolean(em?.sender_unverified);
@@ -78,104 +94,110 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
           ? (author.name ?? author.email)
           : isEmail && em?.from
             ? fmtAddr(em.from)
-            : 'System';
+            : 'system';
+        const sourceLabel =
+          SOURCE_LABEL[event.source ?? 'system'] ?? event.source?.toUpperCase() ?? 'SYS';
         return (
-          <li key={event.id} id={`ev-${event.id}`} className="scroll-mt-20">
-            <article className="rounded-xl border bg-card p-6">
-              <div className="flex items-start gap-3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/12 text-[11px] font-semibold tracking-tight text-primary">
-                  {initials(authorLabel)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="truncate font-medium text-foreground">{authorLabel}</span>
-                    <span className="text-muted-foreground">·</span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatWhen(event.occurredAt)}
-                    </span>
-                    <div className="ml-auto flex flex-wrap items-center gap-1.5">
-                      <Badge variant="outline" className="font-normal">
-                        {event.source}
-                      </Badge>
-                      {senderUnverified ? (
-                        <Badge
-                          variant="destructive"
-                          className="font-normal"
-                          title="From address does not match a team member"
-                        >
-                          unverified sender
-                        </Badge>
-                      ) : null}
-                      {event.visibility === 'private' ? (
-                        <Badge variant="secondary" className="font-normal">
-                          private
-                        </Badge>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="mt-3 space-y-3">
-                    {isEmail && em ? (
-                      <div className="space-y-1 rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-xs">
-                        {em.subject ? (
-                          <p className="text-sm font-medium text-foreground">{em.subject}</p>
-                        ) : null}
-                        {em.forwarded_from ? (
-                          <p className="text-muted-foreground">
-                            Forwarded from{' '}
-                            <span className="text-foreground">{fmtAddr(em.forwarded_from)}</span>
-                          </p>
-                        ) : null}
-                        {em.thread_root_id && em.thread_root_id !== event.id ? (
-                          <p className="text-muted-foreground">
-                            Thread:{' '}
-                            <a href={`#ev-${em.thread_root_id}`} className="underline">
-                              view root
-                            </a>
-                          </p>
-                        ) : null}
-                        {em.attachments && em.attachments.length > 0 ? (
-                          <p className="text-muted-foreground">
-                            {em.attachments.length} attachment
-                            {em.attachments.length === 1 ? '' : 's'}
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {event.contentAudioUrl ? (
-                      audioUrlMap?.get(event.id) ? (
-                        <audio
-                          src={audioUrlMap.get(event.id)}
-                          controls
-                          preload="metadata"
-                          className="w-full"
-                        />
-                      ) : (
-                        <p className="text-xs text-muted-foreground">[audio unavailable]</p>
-                      )
-                    ) : null}
-                    {event.contentText !== null ? (
-                      event.contentText.trim() === '' ? (
-                        <p className="text-sm italic text-muted-foreground">(no speech detected)</p>
-                      ) : (
-                        <p className="whitespace-pre-wrap text-[15px] leading-7">
-                          {event.contentText}
-                        </p>
-                      )
-                    ) : event.contentAudioUrl ? (
-                      transcribeFailed(event.sourceMetadata) ? (
-                        <p className="text-sm italic text-muted-foreground">
-                          Transcription failed — voice memo is still playable.
-                        </p>
-                      ) : (
-                        <p className="text-sm italic text-muted-foreground">Transcribing…</p>
-                      )
-                    ) : (
-                      <p className="text-sm text-muted-foreground">[empty event]</p>
-                    )}
-                  </div>
-                </div>
+          <li
+            key={event.id}
+            id={`ev-${event.id}`}
+            className="grid scroll-mt-20 grid-cols-[18ch_1fr] gap-x-4 gap-y-2 border-b border-border py-3 transition-colors hover:bg-surface md:grid-cols-[18ch_1fr_10ch]"
+          >
+            <time
+              dateTime={event.occurredAt.toISOString()}
+              className="font-mono text-xs text-fg-dim"
+            >
+              {formatTimestamp(event.occurredAt)}
+            </time>
+            <div className="min-w-0 text-sm leading-snug">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="font-medium text-fg">{authorLabel}</span>
+                {senderUnverified ? (
+                  <span
+                    className="font-mono text-[11px] uppercase tracking-[0.1em] text-danger"
+                    title="From address does not match a team member"
+                  >
+                    unverified
+                  </span>
+                ) : null}
+                {event.visibility === 'private' ? (
+                  <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                    private
+                  </span>
+                ) : null}
               </div>
-            </article>
+              <div className="mt-1.5 space-y-2">
+                {isEmail && em?.subject ? (
+                  <p className="text-sm font-medium text-fg">{em.subject}</p>
+                ) : null}
+                {isEmail && em?.forwarded_from ? (
+                  <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                    fwd from <span className="text-fg">{fmtAddr(em.forwarded_from)}</span>
+                  </p>
+                ) : null}
+                {isEmail && em?.thread_root_id && em.thread_root_id !== event.id ? (
+                  <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                    thread →{' '}
+                    <a
+                      href={`#ev-${em.thread_root_id}`}
+                      className="text-signal underline"
+                    >
+                      root
+                    </a>
+                  </p>
+                ) : null}
+                {isEmail && em?.attachments && em.attachments.length > 0 ? (
+                  <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                    {em.attachments.length} attachment
+                    {em.attachments.length === 1 ? '' : 's'}
+                  </p>
+                ) : null}
+                {event.contentAudioUrl ? (
+                  audioUrlMap?.get(event.id) ? (
+                    <audio
+                      src={audioUrlMap.get(event.id)}
+                      controls
+                      preload="metadata"
+                      className="w-full max-w-md"
+                    />
+                  ) : (
+                    <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                      [audio unavailable]
+                    </p>
+                  )
+                ) : null}
+                {event.contentText !== null ? (
+                  event.contentText.trim() === '' ? (
+                    <p className="text-sm italic text-fg-dim">
+                      (no speech detected)
+                    </p>
+                  ) : (
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
+                      {event.contentText}
+                    </p>
+                  )
+                ) : event.contentAudioUrl ? (
+                  transcribeFailed(event.sourceMetadata) ? (
+                    <p className="text-sm italic text-fg-dim">
+                      Transcription failed — voice memo is still playable.
+                    </p>
+                  ) : (
+                    <p className="text-sm italic text-fg-dim">Transcribing…</p>
+                  )
+                ) : (
+                  <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                    [empty event]
+                  </p>
+                )}
+              </div>
+            </div>
+            <span
+              aria-hidden="true"
+              className="col-start-2 -mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim md:col-start-3 md:mt-0 md:text-right"
+            >
+              {sourceLabel}
+            </span>
+            <span className="sr-only">Source: {sourceLabel}</span>
           </li>
         );
       })}

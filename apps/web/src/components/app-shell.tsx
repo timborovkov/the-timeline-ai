@@ -1,9 +1,15 @@
 import type { TeamMembership } from '@/lib/active-team';
 import type { ReactNode } from 'react';
 
+import { CommandBar } from '@/components/command-bar';
+import { InspectorPane } from '@/components/inspector-pane';
+import { InspectorProvider } from '@/components/inspector-context';
+import { InspectorToggle } from '@/components/inspector-pane';
 import { MobileNav } from '@/components/mobile-nav';
-import { SidebarNav } from '@/components/sidebar-nav';
+import { RailNav } from '@/components/rail-nav';
+import { SkipLink } from '@/components/skip-link';
 import { TeamSwitcher } from '@/components/team-switcher';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { UserMenu } from '@/components/user-menu';
 
 interface Props {
@@ -13,36 +19,70 @@ interface Props {
   children: ReactNode;
 }
 
+/**
+ * Operational Archive v2 shell. Three columns:
+ *   • 56px icon rail (mobile: hamburger sheet)
+ *   • main column with persistent ⌘K command bar
+ *   • collapsible 320px right inspector pane (hidden by default, opens
+ *     when a citation chip / object reference is activated)
+ */
 export function AppShell({ active, memberships, user, children }: Props) {
   return (
-    <div className="min-h-screen bg-background">
-      <div className="flex min-h-screen w-full">
-        <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border/60 px-4 py-6 md:flex">
-          <div className="px-2">
-            <span className="text-sm font-semibold tracking-tight">The Timeline</span>
-          </div>
-          <SidebarNav />
-          <div className="mt-auto space-y-3 border-t border-border/60 pt-4">
-            <TeamSwitcher active={active} memberships={memberships} />
+    <InspectorProvider>
+      <SkipLink />
+      <div className="flex min-h-screen w-full bg-bg">
+        {/* ── Left rail (desktop) ─────────────────────────────────── */}
+        <aside
+          aria-label="Sidebar"
+          className="sticky top-0 hidden h-screen w-14 shrink-0 flex-col items-center border-r border-border bg-surface py-3 md:flex"
+        >
+          <span
+            aria-hidden="true"
+            className="grid size-7 place-items-center rounded-sm font-mono text-[11px] font-bold text-signal"
+            title="The Timeline"
+          >
+            ▦
+          </span>
+          <RailNav />
+          <div className="mt-auto flex flex-col items-center gap-1">
+            <TeamSwitcher
+              active={active}
+              memberships={memberships}
+              variant="rail"
+            />
           </div>
         </aside>
+
+        {/* ── Main column ─────────────────────────────────────────── */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border/60 bg-background/85 px-6 backdrop-blur md:px-10">
+          <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-bg/85 px-3 backdrop-blur md:px-4">
             <div className="flex items-center gap-2 md:hidden">
               <MobileNav active={active} memberships={memberships} />
-              <span className="text-sm font-semibold tracking-tight">The Timeline</span>
+              <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg">
+                The Timeline
+              </span>
             </div>
-            <div className="ml-auto flex items-center gap-2">
+            <CommandBar
+              hint={active.teamName ? `team · ${active.teamName}` : undefined}
+              className="hidden md:flex"
+            />
+            <div className="ml-auto flex items-center gap-1">
+              <InspectorToggle />
+              <ThemeToggle />
               <UserMenu user={user} />
             </div>
           </header>
-          {/* `<main>` no longer constrains content width. Prose/form pages
-              wrap themselves in <NarrowContainer> for the read-friendly
-              max-w-3xl column; wide layouts (kanban, table boards) skip
-              the wrapper and fill the full main width. */}
-          <main className="flex-1 px-6 py-10 md:px-10 md:py-14">{children}</main>
+          {/* Main content area. No artificial max-width: pages opt into
+              <ProseContainer> for long-form text; operational surfaces
+              (timeline, board, objects) fill the column. */}
+          <main id="main" className="flex-1 px-4 py-6 md:px-8 md:py-8">
+            {children}
+          </main>
         </div>
+
+        {/* ── Inspector pane (desktop, collapsible) ───────────────── */}
+        <InspectorPane />
       </div>
-    </div>
+    </InspectorProvider>
   );
 }

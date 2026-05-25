@@ -94,7 +94,7 @@ export function SearchBar() {
           onChange={(e) => {
             setQuery(e.target.value);
           }}
-          className="h-11 w-full rounded-xl border border-input bg-card pl-10 pr-28 text-sm transition-colors focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-ring/40"
+          className="h-11 w-full rounded-sm border border-border bg-surface pl-10 pr-28 text-sm transition-colors focus:border-border-strong focus:outline-none"
         />
         <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
           {results !== null && (
@@ -102,7 +102,7 @@ export function SearchBar() {
               type="button"
               onClick={clear}
               aria-label="Clear search"
-              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+              className="grid size-8 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
             >
               <X className="h-4 w-4" />
             </button>
@@ -110,7 +110,7 @@ export function SearchBar() {
           <button
             type="submit"
             disabled={loading || query.trim().length === 0}
-            className="h-8 rounded-md px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground disabled:opacity-40"
+            className="h-8 rounded-sm px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg disabled:opacity-40"
           >
             {loading ? 'Searching…' : 'Search'}
           </button>
@@ -153,7 +153,7 @@ export function SearchBar() {
                         <a
                           key={id}
                           href={`/app/objects/${id}`}
-                          className="rounded-full border border-input px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent"
+                          className="rounded-sm border border-border bg-bg px-2 py-0.5 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted hover:border-border-strong hover:text-fg"
                         >
                           entity
                         </a>

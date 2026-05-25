@@ -20,12 +20,10 @@ export function MobileNav({ active, memberships }: Props) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
-  // Close the sheet whenever the user navigates.
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
 
-  // Lock body scroll while the sheet is open.
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -53,20 +51,29 @@ export function MobileNav({ active, memberships }: Props) {
     };
   }, []);
 
+  // Escape closes the sheet
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
   return (
     <>
       <button
         type="button"
-        onClick={() => {
-          setOpen(true);
-        }}
+        onClick={() => setOpen(true)}
         aria-label="Open navigation"
-        className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground md:hidden"
+        aria-expanded={open}
+        className="grid size-9 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg md:hidden"
       >
-        <Menu className="h-5 w-5" />
+        <Menu className="size-5" />
       </button>
 
-      {open && (
+      {open ? (
         <div
           className="fixed inset-0 z-50 md:hidden"
           role="dialog"
@@ -74,26 +81,24 @@ export function MobileNav({ active, memberships }: Props) {
           aria-label="Navigation"
         >
           <div
-            className="absolute inset-0 bg-background/70 backdrop-blur-sm"
-            onClick={() => {
-              setOpen(false);
-            }}
+            className="absolute inset-0 bg-bg/70 backdrop-blur-sm"
+            onClick={() => setOpen(false)}
           />
-          <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-border/60 bg-background px-4 py-6 shadow-xl">
+          <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-border bg-bg px-4 py-5">
             <div className="flex items-center justify-between px-2">
-              <span className="text-sm font-semibold tracking-tight">The Timeline</span>
+              <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg">
+                The Timeline
+              </span>
               <button
                 type="button"
-                onClick={() => {
-                  setOpen(false);
-                }}
+                onClick={() => setOpen(false)}
                 aria-label="Close navigation"
-                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                className="grid size-8 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
               >
-                <X className="h-4 w-4" />
+                <X className="size-4" />
               </button>
             </div>
-            <nav className="mt-8 flex flex-col gap-1">
+            <nav aria-label="Primary" className="mt-8 flex flex-col gap-1">
               {NAV_ITEMS.map((item) => {
                 const isActive = isNavItemActive(item, pathname);
                 const Icon = item.icon;
@@ -101,33 +106,27 @@ export function MobileNav({ active, memberships }: Props) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    // Dismiss directly on click — the pathname effect only
-                    // fires when the route actually changes, so tapping
-                    // the already-active item (e.g. Timeline from
-                    // /app/timeline) would otherwise leave the sheet open
-                    // and the body scroll locked.
-                    onClick={() => {
-                      setOpen(false);
-                    }}
+                    aria-current={isActive ? 'page' : undefined}
+                    onClick={() => setOpen(false)}
                     className={cn(
-                      'flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
+                      'flex items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors',
                       isActive
-                        ? 'bg-accent text-foreground'
-                        : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                        ? 'bg-surface-2 text-signal'
+                        : 'text-fg-muted hover:bg-surface-2 hover:text-fg',
                     )}
                   >
-                    <Icon className="h-4 w-4" />
+                    <Icon aria-hidden="true" className="size-4" />
                     {item.label}
                   </Link>
                 );
               })}
             </nav>
-            <div className="mt-auto space-y-3 border-t border-border/60 pt-4">
+            <div className="mt-auto space-y-3 border-t border-border pt-4">
               <TeamSwitcher active={active} memberships={memberships} />
             </div>
           </aside>
         </div>
-      )}
+      ) : null}
     </>
   );
 }

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
+import { cn } from '@/lib/utils';
 
 interface Props {
   id: string;
@@ -15,13 +16,31 @@ interface Props {
   initiallyRead: boolean;
 }
 
-export function NotificationRow({ id, kind, summary, entityId, createdAt, initiallyRead }: Props) {
+function formatTs(ts: string): string {
+  const d = new Date(ts);
+  const date = d.toLocaleDateString('en-CA');
+  const time = d.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return `${date} ${time}`;
+}
+
+export function NotificationRow({
+  id,
+  kind,
+  summary,
+  entityId,
+  createdAt,
+  initiallyRead,
+}: Props) {
   const router = useRouter();
   const search = useSearchParams();
   const [pending, startTransition] = useTransition();
-  // Optimistic read state so clicking through to an object instantly clears
-  // the unread dot — the server action runs async without blocking the
-  // navigation.
+  // Optimistic read state so clicking through to an object instantly
+  // clears the unread dot — the server action runs async without
+  // blocking the navigation.
   const [read, setRead] = useState(initiallyRead);
   // Sync from props when the parent refreshes (e.g. MarkAllReadButton
   // calls router.refresh() and notifications now report as read). Only
@@ -40,10 +59,10 @@ export function NotificationRow({ id, kind, summary, entityId, createdAt, initia
       const result = await markNotificationReadAction(id);
       if ('error' in result && result.error) {
         // Action failed (DB blip, scope mismatch). Roll back the
-        // optimistic state so the UI reflects what the server actually
-        // recorded — otherwise the row shows as read while the server
-        // still has it as unread, and on ?unread=1 it'd linger with
-        // read styling but never drop out.
+        // optimistic state so the UI reflects what the server
+        // actually recorded — otherwise the row shows as read while
+        // the server still has it as unread, and on ?unread=1 it'd
+        // linger with read styling but never drop out.
         setRead(false);
         return;
       }
@@ -55,45 +74,47 @@ export function NotificationRow({ id, kind, summary, entityId, createdAt, initia
   }
 
   return (
-    <li className={`rounded-lg border px-4 py-3 text-sm ${read ? 'bg-card/40' : 'bg-card'}`}>
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            {!read && <span className="h-2 w-2 rounded-full bg-primary" />}
-            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              {kind.replace(/_/g, ' ')}
-            </span>
-          </div>
-          <p className="mt-1">
-            {entityId ? (
-              <Link
-                href={`/app/objects/${entityId}`}
-                className="font-medium hover:underline"
-                onClick={markRead}
-              >
-                {summary}
-              </Link>
-            ) : (
-              <span>{summary}</span>
-            )}
-          </p>
+    <li
+      onMouseEnter={markRead}
+      className={cn(
+        'grid grid-cols-[18ch_1fr_auto] gap-x-4 gap-y-1 border-b border-border px-1 py-3 text-sm transition-colors hover:bg-surface',
+        read ? 'opacity-70' : 'opacity-100',
+      )}
+    >
+      <time dateTime={createdAt} className="font-mono text-xs text-fg-dim">
+        {formatTs(createdAt)}
+      </time>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          {!read ? (
+            <span aria-label="unread" className="size-1.5 rounded-sm bg-signal" />
+          ) : null}
+          <span>{kind.replace(/_/g, ' ')}</span>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
-          <span className="text-[11px] text-muted-foreground">
-            {new Date(createdAt).toLocaleString()}
-          </span>
-          {!read && (
-            <button
-              type="button"
-              disabled={pending}
+        <p className="mt-1 text-fg">
+          {entityId ? (
+            <Link
+              href={`/app/objects/${entityId}`}
+              className="font-medium hover:underline"
               onClick={markRead}
-              className="text-[11px] text-primary hover:underline disabled:opacity-50"
             >
-              Mark read
-            </button>
+              {summary}
+            </Link>
+          ) : (
+            <span>{summary}</span>
           )}
-        </div>
+        </p>
       </div>
+      {!read ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={markRead}
+          className="self-start font-mono text-[11px] uppercase tracking-[0.12em] text-signal hover:underline disabled:opacity-50"
+        >
+          Mark read
+        </button>
+      ) : null}
     </li>
   );
 }

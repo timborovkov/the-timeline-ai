@@ -1,6 +1,7 @@
 'use client';
 
 import { ErrorState } from '@/components/error-state';
+import { IndexStrip } from '@/components/index-strip';
 
 export default function ChatError({
   error,
@@ -10,11 +11,14 @@ export default function ChatError({
   reset: () => void;
 }) {
   return (
-    <div>
-      <header className="mb-10">
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Chat</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Ask the timeline</h1>
-      </header>
+    <div className="mx-auto max-w-4xl space-y-8">
+      <IndexStrip
+        srLabel="Chat · error"
+        segments={[
+          { value: 'CHAT' },
+          { label: 'status', value: 'ERROR', danger: true },
+        ]}
+      />
       <ErrorState
         title="Couldn't open chat"
         description="The chat surface failed to load. This is usually transient."

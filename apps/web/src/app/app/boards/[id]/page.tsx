@@ -7,6 +7,7 @@ import { DeleteBoardButton } from '@/components/boards/delete-board-button';
 import { KanbanBoard } from '@/components/boards/kanban-board';
 import { ObjectList } from '@/components/boards/object-list';
 import { ObjectTable } from '@/components/boards/object-table';
+import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -94,23 +95,31 @@ export default async function BoardDetailPage({ params }: { params: Promise<{ id
   const isKanban = board.kind === 'kanban';
 
   return (
-    <div className={isKanban ? 'flex h-[calc(100dvh-11rem)] flex-col' : undefined}>
-      <header className="mb-8 flex shrink-0 items-end justify-between gap-6">
-        <div>
-          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-            <Link href="/app/boards" className="hover:underline">
-              Boards
-            </Link>{' '}
-            · {board.kind}
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">{board.name}</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {rows.length} object{rows.length === 1 ? '' : 's'}
-            {board.kind !== 'table' && ` · grouped by ${effectiveGroupBy}`}
-          </p>
-        </div>
-        <DeleteBoardButton id={board.id} />
-      </header>
+    <div className={isKanban ? 'flex h-[calc(100dvh-10rem)] flex-col' : undefined}>
+      <IndexStrip
+        srLabel={`${board.name} · ${board.kind} · ${rows.length} objects${board.kind !== 'table' ? ` · grouped by ${effectiveGroupBy}` : ''}`}
+        segments={[
+          { value: 'BOARD' },
+          { label: 'kind', value: board.kind },
+          { label: 'name', value: board.name, signal: true },
+          { label: 'objects', value: rows.length },
+          ...(board.kind !== 'table'
+            ? ([{ label: 'group', value: effectiveGroupBy }] as const)
+            : ([] as const)),
+        ]}
+        trailing={
+          <span className="inline-flex items-center gap-3">
+            <Link
+              href="/app/boards"
+              className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg hover:underline"
+            >
+              ← all boards
+            </Link>
+            <DeleteBoardButton id={board.id} />
+          </span>
+        }
+        className="mb-6 shrink-0"
+      />
 
       {isKanban && (
         <div className="min-h-0 flex-1">
