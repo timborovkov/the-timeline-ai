@@ -1315,8 +1315,12 @@ export async function markVisited(db: Db, scope: TeamScope, entityId: string): P
 // ---------- Notifications ----------
 
 // Derive from the drizzle enum so a new notification_kind value added
-// in the schema can't drift past this union silently.
-export type NotificationKind = (typeof notificationKind.enumValues)[number];
+// in the schema can't drift past this union silently. `NOTIFICATION_KINDS`
+// is a runtime const re-export so this `notificationKind` import stays a
+// value use (eslint's consistent-type-imports doesn't recognise `typeof`
+// queries on imports as value usage).
+export const NOTIFICATION_KINDS = notificationKind.enumValues;
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export interface NotificationRow {
   id: string;
