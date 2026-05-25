@@ -46,12 +46,19 @@ export function SearchBar({ initialQuery = '' }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const autoRanRef = useRef<string | null>(null);
+  // Monotonic request token so stale fetches can't overwrite the UI.
+  // Manual submits and the ⌘K auto-run share this counter — without
+  // it, fast ?q= toggling would race the slower response on top of
+  // the fresher one.
+  const requestIdRef = useRef(0);
 
   async function runSearch(raw: string): Promise<void> {
     const q = raw.trim();
+    const myRequestId = ++requestIdRef.current;
     if (!q) {
       setResults(null);
       setError(null);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -63,6 +70,11 @@ export function SearchBar({ initialQuery = '' }: Props) {
         body: JSON.stringify({ query: q }),
       });
       const data = (await res.json()) as ApiResponse;
+      // A newer call has started — drop this response on the floor.
+      // We do NOT touch loading here either: the in-flight latest
+      // request owns the loading flag and will clear it in its own
+      // finally block.
+      if (myRequestId !== requestIdRef.current) return;
       if (!res.ok || !data.ok) {
         if (data.error === 'search_unconfigured') {
           setError(
@@ -80,11 +92,12 @@ export function SearchBar({ initialQuery = '' }: Props) {
       }
       setResults(data.results ?? []);
     } catch (err) {
+      if (myRequestId !== requestIdRef.current) return;
       console.error('[search] request failed', err);
       setError('Network error while searching.');
       setResults(null);
     } finally {
-      setLoading(false);
+      if (myRequestId === requestIdRef.current) setLoading(false);
     }
   }
 

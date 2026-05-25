@@ -1,7 +1,7 @@
 'use client';
 
 import { PanelRightClose, X } from 'lucide-react';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { useInspector } from '@/components/inspector-context';
 import { Button } from '@/components/ui/button';
@@ -61,31 +61,12 @@ export function InspectorPane() {
 }
 
 /**
- * <InspectorPane.Field /> — key/value row for use inside an inspector render.
- */
-export function InspectorField({ k, children }: { k: ReactNode; children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-[11ch_1fr] gap-x-3 py-1">
-      <dt className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">{k}</dt>
-      <dd className="m-0 text-fg">{children}</dd>
-    </div>
-  );
-}
-
-/**
- * <InspectorPane.Quote /> — source quote block with signal-color left border.
- * Renders in Switzer (not mono) since this is human-readable prose.
- */
-export function InspectorQuote({ children }: { children: ReactNode }) {
-  return (
-    <blockquote className="mt-4 border-l-2 border-signal bg-bg p-3 font-sans text-sm leading-snug text-fg">
-      {children}
-    </blockquote>
-  );
-}
-
-/**
  * Toggle button for the inspector — used in the top bar / command bar.
+ * Hidden below the `lg` breakpoint to match {@link InspectorPane}'s own
+ * visibility: tapping a chip on mobile still routes through the
+ * provider (so the state stays consistent for when the user resizes
+ * up), but there's no visible pane to toggle so the button would be
+ * misleading.
  */
 export function InspectorToggle({ className }: { className?: string }) {
   const inspector = useInspector();
@@ -96,7 +77,7 @@ export function InspectorToggle({ className }: { className?: string }) {
       aria-label={inspector.open ? 'Close inspector' : 'Open inspector'}
       aria-pressed={inspector.open}
       onClick={inspector.toggle}
-      className={cn('size-8', className)}
+      className={cn('hidden size-8 lg:inline-flex', className)}
     >
       <PanelRightClose className="size-4" />
     </Button>

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
-export interface IndexSegment {
+interface IndexSegment {
   /** Optional dim label (e.g. "total", "team"). */
   label?: ReactNode;
   /** The main value (e.g. "2,847", "acme"). */

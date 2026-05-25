@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 
-export interface InspectorContent {
+interface InspectorContent {
   /** Stable ID for the source being inspected (e.g., "c:1923", "obj:DEAL-204"). */
   id: string;
   /** Short uppercase label shown in the inspector head. */

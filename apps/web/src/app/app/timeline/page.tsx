@@ -134,18 +134,22 @@ export default async function TimelinePage({ searchParams }: Props) {
           .where(inArray(users.id, memberIds))
       : [];
 
-  const hasFilters = Boolean(authorFilter ?? fromFilter ?? toFilter);
+  const hasSearch = Boolean(sp.q?.trim());
+  const hasFilters = Boolean(authorFilter ?? fromFilter ?? toFilter) || hasSearch;
   const eventCount = events.length;
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
       <IndexStrip
-        srLabel={`Timeline · ${active.teamName} · ${eventCount} event${eventCount === 1 ? '' : 's'}${hasFilters ? ' · filters on' : ''}`}
+        srLabel={`Timeline · ${active.teamName} · ${eventCount} event${eventCount === 1 ? '' : 's'}${hasSearch ? ` · searching for ${sp.q ?? ''}` : ''}${hasFilters ? ' · filters on' : ''}`}
         segments={[
           { value: 'TIMELINE' },
           { label: 'team', value: active.teamName },
           { label: 'events', value: eventCount },
-          ...(hasFilters
+          ...(hasSearch
+            ? ([{ label: 'search', value: sp.q ?? '', signal: true }] as const)
+            : ([] as const)),
+          ...(hasFilters && !hasSearch
             ? ([{ label: 'filter', value: 'ON', signal: true }] as const)
             : ([] as const)),
         ]}

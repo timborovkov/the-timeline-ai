@@ -23,8 +23,11 @@ export function PageHeaderSkeleton() {
 /**
  * Flat-row skeleton matching the new `<TimelineList>` shape:
  *   [mono ts] [body] [source]
+ *
+ * Internal — consumed by {@link TimelineFeedSkeleton}. Exported routes
+ * that need a single row should use the feed skeleton with `count={1}`.
  */
-export function TimelineRowSkeleton() {
+function TimelineRowSkeleton() {
   return (
     <li className="grid grid-cols-[18ch_1fr] gap-x-4 gap-y-2 border-b border-border py-3 md:grid-cols-[18ch_1fr_10ch]">
       <Skeleton className="h-3 w-[16ch]" />
@@ -88,27 +91,6 @@ export function EntityGridSkeleton({ count = 6 }: { count?: number }) {
         >
           <Skeleton className="h-4 w-32" />
           <Skeleton className="h-3 w-12" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function BoardSkeleton({ columns = 4 }: { columns?: number }) {
-  return (
-    <div
-      className="grid grid-cols-2 gap-3 lg:grid-cols-4"
-      aria-busy="true"
-      aria-label="Loading board"
-    >
-      {Array.from({ length: columns }).map((_, c) => (
-        <div key={c} className="rounded-sm border border-border bg-surface p-3">
-          <Skeleton className="mb-3 h-3 w-16" />
-          <div className="space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full rounded-sm" />
-            ))}
-          </div>
         </div>
       ))}
     </div>
