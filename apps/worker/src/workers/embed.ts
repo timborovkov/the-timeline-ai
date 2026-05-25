@@ -376,10 +376,7 @@ function renderObjectNarrative(row: {
   return parts.filter((p) => p.length > 0).join(' | ');
 }
 
-async function buildObjectPlan(
-  db: Db,
-  data: queue.EmbedJobData,
-): Promise<EmbedPlan | null> {
+async function buildObjectPlan(db: Db, data: queue.EmbedJobData): Promise<EmbedPlan | null> {
   if (!('objectId' in data) || !data.objectId) {
     throw new UnrecoverableError('embed: object scope job missing objectId');
   }
@@ -411,10 +408,7 @@ async function buildObjectPlan(
   };
 }
 
-async function buildObjectNotePlan(
-  db: Db,
-  data: queue.EmbedJobData,
-): Promise<EmbedPlan | null> {
+async function buildObjectNotePlan(db: Db, data: queue.EmbedJobData): Promise<EmbedPlan | null> {
   if (!('noteId' in data) || !data.noteId) {
     throw new UnrecoverableError('embed: object_note scope job missing noteId');
   }
@@ -449,10 +443,7 @@ async function buildObjectNotePlan(
   };
 }
 
-async function buildObjectChangePlan(
-  db: Db,
-  data: queue.EmbedJobData,
-): Promise<EmbedPlan | null> {
+async function buildObjectChangePlan(db: Db, data: queue.EmbedJobData): Promise<EmbedPlan | null> {
   if (!('changeId' in data) || !data.changeId) {
     throw new UnrecoverableError('embed: object_change scope job missing changeId');
   }
@@ -503,10 +494,7 @@ async function buildObjectChangePlan(
   };
 }
 
-async function buildEntityPlan(
-  db: Db,
-  data: queue.EmbedJobData,
-): Promise<EmbedPlan | null> {
+async function buildEntityPlan(db: Db, data: queue.EmbedJobData): Promise<EmbedPlan | null> {
   if (!('entityId' in data) || !data.entityId) {
     throw new UnrecoverableError('embed: entity scope job missing entityId');
   }
@@ -539,4 +527,3 @@ async function buildEntityPlan(
     },
   };
 }
-

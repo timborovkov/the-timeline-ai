@@ -216,9 +216,9 @@ async function enqueueByUpdatedAt(args: {
   teamId: string;
   budget: number;
   dryRun: boolean;
-  fetchPage: (cursor: { updatedAt: Date; id: string } | null) => Promise<
-    { id: string; updatedAt: Date }[]
-  >;
+  fetchPage: (
+    cursor: { updatedAt: Date; id: string } | null,
+  ) => Promise<{ id: string; updatedAt: Date }[]>;
   enqueueRow: (id: string) => Promise<void>;
 }): Promise<PhaseResult> {
   if (args.budget <= 0) return { scanned: 0, enqueued: 0 };
@@ -271,7 +271,11 @@ async function enqueueObjects(args: Args, budget: number): Promise<PhaseResult> 
         .limit(PAGE_SIZE);
     },
     async enqueueRow(id) {
-      await queue.enqueueObjectEmbedJob(args.teamId, id, args.targetCollection ? { targetCollection: args.targetCollection } : {});
+      await queue.enqueueObjectEmbedJob(
+        args.teamId,
+        id,
+        args.targetCollection ? { targetCollection: args.targetCollection } : {},
+      );
     },
   });
 }
@@ -305,7 +309,11 @@ async function enqueueEntities(args: Args, budget: number): Promise<PhaseResult>
         .limit(PAGE_SIZE);
     },
     async enqueueRow(id) {
-      await queue.enqueueEntityEmbedJob(args.teamId, id, args.targetCollection ? { targetCollection: args.targetCollection } : {});
+      await queue.enqueueEntityEmbedJob(
+        args.teamId,
+        id,
+        args.targetCollection ? { targetCollection: args.targetCollection } : {},
+      );
     },
   });
 }
@@ -339,7 +347,11 @@ async function enqueueNotes(args: Args, budget: number): Promise<PhaseResult> {
         .limit(PAGE_SIZE);
     },
     async enqueueRow(id) {
-      await queue.enqueueObjectNoteEmbedJob(args.teamId, id, args.targetCollection ? { targetCollection: args.targetCollection } : {});
+      await queue.enqueueObjectNoteEmbedJob(
+        args.teamId,
+        id,
+        args.targetCollection ? { targetCollection: args.targetCollection } : {},
+      );
     },
   });
 }

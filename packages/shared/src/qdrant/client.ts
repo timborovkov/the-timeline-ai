@@ -383,10 +383,14 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     if (opts.sourceKind) {
       must.push({ key: 'source_kind', match: { value: opts.sourceKind } });
     }
-    const res = await request('POST', `/collections/${encodeURIComponent(collection)}/points/count`, {
-      filter: { must },
-      exact: true,
-    });
+    const res = await request(
+      'POST',
+      `/collections/${encodeURIComponent(collection)}/points/count`,
+      {
+        filter: { must },
+        exact: true,
+      },
+    );
     if (res.status !== 200) {
       throw new Error(`Qdrant count failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
     }

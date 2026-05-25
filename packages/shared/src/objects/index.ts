@@ -38,10 +38,7 @@ const embedLog = childLogger('objects:embed');
  * write has already committed; the user shouldn't see an "object created
  * but search is offline" error for a transient Redis hiccup.
  */
-function fireAndForgetEmbed(
-  fn: () => Promise<void>,
-  context: Record<string, unknown>,
-): void {
+function fireAndForgetEmbed(fn: () => Promise<void>, context: Record<string, unknown>): void {
   void fn().catch((err: unknown) => {
     embedLog.error({ err, ...context }, 'failed to enqueue embed job');
   });
@@ -614,14 +611,16 @@ export async function createObject(
   // separate connection) sees the row. Two points per object: the workspace
   // narrative ('object' scope) and the entity disambiguation text ('entity'
   // scope) — different retrieval modes share the row.
-  fireAndForgetEmbed(
-    () => embedQueue.enqueueObjectEmbedJob(scope.teamId, result.id),
-    { teamId: scope.teamId, objectId: result.id, op: 'createObject' },
-  );
-  fireAndForgetEmbed(
-    () => embedQueue.enqueueEntityEmbedJob(scope.teamId, result.id),
-    { teamId: scope.teamId, entityId: result.id, op: 'createObject' },
-  );
+  fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, result.id), {
+    teamId: scope.teamId,
+    objectId: result.id,
+    op: 'createObject',
+  });
+  fireAndForgetEmbed(() => embedQueue.enqueueEntityEmbedJob(scope.teamId, result.id), {
+    teamId: scope.teamId,
+    entityId: result.id,
+    op: 'createObject',
+  });
   return result;
 }
 
@@ -801,27 +800,30 @@ export async function updateObject(
   // status/stage/owner/etc., so any patch can shift the vector. Skip when
   // the patch was a no-op (no actual changes).
   if (txResult.changedFields.length > 0) {
-    fireAndForgetEmbed(
-      () => embedQueue.enqueueObjectEmbedJob(scope.teamId, entityId),
-      { teamId: scope.teamId, objectId: entityId, op: 'updateObject' },
-    );
+    fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, entityId), {
+      teamId: scope.teamId,
+      objectId: entityId,
+      op: 'updateObject',
+    });
     // Only re-embed entity when its text inputs (canonicalName/aliases/type)
     // actually changed — those drive the entity disambiguation point. A
     // pure status flip doesn't need a new entity vector.
-    const entityFieldChanged = txResult.changedFields.some((f) =>
-      f === 'canonicalName' || f === 'aliases' || f === 'type',
+    const entityFieldChanged = txResult.changedFields.some(
+      (f) => f === 'canonicalName' || f === 'aliases' || f === 'type',
     );
     if (entityFieldChanged) {
-      fireAndForgetEmbed(
-        () => embedQueue.enqueueEntityEmbedJob(scope.teamId, entityId),
-        { teamId: scope.teamId, entityId, op: 'updateObject' },
-      );
+      fireAndForgetEmbed(() => embedQueue.enqueueEntityEmbedJob(scope.teamId, entityId), {
+        teamId: scope.teamId,
+        entityId,
+        op: 'updateObject',
+      });
     }
     for (const changeId of txResult.changeIds) {
-      fireAndForgetEmbed(
-        () => embedQueue.enqueueObjectChangeEmbedJob(scope.teamId, changeId),
-        { teamId: scope.teamId, changeId, op: 'updateObject' },
-      );
+      fireAndForgetEmbed(() => embedQueue.enqueueObjectChangeEmbedJob(scope.teamId, changeId), {
+        teamId: scope.teamId,
+        changeId,
+        op: 'updateObject',
+      });
     }
   }
   return { object: txResult.object, changedFields: txResult.changedFields };
@@ -1100,10 +1102,11 @@ export async function createNote(
     return { id: noteId };
   });
 
-  fireAndForgetEmbed(
-    () => embedQueue.enqueueObjectNoteEmbedJob(scope.teamId, result.id),
-    { teamId: scope.teamId, noteId: result.id, op: 'createNote' },
-  );
+  fireAndForgetEmbed(() => embedQueue.enqueueObjectNoteEmbedJob(scope.teamId, result.id), {
+    teamId: scope.teamId,
+    noteId: result.id,
+    op: 'createNote',
+  });
   return result;
 }
 
@@ -1175,10 +1178,11 @@ export async function updateNote(
   });
 
   if (updated) {
-    fireAndForgetEmbed(
-      () => embedQueue.enqueueObjectNoteEmbedJob(scope.teamId, input.noteId),
-      { teamId: scope.teamId, noteId: input.noteId, op: 'updateNote' },
-    );
+    fireAndForgetEmbed(() => embedQueue.enqueueObjectNoteEmbedJob(scope.teamId, input.noteId), {
+      teamId: scope.teamId,
+      noteId: input.noteId,
+      op: 'updateNote',
+    });
   }
   return updated;
 }
@@ -2016,10 +2020,11 @@ export async function proposeObjectChange(
     return { id: changeId };
   });
 
-  fireAndForgetEmbed(
-    () => embedQueue.enqueueObjectChangeEmbedJob(scope.teamId, result.id),
-    { teamId: scope.teamId, changeId: result.id, op: 'proposeObjectChange' },
-  );
+  fireAndForgetEmbed(() => embedQueue.enqueueObjectChangeEmbedJob(scope.teamId, result.id), {
+    teamId: scope.teamId,
+    changeId: result.id,
+    op: 'proposeObjectChange',
+  });
   return result;
 }
 

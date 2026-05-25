@@ -93,10 +93,7 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
       .select({ n: count() })
       .from(objectNotesTable)
       .where(and(eq(objectNotesTable.teamId, teamId), isNull(objectNotesTable.deletedAt))),
-    db
-      .select({ n: count() })
-      .from(objectChangesTable)
-      .where(eq(objectChangesTable.teamId, teamId)),
+    db.select({ n: count() }).from(objectChangesTable).where(eq(objectChangesTable.teamId, teamId)),
   ]);
 
   const entityCount = entityRows[0]?.n ?? 0;
