@@ -155,6 +155,18 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
   const meeting = await scope.getMeeting(meetingId);
   if (!meeting) return { ok: false, error: 'Meeting not found' };
 
+  // Only meetings that have not yet finished can be cancelled. `processing`
+  // is excluded because the finalize worker is mid-flight — cancelling
+  // there would race the worker and stamp `failed` on top of `completed`
+  // a moment later. `completed` and `failed` are terminal.
+  const cancellable: (typeof meeting.status)[] = ['pending', 'joining', 'active'];
+  if (!cancellable.includes(meeting.status)) {
+    return {
+      ok: false,
+      error: `Cannot cancel a meeting in status '${meeting.status}'.`,
+    };
+  }
+
   if (meeting.providerBotId) {
     try {
       const provider = meetingBots.getMeetingBotProvider(meeting.provider);

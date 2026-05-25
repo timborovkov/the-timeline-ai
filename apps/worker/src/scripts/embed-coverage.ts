@@ -170,6 +170,7 @@ async function main(): Promise<void> {
     'object_change',
     'entity',
     'doc_chunk',
+    'meeting_chunk',
   ];
   const reports: KindReport[] = [];
   for (const kind of kinds) {

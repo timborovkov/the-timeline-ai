@@ -108,28 +108,37 @@ export async function POST(req: Request): Promise<Response> {
   const createdAt = parsed.data.bot?.status?.created_at ?? parsed.data.status?.created_at;
   const mappedStatus = code ? meetingBots.recallMapStatus(code) : null;
 
+  // Promotion to `completed` is owned by the meeting-finalize worker — it
+  // generates the summary, records minutes, then flips the status. The
+  // status webhook must NOT short-circuit that path by setting `completed`
+  // from a `bot.status_change` carrying a `done`/`analysis_done` code,
+  // because the finalize worker checks `status === 'completed'` and
+  // exits early. Cap status_change promotions at `processing`.
+  //
+  // We also defensively enqueue finalize when we see `done`/`analysis_done`
+  // via status_change in case the separate `bot.call_ended` event was
+  // dropped (Recall has shipped both shapes historically).
+  const shouldEnqueueFinalize =
+    parsed.event === 'bot.call_ended' ||
+    (parsed.event === 'bot.status_change' &&
+      (code === 'done' || code === 'analysis_done' || mappedStatus === 'completed'));
+
   try {
     if (parsed.event === 'bot.status_change' && mappedStatus) {
+      // Cap at `processing` — never promote to `completed` here.
+      const cappedStatus = mappedStatus === 'completed' ? 'processing' : mappedStatus;
       const patch: Parameters<typeof scope.updateMeetingStatus>[2] = {
         metadata: { last_status: code, last_status_at: createdAt ?? new Date().toISOString() },
       };
-      if (mappedStatus === 'active') patch.startedAt = createdAt ? new Date(createdAt) : new Date();
-      if (mappedStatus === 'processing')
+      if (cappedStatus === 'active') patch.startedAt = createdAt ? new Date(createdAt) : new Date();
+      if (cappedStatus === 'processing')
         patch.endedAt = createdAt ? new Date(createdAt) : new Date();
-      await scope.updateMeetingStatus(meeting.id, mappedStatus, patch);
+      await scope.updateMeetingStatus(meeting.id, cappedStatus, patch);
     } else if (parsed.event === 'bot.call_ended') {
       await scope.updateMeetingStatus(meeting.id, 'processing', {
         endedAt: createdAt ? new Date(createdAt) : new Date(),
         metadata: { call_ended_at: createdAt ?? new Date().toISOString() },
       });
-      if (env.REDIS_URL) {
-        await queue.enqueueMeetingFinalizeJob({
-          meetingId: meeting.id,
-          teamId: meeting.teamId,
-        });
-      } else {
-        log.warn({ meetingId: meeting.id }, 'redis_unavailable_skipping_finalize_enqueue');
-      }
     } else if (parsed.event === 'bot.fatal' || parsed.event === 'bot.failed') {
       await scope.updateMeetingStatus(meeting.id, 'failed', {
         metadata: { failure_at: new Date().toISOString(), failure_code: code ?? 'unknown' },
@@ -137,6 +146,20 @@ export async function POST(req: Request): Promise<Response> {
     }
     // Unknown events are intentionally ignored — Recall ships new event
     // types regularly and we don't want 5xx to trigger retry storms.
+
+    if (shouldEnqueueFinalize) {
+      if (!env.REDIS_URL) {
+        // Without Redis we cannot run finalize and the meeting would be
+        // stuck in `processing` forever. Return 503 so Recall retries the
+        // webhook with exponential backoff; by then Redis should be back.
+        log.error({ meetingId: meeting.id }, 'redis_unavailable_cannot_enqueue_finalize');
+        return Response.json({ ok: false, reason: 'redis_unavailable' }, { status: 503 });
+      }
+      await queue.enqueueMeetingFinalizeJob({
+        meetingId: meeting.id,
+        teamId: meeting.teamId,
+      });
+    }
   } catch (err) {
     log.error({ err, botId, event: parsed.event }, 'status_handler_error');
     return Response.json({ ok: false, reason: 'handler_error' }, { status: 503 });
