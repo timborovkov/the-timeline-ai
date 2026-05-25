@@ -60,6 +60,16 @@ export function ChatPane({
   useEffect(() => {
     searchRef.current = search;
   });
+  // Track whether we've already asked the server to create a session this
+  // ChatPane lifetime. Without this, if server-side `createChatSession`
+  // throws (pinned object missing, DB blip, etc.), the route logs and
+  // falls back to no-persistence — but `sessionIdRef.current` stays null,
+  // so the next user message would send `startNewSession: true` AGAIN,
+  // and we'd either loop on the same failure or spawn a fresh chat row
+  // per message once it recovers. After the first attempt we let
+  // persistence stay off for the rest of this ChatPane; refreshing
+  // re-tries.
+  const sessionCreateAttempted = useRef(initialSessionId !== null);
 
   // useMemo so the Chat instance picks up exactly one transport. The deps
   // array is empty on purpose — we want the transport stable across renders
@@ -68,10 +78,18 @@ export function ChatPane({
     () =>
       new DefaultChatTransport({
         api: '/api/chat',
-        body: () => ({
-          sessionId: sessionIdRef.current ?? undefined,
-          startNewSession: sessionIdRef.current === null,
-        }),
+        body: () => {
+          // Ask the server to create a session only once per ChatPane
+          // lifetime. After the first request fires, future ones either
+          // (a) ride the session id we picked up from the response header,
+          // or (b) stream without persistence if creation failed.
+          const askForNew = sessionIdRef.current === null && !sessionCreateAttempted.current;
+          if (askForNew) sessionCreateAttempted.current = true;
+          return {
+            sessionId: sessionIdRef.current ?? undefined,
+            startNewSession: askForNew,
+          };
+        },
         fetch: async (url, init) => {
           const res = await fetch(url, init);
           const id = res.headers.get('x-tl-session-id');
