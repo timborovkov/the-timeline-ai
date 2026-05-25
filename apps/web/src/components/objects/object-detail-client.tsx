@@ -1,7 +1,7 @@
 'use client';
 
 import { type objects } from '@timeline/shared';
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 
 import {
   acceptObjectChangeAction,
@@ -64,6 +64,12 @@ export function ObjectDetailClient({ detail, userId }: Props) {
   >([]);
   const [mergeSearching, setMergeSearching] = useState(false);
   const [mergePending, mergeStartTransition] = useTransition();
+  // Monotonic request id. The typeahead can fire faster than the server
+  // responds; without this guard, a slow "ab" response can land after
+  // a fast "abc" response and overwrite the correct list with stale
+  // rows. Each request captures its id; only the latest gets to
+  // mutate state.
+  const mergeRequestId = useRef(0);
 
   function patch(field: string, value: unknown): void {
     setError(null);
@@ -526,12 +532,21 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                 setMergeQuery(q);
                 setError(null);
                 if (q.trim().length < 2) {
+                  // Invalidate any in-flight slower query so it can't
+                  // repopulate results after the user cleared the box.
+                  mergeRequestId.current += 1;
                   setMergeResults([]);
+                  setMergeSearching(false);
                   return;
                 }
+                const myRequestId = ++mergeRequestId.current;
                 setMergeSearching(true);
                 void searchObjectsAction({ query: q, excludeId: detail.id, limit: 8 }).then(
                   (res) => {
+                    // Stale response — a newer keystroke already started
+                    // its own request; do not mutate results or clear the
+                    // loading flag (the latest in-flight request owns it).
+                    if (myRequestId !== mergeRequestId.current) return;
                     setMergeSearching(false);
                     if (res.ok) setMergeResults(res.results);
                     else setError(res.error);

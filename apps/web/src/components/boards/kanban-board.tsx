@@ -14,6 +14,7 @@ import { type objects } from '@timeline/shared';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useOptimistic, useTransition } from 'react';
+import { toast } from 'sonner';
 
 import { updateObjectAction } from '@/app/actions/objects';
 import { cn } from '@/lib/utils';
@@ -108,10 +109,18 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
           : groupBy === 'stage'
             ? { id, stage: col === 'unset' ? null : col }
             : { id, status: col };
-      await updateObjectAction(patch);
+      const result = await updateObjectAction(patch);
+      // Surface server errors as a toast — otherwise useOptimistic
+      // silently snaps the card back to its original column and the
+      // user has no idea why the move didn't stick. The card name is
+      // not in scope here so we point at the column attempt instead.
+      if ('error' in result && result.error) {
+        toast.error(`Couldn't move to ${col}`, { description: result.error });
+      }
       // Refresh the server component for this route so the underlying
       // `rows` prop reflects the new column before useOptimistic snaps
-      // back. See the `useOptimistic` comment above.
+      // back. See the `useOptimistic` comment above. On failure this
+      // also restores the card to its real (server-side) column.
       router.refresh();
     });
   }
