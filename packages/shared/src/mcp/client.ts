@@ -382,6 +382,14 @@ export class McpClientManager {
       .limit(1);
     const server = rows[0];
     if (!server) throw new Error('MCP server not found');
+    // Re-check disabledTools at call time. discoverTools filters them out
+    // of tools/list, but the 5-min cached toolMap may still hold a tool
+    // that was disabled after the last discovery — both the agent and
+    // /api/team/mcp-servers/[id]/tools could otherwise invoke it.
+    const disabled = Array.isArray(server.disabledTools) ? (server.disabledTools as string[]) : [];
+    if (disabled.includes(mapping.toolName)) {
+      throw new Error(`MCP tool disabled: ${mapping.toolName}`);
+    }
     const oauth =
       server.authType === 'oauth'
         ? await loadOauthAccessToken(db, teamId, server.id, server.url)

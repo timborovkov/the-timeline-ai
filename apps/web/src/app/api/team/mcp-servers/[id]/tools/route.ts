@@ -43,7 +43,11 @@ export async function POST(
   req: Request,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
-  // Test-call a tool. Same auth gate as GET.
+  // Test-call gate: invoking a team MCP tool runs against shared bearer /
+  // OAuth credentials and hits a third-party API on the team's behalf.
+  // Restrict to admins (matches the rest of the team-catalog mutations).
+  // Personal MCP servers (user_id set) belong to the caller, so the
+  // owner can test-call without admin role.
   const session = await auth();
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { id } = await ctx.params;
@@ -52,6 +56,15 @@ export async function POST(
   const scope = withTeam(db, active.teamId, session.user.id);
   const server = await scope.mcp.getServer(id);
   if (!server) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (server.userId === null) {
+    try {
+      await scope.requireMembership('admin');
+    } catch {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    }
+  } else if (server.userId !== session.user.id) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
   const body: unknown = await req.json();
   const parsed = callSchema.safeParse(body);
   if (!parsed.success) {

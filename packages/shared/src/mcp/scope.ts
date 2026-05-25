@@ -178,9 +178,18 @@ export function createMcpScope(deps: {
     expiresAt: Date | null,
     opts: { clientInfo?: Record<string, unknown>; codeVerifier?: string | null } = {},
   ) {
-    await ensureMember('admin');
     const server = await getServer(mcpServerId);
     if (!server) throw new Error('MCP server not found');
+    // Personal server (user_id set): only the owner persists tokens. Team
+    // server (user_id null): admin required. Matches updateServer /
+    // deleteServer / persistOauthPending so the OAuth flow doesn't
+    // fight itself for non-admin owners of personal MCPs.
+    if (server.userId) {
+      if (server.userId !== userId) throw new Error('forbidden');
+      await ensureMember();
+    } else {
+      await ensureMember('admin');
+    }
     const enc = encryptJson(tokens);
     const clientEnc = opts.clientInfo ? encryptJson(opts.clientInfo) : undefined;
     await db
@@ -223,9 +232,14 @@ export function createMcpScope(deps: {
     codeVerifier: string,
     clientInfo: Record<string, unknown>,
   ) {
-    await ensureMember('admin');
     const server = await getServer(mcpServerId);
     if (!server) throw new Error('MCP server not found');
+    if (server.userId) {
+      if (server.userId !== userId) throw new Error('forbidden');
+      await ensureMember();
+    } else {
+      await ensureMember('admin');
+    }
     const clientEnc = encryptJson(clientInfo);
     const placeholder = encryptJson({});
     await db

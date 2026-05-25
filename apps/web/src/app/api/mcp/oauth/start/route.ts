@@ -42,15 +42,25 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
   const scope = withTeam(db, active.teamId, session.user.id);
-  try {
-    await scope.requireMembership('admin');
-  } catch {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-  }
   const server = await scope.mcp.getServer(parsed.data.mcpServerId);
   if (!server) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   if (server.authType !== 'oauth') {
     return NextResponse.json({ error: 'not_oauth_server' }, { status: 400 });
+  }
+  // Personal MCP servers (user_id set): the owner OAuths against their own
+  // identity, no admin role needed. Team-shared servers (user_id null):
+  // admin only, matching the rest of the team-catalog gates.
+  if (server.userId === null) {
+    try {
+      await scope.requireMembership('admin');
+    } catch {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    }
+  } else if (server.userId !== session.user.id) {
+    // getServer already filters by visibility, so this branch should be
+    // unreachable — defense in depth in case the visibility predicate
+    // ever loosens.
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
   const url = new URL(req.url);

@@ -522,17 +522,26 @@ export const githubProvider: IntegrationProvider = {
       token_type: typeof body.token_type === 'string' ? body.token_type : 'Bearer',
       scope: typeof body.scope === 'string' ? body.scope : SCOPES.join(' '),
     };
-    let login = 'github';
-    let sub = '';
+    // externalAccountId MUST be the GitHub numeric user id so reconnects
+    // upsert on the existing integration row instead of creating a new
+    // one each time (the `(team_id, provider, external_account_id)` partial
+    // unique index dedups on it). A random fallback would silently produce
+    // duplicate integrations on every reconnect — fail the OAuth flow
+    // instead and let the user retry.
+    let login: string;
+    let sub: string;
     try {
       const me = await ghGet<{ id: number; login: string }>(tokens, '/user');
       login = me.login;
       sub = String(me.id);
     } catch (err) {
       log.warn({ err }, 'failed to fetch GitHub /user');
+      throw new Error(
+        'github_user_lookup_failed: could not resolve the authenticated user id from /user — reconnect and try again',
+      );
     }
     return {
-      externalAccountId: sub || `github-${Math.random().toString(36).slice(2, 10)}`,
+      externalAccountId: sub,
       displayName: `GitHub — ${login}`,
       scopes: SCOPES,
       tokens: tokens as unknown as Record<string, unknown>,

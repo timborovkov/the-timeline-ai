@@ -40,13 +40,19 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   const scope = withTeam(db, verified.teamId, session.user.id);
-  try {
-    await scope.requireMembership('admin');
-  } catch {
-    return new Response('forbidden', { status: 403 });
-  }
   const server = await scope.mcp.getServer(verified.mcpServerId);
   if (!server) return new Response('not_found', { status: 404 });
+  // Personal MCP servers: the owner OAuths against their own identity, no
+  // admin role needed. Team-shared servers: admin only.
+  if (server.userId === null) {
+    try {
+      await scope.requireMembership('admin');
+    } catch {
+      return new Response('forbidden', { status: 403 });
+    }
+  } else if (server.userId !== session.user.id) {
+    return new Response('forbidden', { status: 403 });
+  }
   const { clientInfo, codeVerifier } = await scope.mcp.loadOauthClientInfo(verified.mcpServerId);
   if (!clientInfo || !codeVerifier) {
     return new Response('missing_pending_state', { status: 400 });
