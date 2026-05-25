@@ -49,8 +49,7 @@ export const metadata: Metadata = {
   },
 };
 
-const CONTACT_MAILTO =
-  'mailto:tim@irmin.co?subject=The%20Timeline%20%E2%80%94%20talk%20to%20us';
+const CONTACT_MAILTO = 'mailto:tim@irmin.co?subject=The%20Timeline%20%E2%80%94%20talk%20to%20us';
 
 export default function LandingPage() {
   return (
@@ -177,10 +176,7 @@ const FAQ_ITEMS = [
 function Mono({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <span
-      className={cn(
-        'font-mono text-[11px] uppercase tracking-[0.16em] text-fg-dim',
-        className,
-      )}
+      className={cn('font-mono text-[11px] uppercase tracking-[0.16em] text-fg-dim', className)}
     >
       {children}
     </span>
@@ -213,10 +209,7 @@ function Section({
   className?: string;
 }) {
   return (
-    <section
-      id={id}
-      className={cn('border-t border-border px-6 py-20 sm:py-28', className)}
-    >
+    <section id={id} className={cn('border-t border-border px-6 py-20 sm:py-28', className)}>
       <div className="mx-auto max-w-6xl">{children}</div>
     </section>
   );
@@ -246,10 +239,7 @@ function TopNav() {
           >
             How it works
           </Link>
-          <Link
-            href="/sign-in"
-            className="px-3 py-2 text-fg-muted transition-colors hover:text-fg"
-          >
+          <Link href="/sign-in" className="px-3 py-2 text-fg-muted transition-colors hover:text-fg">
             Sign in
           </Link>
           <Button asChild size="sm">
@@ -504,15 +494,7 @@ function Surfaces() {
   );
 }
 
-function SurfaceTile({
-  label,
-  body,
-  coming,
-}: {
-  label: string;
-  body: string;
-  coming?: boolean;
-}) {
+function SurfaceTile({ label, body, coming }: { label: string; body: string; coming?: boolean }) {
   return (
     <div className="bg-bg p-6 sm:p-8">
       <div className="flex items-center gap-2">
@@ -552,9 +534,7 @@ function Receipts() {
             /ASK · TEAM acme
           </div>
           <div className="border-b border-border p-4">
-            <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              YOU
-            </div>
+            <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">YOU</div>
             <p className="mt-1 text-sm text-fg">
               What did we agree with Ternus on the licensing deal?
             </p>
@@ -630,9 +610,7 @@ function FAQ() {
                 +
               </span>
             </summary>
-            <p className="max-w-prose pb-6 pr-8 text-base leading-[1.65] text-fg-muted">
-              {item.a}
-            </p>
+            <p className="max-w-prose pb-6 pr-8 text-base leading-[1.65] text-fg-muted">{item.a}</p>
           </details>
         ))}
       </div>

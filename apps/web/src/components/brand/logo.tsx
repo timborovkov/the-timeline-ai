@@ -57,13 +57,8 @@ export function Wordmark({
 }) {
   return (
     <span className={cn('inline-flex items-center gap-2', className)}>
-      <Logo
-        ariaHidden
-        className={cn(compact ? 'h-4 w-4' : 'h-5 w-5', 'text-fg')}
-      />
-      <span className="font-mono text-xs font-bold uppercase tracking-[0.18em]">
-        THE TIMELINE
-      </span>
+      <Logo ariaHidden className={cn(compact ? 'h-4 w-4' : 'h-5 w-5', 'text-fg')} />
+      <span className="font-mono text-xs font-bold uppercase tracking-[0.18em]">THE TIMELINE</span>
     </span>
   );
 }
