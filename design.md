@@ -159,6 +159,14 @@ Every top-level page opens with:
 - **Avatars** — squared (`rounded-md` for teams, `rounded-full` for people),
   `bg-primary/12 text-primary`, monogram from initials. Never load image
   avatars in Phase 1.
+- **Dialogs & confirmations** — shadcn `AlertDialog` for destructive confirms
+  (use `variant="destructive"` on the action), shadcn `Dialog` for general
+  modals. Never use `window.confirm`, `alert`, or `prompt` — they don't match
+  the design system and block the main thread.
+- **Toasts** — `sonner` via `<Toaster richColors />` mounted in
+  [apps/web/src/app/layout.tsx](apps/web/src/app/layout.tsx). Use
+  `toast.success` / `toast.error` from `sonner` for transient feedback after
+  server actions; keep inline error text for field-level validation.
 
 ## Iconography
 
