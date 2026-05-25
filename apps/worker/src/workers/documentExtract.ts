@@ -454,10 +454,31 @@ async function routeContentToText(
     });
     return { text: result.text, model: result.model };
   }
-  if (ct.startsWith('image/')) {
+  // Image extension fallback matches the PDF/DOCX behaviour above: when
+  // RustFS loses the explicit Content-Type on PUT we still route the
+  // upload through vision via the filename extension. ai-sdk's vision
+  // content-part `mediaType` needs a real MIME, so derive one from the
+  // extension rather than passing octet-stream through.
+  const IMAGE_EXT_TO_MIME: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    bmp: 'image/bmp',
+    tif: 'image/tiff',
+    tiff: 'image/tiff',
+    heic: 'image/heic',
+    heif: 'image/heif',
+    avif: 'image/avif',
+  };
+  const extMatch = /\.([a-z0-9]+)$/i.exec(input.name);
+  const extLower = extMatch?.[1]?.toLowerCase();
+  const fallbackImageMime = extLower ? IMAGE_EXT_TO_MIME[extLower] : undefined;
+  if (ct.startsWith('image/') || fallbackImageMime) {
     const result = await io.extractFromMedia({
       body: input.body,
-      mediaType: ct,
+      mediaType: ct.startsWith('image/') ? ct : (fallbackImageMime ?? 'image/png'),
       filename: input.name,
     });
     return { text: result.text, model: result.model };

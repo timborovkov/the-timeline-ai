@@ -466,6 +466,35 @@ describe('processDocumentExtractJob — content-type routing', () => {
     expect(result.chunkCount).toBeGreaterThanOrEqual(1);
   });
 
+  it('extension fallback also covers images when Content-Type is lost (bugbot #3299101843)', async () => {
+    // The PDF/DOCX fallback above had a sibling gap: images uploaded
+    // without a Content-Type were rejected as unsupported because the
+    // image branch only checked `ct.startsWith('image/')` with no
+    // extension fallback. Now `.jpg/.png/.webp/...` extensions on an
+    // octet-stream upload route to vision with a derived image MIME.
+    h = await makeHarness('\xff\xd8\xff image bytes', { visionResponse: 'whiteboard text' });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'whiteboard scan',
+      filename: 'whiteboard.jpg',
+      contentType: 'application/octet-stream',
+    });
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(result.chunkCount).toBeGreaterThanOrEqual(1);
+    expect(h.extractFromMedia).toHaveBeenCalledOnce();
+    // ai-sdk needs a real image MIME on the content part — verify we
+    // derived 'image/jpeg' from the .jpg extension rather than passing
+    // octet-stream through.
+    const firstCall = h.extractFromMedia.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const call = firstCall?.[0] as { mediaType: string; filename: string };
+    expect(call.mediaType).toBe('image/jpeg');
+    expect(call.filename).toBe('whiteboard.jpg');
+  });
+
   it('still rejects truly unsupported content types (e.g. audio)', async () => {
     h = await makeHarness('binary audio');
     const { versionId } = await createFinalisedDocument(h.db, {

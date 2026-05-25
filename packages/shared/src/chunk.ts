@@ -78,10 +78,15 @@ export function chunkText(input: string, opts: ChunkOptions = {}): TextChunk[] {
       // textbook idiom.
       const sentenceRe = /[.!?](\s|$)/g;
       let lastSentenceEnd = -1;
+      let lastMatchLen = 0;
       for (const m of window.matchAll(sentenceRe)) {
         lastSentenceEnd = m.index;
+        // Match width is 1 when `$` matched (zero-width anchor), 2
+        // otherwise. Using `m[0].length` instead of a hardcoded `+ 2`
+        // keeps `cut` within `hardEnd` for the end-of-window case.
+        lastMatchLen = m[0].length;
       }
-      if (lastSentenceEnd >= 0) cut = windowStart + lastSentenceEnd + 2;
+      if (lastSentenceEnd >= 0) cut = windowStart + lastSentenceEnd + lastMatchLen;
     }
     if (cut < 0) {
       const ws = window.lastIndexOf(' ');

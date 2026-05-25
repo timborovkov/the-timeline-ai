@@ -73,6 +73,22 @@ describe('chunkText', () => {
     expect(last.endsWith('.')).toBe(true);
   });
 
+  it('end-of-window sentence boundary stays within targetChars (bugbot #3299101846)', () => {
+    // When the regex matches `[.!?]$` (zero-width anchor), the match
+    // width is 1, not 2. The cut MUST account for that or it overshoots
+    // hardEnd by one character. Build text where the sentence break
+    // lands exactly at the window edge to exercise the path.
+    // Use small target so we can predict the window.
+    const text = 'a'.repeat(40) + '.' + 'b'.repeat(40);
+    const chunks = chunkText(text, { targetTokens: 10, overlapTokens: 0 });
+    // Chunks must collectively cover the input; no chunk should be
+    // longer than targetChars (10 * 4 = 40). Pre-fix the cut overshoots
+    // and the first chunk would be 41 chars.
+    for (const c of chunks) {
+      expect(c.text.length).toBeLessThanOrEqual(40);
+    }
+  });
+
   it('prefers blank-line boundaries when available', () => {
     const para1 = 'A'.repeat(2000);
     const para2 = 'B'.repeat(2000);
