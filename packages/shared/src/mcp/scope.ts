@@ -1,5 +1,5 @@
 import { type Db, mcpOauthTokens, mcpServers } from '@timeline/db';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, or } from 'drizzle-orm';
 
 import { decryptJson, encryptJson } from '../crypto/secrets.js';
 
@@ -16,6 +16,13 @@ export interface AddMcpServerInput {
   url: string;
   authType: 'none' | 'bearer' | 'header' | 'basic' | 'oauth' | 'url_key';
   authConfig?: McpAuthConfig | null;
+  /**
+   * Phase 11 overlay: `'team'` puts the server in the team catalog (admin
+   * only). `'personal'` keys it to the calling user — visible only to
+   * them, and they don't need to be an admin to add it. Defaults to
+   * `'team'` to preserve pre-overlay callers' behavior.
+   */
+  ownership?: 'team' | 'personal';
 }
 
 export function createMcpScope(deps: {
@@ -26,12 +33,35 @@ export function createMcpScope(deps: {
 }) {
   const { db, teamId, userId, ensureMember } = deps;
 
+  // Visibility predicate: team-shared rows are visible to every member;
+  // personal rows are visible only to their owner. Used everywhere we
+  // surface a server's existence to the caller (list, get, callTool).
+  const visibilityClause = or(isNull(mcpServers.userId), eq(mcpServers.userId, userId));
+
   async function listServers() {
     await ensureMember();
     return db
       .select()
       .from(mcpServers)
-      .where(eq(mcpServers.teamId, teamId))
+      .where(and(eq(mcpServers.teamId, teamId), visibilityClause))
+      .orderBy(desc(mcpServers.createdAt));
+  }
+
+  async function listTeamServers() {
+    await ensureMember();
+    return db
+      .select()
+      .from(mcpServers)
+      .where(and(eq(mcpServers.teamId, teamId), isNull(mcpServers.userId)))
+      .orderBy(desc(mcpServers.createdAt));
+  }
+
+  async function listPersonalServers() {
+    await ensureMember();
+    return db
+      .select()
+      .from(mcpServers)
+      .where(and(eq(mcpServers.teamId, teamId), eq(mcpServers.userId, userId)))
       .orderBy(desc(mcpServers.createdAt));
   }
 
@@ -40,13 +70,20 @@ export function createMcpScope(deps: {
     const rows = await db
       .select()
       .from(mcpServers)
-      .where(and(eq(mcpServers.id, id), eq(mcpServers.teamId, teamId)))
+      .where(and(eq(mcpServers.id, id), eq(mcpServers.teamId, teamId), visibilityClause))
       .limit(1);
     return rows[0] ?? null;
   }
 
   async function addServer(input: AddMcpServerInput) {
-    await ensureMember('admin');
+    const ownership = input.ownership ?? 'team';
+    if (ownership === 'team') {
+      // Team catalog is admin-only. Personal entries belong to the caller
+      // so any member can add them.
+      await ensureMember('admin');
+    } else {
+      await ensureMember();
+    }
     const urlErr = validateMcpUrl(input.url);
     if (urlErr) throw new Error(urlErr);
     let enc: ReturnType<typeof encryptJson> | undefined;
@@ -59,6 +96,7 @@ export function createMcpScope(deps: {
       .insert(mcpServers)
       .values({
         teamId,
+        userId: ownership === 'personal' ? userId : null,
         addedByUserId: userId,
         name: input.name,
         url: input.url,
@@ -69,6 +107,7 @@ export function createMcpScope(deps: {
         enabled,
       })
       .returning();
+    getMcpManager().invalidate(`${teamId}:${userId}`);
     getMcpManager().invalidate(teamId);
     const row = rows[0];
     if (!row) throw new Error('Failed to add MCP server');
@@ -84,9 +123,15 @@ export function createMcpScope(deps: {
       authConfig?: McpAuthConfig | null;
     },
   ) {
-    await ensureMember('admin');
     const existing = await getServer(id);
     if (!existing) throw new Error('MCP server not found');
+    // Personal rows: only the owner can update. Team rows: admin only.
+    if (existing.userId) {
+      if (existing.userId !== userId) throw new Error('forbidden');
+      await ensureMember();
+    } else {
+      await ensureMember('admin');
+    }
     const updates: Partial<typeof mcpServers.$inferInsert> & { updatedAt: Date } = {
       updatedAt: new Date(),
     };
@@ -110,12 +155,21 @@ export function createMcpScope(deps: {
       .set(updates)
       .where(and(eq(mcpServers.id, id), eq(mcpServers.teamId, teamId)));
     getMcpManager().invalidate(teamId);
+    getMcpManager().invalidate(`${teamId}:${userId}`);
   }
 
   async function deleteServer(id: string) {
-    await ensureMember('admin');
+    const existing = await getServer(id);
+    if (!existing) throw new Error('MCP server not found');
+    if (existing.userId) {
+      if (existing.userId !== userId) throw new Error('forbidden');
+      await ensureMember();
+    } else {
+      await ensureMember('admin');
+    }
     await db.delete(mcpServers).where(and(eq(mcpServers.id, id), eq(mcpServers.teamId, teamId)));
     getMcpManager().invalidate(teamId);
+    getMcpManager().invalidate(`${teamId}:${userId}`);
   }
 
   async function persistOauthTokens(
@@ -239,16 +293,18 @@ export function createMcpScope(deps: {
 
   async function discoverTools() {
     await ensureMember();
-    return getMcpManager().connectForTeam(db, teamId);
+    return getMcpManager().connectForTeam(db, teamId, userId);
   }
 
   async function callTool(namespacedName: string, args: Record<string, unknown>) {
     await ensureMember();
-    return getMcpManager().callTool(db, teamId, namespacedName, args);
+    return getMcpManager().callTool(db, teamId, namespacedName, args, userId);
   }
 
   return {
     listServers,
+    listTeamServers,
+    listPersonalServers,
     getServer,
     addServer,
     updateServer,

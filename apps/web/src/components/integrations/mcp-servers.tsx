@@ -22,8 +22,15 @@ interface McpServerRow {
 
 type AuthType = 'none' | 'bearer' | 'header' | 'basic' | 'url_key' | 'oauth';
 
-export function McpServersUi({ servers }: { servers: McpServerRow[] }) {
+export function McpServersUi({
+  servers,
+  ownership,
+}: {
+  servers: McpServerRow[];
+  ownership?: 'team' | 'personal';
+}) {
   const router = useRouter();
+  const isPersonal = ownership === 'personal';
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
@@ -37,6 +44,7 @@ export function McpServersUi({ servers }: { servers: McpServerRow[] }) {
     setBusy(true);
     try {
       const body: Record<string, unknown> = { name, url, authType };
+      if (isPersonal) body.ownership = 'personal';
       if (authType === 'bearer') body.authConfig = { token };
       else if (authType === 'header') body.authConfig = { name: headerName, value: headerValue };
       const res = await fetch('/api/team/mcp-servers', {

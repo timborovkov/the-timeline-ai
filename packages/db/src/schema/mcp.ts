@@ -40,6 +40,10 @@ export const mcpServers = pgTable(
     teamId: uuid('team_id')
       .notNull()
       .references(() => teams.id, { onDelete: 'cascade' }),
+    // Phase 11 overlay: NULL == team-shared, visible to every member.
+    // Non-NULL == personal, visible only to that user (still scoped to the
+    // team so a user can have different personal MCPs per team).
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
     addedByUserId: uuid('added_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     name: text('name').notNull(),
     url: text('url').notNull(),
@@ -69,9 +73,19 @@ export const mcpServers = pgTable(
   },
   (table) => [
     index('mcp_servers_team_idx').on(table.teamId),
-    // One server URL per team to keep the catalog tidy. Different teams
-    // can connect the same URL with different auth configs.
-    uniqueIndex('mcp_servers_team_url_unq').on(table.teamId, table.url),
+    // Team-shared rows (user_id IS NULL) keep the same constraint they
+    // always had: one URL per team. Personal rows (user_id IS NOT NULL)
+    // use the second partial unique so two users can each add their own
+    // copy of the same URL without colliding.
+    uniqueIndex('mcp_servers_team_url_unq')
+      .on(table.teamId, table.url)
+      .where(sql`${table.userId} IS NULL`),
+    uniqueIndex('mcp_servers_team_user_url_unq')
+      .on(table.teamId, table.userId, table.url)
+      .where(sql`${table.userId} IS NOT NULL`),
+    index('mcp_servers_user_idx')
+      .on(table.userId)
+      .where(sql`${table.userId} IS NOT NULL`),
   ],
 );
 

@@ -30,6 +30,11 @@ export const QUEUE_NAMES = {
   // issues, GitHub PRs/issues), writes integration events into
   // raw_events, and updates the per-resource cursor.
   integrationSync: 'integration-sync',
+  // Phase 11: 5-minute MCP server health ping. Sends a cheap initialize
+  // request to every enabled MCP server, updates last_connected_at /
+  // last_error so the settings UI can surface degraded servers without
+  // needing a chat turn to discover them.
+  mcpHealth: 'mcp-health',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -520,5 +525,47 @@ export async function closeIntegrationSyncQueue(): Promise<void> {
   if (!_integrationSyncQueue) return;
   const q = _integrationSyncQueue;
   _integrationSyncQueue = undefined;
+  await q.close().catch(() => undefined);
+}
+
+// Phase 11 — MCP health ping. Single synthetic tick fans out to every
+// enabled MCP server; the worker sweeps in one pass and updates
+// last_connected_at / last_error so the UI can show health without
+// waiting for a chat turn to surface a broken server.
+export interface McpHealthJobData {
+  triggeredAt?: string;
+}
+
+let _mcpHealthQueue: Queue<McpHealthJobData> | undefined;
+
+export function getMcpHealthQueue(): Queue<McpHealthJobData> {
+  if (_mcpHealthQueue) return _mcpHealthQueue;
+  _mcpHealthQueue = new Queue<McpHealthJobData>(QUEUE_NAMES.mcpHealth, {
+    connection: getRedisConnection(),
+    defaultJobOptions: {
+      attempts: 2,
+      backoff: { type: 'fixed', delay: 30_000 },
+      removeOnComplete: { age: 3600, count: 24 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  });
+  return _mcpHealthQueue;
+}
+
+export async function scheduleMcpHealthPing(): Promise<void> {
+  await getMcpHealthQueue().add(
+    'mcp-health-tick',
+    {},
+    {
+      repeat: { pattern: '*/5 * * * *' },
+      jobId: 'mcp-health-tick-5min',
+    },
+  );
+}
+
+export async function closeMcpHealthQueue(): Promise<void> {
+  if (!_mcpHealthQueue) return;
+  const q = _mcpHealthQueue;
+  _mcpHealthQueue = undefined;
   await q.close().catch(() => undefined);
 }

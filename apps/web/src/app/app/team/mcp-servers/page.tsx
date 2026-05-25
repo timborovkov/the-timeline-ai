@@ -16,7 +16,9 @@ export default async function McpServersPage() {
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
   const scope = withTeam(db, active.teamId, session.user.id);
-  const servers = await scope.mcp.listServers();
+  // Team catalog only — personal MCPs live at /app/me/mcp-servers so the
+  // shared team view doesn't surface another user's private servers.
+  const servers = await scope.mcp.listTeamServers();
   const catalog = integrationsLib.listCatalog().filter((c) => c.kind === 'mcp' && c.mcpUrl);
   // Hide entries the team already connected (match by URL).
   const connectedUrls = new Set(servers.map((s) => s.url));

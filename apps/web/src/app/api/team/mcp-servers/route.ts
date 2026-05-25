@@ -37,6 +37,9 @@ const customSchema = z.object({
     ])
     .optional()
     .nullable(),
+  // Phase 11 overlay: 'team' (default, admin-only) vs 'personal' (caller-
+  // owned, any member can add). Catalog shortcuts always create team rows.
+  ownership: z.enum(['team', 'personal']).optional(),
 });
 
 export async function GET(): Promise<Response> {
@@ -126,6 +129,7 @@ export async function POST(req: Request): Promise<Response> {
       url: custom.data.url,
       authType: custom.data.authType,
       authConfig: custom.data.authConfig ?? null,
+      ...(custom.data.ownership ? { ownership: custom.data.ownership } : {}),
     });
     return NextResponse.json({ id: server.id, needsOauth: custom.data.authType === 'oauth' });
   } catch (err) {

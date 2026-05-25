@@ -6,6 +6,7 @@ import { startEmbedWorker } from './workers/embed.js';
 import { startExtractWorker } from './workers/extract.js';
 import { startIntegrationSyncWorker } from './workers/integrationSync.js';
 import { startJanitorWorker } from './workers/janitor.js';
+import { startMcpHealthWorker } from './workers/mcpHealth.js';
 import { startMeetingFinalizeWorker } from './workers/meetingFinalize.js';
 import { startOverdueWorker } from './workers/overdue.js';
 import { startTranscribeWorker } from './workers/transcribe.js';
@@ -29,6 +30,7 @@ async function main(): Promise<void> {
   const meetingFinalizeWorker = startMeetingFinalizeWorker({ db });
   const janitorWorker = startJanitorWorker({ db });
   const integrationSyncWorker = startIntegrationSyncWorker({ db });
+  const mcpHealthWorker = startMcpHealthWorker({ db });
   // Register the hourly repeatables. BullMQ keys by jobId so a
   // duplicate call on the next deploy is a no-op.
   await queue.scheduleOverdueScan();
@@ -37,8 +39,9 @@ async function main(): Promise<void> {
   // to every enabled integration. Same idempotency story — BullMQ dedups
   // by jobId.
   await queue.scheduleIntegrationIncrementalSync();
+  await queue.scheduleMcpHealthPing();
   log.info(
-    'transcribe + extract + embed + overdue + document-extract + meeting-finalize + janitor + integration-sync workers started',
+    'transcribe + extract + embed + overdue + document-extract + meeting-finalize + janitor + integration-sync + mcp-health workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -53,6 +56,7 @@ async function main(): Promise<void> {
         meetingFinalizeWorker.close(),
         janitorWorker.close(),
         integrationSyncWorker.close(),
+        mcpHealthWorker.close(),
       ]);
       await queue.closeTranscribeQueue();
       await queue.closeExtractQueue();
@@ -62,6 +66,7 @@ async function main(): Promise<void> {
       await queue.closeMeetingFinalizeQueue();
       await queue.closeJanitorQueue();
       await queue.closeIntegrationSyncQueue();
+      await queue.closeMcpHealthQueue();
       await queue.closeRedisConnection();
     } catch (err: unknown) {
       log.error({ err }, 'shutdown error');

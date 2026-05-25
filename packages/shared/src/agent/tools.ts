@@ -139,7 +139,7 @@ async function safe<T>(label: string, fn: () => Promise<T>): Promise<T | { error
 export async function buildMcpTools(scope: TeamScope): Promise<ToolSet> {
   const db = getDb();
   const discovery = await getMcpManager()
-    .connectForTeam(db, scope.teamId)
+    .connectForTeam(db, scope.teamId, scope.userId)
     .catch((err: unknown) => {
       log.warn({ err }, 'mcp discovery failed during tool build');
       return null;
@@ -164,6 +164,7 @@ export async function buildMcpTools(scope: TeamScope): Promise<ToolSet> {
             scope.teamId,
             namespaced,
             (args ?? {}) as Record<string, unknown>,
+            scope.userId,
           );
           const asText = JSON.stringify(result).slice(0, 8000);
           return {
@@ -175,6 +176,20 @@ export async function buildMcpTools(scope: TeamScope): Promise<ToolSet> {
           };
         } catch (err) {
           log.warn({ err, tool: namespaced }, 'mcp tool call failed');
+          // Surface needs_reauth in a structured shape the chat UI can
+          // recognize and render as an inline "Reconnect <server>" CTA.
+          // McpNeedsReauthError is thrown by the client when refresh fails.
+          if (err && typeof err === 'object' && 'code' in err) {
+            const e = err as { code?: string; serverId?: string; serverName?: string };
+            if (e.code === 'needs_reauth') {
+              return {
+                ok: false,
+                error: 'needs_reauth',
+                mcp_server_id: e.serverId,
+                mcp_server_name: e.serverName ?? t.serverName,
+              };
+            }
+          }
           return { ok: false, error: err instanceof Error ? err.message : 'mcp_call_failed' };
         }
       },

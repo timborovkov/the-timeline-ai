@@ -11,6 +11,7 @@ function row(overrides: Partial<McpServerRow> = {}): McpServerRow {
   return {
     id: '00000000-0000-0000-0000-000000000001',
     teamId: '00000000-0000-0000-0000-000000000002',
+    userId: null,
     addedByUserId: null,
     name: 'Test',
     url: 'https://mcp.example.com/mcp',

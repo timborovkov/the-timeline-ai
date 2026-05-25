@@ -1,5 +1,5 @@
 import { type Db, mcpOauthTokens, mcpServers } from '@timeline/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull, or } from 'drizzle-orm';
 
 import { decryptJson, encryptJson } from '../crypto/secrets.js';
 import { childLogger } from '../logger.js';
@@ -261,23 +261,38 @@ export class McpClientManager {
     this.cache.delete(teamId);
   }
 
-  async connectForTeam(db: Db, teamId: string): Promise<CachedTeamTools> {
-    const cached = this.cache.get(teamId);
+  async connectForTeam(db: Db, teamId: string, userId?: string): Promise<CachedTeamTools> {
+    // Per-user cache key when userId is provided so two users on the same
+    // team don't share each other's personal MCPs. Falls back to team-only
+    // for callers that don't carry a user identity (worker pings, etc).
+    const cacheKey = userId ? `${teamId}:${userId}` : teamId;
+    const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached;
-    const pending = this.pending.get(teamId);
+    const pending = this.pending.get(cacheKey);
     if (pending) return pending;
-    const p = this.refresh(db, teamId).finally(() => {
-      this.pending.delete(teamId);
+    const p = this.refresh(db, teamId, userId, cacheKey).finally(() => {
+      this.pending.delete(cacheKey);
     });
-    this.pending.set(teamId, p);
+    this.pending.set(cacheKey, p);
     return p;
   }
 
-  private async refresh(db: Db, teamId: string): Promise<CachedTeamTools> {
+  private async refresh(
+    db: Db,
+    teamId: string,
+    userId: string | undefined,
+    cacheKey: string,
+  ): Promise<CachedTeamTools> {
+    // Team-shared rows (user_id IS NULL) plus the calling user's personal
+    // rows when a userId is provided. Worker callers (no userId) get only
+    // the team-shared set.
+    const overlay = userId
+      ? or(isNull(mcpServers.userId), eq(mcpServers.userId, userId))
+      : isNull(mcpServers.userId);
     const servers = await db
       .select()
       .from(mcpServers)
-      .where(and(eq(mcpServers.teamId, teamId), eq(mcpServers.enabled, true)));
+      .where(and(eq(mcpServers.teamId, teamId), eq(mcpServers.enabled, true), overlay));
     const allTools: DiscoveredTool[] = [];
     const toolMap = new Map<string, { serverId: string; toolName: string }>();
     for (const server of servers) {
@@ -315,7 +330,7 @@ export class McpClientManager {
       }
     }
     const entry: CachedTeamTools = { tools: allTools, toolMap, fetchedAt: Date.now() };
-    this.cache.set(teamId, entry);
+    this.cache.set(cacheKey, entry);
     return entry;
   }
 
@@ -348,14 +363,24 @@ export class McpClientManager {
     teamId: string,
     namespacedName: string,
     args: Record<string, unknown>,
+    userId?: string,
   ): Promise<unknown> {
-    const cached = await this.connectForTeam(db, teamId);
+    const cached = await this.connectForTeam(db, teamId, userId);
     const mapping = cached.toolMap.get(namespacedName);
     if (!mapping) throw new Error(`MCP tool not found: ${namespacedName}`);
+    // Defense in depth: even though discovery already filtered by visibility,
+    // re-check here so a stale namespacedName from a long-lived chat session
+    // can't reach a server that's since been demoted to personal or
+    // re-owned by a different user.
+    const visibility = userId
+      ? or(isNull(mcpServers.userId), eq(mcpServers.userId, userId))
+      : isNull(mcpServers.userId);
     const rows = await db
       .select()
       .from(mcpServers)
-      .where(and(eq(mcpServers.id, mapping.serverId), eq(mcpServers.teamId, teamId)))
+      .where(
+        and(eq(mcpServers.id, mapping.serverId), eq(mcpServers.teamId, teamId), visibility),
+      )
       .limit(1);
     const server = rows[0];
     if (!server) throw new Error('MCP server not found');
