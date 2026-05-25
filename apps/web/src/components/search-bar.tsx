@@ -123,9 +123,14 @@ export function SearchBar({ initialQuery = '' }: Props) {
   }, [initialQuery]);
 
   function clear(): void {
+    // Bump the request id so any in-flight /api/search response is
+    // dropped on arrival — otherwise a slow response can land after
+    // clear() and repopulate the results we just dismissed.
+    requestIdRef.current += 1;
     setQuery('');
     setResults(null);
     setError(null);
+    setLoading(false);
   }
 
   return (

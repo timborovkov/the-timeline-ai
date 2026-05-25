@@ -70,12 +70,22 @@ export function InspectorPane() {
  */
 export function InspectorToggle({ className }: { className?: string }) {
   const inspector = useInspector();
+  // No content yet → nothing to toggle into. Disable the button rather
+  // than flipping `open` to true with an empty pane, which would leave
+  // the toggle showing pressed/closed-label with no visible UI change.
+  const disabled = !inspector.content;
+  const label = disabled
+    ? 'No source selected yet'
+    : inspector.open
+      ? 'Close inspector'
+      : 'Open inspector';
   return (
     <Button
       variant="ghost"
       size="icon"
-      aria-label={inspector.open ? 'Close inspector' : 'Open inspector'}
+      aria-label={label}
       aria-pressed={inspector.open}
+      disabled={disabled}
       onClick={inspector.toggle}
       className={cn('hidden size-8 lg:inline-flex', className)}
     >
