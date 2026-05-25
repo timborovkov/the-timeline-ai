@@ -13,7 +13,12 @@ import {
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import { embed as defaultEmbed, type EmbedResult } from './llm/embed.js';
-import { getQdrantClient, type SearchHit, type SearchOpts } from './qdrant/client.js';
+import {
+  getQdrantClient,
+  type SearchHit,
+  type SearchOpts,
+  type SourceKind,
+} from './qdrant/client.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.
@@ -84,6 +89,17 @@ export interface SearchEventsInput {
   to?: Date;
   source?: 'web' | 'telegram' | 'email' | 'system';
   entityIds?: string[];
+  /**
+   * Narrow vector search to a subset of Qdrant source kinds. Phase 8 adds
+   * `object`, `object_note`, `object_change`, and `entity` alongside
+   * `raw_event` and `fact`. When unset, defaults to `['raw_event', 'fact']`
+   * — the event-anchored kinds this hydration pipeline can resolve. Callers
+   * asking for non-event kinds get the Qdrant filter widened, but the
+   * dedup-by-event_id step still drops hits without an event_id; richer
+   * workspace-graph retrieval will need a separate `searchWorkspace`
+   * helper (out of scope for this pass).
+   */
+  sourceKind?: SourceKind | SourceKind[];
   limit?: number;
 }
 
@@ -766,6 +782,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       if (input.to) searchOpts.to = input.to;
       if (input.source) searchOpts.source = input.source;
       if (input.entityIds) searchOpts.entityIds = input.entityIds;
+      // Only pass through the kind filter when explicitly set. If we always
+      // defaulted to ['raw_event', 'fact'] we'd silently drop Phase 5 points
+      // that pre-date the `source_kind` payload field (Qdrant's match-any
+      // filter requires the field to exist on the point). The dedup-by-
+      // event_id step below naturally drops non-event-anchored Phase 8 hits.
+      if (input.sourceKind) searchOpts.sourceKind = input.sourceKind;
 
       const hits = await searchFn(teamId, userId, vector, searchOpts);
 
@@ -776,6 +798,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         // Defense in depth: Qdrant's wrapper already filters team_id, but
         // verify here so a misconfigured payload can't leak across teams.
         if (hit.payload.team_id !== teamId) continue;
+        // Skip non-event-anchored hits (object/object_note/object_change/
+        // entity scopes write event_id=null). This hydration pipeline
+        // resolves results via getEventsByIds, so a null event_id has
+        // nothing to hydrate; the workspace-graph kinds need a separate
+        // helper. Without this check, null keys collide in the dedup map.
+        if (!hit.payload.event_id) continue;
         // Qdrant payloads CAN drift — schema changes, manual point edits,
         // older embed worker versions. Spread on undefined throws and kills
         // the whole search. Treat each field as best-effort.

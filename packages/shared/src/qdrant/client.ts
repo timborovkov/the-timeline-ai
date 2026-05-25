@@ -10,10 +10,39 @@ import { buildPointId, type PointScope } from './point-id.js';
  * events: a future relaxation must not silently widen exposure of points
  * already in the collection.
  */
+export type SourceKind =
+  | 'raw_event'
+  | 'fact'
+  | 'object'
+  | 'object_note'
+  | 'object_change'
+  | 'entity';
+
 export interface QdrantPayload {
   team_id: string;
-  event_id: string;
+  /**
+   * Discriminator added in Phase 8 follow-ups so the agent's retrieval tools
+   * can scope semantic search to a subset of source kinds (e.g. only objects
+   * + notes, excluding raw events). Pre-Phase-8 points written without this
+   * field are inferred at read time: `fact_id` set → 'fact', otherwise
+   * 'raw_event'. New points always stamp this explicitly.
+   */
+  source_kind: SourceKind;
+  /**
+   * The original raw event id, when this point derives from one (raw_event,
+   * fact). Null for object/note/change/entity points, which are not anchored
+   * to a single raw event.
+   */
+  event_id: string | null;
   fact_id: string | null;
+  /** Workspace object id. Set for source_kind in {object, object_note, object_change}. */
+  object_id: string | null;
+  /** object_notes.id. Set only for source_kind='object_note'. */
+  note_id: string | null;
+  /** object_changes.id. Set only for source_kind='object_change'. */
+  change_id: string | null;
+  /** entities.id. Set only for source_kind='entity'. */
+  entity_id: string | null;
   entity_ids: string[];
   occurred_at: string;
   author_user_id: string | null;
@@ -37,6 +66,15 @@ export interface SearchOpts {
   to?: Date;
   source?: QdrantPayload['source'];
   entityIds?: string[];
+  /**
+   * Filter to one or more source kinds. When unset, all points match. When
+   * set, the filter additionally accepts legacy pre-Phase-8 points (which
+   * lack the `source_kind` field) by inferring kind from `fact_id` presence:
+   * a legacy point with `fact_id` set is a fact, otherwise a raw_event.
+   * This means narrowing by kind does not silently drop the existing
+   * timeline corpus.
+   */
+  sourceKind?: SourceKind | SourceKind[];
   limit?: number;
 }
 
@@ -62,6 +100,13 @@ export interface QdrantClient {
    * vector store.
    */
   pointsExist(ids: string[]): Promise<Set<string>>;
+  /**
+   * Exact count of points matching team + visibility + optional kind filter.
+   * Used by the embed-coverage audit script to compare row counts to point
+   * counts. NOT for hot paths — Qdrant's `exact: true` count walks the
+   * collection.
+   */
+  countPoints(teamId: string, opts?: { sourceKind?: SourceKind }): Promise<number>;
   /** Test/admin-only: read the collection name this instance writes to. */
   collectionName(): string;
 }
@@ -267,6 +312,34 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     if (searchOpts.entityIds && searchOpts.entityIds.length > 0) {
       extraMust.push({ key: 'entity_ids', match: { any: searchOpts.entityIds } });
     }
+    if (searchOpts.sourceKind) {
+      const kinds = Array.isArray(searchOpts.sourceKind)
+        ? searchOpts.sourceKind
+        : [searchOpts.sourceKind];
+      // Match new points by their stamped source_kind. Pre-Phase-8 points
+      // lack the field; allow them in when the caller asked for raw_event
+      // and/or fact (the only kinds legacy points can be) by inferring from
+      // fact_id presence. Without this dual branch, narrowing search by
+      // kind silently drops most timeline hits until a full reembed.
+      const branches: unknown[] = [{ key: 'source_kind', match: { any: kinds } }];
+      const wantsRawEvent = kinds.includes('raw_event');
+      const wantsFact = kinds.includes('fact');
+      if (wantsRawEvent && wantsFact) {
+        branches.push({
+          must: [{ is_empty: { key: 'source_kind' } }],
+        });
+      } else if (wantsRawEvent) {
+        branches.push({
+          must: [{ is_empty: { key: 'source_kind' } }, { is_empty: { key: 'fact_id' } }],
+        });
+      } else if (wantsFact) {
+        branches.push({
+          must: [{ is_empty: { key: 'source_kind' } }],
+          must_not: [{ is_empty: { key: 'fact_id' } }],
+        });
+      }
+      extraMust.push({ should: branches });
+    }
     if (extraMust.length > 0) {
       (filter.must as unknown[]).push(...extraMust);
     }
@@ -326,12 +399,37 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     return new Set((body.result ?? []).map((p) => p.id));
   }
 
+  async function countPoints(
+    teamId: string,
+    opts: { sourceKind?: SourceKind } = {},
+  ): Promise<number> {
+    await ensureCollection();
+    const must: unknown[] = [{ key: 'team_id', match: { value: teamId } }];
+    if (opts.sourceKind) {
+      must.push({ key: 'source_kind', match: { value: opts.sourceKind } });
+    }
+    const res = await request(
+      'POST',
+      `/collections/${encodeURIComponent(collection)}/points/count`,
+      {
+        filter: { must },
+        exact: true,
+      },
+    );
+    if (res.status !== 200) {
+      throw new Error(`Qdrant count failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
+    }
+    const body = (res.data ?? {}) as { result?: { count?: number } };
+    return body.result?.count ?? 0;
+  }
+
   return {
     ensureCollection,
     upsertVector,
     search,
     deletePoints,
     pointsExist,
+    countPoints,
     collectionName: () => collection,
   };
 }
