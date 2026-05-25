@@ -217,9 +217,17 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
    * Walk a folder's ancestor chain (deepest → root). Returns structured
    * `{id, name}[]` so callers can build either a path string or a
    * breadcrumb UI from one shared walk; previously the web layer
-   * duplicated this loop with its own `breadcrumbsFor` helper. The
-   * `deletedAt IS NULL` filter applies so soft-deleted ancestors don't
-   * leak into either the path string or the breadcrumb.
+   * duplicated this loop with its own `breadcrumbsFor` helper.
+   *
+   * Filters applied per row: team, deletedAt IS NULL, AND the same
+   * folderVisibility predicate the rest of the scope uses. The
+   * visibility check matters: a team-visible folder can be nested
+   * inside a private folder owned by another user, and without
+   * filtering at each step, the breadcrumb chain would leak the
+   * private parent's name to anyone who can see the team-visible
+   * child. The walk stops as soon as it hits an invisible ancestor —
+   * the visible descendant still renders, but the path string and
+   * breadcrumb truncate cleanly.
    *
    * Walk depth is capped at 32 to bound a misconfigured cycle. Insert
    * guards already prevent that (parent_folder_id must be a real folder;
@@ -235,7 +243,14 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       const rows = await db
         .select({ id: folders.id, name: folders.name, parent: folders.parentFolderId })
         .from(folders)
-        .where(and(eq(folders.id, current), eq(folders.teamId, teamId), isNull(folders.deletedAt)))
+        .where(
+          and(
+            eq(folders.id, current),
+            eq(folders.teamId, teamId),
+            isNull(folders.deletedAt),
+            folderVisibility,
+          ),
+        )
         .limit(1);
       const row = rows[0];
       if (!row) break;

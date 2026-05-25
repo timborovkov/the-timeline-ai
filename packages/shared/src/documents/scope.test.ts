@@ -291,6 +291,37 @@ describe('document scope — soft delete + audit trail', () => {
     expect(await scope.getFolder(folder.id)).not.toBeNull();
   });
 
+  it('folderAncestry hides ancestors invisible to the caller (no name leak)', async () => {
+    // Reachable scenario: user A creates a private "Secret" folder,
+    // then a team-visible "Public" child inside it. User B can see
+    // Public via listFolders (it filters by the folder's OWN
+    // visibility, not its parent's). Pre-fix the breadcrumb walk
+    // returned `[Secret, Public]` for user B because folderAncestry
+    // didn't apply the visibility predicate at each step. The fix
+    // adds folderVisibility to the per-row where-clause; the walk
+    // stops at the invisible ancestor so the breadcrumb truncates.
+    const scopeA = withTeam(db, TEAM_ID, USER_A);
+    const secret = await scopeA.createFolder({
+      name: 'Secret',
+      visibility: 'private',
+    });
+    const pub = await scopeA.createFolder({
+      name: 'Public',
+      parentFolderId: secret.id,
+      visibility: 'team',
+    });
+    // User A sees the full chain.
+    expect(await scopeA.folderAncestry(pub.id)).toEqual([
+      { id: secret.id, name: 'Secret' },
+      { id: pub.id, name: 'Public' },
+    ]);
+    // User B sees only the team-visible leaf; "Secret" is not exposed.
+    const scopeB = withTeam(db, TEAM_ID, USER_B);
+    expect(await scopeB.folderAncestry(pub.id)).toEqual([{ id: pub.id, name: 'Public' }]);
+    // folderPath inherits the same protection.
+    expect(await scopeB.folderPath(pub.id)).toBe('/Public');
+  });
+
   it('folderAncestry returns ancestors shallowest-first (replaces page breadcrumb walker)', async () => {
     // Pins the contract the page's breadcrumb code relies on after the
     // duplicated walker was removed.
