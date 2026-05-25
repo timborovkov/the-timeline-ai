@@ -122,6 +122,22 @@ const schema = z.object({
   // Sentry (optional)
   SENTRY_DSN: z.string().optional(),
   SENTRY_ENVIRONMENT: z.string().optional(),
+
+  // Phase 10 — Meeting bots. Provider defaults to Recall.ai. Set
+  // RECALL_API_KEY + RECALL_STATUS_WEBHOOK_SECRET (Svix-signed status
+  // events) to enable. RECALL_TRANSCRIPT_WEBHOOK_URL is passed to the
+  // provider when starting a bot so transcripts stream back to us.
+  RECALL_API_KEY: z.string().optional(),
+  RECALL_BASE_URL: z.string().url().default('https://us-west-2.recall.ai/api/v1'),
+  RECALL_STATUS_WEBHOOK_SECRET: z.string().optional(),
+  RECALL_TRANSCRIPT_WEBHOOK_URL: z.string().url().optional(),
+  /**
+   * Bot display name. The bot still appears as a participant in silent
+   * mode — meeting platforms surface it in the participant list. Defaults
+   * to "Timeline" so attendees see a recognisable label rather than a
+   * generic provider name.
+   */
+  RECALL_BOT_DISPLAY_NAME: z.string().default('Timeline'),
 });
 
 export type Env = z.infer<typeof schema>;

@@ -30,6 +30,8 @@ import {
   entities as entitiesTable,
   facts as factsTable,
   getDb,
+  meetings as meetingsTable,
+  meetingTranscriptChunks,
   objectChanges as objectChangesTable,
   objectNotes as objectNotesTable,
   rawEvents,
@@ -71,7 +73,7 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
   const db = getDb();
   // entities backs both `object` and `entity` source kinds — same row, two
   // point types. One query feeds both counts.
-  const [rawEventRows, factRows, entityRows, noteRows, changeRows, docChunkRows] =
+  const [rawEventRows, factRows, entityRows, noteRows, changeRows, docChunkRows, meetingChunkRows] =
     await Promise.all([
       db
         .select({ n: count() })
@@ -128,6 +130,17 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
             eq(documents.visibility, 'team'),
           ),
         ),
+      // Phase 10 meeting_chunk: chunks whose parent meeting is team-visibility.
+      db
+        .select({ n: count() })
+        .from(meetingTranscriptChunks)
+        .innerJoin(meetingsTable, eq(meetingsTable.id, meetingTranscriptChunks.meetingId))
+        .where(
+          and(
+            eq(meetingTranscriptChunks.teamId, teamId),
+            eq(meetingsTable.defaultVisibility, 'team'),
+          ),
+        ),
     ]);
 
   const entityCount = entityRows[0]?.n ?? 0;
@@ -139,6 +152,7 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
     object_change: changeRows[0]?.n ?? 0,
     entity: entityCount,
     doc_chunk: docChunkRows[0]?.n ?? 0,
+    meeting_chunk: meetingChunkRows[0]?.n ?? 0,
   };
 }
 

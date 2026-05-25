@@ -21,7 +21,10 @@ export type PointScope =
   | 'entity'
   // Phase 9: documents are chunked and each chunk gets its own point so
   // retrieval is granular. Uses snake_case to match #22's enum convention.
-  | 'doc_chunk';
+  | 'doc_chunk'
+  // Phase 10: meeting transcripts are chunked per utterance group; each
+  // chunk gets its own point so search can match a specific speaker turn.
+  | 'meeting_chunk';
 
 export function buildPointId(scope: PointScope, sourceId: string, modelTag: string): string {
   const input = `${scope}:${sourceId}:${modelTag}`;

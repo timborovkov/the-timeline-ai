@@ -7,6 +7,7 @@ import {
   KanbanSquare,
   MessageSquare,
   Settings,
+  Video,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -29,6 +30,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: '/app/chat', label: 'Chat', icon: MessageSquare },
   { href: '/app/objects', label: 'Objects', icon: Box },
   { href: '/app/documents', label: 'Documents', icon: FolderOpen },
+  { href: '/app/meetings', label: 'Meetings', icon: Video },
   { href: '/app/tasks', label: 'Tasks', icon: CheckSquare },
   { href: '/app/boards', label: 'Boards', icon: KanbanSquare },
   { href: '/app/inbox', label: 'Inbox', icon: Inbox },

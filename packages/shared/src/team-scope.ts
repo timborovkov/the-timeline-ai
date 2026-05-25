@@ -15,6 +15,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizz
 
 import { createDocumentScope } from './documents/scope.js';
 import { embed as defaultEmbed, type EmbedResult } from './llm/embed.js';
+import { createMeetingScope } from './meetings/scope.js';
 import {
   getQdrantClient,
   type SearchHit,
@@ -307,8 +308,16 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     ...(deps.qdrantSearch ? { qdrantSearch: deps.qdrantSearch } : {}),
   });
 
+  const meetingScope = createMeetingScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+
   return {
     ...documentScope,
+    ...meetingScope,
     teamId,
     userId,
 

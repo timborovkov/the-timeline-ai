@@ -16,4 +16,14 @@ export const RATE_LIMITS = {
   emailInbound: { capacity: 120, refillPerSec: 120 / 60 },
   /** 401 lockout for Postmark inbound: 30/min per source IP. */
   emailInboundAuth: { capacity: 30, refillPerSec: 30 / 60 },
+  /** Recall.ai transcript webhook: 600/min per bot. Bots stream many small
+   *  utterance groups; the cap is high to avoid clipping legitimate meetings
+   *  but low enough to choke a replay storm. */
+  recallTranscript: { capacity: 600, refillPerSec: 600 / 60 },
+  /** Pre-lookup gate on the transcript webhook: 200/min per source IP.
+   *  Sits in front of the meeting lookup so an attacker rotating random
+   *  botIds can't burn DB capacity. Lower than the per-bot bucket because
+   *  Recall delivers from a small IP pool; the per-bot bucket handles
+   *  per-meeting burst. */
+  recallTranscriptIp: { capacity: 200, refillPerSec: 200 / 60 },
 } as const;

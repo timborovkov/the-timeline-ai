@@ -1,15 +1,17 @@
 # The Timeline
 
 A multi-tenant team memory system. Capture work as it happens — voice notes,
-text dumps, forwarded emails, Telegram messages — and the system compiles a
-searchable, queryable history of who did what, talked to whom, and decided
-what. Then ask a tool-using agent about it: every claim it surfaces links
-back to the raw event it came from. No black-box summaries.
+text dumps, forwarded emails, Telegram messages, meeting transcripts — and
+the system compiles a searchable, queryable history of who did what, talked
+to whom, and decided what. Then ask a tool-using agent about it: every
+claim it surfaces links back to the raw event it came from. No black-box
+summaries.
 
-Current state: through Phase 9. Web + Telegram + email capture, voice
-transcription, extracted facts + entities, semantic search, agent chat at
-`/app/chat`, workspace objects + boards + persisted chat sessions, and a
-team document drive at `/app/documents` (folders, versioned uploads,
+Current state: through Phase 10. Web + Telegram + email + document drive +
+meeting-bot capture (silent Recall.ai bot for Google Meet / Teams / Zoom),
+voice transcription, extracted facts + entities, semantic search, agent
+chat at `/app/chat`, workspace objects + boards + persisted chat sessions,
+and a team document drive at `/app/documents` (folders, versioned uploads,
 chunked + embedded, cited inline with `[doc:<id>#v<n>:chunk:<id>]`) all
 working end-to-end. Railway deployment, deploy-time migrations, and
 structured logging are in place.
@@ -46,6 +48,7 @@ dashboard quirks:
 - [`docs/setup/openrouter.html`](./docs/setup/openrouter.html) — OpenRouter API
   (Phase 3+).
 - [`docs/setup/postmark.html`](./docs/setup/postmark.html) — inbound email (Phase 7).
+- [`docs/setup/meeting-bots.html`](./docs/setup/meeting-bots.html) — Recall.ai meeting bots (Phase 10).
 - [`docs/setup/sentry.html`](./docs/setup/sentry.html) — error tracking.
 - [`docs/setup/railway.html`](./docs/setup/railway.html) — staging + production
   deploys.

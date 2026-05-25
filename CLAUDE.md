@@ -72,16 +72,18 @@ non-negotiables:
 apps/
   web/      Next.js 15 app (App Router, RSC, server actions, Auth.js)
   worker/   BullMQ workers (transcribe, extract, embed, document-extract,
-            overdue-scan)
+            meeting-finalize, overdue-scan)
 packages/
   db/       Drizzle schema + migrations
   shared/   Cross-package code: withTeam scope, llm wrapper, Qdrant wrapper,
             S3 wrapper, Telegram dispatcher, queue names, objects module,
             documents module (Phase 9 — folders/documents/versions/chunks
-            scope, RustFS object-key builder, text chunker)
+            scope, RustFS object-key builder, text chunker), meeting-bots
+            module (Phase 10 — Recall.ai provider, Svix verifier) +
+            meetings scope (meeting/chunk/usage helpers)
 docs/
   setup/    External service walkthroughs (Telegram, OpenRouter, Postmark,
-            Sentry, Railway, local dev)
+            Recall.ai meeting bots, Sentry, Railway, local dev)
 ```
 
 Phased build plan and current state: [todo.md](todo.md). Product vision:
