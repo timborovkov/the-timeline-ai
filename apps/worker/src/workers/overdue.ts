@@ -41,7 +41,7 @@ export function startOverdueWorker(deps: OverdueWorkerDeps): Worker<queue.Overdu
       let totalInserted = 0;
 
       while (totalScanned < MAX_ENTITIES_PER_TICK) {
-        const overdueRows: Array<{
+        const overdueRows: {
           id: string;
           teamId: string;
           type: typeof entities.$inferSelect.type;
@@ -49,7 +49,7 @@ export function startOverdueWorker(deps: OverdueWorkerDeps): Worker<queue.Overdu
           ownerUserId: string | null;
           assigneeUserId: string | null;
           dueAt: Date | null;
-        }> = await deps.db
+        }[] = await deps.db
           .select({
             id: entities.id,
             teamId: entities.teamId,
