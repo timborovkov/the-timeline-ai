@@ -43,12 +43,8 @@
   --radius-xl: 8px;
 
   /* Font stacks */
-  --font-sans:
-    var(--font-switzer), ui-sans-serif, system-ui, -apple-system,
-    'Segoe UI', sans-serif;
-  --font-mono:
-    var(--font-commit-mono), ui-monospace, SFMono-Regular, 'SF Mono', Menlo,
-    monospace;
+  --font-sans: var(--font-switzer), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-commit-mono), ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
 }
 
 /* ── Light mode (default) ─────────────────────────────────────── */

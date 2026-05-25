@@ -14,10 +14,7 @@ export default function TelegramError({
     <div className="mx-auto max-w-3xl space-y-8">
       <IndexStrip
         srLabel="Team / Telegram · error"
-        segments={[
-          { value: 'TEAM / TELEGRAM' },
-          { label: 'status', value: 'ERROR', danger: true },
-        ]}
+        segments={[{ value: 'TEAM / TELEGRAM' }, { label: 'status', value: 'ERROR', danger: true }]}
       />
       <ErrorState
         title="Couldn't load Telegram links"

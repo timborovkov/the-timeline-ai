@@ -51,17 +51,12 @@ export function TeamSwitcher({ active, memberships, variant = 'full' }: Props) {
                 {monogram}
               </span>
               <span className="flex min-w-0 flex-1 flex-col leading-tight">
-                <span className="truncate text-sm font-medium text-fg">
-                  {active.teamName}
-                </span>
+                <span className="truncate text-sm font-medium text-fg">{active.teamName}</span>
                 <span className="truncate font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
                   Active team
                 </span>
               </span>
-              <ChevronsUpDown
-                aria-hidden="true"
-                className="size-3.5 shrink-0 text-fg-dim"
-              />
+              <ChevronsUpDown aria-hidden="true" className="size-3.5 shrink-0 text-fg-dim" />
             </>
           )}
         </button>
@@ -76,20 +71,11 @@ export function TeamSwitcher({ active, memberships, variant = 'full' }: Props) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {memberships.map((m) => (
-          <form
-            key={m.teamId}
-            action={`/app/team/switch/${m.teamId}`}
-            method="post"
-          >
+          <form key={m.teamId} action={`/app/team/switch/${m.teamId}`} method="post">
             <DropdownMenuItem asChild>
-              <button
-                type="submit"
-                className="flex w-full items-center justify-between"
-              >
+              <button type="submit" className="flex w-full items-center justify-between">
                 <span className="truncate">{m.teamName}</span>
-                {m.teamId === active.teamId ? (
-                  <Check className="size-4 text-signal" />
-                ) : null}
+                {m.teamId === active.teamId ? <Check className="size-4 text-signal" /> : null}
               </button>
             </DropdownMenuItem>
           </form>

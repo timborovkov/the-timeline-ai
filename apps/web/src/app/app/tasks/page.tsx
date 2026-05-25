@@ -22,15 +22,10 @@ export default async function TasksPage() {
     limit: 500,
   });
 
-  const open = rows.filter(
-    (r) => r.status !== 'done' && r.status !== 'cancelled',
-  ).length;
+  const open = rows.filter((r) => r.status !== 'done' && r.status !== 'cancelled').length;
   const overdue = rows.filter(
     (r) =>
-      r.dueAt !== null &&
-      r.dueAt < new Date() &&
-      r.status !== 'done' &&
-      r.status !== 'cancelled',
+      r.dueAt !== null && r.dueAt < new Date() && r.status !== 'done' && r.status !== 'cancelled',
   ).length;
 
   return (

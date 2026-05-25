@@ -27,14 +27,7 @@ function formatTs(ts: string): string {
   return `${date} ${time}`;
 }
 
-export function NotificationRow({
-  id,
-  kind,
-  summary,
-  entityId,
-  createdAt,
-  initiallyRead,
-}: Props) {
+export function NotificationRow({ id, kind, summary, entityId, createdAt, initiallyRead }: Props) {
   const router = useRouter();
   const search = useSearchParams();
   const [pending, startTransition] = useTransition();
@@ -86,9 +79,7 @@ export function NotificationRow({
       </time>
       <div className="min-w-0">
         <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-          {!read ? (
-            <span aria-label="unread" className="size-1.5 rounded-sm bg-signal" />
-          ) : null}
+          {!read ? <span aria-label="unread" className="size-1.5 rounded-sm bg-signal" /> : null}
           <span>{kind.replace(/_/g, ' ')}</span>
         </div>
         <p className="mt-1 text-fg">

@@ -34,10 +34,7 @@ export function RailNav() {
             )}
           >
             {active ? (
-              <span
-                aria-hidden="true"
-                className="absolute left-0 top-1.5 h-6 w-0.5 bg-signal"
-              />
+              <span aria-hidden="true" className="absolute left-0 top-1.5 h-6 w-0.5 bg-signal" />
             ) : null}
             <Icon aria-hidden="true" className="size-4" />
           </Link>

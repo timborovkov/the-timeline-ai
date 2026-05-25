@@ -92,13 +92,9 @@ export function ObjectDetailClient({ detail, userId }: Props) {
           <span className="text-fg">{detail.type}</span>
           <span className="text-fg-dim">·</span>
           <span className="text-signal">{detail.canonicalName}</span>
-          <span className="ml-auto text-fg-dim">
-            id&nbsp;{detail.id.slice(0, 8)}
-          </span>
+          <span className="ml-auto text-fg-dim">id&nbsp;{detail.id.slice(0, 8)}</span>
         </div>
-        <h1 className="mt-4 text-2xl font-semibold tracking-tight">
-          {detail.canonicalName}
-        </h1>
+        <h1 className="mt-4 text-2xl font-semibold tracking-tight">{detail.canonicalName}</h1>
         {detail.aliases.length > 0 && (
           <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
             aka {detail.aliases.join(' · ')}
@@ -118,9 +114,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
           // useTransition, so future edits inside this IIFE that reach
           // for `pending` get the transition state instead of silently
           // grabbing the count.
-          const pendingCount = detail.recentChanges.filter(
-            (c) => c.status === 'suggested',
-          ).length;
+          const pendingCount = detail.recentChanges.filter((c) => c.status === 'suggested').length;
           if (pendingCount === 0) return null;
           return (
             <div
@@ -233,7 +227,10 @@ export function ObjectDetailClient({ detail, userId }: Props) {
               const isEditing = editingNoteId === n.id;
               const isOwner = n.authorUserId === userId;
               return (
-                <li key={n.id} className="rounded-sm border border-border bg-surface px-4 py-3 text-sm">
+                <li
+                  key={n.id}
+                  className="rounded-sm border border-border bg-surface px-4 py-3 text-sm"
+                >
                   {isEditing ? (
                     <div className="space-y-2">
                       <textarea

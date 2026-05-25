@@ -40,11 +40,7 @@ export function TimelineRowSkeleton() {
 
 export function TimelineFeedSkeleton({ count = 4 }: { count?: number }) {
   return (
-    <ol
-      className="border-t border-border"
-      aria-busy="true"
-      aria-label="Loading timeline"
-    >
+    <ol className="border-t border-border" aria-busy="true" aria-label="Loading timeline">
       {Array.from({ length: count }).map((_, i) => (
         <TimelineRowSkeleton key={i} />
       ))}
@@ -106,10 +102,7 @@ export function BoardSkeleton({ columns = 4 }: { columns?: number }) {
       aria-label="Loading board"
     >
       {Array.from({ length: columns }).map((_, c) => (
-        <div
-          key={c}
-          className="rounded-sm border border-border bg-surface p-3"
-        >
+        <div key={c} className="rounded-sm border border-border bg-surface p-3">
           <Skeleton className="mb-3 h-3 w-16" />
           <div className="space-y-2">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -128,10 +121,7 @@ export function InlineSpinner({ label = 'Loading…' }: { label?: string }) {
       className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
       aria-live="polite"
     >
-      <span
-        aria-hidden="true"
-        className="size-1.5 animate-pulse rounded-sm bg-signal"
-      />
+      <span aria-hidden="true" className="size-1.5 animate-pulse rounded-sm bg-signal" />
       {label}
     </div>
   );

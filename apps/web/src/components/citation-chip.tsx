@@ -41,8 +41,7 @@ export function CitationChip({
         render ??
         (() => (
           <p className="text-fg-muted">
-            No detail loaded for{' '}
-            <span className="font-mono text-signal">[{id}]</span> yet.
+            No detail loaded for <span className="font-mono text-signal">[{id}]</span> yet.
           </p>
         )),
     });
@@ -62,8 +61,7 @@ export function CitationChip({
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
         variant === 'default' &&
           'border border-signal/30 bg-signal-soft text-signal hover:bg-signal/25',
-        variant === 'muted' &&
-          'border border-border text-fg-muted hover:bg-surface-2',
+        variant === 'muted' && 'border border-border text-fg-muted hover:bg-surface-2',
         className,
       )}
     >

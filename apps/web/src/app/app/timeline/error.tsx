@@ -14,10 +14,7 @@ export default function TimelineError({
     <div className="mx-auto max-w-5xl space-y-8">
       <IndexStrip
         srLabel="Timeline · error"
-        segments={[
-          { value: 'TIMELINE' },
-          { label: 'status', value: 'ERROR', danger: true },
-        ]}
+        segments={[{ value: 'TIMELINE' }, { label: 'status', value: 'ERROR', danger: true }]}
       />
       <ErrorState
         title="Couldn't load the timeline"

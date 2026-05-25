@@ -21,16 +21,10 @@ export default async function BoardsIndexPage() {
     <div className="mx-auto max-w-4xl space-y-6">
       <IndexStrip
         srLabel={`Boards · ${boards.length} saved views`}
-        segments={[
-          { value: 'BOARDS' },
-          { label: 'saved', value: boards.length },
-        ]}
+        segments={[{ value: 'BOARDS' }, { label: 'saved', value: boards.length }]}
       />
 
-      <section
-        aria-label="Create board"
-        className="rounded-sm border border-border bg-surface p-4"
-      >
+      <section aria-label="Create board" className="rounded-sm border border-border bg-surface p-4">
         <BoardCreateForm />
       </section>
 
@@ -46,9 +40,7 @@ export default async function BoardsIndexPage() {
                 href={`/app/boards/${b.id}`}
                 className="flex items-center justify-between px-3 py-2.5 text-sm transition-colors hover:bg-surface"
               >
-                <span className="min-w-0 flex-1 truncate font-medium text-fg">
-                  {b.name}
-                </span>
+                <span className="min-w-0 flex-1 truncate font-medium text-fg">{b.name}</span>
                 <span className="ml-3 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                   {b.kind}
                   {b.groupBy ? ` · by ${b.groupBy}` : ''}

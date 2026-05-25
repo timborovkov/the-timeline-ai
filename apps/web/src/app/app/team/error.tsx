@@ -14,10 +14,7 @@ export default function TeamError({
     <div className="mx-auto max-w-3xl space-y-8">
       <IndexStrip
         srLabel="Team · error"
-        segments={[
-          { value: 'TEAM' },
-          { label: 'status', value: 'ERROR', danger: true },
-        ]}
+        segments={[{ value: 'TEAM' }, { label: 'status', value: 'ERROR', danger: true }]}
       />
       <ErrorState
         title="Couldn't load team settings"

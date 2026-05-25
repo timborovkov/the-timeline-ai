@@ -45,11 +45,7 @@ export function AppShell({ active, memberships, user, children }: Props) {
           </span>
           <RailNav />
           <div className="mt-auto flex flex-col items-center gap-1">
-            <TeamSwitcher
-              active={active}
-              memberships={memberships}
-              variant="rail"
-            />
+            <TeamSwitcher active={active} memberships={memberships} variant="rail" />
           </div>
         </aside>
 

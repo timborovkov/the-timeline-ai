@@ -116,7 +116,10 @@ export function BoardCreateForm() {
         )}
       </div>
       {error && (
-        <p role="alert" className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-danger">
+        <p
+          role="alert"
+          className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-danger"
+        >
           {error}
         </p>
       )}

@@ -10,13 +10,13 @@ export default function HomePage() {
           THE TIMELINE · OPERATIONAL ARCHIVE
         </p>
         <h1 className="text-5xl font-bold tracking-tight">
-          The operations log<br />
+          The operations log
+          <br />
           your team can <span className="text-signal">talk to</span>.
         </h1>
         <p className="max-w-prose text-lg leading-relaxed text-fg-muted">
-          Voice notes, written notes, forwarded emails, Telegram messages — one
-          searchable, cited history. Every answer the agent gives points back
-          to the raw event it came from.
+          Voice notes, written notes, forwarded emails, Telegram messages — one searchable, cited
+          history. Every answer the agent gives points back to the raw event it came from.
         </p>
         <div className="flex flex-wrap gap-3 pt-2">
           <Button asChild>

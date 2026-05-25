@@ -23,31 +23,17 @@ export function ObjectTable({ rows }: { rows: objects.ObjectRow[] }) {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr
-              key={r.id}
-              className="border-t border-border transition-colors hover:bg-bg"
-            >
+            <tr key={r.id} className="border-t border-border transition-colors hover:bg-bg">
               <td className="px-3 py-2">
-                <Link
-                  href={`/app/objects/${r.id}`}
-                  className="font-medium text-fg hover:underline"
-                >
+                <Link href={`/app/objects/${r.id}`} className="font-medium text-fg hover:underline">
                   {r.canonicalName}
                 </Link>
               </td>
+              <td className="px-3 py-2 font-mono text-xs text-fg-muted">{r.type}</td>
+              <td className="px-3 py-2 font-mono text-xs text-fg-muted">{r.status}</td>
+              <td className="px-3 py-2 font-mono text-xs text-fg-muted">{r.stage ?? '—'}</td>
               <td className="px-3 py-2 font-mono text-xs text-fg-muted">
-                {r.type}
-              </td>
-              <td className="px-3 py-2 font-mono text-xs text-fg-muted">
-                {r.status}
-              </td>
-              <td className="px-3 py-2 font-mono text-xs text-fg-muted">
-                {r.stage ?? '—'}
-              </td>
-              <td className="px-3 py-2 font-mono text-xs text-fg-muted">
-                {r.dueAt
-                  ? new Date(r.dueAt).toLocaleDateString('en-CA')
-                  : '—'}
+                {r.dueAt ? new Date(r.dueAt).toLocaleDateString('en-CA') : '—'}
               </td>
             </tr>
           ))}

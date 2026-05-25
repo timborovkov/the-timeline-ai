@@ -14,10 +14,7 @@ export default function BoardsLoading() {
         aria-label="Loading boards"
       >
         {Array.from({ length: 4 }).map((_, i) => (
-          <li
-            key={i}
-            className="flex items-center justify-between bg-bg px-3 py-2.5"
-          >
+          <li key={i} className="flex items-center justify-between bg-bg px-3 py-2.5">
             <Skeleton className="h-4 w-32" />
             <Skeleton className="h-3 w-16" />
           </li>

@@ -31,13 +31,7 @@ interface IndexStripProps {
  *
  * `segments[0]` is treated as the page's <h1>. The rest render as metadata.
  */
-export function IndexStrip({
-  segments,
-  trailing,
-  srLabel,
-  titleId,
-  className,
-}: IndexStripProps) {
+export function IndexStrip({ segments, trailing, srLabel, titleId, className }: IndexStripProps) {
   const title = segments[0];
   if (!title) {
     throw new Error('IndexStrip requires at least one segment');
@@ -53,27 +47,14 @@ export function IndexStrip({
         className,
       )}
     >
-      <h1
-        id={titleId}
-        className="m-0 text-xs font-normal uppercase tracking-[0.12em] text-fg"
-      >
+      <h1 id={titleId} className="m-0 text-xs font-normal uppercase tracking-[0.12em] text-fg">
         <span aria-hidden="true">{title.value}</span>
         <span className="sr-only">{srLabel}</span>
       </h1>
       {rest.map((seg, i) => (
-        <span
-          key={i}
-          aria-hidden="true"
-          className="inline-flex items-baseline gap-1.5"
-        >
+        <span key={i} aria-hidden="true" className="inline-flex items-baseline gap-1.5">
           {seg.label ? <span className="text-fg-dim">{seg.label}</span> : null}
-          <span
-            className={cn(
-              'text-fg',
-              seg.signal && 'text-signal',
-              seg.danger && 'text-danger',
-            )}
-          >
+          <span className={cn('text-fg', seg.signal && 'text-signal', seg.danger && 'text-danger')}>
             {seg.value}
           </span>
         </span>

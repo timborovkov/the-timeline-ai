@@ -29,9 +29,7 @@ export function InspectorPane() {
       role="dialog"
       aria-label={`Inspector for ${id}`}
       aria-labelledby="inspector-title"
-      className={cn(
-        'hidden w-80 shrink-0 border-l border-border bg-surface lg:flex lg:flex-col',
-      )}
+      className={cn('hidden w-80 shrink-0 border-l border-border bg-surface lg:flex lg:flex-col')}
     >
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
         <div className="flex items-baseline gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
@@ -65,18 +63,10 @@ export function InspectorPane() {
 /**
  * <InspectorPane.Field /> — key/value row for use inside an inspector render.
  */
-export function InspectorField({
-  k,
-  children,
-}: {
-  k: ReactNode;
-  children: ReactNode;
-}) {
+export function InspectorField({ k, children }: { k: ReactNode; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[11ch_1fr] gap-x-3 py-1">
-      <dt className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-        {k}
-      </dt>
+      <dt className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">{k}</dt>
       <dd className="m-0 text-fg">{children}</dd>
     </div>
   );

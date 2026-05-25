@@ -58,11 +58,7 @@ export function InspectorProvider({ children }: { children: ReactNode }) {
     [open, content, show, hide, toggle],
   );
 
-  return (
-    <InspectorContext.Provider value={value}>
-      {children}
-    </InspectorContext.Provider>
-  );
+  return <InspectorContext.Provider value={value}>{children}</InspectorContext.Provider>;
 }
 
 export function useInspector() {

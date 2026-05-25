@@ -14,10 +14,7 @@ export default function ChatError({
     <div className="mx-auto max-w-4xl space-y-8">
       <IndexStrip
         srLabel="Chat · error"
-        segments={[
-          { value: 'CHAT' },
-          { label: 'status', value: 'ERROR', danger: true },
-        ]}
+        segments={[{ value: 'CHAT' }, { label: 'status', value: 'ERROR', danger: true }]}
       />
       <ErrorState
         title="Couldn't open chat"

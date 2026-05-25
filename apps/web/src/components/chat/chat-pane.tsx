@@ -272,8 +272,7 @@ export function ChatPane({
           role="alert"
           className="shrink-0 font-mono text-xs uppercase tracking-[0.12em] text-danger"
         >
-          {error.message ||
-            'Chat failed. Make sure OPENROUTER_API_KEY is configured.'}
+          {error.message || 'Chat failed. Make sure OPENROUTER_API_KEY is configured.'}
         </p>
       )}
 

@@ -216,11 +216,7 @@ export default async function TimelinePage({ searchParams }: Props) {
           </details>
         </div>
 
-        <TimelineList
-          events={events}
-          authorMap={authorMap}
-          audioUrlMap={audioUrlMap}
-        />
+        <TimelineList events={events} authorMap={authorMap} audioUrlMap={audioUrlMap} />
       </section>
     </div>
   );

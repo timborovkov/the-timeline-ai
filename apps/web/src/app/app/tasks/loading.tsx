@@ -19,10 +19,7 @@ export default function TasksLoading() {
             </div>
             <div className="space-y-2">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="rounded-sm border border-border bg-bg px-3 py-2"
-                >
+                <div key={i} className="rounded-sm border border-border bg-bg px-3 py-2">
                   <Skeleton className="h-4 w-3/4" />
                   <Skeleton className="mt-1.5 h-3 w-1/2" />
                 </div>

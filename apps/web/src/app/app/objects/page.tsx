@@ -37,9 +37,7 @@ export default async function ObjectsIndexPage({
   const params = await searchParams;
 
   const type =
-    params.type && TYPE_LABEL[params.type]
-      ? (params.type as objects.ObjectType)
-      : undefined;
+    params.type && TYPE_LABEL[params.type] ? (params.type as objects.ObjectType) : undefined;
   const status = params.status?.trim() ?? undefined;
 
   // Default to hiding archived objects — `listObjects` only applies the

@@ -16,21 +16,24 @@
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('https://cdn.jsdelivr.net/npm/@fontsource/commit-mono/files/commit-mono-latin-400-normal.woff2') format('woff2');
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/commit-mono/files/commit-mono-latin-400-normal.woff2')
+    format('woff2');
 }
 @font-face {
   font-family: 'Commit Mono';
   font-style: italic;
   font-weight: 400;
   font-display: swap;
-  src: url('https://cdn.jsdelivr.net/npm/@fontsource/commit-mono/files/commit-mono-latin-400-italic.woff2') format('woff2');
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/commit-mono/files/commit-mono-latin-400-italic.woff2')
+    format('woff2');
 }
 @font-face {
   font-family: 'Commit Mono';
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url('https://cdn.jsdelivr.net/npm/@fontsource/commit-mono/files/commit-mono-latin-700-normal.woff2') format('woff2');
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/commit-mono/files/commit-mono-latin-700-normal.woff2')
+    format('woff2');
 }
 
 /* ── Tokens ─────────────────────────────────────────────────────── */
@@ -69,7 +72,9 @@
 }
 
 /* ── Base ───────────────────────────────────────────────────────── */
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 html {
   -webkit-text-size-adjust: 100%;
@@ -81,15 +86,25 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family:
-    'Switzer', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    'Switzer',
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
   font-size: 15px;
   line-height: 1.6;
-  font-feature-settings: 'ss01' 1, 'cv01' 1;
+  font-feature-settings:
+    'ss01' 1,
+    'cv01' 1;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-::selection { background: var(--signal-soft); color: var(--fg); }
+::selection {
+  background: var(--signal-soft);
+  color: var(--fg);
+}
 
 /* ── Skip link ──────────────────────────────────────────────────── */
 .skip {
@@ -139,9 +154,16 @@ main {
   padding: 0.875rem 0;
   margin: 0 0 2rem;
 }
-.index-strip > strong { color: var(--fg); font-weight: 400; }
-.index-strip > .signal { color: var(--signal); }
-.index-strip > .dim { color: var(--fg-dim); }
+.index-strip > strong {
+  color: var(--fg);
+  font-weight: 400;
+}
+.index-strip > .signal {
+  color: var(--signal);
+}
+.index-strip > .dim {
+  color: var(--fg-dim);
+}
 
 /* ── Typography ─────────────────────────────────────────────────── */
 h1 {
@@ -166,7 +188,9 @@ h3 {
   font-weight: 600;
   letter-spacing: -0.01em;
 }
-p { margin: 0 0 1rem; }
+p {
+  margin: 0 0 1rem;
+}
 .tagline {
   font-size: 1.125rem;
   color: var(--fg-muted);
@@ -181,11 +205,20 @@ a {
   text-decoration-color: color-mix(in oklab, var(--signal) 40%, transparent);
   text-underline-offset: 2px;
 }
-a:hover { text-decoration-color: var(--signal); }
-.intro a { color: var(--fg); text-decoration-color: var(--border-strong); }
+a:hover {
+  text-decoration-color: var(--signal);
+}
+.intro a {
+  color: var(--fg);
+  text-decoration-color: var(--border-strong);
+}
 
-em { font-style: italic; }
-strong { font-weight: 600; }
+em {
+  font-style: italic;
+}
+strong {
+  font-weight: 600;
+}
 
 code {
   font-family: 'Commit Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -193,7 +226,10 @@ code {
   background: var(--surface-2);
   padding: 0.1em 0.35em;
   border-radius: var(--radius);
-  font-feature-settings: 'tnum' 1, 'zero' 1, 'ss01' 1;
+  font-feature-settings:
+    'tnum' 1,
+    'zero' 1,
+    'ss01' 1;
 }
 
 pre {
@@ -238,7 +274,8 @@ table {
   border-radius: var(--radius);
   overflow: hidden;
 }
-th, td {
+th,
+td {
   text-align: left;
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--border);
@@ -253,11 +290,18 @@ th {
   color: var(--fg-dim);
   font-weight: 400;
 }
-tr:last-child td { border-bottom: 0; }
+tr:last-child td {
+  border-bottom: 0;
+}
 
 /* ── Lists ──────────────────────────────────────────────────────── */
-ul, ol { padding-left: 1.25rem; margin: 0.75rem 0 1.25rem; }
-ul.group, ol.group {
+ul,
+ol {
+  padding-left: 1.25rem;
+  margin: 0.75rem 0 1.25rem;
+}
+ul.group,
+ol.group {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -265,13 +309,15 @@ ul.group, ol.group {
   grid-template-columns: 1fr;
   gap: 0.5rem;
 }
-ul.group li, ol.group li {
+ul.group li,
+ol.group li {
   border: 1px solid var(--border);
   background: var(--surface);
   border-radius: var(--radius);
   padding: 0.625rem 0.875rem;
 }
-ul.group li:hover, ol.group li:hover {
+ul.group li:hover,
+ol.group li:hover {
   border-color: var(--border-strong);
 }
 
@@ -307,9 +353,14 @@ nav.toc ul {
   columns: 2;
   column-gap: 1.5rem;
 }
-nav.toc li { break-inside: avoid; padding: 0.125rem 0; }
+nav.toc li {
+  break-inside: avoid;
+  padding: 0.125rem 0;
+}
 @media (max-width: 640px) {
-  nav.toc ul { columns: 1; }
+  nav.toc ul {
+    columns: 1;
+  }
 }
 
 /* ── Page meta strip (kind + tagline) ───────────────────────────── */
@@ -377,7 +428,9 @@ nav.toc li { break-inside: avoid; padding: 0.125rem 0; }
   padding: 0.875rem 1rem;
   margin: 0.6rem 0;
 }
-.principle b { color: var(--signal); }
+.principle b {
+  color: var(--signal);
+}
 
 /* ── Pills (objects) ────────────────────────────────────────────── */
 .pill {

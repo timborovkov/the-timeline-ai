@@ -35,9 +35,7 @@ export function ObjectList({ rows, groupBy = 'status' }: Props) {
       {keys.map((k) => (
         <section key={k} aria-label={k}>
           <div className="mb-2 flex items-baseline justify-between border-b border-border pb-1.5">
-            <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-              {k}
-            </h2>
+            <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">{k}</h2>
             <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
               {grouped.get(k)?.length ?? 0}
             </span>
@@ -54,9 +52,7 @@ export function ObjectList({ rows, groupBy = 'status' }: Props) {
                   </span>
                   <span className="ml-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                     <span>{r.type}</span>
-                    {r.dueAt && (
-                      <span>· {new Date(r.dueAt).toLocaleDateString('en-CA')}</span>
-                    )}
+                    {r.dueAt && <span>· {new Date(r.dueAt).toLocaleDateString('en-CA')}</span>}
                   </span>
                 </Link>
               </li>

@@ -156,9 +156,7 @@ function Column({ id, rows }: { id: string; rows: objects.ObjectRow[] }) {
       )}
     >
       <div className="mb-3 flex shrink-0 items-baseline justify-between">
-        <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          {id}
-        </h3>
+        <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">{id}</h3>
         <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg">
           {rows.length}
         </span>
@@ -204,9 +202,7 @@ function Card({ row }: { row: objects.ObjectRow }) {
       </Link>
       <div className="mt-1.5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
         <span>{row.type}</span>
-        {row.dueAt && (
-          <span>· due {new Date(row.dueAt).toLocaleDateString('en-CA')}</span>
-        )}
+        {row.dueAt && <span>· due {new Date(row.dueAt).toLocaleDateString('en-CA')}</span>}
         {/* Badge tracks the live review state, not provenance.
             agentSuggested stays true forever; status leaves 'suggested'
             on accept/reject. */}

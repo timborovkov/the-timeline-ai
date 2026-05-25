@@ -24,19 +24,12 @@ export function ThemeToggle({ className }: { className?: string }) {
   useEffect(() => setMounted(true), []);
 
   const ActiveIcon =
-    (mounted &&
-      OPTIONS.find((o) => o.value === (resolvedTheme ?? 'light'))?.icon) ||
-    Sun;
+    (mounted && OPTIONS.find((o) => o.value === (resolvedTheme ?? 'light'))?.icon) || Sun;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={className}
-          aria-label="Toggle theme"
-        >
+        <Button variant="ghost" size="icon" className={className} aria-label="Toggle theme">
           <ActiveIcon className="size-4" />
         </Button>
       </DropdownMenuTrigger>
@@ -49,9 +42,7 @@ export function ThemeToggle({ className }: { className?: string }) {
           >
             <Icon className="mr-2 size-3.5" />
             <span>{label}</span>
-            {mounted && theme === value ? (
-              <Check className="ml-auto size-3.5 text-signal" />
-            ) : null}
+            {mounted && theme === value ? <Check className="ml-auto size-3.5 text-signal" /> : null}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

@@ -28,8 +28,7 @@ function transcribeFailed(meta: unknown): boolean {
   return (
     typeof meta === 'object' &&
     meta !== null &&
-    typeof (meta as Record<string, unknown>).transcription_failed_at ===
-      'string'
+    typeof (meta as Record<string, unknown>).transcription_failed_at === 'string'
   );
 }
 
@@ -79,14 +78,9 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
   }
 
   return (
-    <ol
-      className="border-t border-border"
-      aria-label="Captured events, most recent first"
-    >
+    <ol className="border-t border-border" aria-label="Captured events, most recent first">
       {events.map((event) => {
-        const author = event.authorUserId
-          ? authorMap.get(event.authorUserId)
-          : null;
+        const author = event.authorUserId ? authorMap.get(event.authorUserId) : null;
         const isEmail = event.source === 'email';
         const em = isEmail ? emailMeta(event.sourceMetadata) : null;
         const senderUnverified = Boolean(em?.sender_unverified);
@@ -138,10 +132,7 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
                 {isEmail && em?.thread_root_id && em.thread_root_id !== event.id ? (
                   <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                     thread →{' '}
-                    <a
-                      href={`#ev-${em.thread_root_id}`}
-                      className="text-signal underline"
-                    >
+                    <a href={`#ev-${em.thread_root_id}`} className="text-signal underline">
                       root
                     </a>
                   </p>
@@ -168,9 +159,7 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
                 ) : null}
                 {event.contentText !== null ? (
                   event.contentText.trim() === '' ? (
-                    <p className="text-sm italic text-fg-dim">
-                      (no speech detected)
-                    </p>
+                    <p className="text-sm italic text-fg-dim">(no speech detected)</p>
                   ) : (
                     <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
                       {event.contentText}

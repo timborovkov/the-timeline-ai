@@ -159,9 +159,7 @@ export default async function ChatPage({
           id: s.id,
           title: s.title,
           pinnedEntityId: s.pinnedEntityId,
-          pinnedEntityName: s.pinnedEntityId
-            ? (pinnedNames.get(s.pinnedEntityId) ?? null)
-            : null,
+          pinnedEntityName: s.pinnedEntityId ? (pinnedNames.get(s.pinnedEntityId) ?? null) : null,
         }))}
       />
       <div className="flex min-h-0 flex-1 flex-col px-4 py-5 md:px-8 md:py-6">
