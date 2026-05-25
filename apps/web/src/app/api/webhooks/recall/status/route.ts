@@ -135,14 +135,22 @@ export async function POST(req: Request): Promise<Response> {
   // We also defensively enqueue finalize when we see `done`/`analysis_done`
   // via status_change in case the separate `bot.call_ended` event was
   // dropped (Recall has shipped both shapes historically).
-  const finalizeSignal =
+  const shouldEnqueueFinalize =
     parsed.event === 'bot.call_ended' ||
     (parsed.event === 'bot.status_change' &&
       (code === 'done' || code === 'analysis_done' || mappedStatus === 'completed'));
-  // Only enqueue finalize once. If we're already `processing`, an earlier
-  // event already kicked off the job and the BullMQ retry policy + the
-  // worker's `status === 'completed'` short-circuit handle the rest.
-  const shouldEnqueueFinalize = finalizeSignal && meeting.status !== 'processing';
+
+  // Fail-fast Redis precheck. If we can't enqueue finalize, we must NOT
+  // write `processing` to the DB and then return 503 — Recall will retry
+  // the webhook, but on the next attempt the meeting is already
+  // `processing` so any "did we already enqueue?" guard would silently
+  // skip the enqueue and the meeting would be stranded. Returning 503
+  // BEFORE the DB write keeps the status at its prior value (active /
+  // joining) so the next retry re-enters this branch cleanly.
+  if (shouldEnqueueFinalize && !env.REDIS_URL) {
+    log.error({ meetingId: meeting.id }, 'redis_unavailable_cannot_enqueue_finalize');
+    return Response.json({ ok: false, reason: 'redis_unavailable' }, { status: 503 });
+  }
 
   try {
     if (parsed.event === 'bot.status_change' && mappedStatus) {
@@ -202,13 +210,10 @@ export async function POST(req: Request): Promise<Response> {
     // types regularly and we don't want 5xx to trigger retry storms.
 
     if (shouldEnqueueFinalize) {
-      if (!env.REDIS_URL) {
-        // Without Redis we cannot run finalize and the meeting would be
-        // stuck in `processing` forever. Return 503 so Recall retries the
-        // webhook with exponential backoff; by then Redis should be back.
-        log.error({ meetingId: meeting.id }, 'redis_unavailable_cannot_enqueue_finalize');
-        return Response.json({ ok: false, reason: 'redis_unavailable' }, { status: 503 });
-      }
+      // Redis availability was verified before any DB write above.
+      // Duplicate enqueues (e.g. retried bot.call_ended after our 200) are
+      // safe: the worker short-circuits on `status === 'completed'`, so
+      // the cost of a duplicate is a single DB lookup.
       await queue.enqueueMeetingFinalizeJob({
         meetingId: meeting.id,
         teamId: meeting.teamId,
