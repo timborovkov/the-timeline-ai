@@ -3,6 +3,7 @@
 import { Search, X } from 'lucide-react';
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 
+import { CitationChip } from '@/components/citation-chip';
 import { Card, CardContent } from '@/components/ui/card';
 
 interface SearchResult {
@@ -181,13 +182,13 @@ export function SearchBar({ initialQuery = '' }: Props) {
                   {r.entityIds.length > 0 && (
                     <div className="flex flex-wrap gap-1 pt-1">
                       {r.entityIds.map((id) => (
-                        <a
+                        <CitationChip
                           key={id}
+                          id={`ent:${id.slice(0, 8)}`}
+                          source="Entity"
                           href={`/app/objects/${id}`}
-                          className="rounded-sm border border-border bg-bg px-2 py-0.5 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted hover:border-border-strong hover:text-fg"
-                        >
-                          entity
-                        </a>
+                          variant="muted"
+                        />
                       ))}
                     </div>
                   )}
