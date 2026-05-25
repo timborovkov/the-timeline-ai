@@ -10,7 +10,7 @@ import { and, desc, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import { revokeLinkTokenAction, unbindChatAction } from '@/app/actions/telegram';
-import { NarrowContainer } from '@/components/narrow-container';
+import { IndexStrip } from '@/components/index-strip';
 import { GenerateGroupTokenForm, GeneratePersonalTokenForm } from '@/components/telegram-forms';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -93,165 +93,165 @@ export default async function TelegramSettingsPage() {
   const userMap = new Map(userRows.map((u) => [u.id, u] as const));
 
   return (
-    <NarrowContainer>
-      <div className="space-y-8">
-        <header>
-          <h1 className="text-2xl font-semibold tracking-tight">Telegram</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Connect Telegram DMs and group chats to {active.teamName}. Text messages land in the
-            timeline.
+    <div className="mx-auto max-w-3xl space-y-6">
+      <IndexStrip
+        srLabel={`Telegram integration for ${active.teamName} · ${bindings.length} bound groups · ${linkedTgUsers.length} linked users`}
+        segments={[
+          { value: 'TEAM / TELEGRAM' },
+          { label: 'team', value: active.teamName, signal: true },
+          { label: 'groups', value: bindings.length },
+          { label: 'users', value: linkedTgUsers.length },
+        ]}
+      />
+
+      {!webhookConfigured ? (
+        <Card>
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            <p>
+              Telegram is not configured in this environment. Set{' '}
+              <code className="font-mono">TELEGRAM_BOT_TOKEN</code> and{' '}
+              <code className="font-mono">TELEGRAM_WEBHOOK_SECRET</code> and register the webhook
+              (see <code className="font-mono">docs/setup/telegram.md</code>). Link tokens still
+              generate, but Telegram will not deliver messages until the webhook is live.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Link a personal DM</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Generate a single-use token, then DM the bot{' '}
+            <code className="font-mono">/link &lt;token&gt;</code>. 15-minute TTL.
           </p>
-        </header>
+          <GeneratePersonalTokenForm botUsername={botUsername} />
+        </CardContent>
+      </Card>
 
-        {!webhookConfigured ? (
-          <Card>
-            <CardContent className="py-4 text-sm text-muted-foreground">
-              <p>
-                Telegram is not configured in this environment. Set{' '}
-                <code className="font-mono">TELEGRAM_BOT_TOKEN</code> and{' '}
-                <code className="font-mono">TELEGRAM_WEBHOOK_SECRET</code> and register the webhook
-                (see <code className="font-mono">docs/setup/telegram.md</code>). Link tokens still
-                generate, but Telegram will not deliver messages until the webhook is live.
-              </p>
-            </CardContent>
-          </Card>
-        ) : null}
-
+      {isAdmin ? (
         <Card>
           <CardHeader>
-            <CardTitle>Link a personal DM</CardTitle>
+            <CardTitle>Bind a group chat</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Generate a single-use token, then DM the bot{' '}
-              <code className="font-mono">/link &lt;token&gt;</code>. 15-minute TTL.
+              Add the bot to the group with the deep-link, or have an admin run{' '}
+              <code className="font-mono">/link &lt;token&gt;</code> inside the group. Group binding
+              requires a team admin to issue the token and a group admin to consume it.
             </p>
-            <GeneratePersonalTokenForm botUsername={botUsername} />
+            <GenerateGroupTokenForm botUsername={botUsername} />
           </CardContent>
         </Card>
+      ) : null}
 
-        {isAdmin ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Bind a group chat</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Add the bot to the group with the deep-link, or have an admin run{' '}
-                <code className="font-mono">/link &lt;token&gt;</code> inside the group. Group
-                binding requires a team admin to issue the token and a group admin to consume it.
-              </p>
-              <GenerateGroupTokenForm botUsername={botUsername} />
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {activeTokens.length > 0 ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Pending tokens</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-xs text-muted-foreground">
-                Token values are only shown once, when you generate them. Lost a token? Revoke it
-                and generate a new one.
-              </p>
-              <ul className="divide-y">
-                {activeTokens.map((t) => (
-                  <li key={t.id} className="flex items-center justify-between py-3">
-                    <div className="flex flex-col">
-                      <span className="text-sm">
-                        {t.scope === 'group' ? 'Group binding' : 'Personal link'}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        expires {t.expiresAt.toISOString()}
-                        {isAdmin && t.issuedByUserId !== session.user.id
-                          ? ` · issued by another teammate`
-                          : ''}
-                      </span>
-                    </div>
-                    {isAdmin ? (
-                      <form action={revokeLinkTokenAction}>
-                        <input type="hidden" name="id" value={t.id} />
-                        <Button type="submit" variant="ghost" size="sm">
-                          Revoke
-                        </Button>
-                      </form>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        ) : null}
-
+      {activeTokens.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Bound group chats</CardTitle>
+            <CardTitle>Pending tokens</CardTitle>
           </CardHeader>
-          <CardContent>
-            {bindings.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No groups bound yet.</p>
-            ) : (
-              <ul className="divide-y">
-                {bindings.map((b) => (
-                  <li key={b.id} className="flex items-center justify-between py-3">
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Token values are only shown once, when you generate them. Lost a token? Revoke it and
+              generate a new one.
+            </p>
+            <ul className="divide-y">
+              {activeTokens.map((t) => (
+                <li key={t.id} className="flex items-center justify-between py-3">
+                  <div className="flex flex-col">
+                    <span className="text-sm">
+                      {t.scope === 'group' ? 'Group binding' : 'Personal link'}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      expires {t.expiresAt.toISOString()}
+                      {isAdmin && t.issuedByUserId !== session.user.id
+                        ? ` · issued by another teammate`
+                        : ''}
+                    </span>
+                  </div>
+                  {isAdmin ? (
+                    <form action={revokeLinkTokenAction}>
+                      <input type="hidden" name="id" value={t.id} />
+                      <Button type="submit" variant="ghost" size="sm">
+                        Revoke
+                      </Button>
+                    </form>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Bound group chats</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {bindings.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No groups bound yet.</p>
+          ) : (
+            <ul className="divide-y">
+              {bindings.map((b) => (
+                <li key={b.id} className="flex items-center justify-between py-3">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium">{b.title ?? `Chat ${b.tgChatId}`}</span>
+                    <span className="text-xs text-muted-foreground">
+                      chat_id {b.tgChatId} · bound {b.createdAt.toISOString()}
+                    </span>
+                  </div>
+                  {isAdmin ? (
+                    <form action={unbindChatAction}>
+                      <input type="hidden" name="id" value={b.id} />
+                      <Button type="submit" variant="ghost" size="sm">
+                        Unbind
+                      </Button>
+                    </form>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Linked Telegram users</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {linkedTgUsers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No Telegram users linked yet.</p>
+          ) : (
+            <ul className="divide-y">
+              {linkedTgUsers.map((u) => {
+                const appUser = u.userId ? userMap.get(u.userId) : undefined;
+                const fullName = [u.firstName, u.lastName].filter(Boolean).join(' ');
+                const tgName = u.username ?? (fullName || `tg:${u.tgUserId}`);
+                return (
+                  <li
+                    key={`${u.id}-${u.userId ?? 'unverified'}`}
+                    className="flex items-center justify-between py-3"
+                  >
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium">{b.title ?? `Chat ${b.tgChatId}`}</span>
+                      <span className="text-sm font-medium">
+                        {appUser?.name ?? appUser?.email ?? 'Unverified Telegram user'}
+                      </span>
                       <span className="text-xs text-muted-foreground">
-                        chat_id {b.tgChatId} · bound {b.createdAt.toISOString()}
+                        tg:{tgName} · {appUser?.email ?? 'no app account'}
                       </span>
                     </div>
-                    {isAdmin ? (
-                      <form action={unbindChatAction}>
-                        <input type="hidden" name="id" value={b.id} />
-                        <Button type="submit" variant="ghost" size="sm">
-                          Unbind
-                        </Button>
-                      </form>
-                    ) : null}
+                    {u.isActive ? <Badge variant="outline">active DM</Badge> : null}
                   </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Linked Telegram users</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {linkedTgUsers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No Telegram users linked yet.</p>
-            ) : (
-              <ul className="divide-y">
-                {linkedTgUsers.map((u) => {
-                  const appUser = u.userId ? userMap.get(u.userId) : undefined;
-                  const fullName = [u.firstName, u.lastName].filter(Boolean).join(' ');
-                  const tgName = u.username ?? (fullName || `tg:${u.tgUserId}`);
-                  return (
-                    <li
-                      key={`${u.id}-${u.userId ?? 'unverified'}`}
-                      className="flex items-center justify-between py-3"
-                    >
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium">
-                          {appUser?.name ?? appUser?.email ?? 'Unverified Telegram user'}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          tg:{tgName} · {appUser?.email ?? 'no app account'}
-                        </span>
-                      </div>
-                      {u.isActive ? <Badge variant="outline">active DM</Badge> : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </NarrowContainer>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

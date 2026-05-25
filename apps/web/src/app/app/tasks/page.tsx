@@ -2,6 +2,7 @@ import { objects, withTeam } from '@timeline/shared';
 import { redirect } from 'next/navigation';
 
 import { KanbanBoard } from '@/components/boards/kanban-board';
+import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -21,20 +22,31 @@ export default async function TasksPage() {
     limit: 500,
   });
 
+  const open = rows.filter((r) => r.status !== 'done' && r.status !== 'cancelled').length;
+  const overdue = rows.filter(
+    (r) =>
+      r.dueAt !== null && r.dueAt < new Date() && r.status !== 'done' && r.status !== 'cancelled',
+  ).length;
+
   return (
-    // Fixed viewport-bounded height (viewport − AppShell header − main py
-    // padding ≈ 11rem) so KanbanBoard can fill the remaining space and
-    // each column gets its own internal scroll. Without a known parent
-    // height the kanban would size to content and you'd lose the
-    // per-column vertical scroll entirely.
-    <div className="flex h-[calc(100dvh-11rem)] flex-col">
-      <header className="mb-8 shrink-0">
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Tasks</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">All tasks</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Every task across the workspace, grouped by status. Drag between columns to update.
-        </p>
-      </header>
+    // Fixed viewport-bounded height (viewport − AppShell header − main
+    // py padding ≈ 10rem) so KanbanBoard can fill the remaining space
+    // and each column gets its own internal scroll. Without a known
+    // parent height the kanban would size to content and you'd lose
+    // the per-column vertical scroll entirely.
+    <div className="flex h-[calc(100dvh-10rem)] flex-col">
+      <IndexStrip
+        srLabel={`Tasks · ${rows.length} total · ${open} open${overdue ? ` · ${overdue} overdue` : ''}`}
+        segments={[
+          { value: 'TASKS' },
+          { label: 'total', value: rows.length },
+          { label: 'open', value: open },
+          ...(overdue > 0
+            ? ([{ label: 'overdue', value: overdue, danger: true }] as const)
+            : ([] as const)),
+        ]}
+        className="mb-5 shrink-0"
+      />
 
       <div className="min-h-0 flex-1">
         <KanbanBoard rows={rows} groupBy="status" columns={TASK_COLUMNS} />

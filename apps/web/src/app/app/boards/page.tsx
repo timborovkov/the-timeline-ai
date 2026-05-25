@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { BoardCreateForm } from '@/components/boards/board-create-form';
-import { NarrowContainer } from '@/components/narrow-container';
+import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -18,33 +18,30 @@ export default async function BoardsIndexPage() {
   const boards = await objects.listBoardViews(db, scope);
 
   return (
-    <NarrowContainer>
-      <header className="mb-10">
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Boards</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Saved boards</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Pin a filter as a kanban, table, or list view. Boards are shared with the team.
-        </p>
-      </header>
+    <div className="mx-auto max-w-4xl space-y-6">
+      <IndexStrip
+        srLabel={`Boards · ${boards.length} saved views`}
+        segments={[{ value: 'BOARDS' }, { label: 'saved', value: boards.length }]}
+      />
 
-      <div className="mb-10">
+      <section aria-label="Create board" className="rounded-sm border border-border bg-surface p-4">
         <BoardCreateForm />
-      </div>
+      </section>
 
       {boards.length === 0 ? (
-        <div className="rounded-xl border border-dashed bg-card/40 px-6 py-12 text-center text-sm text-muted-foreground">
-          No boards yet. Create one above.
+        <div className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
+          NO BOARDS YET → PIN A FILTER ABOVE
         </div>
       ) : (
-        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-px overflow-hidden border border-border sm:grid-cols-2">
           {boards.map((b) => (
-            <li key={b.id}>
+            <li key={b.id} className="bg-bg">
               <Link
                 href={`/app/boards/${b.id}`}
-                className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 text-sm transition-colors hover:border-primary/30 hover:bg-accent/40"
+                className="flex items-center justify-between px-3 py-2.5 text-sm transition-colors hover:bg-surface"
               >
-                <span className="min-w-0 flex-1 truncate font-medium">{b.name}</span>
-                <span className="ml-3 text-[11px] uppercase tracking-wide text-muted-foreground">
+                <span className="min-w-0 flex-1 truncate font-medium text-fg">{b.name}</span>
+                <span className="ml-3 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                   {b.kind}
                   {b.groupBy ? ` · by ${b.groupBy}` : ''}
                 </span>
@@ -53,6 +50,6 @@ export default async function BoardsIndexPage() {
           ))}
         </ul>
       )}
-    </NarrowContainer>
+    </div>
   );
 }

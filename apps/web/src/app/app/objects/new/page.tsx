@@ -1,17 +1,24 @@
-import { NarrowContainer } from '@/components/narrow-container';
+import Link from 'next/link';
+
+import { IndexStrip } from '@/components/index-strip';
 import { NewObjectForm } from '@/components/objects/new-object-form';
 
 export default function NewObjectPage() {
   return (
-    <NarrowContainer>
-      <header className="mb-10">
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Objects</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">New object</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Create a workspace object. You can edit every field on the object page afterwards.
-        </p>
-      </header>
+    <div className="mx-auto max-w-3xl space-y-6">
+      <IndexStrip
+        srLabel="Create a new workspace object"
+        segments={[{ value: 'OBJECTS / NEW' }, { label: 'mode', value: 'create', signal: true }]}
+        trailing={
+          <Link
+            href="/app/objects"
+            className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg hover:underline"
+          >
+            ← all objects
+          </Link>
+        }
+      />
       <NewObjectForm />
-    </NarrowContainer>
+    </div>
   );
 }

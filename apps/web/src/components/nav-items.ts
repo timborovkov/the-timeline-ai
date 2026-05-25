@@ -12,8 +12,8 @@ import {
 /**
  * Single source of truth for the primary app navigation.
  *
- * Both the desktop sidebar ([sidebar-nav.tsx](./sidebar-nav.tsx)) and the
- * mobile slide-over ([mobile-nav.tsx](./mobile-nav.tsx)) read from this list
+ * Both the desktop rail ([rail-nav.tsx](./rail-nav.tsx)) and the mobile
+ * slide-over ([mobile-nav.tsx](./mobile-nav.tsx)) read from this list
  * so the two experiences can't drift. If you add a new top-level route, add
  * it here once.
  */
