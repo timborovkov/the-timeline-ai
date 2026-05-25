@@ -163,14 +163,6 @@ export async function processDocumentExtractJob(
     return { documentVersionId, skipped: true, reason: 'document_deleted' };
   }
 
-  // Already past 'chunked' (the embed worker promotes to 'embedded'
-  // once chunks land in Qdrant). Replays from the redocument-extract
-  // script intentionally re-enter here; the user must reset the
-  // status row first if they want a true re-extract.
-  if (version.processingStatus === 'chunked' || version.processingStatus === 'embedded') {
-    return { documentVersionId, skipped: true, reason: 'already_processed' };
-  }
-
   if (document.visibility !== 'team') {
     await deps.db
       .update(documentVersions)
@@ -186,14 +178,42 @@ export async function processDocumentExtractJob(
     };
   }
 
-  // Mark as extracting so concurrent enqueues see progress.
-  await deps.db.transaction(async (tx) => {
+  // Race-safe ownership claim: take the advisory lock, re-read the
+  // status under the lock, and only flip pending → extracting if no
+  // other worker beat us to it. Without the under-lock re-read, two
+  // concurrent jobs for the same versionId both pass the idempotency
+  // check (each sees the stale 'pending' from before the lock) and
+  // both burn through the vision LLM. The lock + re-read makes the
+  // second worker bail cheap.
+  const claim = await deps.db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
+    const fresh = await tx
+      .select({ status: documentVersions.processingStatus })
+      .from(documentVersions)
+      .where(eq(documentVersions.id, version.id))
+      .limit(1);
+    const status = fresh[0]?.status;
+    if (status === 'chunked' || status === 'embedded' || status === 'extracting') {
+      // Either a sibling worker is in flight (extracting) or already
+      // finished (chunked/embedded). Replays from the
+      // redocument-extract script intentionally re-enter here; the
+      // operator must reset the status to 'pending' first if they
+      // want a true re-extract.
+      return { skipped: true, reason: 'already_processed' as const };
+    }
     await tx
       .update(documentVersions)
       .set({ processingStatus: 'extracting', processingError: null })
       .where(eq(documentVersions.id, version.id));
+    return { skipped: false };
   });
+  if (claim.skipped) {
+    return {
+      documentVersionId,
+      skipped: true,
+      reason: claim.reason ?? 'already_processed',
+    };
+  }
 
   // Bounds-check before reading the body. RustFS HEAD is cheap and
   // surfaces oversize uploads without consuming bandwidth.
@@ -211,13 +231,29 @@ export async function processDocumentExtractJob(
   }
 
   const contentType = (version.contentType ?? '').toLowerCase();
-  let text: string | null;
+  let text: string;
   let extractionModel: string = EXTRACT_CODE_VERSION;
   try {
     const routed = await routeContentToText({ contentType, body, name: document.name }, io);
+    if ('failure' in routed) {
+      // Honest reason — routeContentToText distinguishes "unsupported
+      // mediaType" from "binary content masquerading as text" so the
+      // operator sees the actual diagnosis on the version row, not a
+      // confusing "text/plain not supported".
+      await deps.db
+        .update(documentVersions)
+        .set({ processingStatus: 'failed', processingError: routed.failure })
+        .where(eq(documentVersions.id, version.id));
+      // Don't retry — adding an extractor or fixing the upload changes
+      // the input, not the policy. UnrecoverableError stops the BullMQ
+      // retry loop.
+      throw new UnrecoverableError(routed.failure);
+    }
     text = routed.text;
     if (routed.model) extractionModel = routed.model;
   } catch (err: unknown) {
+    // Already stamped above for the routed-failure branch.
+    if (err instanceof UnrecoverableError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     await deps.db
       .update(documentVersions)
@@ -226,16 +262,6 @@ export async function processDocumentExtractJob(
     // Transient LLM / mammoth errors bubble up so BullMQ retries. The
     // version row records the last error so the operator sees progress.
     throw err;
-  }
-  if (text === null) {
-    const reason = `content_type=${contentType || 'unknown'} not supported`;
-    await deps.db
-      .update(documentVersions)
-      .set({ processingStatus: 'failed', processingError: reason })
-      .where(eq(documentVersions.id, version.id));
-    // Don't retry — adding a new extractor changes the policy, not
-    // the input. UnrecoverableError stops the BullMQ retry loop.
-    throw new UnrecoverableError(reason);
   }
 
   if (!text.trim()) {
@@ -356,12 +382,19 @@ export function startDocumentExtractWorker(
  *   - DOCX (Office Open XML) → `io.extractDocx` (mammoth raw-text).
  *     Native extraction is faster and free; vision is reserved for
  *     formats that need OCR.
- *   - Anything else → `{ text: null }`.
+ *   - Anything else → `{ failure }` with an honest reason string. Two
+ *     failure modes the caller must distinguish:
+ *       * "content_type=… not supported" — no extractor for the MIME
+ *       * "binary content detected in text-declared upload" — file
+ *         claimed text/* but has NUL bytes in the head (operator
+ *         likely uploaded a binary with the wrong Content-Type)
  */
+type RouteResult = { text: string; model?: string } | { failure: string };
+
 async function routeContentToText(
   input: { contentType: string; body: Buffer; name: string },
   io: DocumentExtractIO,
-): Promise<{ text: string | null; model?: string }> {
+): Promise<RouteResult> {
   const ct = input.contentType;
   // Text-ish routes first. These are cheapest and zero LLM cost.
   if (
@@ -372,13 +405,19 @@ async function routeContentToText(
   ) {
     const text = input.body.toString('utf-8');
     // Quick guard against accidentally treating a binary file as text
-    // (would have garbled tokens). Reject if the first 1 KB contains many
-    // NUL bytes — a heuristic, not a guarantee.
+    // (would have garbled tokens). Reject if the first 1 KB contains
+    // many NUL bytes — a heuristic, not a guarantee. The failure
+    // reason names what's actually wrong (binary content) rather than
+    // claiming the MIME isn't supported.
     const head = text.slice(0, 1024);
     let nul = 0;
     for (let i = 0; i < head.length; i++) {
       if (head.charCodeAt(i) === 0) nul++;
-      if (nul > 8) return { text: null };
+      if (nul > 8) {
+        return {
+          failure: `binary content detected in text-declared upload (content_type=${ct || 'unknown'})`,
+        };
+      }
     }
     return { text };
   }
@@ -413,5 +452,7 @@ async function routeContentToText(
   }
   // audio/video and anything else: out of scope for the extract worker.
   // Audio goes through the transcribe worker; video has no route yet.
-  return { text: null };
+  return {
+    failure: `content_type=${ct || 'unknown'} not supported`,
+  };
 }

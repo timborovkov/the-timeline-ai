@@ -269,6 +269,37 @@ describe('processDocumentExtractJob — short-circuits', () => {
     );
   });
 
+  it('two concurrent workers race the same version: only one extracts (bugbot #3298476406)', async () => {
+    // Simulates a sibling worker that already flipped status to
+    // 'extracting' before our handler took the lock. Without the
+    // under-lock re-read of status, both workers pass the pre-lock
+    // idempotency check, both fetch the blob, both pay the LLM cost.
+    // After the fix the second worker observes 'extracting' inside the
+    // lock and bails without calling fetchBlob or the vision model.
+    h = await makeHarness('race content');
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'race.txt',
+      contentType: 'text/plain',
+    });
+    // Set status to 'extracting' BEFORE the handler runs — mimics a
+    // sibling worker that already grabbed the lock and released it
+    // (lock is xact-scoped). Our handler must observe this and skip.
+    await h.pg.exec(
+      `UPDATE document_versions SET processing_status = 'extracting' WHERE id = '${versionId}'`,
+    );
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe('already_processed');
+    // Critical: the blob fetch + embed enqueue must NOT have happened.
+    // Pre-fix, both rip through the full LLM extraction.
+    expect(h.fetchBlob).not.toHaveBeenCalled();
+    expect(h.enqueueEmbed).not.toHaveBeenCalled();
+  });
+
   it('throws UnrecoverableError for non-existent version (does not enqueue)', async () => {
     h = await makeHarness('content');
     const FAKE = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
@@ -479,8 +510,11 @@ describe('processDocumentExtractJob — content-type routing', () => {
     expect(result.chunkCount).toBeGreaterThanOrEqual(1);
   });
 
-  it('refuses obvious binary content even when extension looks text-ish', async () => {
-    // 16 NUL bytes in the head — the heuristic should reject.
+  it('refuses obvious binary content even when extension looks text-ish, with an honest reason', async () => {
+    // 20 NUL bytes in the head — the heuristic should reject. The
+    // error must say "binary content detected", not "text/plain not
+    // supported" (which is misleading — text/plain IS supported; the
+    // actual file just isn't text).
     h = await makeHarness('\0'.repeat(20) + 'rest');
     const { versionId } = await createFinalisedDocument(h.db, {
       name: 'fake.txt',
@@ -492,12 +526,16 @@ describe('processDocumentExtractJob — content-type routing', () => {
         { documentVersionId: versionId, teamId: TEAM_ID },
         h.io,
       ),
-    ).rejects.toThrow();
-    const row = await h.pg.query<{ processing_status: string }>(
-      `SELECT processing_status FROM document_versions WHERE id = $1`,
+    ).rejects.toThrow(/binary content detected/);
+    const row = await h.pg.query<{ processing_status: string; processing_error: string }>(
+      `SELECT processing_status, processing_error FROM document_versions WHERE id = $1`,
       [versionId],
     );
     expect(row.rows[0]?.processing_status).toBe('failed');
+    expect(row.rows[0]?.processing_error).toContain('binary content detected');
+    // Must NOT say the MIME is unsupported — that diagnosis would
+    // mislead the operator.
+    expect(row.rows[0]?.processing_error).not.toContain('not supported');
   });
 });
 
