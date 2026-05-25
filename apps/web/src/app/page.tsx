@@ -9,7 +9,6 @@ import { Logo, Wordmark } from '@/components/brand/logo';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-
 const SITE_NAME = 'The Timeline';
 const SITE_TAGLINE = 'The operations log your team can talk to';
 const SITE_DESCRIPTION =

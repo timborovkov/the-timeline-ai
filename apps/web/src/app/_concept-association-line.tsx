@@ -2,7 +2,10 @@
 
 import { useLayoutEffect, useState } from 'react';
 
-interface Pos { top: number; height: number }
+interface Pos {
+  top: number;
+  height: number;
+}
 
 export function AssociationLine({
   fromId,
