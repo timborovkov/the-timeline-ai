@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
  * The hash includes the model tag deliberately: changing the embedding model
  * is exactly the case where we MUST NOT overwrite a vector in place.
  */
-export type PointScope = 'event' | 'fact';
+export type PointScope = 'event' | 'fact' | 'doc-chunk';
 
 export function buildPointId(scope: PointScope, sourceId: string, modelTag: string): string {
   const input = `${scope}:${sourceId}:${modelTag}`;

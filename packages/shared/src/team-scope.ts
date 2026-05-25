@@ -2,6 +2,7 @@ import {
   type Db,
   entities,
   entityType,
+  eventSource,
   factEntities,
   facts as factsTable,
   rawEvents,
@@ -12,6 +13,7 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
+import { createDocumentScope } from './documents/scope.js';
 import { embed as defaultEmbed, type EmbedResult } from './llm/embed.js';
 import { getQdrantClient, type SearchHit, type SearchOpts } from './qdrant/client.js';
 
@@ -28,6 +30,14 @@ export type TeamRole = (typeof _roleValues)[number];
 const _entityTypeValues = entityType.enumValues;
 export type EntityType = (typeof _entityTypeValues)[number];
 
+// Source values pinned to the Drizzle enum so widening (Phase 9 added
+// 'document') only requires changing the schema. Output types use
+// `EventSource`; input types pin to the legacy narrow union because doc
+// activity goes through the documents scope, not generic createEvent().
+const _eventSourceValues = eventSource.enumValues;
+export type EventSource = (typeof _eventSourceValues)[number];
+export type CreatableEventSource = Exclude<EventSource, 'document'>;
+
 const ROLE_RANK: Record<TeamRole, number> = { member: 0, admin: 1, owner: 2 };
 
 export interface EventListFilters {
@@ -42,7 +52,7 @@ export interface EventListFilters {
 
 export interface CreateEventInput {
   authorUserId: string | null;
-  source: 'web' | 'telegram' | 'email' | 'system';
+  source: EventSource;
   contentText?: string | null;
   contentAudioUrl?: string | null;
   occurredAt?: Date;
@@ -92,7 +102,7 @@ export interface SearchEventResult {
   factIds: string[];
   score: number;
   occurredAt: string;
-  source: 'web' | 'telegram' | 'email' | 'system';
+  source: EventSource;
   authorUserId: string | null;
   entityIds: string[];
   snippet: string;
@@ -139,7 +149,7 @@ export interface EntityProfile {
   events: {
     id: string;
     occurredAt: Date;
-    source: 'web' | 'telegram' | 'email' | 'system';
+    source: EventSource;
     authorUserId: string | null;
     authorName: string | null;
     authorEmail: string | null;
@@ -153,7 +163,7 @@ export interface EventWithFacts {
   event: {
     id: string;
     occurredAt: Date;
-    source: 'web' | 'telegram' | 'email' | 'system';
+    source: EventSource;
     authorUserId: string | null;
     contentText: string | null;
     contentAudioUrl: string | null;
@@ -268,7 +278,21 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     }
   }
 
+  // Phase 9 — document drive methods, spread in below. Document methods
+  // share `ensureMember` / `requireTeamMember` so they participate in the
+  // same membership-cache and team-isolation chokepoints.
+  const documentScope = createDocumentScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+    requireTeamMember,
+    ...(deps.embed ? { embed: deps.embed } : {}),
+    ...(deps.qdrantSearch ? { qdrantSearch: deps.qdrantSearch } : {}),
+  });
+
   return {
+    ...documentScope,
     teamId,
     userId,
 

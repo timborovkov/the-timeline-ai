@@ -12,12 +12,20 @@ import { buildPointId, type PointScope } from './point-id.js';
  */
 export interface QdrantPayload {
   team_id: string;
+  /**
+   * For 'event' and 'fact' scopes this is the raw_events.id the point
+   * derives from. For 'doc-chunk' scopes this points at the document's
+   * upload-event row (set on `document_versions.source_event_id`) so the
+   * existing dedup-by-event-id paths still have a stable key, and so
+   * click-through resolution from a citation can land on either the
+   * document or the event.
+   */
   event_id: string;
   fact_id: string | null;
   entity_ids: string[];
   occurred_at: string;
   author_user_id: string | null;
-  source: 'web' | 'telegram' | 'email' | 'system';
+  source: 'web' | 'telegram' | 'email' | 'system' | 'document';
   visibility: 'team' | 'private' | 'specific_users';
   /**
    * Users explicitly granted visibility when `visibility === 'specific_users'`.
@@ -30,6 +38,23 @@ export interface QdrantPayload {
    */
   visibility_user_ids: string[] | null;
   embedding_model: string;
+  /**
+   * Phase 9 — discriminator that lets searchEvents() exclude doc-chunk
+   * points and searchDocumentChunks() include only them. Existing
+   * event/fact points written before Phase 9 have no `point_kind` field;
+   * the filters use `must`/`must_not` semantics that tolerate the absence
+   * (a missing field never matches `match.value`), so no backfill is
+   * required.
+   */
+  point_kind?: 'event' | 'fact' | 'doc-chunk';
+  // Phase 9 document fields — populated on 'doc-chunk' scope only.
+  document_id?: string;
+  document_version_id?: string;
+  document_chunk_id?: string;
+  folder_id?: string | null;
+  owner_user_id?: string | null;
+  /** Document version's createdAt (ISO). Lets recency filters work. */
+  updated_at?: string;
 }
 
 export interface SearchOpts {
@@ -38,6 +63,19 @@ export interface SearchOpts {
   source?: QdrantPayload['source'];
   entityIds?: string[];
   limit?: number;
+  /**
+   * Phase 9 — restrict by point kind. Defaults to 'event-or-fact' so
+   * `searchEvents` and any other timeline-flavoured caller never see
+   * document chunks. `searchDocumentChunks` passes 'doc-chunk' to flip
+   * the filter.
+   */
+  kind?: 'event-or-fact' | 'doc-chunk';
+  /** Restrict to a single document (only meaningful when kind = 'doc-chunk'). */
+  documentId?: string;
+  /** Restrict to a folder subtree caller already resolved (only meaningful
+   *  when kind = 'doc-chunk'). The caller is responsible for expanding the
+   *  subtree to a flat folder-id list. */
+  folderIds?: string[];
 }
 
 export interface SearchHit {
@@ -266,6 +304,25 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     }
     if (searchOpts.entityIds && searchOpts.entityIds.length > 0) {
       extraMust.push({ key: 'entity_ids', match: { any: searchOpts.entityIds } });
+    }
+    // Phase 9 kind discriminator. Default: timeline-flavoured callers must
+    // never see doc-chunk points. Doc-chunk callers explicitly opt in.
+    const kind = searchOpts.kind ?? 'event-or-fact';
+    if (kind === 'doc-chunk') {
+      extraMust.push({ key: 'point_kind', match: { value: 'doc-chunk' } });
+      if (searchOpts.documentId) {
+        extraMust.push({ key: 'document_id', match: { value: searchOpts.documentId } });
+      }
+      if (searchOpts.folderIds && searchOpts.folderIds.length > 0) {
+        extraMust.push({ key: 'folder_id', match: { any: searchOpts.folderIds } });
+      }
+    } else {
+      // Exclude any doc-chunk point from event-flavoured search. Pre-Phase-9
+      // points lack `point_kind` entirely; Qdrant's `must_not.match.value`
+      // does not match a missing field, so existing event/fact points pass.
+      (filter as { must_not?: unknown[] }).must_not = [
+        { key: 'point_kind', match: { value: 'doc-chunk' } },
+      ];
     }
     if (extraMust.length > 0) {
       (filter.must as unknown[]).push(...extraMust);

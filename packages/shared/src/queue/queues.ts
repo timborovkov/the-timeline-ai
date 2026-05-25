@@ -12,6 +12,10 @@ export const QUEUE_NAMES = {
   // worker process itself (BullMQ repeatable on startup); consumed by
   // startOverdueWorker.
   overdueScan: 'overdue-scan',
+  // Phase 9: document upload → text extract → chunk → embed pipeline.
+  // The `documentExtract` worker fans out to many `embed` jobs (one per
+  // chunk) once chunking succeeds; embed shares the existing queue.
+  documentExtract: 'document-extract',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -105,6 +109,14 @@ export interface EmbedJobData {
   teamId: string;
   /** Embed a specific fact's statement rather than the raw event body. */
   factId?: string;
+  /**
+   * Phase 9 — embed a document chunk. When set, the worker reads the
+   * chunk text from `document_chunks` and stamps a 'doc-chunk' payload
+   * with the parent document/version fields. `rawEventId` in this branch
+   * is the document's upload-event id (denormalised so doc-chunk points
+   * carry an `event_id` for dedup compatibility); `factId` must be unset.
+   */
+  documentChunkId?: string;
   /** Optional override used by the re-embed script to write into a new
    *  collection during a model migration. When unset, the worker writes to
    *  `QDRANT_COLLECTION`. */
@@ -187,5 +199,44 @@ export async function closeOverdueScanQueue(): Promise<void> {
   if (!_overdueScanQueue) return;
   const q = _overdueScanQueue;
   _overdueScanQueue = undefined;
+  await q.close().catch(() => undefined);
+}
+
+export interface DocumentExtractJobData {
+  documentVersionId: string;
+  teamId: string;
+  /** Override target Qdrant collection for the embed fan-out — used by the
+   *  redocument-embed migration script. Threaded into each chunk's embed
+   *  job verbatim. */
+  targetCollection?: string;
+}
+
+let _documentExtractQueue: Queue<DocumentExtractJobData> | undefined;
+
+export function getDocumentExtractQueue(): Queue<DocumentExtractJobData> {
+  if (_documentExtractQueue) return _documentExtractQueue;
+  _documentExtractQueue = new Queue<DocumentExtractJobData>(QUEUE_NAMES.documentExtract, {
+    connection: getRedisConnection(),
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5000 },
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  });
+  return _documentExtractQueue;
+}
+
+export async function enqueueDocumentExtractJob(data: DocumentExtractJobData): Promise<void> {
+  // No jobId-based dedup for the same reasons as the other queues:
+  // worker-side idempotency comes from advisory locks on
+  // `document_versions.id` plus the deterministic chunk-embed point ids.
+  await getDocumentExtractQueue().add('document-extract', data);
+}
+
+export async function closeDocumentExtractQueue(): Promise<void> {
+  if (!_documentExtractQueue) return;
+  const q = _documentExtractQueue;
+  _documentExtractQueue = undefined;
   await q.close().catch(() => undefined);
 }

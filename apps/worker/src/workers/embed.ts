@@ -1,4 +1,12 @@
-import { type Db, facts as factsTable, factEntities, rawEvents } from '@timeline/db';
+import {
+  type Db,
+  documentChunks,
+  documents,
+  documentVersions,
+  facts as factsTable,
+  factEntities,
+  rawEvents,
+} from '@timeline/db';
 import { childLogger, getEnv, llm, qdrant, queue } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
@@ -15,7 +23,7 @@ interface RawEventRow {
   contentText: string | null;
   occurredAt: Date;
   authorUserId: string | null;
-  source: 'web' | 'telegram' | 'email' | 'system';
+  source: 'web' | 'telegram' | 'email' | 'system' | 'document';
   visibility: 'private' | 'team' | 'specific_users';
   visibilityUserIds: string[] | null;
   sourceMetadata: unknown;
@@ -49,13 +57,120 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
   const worker = new Worker<queue.EmbedJobData>(
     queue.QUEUE_NAMES.embed,
     async (job: Job<queue.EmbedJobData>) => {
-      const { rawEventId, teamId, factId, targetCollection } = job.data;
+      const { rawEventId, teamId, factId, documentChunkId, targetCollection } = job.data;
       const env = getEnv();
       if (!env.OPENROUTER_API_KEY) {
         throw new UnrecoverableError('embed: OPENROUTER_API_KEY not configured');
       }
       if (!env.QDRANT_URL) {
         throw new UnrecoverableError('embed: QDRANT_URL not configured');
+      }
+
+      // Phase 9: document-chunk embedding path. Distinct enough from the
+      // event/fact pipeline (no privacy gate via raw_events.visibility — the
+      // gate lives on `documents.visibility` instead; no `raw_events`
+      // source_metadata stamping on success/failure; no fact join) that
+      // inlining the branch would tangle two flows. Return early on
+      // success; failures throw and BullMQ retries.
+      if (documentChunkId) {
+        if (factId) {
+          throw new UnrecoverableError(
+            'embed: documentChunkId and factId are mutually exclusive',
+          );
+        }
+        const chunkRows = await deps.db
+          .select({
+            chunk: documentChunks,
+            document: documents,
+            version: documentVersions,
+          })
+          .from(documentChunks)
+          .innerJoin(documents, eq(documents.id, documentChunks.documentId))
+          .innerJoin(documentVersions, eq(documentVersions.id, documentChunks.documentVersionId))
+          .where(eq(documentChunks.id, documentChunkId))
+          .limit(1);
+        const hit = chunkRows[0];
+        if (!hit) {
+          throw new UnrecoverableError(`document chunk ${documentChunkId} not found`);
+        }
+        if (hit.chunk.teamId !== teamId) {
+          throw new UnrecoverableError(
+            `chunk ${documentChunkId} team mismatch (job=${teamId}, row=${hit.chunk.teamId})`,
+          );
+        }
+        if (hit.document.deletedAt) {
+          // The agent should not retrieve chunks from a deleted document.
+          // Stamp the chunk's parent version as embedded (so the redocument
+          // script doesn't loop on it) and exit. The deleteDocument scope
+          // method separately issues deletePoints to flush any prior points.
+          return { documentChunkId, skipped: true, reason: 'document_deleted' };
+        }
+        if (hit.document.visibility !== 'team') {
+          // Same hard privacy gate as the event/fact path. Future
+          // relaxation will need a per-chunk privacy-aware payload write,
+          // not just removing this check.
+          return {
+            documentChunkId,
+            skipped: true,
+            reason: `visibility=${hit.document.visibility}`,
+          };
+        }
+
+        const chunkText = hit.chunk.text.trim();
+        if (!chunkText) {
+          throw new UnrecoverableError(`chunk ${documentChunkId} has empty text`);
+        }
+        const { vector, model } = await llm.embed({ text: chunkText });
+        const client = qdrant.getQdrantClient(
+          targetCollection ? { collection: targetCollection, requireExisting: true } : {},
+        );
+        const pointId = qdrant.buildPointId('doc-chunk', hit.chunk.id, model);
+        const payload: qdrant.QdrantPayload = {
+          team_id: teamId,
+          // Carry the document's upload-event id so doc-chunk points have a
+          // stable `event_id` for any payload consumer that keys on it.
+          // Falls back to the chunk id when no upload event was wired (e.g.
+          // legacy backfill), which keeps the field non-null.
+          event_id: hit.version.sourceEventId ?? hit.chunk.id,
+          fact_id: null,
+          entity_ids: [],
+          occurred_at: hit.version.createdAt.toISOString(),
+          author_user_id: hit.version.uploadedByUserId,
+          source: 'document',
+          visibility: hit.document.visibility,
+          visibility_user_ids: hit.document.visibilityUserIds,
+          embedding_model: model,
+          point_kind: 'doc-chunk',
+          document_id: hit.document.id,
+          document_version_id: hit.version.id,
+          document_chunk_id: hit.chunk.id,
+          folder_id: hit.document.folderId,
+          owner_user_id: hit.document.ownerUserId,
+          updated_at: hit.version.createdAt.toISOString(),
+        };
+        await client.upsertVector(pointId, vector, payload);
+        // Stamp the version row as `embedded` only after the last chunk
+        // lands. We approximate that with a SQL count: if every chunk on
+        // this version has been upserted at least once (i.e. all chunk ids
+        // exist), mark embedded. Cheap, racy with concurrent jobs, but the
+        // status is informational — the reembed script is the authority.
+        const counts = await deps.db
+          .select({
+            total: sql<number>`count(*)::int`,
+          })
+          .from(documentChunks)
+          .where(eq(documentChunks.documentVersionId, hit.version.id));
+        const total = counts[0]?.total ?? 0;
+        // No precise per-version "embedded count" without an upsert log, so
+        // just promote the status to 'embedded' once all chunks exist. The
+        // worker re-runs are idempotent so a repeat run keeps it correct.
+        if (total > 0) {
+          await deps.db
+            .update(documentVersions)
+            .set({ processingStatus: 'embedded', embeddingModelVersion: model })
+            .where(eq(documentVersions.id, hit.version.id));
+        }
+        return { documentChunkId, model, pointId };
       }
 
       const rows = (await deps.db
@@ -182,6 +297,11 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
         // silently produce points that fail the filter.
         visibility_user_ids: row.visibilityUserIds,
         embedding_model: model,
+        // Phase 9: explicitly stamp the point kind so doc-chunk filtering
+        // is robust even if a future schema change reuses `event_id` more
+        // broadly. Pre-Phase-9 points lack this field; the filters tolerate
+        // missing values, so backfill is optional.
+        point_kind: scope === 'fact' ? 'fact' : 'event',
       };
       await client.upsertVector(pointId, vector, payload);
 

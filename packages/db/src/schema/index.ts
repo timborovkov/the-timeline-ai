@@ -13,3 +13,4 @@ export * from './board-views.js';
 export * from './notifications.js';
 export * from './chat-sessions.js';
 export * from './chat-messages.js';
+export * from './documents.js';

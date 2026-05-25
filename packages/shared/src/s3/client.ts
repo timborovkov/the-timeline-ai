@@ -72,3 +72,9 @@ export function getAttachmentsBucket(): string {
   if (!env.S3_BUCKET_ATTACHMENTS) throw new Error('S3_BUCKET_ATTACHMENTS is required');
   return env.S3_BUCKET_ATTACHMENTS;
 }
+
+export function getDocumentsBucket(): string {
+  const env = getEnv();
+  if (!env.S3_BUCKET_DOCUMENTS) throw new Error('S3_BUCKET_DOCUMENTS is required');
+  return env.S3_BUCKET_DOCUMENTS;
+}

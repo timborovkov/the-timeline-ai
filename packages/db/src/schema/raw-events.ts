@@ -13,7 +13,13 @@ import {
 import { teams } from './teams.js';
 import { users } from './users.js';
 
-export const eventSource = pgEnum('event_source', ['web', 'telegram', 'email', 'system']);
+export const eventSource = pgEnum('event_source', [
+  'web',
+  'telegram',
+  'email',
+  'system',
+  'document',
+]);
 
 export const eventVisibility = pgEnum('event_visibility', ['private', 'team', 'specific_users']);
 

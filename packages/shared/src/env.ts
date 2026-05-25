@@ -42,6 +42,12 @@ const schema = z.object({
   S3_BUCKET_AUDIO: z.string().optional(),
   S3_BUCKET_ATTACHMENTS: z.string().optional(),
   S3_BUCKET_EXPORTS: z.string().optional(),
+  /**
+   * Phase 9 — team document drive. Object keys are versioned and never
+   * overwritten in place (see `documents/object-key.ts`), so this bucket
+   * can have its own lifecycle policy distinct from `S3_BUCKET_ATTACHMENTS`.
+   */
+  S3_BUCKET_DOCUMENTS: z.string().optional(),
 
   // OpenRouter (Phase 3+)
   OPENROUTER_API_KEY: z.string().optional(),
