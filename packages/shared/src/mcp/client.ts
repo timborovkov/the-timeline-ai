@@ -77,6 +77,10 @@ async function rpc(
 ): Promise<unknown> {
   const id = Date.now() + Math.floor(Math.random() * 1000);
   const body: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
+  // redirect: 'manual' so a server that passed validateMcpUrl can't 302
+  // us to a link-local / private target the guard would have rejected
+  // on the original hostname. The MCP spec requires direct JSON-RPC
+  // responses, so any 3xx here is misbehavior.
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -85,7 +89,11 @@ async function rpc(
       ...headers,
     },
     body: JSON.stringify(body),
+    redirect: 'manual',
   });
+  if (res.status >= 300 && res.status < 400) {
+    throw new Error(`MCP ${method}: server attempted redirect (${String(res.status)})`);
+  }
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`MCP ${method} ${String(res.status)}: ${text.slice(0, 200)}`);
@@ -257,8 +265,14 @@ export class McpClientManager {
     return this.instance;
   }
 
-  invalidate(teamId: string): void {
-    this.cache.delete(teamId);
+  invalidate(cacheKey: string): void {
+    // Drop the cached result AND any in-flight refresh promise. Without
+    // clearing `pending`, a refresh that started just before
+    // invalidate() can still resolve and write its (now-stale) tool
+    // list back into the cache, holding the user at empty/stale tools
+    // until the next refresh fires 5 minutes later.
+    this.cache.delete(cacheKey);
+    this.pending.delete(cacheKey);
   }
 
   async connectForTeam(db: Db, teamId: string, userId?: string): Promise<CachedTeamTools> {

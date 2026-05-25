@@ -104,9 +104,15 @@ export async function discoverOAuth(serverUrl: string): Promise<OAuthDiscovery> 
     `${parsed.origin}/.well-known/oauth-protected-resource`,
   ];
   let lastErr: unknown;
+  // redirect: 'manual' across every outbound fetch in this file — a 3xx
+  // could point at a link-local / private target that the original
+  // validateMcpUrl check passed but the redirect destination wouldn't.
   for (const url of candidates) {
     try {
-      const res = await fetch(url, { headers: { accept: 'application/json' } });
+      const res = await fetch(url, {
+        headers: { accept: 'application/json' },
+        redirect: 'manual',
+      });
       if (!res.ok) continue;
       const body = (await res.json()) as Record<string, unknown>;
       // Protected-resource metadata points at the authorization server.
@@ -127,6 +133,7 @@ export async function discoverOAuth(serverUrl: string): Promise<OAuthDiscovery> 
           }
           const asRes = await fetch(`${asUrl}/.well-known/oauth-authorization-server`, {
             headers: { accept: 'application/json' },
+            redirect: 'manual',
           });
           if (asRes.ok) return (await asRes.json()) as OAuthDiscovery;
         }
@@ -168,6 +175,7 @@ export async function registerClient(
       token_endpoint_auth_method: 'none',
       application_type: 'web',
     }),
+    redirect: 'manual',
   });
   const text = await res.text();
   if (!res.ok) {
@@ -236,6 +244,7 @@ export async function exchangeCode(input: ExchangeCodeInput): Promise<OAuthToken
       accept: 'application/json',
     },
     body: body.toString(),
+    redirect: 'manual',
   });
   const text = await res.text();
   if (!res.ok) {
@@ -272,6 +281,7 @@ export async function refreshToken(input: RefreshTokenInput): Promise<OAuthToken
       accept: 'application/json',
     },
     body: body.toString(),
+    redirect: 'manual',
   });
   const text = await res.text();
   if (!res.ok) {

@@ -293,22 +293,6 @@ export function createMcpScope(deps: {
     return { clientInfo, codeVerifier: row.codeVerifier };
   }
 
-  async function getOauthTokens(mcpServerId: string) {
-    await ensureMember();
-    const rows = await db
-      .select()
-      .from(mcpOauthTokens)
-      .where(and(eq(mcpOauthTokens.teamId, teamId), eq(mcpOauthTokens.mcpServerId, mcpServerId)))
-      .limit(1);
-    const row = rows[0];
-    if (!row) return null;
-    return decryptJson({
-      ciphertext: row.tokenCiphertext,
-      iv: row.tokenIv,
-      tag: row.tokenTag,
-    });
-  }
-
   async function discoverTools() {
     await ensureMember();
     return getMcpManager().connectForTeam(db, teamId, userId);
@@ -330,7 +314,6 @@ export function createMcpScope(deps: {
     persistOauthTokens,
     persistOauthPending,
     loadOauthClientInfo,
-    getOauthTokens,
     discoverTools,
     callTool,
   };

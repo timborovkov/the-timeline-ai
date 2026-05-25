@@ -26,6 +26,18 @@ export async function GET(
   const scope = withTeam(db, active.teamId, session.user.id);
   const server = await scope.mcp.getServer(id);
   if (!server) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  // discoverTools runs a live MCP handshake using stored team
+  // bearer/OAuth credentials — same blast radius as POST below, so gate
+  // identically: admin for team-shared rows, owner for personal rows.
+  if (server.userId === null) {
+    try {
+      await scope.requireMembership('admin');
+    } catch {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    }
+  } else if (server.userId !== session.user.id) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
   const cache = await scope.mcp.discoverTools();
   const tools = cache.tools.filter((t) => t.serverId === id);
   return NextResponse.json({
