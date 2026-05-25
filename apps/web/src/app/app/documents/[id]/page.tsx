@@ -2,7 +2,6 @@ import { withTeam } from '@timeline/shared';
 import { notFound, redirect } from 'next/navigation';
 
 import { DocumentDetail } from '@/components/documents/document-detail';
-import { NarrowContainer } from '@/components/narrow-container';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -37,7 +36,7 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
   const requestedVersion = sp.version ? Number.parseInt(sp.version, 10) : null;
 
   return (
-    <NarrowContainer>
+    <div className="mx-auto max-w-4xl space-y-6">
       <DocumentDetail
         document={{
           id: document.id,
@@ -62,6 +61,6 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
         }))}
         requestedVersion={requestedVersion}
       />
-    </NarrowContainer>
+    </div>
   );
 }

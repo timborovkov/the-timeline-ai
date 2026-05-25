@@ -1,0 +1,460 @@
+/*
+ * The Timeline — Docs shared stylesheet (Operational Archive v2).
+ *
+ * Single source of truth for the visual treatment of every page under
+ * /docs/. Mirrors the app's design system from apps/web/src/app/globals.css
+ * — OKLCH tokens, Switzer + Commit Mono, signal-lime accent. If the app's
+ * tokens change, mirror the change here so the marketing and operational
+ * surfaces never drift.
+ */
+
+/* ── Fonts (CDN, no build step) ─────────────────────────────────── */
+@import url('https://api.fontshare.com/v2/css?f[]=switzer@200,300,400,500,600,700,800,900&display=swap');
+
+@font-face {
+  font-family: 'Commit Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/commit-mono/files/commit-mono-latin-400-normal.woff2')
+    format('woff2');
+}
+@font-face {
+  font-family: 'Commit Mono';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/commit-mono/files/commit-mono-latin-400-italic.woff2')
+    format('woff2');
+}
+@font-face {
+  font-family: 'Commit Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/commit-mono/files/commit-mono-latin-700-normal.woff2')
+    format('woff2');
+}
+
+/* ── Tokens ─────────────────────────────────────────────────────── */
+:root {
+  --bg: oklch(0.99 0.002 240);
+  --surface: oklch(0.97 0.003 240);
+  --surface-2: oklch(0.94 0.004 240);
+  --border: oklch(0.88 0.004 240);
+  --border-strong: oklch(0.78 0.004 240);
+  --fg: oklch(0.18 0.005 240);
+  --fg-muted: oklch(0.4 0.006 240);
+  --fg-dim: oklch(0.58 0.006 240);
+  --signal: oklch(0.65 0.22 130);
+  --signal-fg: oklch(0.99 0.002 240);
+  --signal-soft: oklch(0.65 0.22 130 / 0.14);
+  --danger: oklch(0.55 0.22 25);
+  --radius: 2px;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(0.13 0.005 240);
+    --surface: oklch(0.17 0.005 240);
+    --surface-2: oklch(0.21 0.006 240);
+    --border: oklch(0.27 0.006 240);
+    --border-strong: oklch(0.38 0.006 240);
+    --fg: oklch(0.96 0.005 240);
+    --fg-muted: oklch(0.68 0.006 240);
+    --fg-dim: oklch(0.48 0.006 240);
+    --signal: oklch(0.9 0.2 130);
+    --signal-fg: oklch(0.13 0.005 240);
+    --signal-soft: oklch(0.9 0.2 130 / 0.16);
+    --danger: oklch(0.7 0.2 25);
+  }
+}
+
+/* ── Base ───────────────────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family:
+    'Switzer',
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  font-feature-settings:
+    'ss01' 1,
+    'cv01' 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--signal-soft);
+  color: var(--fg);
+}
+
+/* ── Skip link ──────────────────────────────────────────────────── */
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+.skip:focus {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 10;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.875rem;
+  font-family: 'Commit Mono', ui-monospace, monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--fg);
+}
+
+/* ── Layout ─────────────────────────────────────────────────────── */
+main {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 6rem;
+}
+
+/* ── Index strip — mono uppercase eyebrow shared with the app ──── */
+.eyebrow,
+.index-strip {
+  font-family: 'Commit Mono', ui-monospace, monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--fg-dim);
+  margin: 0 0 0.5rem;
+}
+.index-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.125rem;
+  align-items: baseline;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 0.875rem 0;
+  margin: 0 0 2rem;
+}
+.index-strip > strong {
+  color: var(--fg);
+  font-weight: 400;
+}
+.index-strip > .signal {
+  color: var(--signal);
+}
+.index-strip > .dim {
+  color: var(--fg-dim);
+}
+
+/* ── Typography ─────────────────────────────────────────────────── */
+h1 {
+  font-size: 2.25rem;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  margin: 0 0 0.75rem;
+  font-weight: 700;
+}
+h2 {
+  font-family: 'Commit Mono', ui-monospace, monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--fg-dim);
+  font-weight: 400;
+  margin: 2.5rem 0 0.75rem;
+}
+h3 {
+  font-size: 1.05rem;
+  margin: 1.5rem 0 0.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+p {
+  margin: 0 0 1rem;
+}
+.tagline {
+  font-size: 1.125rem;
+  color: var(--fg-muted);
+  margin: 0 0 2rem;
+  max-width: 38rem;
+}
+
+/* ── Inline & block content ────────────────────────────────────── */
+a {
+  color: var(--signal);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--signal) 40%, transparent);
+  text-underline-offset: 2px;
+}
+a:hover {
+  text-decoration-color: var(--signal);
+}
+.intro a {
+  color: var(--fg);
+  text-decoration-color: var(--border-strong);
+}
+
+em {
+  font-style: italic;
+}
+strong {
+  font-weight: 600;
+}
+
+code {
+  font-family: 'Commit Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875em;
+  background: var(--surface-2);
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius);
+  font-feature-settings:
+    'tnum' 1,
+    'zero' 1,
+    'ss01' 1;
+}
+
+pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.875rem 1rem;
+  overflow-x: auto;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  margin: 0.875rem 0 1.25rem;
+}
+pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  border-radius: 0;
+}
+
+blockquote {
+  margin: 1rem 0;
+  padding: 0.5rem 0 0.5rem 1rem;
+  border-left: 2px solid var(--signal);
+  color: var(--fg);
+  font-size: 0.95rem;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 2.5rem 0;
+}
+
+/* ── Tables ─────────────────────────────────────────────────────── */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+th,
+td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+th {
+  background: var(--bg);
+  font-family: 'Commit Mono', ui-monospace, monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--fg-dim);
+  font-weight: 400;
+}
+tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ── Lists ──────────────────────────────────────────────────────── */
+ul,
+ol {
+  padding-left: 1.25rem;
+  margin: 0.75rem 0 1.25rem;
+}
+ul.group,
+ol.group {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+ul.group li,
+ol.group li {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 0.625rem 0.875rem;
+}
+ul.group li:hover,
+ol.group li:hover {
+  border-color: var(--border-strong);
+}
+
+/* ── Callouts ───────────────────────────────────────────────────── */
+.callout {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 0.875rem 1rem;
+  margin: 1rem 0 1.5rem;
+}
+.callout.signal {
+  border-color: color-mix(in oklab, var(--signal) 40%, var(--border));
+  background: var(--signal-soft);
+}
+.callout.danger {
+  border-color: color-mix(in oklab, var(--danger) 40%, var(--border));
+}
+
+/* ── TOC nav (product brief, objects) ───────────────────────────── */
+nav.toc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.875rem 1.125rem;
+  margin: 0 0 2.25rem;
+  font-size: 0.95rem;
+}
+nav.toc ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  columns: 2;
+  column-gap: 1.5rem;
+}
+nav.toc li {
+  break-inside: avoid;
+  padding: 0.125rem 0;
+}
+@media (max-width: 640px) {
+  nav.toc ul {
+    columns: 1;
+  }
+}
+
+/* ── Page meta strip (kind + tagline) ───────────────────────────── */
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: baseline;
+  padding: 0.875rem 0;
+  margin: 0 0 1.25rem;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-family: 'Commit Mono', ui-monospace, monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--fg-dim);
+}
+.meta .kind {
+  color: var(--signal);
+  font-weight: 700;
+}
+.tldr {
+  font-size: 1.05rem;
+  line-height: 1.55;
+  color: var(--fg-muted);
+  margin: 0 0 2rem;
+  max-width: 38rem;
+}
+
+/* ── Stat cards (objects) ───────────────────────────────────────── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.6rem;
+  margin: 0.75rem 0 1.5rem;
+}
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.875rem;
+}
+.stat b {
+  display: block;
+  font-size: 1.15rem;
+  line-height: 1.2;
+  color: var(--fg);
+  font-weight: 600;
+}
+.stat span {
+  color: var(--fg-dim);
+  font-size: 0.78rem;
+  font-family: 'Commit Mono', ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* ── Principles (product-brief) ─────────────────────────────────── */
+.principle {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--signal);
+  border-radius: var(--radius);
+  padding: 0.875rem 1rem;
+  margin: 0.6rem 0;
+}
+.principle b {
+  color: var(--signal);
+}
+
+/* ── Pills (objects) ────────────────────────────────────────────── */
+.pill {
+  display: inline-block;
+  font-family: 'Commit Mono', ui-monospace, monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.1em 0.55em;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg-muted);
+}
+
+/* ── Footer / meta ──────────────────────────────────────────────── */
+footer,
+.meta {
+  font-family: 'Commit Mono', ui-monospace, monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--fg-dim);
+  margin-top: 4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}

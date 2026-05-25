@@ -86,35 +86,51 @@ export function ObjectDetailClient({ detail, userId }: Props) {
   }
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
       <header>
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{detail.type}</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{detail.canonicalName}</h1>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-y border-border py-3 font-mono text-xs uppercase tracking-[0.12em] text-fg-muted">
+          <span className="text-fg">{detail.type}</span>
+          <span className="text-fg-dim">·</span>
+          <span className="text-signal">{detail.canonicalName}</span>
+          <span className="ml-auto text-fg-dim">id&nbsp;{detail.id.slice(0, 8)}</span>
+        </div>
+        <h1 className="mt-4 text-2xl font-semibold tracking-tight">{detail.canonicalName}</h1>
         {detail.aliases.length > 0 && (
-          <p className="mt-2 text-sm text-muted-foreground">
-            Also known as: {detail.aliases.join(', ')}
+          <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+            aka {detail.aliases.join(' · ')}
           </p>
         )}
         {detail.newSinceLastVisit > 0 && (
-          <div className="mt-4 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2 text-sm text-primary">
-            {detail.newSinceLastVisit} new change{detail.newSinceLastVisit === 1 ? '' : 's'} since
-            your last visit.
+          <div
+            role="status"
+            className="mt-4 rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal"
+          >
+            {detail.newSinceLastVisit} new change
+            {detail.newSinceLastVisit === 1 ? '' : 's'} since your last visit
           </div>
         )}
         {(() => {
-          // Local name avoids shadowing the outer `pending` from useTransition,
-          // so future edits inside this IIFE that reach for `pending` get the
-          // transition state instead of silently grabbing the count.
+          // Local name avoids shadowing the outer `pending` from
+          // useTransition, so future edits inside this IIFE that reach
+          // for `pending` get the transition state instead of silently
+          // grabbing the count.
           const pendingCount = detail.recentChanges.filter((c) => c.status === 'suggested').length;
           if (pendingCount === 0) return null;
           return (
-            <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/5 px-4 py-2 text-sm text-amber-700">
-              {pendingCount} agent suggestion{pendingCount === 1 ? '' : 's'} awaiting review below.
+            <div
+              role="status"
+              className="mt-3 rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal"
+            >
+              {pendingCount} agent suggestion
+              {pendingCount === 1 ? '' : 's'} awaiting review below
             </div>
           );
         })()}
         {error && (
-          <div className="mt-4 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-2 text-sm text-destructive">
+          <div
+            role="alert"
+            className="mt-4 rounded-sm border border-danger/40 bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-danger"
+          >
             {error}
           </div>
         )}
@@ -198,7 +214,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
             type="button"
             onClick={addNote}
             disabled={pending || !noteBody.trim()}
-            className="rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm text-primary hover:bg-primary/20 disabled:opacity-50"
+            className="rounded-md border border-signal/40 bg-signal-soft px-3 py-1.5 text-sm text-signal hover:bg-signal/25 disabled:opacity-50"
           >
             Add note
           </button>
@@ -211,7 +227,10 @@ export function ObjectDetailClient({ detail, userId }: Props) {
               const isEditing = editingNoteId === n.id;
               const isOwner = n.authorUserId === userId;
               return (
-                <li key={n.id} className="rounded-lg border bg-card px-4 py-3 text-sm">
+                <li
+                  key={n.id}
+                  className="rounded-sm border border-border bg-surface px-4 py-3 text-sm"
+                >
                   {isEditing ? (
                     <div className="space-y-2">
                       <textarea
@@ -245,7 +264,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                               }
                             });
                           }}
-                          className="rounded-md border border-primary/40 bg-primary/10 px-3 py-1 text-xs text-primary hover:bg-primary/20 disabled:opacity-50"
+                          className="rounded-md border border-signal/40 bg-signal-soft px-3 py-1 text-xs text-signal hover:bg-signal/25 disabled:opacity-50"
                         >
                           Save
                         </button>
@@ -315,7 +334,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
             {detail.openTasks.map((t) => (
               <li
                 key={t.id}
-                className="flex items-center justify-between rounded-lg border bg-card px-4 py-2 text-sm"
+                className="flex items-center justify-between rounded-sm border border-border bg-surface px-4 py-2 text-sm"
               >
                 <a href={`/app/objects/${t.id}`} className="font-medium hover:underline">
                   {t.canonicalName}
@@ -383,7 +402,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                 }
               });
             }}
-            className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary hover:bg-primary/20 disabled:opacity-50"
+            className="rounded-md border border-signal/40 bg-signal-soft px-3 py-2 text-sm text-signal hover:bg-signal/25 disabled:opacity-50"
           >
             Link
           </button>
@@ -395,7 +414,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
             {detail.relationships.map((r) => (
               <li
                 key={`${r.direction}-${r.id}`}
-                className="flex items-center justify-between rounded-lg border bg-card px-4 py-2 text-sm"
+                className="flex items-center justify-between rounded-sm border border-border bg-surface px-4 py-2 text-sm"
               >
                 <a href={`/app/objects/${r.otherId}`} className="font-medium hover:underline">
                   {r.otherName}
@@ -444,7 +463,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
               return (
                 <li
                   key={c.id}
-                  className={`rounded-lg border bg-card px-4 py-2 ${isSuggested ? 'border-amber-500/40 bg-amber-500/5' : ''} ${isRejected ? 'opacity-60' : ''}`}
+                  className={`rounded-sm border border-border bg-surface px-4 py-2 ${isSuggested ? 'border-signal/40 bg-signal-soft' : ''} ${isRejected ? 'opacity-60' : ''}`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-medium">{c.field}</span>
@@ -473,7 +492,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                               else router.refresh();
                             });
                           }}
-                          className="rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 text-primary hover:bg-primary/20 disabled:opacity-50"
+                          className="rounded-md border border-signal/40 bg-signal-soft px-2 py-0.5 text-signal hover:bg-signal/25 disabled:opacity-50"
                         >
                           Accept
                         </button>

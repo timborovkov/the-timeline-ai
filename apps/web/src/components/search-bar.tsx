@@ -1,8 +1,9 @@
 'use client';
 
 import { Search, X } from 'lucide-react';
-import { useState, type SyntheticEvent } from 'react';
+import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 
+import { CitationChip } from '@/components/citation-chip';
 import { Card, CardContent } from '@/components/ui/card';
 
 interface SearchResult {
@@ -28,19 +29,36 @@ interface ApiResponse {
  * empty query renders nothing (the existing reverse-chron timeline shows
  * underneath). Non-empty queries POST to /api/search and render result
  * cards. Streaming is intentionally not implemented here — Phase 6.
+ *
+ * `initialQuery` prefills the input AND auto-runs the search on mount.
+ * Used by the ⌘K command bar route `/app/timeline?q=…` so submitting a
+ * query from anywhere in the app lands on the timeline with results
+ * already rendered. Auto-search runs once per mounted instance, even if
+ * the prop is later cleared, so the user can still erase and retry.
  */
-export function SearchBar() {
-  const [query, setQuery] = useState('');
+interface Props {
+  initialQuery?: string;
+}
+
+export function SearchBar({ initialQuery = '' }: Props) {
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoRanRef = useRef<string | null>(null);
+  // Monotonic request token so stale fetches can't overwrite the UI.
+  // Manual submits and the ⌘K auto-run share this counter — without
+  // it, fast ?q= toggling would race the slower response on top of
+  // the fresher one.
+  const requestIdRef = useRef(0);
 
-  async function onSubmit(e: SyntheticEvent<HTMLFormElement>): Promise<void> {
-    e.preventDefault();
-    const q = query.trim();
+  async function runSearch(raw: string): Promise<void> {
+    const q = raw.trim();
+    const myRequestId = ++requestIdRef.current;
     if (!q) {
       setResults(null);
       setError(null);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -52,6 +70,11 @@ export function SearchBar() {
         body: JSON.stringify({ query: q }),
       });
       const data = (await res.json()) as ApiResponse;
+      // A newer call has started — drop this response on the floor.
+      // We do NOT touch loading here either: the in-flight latest
+      // request owns the loading flag and will clear it in its own
+      // finally block.
+      if (myRequestId !== requestIdRef.current) return;
       if (!res.ok || !data.ok) {
         if (data.error === 'search_unconfigured') {
           setError(
@@ -69,18 +92,45 @@ export function SearchBar() {
       }
       setResults(data.results ?? []);
     } catch (err) {
+      if (myRequestId !== requestIdRef.current) return;
       console.error('[search] request failed', err);
       setError('Network error while searching.');
       setResults(null);
     } finally {
-      setLoading(false);
+      if (myRequestId === requestIdRef.current) setLoading(false);
     }
   }
 
+  async function onSubmit(e: SyntheticEvent<HTMLFormElement>): Promise<void> {
+    e.preventDefault();
+    await runSearch(query);
+  }
+
+  // Auto-run search when arriving from the command bar (`?q=…`), and
+  // re-run whenever the prop changes to a new non-empty value (e.g. the
+  // user submits the ⌘K bar a second time with a different query while
+  // already on the timeline). `lastAutoRanRef` tracks the last value
+  // we've auto-run so we don't fight the user mid-typing: if they edit
+  // the input after auto-search lands, our local `query` state diverges
+  // from `initialQuery` and we leave it alone.
+  useEffect(() => {
+    const trimmed = initialQuery.trim();
+    if (!trimmed) return;
+    if (autoRanRef.current === trimmed) return;
+    autoRanRef.current = trimmed;
+    setQuery(initialQuery);
+    void runSearch(initialQuery);
+  }, [initialQuery]);
+
   function clear(): void {
+    // Bump the request id so any in-flight /api/search response is
+    // dropped on arrival — otherwise a slow response can land after
+    // clear() and repopulate the results we just dismissed.
+    requestIdRef.current += 1;
     setQuery('');
     setResults(null);
     setError(null);
+    setLoading(false);
   }
 
   return (
@@ -94,7 +144,7 @@ export function SearchBar() {
           onChange={(e) => {
             setQuery(e.target.value);
           }}
-          className="h-11 w-full rounded-xl border border-input bg-card pl-10 pr-28 text-sm transition-colors focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-ring/40"
+          className="h-11 w-full rounded-sm border border-border bg-surface pl-10 pr-28 text-sm transition-colors focus:border-border-strong focus:outline-none"
         />
         <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
           {results !== null && (
@@ -102,7 +152,7 @@ export function SearchBar() {
               type="button"
               onClick={clear}
               aria-label="Clear search"
-              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+              className="grid size-8 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
             >
               <X className="h-4 w-4" />
             </button>
@@ -110,7 +160,7 @@ export function SearchBar() {
           <button
             type="submit"
             disabled={loading || query.trim().length === 0}
-            className="h-8 rounded-md px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground disabled:opacity-40"
+            className="h-8 rounded-sm px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg disabled:opacity-40"
           >
             {loading ? 'Searching…' : 'Search'}
           </button>
@@ -150,13 +200,13 @@ export function SearchBar() {
                   {r.entityIds.length > 0 && (
                     <div className="flex flex-wrap gap-1 pt-1">
                       {r.entityIds.map((id) => (
-                        <a
+                        <CitationChip
                           key={id}
+                          id={`ent:${id.slice(0, 8)}`}
+                          source="Entity"
                           href={`/app/objects/${id}`}
-                          className="rounded-full border border-input px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent"
-                        >
-                          entity
-                        </a>
+                          variant="muted"
+                        />
                       ))}
                     </div>
                   )}

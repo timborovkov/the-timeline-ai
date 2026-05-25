@@ -17,8 +17,8 @@ function colValue(row: objects.ObjectRow, key: GroupKey): string {
 export function ObjectList({ rows, groupBy = 'status' }: Props) {
   if (rows.length === 0) {
     return (
-      <p className="rounded-xl border border-dashed bg-card/40 px-6 py-12 text-center text-sm text-muted-foreground">
-        Nothing matches this filter.
+      <p className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
+        NOTHING MATCHES THIS FILTER
       </p>
     );
   }
@@ -31,24 +31,28 @@ export function ObjectList({ rows, groupBy = 'status' }: Props) {
   }
   const keys = Array.from(grouped.keys()).sort();
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {keys.map((k) => (
-        <section key={k}>
-          <div className="mb-2 flex items-baseline justify-between">
-            <h2 className="text-sm font-medium tracking-tight">{k}</h2>
-            <span className="text-xs text-muted-foreground">{grouped.get(k)?.length ?? 0}</span>
+        <section key={k} aria-label={k}>
+          <div className="mb-2 flex items-baseline justify-between border-b border-border pb-1.5">
+            <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">{k}</h2>
+            <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+              {grouped.get(k)?.length ?? 0}
+            </span>
           </div>
-          <ul className="space-y-1.5">
+          <ul className="border border-border">
             {(grouped.get(k) ?? []).map((r) => (
-              <li key={r.id}>
+              <li key={r.id} className="border-b border-border last:border-b-0">
                 <Link
                   href={`/app/objects/${r.id}`}
-                  className="flex items-center justify-between rounded-lg border bg-card px-4 py-2 text-sm hover:border-primary/30 hover:bg-accent/40"
+                  className="flex items-center justify-between px-3 py-2 text-sm transition-colors hover:bg-surface"
                 >
-                  <span className="min-w-0 flex-1 truncate font-medium">{r.canonicalName}</span>
-                  <span className="ml-3 flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <span className="min-w-0 flex-1 truncate font-medium text-fg">
+                    {r.canonicalName}
+                  </span>
+                  <span className="ml-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                     <span>{r.type}</span>
-                    {r.dueAt && <span>· {new Date(r.dueAt).toLocaleDateString()}</span>}
+                    {r.dueAt && <span>· {new Date(r.dueAt).toLocaleDateString('en-CA')}</span>}
                   </span>
                 </Link>
               </li>

@@ -151,13 +151,15 @@ function Column({ id, rows }: { id: string; rows: objects.ObjectRow[] }) {
     <div
       ref={setNodeRef}
       className={cn(
-        'flex h-full w-[280px] shrink-0 flex-col rounded-xl border bg-card/40 p-3',
-        isOver && 'border-primary/40 bg-primary/5',
+        'flex h-full w-[280px] shrink-0 flex-col rounded-sm border border-border bg-surface p-3',
+        isOver && 'border-signal/40 bg-signal-soft',
       )}
     >
-      <div className="mb-2 flex shrink-0 items-baseline justify-between">
-        <h3 className="text-xs font-medium uppercase tracking-wide">{id}</h3>
-        <span className="text-[11px] text-muted-foreground">{rows.length}</span>
+      <div className="mb-3 flex shrink-0 items-baseline justify-between">
+        <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">{id}</h3>
+        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg">
+          {rows.length}
+        </span>
       </div>
       {/* `min-h-0` is the magic that lets a flex child actually shrink
           enough for overflow-y-auto to kick in — without it the column
@@ -183,7 +185,7 @@ function Card({ row }: { row: objects.ObjectRow }) {
       {...attributes}
       {...listeners}
       className={cn(
-        'cursor-grab rounded-lg border bg-card px-3 py-2 text-sm shadow-sm',
+        'cursor-grab rounded-sm border border-border bg-bg px-3 py-2 text-sm transition-colors hover:border-border-strong',
         isDragging && 'opacity-50',
       )}
     >
@@ -198,13 +200,14 @@ function Card({ row }: { row: objects.ObjectRow }) {
       >
         {row.canonicalName}
       </Link>
-      <div className="mt-1 flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+      <div className="mt-1.5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
         <span>{row.type}</span>
-        {row.dueAt && <span>· due {new Date(row.dueAt).toLocaleDateString()}</span>}
-        {/* Badge tracks the live review state, not provenance. agentSuggested
-            stays true forever; status leaves 'suggested' on accept/reject. */}
+        {row.dueAt && <span>· due {new Date(row.dueAt).toLocaleDateString('en-CA')}</span>}
+        {/* Badge tracks the live review state, not provenance.
+            agentSuggested stays true forever; status leaves 'suggested'
+            on accept/reject. */}
         {row.agentSuggested && row.status === 'suggested' && (
-          <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-amber-700">
+          <span className="rounded-sm border border-signal/40 bg-signal-soft px-1.5 py-0.5 text-signal">
             suggested
           </span>
         )}

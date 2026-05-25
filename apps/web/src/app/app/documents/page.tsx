@@ -2,7 +2,6 @@ import { withTeam } from '@timeline/shared';
 import { redirect } from 'next/navigation';
 
 import { DocumentDrive } from '@/components/documents/document-drive';
-import { NarrowContainer } from '@/components/narrow-container';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -37,7 +36,7 @@ export default async function DocumentsPage({ searchParams }: Props) {
   ]);
 
   return (
-    <NarrowContainer>
+    <div className="mx-auto max-w-5xl space-y-6">
       <DocumentDrive
         currentFolderId={folderId}
         breadcrumbs={breadcrumbs}
@@ -55,7 +54,7 @@ export default async function DocumentsPage({ searchParams }: Props) {
           ownerUserId: d.ownerUserId,
         }))}
       />
-    </NarrowContainer>
+    </div>
   );
 }
 

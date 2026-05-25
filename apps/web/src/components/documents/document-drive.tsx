@@ -162,7 +162,7 @@ export function DocumentDrive({ currentFolderId, breadcrumbs, folders, documents
           e.preventDefault();
         }}
         onDrop={onDrop}
-        className="rounded-xl border border-dashed border-border bg-card/30 p-6"
+        className="rounded-sm border border-dashed border-border bg-card/30 p-6"
       >
         {folders.length === 0 && documents.length === 0 ? (
           <p className="text-center text-sm text-muted-foreground">
@@ -179,7 +179,7 @@ export function DocumentDrive({ currentFolderId, breadcrumbs, folders, documents
                   {folders.map((f) => (
                     <li
                       key={f.id}
-                      className="group flex items-center justify-between rounded-lg border border-border bg-card p-3 hover:border-foreground/20"
+                      className="group flex items-center justify-between rounded-sm border border-border bg-card p-3 hover:border-fg/20"
                     >
                       <Link
                         href={`/app/documents?folder=${f.id}`}
@@ -211,7 +211,7 @@ export function DocumentDrive({ currentFolderId, breadcrumbs, folders, documents
                   {documents.map((d) => (
                     <li
                       key={d.id}
-                      className="flex items-center justify-between rounded-lg border border-border bg-card p-3 hover:border-foreground/20"
+                      className="flex items-center justify-between rounded-sm border border-border bg-card p-3 hover:border-fg/20"
                     >
                       <Link
                         href={`/app/documents/${d.id}`}

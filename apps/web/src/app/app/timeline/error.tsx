@@ -1,6 +1,7 @@
 'use client';
 
 import { ErrorState } from '@/components/error-state';
+import { IndexStrip } from '@/components/index-strip';
 
 export default function TimelineError({
   error,
@@ -10,11 +11,11 @@ export default function TimelineError({
   reset: () => void;
 }) {
   return (
-    <div>
-      <header className="mb-10">
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Timeline</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Timeline</h1>
-      </header>
+    <div className="mx-auto max-w-5xl space-y-8">
+      <IndexStrip
+        srLabel="Timeline · error"
+        segments={[{ value: 'TIMELINE' }, { label: 'status', value: 'ERROR', danger: true }]}
+      />
       <ErrorState
         title="Couldn't load the timeline"
         description="The feed failed to load. This is usually transient."

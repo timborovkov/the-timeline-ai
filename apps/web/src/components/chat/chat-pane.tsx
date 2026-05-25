@@ -185,11 +185,11 @@ export function ChatPane({
         {messages.length === 0 ? (
           <div className="flex flex-col gap-6 pt-8">
             <div>
-              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                Try asking
+              <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+                TRY ASKING
               </p>
-              <h2 className="mt-2 text-xl font-medium tracking-tight">
-                Ask anything about {teamName}'s timeline
+              <h2 className="mt-2 text-xl font-medium tracking-tight text-fg">
+                Ask anything about {teamName}&apos;s timeline
               </h2>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -200,7 +200,7 @@ export function ChatPane({
                   onClick={() => {
                     submit(s);
                   }}
-                  className="rounded-full border bg-card px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:bg-accent/40 hover:text-foreground"
+                  className="rounded-sm border border-border bg-surface px-3 py-1.5 text-left text-sm text-fg-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-fg"
                 >
                   {s}
                 </button>
@@ -216,15 +216,15 @@ export function ChatPane({
                   key={m.id}
                   className={cn('flex flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}
                 >
-                  <span className="px-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                  <span className="px-1 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
                     {isUser ? 'You' : teamName}
                   </span>
                   <div
                     className={cn(
-                      'max-w-[90%] rounded-2xl text-sm',
+                      'max-w-[90%] text-sm leading-relaxed',
                       isUser
-                        ? 'rounded-br-md bg-secondary px-4 py-3 text-secondary-foreground'
-                        : 'border-l-2 border-primary/60 bg-transparent py-1 pl-4 pr-1',
+                        ? 'rounded-sm bg-surface-2 px-4 py-2.5 text-fg'
+                        : 'border-l-2 border-signal bg-transparent py-1 pl-4 pr-1 text-fg',
                     )}
                   >
                     <div className="space-y-2">
@@ -268,7 +268,10 @@ export function ChatPane({
       </div>
 
       {error && (
-        <p className="shrink-0 text-sm text-destructive">
+        <p
+          role="alert"
+          className="shrink-0 font-mono text-xs uppercase tracking-[0.12em] text-danger"
+        >
           {error.message || 'Chat failed. Make sure OPENROUTER_API_KEY is configured.'}
         </p>
       )}
@@ -280,8 +283,12 @@ export function ChatPane({
         }}
         className="shrink-0"
       >
-        <div className="relative rounded-xl border bg-card shadow-sm">
+        <div className="relative rounded-sm border border-border bg-surface focus-within:border-border-strong">
+          <label htmlFor="chat-composer" className="sr-only">
+            Ask the timeline
+          </label>
           <input
+            id="chat-composer"
             type="text"
             value={input}
             onChange={(e) => {
@@ -289,15 +296,15 @@ export function ChatPane({
             }}
             placeholder="Ask anything about your team's timeline…"
             disabled={isStreaming}
-            className="h-14 w-full rounded-xl bg-transparent pl-5 pr-14 text-sm focus:outline-none"
+            className="h-12 w-full rounded-sm bg-transparent pl-4 pr-12 text-sm focus:outline-none"
           />
           <button
             type="submit"
             disabled={isStreaming || !input.trim()}
             aria-label="Send"
-            className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-30"
+            className="absolute right-1.5 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 disabled:opacity-30"
           >
-            <Send className="h-4 w-4" />
+            <Send className="size-4" />
           </button>
         </div>
       </form>
