@@ -67,10 +67,14 @@ export const rawEvents = pgTable(
     // raw_event row was previously vulnerable to a double-insert when a
     // retry hit before the prior insert committed. Same per-team scoping
     // as email so a forged provider id can't collide across teams.
+    // No `source = 'meeting'` filter: the enum value is added in the same
+    // drizzle transaction as this index (Postgres 55P04 — unsafe use of
+    // new enum value), and a `source::text` cast is STABLE so rejected by
+    // 42P17. The JSONB-key check is sufficient because only the meeting
+    // ingest path sets `meeting_chunk_provider_id` (see
+    // packages/shared/src/meetings/scope.ts).
     uniqueIndex('raw_events_meeting_chunk_id_unq')
       .on(table.teamId, sql`((${table.sourceMetadata} ->> 'meeting_chunk_provider_id'))`)
-      .where(
-        sql`${table.source} = 'meeting' AND ${table.sourceMetadata} ? 'meeting_chunk_provider_id'`,
-      ),
+      .where(sql`${table.sourceMetadata} ? 'meeting_chunk_provider_id'`),
   ],
 );
