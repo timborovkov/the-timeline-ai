@@ -100,8 +100,10 @@ services:
       mc mb --ignore-existing local/timeline-audio;
       mc mb --ignore-existing local/timeline-attachments;
       mc mb --ignore-existing local/timeline-exports;
+      mc mb --ignore-existing local/timeline-documents;
       mc version enable local/timeline-audio;
       mc version enable local/timeline-attachments;
+      mc version enable local/timeline-documents;
       echo 'RustFS buckets ready.';
       "
 

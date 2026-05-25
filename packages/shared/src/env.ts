@@ -42,6 +42,12 @@ const schema = z.object({
   S3_BUCKET_AUDIO: z.string().optional(),
   S3_BUCKET_ATTACHMENTS: z.string().optional(),
   S3_BUCKET_EXPORTS: z.string().optional(),
+  /**
+   * Phase 9 — team document drive. Object keys are versioned and never
+   * overwritten in place (see `documents/object-key.ts`), so this bucket
+   * can have its own lifecycle policy distinct from `S3_BUCKET_ATTACHMENTS`.
+   */
+  S3_BUCKET_DOCUMENTS: z.string().optional(),
 
   // OpenRouter (Phase 3+)
   OPENROUTER_API_KEY: z.string().optional(),
@@ -57,6 +63,15 @@ const schema = z.object({
    * Resolution chain: AGENT_MODEL ?? CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini'.
    */
   AGENT_MODEL: z.string().optional(),
+  /**
+   * Phase 9 vision model for document OCR (PDFs, scanned images). Must
+   * support multimodal input (file + image content parts).
+   * Resolution chain: VISION_MODEL ?? CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini'.
+   * Tune for cost: GPT-4o-mini is the cheapest viable default; Claude
+   * Sonnet handles dense layouts (forms, tables) more faithfully but
+   * costs ~5x.
+   */
+  VISION_MODEL: z.string().optional(),
 
   // Telegram (Phase 2+)
   TELEGRAM_BOT_TOKEN: z.string().optional(),

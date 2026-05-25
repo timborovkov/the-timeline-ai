@@ -7,6 +7,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./citation": {
+      "import": "./dist/citation.js",
+      "types": "./dist/citation.d.ts"
     }
   },
   "main": "./dist/index.js",

@@ -16,7 +16,10 @@ export type SourceKind =
   | 'object'
   | 'object_note'
   | 'object_change'
-  | 'entity';
+  | 'entity'
+  // Phase 9: documents are chunked; each chunk gets its own point so the
+  // agent can cite a specific piece of a document at a specific version.
+  | 'doc_chunk';
 
 export interface QdrantPayload {
   team_id: string;
@@ -25,13 +28,17 @@ export interface QdrantPayload {
    * can scope semantic search to a subset of source kinds (e.g. only objects
    * + notes, excluding raw events). Pre-Phase-8 points written without this
    * field are inferred at read time: `fact_id` set → 'fact', otherwise
-   * 'raw_event'. New points always stamp this explicitly.
+   * 'raw_event'. New points always stamp this explicitly. Phase 9 adds
+   * `doc_chunk` for document drive chunks.
    */
   source_kind: SourceKind;
   /**
    * The original raw event id, when this point derives from one (raw_event,
-   * fact). Null for object/note/change/entity points, which are not anchored
-   * to a single raw event.
+   * fact). For `doc_chunk` points this is the document's upload-event id
+   * (`document_versions.source_event_id`) so click-through citation
+   * resolution can still land on the originating event. Null for
+   * object/note/change/entity points, which are not anchored to a single
+   * raw event.
    */
   event_id: string | null;
   fact_id: string | null;
@@ -46,7 +53,7 @@ export interface QdrantPayload {
   entity_ids: string[];
   occurred_at: string;
   author_user_id: string | null;
-  source: 'web' | 'telegram' | 'email' | 'system';
+  source: 'web' | 'telegram' | 'email' | 'system' | 'document';
   visibility: 'team' | 'private' | 'specific_users';
   /**
    * Users explicitly granted visibility when `visibility === 'specific_users'`.
@@ -59,6 +66,20 @@ export interface QdrantPayload {
    */
   visibility_user_ids: string[] | null;
   embedding_model: string;
+  // ---- Phase 9 doc-chunk-only fields (per-kind, like object_id / note_id
+  // above). All null for non-doc_chunk points.
+  /** documents.id. Set only for source_kind='doc_chunk'. */
+  document_id: string | null;
+  /** document_versions.id. Set only for source_kind='doc_chunk'. */
+  document_version_id: string | null;
+  /** document_chunks.id. Set only for source_kind='doc_chunk'. */
+  document_chunk_id: string | null;
+  /** Parent folder id (or null for team-root). Drives folderId search filters. */
+  folder_id: string | null;
+  /** documents.ownerUserId — surfaced for owner filters. */
+  owner_user_id: string | null;
+  /** document_versions.createdAt as ISO. Lets recency filters work on docs. */
+  updated_at: string | null;
 }
 
 export interface SearchOpts {
@@ -76,6 +97,13 @@ export interface SearchOpts {
    */
   sourceKind?: SourceKind | SourceKind[];
   limit?: number;
+  /** Phase 9: restrict doc_chunk search to one document. Only meaningful
+   *  when `sourceKind` is `'doc_chunk'` (or includes it). */
+  documentId?: string;
+  /** Phase 9: restrict doc_chunk search to a folder subtree that the caller
+   *  already flattened to a list of folder ids. Only meaningful when
+   *  `sourceKind` includes `'doc_chunk'`. */
+  folderIds?: string[];
 }
 
 export interface SearchHit {
@@ -339,6 +367,28 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
         });
       }
       extraMust.push({ should: branches });
+      // Phase 9: doc-chunk callers can further narrow by document or folder.
+      // These fields are only set on `source_kind='doc_chunk'` points, so
+      // they're a no-op for any other kind — safe to apply unconditionally
+      // when present.
+      if (kinds.includes('doc_chunk')) {
+        if (searchOpts.documentId) {
+          extraMust.push({ key: 'document_id', match: { value: searchOpts.documentId } });
+        }
+        if (searchOpts.folderIds && searchOpts.folderIds.length > 0) {
+          extraMust.push({ key: 'folder_id', match: { any: searchOpts.folderIds } });
+        }
+      }
+    } else {
+      // Phase 9: when sourceKind is unspecified the caller is doing a
+      // timeline-flavoured search (searchEvents). Document chunks must NOT
+      // surface there — they have their own retrieval path via
+      // searchDocumentChunks. Pre-Phase-9 points without `source_kind`
+      // pass this filter because Qdrant's `must_not.match.value` does not
+      // match a missing field.
+      (filter as { must_not?: unknown[] }).must_not = [
+        { key: 'source_kind', match: { value: 'doc_chunk' } },
+      ];
     }
     if (extraMust.length > 0) {
       (filter.must as unknown[]).push(...extraMust);

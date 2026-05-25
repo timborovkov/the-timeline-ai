@@ -4,12 +4,14 @@ Ordered roadmap. Keep this file short: shipped work is bundled, open work is act
 
 ## Current Status
 
-Phases 0-7 are shipped on `main` via PRs #1-#9. Railway deploy work is complete, deploy-time migrations are wired, and pino logging is live via PR #11.
+Phases 0-8 are shipped on `main`. Phase 9 (Team Document Drive) is in
+review on this branch: foundation + worker + UI + tests across three
+slices, full build green, 196 tests across `@timeline/shared`,
+`@timeline/worker`, and `@timeline/web`.
 
 Open PRs not counted here yet:
 
-- PR #10 — UI redesign: spacious editorial calm, mobile nav, loading/error states.
-- PR #12 — Telegram webhook auto-registration on web startup.
+- Phase 9 — Team Document Drive (this branch).
 
 ## Completed Bundle
 
@@ -84,17 +86,20 @@ Out of scope (future): a `search_workspace` agent tool that returns workspace-gr
 
 Goal: give each team a private Google Drive-style knowledge base before external integrations. Documents become first-class timeline sources: uploads, deletes, moves, renames, and version changes are logged, processed, embedded, and cited by the agent.
 
-- [ ] Add document storage schema: folders, documents, document versions, file blobs, document chunks, owners, visibility, timestamps, deleted_at, and source timeline event ids.
-- [ ] Add folder/document UI: upload, rename, move, delete/restore, folder tree or breadcrumb navigation, owner display, created/updated timestamps, version history.
-- [ ] Store document files in RustFS with immutable versioned object keys. Never overwrite a prior version in place.
-- [ ] Log document activity to the timeline: upload, new version, rename, move, delete, restore, owner/visibility change.
-- [ ] Add document processing workers: text extraction for text/markdown/docx where practical, PDF text extraction, OCR/AI vision for scanned PDFs/images, chunking, summarization, and embeddings.
-- [ ] Add vector payloads for documents: `team_id`, `document_id`, `document_version_id`, `chunk_id`, `folder_id`, `owner_user_id`, `visibility`, `updated_at`, `embedding_model`.
-- [ ] Add agent tools for document search and retrieval: search document chunks, get document metadata, get cited chunk/version, list recent document changes.
-- [ ] Make document citations explicit in agent answers, e.g. `[doc:<id>#v<version>:chunk:<id>]`, linking to the document and exact version/chunk where possible.
-- [ ] Add document reprocess/re-embed scripts. Changing OCR, chunking, or embedding models must be replayable and versioned.
-- [ ] Add safety rules for deletes and retention: soft delete first, admin-only hard purge later, audit trail always preserved.
-- [ ] Add initial document types/use cases to dogfood: contracts, deal docs, internal guides, policies, office rules, onboarding docs, customer notes.
+Foundation, processing pipeline, agent surface, and the document drive UI shipped together in three reviewable slices on one branch (migration `0010_phase9_documents.sql`). The new `documents` module in `packages/shared/src/documents/` (scope + chunker + object-key) sits alongside the existing `objects` module; folders/documents reuse `event_visibility` so the same `withTeam` visibility predicate gates the drive. Every doc activity writes a `raw_events` row with `source='document'` and a structured `sourceMetadata` payload so the existing timeline / notification / search plumbing lights up without bespoke wiring.
+
+- [x] Document storage schema: `folders` (nested tree), `documents` (folder_id nullable = team root), `document_versions` (immutable, versioned object_key in RustFS), `document_chunks`. Soft-delete via `deleted_at`. `document_versions.source_event_id` back-references the upload `raw_events` row. (`packages/db/src/schema/documents.ts`, migration `0010_phase9_documents.sql`.)
+- [x] Folder/document UI: drag-drop upload, breadcrumb navigation, nested folders (one-level-at-a-time browsing via `?folder=<id>`), rename/delete/restore, owner display, version history with processing-status badges, signed-URL download per version. (`apps/web/src/app/app/documents/`, `apps/web/src/components/documents/`.)
+- [x] RustFS storage with versioned immutable object keys: `${teamId}/${documentId}/v${version}/${filename}`. New `S3_BUCKET_DOCUMENTS` env. Renames change the DB row only; the object is never overwritten in place. (`packages/shared/src/documents/object-key.ts`, `packages/shared/src/s3/client.ts`.)
+- [x] Log document activity to the timeline. New `'document'` value on the `event_source` enum; every upload/new-version/rename/move/delete/restore/visibility-change writes a `raw_events` row in the same transaction as the doc mutation with `sourceMetadata.action` + previous values. (`packages/shared/src/documents/scope.ts`.)
+- [x] Document processing worker: text / markdown / json / xml read directly. PDF and image (jpg/png/etc.) route through `llm.extractTextFromMedia` (`packages/shared/src/llm/vision.ts`) — vision LLM via OpenRouter, model pinned to `VISION_MODEL` env. DOCX uses `mammoth` for native raw-text extraction (cheaper + lossless vs. vision-on-Office-XML). Filename-extension fallback handles uploads where Content-Type came through as `application/octet-stream`. Audio/video remain out of scope (audio has its own transcribe worker). Chunker (~800 token target / ~120 overlap) in `packages/shared/src/chunk.ts`. (`apps/worker/src/workers/documentExtract.ts`.)
+- [x] Vector payloads for documents: `point_kind: 'doc-chunk'` discriminator, plus `document_id` / `document_version_id` / `document_chunk_id` / `folder_id` / `owner_user_id` / `updated_at`. `searchEvents` excludes doc-chunk points via `must_not`; `searchDocumentChunks` filters to `kind: 'doc-chunk'`. Pre-Phase-9 points without `point_kind` work unchanged (no backfill required). (`packages/shared/src/qdrant/client.ts`.)
+- [x] Agent tools: `search_documents`, `get_document`, `get_document_chunk`, `list_recent_document_changes`. All chunk text goes through `fenceExternalContent` (Rule 8 — uploaded documents are an untrusted source). (`packages/shared/src/agent/tools.ts`.)
+- [x] Citation format extended: `[doc:<documentId>#v<version>:chunk:<chunkId>]` mandatory whenever the agent uses document content. System prompt bumped to `agent-v5-2026-05` with documents-as-untrusted-source clarification. Citation chip in `apps/web/src/components/chat/citation.tsx` resolves to `/app/documents/<documentId>?version=<n>#chunk-<chunkId>`.
+- [x] Reprocess / re-embed scripts: `redocument-extract` (re-drives the worker; `--force` resets pending), `redocument-embed` (per-chunk embed enqueue with `--target-collection` for zero-downtime model cutover). Mirror the existing `reembed.ts` / `reextract.ts` shape. (`apps/worker/src/scripts/`.)
+- [x] Safety: all deletes are soft (`deleted_at`); object blobs are retained. Deleted-document chunks are filtered out of search (worker skip-stamp + scope visibility join). Visibility changes write a `visibility_change` raw_event so audit is preserved. Hard purge is deferred to admin-only follow-up.
+- [ ] Per-team monthly vision-spend caps + dashboard. Vision tokens are 5-10x text tokens; without caps a 100-page PDF dump per team could surprise the bill. Tracked in Phase 12 (cost guardrails / monitoring).
+- [ ] Dogfood content: contracts, deal docs, internal guides, policies, office rules, onboarding docs, customer notes. Pending real content.
 
 ## Phase 10 — Meeting Bots (Google Meet, Teams, Zoom)
 

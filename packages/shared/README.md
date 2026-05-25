@@ -1,6 +1,6 @@
 # @timeline/shared
 
-Cross-package code: the `withTeam` team-scope helper, the single `llm` inference layer, Qdrant + S3 wrappers, Telegram and Postmark dispatchers, BullMQ queue names, and shared env parsing.
+Cross-package code: the `withTeam` team-scope helper, the single `llm` inference layer, Qdrant + S3 wrappers, Telegram and Postmark dispatchers, BullMQ queue names, the objects module, the documents module (Phase 9 — folders/documents/versions/chunks scope + RustFS object-key builder + text chunker), and shared env parsing.
 
 ## Why it exists
 

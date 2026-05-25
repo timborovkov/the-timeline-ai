@@ -1,6 +1,6 @@
 # @timeline/worker
 
-BullMQ workers for the async processing pipeline: transcribe, extract, embed. One Node entry point per queue, all sharing the same image and codebase.
+BullMQ workers for the async processing pipeline: transcribe, extract, embed, document-extract, overdue-scan. One Node entry point per queue, all sharing the same image and codebase.
 
 ## Why it exists
 
@@ -15,6 +15,8 @@ pnpm --filter @timeline/worker dev          # all workers, watch mode
 pnpm --filter @timeline/worker build
 pnpm --filter @timeline/worker reextract -- --team=<teamId>
 pnpm --filter @timeline/worker reembed   -- --team=<teamId> --target-collection=events_v2
+pnpm --filter @timeline/worker redocument-extract -- --team=<teamId> [--status=failed,pending] [--force]
+pnpm --filter @timeline/worker redocument-embed   -- --team=<teamId> [--target-collection=docs_v2]
 ```
 
 Production start commands are per-worker (see [docs/railway.html](../../docs/railway.html)):

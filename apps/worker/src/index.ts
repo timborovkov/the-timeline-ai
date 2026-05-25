@@ -1,6 +1,7 @@
 import { closeDb, getDb, waitForMigrations } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
 
+import { startDocumentExtractWorker } from './workers/documentExtract.js';
 import { startEmbedWorker } from './workers/embed.js';
 import { startExtractWorker } from './workers/extract.js';
 import { startOverdueWorker } from './workers/overdue.js';
@@ -21,10 +22,11 @@ async function main(): Promise<void> {
   const extractWorker = startExtractWorker({ db });
   const embedWorker = startEmbedWorker({ db });
   const overdueWorker = startOverdueWorker({ db });
+  const documentExtractWorker = startDocumentExtractWorker({ db });
   // Register the hourly overdue-scan repeatable. BullMQ keys by jobId so a
   // duplicate call on the next deploy is a no-op.
   await queue.scheduleOverdueScan();
-  log.info('transcribe + extract + embed + overdue workers started');
+  log.info('transcribe + extract + embed + overdue + document-extract workers started');
 
   const shutdown = async (signal: string): Promise<void> => {
     log.info({ signal }, 'received shutdown signal');
@@ -34,11 +36,13 @@ async function main(): Promise<void> {
         extractWorker.close(),
         embedWorker.close(),
         overdueWorker.close(),
+        documentExtractWorker.close(),
       ]);
       await queue.closeTranscribeQueue();
       await queue.closeExtractQueue();
       await queue.closeEmbedQueue();
       await queue.closeOverdueScanQueue();
+      await queue.closeDocumentExtractQueue();
       await queue.closeRedisConnection();
     } catch (err: unknown) {
       log.error({ err }, 'shutdown error');

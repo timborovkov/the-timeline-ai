@@ -1,5 +1,8 @@
 import {
   type Db,
+  documentChunks,
+  documents,
+  documentVersions,
   entities as entitiesTable,
   facts as factsTable,
   factEntities,
@@ -23,7 +26,7 @@ interface RawEventRow {
   contentText: string | null;
   occurredAt: Date;
   authorUserId: string | null;
-  source: 'web' | 'telegram' | 'email' | 'system';
+  source: 'web' | 'telegram' | 'email' | 'system' | 'document';
   visibility: 'private' | 'team' | 'specific_users';
   visibilityUserIds: string[] | null;
   sourceMetadata: unknown;
@@ -42,7 +45,12 @@ interface FactRow {
  */
 function resolveScope(data: queue.EmbedJobData): qdrant.PointScope {
   const scope = 'scope' in data ? data.scope : undefined;
-  if (scope) return scope === 'raw_event' ? 'event' : scope;
+  if (scope) {
+    // Payload uses 'event' (PointScope), but the queue's union calls it
+    // 'raw_event' (SourceKind). Map the queue tag onto the point scope.
+    if (scope === 'raw_event') return 'event';
+    return scope;
+  }
   if ('factId' in data && data.factId) return 'fact';
   return 'event';
 }
@@ -75,6 +83,14 @@ function blankNonEventPayload(args: {
     visibility: 'team',
     visibility_user_ids: null,
     embedding_model: args.model,
+    // Phase 9 per-kind doc fields — null on non-doc_chunk points; the
+    // buildDocChunkPlan overrides these on top of this base.
+    document_id: null,
+    document_version_id: null,
+    document_chunk_id: null,
+    folder_id: null,
+    owner_user_id: null,
+    updated_at: null,
   };
 }
 
@@ -119,8 +135,10 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
       const scope = resolveScope(job.data);
       const plan = await buildPlan(deps.db, job.data, scope);
       if (!plan) {
-        // No-op (e.g. visibility-skipped raw event already stamped, or
-        // object_change with empty summary). Success path with no Qdrant write.
+        // No-op (e.g. visibility-skipped raw event already stamped,
+        // object_change with empty summary, or doc-chunk whose parent
+        // document was soft-deleted between enqueue and process).
+        // Success path with no Qdrant write.
         return { skipped: true };
       }
 
@@ -232,6 +250,8 @@ async function buildPlan(
       return buildObjectChangePlan(db, data);
     case 'entity':
       return buildEntityPlan(db, data);
+    case 'doc_chunk':
+      return buildDocChunkPlan(db, data);
   }
 }
 
@@ -490,6 +510,77 @@ async function buildObjectChangePlan(db: Db, data: queue.EmbedJobData): Promise<
     payloadOverrides: {
       object_id: row.entityId,
       change_id: row.id,
+    },
+  };
+}
+
+/**
+ * Phase 9: doc-chunk plan. One Qdrant point per chunk of a finalised
+ * `document_versions` row. Visibility gate lives on the parent document
+ * row (not raw_events); soft-deleted documents return null so the embed
+ * is a clean no-op rather than a stamped failure (the deleteDocument
+ * scope path separately issues deletePoints to flush any prior points).
+ */
+async function buildDocChunkPlan(db: Db, data: queue.EmbedJobData): Promise<EmbedPlan | null> {
+  if (!('documentChunkId' in data) || !data.documentChunkId) {
+    throw new UnrecoverableError('embed: doc_chunk scope job missing documentChunkId');
+  }
+  const rows = await db
+    .select({
+      chunk: documentChunks,
+      document: documents,
+      version: documentVersions,
+    })
+    .from(documentChunks)
+    .innerJoin(documents, eq(documents.id, documentChunks.documentId))
+    .innerJoin(documentVersions, eq(documentVersions.id, documentChunks.documentVersionId))
+    .where(eq(documentChunks.id, data.documentChunkId))
+    .limit(1);
+  const hit = rows[0];
+  if (!hit) {
+    throw new UnrecoverableError(`document chunk ${data.documentChunkId} not found`);
+  }
+  if (hit.chunk.teamId !== data.teamId) {
+    throw new UnrecoverableError(
+      `chunk ${data.documentChunkId} team mismatch (job=${data.teamId}, row=${hit.chunk.teamId})`,
+    );
+  }
+  // Soft-deleted documents: skip without stamping a failure. The
+  // deleteDocument path flushes prior Qdrant points separately. A
+  // mid-flight delete races the embed job; bail cleanly so the audit
+  // stays tidy.
+  if (hit.document.deletedAt) return null;
+  // Non-team visibility documents follow the same hard privacy gate as
+  // the event/fact path. Future relaxation needs a per-chunk privacy-
+  // aware payload write, not just removing this check.
+  if (hit.document.visibility !== 'team') return null;
+  const text = hit.chunk.text.trim();
+  if (!text) {
+    throw new UnrecoverableError(`chunk ${data.documentChunkId} has empty text`);
+  }
+  return {
+    text,
+    scope: 'doc_chunk',
+    sourceKind: 'doc_chunk',
+    sourceId: hit.chunk.id,
+    occurredAt: hit.version.createdAt,
+    authorUserId: hit.version.uploadedByUserId,
+    payloadOverrides: {
+      // Source enum value 'document' (not 'system') so source-filtered
+      // searches that target documents resolve correctly.
+      source: 'document',
+      // Carry the upload-event id so any caller that keys on event_id
+      // (timeline rendering, ev:<id> citation expansion) still has a
+      // stable target for the doc-chunk's originating event.
+      event_id: hit.version.sourceEventId,
+      visibility: hit.document.visibility,
+      visibility_user_ids: hit.document.visibilityUserIds,
+      document_id: hit.document.id,
+      document_version_id: hit.version.id,
+      document_chunk_id: hit.chunk.id,
+      folder_id: hit.document.folderId,
+      owner_user_id: hit.document.ownerUserId,
+      updated_at: hit.version.createdAt.toISOString(),
     },
   };
 }

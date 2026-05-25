@@ -25,6 +25,8 @@
  */
 import {
   closeDb,
+  documentChunks,
+  documents,
   entities as entitiesTable,
   facts as factsTable,
   getDb,
@@ -69,47 +71,64 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
   const db = getDb();
   // entities backs both `object` and `entity` source kinds — same row, two
   // point types. One query feeds both counts.
-  const [rawEventRows, factRows, entityRows, noteRows, changeRows] = await Promise.all([
-    db
-      .select({ n: count() })
-      .from(rawEvents)
-      .where(
-        and(
-          eq(rawEvents.teamId, teamId),
-          eq(rawEvents.visibility, 'team'),
-          isNotNull(rawEvents.contentText),
-        ),
-      ),
-    db
-      .select({ n: count() })
-      .from(factsTable)
-      .innerJoin(rawEvents, eq(factsTable.rawEventId, rawEvents.id))
-      .where(and(eq(factsTable.teamId, teamId), eq(rawEvents.visibility, 'team'))),
-    db
-      .select({ n: count() })
-      .from(entitiesTable)
-      .where(and(eq(entitiesTable.teamId, teamId), isNull(entitiesTable.mergedIntoId))),
-    db
-      .select({ n: count() })
-      .from(objectNotesTable)
-      .where(and(eq(objectNotesTable.teamId, teamId), isNull(objectNotesTable.deletedAt))),
-    // Mirror buildObjectChangePlan: rows with field starting `__` AND no
-    // operator `note` are intentionally skipped by the worker (the parent
-    // raw_events row carries the human narrative). Counting them would
-    // create permanent positive drift for healthy teams.
-    db
-      .select({ n: count() })
-      .from(objectChangesTable)
-      .where(
-        and(
-          eq(objectChangesTable.teamId, teamId),
-          or(
-            not(sql`${objectChangesTable.field} LIKE '\\_\\_%' ESCAPE '\\'`),
-            isNotNull(objectChangesTable.note),
+  const [rawEventRows, factRows, entityRows, noteRows, changeRows, docChunkRows] =
+    await Promise.all([
+      db
+        .select({ n: count() })
+        .from(rawEvents)
+        .where(
+          and(
+            eq(rawEvents.teamId, teamId),
+            eq(rawEvents.visibility, 'team'),
+            isNotNull(rawEvents.contentText),
           ),
         ),
-      ),
-  ]);
+      db
+        .select({ n: count() })
+        .from(factsTable)
+        .innerJoin(rawEvents, eq(factsTable.rawEventId, rawEvents.id))
+        .where(and(eq(factsTable.teamId, teamId), eq(rawEvents.visibility, 'team'))),
+      db
+        .select({ n: count() })
+        .from(entitiesTable)
+        .where(and(eq(entitiesTable.teamId, teamId), isNull(entitiesTable.mergedIntoId))),
+      db
+        .select({ n: count() })
+        .from(objectNotesTable)
+        .where(and(eq(objectNotesTable.teamId, teamId), isNull(objectNotesTable.deletedAt))),
+      // Mirror buildObjectChangePlan: rows with field starting `__` AND no
+      // operator `note` are intentionally skipped by the worker (the parent
+      // raw_events row carries the human narrative). Counting them would
+      // create permanent positive drift for healthy teams.
+      db
+        .select({ n: count() })
+        .from(objectChangesTable)
+        .where(
+          and(
+            eq(objectChangesTable.teamId, teamId),
+            or(
+              not(sql`${objectChangesTable.field} LIKE '\\_\\_%' ESCAPE '\\'`),
+              isNotNull(objectChangesTable.note),
+            ),
+          ),
+        ),
+      // Phase 9 doc_chunk: chunks whose parent document is active (not
+      // soft-deleted) AND is team-visibility. Mirrors buildDocChunkPlan's
+      // skip rules — soft-deleted docs and private docs are intentionally
+      // not in Qdrant, so excluding them from the row count keeps drift
+      // honest.
+      db
+        .select({ n: count() })
+        .from(documentChunks)
+        .innerJoin(documents, eq(documents.id, documentChunks.documentId))
+        .where(
+          and(
+            eq(documentChunks.teamId, teamId),
+            isNull(documents.deletedAt),
+            eq(documents.visibility, 'team'),
+          ),
+        ),
+    ]);
 
   const entityCount = entityRows[0]?.n ?? 0;
   return {
@@ -119,6 +138,7 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
     object_note: noteRows[0]?.n ?? 0,
     object_change: changeRows[0]?.n ?? 0,
     entity: entityCount,
+    doc_chunk: docChunkRows[0]?.n ?? 0,
   };
 }
 
@@ -135,6 +155,7 @@ async function main(): Promise<void> {
     'object_note',
     'object_change',
     'entity',
+    'doc_chunk',
   ];
   const reports: KindReport[] = [];
   for (const kind of kinds) {

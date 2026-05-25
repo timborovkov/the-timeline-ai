@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "node server.js",
     "lint": "eslint src",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -40,6 +41,8 @@
     "@types/react-dom": "^19.0.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^4.0.0",
-    "typescript": "*"
+    "typescript": "*",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^4.1.6"
   }
 }
