@@ -1,6 +1,6 @@
 'use server';
 
-import { childLogger, getEnv, meetingBots, withTeam } from '@timeline/shared';
+import { childLogger, meetingBots, withTeam } from '@timeline/shared';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -53,13 +53,10 @@ async function withScopeOrError() {
 export async function scheduleMeetingBotAction(
   input: z.input<typeof scheduleSchema>,
 ): Promise<Result> {
-  const env = getEnv();
   if (!meetingBots.isMeetingBotConfigured()) {
     return { ok: false, error: 'Meeting bots are not configured for this environment.' };
   }
-  if (!env.RECALL_TRANSCRIPT_WEBHOOK_URL) {
-    return { ok: false, error: 'RECALL_TRANSCRIPT_WEBHOOK_URL is not set.' };
-  }
+  const transcriptWebhookUrl = meetingBots.resolveTranscriptWebhookUrl();
   const parsed = scheduleSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -122,7 +119,7 @@ export async function scheduleMeetingBotAction(
       teamId,
       meetingUrl: parsed.data.meetingUrl,
       platform,
-      transcriptWebhookUrl: env.RECALL_TRANSCRIPT_WEBHOOK_URL,
+      transcriptWebhookUrl,
     });
     await scope.updateMeetingStatus(meeting.id, 'joining', {
       providerBotId: join.botId,

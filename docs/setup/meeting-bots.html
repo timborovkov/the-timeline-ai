@@ -77,8 +77,15 @@ RECALL_BASE_URL=https://us-west-2.recall.ai/api/v1
         </li>
         <li>
           <strong>Transcript webhook</strong>. We pass this URL to Recall on every
-          <code>POST /bot</code> call, so set it in env (no dashboard step):
-          <pre><code>RECALL_TRANSCRIPT_WEBHOOK_URL=https://&lt;your-app-domain&gt;/api/webhooks/recall/transcript
+          <code>POST /bot</code> call.
+          <strong>By default it is derived from <code>AUTH_URL</code></strong> (your app's public
+          origin, already required by Auth.js) plus the fixed route path, so most installs need no
+          additional config — the bot posts to
+          <code>${AUTH_URL}/api/webhooks/recall/transcript</code>. Set
+          <code>RECALL_TRANSCRIPT_WEBHOOK_URL</code> only when transcripts should hit a different
+          origin (proxy, tunnel for local dev, separate webhook ingress):
+          <pre><code># Optional — defaults to AUTH_URL + /api/webhooks/recall/transcript
+RECALL_TRANSCRIPT_WEBHOOK_URL=https://&lt;your-app-domain&gt;/api/webhooks/recall/transcript
 </code></pre>
           This endpoint is NOT Svix-signed — Recall does not sign realtime transcript events.
           Authentication relies on:
