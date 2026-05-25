@@ -3,8 +3,10 @@
 -- (team_id, source_metadata->>'meeting_chunk_provider_id') to make those
 -- retries a no-op at the audit-event layer.
 --
--- This index lives in its own migration so the `meeting` enum value added
--- in 0011 is committed before being referenced here. Postgres rejects use
--- of a freshly-added enum value inside the same transaction (55P04).
+-- The WHERE clause casts `source` to text instead of comparing it as the
+-- event_source enum. Drizzle-orm wraps all pending migrations in a single
+-- transaction, so a direct `source = 'meeting'` comparison would trip
+-- Postgres's check_safe_enum_use (55P04) on the freshly-added enum value
+-- from 0011. Comparing as text sidesteps the new-enum-value binding.
 
-CREATE UNIQUE INDEX IF NOT EXISTS "raw_events_meeting_chunk_id_unq" ON "raw_events" USING btree ("team_id", ((source_metadata ->> 'meeting_chunk_provider_id'))) WHERE "raw_events"."source" = 'meeting' AND "raw_events"."source_metadata" ? 'meeting_chunk_provider_id';
+CREATE UNIQUE INDEX IF NOT EXISTS "raw_events_meeting_chunk_id_unq" ON "raw_events" USING btree ("team_id", ((source_metadata ->> 'meeting_chunk_provider_id'))) WHERE "raw_events"."source"::text = 'meeting' AND "raw_events"."source_metadata" ? 'meeting_chunk_provider_id';
