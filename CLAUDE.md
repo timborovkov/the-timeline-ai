@@ -71,11 +71,14 @@ non-negotiables:
 ```
 apps/
   web/      Next.js 15 app (App Router, RSC, server actions, Auth.js)
-  worker/   BullMQ workers (transcribe, extract, embed)
+  worker/   BullMQ workers (transcribe, extract, embed, document-extract,
+            overdue-scan)
 packages/
   db/       Drizzle schema + migrations
   shared/   Cross-package code: withTeam scope, llm wrapper, Qdrant wrapper,
-            S3 wrapper, Telegram dispatcher, queue names
+            S3 wrapper, Telegram dispatcher, queue names, objects module,
+            documents module (Phase 9 — folders/documents/versions/chunks
+            scope, RustFS object-key builder, text chunker)
 docs/
   setup/    External service walkthroughs (Telegram, OpenRouter, Postmark,
             Sentry, Railway, local dev)
