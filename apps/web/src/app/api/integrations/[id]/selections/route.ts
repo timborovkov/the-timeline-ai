@@ -35,6 +35,16 @@ export async function GET(
   const resolved = await resolveScope(session.user.id);
   if (!resolved) return NextResponse.json({ error: 'no_team' }, { status: 400 });
   const { scope } = resolved;
+  // Listing syncable resources decrypts team OAuth tokens and calls the
+  // provider API on the integration's behalf. PUT requires admin to change
+  // selections; GET must require admin too so a non-admin member can't
+  // enumerate every external repo/project/folder the team's tokens can
+  // reach.
+  try {
+    await scope.requireMembership('admin');
+  } catch {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
   const integration = await scope.integrations.getIntegration(id);
   if (!integration) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   const [tokens, selections] = await Promise.all([

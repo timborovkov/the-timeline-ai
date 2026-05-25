@@ -723,7 +723,21 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           };
           if (parsed.limit) opts.limit = parsed.limit;
           const hits = await scope.searchEvents(opts);
-          const filtered = hits.filter((h) => h.source === 'integration');
+          let filtered = hits.filter((h) => h.source === 'integration');
+          // Apply the optional provider filter. `provider` lives in
+          // raw_events.source_metadata, which `searchEvents` doesn't return,
+          // so hydrate via getEventsByIds (which already enforces team_id +
+          // visibility) and drop hits whose provider doesn't match.
+          if (parsed.provider && filtered.length > 0) {
+            const rows = await scope.getEventsByIds(filtered.map((r) => r.eventId));
+            const providerById = new Map<string, string | undefined>();
+            for (const row of rows) {
+              const md = row.sourceMetadata as Record<string, unknown> | null;
+              const prov = md && typeof md.provider === 'string' ? md.provider : undefined;
+              providerById.set(row.id, prov);
+            }
+            filtered = filtered.filter((r) => providerById.get(r.eventId) === parsed.provider);
+          }
           return {
             count: filtered.length,
             results: filtered.slice(0, parsed.limit ?? 10).map((r) => ({

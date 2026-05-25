@@ -1,10 +1,11 @@
 import { type Db, mcpOauthTokens, mcpServers } from '@timeline/db';
 import { and, eq } from 'drizzle-orm';
 
-import { decryptJson } from '../crypto/secrets.js';
+import { decryptJson, encryptJson } from '../crypto/secrets.js';
 import { childLogger } from '../logger.js';
 
 import { buildAuth } from './auth.js';
+import { discoverOAuth, refreshToken as oauthRefreshToken } from './oauth-provider.js';
 import { namespaceToolName } from './tool-namespace.js';
 
 import type { McpServerRow } from './auth.js';
@@ -23,6 +24,23 @@ import type { McpServerRow } from './auth.js';
 // team for 5 minutes, mirroring Vernix's behavior.
 
 const log = childLogger('mcp:client');
+
+/**
+ * Thrown when an OAuth-backed MCP server's tokens have expired and the
+ * refresh attempt failed (revoked, server rotated client, etc). The chat
+ * UI catches this and renders an inline "Reconnect <server>" CTA so the
+ * user can re-authorize without leaving the conversation.
+ */
+export class McpNeedsReauthError extends Error {
+  readonly code = 'needs_reauth' as const;
+  constructor(
+    readonly serverId: string,
+    readonly serverName: string,
+  ) {
+    super(`MCP server ${serverName} needs reconnection`);
+    this.name = 'McpNeedsReauthError';
+  }
+}
 
 export interface McpTool {
   name: string;
@@ -94,10 +112,27 @@ async function rpc(
   return parsed.result;
 }
 
+interface StoredOauthTokens {
+  accessToken?: string;
+  refreshToken?: string;
+  tokenType?: string;
+  scope?: string;
+  expiresAt?: number;
+}
+
+// 60-second skew — refresh slightly ahead of expiry so concurrent in-flight
+// tool calls don't hit a 401 race on the resource server side.
+const REFRESH_SKEW_MS = 60 * 1000;
+
+// Per-(team, server) pending refresh map so two concurrent tool calls don't
+// race two refresh roundtrips and stomp each other's tokens.
+const pendingRefresh = new Map<string, Promise<string | null>>();
+
 async function loadOauthAccessToken(
   db: Db,
   teamId: string,
   serverId: string,
+  serverUrl: string,
 ): Promise<string | null> {
   const rows = await db
     .select()
@@ -106,17 +141,102 @@ async function loadOauthAccessToken(
     .limit(1);
   const row = rows[0];
   if (!row) return null;
+  let tokens: StoredOauthTokens;
   try {
-    const tokens = decryptJson({
+    tokens = decryptJson({
       ciphertext: row.tokenCiphertext,
       iv: row.tokenIv,
       tag: row.tokenTag,
-    }) as { accessToken?: string };
-    return tokens.accessToken ?? null;
+    }) as StoredOauthTokens;
   } catch (err) {
     log.warn({ err, serverId }, 'failed to decrypt MCP oauth tokens');
     return null;
   }
+  const expiresAt =
+    typeof tokens.expiresAt === 'number'
+      ? tokens.expiresAt
+      : row.expiresAt
+        ? row.expiresAt.getTime()
+        : undefined;
+  // Fast path: still valid, no refresh needed.
+  if (!expiresAt || Date.now() < expiresAt - REFRESH_SKEW_MS) {
+    return tokens.accessToken ?? null;
+  }
+  // Expired (or near-expiry) and we have a refresh token + persisted client
+  // info — try a refresh. Without a refresh token we can only return the
+  // stale access token and let the resource server 401 us into a
+  // needs_reauth surface.
+  const refreshTokenStr = tokens.refreshToken;
+  const clientCiphertext = row.clientInfoCiphertext;
+  const clientIv = row.clientInfoIv;
+  const clientTag = row.clientInfoTag;
+  if (!refreshTokenStr || !clientCiphertext || !clientIv || !clientTag) {
+    return tokens.accessToken ?? null;
+  }
+  const lockKey = `${teamId}:${serverId}`;
+  const inflight = pendingRefresh.get(lockKey);
+  if (inflight) return inflight;
+  const p = (async (): Promise<string | null> => {
+    try {
+      const clientInfo = decryptJson({
+        ciphertext: clientCiphertext,
+        iv: clientIv,
+        tag: clientTag,
+      }) as { client_id?: string; client_secret?: string };
+      if (!clientInfo.client_id) return tokens.accessToken ?? null;
+      const discovery = await discoverOAuth(serverUrl);
+      const refreshed = await oauthRefreshToken({
+        discovery,
+        refreshToken: refreshTokenStr,
+        clientId: clientInfo.client_id,
+        ...(clientInfo.client_secret ? { clientSecret: clientInfo.client_secret } : {}),
+      });
+      const nextExpiresAtMs =
+        typeof refreshed.expires_at === 'number'
+          ? refreshed.expires_at
+          : refreshed.expires_in
+            ? Date.now() + refreshed.expires_in * 1000
+            : undefined;
+      // Some servers rotate the refresh token; otherwise reuse the old one.
+      const nextRefresh = refreshed.refresh_token ?? tokens.refreshToken;
+      const nextScope = refreshed.scope ?? tokens.scope;
+      const nextTokens: StoredOauthTokens = {
+        accessToken: refreshed.access_token,
+        tokenType: refreshed.token_type ?? tokens.tokenType ?? 'Bearer',
+        ...(nextRefresh ? { refreshToken: nextRefresh } : {}),
+        ...(nextScope ? { scope: nextScope } : {}),
+        ...(nextExpiresAtMs ? { expiresAt: nextExpiresAtMs } : {}),
+      };
+      const enc = encryptJson(nextTokens);
+      await db
+        .update(mcpOauthTokens)
+        .set({
+          tokenCiphertext: enc.ciphertext,
+          tokenIv: enc.iv,
+          tokenTag: enc.tag,
+          expiresAt: nextExpiresAtMs ? new Date(nextExpiresAtMs) : null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(mcpOauthTokens.teamId, teamId), eq(mcpOauthTokens.mcpServerId, serverId)));
+      await db
+        .update(mcpServers)
+        .set({ lastError: null, updatedAt: new Date() })
+        .where(eq(mcpServers.id, serverId));
+      return refreshed.access_token;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.warn({ err, serverId }, 'MCP oauth refresh failed');
+      await db
+        .update(mcpServers)
+        .set({ lastError: `oauth_refresh_failed: ${msg.slice(0, 200)}`, updatedAt: new Date() })
+        .where(eq(mcpServers.id, serverId));
+      return null;
+    } finally {
+      pendingRefresh.delete(lockKey);
+    }
+  })();
+  pendingRefresh.set(lockKey, p);
+  return p;
 }
 
 export interface CachedTeamTools {
@@ -201,7 +321,9 @@ export class McpClientManager {
 
   async discoverTools(db: Db, server: McpServerRow): Promise<McpTool[]> {
     const oauth =
-      server.authType === 'oauth' ? await loadOauthAccessToken(db, server.teamId, server.id) : null;
+      server.authType === 'oauth'
+        ? await loadOauthAccessToken(db, server.teamId, server.id, server.url)
+        : null;
     const { headers, url } = buildAuth(server, oauth);
     const disabled = new Set(
       Array.isArray(server.disabledTools) ? (server.disabledTools as string[]) : [],
@@ -238,7 +360,15 @@ export class McpClientManager {
     const server = rows[0];
     if (!server) throw new Error('MCP server not found');
     const oauth =
-      server.authType === 'oauth' ? await loadOauthAccessToken(db, teamId, server.id) : null;
+      server.authType === 'oauth'
+        ? await loadOauthAccessToken(db, teamId, server.id, server.url)
+        : null;
+    if (server.authType === 'oauth' && !oauth) {
+      // Refresh failed (token revoked, server rotated client, etc). Surface
+      // a typed error the chat UI can recognize and render an inline
+      // "Reconnect <server>" CTA instead of a generic failure toast.
+      throw new McpNeedsReauthError(server.id, server.name);
+    }
     const { headers, url } = buildAuth(server, oauth);
     return rpc(url, headers, 'tools/call', { name: mapping.toolName, arguments: args });
   }

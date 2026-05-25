@@ -33,10 +33,30 @@ export async function POST(req: Request): Promise<Response> {
   } catch {
     return NextResponse.json({ ok: false, reason: 'bad_json' }, { status: 200 });
   }
+  // Linear webhooks carry `organizationId` at the top level. We OAuth as
+  // an organization (externalAccountId == LinearOrg.id), so isolating by
+  // that id ensures org A's webhook can't write to org B's tenant.
+  const orgIdRaw =
+    payload && typeof payload === 'object' && 'organizationId' in payload
+      ? (payload as { organizationId?: unknown }).organizationId
+      : undefined;
+  const orgId = typeof orgIdRaw === 'string' ? orgIdRaw : '';
+  if (!orgId) {
+    return NextResponse.json({ ok: true, reason: 'no_org_id' }, { status: 200 });
+  }
   const rows = await db
     .select()
     .from(integrationsTable)
-    .where(and(eq(integrationsTable.provider, 'linear'), eq(integrationsTable.enabled, true)));
+    .where(
+      and(
+        eq(integrationsTable.provider, 'linear'),
+        eq(integrationsTable.enabled, true),
+        eq(integrationsTable.externalAccountId, orgId),
+      ),
+    );
+  if (rows.length === 0) {
+    return NextResponse.json({ ok: true, reason: 'no_matching_tenant' }, { status: 200 });
+  }
   for (const integration of rows) {
     try {
       const provider = integrationsLib.getProvider('linear');

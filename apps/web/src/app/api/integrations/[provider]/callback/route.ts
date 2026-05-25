@@ -35,7 +35,14 @@ function verifyState(state: string): z.infer<typeof stateSchema> | null {
   if (!timingSafeEqual(a, b)) return null;
   try {
     const payload: unknown = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
-    return stateSchema.parse(payload);
+    const parsed = stateSchema.parse(payload);
+    // Reject expired state. The start route mints iat as Date.now() (ms);
+    // the 15-minute window mirrors the MCP-side oauth-state JWT and is
+    // long enough for a user to complete the upstream OAuth dance but
+    // short enough to bound replay/fixation.
+    const ageMs = Date.now() - parsed.iat;
+    if (ageMs < 0 || ageMs > 15 * 60 * 1000) return null;
+    return parsed;
   } catch {
     return null;
   }

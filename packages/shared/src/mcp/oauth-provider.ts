@@ -152,6 +152,11 @@ export async function registerClient(
   redirectUri: string,
   clientName: string,
 ): Promise<OAuthClientInfo> {
+  // Same SSRF posture as buildAuthorizeUrl / exchangeCode / refreshToken —
+  // a malicious MCP server could advertise a private-IP registration_endpoint
+  // and force this backend to POST to internal infra.
+  const ssrfErr = validateMcpUrl(registrationEndpoint);
+  if (ssrfErr) throw new Error(`OAuth registration_endpoint rejected: ${ssrfErr}`);
   const res = await fetch(registrationEndpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
