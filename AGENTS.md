@@ -61,9 +61,35 @@ tool. When in doubt, invoke the skill.
   No direct OpenAI / OpenRouter SDK calls from app or worker code.
 - **`pnpm` only** (no `npm` / `yarn`). Workspace packages are wired via
   Turborepo; `pnpm -r build` is the canonical build.
+- **Run `pnpm validate` before declaring work complete.** Runs
+  `format:check`, `typecheck`, `lint`, and `knip` in sequence — the same
+  gates CI enforces. Fix failures at the root cause; do not skip.
 - **Meeting bots are silent + consent-gated.** Phase 10 ships transcript
   capture only — no voice/agent mode. `team_meeting_settings
   .require_host_consent` (default true) blocks scheduling unless the
   caller has explicitly confirmed participants will be informed. Raw
   audio is NOT copied to S3; transcript text is the only persistent
   record.
+
+## Repo layout
+
+```
+apps/
+  web/      Next.js 15 app (App Router, RSC, server actions, Auth.js)
+  worker/   BullMQ workers (transcribe, extract, embed, document-extract,
+            meeting-finalize, overdue-scan)
+packages/
+  db/       Drizzle schema + migrations
+  shared/   Cross-package code: withTeam scope, llm wrapper, Qdrant wrapper,
+            S3 wrapper, Telegram dispatcher, queue names, objects module,
+            documents module (Phase 9 — folders/documents/versions/chunks
+            scope, RustFS object-key builder, text chunker), meeting-bots
+            module (Phase 10 — Recall.ai provider, Svix verifier) +
+            meetings scope (meeting/chunk/usage helpers)
+docs/
+  setup/    External service walkthroughs (Telegram, OpenRouter, Postmark,
+            Recall.ai meeting bots, Sentry, Railway, local dev)
+```
+
+Phased build plan and current state: [todo.md](todo.md). Product vision:
+[docs/product-brief.html](docs/product-brief.html). Design system: [design.md](design.md).
