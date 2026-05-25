@@ -122,6 +122,18 @@ export function validateMcpUrl(rawUrl: string): string | null {
     ) {
       return 'Private IP ranges not allowed';
     }
+    // RFC 3927 link-local (169.254.0.0/16) — same range as AWS / GCP /
+    // Azure metadata (169.254.169.254). Without this block, a team
+    // admin could register the cloud metadata endpoint as an MCP URL
+    // and later OAuth/RPC fetches would credential-leak through it.
+    if (host.startsWith('169.254.')) {
+      return 'Link-local addresses not allowed';
+    }
+    // IPv6 link-local (fe80::/10) and unique-local (fc00::/7). URL host
+    // strips outer brackets so we match on the leading bytes.
+    if (host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd')) {
+      return 'IPv6 link-local / unique-local addresses not allowed';
+    }
   }
   return null;
 }
