@@ -11,6 +11,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 
 import { askAgent } from '../agent/ask.js';
 import { childLogger } from '../logger.js';
+import { getRedisConnection } from '../queue/connection.js';
 import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '../rate-limit/index.js';
 
 import { type TelegramApi } from './api.js';
@@ -514,6 +515,7 @@ async function cmdAskDm(ctx: DmContext, arg: string): Promise<void> {
     db: ctx.db,
     chatId: ctx.message.chat.id,
     tgUserId: ctx.tgUser.id,
+    updateId: ctx.updateId,
     teamId: ctx.activeTeamId,
     userId: ctx.tgUserRow.userId,
     userName: tgDisplayName(ctx.tgUser),
@@ -540,11 +542,25 @@ async function runAsk(input: {
   db: Db;
   chatId: number;
   tgUserId: number;
+  /** Telegram update_id — used to dedupe webhook retries so a slow agent
+   *  call doesn't get replayed (and re-billed) when Telegram retries. */
+  updateId: number;
   teamId: string | null;
   userId: string | null;
   userName: string;
   question: string;
 }): Promise<void> {
+  // Idempotency gate: if Telegram retries this update_id (typical when the
+  // webhook handler takes longer than ~60s, which can happen when the agent
+  // runs multi-tool turns), short-circuit so we don't bill OpenRouter twice
+  // and the user doesn't get duplicate replies. Fail-open when Redis is
+  // unavailable — capture and answer keep working at the cost of possible
+  // double-billing during an outage.
+  const claimed = await claimAskUpdate(input.updateId);
+  if (!claimed) {
+    log.info({ updateId: input.updateId, tgUserId: input.tgUserId }, 'ask_update_dedup');
+    return;
+  }
   const question = input.question.trim();
   if (!question) {
     await input.tg.sendMessage({
@@ -607,6 +623,28 @@ async function runAsk(input: {
     return;
   }
   await input.tg.sendMessage({ chat_id: input.chatId, text: result.answer });
+}
+
+/**
+ * Claim a Telegram update_id for /ask processing. Returns `true` if this is
+ * the first time we've seen it (caller should proceed), `false` if it's a
+ * duplicate webhook delivery (caller should silently drop).
+ *
+ * Backed by Redis SET NX with a 10-minute TTL — long enough to cover
+ * Telegram's retry window for a slow handler, short enough that the key set
+ * stays bounded. Without Redis we fail-open: capture is correctness, this
+ * dedup is only a cost/UX guard.
+ */
+async function claimAskUpdate(updateId: number): Promise<boolean> {
+  try {
+    const conn = getRedisConnection();
+    const key = `tg:ask:seen:${updateId}`;
+    const reply = await conn.set(key, '1', 'EX', 600, 'NX');
+    return reply === 'OK';
+  } catch (err) {
+    log.warn({ err: (err as Error).message, updateId }, 'ask_dedup_unavailable');
+    return true;
+  }
 }
 
 async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Promise<void> {
@@ -834,6 +872,7 @@ async function dispatchGroupCommand(
         db: ctx.db,
         chatId: ctx.message.chat.id,
         tgUserId: ctx.tgUser.id,
+        updateId: ctx.updateId,
         teamId: ctx.binding?.teamId ?? null,
         userId: ctx.tgUserRow.userId,
         userName: tgDisplayName(ctx.tgUser),
