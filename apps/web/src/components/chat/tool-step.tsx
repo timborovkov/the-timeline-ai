@@ -58,6 +58,17 @@ function summarize(name: string, input: unknown, output: unknown): string {
  */
 function ReconnectButton({ serverId, serverName }: { serverId: string; serverName: string }) {
   const [busy, setBusy] = useState(false);
+  // Non-admin path: /api/mcp/oauth/start requires admin; surface that
+  // inline rather than letting the user click into a generic failure
+  // toast. Re-renders the row with an "ask an admin" hint.
+  const [forbidden, setForbidden] = useState(false);
+  if (forbidden) {
+    return (
+      <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">
+        {serverName} needs reconnecting — ask a team admin to visit /app/team/mcp-servers
+      </p>
+    );
+  }
   return (
     <button
       type="button"
@@ -70,6 +81,11 @@ function ReconnectButton({ serverId, serverName }: { serverId: string; serverNam
           body: JSON.stringify({ mcpServerId: serverId }),
         })
           .then(async (r) => {
+            if (r.status === 403) {
+              setForbidden(true);
+              setBusy(false);
+              return;
+            }
             if (!r.ok) {
               setBusy(false);
               return;

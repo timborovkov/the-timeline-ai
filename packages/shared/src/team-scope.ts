@@ -204,6 +204,17 @@ export interface TeamScopeDeps {
     vector: number[],
     opts: SearchOpts,
   ) => Promise<SearchHit[]>;
+  /**
+   * Skip the team-membership check on first query. Set only by trusted
+   * callers that have already authenticated the team boundary via some
+   * other mechanism (e.g. the Phase 11 outbound MCP server uses a bearer
+   * key that resolves to a team_id; the bearer-key check IS the
+   * membership proof). Visibility filtering still applies — pass an
+   * actor userId that the filter should treat as "not the author of any
+   * private event" (e.g. the zero UUID) so `private` and
+   * `specific_users` events stay invisible.
+   */
+  skipMembershipCheck?: boolean;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -233,6 +244,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   let membershipPromise: Promise<TeamRole> | undefined;
 
   function ensureMember(minRole: TeamRole = 'member'): Promise<TeamRole> {
+    if (deps.skipMembershipCheck) {
+      // Trusted-caller path (Phase 11 outbound MCP): membership has
+      // already been proven by the bearer-key resolution. Resolve as
+      // 'member' so any `requireMembership('admin')` call still throws —
+      // outbound MCP keys must never reach admin-only mutations.
+      return Promise.resolve('member' as TeamRole);
+    }
     membershipPromise ??= (async () => {
       const rows = await db
         .select({ role: teamMembers.role })

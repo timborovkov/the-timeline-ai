@@ -172,8 +172,12 @@ async function callTool(
   // visibility predicate requires authorUserId == userId, which the
   // null UUID can't satisfy). This is intentional — outbound MCP keys
   // are team-scoped, not per-user, so private events stay private.
+  // Bearer-key auth is the trust boundary; skipMembershipCheck tells
+  // withTeam not to query team_members for the zero-UUID actor. The
+  // visibility filter still excludes `private` and `specific_users`
+  // events since the zero-UUID isn't author/target on any of them.
   const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
-  const scope = withTeam(db, teamId, PSEUDO_USER);
+  const scope = withTeam(db, teamId, PSEUDO_USER, { skipMembershipCheck: true });
   switch (toolName) {
     case 'timeline.search_events': {
       const query = typeof args.query === 'string' ? args.query : '';
@@ -323,8 +327,12 @@ export async function handleMcpRequest(
 }
 
 async function readResource(db: Db, teamId: string, uri: string): Promise<unknown> {
+  // Bearer-key auth is the trust boundary; skipMembershipCheck tells
+  // withTeam not to query team_members for the zero-UUID actor. The
+  // visibility filter still excludes `private` and `specific_users`
+  // events since the zero-UUID isn't author/target on any of them.
   const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
-  const scope = withTeam(db, teamId, PSEUDO_USER);
+  const scope = withTeam(db, teamId, PSEUDO_USER, { skipMembershipCheck: true });
   if (uri === 'timeline://events/recent') {
     const rows = await scope.listEvents({ limit: 50 });
     return rows.map((r) => ({

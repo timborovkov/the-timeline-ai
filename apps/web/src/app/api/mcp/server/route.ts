@@ -6,6 +6,30 @@ import { db } from '@/lib/db';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+// CORS — MCP clients may run in a browser context (web-based agents,
+// claude.ai integrations) where the fetch crosses origins. Bearer auth
+// is in the Authorization header so a wildcard `*` origin is safe
+// (credentials are NOT cookie-based; opaque keys must be explicitly
+// supplied). We do NOT set Access-Control-Allow-Credentials so cookies
+// can't be used to authenticate the cross-origin call.
+const CORS_HEADERS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, POST, OPTIONS',
+  'access-control-allow-headers': 'authorization, content-type',
+  'access-control-max-age': '3600',
+} as const;
+
+export function OPTIONS(): Response {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
+
+function withCors(res: Response): Response {
+  for (const [k, v] of Object.entries(CORS_HEADERS)) {
+    res.headers.set(k, v);
+  }
+  return res;
+}
+
 /**
  * Timeline-as-MCP-server JSON-RPC endpoint. External agents (Claude
  * Desktop, Cursor, Vernix, etc.) point at this URL and authorise via a
@@ -26,9 +50,11 @@ export async function POST(req: Request): Promise<Response> {
       refillPerSec: 600 / 60,
     });
     if (!rl.ok) {
-      return NextResponse.json(
-        { jsonrpc: '2.0', id: null, error: { code: -32029, message: 'rate_limited' } },
-        { status: 429 },
+      return withCors(
+        NextResponse.json(
+          { jsonrpc: '2.0', id: null, error: { code: -32029, message: 'rate_limited' } },
+          { status: 429 },
+        ),
       );
     }
   }
@@ -40,23 +66,27 @@ export async function POST(req: Request): Promise<Response> {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse_error' } },
-      { status: 400 },
+    return withCors(
+      NextResponse.json(
+        { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse_error' } },
+        { status: 400 },
+      ),
     );
   }
   if (!body || typeof body !== 'object' || !('method' in body)) {
-    return NextResponse.json(
-      { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'invalid_request' } },
-      { status: 400 },
+    return withCors(
+      NextResponse.json(
+        { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'invalid_request' } },
+        { status: 400 },
+      ),
     );
   }
   const response = await mcpServer.handleMcpRequest({ db, bearer }, body);
   if (!response) {
     // Notification: no response expected.
-    return new Response(null, { status: 204 });
+    return withCors(new Response(null, { status: 204 }));
   }
-  return NextResponse.json(response);
+  return withCors(NextResponse.json(response));
 }
 
 export function GET(): Response {
@@ -64,11 +94,13 @@ export function GET(): Response {
   // browser visitor sees something other than 405. MCP clients don't
   // use GET; the streamable-HTTP transport spec allows it for SSE
   // notifications which we don't emit today.
-  return NextResponse.json({
-    name: 'the-timeline',
-    version: '0.1.0',
-    description:
-      'Timeline-as-MCP-server. POST JSON-RPC 2.0 requests with `Authorization: Bearer <key>`. Mint keys at /app/team/mcp-share.',
-    protocolVersion: '2024-11-05',
-  });
+  return withCors(
+    NextResponse.json({
+      name: 'the-timeline',
+      version: '0.1.0',
+      description:
+        'Timeline-as-MCP-server. POST JSON-RPC 2.0 requests with `Authorization: Bearer <key>`. Mint keys at /app/team/mcp-share.',
+      protocolVersion: '2024-11-05',
+    }),
+  );
 }

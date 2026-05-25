@@ -27,11 +27,12 @@ async function pingServer(db: Db, serverId: string): Promise<{ ok: boolean; erro
   const rows = await db.select().from(mcpServers).where(eq(mcpServers.id, serverId)).limit(1);
   const row = rows[0];
   if (!row) return { ok: false, error: 'not_found' };
+  let timer: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
       mgr.discoverTools(db, row),
-      new Promise((_, reject) => {
-        setTimeout(() => {
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
           reject(new Error('mcp_health_timeout'));
         }, PING_TIMEOUT_MS);
       }),
@@ -39,6 +40,11 @@ async function pingServer(db: Db, serverId: string): Promise<{ ok: boolean; erro
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    // Always clear the timer so a fast ping doesn't leave it pending for
+    // the full 10s — adds up to thousands of dangling Timeout handles
+    // across a healthy fleet on a 5-minute schedule.
+    if (timer) clearTimeout(timer);
   }
 }
 
