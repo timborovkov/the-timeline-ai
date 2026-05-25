@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 import { Logo, Wordmark } from '@/components/brand/logo';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -245,6 +246,7 @@ function TopNav() {
           <Link href="/sign-in" className="px-3 py-2 text-fg-muted transition-colors hover:text-fg">
             Sign in
           </Link>
+          <ThemeToggle className="text-fg-muted hover:text-fg" />
           <Button asChild size="sm">
             <Link href="/sign-up">Create team</Link>
           </Button>
