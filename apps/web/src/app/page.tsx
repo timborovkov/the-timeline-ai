@@ -106,6 +106,7 @@ function StructuredData() {
           'Telegram bot ingest with /ask agent',
           'Email ingest via Postmark',
           'Document drive with version history',
+          'Meeting transcripts from Google Meet, Microsoft Teams, and Zoom (Recall.ai)',
           'Agent answers with auditable citations',
           'Team-scoped vector + structured storage',
         ],
@@ -270,8 +271,8 @@ function Hero() {
               updates itself.
             </h1>
             <p className="mt-8 max-w-prose text-lg leading-relaxed text-fg-muted">
-              Voice-note after the call. Forward the email. Drop the meeting transcript. The agent
-              extracts who, what, and when — reconciled against everything your team has ever said.
+              Voice-note after the call. Forward the email. Drop a Google Meet, Teams, or Zoom
+              link and a silent bot takes notes. The agent extracts who, what, and when — reconciled against everything your team has ever said.
               Ask it anything; every answer cites the raw event it came from.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
@@ -802,8 +803,7 @@ function Surfaces() {
         />
         <SurfaceTile
           label="MEETING BOTS"
-          coming
-          body="Meet, Teams, Zoom. Transcripts and action items land in the same pipeline."
+          body="Paste a Google Meet, Microsoft Teams, or Zoom link. A silent Recall.ai bot joins, transcribes, and drops decisions and action items on the same timeline."
         />
         <SurfaceTile
           label="CUSTOM MCP"
