@@ -1,5 +1,7 @@
 import Link from 'next/link';
 
+import { AssociationLine } from './_concept-association-line';
+
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
@@ -7,7 +9,6 @@ import { Logo, Wordmark } from '@/components/brand/logo';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-import { AssociationLine } from './_concept-association-line';
 
 const SITE_NAME = 'The Timeline';
 const SITE_TAGLINE = 'The operations log your team can talk to';
