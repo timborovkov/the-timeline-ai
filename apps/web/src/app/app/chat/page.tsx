@@ -135,6 +135,14 @@ export default async function ChatPage({
       activeSessionId = requestedSessionId;
       initialMessages = hydrate(loaded);
       pinnedEntityId = loaded.session.pinnedEntityId;
+      // Deep-linked or older sessions can fall outside the top-50 sidebar
+      // window, so their pinnedEntityId isn't in `pinnedNames`. Fetch the
+      // active session's pinned name on demand so the chip shows the
+      // entity name instead of a raw UUID.
+      if (pinnedEntityId && !pinnedNames.has(pinnedEntityId)) {
+        const extra = await loadPinnedEntity(db, active.teamId, [pinnedEntityId]);
+        for (const [k, v] of extra) pinnedNames.set(k, v);
+      }
       pinnedEntityName = pinnedEntityId ? (pinnedNames.get(pinnedEntityId) ?? null) : null;
     }
   }
