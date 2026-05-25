@@ -12,7 +12,7 @@
       ],
       "project": ["src/**/*.{ts,tsx}"],
       "ignore": ["src/components/ui/**"],
-      "ignoreDependencies": ["tailwindcss"]
+      "ignoreDependencies": ["tailwindcss", "radix-ui"]
     },
     "apps/worker": {
       "entry": ["src/index.ts", "src/scripts/*.ts"],
