@@ -237,21 +237,29 @@ export async function markNotificationReadAction(id: string): Promise<ActionStat
   if (!parsed.success) return { error: 'Invalid id' };
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
-  // `markNotificationRead` returns false for both "not found" and "already
-  // read" (the SQL is guarded by `readAt IS NULL`). Either way the user's
-  // desired state — read — is achieved, so always return ok and let the
-  // revalidation refresh whatever stale view triggered the click.
-  await objects.markNotificationRead(db, r.scope, parsed.data);
-  revalidatePath('/app/inbox');
-  return { ok: true };
+  try {
+    // `markNotificationRead` returns false for both "not found" and "already
+    // read" (the SQL is guarded by `readAt IS NULL`). Either way the user's
+    // desired state — read — is achieved, so always return ok and let the
+    // revalidation refresh whatever stale view triggered the click.
+    await objects.markNotificationRead(db, r.scope, parsed.data);
+    revalidatePath('/app/inbox');
+    return { ok: true };
+  } catch (err) {
+    return { error: friendlyError(err, 'Failed to mark notification read') };
+  }
 }
 
 export async function markAllNotificationsReadAction(): Promise<ActionState> {
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
-  await objects.markAllNotificationsRead(db, r.scope);
-  revalidatePath('/app/inbox');
-  return { ok: true };
+  try {
+    await objects.markAllNotificationsRead(db, r.scope);
+    revalidatePath('/app/inbox');
+    return { ok: true };
+  } catch (err) {
+    return { error: friendlyError(err, 'Failed to mark notifications read') };
+  }
 }
 
 // ---------- Suggestion review ----------

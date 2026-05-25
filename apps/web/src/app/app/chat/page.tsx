@@ -116,8 +116,6 @@ export default async function ChatPage({
   const requestedSessionId = params.session ?? null;
 
   const sessions = await objects.listChatSessions(db, scope, { limit: 50 });
-  const pinnedIds = sessions.map((s) => s.pinnedEntityId).filter((v): v is string => v !== null);
-  const pinnedNames = await loadPinnedEntity(db, active.teamId, pinnedIds);
 
   // If the URL points at a session that no longer loads (archived,
   // wrong team, malformed id), do NOT pass that id down to the client.
@@ -128,16 +126,26 @@ export default async function ChatPage({
   let activeSessionId: string | null = null;
   let initialMessages: UIMessage[] = [];
   let pinnedEntityId: string | null = null;
-  let pinnedEntityName: string | null = null;
   if (requestedSessionId) {
     const loaded = await objects.getChatSession(db, scope, requestedSessionId);
     if (loaded) {
       activeSessionId = requestedSessionId;
       initialMessages = hydrate(loaded);
       pinnedEntityId = loaded.session.pinnedEntityId;
-      pinnedEntityName = pinnedEntityId ? (pinnedNames.get(pinnedEntityId) ?? null) : null;
     }
   }
+
+  // Resolve display names for pinned entities — both the sidebar's
+  // top-50 and (crucially) the active session if the URL points at an
+  // older chat outside that window. Without including the active
+  // session's pinned id here, the chat header would render a raw UUID
+  // instead of the entity name.
+  const pinnedIds = new Set<string>(
+    sessions.map((s) => s.pinnedEntityId).filter((v): v is string => v !== null),
+  );
+  if (pinnedEntityId) pinnedIds.add(pinnedEntityId);
+  const pinnedNames = await loadPinnedEntity(db, active.teamId, Array.from(pinnedIds));
+  const pinnedEntityName = pinnedEntityId ? (pinnedNames.get(pinnedEntityId) ?? null) : null;
 
   return (
     // Escape main's px/py with negative margins so the chat fills the
