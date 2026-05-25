@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- Base ----
-FROM node:20-alpine AS base
+FROM node:24-alpine AS base
 RUN apk add --no-cache libc6-compat
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
@@ -41,7 +41,7 @@ COPY --from=builder /app/ .
 RUN pnpm deploy --filter @timeline/db --prod /prod/db
 
 # ---- Runner ----
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production

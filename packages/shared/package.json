@@ -40,7 +40,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.4.6",
     "@types/bcryptjs": "^2.4.6",
-    "@types/node": "^20.0.0",
+    "@types/node": "^24.0.0",
     "typescript": "*",
     "vitest": "^4.1.6"
   }
