@@ -124,6 +124,59 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
   }
 }
 
+// ---------- Merge ----------
+
+const mergeObjectSchema = z.object({
+  // The id that survives. Receives the loser's aliases + canonical name
+  // and inherits all fact references.
+  winnerId: uuidSchema,
+  loserId: uuidSchema,
+});
+
+export async function mergeObjectAction(input: unknown): Promise<ActionState> {
+  const parsed = mergeObjectSchema.safeParse(input);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+  const r = await resolveScope();
+  if (!r.ok) return { error: r.error };
+  try {
+    await objects.mergeObject(db, r.scope, parsed.data);
+    revalidatePath('/app/objects');
+    revalidatePath(`/app/objects/${parsed.data.winnerId}`);
+    revalidatePath(`/app/objects/${parsed.data.loserId}`);
+    return { ok: true, id: parsed.data.winnerId };
+  } catch (err) {
+    return { error: friendlyError(err, 'Failed to merge') };
+  }
+}
+
+/**
+ * Typeahead-style search used by the merge picker. Returns a small set
+ * of candidate objects matching the query, excluding the source so it
+ * can't merge into itself.
+ */
+export async function searchObjectsAction(
+  input: unknown,
+): Promise<
+  | { ok: true; results: { id: string; canonicalName: string; type: objects.ObjectType }[] }
+  | { ok: false; error: string }
+> {
+  const schema = z.object({
+    query: z.string().trim().max(120),
+    excludeId: uuidSchema.optional(),
+    limit: z.number().int().min(1).max(20).optional(),
+  });
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'Invalid query' };
+  const r = await resolveScope();
+  if (!r.ok) return { ok: false, error: r.error };
+  try {
+    const results = await objects.searchObjects(db, r.scope, parsed.data);
+    return { ok: true, results };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Search failed' };
+  }
+}
+
 const relationshipSchema = z.object({
   fromEntityId: uuidSchema,
   toEntityId: uuidSchema,
