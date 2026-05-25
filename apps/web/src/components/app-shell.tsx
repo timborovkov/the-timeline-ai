@@ -16,7 +16,7 @@ interface Props {
 export function AppShell({ active, memberships, user, children }: Props) {
   return (
     <div className="min-h-screen bg-background">
-      <div className="mx-auto flex min-h-screen w-full max-w-[1400px]">
+      <div className="flex min-h-screen w-full">
         <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border/60 px-4 py-6 md:flex">
           <div className="px-2">
             <span className="text-sm font-semibold tracking-tight">The Timeline</span>
