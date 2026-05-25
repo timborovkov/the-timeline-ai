@@ -10,12 +10,28 @@ const log = childLogger('agent:tools');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const sourceKindSchema = z.enum([
+  'raw_event',
+  'fact',
+  'object',
+  'object_note',
+  'object_change',
+  'entity',
+]);
+
 const searchTimelineInput = z.object({
   query: z.string().trim().min(1).max(500),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
   source: z.enum(['web', 'telegram', 'email', 'system']).optional(),
   entityIds: z.array(z.string().regex(UUID_RE)).max(20).optional(),
+  /**
+   * Narrow vector search to a subset of source kinds. Defaults to all kinds
+   * on the Qdrant side, but the timeline hydration only resolves event-
+   * anchored kinds (raw_event, fact). Workspace-graph kinds are filterable
+   * but currently surface via the entity / object tools, not this one.
+   */
+  sourceKind: z.union([sourceKindSchema, z.array(sourceKindSchema).max(6)]).optional(),
   limit: z.number().int().min(1).max(20).optional(),
 });
 
@@ -129,6 +145,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           if (input.to) args.to = new Date(input.to);
           if (input.source) args.source = input.source;
           if (input.entityIds) args.entityIds = input.entityIds;
+          if (input.sourceKind) args.sourceKind = input.sourceKind;
           if (input.limit) args.limit = input.limit;
           const results = await scope.searchEvents(args);
           // Fence the snippet so a malicious search hit cannot smuggle a

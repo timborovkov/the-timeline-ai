@@ -176,16 +176,19 @@ describe('processDocumentExtractJob — happy path', () => {
     );
     expect(chunks.rows.length).toBe(result.chunkCount);
     chunks.rows.forEach((r, i) => expect(r.chunk_index).toBe(i));
-    // One embed job per chunk, each carrying the documentChunkId.
+    // One embed job per chunk, each carrying the documentChunkId on the
+    // doc_chunk variant of the discriminated EmbedJobData union.
     expect(h.enqueueEmbed).toHaveBeenCalledTimes(result.chunkCount ?? 0);
     const enqueued = h.enqueueEmbed.mock.calls.map(
       (c) => c[0] as queueNS.EmbedJobData,
     );
     for (const job of enqueued) {
       expect(job.teamId).toBe(TEAM_ID);
-      expect(job.documentChunkId).toBeTruthy();
-      // rawEventId should be the document's upload event id, not the chunk id.
-      expect(job.rawEventId).not.toBe(job.documentChunkId);
+      // Narrow via the discriminator before reading per-variant fields.
+      expect('scope' in job && job.scope === 'doc_chunk').toBe(true);
+      if ('scope' in job && job.scope === 'doc_chunk') {
+        expect(job.documentChunkId).toBeTruthy();
+      }
     }
     // documentId loaded for cross-checking the upload event source id.
     expect(documentId).toBeTruthy();

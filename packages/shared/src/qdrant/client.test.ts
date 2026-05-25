@@ -97,8 +97,13 @@ afterEach(() => {
 
 const samplePayload: QdrantPayload = {
   team_id: 'team-A',
+  source_kind: 'raw_event',
   event_id: 'ev-1',
   fact_id: null,
+  object_id: null,
+  note_id: null,
+  change_id: null,
+  entity_id: null,
   entity_ids: [],
   occurred_at: '2026-05-20T00:00:00.000Z',
   author_user_id: 'user-1',
@@ -106,6 +111,13 @@ const samplePayload: QdrantPayload = {
   visibility: 'team',
   visibility_user_ids: null,
   embedding_model: 'openai/text-embedding-3-small',
+  // Phase 9 per-kind doc fields — null on non-doc_chunk points.
+  document_id: null,
+  document_version_id: null,
+  document_chunk_id: null,
+  folder_id: null,
+  owner_user_id: null,
+  updated_at: null,
 };
 
 describe('createQdrantClient', () => {
@@ -260,12 +272,12 @@ describe('createQdrantClient', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Phase 9 — kind discriminator. searchEvents-flavoured callers MUST never
-  // see doc-chunk points; searchDocumentChunks MUST see only doc-chunk
-  // points. Verified by inspecting the filter sent to /points/search.
+  // Phase 9 — source_kind discriminator for doc_chunk. The default
+  // (timeline-flavoured) search MUST NOT see doc_chunk points;
+  // searchDocumentChunks opts in via sourceKind='doc_chunk'.
   // ---------------------------------------------------------------------------
 
-  it('default search excludes doc-chunk points via must_not (timeline isolation)', async () => {
+  it('default search excludes doc_chunk points via must_not (timeline isolation)', async () => {
     const { fetcher, calls } = makeFetcher({ collectionExists: true });
     const client = createQdrantClient({ fetcher });
     await client.search('team-A', 'user-1', [0, 0, 0, 0]);
@@ -275,32 +287,41 @@ describe('createQdrantClient', () => {
       filter: { must_not?: { key: string; match: { value: string } }[] };
     };
     expect(body.filter.must_not).toEqual([
-      { key: 'point_kind', match: { value: 'doc-chunk' } },
+      { key: 'source_kind', match: { value: 'doc_chunk' } },
     ]);
   });
 
-  it('kind=doc-chunk search MUST point_kind and drops the must_not exclusion', async () => {
+  it('sourceKind=doc_chunk search MUST source_kind and drops the must_not exclusion', async () => {
     const { fetcher, calls } = makeFetcher({ collectionExists: true });
     const client = createQdrantClient({ fetcher });
-    await client.search('team-A', 'user-1', [0, 0, 0, 0], { kind: 'doc-chunk' });
+    await client.search('team-A', 'user-1', [0, 0, 0, 0], { sourceKind: 'doc_chunk' });
     const search = calls.find((c) => c.url.endsWith('/points/search'));
     if (!search) throw new Error('no search call captured');
     const body = search.body as {
       filter: {
-        must: { key: string; match: { value: string } }[];
+        must: ({ key?: string; should?: unknown[] } | unknown)[];
         must_not?: unknown[];
       };
     };
     expect(body.filter.must_not).toBeUndefined();
-    const kindMust = body.filter.must.find((m) => m.key === 'point_kind');
-    expect(kindMust).toEqual({ key: 'point_kind', match: { value: 'doc-chunk' } });
+    // sourceKind narrowing is implemented as `should: [match any kinds,
+    // legacy-fallback branches]` so callers asking for doc_chunk alone
+    // see a should-clause naming doc_chunk.
+    const should = body.filter.must.find(
+      (m): m is { should: { key: string; match: { any: string[] } }[] } =>
+        (m as { should?: unknown }).should !== undefined,
+    );
+    expect(should?.should[0]).toEqual({
+      key: 'source_kind',
+      match: { any: ['doc_chunk'] },
+    });
   });
 
-  it('kind=doc-chunk search threads documentId and folderIds into must', async () => {
+  it('sourceKind=doc_chunk search threads documentId and folderIds into must', async () => {
     const { fetcher, calls } = makeFetcher({ collectionExists: true });
     const client = createQdrantClient({ fetcher });
     await client.search('team-A', 'user-1', [0, 0, 0, 0], {
-      kind: 'doc-chunk',
+      sourceKind: 'doc_chunk',
       documentId: 'doc-1',
       folderIds: ['folder-a', 'folder-b'],
     });
@@ -323,10 +344,10 @@ describe('createQdrantClient', () => {
     expect(folderMust?.match.any).toEqual(['folder-a', 'folder-b']);
   });
 
-  it('documentId / folderIds on a non-doc-chunk search are ignored (no leakage)', async () => {
+  it('documentId / folderIds on a non-doc_chunk search are ignored (no leakage)', async () => {
     // Defense in depth: even if a caller passes documentId without
-    // setting kind='doc-chunk', the filter must NOT promote the search
-    // into the doc-chunk space (which would let timeline tools query
+    // setting sourceKind='doc_chunk', the filter must NOT promote the
+    // search into doc-chunk space (which would let timeline tools query
     // documents via a typo).
     const { fetcher, calls } = makeFetcher({ collectionExists: true });
     const client = createQdrantClient({ fetcher });
@@ -343,7 +364,7 @@ describe('createQdrantClient', () => {
     const hasFolder = body.filter.must.some((m) => m.key === 'folder_id');
     expect(hasDocId).toBe(false);
     expect(hasFolder).toBe(false);
-    // must_not still excludes doc-chunk so the timeline-flavoured search
+    // must_not still excludes doc_chunk so the timeline-flavoured search
     // semantics are preserved.
     expect(body.filter.must_not).toBeDefined();
   });

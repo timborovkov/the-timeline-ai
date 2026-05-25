@@ -307,10 +307,11 @@ export async function processDocumentExtractJob(
   });
 
   // Fan out embed jobs. Each chunk's embed point id is deterministic
-  // so duplicate enqueues are safe.
+  // (sha256 of scope + chunkId + model), so duplicate enqueues are safe.
+  // Uses the doc_chunk variant of the post-Phase-8 discriminated union.
   for (const chunkId of insertedIds) {
     await io.enqueueEmbed({
-      rawEventId: version.sourceEventId ?? chunkId,
+      scope: 'doc_chunk',
       teamId,
       documentChunkId: chunkId,
       ...(targetCollection ? { targetCollection } : {}),

@@ -67,18 +67,20 @@ the helpers (`listObjects`, `getObject`, `createObject`, `updateObject`,
 - [x] Overdue detector: hourly BullMQ repeatable (`overdue-scan` queue, `apps/worker/src/workers/overdue.ts`) scans overdue tasks/follow_ups and fans out to owner+assignee. Dedup per-day via partial unique index `notifications_overdue_dedup_idx` in migration `0008_overdue_dedup.sql`.
 - [x] Suggestion review UI: `suggested` rows in the "Recent changes" pane render Accept/Reject buttons. Accept calls `objects.acceptObjectChange` which re-uses `updateObject` so the full audit + notification path runs. A pending-suggestions banner appears on the object header when any are awaiting review.
 
-### Phase 8 follow-ups (next) — embed the rest of the object graph
+### Phase 8 follow-ups (shipped) — embed the rest of the object graph
 
-Today's embedding worker only covers `raw_events` (event body) and `facts` (via `fact_entities`). Phase 8's new object surface — `objects`, `object_notes`, `object_changes`, `entities` — is not in Qdrant yet. Close the gap so semantic search and the agent's retrieval tools see the full org map, not just the timeline.
+Phase 5 only covered `raw_events` and `facts` in Qdrant. This pass extends embedding coverage to the workspace object graph so the agent's retrieval tools see the full org map.
 
-- [ ] Embed `objects` on insert/update: text = name + description + current state summary (status/stage/priority/owner narrative). Re-embed on every `updateObject`.
-- [ ] Embed `object_notes` on insert/update: text = note body.
-- [ ] Embed `object_changes` (narrative `summary` field only, not raw JSON diff).
-- [ ] Embed `entities` (canonical name + aliases array) for entity disambiguation retrieval.
-- [ ] Extend Qdrant payload schema in `packages/shared/src/qdrant/client.ts` with `source_kind` enum (`raw_event | fact | object | object_note | object_change | entity | document_chunk | meeting_chunk | integration_event | chat_message`) and a corresponding source-kind-specific id field, while keeping existing fields for back-compat.
-- [ ] Update the reembed script to walk every source kind, not just raw_events + facts.
-- [ ] Update agent retrieval tools (`search_*` family in `packages/shared/src/agent/tools.ts`) to accept an optional `source_kind` filter and default to all-kinds for broad search.
-- [ ] Add a coverage audit script: for each source-kind table, compare row count to payload-filtered Qdrant count and report drift.
+- [x] Embed `objects` on insert/update: text = type + name + aliases + status/stage/priority/due narrative. Re-embedded on every `updateObject`.
+- [x] Embed `object_notes` on insert/update: text = note body. (Soft-deleted notes are skipped.)
+- [x] Embed `object_changes` using the operator's prose `note` when present, else a compact `field: prev → next` diff. Internal markers (`__create__`, `__note_*__`) are skipped — the parent `raw_events` row carries the narrative.
+- [x] Embed `entities` (canonical name + aliases) for entity disambiguation retrieval. Enqueued from `extract/resolve.ts` on insert and on alias merge, and from `createObject`/`updateObject` for workspace-typed entities.
+- [x] Extended Qdrant payload in [`packages/shared/src/qdrant/client.ts`](packages/shared/src/qdrant/client.ts) with `source_kind` enum + per-kind id fields (`object_id`, `note_id`, `change_id`, `entity_id`); `event_id` widened to nullable. `PointScope` widened in [`packages/shared/src/qdrant/point-id.ts`](packages/shared/src/qdrant/point-id.ts). Existing event/fact points keep working without re-embed (hash unchanged); legacy points without `source_kind` are read-tolerated by the dedup path.
+- [x] Reembed script walks every source kind with paired `--skip-objects`, `--skip-notes`, `--skip-changes`, `--skip-entities` flags. ([`apps/worker/src/scripts/reembed.ts`](apps/worker/src/scripts/reembed.ts))
+- [x] Agent `search_timeline` accepts optional `source_kind` filter (single or array); `searchEvents` plumbs it through to Qdrant and defensively skips non-event-anchored hits in the event-id dedup. ([`packages/shared/src/agent/tools.ts`](packages/shared/src/agent/tools.ts), [`packages/shared/src/team-scope.ts`](packages/shared/src/team-scope.ts))
+- [x] Coverage audit script [`apps/worker/src/scripts/embed-coverage.ts`](apps/worker/src/scripts/embed-coverage.ts) compares per-kind row counts to payload-filtered Qdrant counts and exits non-zero when drift exceeds `--threshold` (default 1%). Run via `pnpm --filter @timeline/worker embed-coverage -- --team=<uuid>`.
+
+Out of scope (future): a `search_workspace` agent tool that returns workspace-graph hits with their own hydration path (current `search_timeline` only resolves event-anchored kinds); a backfill that stamps `source_kind` onto legacy event/fact points (read-side fallback handles them today); `documents`, `meeting_chunks`, `integration_events`, `chat_messages` source kinds (reserved in the enum, wired in their respective phases).
 
 ## Phase 9 — Team Document Drive
 

@@ -98,7 +98,7 @@ async function main(): Promise<void> {
         console.log(`[dry-run] would enqueue embed for chunk ${row.id}`);
       } else {
         await queue.enqueueEmbedJob({
-          rawEventId: row.sourceEventId ?? row.id,
+          scope: 'doc_chunk',
           teamId: args.teamId,
           documentChunkId: row.id,
           ...(args.targetCollection ? { targetCollection: args.targetCollection } : {}),

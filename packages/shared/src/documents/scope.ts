@@ -849,7 +849,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       const { vector } = await embedFn({ text: input.query });
       const searchOpts: SearchOpts = {
         limit: input.limit ?? 12,
-        kind: 'doc-chunk',
+        sourceKind: 'doc_chunk',
       };
       if (input.documentId) searchOpts.documentId = input.documentId;
       if (input.folderIds) searchOpts.folderIds = input.folderIds;

@@ -10,18 +10,46 @@ import { buildPointId, type PointScope } from './point-id.js';
  * events: a future relaxation must not silently widen exposure of points
  * already in the collection.
  */
+export type SourceKind =
+  | 'raw_event'
+  | 'fact'
+  | 'object'
+  | 'object_note'
+  | 'object_change'
+  | 'entity'
+  // Phase 9: documents are chunked; each chunk gets its own point so the
+  // agent can cite a specific piece of a document at a specific version.
+  | 'doc_chunk';
+
 export interface QdrantPayload {
   team_id: string;
   /**
-   * For 'event' and 'fact' scopes this is the raw_events.id the point
-   * derives from. For 'doc-chunk' scopes this points at the document's
-   * upload-event row (set on `document_versions.source_event_id`) so the
-   * existing dedup-by-event-id paths still have a stable key, and so
-   * click-through resolution from a citation can land on either the
-   * document or the event.
+   * Discriminator added in Phase 8 follow-ups so the agent's retrieval tools
+   * can scope semantic search to a subset of source kinds (e.g. only objects
+   * + notes, excluding raw events). Pre-Phase-8 points written without this
+   * field are inferred at read time: `fact_id` set → 'fact', otherwise
+   * 'raw_event'. New points always stamp this explicitly. Phase 9 adds
+   * `doc_chunk` for document drive chunks.
    */
-  event_id: string;
+  source_kind: SourceKind;
+  /**
+   * The original raw event id, when this point derives from one (raw_event,
+   * fact). For `doc_chunk` points this is the document's upload-event id
+   * (`document_versions.source_event_id`) so click-through citation
+   * resolution can still land on the originating event. Null for
+   * object/note/change/entity points, which are not anchored to a single
+   * raw event.
+   */
+  event_id: string | null;
   fact_id: string | null;
+  /** Workspace object id. Set for source_kind in {object, object_note, object_change}. */
+  object_id: string | null;
+  /** object_notes.id. Set only for source_kind='object_note'. */
+  note_id: string | null;
+  /** object_changes.id. Set only for source_kind='object_change'. */
+  change_id: string | null;
+  /** entities.id. Set only for source_kind='entity'. */
+  entity_id: string | null;
   entity_ids: string[];
   occurred_at: string;
   author_user_id: string | null;
@@ -38,23 +66,20 @@ export interface QdrantPayload {
    */
   visibility_user_ids: string[] | null;
   embedding_model: string;
-  /**
-   * Phase 9 — discriminator that lets searchEvents() exclude doc-chunk
-   * points and searchDocumentChunks() include only them. Existing
-   * event/fact points written before Phase 9 have no `point_kind` field;
-   * the filters use `must`/`must_not` semantics that tolerate the absence
-   * (a missing field never matches `match.value`), so no backfill is
-   * required.
-   */
-  point_kind?: 'event' | 'fact' | 'doc-chunk';
-  // Phase 9 document fields — populated on 'doc-chunk' scope only.
-  document_id?: string;
-  document_version_id?: string;
-  document_chunk_id?: string;
-  folder_id?: string | null;
-  owner_user_id?: string | null;
-  /** Document version's createdAt (ISO). Lets recency filters work. */
-  updated_at?: string;
+  // ---- Phase 9 doc-chunk-only fields (per-kind, like object_id / note_id
+  // above). All null for non-doc_chunk points.
+  /** documents.id. Set only for source_kind='doc_chunk'. */
+  document_id: string | null;
+  /** document_versions.id. Set only for source_kind='doc_chunk'. */
+  document_version_id: string | null;
+  /** document_chunks.id. Set only for source_kind='doc_chunk'. */
+  document_chunk_id: string | null;
+  /** Parent folder id (or null for team-root). Drives folderId search filters. */
+  folder_id: string | null;
+  /** documents.ownerUserId — surfaced for owner filters. */
+  owner_user_id: string | null;
+  /** document_versions.createdAt as ISO. Lets recency filters work on docs. */
+  updated_at: string | null;
 }
 
 export interface SearchOpts {
@@ -62,19 +87,22 @@ export interface SearchOpts {
   to?: Date;
   source?: QdrantPayload['source'];
   entityIds?: string[];
-  limit?: number;
   /**
-   * Phase 9 — restrict by point kind. Defaults to 'event-or-fact' so
-   * `searchEvents` and any other timeline-flavoured caller never see
-   * document chunks. `searchDocumentChunks` passes 'doc-chunk' to flip
-   * the filter.
+   * Filter to one or more source kinds. When unset, all points match. When
+   * set, the filter additionally accepts legacy pre-Phase-8 points (which
+   * lack the `source_kind` field) by inferring kind from `fact_id` presence:
+   * a legacy point with `fact_id` set is a fact, otherwise a raw_event.
+   * This means narrowing by kind does not silently drop the existing
+   * timeline corpus.
    */
-  kind?: 'event-or-fact' | 'doc-chunk';
-  /** Restrict to a single document (only meaningful when kind = 'doc-chunk'). */
+  sourceKind?: SourceKind | SourceKind[];
+  limit?: number;
+  /** Phase 9: restrict doc_chunk search to one document. Only meaningful
+   *  when `sourceKind` is `'doc_chunk'` (or includes it). */
   documentId?: string;
-  /** Restrict to a folder subtree caller already resolved (only meaningful
-   *  when kind = 'doc-chunk'). The caller is responsible for expanding the
-   *  subtree to a flat folder-id list. */
+  /** Phase 9: restrict doc_chunk search to a folder subtree that the caller
+   *  already flattened to a list of folder ids. Only meaningful when
+   *  `sourceKind` includes `'doc_chunk'`. */
   folderIds?: string[];
 }
 
@@ -100,6 +128,13 @@ export interface QdrantClient {
    * vector store.
    */
   pointsExist(ids: string[]): Promise<Set<string>>;
+  /**
+   * Exact count of points matching team + visibility + optional kind filter.
+   * Used by the embed-coverage audit script to compare row counts to point
+   * counts. NOT for hot paths — Qdrant's `exact: true` count walks the
+   * collection.
+   */
+  countPoints(teamId: string, opts?: { sourceKind?: SourceKind }): Promise<number>;
   /** Test/admin-only: read the collection name this instance writes to. */
   collectionName(): string;
 }
@@ -305,23 +340,54 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     if (searchOpts.entityIds && searchOpts.entityIds.length > 0) {
       extraMust.push({ key: 'entity_ids', match: { any: searchOpts.entityIds } });
     }
-    // Phase 9 kind discriminator. Default: timeline-flavoured callers must
-    // never see doc-chunk points. Doc-chunk callers explicitly opt in.
-    const kind = searchOpts.kind ?? 'event-or-fact';
-    if (kind === 'doc-chunk') {
-      extraMust.push({ key: 'point_kind', match: { value: 'doc-chunk' } });
-      if (searchOpts.documentId) {
-        extraMust.push({ key: 'document_id', match: { value: searchOpts.documentId } });
+    if (searchOpts.sourceKind) {
+      const kinds = Array.isArray(searchOpts.sourceKind)
+        ? searchOpts.sourceKind
+        : [searchOpts.sourceKind];
+      // Match new points by their stamped source_kind. Pre-Phase-8 points
+      // lack the field; allow them in when the caller asked for raw_event
+      // and/or fact (the only kinds legacy points can be) by inferring from
+      // fact_id presence. Without this dual branch, narrowing search by
+      // kind silently drops most timeline hits until a full reembed.
+      const branches: unknown[] = [{ key: 'source_kind', match: { any: kinds } }];
+      const wantsRawEvent = kinds.includes('raw_event');
+      const wantsFact = kinds.includes('fact');
+      if (wantsRawEvent && wantsFact) {
+        branches.push({
+          must: [{ is_empty: { key: 'source_kind' } }],
+        });
+      } else if (wantsRawEvent) {
+        branches.push({
+          must: [{ is_empty: { key: 'source_kind' } }, { is_empty: { key: 'fact_id' } }],
+        });
+      } else if (wantsFact) {
+        branches.push({
+          must: [{ is_empty: { key: 'source_kind' } }],
+          must_not: [{ is_empty: { key: 'fact_id' } }],
+        });
       }
-      if (searchOpts.folderIds && searchOpts.folderIds.length > 0) {
-        extraMust.push({ key: 'folder_id', match: { any: searchOpts.folderIds } });
+      extraMust.push({ should: branches });
+      // Phase 9: doc-chunk callers can further narrow by document or folder.
+      // These fields are only set on `source_kind='doc_chunk'` points, so
+      // they're a no-op for any other kind — safe to apply unconditionally
+      // when present.
+      if (kinds.includes('doc_chunk')) {
+        if (searchOpts.documentId) {
+          extraMust.push({ key: 'document_id', match: { value: searchOpts.documentId } });
+        }
+        if (searchOpts.folderIds && searchOpts.folderIds.length > 0) {
+          extraMust.push({ key: 'folder_id', match: { any: searchOpts.folderIds } });
+        }
       }
     } else {
-      // Exclude any doc-chunk point from event-flavoured search. Pre-Phase-9
-      // points lack `point_kind` entirely; Qdrant's `must_not.match.value`
-      // does not match a missing field, so existing event/fact points pass.
+      // Phase 9: when sourceKind is unspecified the caller is doing a
+      // timeline-flavoured search (searchEvents). Document chunks must NOT
+      // surface there — they have their own retrieval path via
+      // searchDocumentChunks. Pre-Phase-9 points without `source_kind`
+      // pass this filter because Qdrant's `must_not.match.value` does not
+      // match a missing field.
       (filter as { must_not?: unknown[] }).must_not = [
-        { key: 'point_kind', match: { value: 'doc-chunk' } },
+        { key: 'source_kind', match: { value: 'doc_chunk' } },
       ];
     }
     if (extraMust.length > 0) {
@@ -383,12 +449,37 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     return new Set((body.result ?? []).map((p) => p.id));
   }
 
+  async function countPoints(
+    teamId: string,
+    opts: { sourceKind?: SourceKind } = {},
+  ): Promise<number> {
+    await ensureCollection();
+    const must: unknown[] = [{ key: 'team_id', match: { value: teamId } }];
+    if (opts.sourceKind) {
+      must.push({ key: 'source_kind', match: { value: opts.sourceKind } });
+    }
+    const res = await request(
+      'POST',
+      `/collections/${encodeURIComponent(collection)}/points/count`,
+      {
+        filter: { must },
+        exact: true,
+      },
+    );
+    if (res.status !== 200) {
+      throw new Error(`Qdrant count failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
+    }
+    const body = (res.data ?? {}) as { result?: { count?: number } };
+    return body.result?.count ?? 0;
+  }
+
   return {
     ensureCollection,
     upsertVector,
     search,
     deletePoints,
     pointsExist,
+    countPoints,
     collectionName: () => collection,
   };
 }

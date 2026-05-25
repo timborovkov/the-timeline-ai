@@ -12,7 +12,16 @@ import { createHash } from 'node:crypto';
  * The hash includes the model tag deliberately: changing the embedding model
  * is exactly the case where we MUST NOT overwrite a vector in place.
  */
-export type PointScope = 'event' | 'fact' | 'doc-chunk';
+export type PointScope =
+  | 'event'
+  | 'fact'
+  | 'object'
+  | 'object_note'
+  | 'object_change'
+  | 'entity'
+  // Phase 9: documents are chunked and each chunk gets its own point so
+  // retrieval is granular. Uses snake_case to match #22's enum convention.
+  | 'doc_chunk';
 
 export function buildPointId(scope: PointScope, sourceId: string, modelTag: string): string {
   const input = `${scope}:${sourceId}:${modelTag}`;

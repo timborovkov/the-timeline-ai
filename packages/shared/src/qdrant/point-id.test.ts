@@ -31,7 +31,7 @@ describe('buildPointId', () => {
     const sameSourceId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     const evId = buildPointId('event', sameSourceId, 'm');
     const factId = buildPointId('fact', sameSourceId, 'm');
-    const docId = buildPointId('doc-chunk', sameSourceId, 'm');
+    const docId = buildPointId('doc_chunk', sameSourceId, 'm');
     expect(new Set([evId, factId, docId]).size).toBe(3);
     expect(docId).toMatch(UUID_V4_LIKE);
   });
