@@ -81,10 +81,10 @@ CREATE TABLE "team_meeting_settings" (
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "team_meeting_settings" ADD CONSTRAINT "team_meeting_settings_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "team_meeting_settings" ADD CONSTRAINT "team_meeting_settings_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE cascade ON UPDATE no action;
 
--- Phase 10 raw_events idempotency: the unsigned Recall transcript webhook
--- retries on 5xx, and we want the partial unique index on
--- (team_id, source_metadata->>'meeting_chunk_provider_id') to make those
--- retries a no-op at the audit-event layer.
-CREATE UNIQUE INDEX "raw_events_meeting_chunk_id_unq" ON "raw_events" USING btree ("team_id", ((source_metadata ->> 'meeting_chunk_provider_id'))) WHERE "raw_events"."source" = 'meeting' AND "raw_events"."source_metadata" ? 'meeting_chunk_provider_id';
+-- Note: the raw_events partial unique index that references the new
+-- `meeting` enum value lives in migration 0012. Postgres rejects use of a
+-- freshly-added enum value inside the same transaction
+-- (ERROR 55P04: unsafe use of new value), so the index must run after this
+-- migration commits.
