@@ -70,6 +70,30 @@ tool. When in doubt, invoke the skill.
   caller has explicitly confirmed participants will be informed. Raw
   audio is NOT copied to S3; transcript text is the only persistent
   record.
+- **All integration secrets at rest go through `crypto/secrets.ts`.**
+  AES-256-GCM, key from `SECRETS_ENCRYPTION_KEY`. Never store an OAuth
+  refresh token or bearer config as plaintext; the column triplet is
+  `*_ciphertext`/`*_iv`/`*_tag`. Same applies to inbound MCP
+  (`mcp_oauth_tokens`, `mcp_servers.auth_config_*`) and any future
+  third-party token storage.
+- **MCP tool outputs are untrusted.** Every output from a connected
+  custom MCP server flows through `fenceExternalContent` in
+  [`packages/shared/src/agent/tools.ts`](packages/shared/src/agent/tools.ts)
+  before the agent sees it (Rule 8 of the system prompt). Same for
+  integration event snippets surfaced via `search_integration_events`.
+  A new tool that surfaces external content MUST wrap it.
+- **Outbound MCP bearer keys see only `team`-visibility events.** The
+  `/api/mcp/server` handler uses `withTeam(db, teamId, ZERO_UUID,
+  { skipMembershipCheck: true })`. The zero-UUID can't match
+  `authorUserId` (private) or `visibilityUserIds` (specific_users), so
+  those events stay invisible. Do not loosen this — bearer keys
+  represent a team, not a user.
+- **No SSRF from user-supplied or discovered URLs.** `validateMcpUrl`
+  in [`packages/shared/src/mcp/auth.ts`](packages/shared/src/mcp/auth.ts)
+  rejects loopback, RFC1918, RFC 3927 link-local (169.254/16 — cloud
+  metadata!), IPv6 link-local / unique-local, `.local`, `.internal`,
+  and `http://` in production. Any new outbound fetch against a URL
+  that originated outside our code must go through this guard.
 
 ## Repo layout
 
@@ -77,7 +101,8 @@ tool. When in doubt, invoke the skill.
 apps/
   web/      Next.js 15 app (App Router, RSC, server actions, Auth.js)
   worker/   BullMQ workers (transcribe, extract, embed, document-extract,
-            meeting-finalize, overdue-scan, janitor)
+            meeting-finalize, overdue-scan, janitor, integration-sync,
+            mcp-health)
 packages/
   db/       Drizzle schema + migrations
   shared/   Cross-package code: withTeam scope, llm wrapper, Qdrant wrapper,
@@ -85,10 +110,16 @@ packages/
             documents module (Phase 9 — folders/documents/versions/chunks
             scope, RustFS object-key builder, text chunker), meeting-bots
             module (Phase 10 — Recall.ai provider, Svix verifier) +
-            meetings scope (meeting/chunk/usage helpers)
+            meetings scope (meeting/chunk/usage helpers), integrations
+            module (Phase 11 — Drive/Linear/GitHub providers, event-writer,
+            registry catalog, AES-GCM secrets helper), mcp module (Phase 11
+            — JSON-RPC client, OAuth client + state JWT, SSRF guard,
+            team+user-overlay scope), mcp-server module (Phase 11 outbound —
+            JSON-RPC handler, bearer-key mint/verify for /api/mcp/server)
 docs/
   setup/    External service walkthroughs (Telegram, OpenRouter, Postmark,
-            Recall.ai meeting bots, Sentry, Railway, local dev)
+            Recall.ai meeting bots, Sentry, Railway, local dev,
+            third-party integrations + Timeline-as-MCP-server)
 ```
 
 Phased build plan and current state: [todo.md](todo.md). Product vision:

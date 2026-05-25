@@ -46,15 +46,22 @@
         <li>
           Set:
           <pre><code>GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...</code></pre>
+GOOGLE_CLIENT_SECRET=...
+# REQUIRED before accepting Drive webhooks. 32+ bytes of randomness.
+GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
           Restart the web + worker services. The card on <code>/app/team/integrations</code> turns
           from <em>Not configured</em> to <em>Connect</em>.
         </li>
         <li>
-          (Optional) Register a Drive push-notification channel keyed on the integration row's id;
-          route hits <code>/api/webhooks/google-drive</code>.
+          (Optional) Register a Drive push-notification channel for incremental sync. The channel
+          <code>token</code> must be
+          <code
+            >&lt;integration_id&gt;.&lt;HMAC-SHA256(GOOGLE_DRIVE_WEBHOOK_SECRET,
+            integration_id)&gt;</code
+          >; route hits <code>/api/webhooks/google-drive</code>. The handler refuses inbound
+          notifications when the secret is unset, and rejects bad signatures.
         </li>
       </ol>
 
@@ -99,8 +106,13 @@ GITHUB_WEBHOOK_SECRET=...</code></pre>
         </li>
       </ol>
 
-      <h2 id="mcp">Custom MCP servers</h2>
-      <p>Visit <code>/app/team/mcp-servers</code> → <em>Add server</em>. Pick an auth mode:</p>
+      <h2 id="mcp">Custom MCP servers (inbound)</h2>
+      <p>
+        Bring tools from any MCP-compatible server into the agent's toolset. Visit
+        <code>/app/team/mcp-servers</code> (team catalog — admins only) or
+        <code>/app/me/mcp-servers</code> (personal overlay — visible only to you, any member can
+        add). Pick an auth mode:
+      </p>
       <ul>
         <li><strong>None</strong> — public MCP servers with no auth.</li>
         <li><strong>Bearer token</strong> — API keys / personal access tokens.</li>
@@ -108,15 +120,67 @@ GITHUB_WEBHOOK_SECRET=...</code></pre>
         <li>
           <strong>OAuth</strong> — server speaks the MCP OAuth dance; state JWT-equivalent is
           HS256-signed with <code>MCP_OAUTH_STATE_SECRET</code> (falls back to
-          <code>AUTH_SECRET</code>).
+          <code>AUTH_SECRET</code>). Access tokens auto-refresh on expiry; if refresh fails the chat
+          inline-renders a <em>Reconnect</em> button.
         </li>
       </ul>
       <p>
-        Discovered tools appear under the server with a <em>Test call</em> button. Tools are
-        namespaced as <code>mcp__&lt;serverIdCompact&gt;__&lt;toolName&gt;</code> and merged into
-        the agent's toolset on every <code>/api/chat</code> request. Outputs are fenced through
+        Discovered tools appear under the server with a <em>Test call</em> button (admin for team
+        servers, owner for personal). Tools are namespaced as
+        <code>mcp__&lt;serverIdCompact&gt;__&lt;toolName&gt;</code> and merged into the agent's
+        toolset on every <code>/api/chat</code> request. Outputs are fenced through
         <code>fenceExternalContent</code> so the agent treats them as untrusted data per Rule 8 of
-        the system prompt.
+        the system prompt. A background <code>mcp-health</code> worker pings every enabled server on
+        a 5-minute schedule and surfaces <code>last_connected_at</code> / <code>last_error</code> in
+        the UI.
+      </p>
+
+      <h2 id="timeline-as-mcp">Timeline as an MCP server (outbound)</h2>
+      <p>
+        Expose this Timeline as an MCP server so external agents (Claude Desktop, Cursor, Vernix,
+        web-based agents, etc.) can query its events, entities, and documents. Admins mint bearer
+        keys at <code>/app/team/mcp-share</code>:
+      </p>
+      <ol>
+        <li>Go to <code>/app/team/mcp-share</code> and copy the MCP endpoint URL shown there.</li>
+        <li>
+          Click <em>New key</em>, give it a label (e.g. "Claude Desktop — personal mac"), and copy
+          the one-time plaintext.
+        </li>
+        <li>
+          In the consuming agent, add an MCP server with:
+          <ul>
+            <li>URL: <code>{AUTH_URL}/api/mcp/server</code></li>
+            <li>Header: <code>Authorization: Bearer tla_...</code></li>
+          </ul>
+        </li>
+      </ol>
+      <p>
+        The server speaks MCP protocol <code>2024-11-05</code> over streamable HTTP. Methods:
+        <code>initialize</code>, <code>tools/list</code>, <code>tools/call</code>,
+        <code>resources/list</code>, <code>resources/read</code>, <code>prompts/list</code>,
+        <code>prompts/get</code>. Tools exposed:
+      </p>
+      <ul>
+        <li><code>timeline.search_events</code> — semantic search across raw events</li>
+        <li>
+          <code>timeline.get_event</code> / <code>timeline.list_events</code> — fetch + paginate
+        </li>
+        <li><code>timeline.get_entity</code> — lookup person / company / project / topic</li>
+        <li>
+          <code>timeline.search_documents</code> — semantic search across the team document drive
+        </li>
+      </ul>
+      <p>
+        <strong>Isolation:</strong> bearer keys are team-scoped, not per-user. The handler runs all
+        queries with a pseudo-zero-UUID actor so events with <code>visibility=private</code> or
+        <code>specific_users</code> stay invisible to outbound clients — only
+        <code>visibility=team</code> events flow out. Keys are stored as SHA-256 hashes (plaintext
+        shown once at creation). Revoke from the same page; revocation is immediate.
+      </p>
+      <p>
+        Wildcard CORS is set so browser-based agents work; Authorization-header auth means cookies
+        cannot authenticate the cross-origin call. Per-IP rate limit 600/min.
       </p>
 
       <h2 id="sync">How sync runs</h2>

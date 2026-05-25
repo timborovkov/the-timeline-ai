@@ -7,14 +7,17 @@ to whom, and decided what. Then ask a tool-using agent about it: every
 claim it surfaces links back to the raw event it came from. No black-box
 summaries.
 
-Current state: through Phase 10. Web + Telegram + email + document drive +
+Current state: through Phase 11. Web + Telegram + email + document drive +
 meeting-bot capture (silent Recall.ai bot for Google Meet / Teams / Zoom),
 voice transcription, extracted facts + entities, semantic search, agent
 chat at `/app/chat`, workspace objects + boards + persisted chat sessions,
-and a team document drive at `/app/documents` (folders, versioned uploads,
-chunked + embedded, cited inline with `[doc:<id>#v<n>:chunk:<id>]`) all
-working end-to-end. Railway deployment, deploy-time migrations, and
-structured logging are in place.
+a team document drive at `/app/documents` (folders, versioned uploads,
+chunked + embedded, cited inline with `[doc:<id>#v<n>:chunk:<id>]`), and
+third-party integrations (Google Drive, Linear, GitHub native + custom
+MCP servers per team or per user) at `/app/team/integrations` —
+plus a Vernix-style outbound MCP server at `/api/mcp/server` so external
+agents (Claude Desktop, Cursor, Vernix) can query this Timeline. Railway
+deployment, deploy-time migrations, and structured logging are in place.
 
 ## Read first
 
@@ -49,6 +52,7 @@ dashboard quirks:
   (Phase 3+).
 - [`docs/setup/postmark.html`](./docs/setup/postmark.html) — inbound email (Phase 7).
 - [`docs/setup/meeting-bots.html`](./docs/setup/meeting-bots.html) — Recall.ai meeting bots (Phase 10).
+- [`docs/setup/integrations.html`](./docs/setup/integrations.html) — third-party integrations (Drive/Linear/GitHub), custom MCP servers, and Timeline-as-MCP-server (Phase 11).
 - [`docs/setup/sentry.html`](./docs/setup/sentry.html) — error tracking.
 - [`docs/setup/railway.html`](./docs/setup/railway.html) — staging + production
   deploys.

@@ -37,6 +37,12 @@ ln -sf ../../.env apps/web/.env
       <p>Fill in at minimum:</p>
       <ul>
         <li><code>AUTH_SECRET</code> — <code>openssl rand -base64 32</code></li>
+        <li>
+          <code>SECRETS_ENCRYPTION_KEY</code> — 32-byte base64 key required as soon as you connect
+          any Phase 11 integration or custom MCP server. Generate with
+          <code>openssl rand -base64 32</code>. See
+          <a href="integrations.html">integrations setup</a>.
+        </li>
       </ul>
 
       <p>The rest of the defaults already match <code>docker-compose.yml</code>.</p>
