@@ -248,10 +248,23 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
   async function getDocumentRaw(id: string): Promise<DocumentRow | null> {
     if (!UUID_RE.test(id)) return null;
+    // Filters soft-deleted documents in addition to team + visibility.
+    // Soft-deleted rows must NOT surface via `getDocument` — that would
+    // make them readable through the detail page, the agent's
+    // `get_document` tool, and `getDocumentDownloadUrlAction`. Restore
+    // / hard-purge paths use a direct query that bypasses this helper
+    // because they need to operate on deleted rows.
     const rows = await db
       .select()
       .from(documents)
-      .where(and(eq(documents.id, id), eq(documents.teamId, teamId), documentVisibility))
+      .where(
+        and(
+          eq(documents.id, id),
+          eq(documents.teamId, teamId),
+          documentVisibility,
+          isNull(documents.deletedAt),
+        ),
+      )
       .limit(1);
     return (rows[0] as DocumentRow | undefined) ?? null;
   }

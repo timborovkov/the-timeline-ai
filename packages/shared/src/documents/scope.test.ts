@@ -273,6 +273,30 @@ describe('document scope — soft delete + audit trail', () => {
     const remaining = await scope.listDocuments({ folderId: null });
     expect(remaining.map((d) => d.id)).toContain(created.document.id);
   });
+
+  it('soft-deleted documents are NOT reachable via getDocument (bugbot #3298769085)', async () => {
+    // Pre-fix, a direct-by-id lookup still returned the row, so the
+    // detail page, the agent's get_document tool, and the download
+    // action all leaked content of "deleted" docs. The fix filters
+    // by isNull(deletedAt) in getDocumentRaw.
+    const scope = withTeam(db, TEAM_ID, USER_A);
+    const created = await scope.createDocument({
+      name: 'gone.txt',
+      folderId: null,
+      filename: 'gone.txt',
+      contentType: 'text/plain',
+    });
+    // Before delete: getDocument finds it.
+    expect(await scope.getDocument(created.document.id)).not.toBeNull();
+    await scope.softDeleteDocument(created.document.id);
+    // After delete: getDocument returns null even though the row
+    // physically exists (soft delete preserves the audit trail).
+    expect(await scope.getDocument(created.document.id)).toBeNull();
+    // restoreDocument deliberately bypasses getDocumentRaw so it can
+    // still find the soft-deleted row to undelete it.
+    await scope.restoreDocument(created.document.id);
+    expect(await scope.getDocument(created.document.id)).not.toBeNull();
+  });
 });
 
 describe('document scope — transactional invariant', () => {

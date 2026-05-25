@@ -231,10 +231,22 @@ export async function processDocumentExtractJob(
   }
 
   const contentType = (version.contentType ?? '').toLowerCase();
+  // Extension fallback for routing must use the ORIGINAL uploaded
+  // filename, not document.name — the latter is the user-facing display
+  // (e.g. "Acme MSA") and frequently has no extension. The sanitised
+  // upload filename is the last segment of the versioned object key
+  // (see buildDocumentObjectKey: `<team>/<doc>/v<n>/<filename>`). Fall
+  // back to document.name only if the key shape is unexpected.
+  // `||` not `??` here — pop()?.trim() can return an empty string,
+  // which is meaningless for extension routing. Empty-string and
+  // undefined both fall through to document.name.
+  const objectKeyTail = version.objectKey.split('/').pop()?.trim();
+  const filenameForRouting =
+    objectKeyTail && objectKeyTail.length > 0 ? objectKeyTail : document.name;
   let text: string;
   let extractionModel: string = EXTRACT_CODE_VERSION;
   try {
-    const routed = await routeContentToText({ contentType, body, name: document.name }, io);
+    const routed = await routeContentToText({ contentType, body, name: filenameForRouting }, io);
     if ('failure' in routed) {
       // Honest reason — routeContentToText distinguishes "unsupported
       // mediaType" from "binary content masquerading as text" so the

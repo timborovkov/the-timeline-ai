@@ -119,13 +119,16 @@ async function createFinalisedDocument(
     name: string;
     contentType: string;
     visibility?: 'team' | 'private' | 'specific_users';
+    /** Override the upload filename. Defaults to `opts.name` for back-compat
+     *  with existing tests that pass an extension-bearing display name. */
+    filename?: string;
   },
 ): Promise<{ documentId: string; versionId: string }> {
   const scope = withTeam(db, TEAM_ID, USER_A);
   const created = await scope.createDocument({
     name: opts.name,
     folderId: null,
-    filename: opts.name,
+    filename: opts.filename ?? opts.name,
     contentType: opts.contentType,
     visibility: opts.visibility ?? 'team',
   });
@@ -439,6 +442,28 @@ describe('processDocumentExtractJob — content-type routing', () => {
       h.io,
     );
     expect(h.extractFromMedia).toHaveBeenCalledOnce();
+  });
+
+  it('extension fallback reads the upload filename, not the display name (bugbot #3298769081)', async () => {
+    // The real-world case: users name their document something
+    // human-readable like "Acme MSA" (no extension) while uploading
+    // "msa.pdf". Pre-fix the worker read document.name for the
+    // extension regex and stamped the doc as unsupported. Post-fix the
+    // worker derives the filename from version.objectKey.
+    h = await makeHarness('%PDF bytes', { visionResponse: 'derived from filename' });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'Acme MSA', // display name — no extension
+      filename: 'msa.pdf', // upload filename — extension lives here
+      contentType: 'application/octet-stream',
+    });
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    // Vision was called because the .pdf extension routed correctly.
+    expect(h.extractFromMedia).toHaveBeenCalledOnce();
+    expect(result.chunkCount).toBeGreaterThanOrEqual(1);
   });
 
   it('still rejects truly unsupported content types (e.g. audio)', async () => {
