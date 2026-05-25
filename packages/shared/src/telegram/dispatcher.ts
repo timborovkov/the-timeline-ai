@@ -682,18 +682,19 @@ async function runAskInner(input: RunAskInput): Promise<void> {
     await sendWithRetry(input.tg, { chat_id: input.chatId, text });
     return;
   }
-  // Cache the paid answer BEFORE attempting to send. If the send fails or
-  // the process dies between here and clear, the next delivery (manual
-  // replay or a still-in-flight Telegram retry) can deliver from cache
-  // without re-billing OpenRouter.
-  await cachePendingAnswer(input.updateId, result.answer).catch(() => undefined);
   const delivered = await sendWithRetry(input.tg, {
     chat_id: input.chatId,
     text: result.answer,
   });
-  if (delivered) {
-    await clearPendingAnswer(input.updateId).catch(() => undefined);
-  } else {
+  if (!delivered) {
+    // Stash the paid answer ONLY after every send attempt failed. Caching
+    // before the send opens a race: a Telegram redelivery arriving while
+    // the first attempt is still inside sendWithRetry would hit dedup,
+    // read the cache, and send the same answer a second time. The crash
+    // window between a successful agent run and the first sendMessage
+    // attempt is much smaller than the redelivery race, and a missed
+    // reply is preferable to a duplicate.
+    await cachePendingAnswer(input.updateId, result.answer).catch(() => undefined);
     log.error(
       { updateId: input.updateId, chatId: input.chatId, tgUserId: input.tgUserId },
       'ask_answer_undelivered',
