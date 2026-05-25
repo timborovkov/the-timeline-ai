@@ -378,9 +378,7 @@ export class McpClientManager {
     const rows = await db
       .select()
       .from(mcpServers)
-      .where(
-        and(eq(mcpServers.id, mapping.serverId), eq(mcpServers.teamId, teamId), visibility),
-      )
+      .where(and(eq(mcpServers.id, mapping.serverId), eq(mcpServers.teamId, teamId), visibility))
       .limit(1);
     const server = rows[0];
     if (!server) throw new Error('MCP server not found');

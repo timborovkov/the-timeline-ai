@@ -73,7 +73,8 @@ const TOOLS = [
   },
   {
     name: 'timeline.get_entity',
-    description: 'Look up an entity (person, company, project, topic) by exact id or canonical name.',
+    description:
+      'Look up an entity (person, company, project, topic) by exact id or canonical name.',
     inputSchema: {
       type: 'object',
       properties: { idOrName: { type: 'string', minLength: 1, maxLength: 200 } },
@@ -129,7 +130,10 @@ interface HandleContext {
   bearer: string | null;
 }
 
-async function jsonRpcSuccess(id: number | string | null, result: unknown): Promise<JsonRpcSuccess> {
+async function jsonRpcSuccess(
+  id: number | string | null,
+  result: unknown,
+): Promise<JsonRpcSuccess> {
   return Promise.resolve({ jsonrpc: '2.0', id, result });
 }
 
@@ -351,8 +355,7 @@ function buildPrompt(
           role: 'user',
           content: {
             type: 'text',
-            text:
-              'Use timeline.list_events with a 7-day window, then timeline.search_events for any standout themes. Summarize what the team has been working on this week.',
+            text: 'Use timeline.list_events with a 7-day window, then timeline.search_events for any standout themes. Summarize what the team has been working on this week.',
           },
         },
       ],

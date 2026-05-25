@@ -93,8 +93,7 @@ export async function POST(req: Request): Promise<Response> {
   if (matchClauses.length === 0) {
     return NextResponse.json({ ok: true, reason: 'no_matching_tenant' }, { status: 200 });
   }
-  const tenantClause =
-    matchClauses.length === 1 ? matchClauses[0] : or(...matchClauses);
+  const tenantClause = matchClauses.length === 1 ? matchClauses[0] : or(...matchClauses);
   const rows = await db
     .select()
     .from(integrationsTable)

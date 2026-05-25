@@ -68,7 +68,7 @@ export function GET(): Response {
     name: 'the-timeline',
     version: '0.1.0',
     description:
-      "Timeline-as-MCP-server. POST JSON-RPC 2.0 requests with `Authorization: Bearer <key>`. Mint keys at /app/team/mcp-share.",
+      'Timeline-as-MCP-server. POST JSON-RPC 2.0 requests with `Authorization: Bearer <key>`. Mint keys at /app/team/mcp-share.',
     protocolVersion: '2024-11-05',
   });
 }

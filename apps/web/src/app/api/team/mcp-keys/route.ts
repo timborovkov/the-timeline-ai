@@ -58,7 +58,10 @@ export async function POST(req: Request): Promise<Response> {
   const body: unknown = await req.json();
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: 'bad_request', issues: parsed.error.issues }, { status: 400 });
+    return NextResponse.json(
+      { error: 'bad_request', issues: parsed.error.issues },
+      { status: 400 },
+    );
   }
   const minted = mcpServer.mintKey();
   const rows = await db

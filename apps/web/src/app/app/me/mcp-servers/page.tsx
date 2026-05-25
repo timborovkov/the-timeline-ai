@@ -32,9 +32,9 @@ export default async function PersonalMcpServersPage() {
         ]}
       />
       <p className="text-sm text-fg-muted">
-        Personal MCP servers are visible only to you and contribute their tools to
-        chats you start. Use them for tools tied to your own accounts (e.g. personal
-        Linear, scratch Postgres, your own MCP servers in development).
+        Personal MCP servers are visible only to you and contribute their tools to chats you start.
+        Use them for tools tied to your own accounts (e.g. personal Linear, scratch Postgres, your
+        own MCP servers in development).
       </p>
       <a
         href="/app/team/mcp-servers"

@@ -75,8 +75,8 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-fg-muted">
-            Configure your MCP client (Claude Desktop, Cursor, Vernix, etc.) with the URL
-            below plus a bearer key from this page. The server speaks MCP protocol{' '}
+            Configure your MCP client (Claude Desktop, Cursor, Vernix, etc.) with the URL below plus
+            a bearer key from this page. The server speaks MCP protocol{' '}
             <code className="font-mono">2024-11-05</code> over streamable HTTP.
           </p>
           <div className="flex items-center gap-2">
@@ -106,9 +106,8 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-fg-muted">
-              The plaintext for <span className="font-mono">{mintedKey.name}</span> is shown
-              below once. We store only the hash; if you lose it you&apos;ll need to mint a
-              new one.
+              The plaintext for <span className="font-mono">{mintedKey.name}</span> is shown below
+              once. We store only the hash; if you lose it you&apos;ll need to mint a new one.
             </p>
             <div className="flex items-center gap-2">
               <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">

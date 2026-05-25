@@ -94,7 +94,9 @@ export function ToolStep({ name, state, input, output }: Props) {
   const isRunning =
     state === 'input-streaming' || state === 'input-available' || state === 'partial-call';
   const out =
-    output && typeof output === 'object' && (output as Record<string, unknown>).error === 'needs_reauth'
+    output &&
+    typeof output === 'object' &&
+    (output as Record<string, unknown>).error === 'needs_reauth'
       ? (output as Record<string, unknown>)
       : null;
   const isError =
@@ -104,8 +106,7 @@ export function ToolStep({ name, state, input, output }: Props) {
       output !== null &&
       'error' in (output as Record<string, unknown>));
   const summary = summarize(name, input, output);
-  const reauthServerId =
-    out && typeof out.mcp_server_id === 'string' ? out.mcp_server_id : null;
+  const reauthServerId = out && typeof out.mcp_server_id === 'string' ? out.mcp_server_id : null;
   const reauthServerName =
     out && typeof out.mcp_server_name === 'string' ? out.mcp_server_name : 'MCP server';
   return (
