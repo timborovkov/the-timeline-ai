@@ -33,7 +33,7 @@ import {
   rawEvents,
 } from '@timeline/db';
 import { qdrant } from '@timeline/shared';
-import { and, count, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, count, eq, isNotNull, isNull, not, or, sql } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -93,7 +93,22 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
       .select({ n: count() })
       .from(objectNotesTable)
       .where(and(eq(objectNotesTable.teamId, teamId), isNull(objectNotesTable.deletedAt))),
-    db.select({ n: count() }).from(objectChangesTable).where(eq(objectChangesTable.teamId, teamId)),
+    // Mirror buildObjectChangePlan: rows with field starting `__` AND no
+    // operator `note` are intentionally skipped by the worker (the parent
+    // raw_events row carries the human narrative). Counting them would
+    // create permanent positive drift for healthy teams.
+    db
+      .select({ n: count() })
+      .from(objectChangesTable)
+      .where(
+        and(
+          eq(objectChangesTable.teamId, teamId),
+          or(
+            not(sql`${objectChangesTable.field} LIKE '\\_\\_%' ESCAPE '\\'`),
+            isNotNull(objectChangesTable.note),
+          ),
+        ),
+      ),
   ]);
 
   const entityCount = entityRows[0]?.n ?? 0;

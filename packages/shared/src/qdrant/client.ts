@@ -67,9 +67,12 @@ export interface SearchOpts {
   source?: QdrantPayload['source'];
   entityIds?: string[];
   /**
-   * Filter to one or more source kinds. When unset, all kinds match (including
-   * legacy points written before this field existed — those are matched via
-   * a `should` branch that also accepts `fact_id`-derived inference).
+   * Filter to one or more source kinds. When unset, all points match. When
+   * set, the filter additionally accepts legacy pre-Phase-8 points (which
+   * lack the `source_kind` field) by inferring kind from `fact_id` presence:
+   * a legacy point with `fact_id` set is a fact, otherwise a raw_event.
+   * This means narrowing by kind does not silently drop the existing
+   * timeline corpus.
    */
   sourceKind?: SourceKind | SourceKind[];
   limit?: number;
@@ -313,7 +316,29 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       const kinds = Array.isArray(searchOpts.sourceKind)
         ? searchOpts.sourceKind
         : [searchOpts.sourceKind];
-      extraMust.push({ key: 'source_kind', match: { any: kinds } });
+      // Match new points by their stamped source_kind. Pre-Phase-8 points
+      // lack the field; allow them in when the caller asked for raw_event
+      // and/or fact (the only kinds legacy points can be) by inferring from
+      // fact_id presence. Without this dual branch, narrowing search by
+      // kind silently drops most timeline hits until a full reembed.
+      const branches: unknown[] = [{ key: 'source_kind', match: { any: kinds } }];
+      const wantsRawEvent = kinds.includes('raw_event');
+      const wantsFact = kinds.includes('fact');
+      if (wantsRawEvent && wantsFact) {
+        branches.push({
+          must: [{ is_empty: { key: 'source_kind' } }],
+        });
+      } else if (wantsRawEvent) {
+        branches.push({
+          must: [{ is_empty: { key: 'source_kind' } }, { is_empty: { key: 'fact_id' } }],
+        });
+      } else if (wantsFact) {
+        branches.push({
+          must: [{ is_empty: { key: 'source_kind' } }],
+          must_not: [{ is_empty: { key: 'fact_id' } }],
+        });
+      }
+      extraMust.push({ should: branches });
     }
     if (extraMust.length > 0) {
       (filter.must as unknown[]).push(...extraMust);
