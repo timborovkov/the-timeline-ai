@@ -35,6 +35,26 @@ const getEventInput = z.object({
   id: z.string().regex(UUID_RE),
 });
 
+const searchDocumentsInput = z.object({
+  query: z.string().trim().min(1).max(500),
+  documentId: z.string().regex(UUID_RE).optional(),
+  folderIds: z.array(z.string().regex(UUID_RE)).max(20).optional(),
+  limit: z.number().int().min(1).max(20).optional(),
+});
+
+const getDocumentInput = z.object({
+  id: z.string().regex(UUID_RE),
+});
+
+const getDocumentChunkInput = z.object({
+  id: z.string().regex(UUID_RE),
+});
+
+const listDocumentChangesInput = z.object({
+  since: z.string().datetime().optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+
 /**
  * Wrap an event's raw text in `<external_content>` tags so the model cannot
  * confuse it with system instructions. The tag name is referenced verbatim
@@ -462,6 +482,132 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
               entity_id: e.id,
               name: e.canonicalName,
               type: e.type,
+            })),
+          };
+        }),
+    }),
+
+    search_documents: tool({
+      description:
+        "Semantic search across the team's document drive. Returns ranked chunks with document_id, version, chunk_id, page_number, and snippet. Use this when the answer might live in an uploaded contract, deal doc, policy, onboarding guide, or customer note. Cite hits with [doc:<documentId>#v<version>:chunk:<chunkId>].",
+      inputSchema: searchDocumentsInput,
+      execute: async (raw) =>
+        safe('search_documents', async () => {
+          const input = searchDocumentsInput.parse(raw);
+          const args: Parameters<typeof scope.searchDocumentChunks>[0] = {
+            query: input.query,
+          };
+          if (input.documentId) args.documentId = input.documentId;
+          if (input.folderIds) args.folderIds = input.folderIds;
+          if (input.limit) args.limit = input.limit;
+          const hits = await scope.searchDocumentChunks(args);
+          // Fence the chunk text so a prompt-injection embedded in an
+          // uploaded document cannot escape into the agent's instructions.
+          // Use the chunk id as the fence event_id attribute so the marker
+          // is unique per piece of returned content.
+          const fenced = hits.map((h) => ({
+            document_id: h.documentId,
+            document_version_id: h.documentVersionId,
+            document_chunk_id: h.documentChunkId,
+            version: h.version,
+            chunk_index: h.chunkIndex,
+            page_number: h.pageNumber,
+            document_name: h.documentName,
+            folder_id: h.folderId,
+            score: h.score,
+            snippet:
+              fenceExternalContent(h.summary ?? h.text.slice(0, 800), {
+                source: 'document',
+                eventId: h.documentChunkId,
+              }) ?? '',
+          }));
+          return { count: fenced.length, results: fenced };
+        }),
+    }),
+
+    get_document: tool({
+      description:
+        'Fetch a document by id: metadata, owner, visibility, folder, current version, and full version history. Use this to verify a [doc:...] citation or to drill into a hit returned by search_documents.',
+      inputSchema: getDocumentInput,
+      execute: async (raw) =>
+        safe('get_document', async () => {
+          const { id } = getDocumentInput.parse(raw);
+          const document = await scope.getDocument(id);
+          if (!document) return { found: false };
+          const versions = await scope.listDocumentVersions(document.id);
+          const folderPath = await scope.folderPath(document.folderId);
+          return {
+            found: true,
+            document_id: document.id,
+            name: document.name,
+            folder_id: document.folderId,
+            folder_path: folderPath,
+            owner_user_id: document.ownerUserId,
+            visibility: document.visibility,
+            current_version_id: document.currentVersionId,
+            created_at: document.createdAt.toISOString(),
+            updated_at: document.updatedAt.toISOString(),
+            versions: versions.map((v) => ({
+              version_id: v.id,
+              version: v.version,
+              byte_size: v.byteSize,
+              content_type: v.contentType,
+              uploaded_by_user_id: v.uploadedByUserId,
+              processing_status: v.processingStatus,
+              created_at: v.createdAt.toISOString(),
+            })),
+          };
+        }),
+    }),
+
+    get_document_chunk: tool({
+      description:
+        "Fetch the full text of a single document chunk by chunk_id. Use this to expand a citation when the snippet returned by search_documents isn't enough. Returns the chunk text fenced as external content.",
+      inputSchema: getDocumentChunkInput,
+      execute: async (raw) =>
+        safe('get_document_chunk', async () => {
+          const { id } = getDocumentChunkInput.parse(raw);
+          const chunk = await scope.getDocumentChunk(id);
+          if (!chunk) return { found: false };
+          return {
+            found: true,
+            document_chunk_id: chunk.id,
+            document_id: chunk.documentId,
+            document_version_id: chunk.documentVersionId,
+            chunk_index: chunk.chunkIndex,
+            page_number: chunk.pageNumber,
+            token_count: chunk.tokenCount,
+            text:
+              fenceExternalContent(chunk.text, {
+                source: 'document',
+                eventId: chunk.id,
+              }) ?? '',
+          };
+        }),
+    }),
+
+    list_recent_document_changes: tool({
+      description:
+        "List recent document drive activity (uploads, new versions, renames, moves, deletes, restores, visibility changes). Use this for 'what's new in the docs', 'what did someone change recently', or to enumerate documents touched since a given time. Each entry links to a raw_events id for [ev:...] citation.",
+      inputSchema: listDocumentChangesInput,
+      execute: async (raw) =>
+        safe('list_recent_document_changes', async () => {
+          const input = listDocumentChangesInput.parse(raw);
+          const args: Parameters<typeof scope.listRecentDocumentChanges>[0] = {};
+          if (input.since) args.since = new Date(input.since);
+          if (input.limit) args.limit = input.limit;
+          const changes = await scope.listRecentDocumentChanges(args);
+          return {
+            count: changes.length,
+            changes: changes.map((c) => ({
+              event_id: c.id,
+              occurred_at: c.occurredAt.toISOString(),
+              author_user_id: c.authorUserId,
+              action: c.action,
+              document_id: c.documentId,
+              document_version_id: c.documentVersionId,
+              folder_id: c.folderId,
+              summary: c.summary,
             })),
           };
         }),

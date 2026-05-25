@@ -9,6 +9,8 @@
     "start": "node dist/index.js",
     "reextract": "tsx src/scripts/reextract.ts",
     "reembed": "tsx src/scripts/reembed.ts",
+    "redocument-extract": "tsx src/scripts/redocument-extract.ts",
+    "redocument-embed": "tsx src/scripts/redocument-embed.ts",
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
