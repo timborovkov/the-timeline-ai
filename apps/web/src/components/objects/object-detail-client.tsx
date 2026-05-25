@@ -58,25 +58,13 @@ export function ObjectDetailClient({ detail, userId }: Props) {
   const [editingBody, setEditingBody] = useState('');
   const [linkId, setLinkId] = useState('');
   const [linkKind, setLinkKind] = useState<(typeof RELATIONSHIP_KINDS)[number]>('related');
-  // Once the user has saved anything this mount, suppress the
-  // "new since your last visit" banner. router.refresh() re-runs the
-  // server component, which reads `newSinceLastVisit` BEFORE
-  // `markVisited` rolls the timestamp forward — so the user's own
-  // just-applied edit would otherwise show up as a "new change since
-  // your last visit." This silences that confusing self-echo without
-  // hiding genuinely new changes that loaded with the initial render.
-  const [hasMutated, setHasMutated] = useState(false);
-  const refreshAfterSuccess = (): void => {
-    setHasMutated(true);
-    router.refresh();
-  };
 
   function patch(field: string, value: unknown): void {
     setError(null);
     startTransition(async () => {
       const result = await updateObjectAction({ id: detail.id, [field]: value });
       if ('error' in result && result.error) setError(result.error);
-      else refreshAfterSuccess();
+      else router.refresh();
     });
   }
 
@@ -92,7 +80,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
         setError(result.error);
       } else {
         setNoteBody('');
-        refreshAfterSuccess();
+        router.refresh();
       }
     });
   }
@@ -107,7 +95,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
             Also known as: {detail.aliases.join(', ')}
           </p>
         )}
-        {detail.newSinceLastVisit > 0 && !hasMutated && (
+        {detail.newSinceLastVisit > 0 && (
           <div className="mt-4 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2 text-sm text-primary">
             {detail.newSinceLastVisit} new change{detail.newSinceLastVisit === 1 ? '' : 's'} since
             your last visit.
@@ -253,7 +241,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                                 setError(result.error);
                               } else {
                                 setEditingNoteId(null);
-                                refreshAfterSuccess();
+                                router.refresh();
                               }
                             });
                           }}
@@ -301,7 +289,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                                 entityId: detail.id,
                               });
                               if ('error' in result && result.error) setError(result.error);
-                              else refreshAfterSuccess();
+                              else router.refresh();
                             });
                           }}
                           className="text-destructive hover:underline"
@@ -391,7 +379,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                 if ('error' in result && result.error) setError(result.error);
                 else {
                   setLinkId('');
-                  refreshAfterSuccess();
+                  router.refresh();
                 }
               });
             }}
@@ -429,7 +417,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                             otherEntityId: r.otherId,
                           });
                           if ('error' in result && result.error) setError(result.error);
-                          else refreshAfterSuccess();
+                          else router.refresh();
                         });
                       }}
                       className="text-xs text-destructive hover:underline"
@@ -482,7 +470,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                                 entityId: detail.id,
                               });
                               if ('error' in result && result.error) setError(result.error);
-                              else refreshAfterSuccess();
+                              else router.refresh();
                             });
                           }}
                           className="rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 text-primary hover:bg-primary/20 disabled:opacity-50"
@@ -500,7 +488,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                                 entityId: detail.id,
                               });
                               if ('error' in result && result.error) setError(result.error);
-                              else refreshAfterSuccess();
+                              else router.refresh();
                             });
                           }}
                           className="rounded-md border px-2 py-0.5 text-muted-foreground hover:bg-accent disabled:opacity-50"
@@ -526,7 +514,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
             startTransition(async () => {
               const result = await archiveObjectAction({ id: detail.id });
               if ('error' in result && result.error) setError(result.error);
-              else refreshAfterSuccess();
+              else router.refresh();
             });
           }}
           className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50"

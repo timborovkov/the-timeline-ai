@@ -390,6 +390,15 @@ export async function getObject(
   // would double-count every new note.
   let newSinceLastVisit = 0;
   if (lastVisitedAt) {
+    // Exclude changes the current user authored. Without this, a mutation
+    // by the user immediately followed by router.refresh() reads
+    // newSinceLastVisit BEFORE markVisited rolls the timestamp forward,
+    // so their own edit echoes back as "1 new change since your last
+    // visit." Filtering by actorUserId yields a true "what did OTHERS
+    // change while I was away" signal — which is what the banner copy
+    // actually claims. Rows authored by the agent (actorUserId IS NULL)
+    // still count, since users genuinely want to know what the agent
+    // did since their last visit.
     const countRows = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(objectChanges)
@@ -398,6 +407,7 @@ export async function getObject(
           eq(objectChanges.teamId, scope.teamId),
           eq(objectChanges.entityId, entityRow.id),
           gte(objectChanges.changedAt, lastVisitedAt),
+          sql`(${objectChanges.actorUserId} IS NULL OR ${objectChanges.actorUserId} <> ${scope.userId})`,
         ),
       );
     newSinceLastVisit = countRows[0]?.count ?? 0;
