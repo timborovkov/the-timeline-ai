@@ -46,10 +46,16 @@ export function DocumentDrive({ currentFolderId, breadcrumbs, folders, documents
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
-  const [uploading, setUploading] = useState<string | null>(null);
+  // Set of in-flight upload filenames. Multi-file drop fires
+  // handleUploadFile concurrently for each file; a single `string |
+  // null` state would let the first finisher clobber the "Uploading…"
+  // indicator while siblings are still running. The Set lets all
+  // active uploads count toward "busy" and surface the most recent
+  // filename in the button label.
+  const [uploading, setUploading] = useState<readonly string[]>([]);
 
   async function handleUploadFile(file: File): Promise<void> {
-    setUploading(file.name);
+    setUploading((prev) => [...prev, file.name]);
     try {
       const req = await requestDocumentUploadAction({
         folderId: currentFolderId,
@@ -85,7 +91,14 @@ export function DocumentDrive({ currentFolderId, breadcrumbs, folders, documents
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Upload error');
     } finally {
-      setUploading(null);
+      // Remove ONLY this file's entry — leave any sibling uploads
+      // still in-flight in the busy set. Splice-by-first-index handles
+      // the rare case of dropping the same filename twice in one batch.
+      setUploading((prev) => {
+        const i = prev.indexOf(file.name);
+        if (i < 0) return prev;
+        return [...prev.slice(0, i), ...prev.slice(i + 1)];
+      });
     }
   }
 
@@ -149,9 +162,17 @@ export function DocumentDrive({ currentFolderId, breadcrumbs, folders, documents
             <FolderPlus className="mr-2 h-4 w-4" />
             New folder
           </Button>
-          <Button size="sm" onClick={() => fileInputRef.current?.click()} disabled={!!uploading}>
+          <Button
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading.length > 0}
+          >
             <Upload className="mr-2 h-4 w-4" />
-            {uploading ? `Uploading ${uploading}…` : 'Upload'}
+            {uploading.length === 0
+              ? 'Upload'
+              : uploading.length === 1
+                ? `Uploading ${uploading[0]}…`
+                : `Uploading ${String(uploading.length)} files…`}
           </Button>
           <input ref={fileInputRef} type="file" className="hidden" onChange={onFileChange} />
         </div>

@@ -53,6 +53,26 @@ describe('chunkText', () => {
     expect(containing.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('cuts at the latest sentence boundary in the window (bugbot #3298970351)', () => {
+    // Multi-sentence text with NO blank lines — the chunker should
+    // pick the LAST `[.!?] ` boundary inside its search window, not
+    // a whitespace fallback. Construct text where the only natural
+    // breaks are sentence boundaries.
+    const sentence = (n: number): string => `Sentence ${String(n)} ends here. `;
+    const text = Array.from({ length: 200 }, (_, i) => sentence(i)).join('');
+    const chunks = chunkText(text);
+    expect(chunks.length).toBeGreaterThanOrEqual(2);
+    // The first chunk must END on a period (sentence boundary), not
+    // mid-sentence. The fallback to whitespace would commonly end the
+    // chunk on a non-period word.
+    const first = chunks[0]?.text ?? '';
+    expect(first.endsWith('.')).toBe(true);
+    // Sanity: the LAST chunk also ends on a period (terminal sentence,
+    // no trailing space — the regex now handles `[.!?]$`).
+    const last = chunks.at(-1)?.text ?? '';
+    expect(last.endsWith('.')).toBe(true);
+  });
+
   it('prefers blank-line boundaries when available', () => {
     const para1 = 'A'.repeat(2000);
     const para2 = 'B'.repeat(2000);

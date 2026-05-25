@@ -68,8 +68,20 @@ export function chunkText(input: string, opts: ChunkOptions = {}): TextChunk[] {
     const blank = window.lastIndexOf('\n\n');
     if (blank >= 0) cut = windowStart + blank + 2;
     if (cut < 0) {
-      const sentence = window.search(/[.!?]\s(?=[^.!?]*$)/);
-      if (sentence >= 0) cut = windowStart + sentence + 2;
+      // Find the LAST sentence boundary in the window. A boundary is
+      // `[.!?]` followed by whitespace OR end-of-window — the latter
+      // matters when the cleaned text ends mid-window with terminal
+      // punctuation and no trailing space (e.g. the last chunk of a
+      // document). The previous regex used a negative lookahead that
+      // worked for the common case but was hard to reason about; this
+      // explicit "iterate matches, keep the last one" form is the
+      // textbook idiom.
+      const sentenceRe = /[.!?](\s|$)/g;
+      let lastSentenceEnd = -1;
+      for (const m of window.matchAll(sentenceRe)) {
+        lastSentenceEnd = m.index;
+      }
+      if (lastSentenceEnd >= 0) cut = windowStart + lastSentenceEnd + 2;
     }
     if (cut < 0) {
       const ws = window.lastIndexOf(' ');
