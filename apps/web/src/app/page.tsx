@@ -442,10 +442,7 @@ const WORKSPACE_OBJECTS = [
 
 function ConceptDiagram() {
   return (
-    <div
-      aria-hidden
-      className="cdg-root mt-10 border border-border bg-bg"
-    >
+    <div aria-hidden className="cdg-root mt-10 border border-border bg-bg">
       {/* Top row: inputs · pipeline · workspace */}
       <div className="relative grid gap-px bg-border sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
         {/* INPUTS */}
@@ -475,9 +472,15 @@ function ConceptDiagram() {
           <div className="inline-flex flex-col items-center gap-3 border border-border bg-surface px-6 py-5">
             <Mono className="text-signal">EXTRACT · AGENT</Mono>
             <div className="font-mono text-base text-fg-muted">
-              <span className="cdg-dot" style={{ animationDelay: '0s' }}>◇</span>{' '}
-              <span className="cdg-dot" style={{ animationDelay: '0.3s' }}>◇</span>{' '}
-              <span className="cdg-dot" style={{ animationDelay: '0.6s' }}>◇</span>
+              <span className="cdg-dot" style={{ animationDelay: '0s' }}>
+                ◇
+              </span>{' '}
+              <span className="cdg-dot" style={{ animationDelay: '0.3s' }}>
+                ◇
+              </span>{' '}
+              <span className="cdg-dot" style={{ animationDelay: '0.6s' }}>
+                ◇
+              </span>
             </div>
             <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
               llm.chat · llm.embed · llm.transcribe
@@ -561,13 +564,22 @@ function ConceptDiagram() {
       </div>
       <div className="relative hidden h-6 gap-px bg-border sm:grid sm:grid-cols-3">
         <div className="relative bg-bg">
-          <span className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60" style={{ animationDelay: '5.5s' }} />
+          <span
+            className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
+            style={{ animationDelay: '5.5s' }}
+          />
         </div>
         <div className="relative bg-bg">
-          <span className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60" style={{ animationDelay: '5.7s' }} />
+          <span
+            className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
+            style={{ animationDelay: '5.7s' }}
+          />
         </div>
         <div className="relative bg-bg">
-          <span className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60" style={{ animationDelay: '5.9s' }} />
+          <span
+            className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
+            style={{ animationDelay: '5.9s' }}
+          />
         </div>
       </div>
 
