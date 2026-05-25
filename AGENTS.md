@@ -77,7 +77,7 @@ tool. When in doubt, invoke the skill.
 apps/
   web/      Next.js 15 app (App Router, RSC, server actions, Auth.js)
   worker/   BullMQ workers (transcribe, extract, embed, document-extract,
-            meeting-finalize, overdue-scan)
+            meeting-finalize, overdue-scan, janitor)
 packages/
   db/       Drizzle schema + migrations
   shared/   Cross-package code: withTeam scope, llm wrapper, Qdrant wrapper,
