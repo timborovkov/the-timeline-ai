@@ -149,27 +149,19 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
           updated_at: hit.version.createdAt.toISOString(),
         };
         await client.upsertVector(pointId, vector, payload);
-        // Stamp the version row as `embedded` only after the last chunk
-        // lands. We approximate that with a SQL count: if every chunk on
-        // this version has been upserted at least once (i.e. all chunk ids
-        // exist), mark embedded. Cheap, racy with concurrent jobs, but the
-        // status is informational — the reembed script is the authority.
-        const counts = await deps.db
-          .select({
-            total: sql<number>`count(*)::int`,
-          })
-          .from(documentChunks)
-          .where(eq(documentChunks.documentVersionId, hit.version.id));
-        const total = counts[0]?.total ?? 0;
-        // No precise per-version "embedded count" without an upsert log, so
-        // just promote the status to 'embedded' once all chunks exist. The
-        // worker re-runs are idempotent so a repeat run keeps it correct.
-        if (total > 0) {
-          await deps.db
-            .update(documentVersions)
-            .set({ processingStatus: 'embedded', embeddingModelVersion: model })
-            .where(eq(documentVersions.id, hit.version.id));
-        }
+        // Do NOT promote processingStatus → 'embedded' here. We can't tell
+        // from one chunk's job whether sibling chunks have been upserted —
+        // counting `document_chunks` rows would always succeed (they're
+        // all written by the extract worker before any embed job runs), so
+        // a check on row count flips the badge green after the first
+        // chunk lands while N-1 chunks are still in flight. The reembed
+        // script is the authority for "everything for this version is in
+        // Qdrant"; until that runs (or a per-version completion tracker
+        // ships), 'chunked' is the truthful final status. The agent's
+        // search hydrates from Postgres + the doc-chunk Qdrant filter, so
+        // chunks become searchable as they land regardless of the badge.
+        // Worker is otherwise idempotent: deterministic point id +
+        // pointsExist make duplicate enqueues no-ops.
         return { documentChunkId, model, pointId };
       }
 

@@ -15,4 +15,5 @@ export * as agent from './agent/index.js';
 export * as objects from './objects/index.js';
 export * as rateLimit from './rate-limit/index.js';
 export * from './chunk.js';
+export * from './citation.js';
 export * from './documents/index.js';

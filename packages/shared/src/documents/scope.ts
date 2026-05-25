@@ -606,6 +606,17 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         const document = drows[0] as DocumentRow | undefined;
         if (!document) throw new Error('Document not found for version');
 
+        // Idempotent finalize: if this version already has a source_event_id,
+        // the upload was already finalised. Return the existing state rather
+        // than writing a second "Uploaded foo" raw_events row. Guards
+        // against UI double-clicks, retried server actions, and Next.js's
+        // automatic action replay after a transient error.
+        if (version.sourceEventId) {
+          const action: 'upload' | 'new_version' =
+            version.version === 1 ? 'upload' : 'new_version';
+          return { document, version, eventId: version.sourceEventId, action };
+        }
+
         const action: 'upload' | 'new_version' = version.version === 1 ? 'upload' : 'new_version';
         const summary =
           action === 'upload'
