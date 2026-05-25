@@ -11,10 +11,7 @@ export default function TasksLoading() {
 
       <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto">
         {Array.from({ length: 5 }).map((_, col) => (
-          <div
-            key={col}
-            className="flex w-72 shrink-0 flex-col rounded-lg border bg-card/40 p-3"
-          >
+          <div key={col} className="flex w-72 shrink-0 flex-col rounded-lg border bg-card/40 p-3">
             <div className="mb-3 flex items-center justify-between">
               <Skeleton className="h-4 w-16" />
               <Skeleton className="h-3 w-6" />
