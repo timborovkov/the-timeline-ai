@@ -435,10 +435,13 @@ export async function scheduleJanitorSweep(): Promise<void> {
     'sweep',
     {},
     {
-      // Every hour on the half-hour so it doesn't fight the on-the-hour
-      // overdue scan for the same DB connections.
-      repeat: { pattern: '30 * * * *' },
-      jobId: 'janitor-hourly',
+      // Every 5 minutes. Each tick is two indexed SELECTs on small result
+      // sets; cost is negligible. 5min cadence gives ~7.5min recovery for
+      // a stuck `pending` row (5min threshold + up to 5min for next tick),
+      // which beats the 30-60min you'd get from an hourly sweep without
+      // adding noticeable DB load.
+      repeat: { pattern: '*/5 * * * *' },
+      jobId: 'janitor-tick',
     },
   );
 }

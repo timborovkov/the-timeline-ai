@@ -29,7 +29,7 @@ const PROCESSING_MEETING_MIN_AGE_MS = 30 * 60 * 1000;
 
 const log = childLogger('worker:janitor');
 
-export interface JanitorDeps {
+interface JanitorDeps {
   db: Db;
   // Injectable for tests so we can assert what got re-enqueued without
   // touching Redis. Production binds these to the real queue helpers.
@@ -37,7 +37,7 @@ export interface JanitorDeps {
   enqueueMeetingFinalizeJob?: (data: queue.MeetingFinalizeJobData) => Promise<void>;
 }
 
-export interface JanitorTickResult {
+interface JanitorTickResult {
   documentVersionsRequeued: number;
   meetingsRequeued: number;
 }
