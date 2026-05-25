@@ -13,7 +13,7 @@
  *   pnpm --filter @timeline/worker redocument-embed -- \
  *     --team=<uuid> [--target-collection=<name>] [--limit=N] [--dry-run]
  */
-import { closeDb, documentChunks, documents, documentVersions, getDb } from '@timeline/db';
+import { closeDb, documentChunks, documents, getDb } from '@timeline/db';
 import { queue } from '@timeline/shared';
 import { and, asc, eq, gt, isNull, or, type SQL } from 'drizzle-orm';
 
@@ -81,11 +81,9 @@ async function main(): Promise<void> {
       .select({
         id: documentChunks.id,
         createdAt: documentChunks.createdAt,
-        sourceEventId: documentVersions.sourceEventId,
       })
       .from(documentChunks)
       .innerJoin(documents, eq(documents.id, documentChunks.documentId))
-      .innerJoin(documentVersions, eq(documentVersions.id, documentChunks.documentVersionId))
       .where(and(...conditions))
       .orderBy(asc(documentChunks.createdAt), asc(documentChunks.id))
       .limit(PAGE_SIZE);
