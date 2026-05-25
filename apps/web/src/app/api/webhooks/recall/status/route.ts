@@ -108,6 +108,23 @@ export async function POST(req: Request): Promise<Response> {
   const createdAt = parsed.data.bot?.status?.created_at ?? parsed.data.status?.created_at;
   const mappedStatus = code ? meetingBots.recallMapStatus(code) : null;
 
+  // Terminal-state guard. `completed` (finalize ran) and `failed` (user
+  // cancelled or bot crashed) are absorbing states — Recall can replay
+  // status events well after the meeting reached terminal, and we must
+  // not let a late `bot.status_change` regress them to `processing` or
+  // re-enqueue finalize over a cancelled meeting. Return 200 so Recall
+  // stops retrying; the event is a no-op from our perspective.
+  if (meeting.status === 'completed' || meeting.status === 'failed') {
+    log.info(
+      { botId, event: parsed.event, currentStatus: meeting.status },
+      'ignoring_event_terminal_status',
+    );
+    return Response.json(
+      { ok: true, reason: 'terminal_status', status: meeting.status },
+      { status: 200 },
+    );
+  }
+
   // Promotion to `completed` is owned by the meeting-finalize worker — it
   // generates the summary, records minutes, then flips the status. The
   // status webhook must NOT short-circuit that path by setting `completed`
@@ -118,28 +135,65 @@ export async function POST(req: Request): Promise<Response> {
   // We also defensively enqueue finalize when we see `done`/`analysis_done`
   // via status_change in case the separate `bot.call_ended` event was
   // dropped (Recall has shipped both shapes historically).
-  const shouldEnqueueFinalize =
+  const finalizeSignal =
     parsed.event === 'bot.call_ended' ||
     (parsed.event === 'bot.status_change' &&
       (code === 'done' || code === 'analysis_done' || mappedStatus === 'completed'));
+  // Only enqueue finalize once. If we're already `processing`, an earlier
+  // event already kicked off the job and the BullMQ retry policy + the
+  // worker's `status === 'completed'` short-circuit handle the rest.
+  const shouldEnqueueFinalize = finalizeSignal && meeting.status !== 'processing';
 
   try {
     if (parsed.event === 'bot.status_change' && mappedStatus) {
       // Cap at `processing` — never promote to `completed` here.
       const cappedStatus = mappedStatus === 'completed' ? 'processing' : mappedStatus;
-      const patch: Parameters<typeof scope.updateMeetingStatus>[2] = {
-        metadata: { last_status: code, last_status_at: createdAt ?? new Date().toISOString() },
+      // Don't regress: if we're already at `processing`, a late event
+      // mapping to `joining` or `active` would pull us backwards. The
+      // forward order is joining → active → processing; a status_change
+      // arriving below the current state is informational only.
+      // Linear status rank used only to detect backwards transitions.
+      // `completed` and `failed` are unreachable here (the terminal guard
+      // at the top of the handler short-circuits), but included for
+      // completeness so the lookup is total.
+      const rank: Record<string, number> = {
+        pending: 0,
+        joining: 1,
+        active: 2,
+        processing: 3,
+        completed: 4,
+        failed: 4,
       };
-      if (cappedStatus === 'active') patch.startedAt = createdAt ? new Date(createdAt) : new Date();
-      if (cappedStatus === 'processing')
-        patch.endedAt = createdAt ? new Date(createdAt) : new Date();
-      await scope.updateMeetingStatus(meeting.id, cappedStatus, patch);
+      const currentRank = rank[meeting.status] ?? 0;
+      const nextRank = rank[cappedStatus] ?? 0;
+      if (nextRank >= currentRank) {
+        const patch: Parameters<typeof scope.updateMeetingStatus>[2] = {
+          metadata: { last_status: code, last_status_at: createdAt ?? new Date().toISOString() },
+        };
+        if (cappedStatus === 'active')
+          patch.startedAt = createdAt ? new Date(createdAt) : new Date();
+        if (cappedStatus === 'processing')
+          patch.endedAt = createdAt ? new Date(createdAt) : new Date();
+        await scope.updateMeetingStatus(meeting.id, cappedStatus, patch);
+      } else {
+        log.info(
+          { botId, currentStatus: meeting.status, attempted: cappedStatus },
+          'ignoring_backward_status_transition',
+        );
+      }
     } else if (parsed.event === 'bot.call_ended') {
-      await scope.updateMeetingStatus(meeting.id, 'processing', {
-        endedAt: createdAt ? new Date(createdAt) : new Date(),
-        metadata: { call_ended_at: createdAt ?? new Date().toISOString() },
-      });
+      // Only update if we haven't already moved to processing (idempotent
+      // re-delivery).
+      if (meeting.status !== 'processing') {
+        await scope.updateMeetingStatus(meeting.id, 'processing', {
+          endedAt: createdAt ? new Date(createdAt) : new Date(),
+          metadata: { call_ended_at: createdAt ?? new Date().toISOString() },
+        });
+      }
     } else if (parsed.event === 'bot.fatal' || parsed.event === 'bot.failed') {
+      // `failed` is terminal — overrides any in-flight state including
+      // `processing`. The terminal guard above only blocks transitions OUT
+      // of failed/completed; transitioning INTO failed is always allowed.
       await scope.updateMeetingStatus(meeting.id, 'failed', {
         metadata: { failure_at: new Date().toISOString(), failure_code: code ?? 'unknown' },
       });
