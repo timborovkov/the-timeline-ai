@@ -120,11 +120,7 @@ export function MergeEntityPanel({ entityId, entityName }: Props) {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={pending}
-                onClick={performMerge}
-              >
+              <AlertDialogAction variant="destructive" disabled={pending} onClick={performMerge}>
                 {pending ? 'Merging…' : 'Merge'}
               </AlertDialogAction>
             </AlertDialogFooter>
