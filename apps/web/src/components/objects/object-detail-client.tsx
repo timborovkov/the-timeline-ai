@@ -1,7 +1,8 @@
 'use client';
 
 import { type objects } from '@timeline/shared';
-import { useRef, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { useState, useTransition } from 'react';
 
 import {
   acceptObjectChangeAction,
@@ -9,10 +10,8 @@ import {
   archiveObjectAction,
   createNoteAction,
   deleteNoteAction,
-  mergeObjectAction,
   rejectObjectChangeAction,
   removeRelationshipAction,
-  searchObjectsAction,
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
@@ -51,6 +50,7 @@ function statusOptions(type: string): string[] {
 }
 
 export function ObjectDetailClient({ detail, userId }: Props) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [noteBody, setNoteBody] = useState('');
@@ -58,24 +58,13 @@ export function ObjectDetailClient({ detail, userId }: Props) {
   const [editingBody, setEditingBody] = useState('');
   const [linkId, setLinkId] = useState('');
   const [linkKind, setLinkKind] = useState<(typeof RELATIONSHIP_KINDS)[number]>('related');
-  const [mergeQuery, setMergeQuery] = useState('');
-  const [mergeResults, setMergeResults] = useState<
-    { id: string; canonicalName: string; type: string }[]
-  >([]);
-  const [mergeSearching, setMergeSearching] = useState(false);
-  const [mergePending, mergeStartTransition] = useTransition();
-  // Monotonic request id. The typeahead can fire faster than the server
-  // responds; without this guard, a slow "ab" response can land after
-  // a fast "abc" response and overwrite the correct list with stale
-  // rows. Each request captures its id; only the latest gets to
-  // mutate state.
-  const mergeRequestId = useRef(0);
 
   function patch(field: string, value: unknown): void {
     setError(null);
     startTransition(async () => {
       const result = await updateObjectAction({ id: detail.id, [field]: value });
       if ('error' in result && result.error) setError(result.error);
+      else router.refresh();
     });
   }
 
@@ -91,6 +80,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
         setError(result.error);
       } else {
         setNoteBody('');
+        router.refresh();
       }
     });
   }
@@ -251,6 +241,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                                 setError(result.error);
                               } else {
                                 setEditingNoteId(null);
+                                router.refresh();
                               }
                             });
                           }}
@@ -298,6 +289,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                                 entityId: detail.id,
                               });
                               if ('error' in result && result.error) setError(result.error);
+                              else router.refresh();
                             });
                           }}
                           className="text-destructive hover:underline"
@@ -385,7 +377,10 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                   kind: linkKind,
                 });
                 if ('error' in result && result.error) setError(result.error);
-                else setLinkId('');
+                else {
+                  setLinkId('');
+                  router.refresh();
+                }
               });
             }}
             className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary hover:bg-primary/20 disabled:opacity-50"
@@ -419,8 +414,10 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                           const result = await removeRelationshipAction({
                             id: r.id,
                             entityId: detail.id,
+                            otherEntityId: r.otherId,
                           });
                           if ('error' in result && result.error) setError(result.error);
+                          else router.refresh();
                         });
                       }}
                       className="text-xs text-destructive hover:underline"
@@ -473,6 +470,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                                 entityId: detail.id,
                               });
                               if ('error' in result && result.error) setError(result.error);
+                              else router.refresh();
                             });
                           }}
                           className="rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 text-primary hover:bg-primary/20 disabled:opacity-50"
@@ -490,6 +488,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                                 entityId: detail.id,
                               });
                               if ('error' in result && result.error) setError(result.error);
+                              else router.refresh();
                             });
                           }}
                           className="rounded-md border px-2 py-0.5 text-muted-foreground hover:bg-accent disabled:opacity-50"
@@ -506,109 +505,6 @@ export function ObjectDetailClient({ detail, userId }: Props) {
         )}
       </section>
 
-      {/* Merge: fold a duplicate object into this one. The current
-          object is the WINNER — it keeps its id, inherits the loser's
-          fact references, and gets the loser's name+aliases folded
-          into its alias list. Admin-only on the server (mergeObject
-          re-checks role inside the tx); the button is best-effort and
-          will return a friendly error for non-admins. */}
-      <section className="border-t pt-6">
-        <h2 className="mb-3 text-sm font-medium tracking-tight">
-          Merge duplicates into this object
-        </h2>
-        <p className="mb-3 text-xs text-muted-foreground">
-          Search for the duplicate to fold in. Its facts and aliases move here; the duplicate is
-          marked merged and stops appearing in lists. Admin role required.
-        </p>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="flex-1">
-            <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
-              Find duplicate
-            </span>
-            <input
-              value={mergeQuery}
-              onChange={(e) => {
-                const q = e.target.value;
-                setMergeQuery(q);
-                setError(null);
-                if (q.trim().length < 2) {
-                  // Invalidate any in-flight slower query so it can't
-                  // repopulate results after the user cleared the box.
-                  mergeRequestId.current += 1;
-                  setMergeResults([]);
-                  setMergeSearching(false);
-                  return;
-                }
-                const myRequestId = ++mergeRequestId.current;
-                setMergeSearching(true);
-                void searchObjectsAction({ query: q, excludeId: detail.id, limit: 8 }).then(
-                  (res) => {
-                    // Stale response — a newer keystroke already started
-                    // its own request; do not mutate results or clear the
-                    // loading flag (the latest in-flight request owns it).
-                    if (myRequestId !== mergeRequestId.current) return;
-                    setMergeSearching(false);
-                    if (res.ok) setMergeResults(res.results);
-                    else setError(res.error);
-                  },
-                );
-              }}
-              placeholder="type at least 2 characters"
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-            />
-          </label>
-        </div>
-        {mergeSearching ? (
-          <p className="mt-3 text-xs text-muted-foreground">Searching…</p>
-        ) : mergeResults.length === 0 && mergeQuery.trim().length >= 2 ? (
-          <p className="mt-3 text-xs text-muted-foreground">No matches.</p>
-        ) : mergeResults.length > 0 ? (
-          <ul className="mt-3 space-y-2">
-            {mergeResults.map((m) => (
-              <li
-                key={m.id}
-                className="flex items-center justify-between rounded-lg border bg-card px-4 py-2 text-sm"
-              >
-                <div className="min-w-0">
-                  <div className="truncate font-medium">{m.canonicalName}</div>
-                  <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    {m.type}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  disabled={mergePending}
-                  onClick={() => {
-                    if (
-                      !confirm(
-                        `Fold "${m.canonicalName}" into "${detail.canonicalName}"? This cannot be undone from the UI.`,
-                      )
-                    )
-                      return;
-                    setError(null);
-                    mergeStartTransition(async () => {
-                      const result = await mergeObjectAction({
-                        winnerId: detail.id,
-                        loserId: m.id,
-                      });
-                      if ('error' in result && result.error) {
-                        setError(result.error);
-                      } else {
-                        setMergeQuery('');
-                        setMergeResults([]);
-                      }
-                    });
-                  }}
-                  className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
-                >
-                  Merge in
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </section>
-
       <footer className="border-t pt-6">
         <button
           type="button"
@@ -618,6 +514,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
             startTransition(async () => {
               const result = await archiveObjectAction({ id: detail.id });
               if ('error' in result && result.error) setError(result.error);
+              else router.refresh();
             });
           }}
           className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50"

@@ -118,62 +118,13 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
     await objects.archiveObject(db, r.scope, parsed.data.id, { kind: 'user', userId: r.userId });
     revalidatePath('/app/objects');
     revalidatePath(`/app/objects/${parsed.data.id}`);
+    // Archived objects must drop out of any board/kanban view that was
+    // surfacing them. Matches the revalidation set in updateObjectAction.
+    revalidatePath('/app/boards', 'layout');
+    revalidatePath('/app/tasks');
     return { ok: true };
   } catch (err) {
     return { error: friendlyError(err, 'Failed to archive') };
-  }
-}
-
-// ---------- Merge ----------
-
-const mergeObjectSchema = z.object({
-  // The id that survives. Receives the loser's aliases + canonical name
-  // and inherits all fact references.
-  winnerId: uuidSchema,
-  loserId: uuidSchema,
-});
-
-export async function mergeObjectAction(input: unknown): Promise<ActionState> {
-  const parsed = mergeObjectSchema.safeParse(input);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
-  const r = await resolveScope();
-  if (!r.ok) return { error: r.error };
-  try {
-    await objects.mergeObject(db, r.scope, parsed.data);
-    revalidatePath('/app/objects');
-    revalidatePath(`/app/objects/${parsed.data.winnerId}`);
-    revalidatePath(`/app/objects/${parsed.data.loserId}`);
-    return { ok: true, id: parsed.data.winnerId };
-  } catch (err) {
-    return { error: friendlyError(err, 'Failed to merge') };
-  }
-}
-
-/**
- * Typeahead-style search used by the merge picker. Returns a small set
- * of candidate objects matching the query, excluding the source so it
- * can't merge into itself.
- */
-export async function searchObjectsAction(
-  input: unknown,
-): Promise<
-  | { ok: true; results: { id: string; canonicalName: string; type: objects.ObjectType }[] }
-  | { ok: false; error: string }
-> {
-  const schema = z.object({
-    query: z.string().trim().max(120),
-    excludeId: uuidSchema.optional(),
-    limit: z.number().int().min(1).max(20).optional(),
-  });
-  const parsed = schema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: 'Invalid query' };
-  const r = await resolveScope();
-  if (!r.ok) return { ok: false, error: r.error };
-  try {
-    const results = await objects.searchObjects(db, r.scope, parsed.data);
-    return { ok: true, results };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Search failed' };
   }
 }
 
@@ -202,7 +153,9 @@ export async function addRelationshipAction(input: unknown): Promise<ActionState
 }
 
 export async function removeRelationshipAction(input: unknown): Promise<ActionState> {
-  const parsed = z.object({ id: uuidSchema, entityId: uuidSchema }).safeParse(input);
+  const parsed = z
+    .object({ id: uuidSchema, entityId: uuidSchema, otherEntityId: uuidSchema.optional() })
+    .safeParse(input);
   if (!parsed.success) return { error: 'Invalid id' };
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
@@ -212,6 +165,12 @@ export async function removeRelationshipAction(input: unknown): Promise<ActionSt
       userId: r.userId,
     });
     revalidatePath(`/app/objects/${parsed.data.entityId}`);
+    // Revalidate the peer's detail page too — addRelationshipAction does
+    // the same, otherwise the other side keeps showing the now-deleted
+    // link until the user navigates away.
+    if (parsed.data.otherEntityId) {
+      revalidatePath(`/app/objects/${parsed.data.otherEntityId}`);
+    }
     return { ok: true };
   } catch (err) {
     return { error: friendlyError(err, 'Failed to unlink') };
@@ -291,10 +250,13 @@ export async function markNotificationReadAction(id: string): Promise<ActionStat
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
   try {
-    // `markNotificationRead` returns false for both "not found" and "already
-    // read" (the SQL is guarded by `readAt IS NULL`). Either way the user's
-    // desired state — read — is achieved, so always return ok and let the
-    // revalidation refresh whatever stale view triggered the click.
+    // `markNotificationRead` returns false for both "not found" and
+    // "already read" (the SQL is guarded by `readAt IS NULL`). Either
+    // way the user's desired state — read — is achieved, so always
+    // return ok and let the revalidation refresh whatever stale view
+    // triggered the click. Wrap in try/catch so a DB failure surfaces
+    // as { error } instead of throwing into the client and stranding
+    // the optimistic read state.
     await objects.markNotificationRead(db, r.scope, parsed.data);
     revalidatePath('/app/inbox');
     return { ok: true };
@@ -334,6 +296,11 @@ export async function acceptObjectChangeAction(input: unknown): Promise<ActionSt
     });
     revalidatePath(`/app/objects/${parsed.data.entityId}`);
     revalidatePath('/app/inbox');
+    // Accepting may change status / stage / priority — same revalidation
+    // set as updateObjectAction so kanban / task columns reflect the move.
+    revalidatePath('/app/objects');
+    revalidatePath('/app/boards', 'layout');
+    revalidatePath('/app/tasks');
     return ok ? { ok: true } : { error: 'Suggestion no longer pending' };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Failed to accept' };

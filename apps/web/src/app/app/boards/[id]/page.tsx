@@ -74,6 +74,11 @@ export default async function BoardDetailPage({ params }: { params: Promise<{ id
   if (!board) notFound();
 
   const sanitizedFilter = sanitizeBoardFilter(board.filter);
+  // Default to hiding archived rows when the saved filter doesn't pin a
+  // value — matches the main objects index, otherwise archived items
+  // surface on kanban/table/list views with no way to dismiss them from
+  // the board UI.
+  sanitizedFilter.archived ??= false;
   const rows = await objects.listObjects(db, scope, sanitizedFilter);
 
   const groupBy: GroupKey = isGroupKey(board.groupBy) ? board.groupBy : 'status';

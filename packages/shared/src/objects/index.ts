@@ -15,15 +15,13 @@ import {
   entities,
   entityRelationships,
   entityType,
-  factEntities,
-  notificationKind,
   notifications,
   objectChanges,
   objectNotes,
   objectViews,
   rawEvents,
 } from '@timeline/db';
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
 
 import type { TeamScope } from '../team-scope.js';
 
@@ -392,6 +390,15 @@ export async function getObject(
   // would double-count every new note.
   let newSinceLastVisit = 0;
   if (lastVisitedAt) {
+    // Exclude changes the current user authored. Without this, a mutation
+    // by the user immediately followed by router.refresh() reads
+    // newSinceLastVisit BEFORE markVisited rolls the timestamp forward,
+    // so their own edit echoes back as "1 new change since your last
+    // visit." Filtering by actorUserId yields a true "what did OTHERS
+    // change while I was away" signal — which is what the banner copy
+    // actually claims. Rows authored by the agent (actorUserId IS NULL)
+    // still count, since users genuinely want to know what the agent
+    // did since their last visit.
     const countRows = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(objectChanges)
@@ -400,6 +407,7 @@ export async function getObject(
           eq(objectChanges.teamId, scope.teamId),
           eq(objectChanges.entityId, entityRow.id),
           gte(objectChanges.changedAt, lastVisitedAt),
+          sql`(${objectChanges.actorUserId} IS NULL OR ${objectChanges.actorUserId} <> ${scope.userId})`,
         ),
       );
     newSinceLastVisit = countRows[0]?.count ?? 0;
@@ -771,144 +779,6 @@ export async function unarchiveObject(
 ): Promise<ObjectRow> {
   const result = await updateObject(db, scope, entityId, { archivedAt: null }, actor);
   return result.object;
-}
-
-/**
- * Fold one object (loser) into another (winner) for the active team.
- * Mirrors the Phase 4 `mergeEntityAction` removed when entities became
- * workspace objects — the underlying SQL is identical:
- *
- *   - all `fact_entities` rows referencing the loser are rewritten to
- *     the winner; on-conflict (same fact + same role) the loser row is
- *     dropped instead of UPDATE-then-PK-violation;
- *   - the loser's canonicalName + aliases are folded into the winner's
- *     aliases, de-duped case-insensitively;
- *   - the loser is soft-deleted by setting `merged_into_id = winner`.
- *
- * Admin-only — re-checks the role inside the transaction to close the
- * TOCTOU between the outer guard and the destructive write. SELECT FOR
- * UPDATE ordered by id serializes concurrent A→B / B→A attempts so we
- * never create a merge cycle.
- */
-export async function mergeObject(
-  db: Db,
-  scope: TeamScope,
-  input: { winnerId: string; loserId: string },
-): Promise<void> {
-  await scope.requireMembership('admin');
-  if (!UUID_RE.test(input.winnerId) || !UUID_RE.test(input.loserId)) {
-    throw new Error('Invalid entity id');
-  }
-  if (input.winnerId === input.loserId) {
-    throw new Error('Cannot merge an object into itself');
-  }
-
-  await db.transaction(async (tx) => {
-    // Re-check admin role inside the tx so a role revocation between the
-    // outer guard and the destructive write closes the TOCTOU window.
-    const role = await scope.requireMembership('admin');
-    if (role !== 'admin' && role !== 'owner') throw new Error('Admin role required');
-
-    const rows = await tx
-      .select({
-        id: entities.id,
-        canonicalName: entities.canonicalName,
-        aliases: entities.aliases,
-        mergedIntoId: entities.mergedIntoId,
-      })
-      .from(entities)
-      .where(
-        and(
-          eq(entities.teamId, scope.teamId),
-          inArray(entities.id, [input.winnerId, input.loserId]),
-        ),
-      )
-      .orderBy(asc(entities.id))
-      .for('update');
-    const winner = rows.find((r) => r.id === input.winnerId);
-    const loser = rows.find((r) => r.id === input.loserId);
-    if (!winner || !loser) throw new Error('Object not found');
-    if (winner.mergedIntoId || loser.mergedIntoId) {
-      throw new Error('One of these objects has already been merged');
-    }
-
-    // Move fact_entities to the winner. The (fact_id, entity_id, role)
-    // composite PK can collide when the winner is already referenced
-    // from the same fact in the same role — skip those rows in the
-    // UPDATE and drop them with the trailing DELETE.
-    await tx.execute(sql`
-      UPDATE ${factEntities} AS fe
-      SET entity_id = ${input.winnerId}::uuid
-      WHERE fe.entity_id = ${input.loserId}::uuid
-        AND NOT EXISTS (
-          SELECT 1 FROM ${factEntities} fe2
-          WHERE fe2.fact_id = fe.fact_id
-            AND fe2.entity_id = ${input.winnerId}::uuid
-            AND fe2.role = fe.role
-        )
-    `);
-    await tx.delete(factEntities).where(eq(factEntities.entityId, input.loserId));
-
-    const existingAliases = Array.isArray(winner.aliases)
-      ? (winner.aliases as unknown[]).filter((v): v is string => typeof v === 'string')
-      : [];
-    const incomingAliases = Array.isArray(loser.aliases)
-      ? (loser.aliases as unknown[]).filter((v): v is string => typeof v === 'string')
-      : [];
-    const candidate = [loser.canonicalName, ...incomingAliases];
-    const merged = [...existingAliases];
-    for (const a of candidate) {
-      if (!merged.some((e) => e.toLowerCase() === a.toLowerCase())) merged.push(a);
-    }
-
-    await tx
-      .update(entities)
-      .set({ aliases: merged, updatedAt: new Date() })
-      .where(eq(entities.id, input.winnerId));
-    await tx
-      .update(entities)
-      .set({ mergedIntoId: input.winnerId, updatedAt: new Date() })
-      .where(eq(entities.id, input.loserId));
-  });
-}
-
-/**
- * Search candidate merge targets by case-insensitive canonical name.
- * Scoped to the active team and excludes already-merged rows; the
- * caller passes its own id as `excludeId` so the source object can't
- * pick itself.
- */
-export async function searchObjects(
-  db: Db,
-  scope: TeamScope,
-  input: { query: string; excludeId?: string; limit?: number },
-): Promise<{ id: string; canonicalName: string; type: ObjectType }[]> {
-  await scope.requireMembership();
-  const q = input.query.trim().toLowerCase();
-  if (q.length === 0) return [];
-  const limit = Math.min(Math.max(input.limit ?? 8, 1), 20);
-  const excludeOk = input.excludeId && UUID_RE.test(input.excludeId);
-  // `\` escapes the LIKE metacharacters so a user typing "50%" doesn't
-  // get a wildcard match.
-  const pattern = `%${q.replace(/[%_\\]/g, '\\$&')}%`;
-  const rows = await db
-    .select({
-      id: entities.id,
-      canonicalName: entities.canonicalName,
-      type: entities.type,
-    })
-    .from(entities)
-    .where(
-      and(
-        eq(entities.teamId, scope.teamId),
-        isNull(entities.mergedIntoId),
-        excludeOk ? sql`${entities.id} <> ${input.excludeId}::uuid` : sql`true`,
-        sql`lower(${entities.canonicalName}) LIKE ${pattern} ESCAPE '\\'`,
-      ),
-    )
-    .orderBy(asc(entities.canonicalName))
-    .limit(limit);
-  return rows;
 }
 
 export async function addRelationship(
@@ -1314,17 +1184,15 @@ export async function markVisited(db: Db, scope: TeamScope, entityId: string): P
 
 // ---------- Notifications ----------
 
-// Derive from the drizzle enum so a new notification_kind value added
-// in the schema can't drift past this union silently. `NOTIFICATION_KINDS`
-// is a runtime const re-export so this `notificationKind` import stays a
-// value use (eslint's consistent-type-imports doesn't recognise `typeof`
-// queries on imports as value usage).
-export const NOTIFICATION_KINDS = notificationKind.enumValues;
-export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
-
 export interface NotificationRow {
   id: string;
-  kind: NotificationKind;
+  kind:
+    | 'object_changed'
+    | 'task_due'
+    | 'task_overdue'
+    | 'follow_up_overdue'
+    | 'mention'
+    | 'agent_suggestion';
   entityId: string | null;
   objectChangeId: string | null;
   summary: string;
