@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
@@ -15,6 +16,8 @@ interface Props {
 }
 
 export function NotificationRow({ id, kind, summary, entityId, createdAt, initiallyRead }: Props) {
+  const router = useRouter();
+  const search = useSearchParams();
   const [pending, startTransition] = useTransition();
   // Optimistic read state so clicking through to an object instantly clears
   // the unread dot — the server action runs async without blocking the
@@ -24,8 +27,13 @@ export function NotificationRow({ id, kind, summary, entityId, createdAt, initia
   function markRead(): void {
     if (read) return;
     setRead(true);
+    const onUnreadFilter = search.get('unread') === '1';
     startTransition(async () => {
       await markNotificationReadAction(id);
+      // On the unread-only view, the server filter excludes read rows —
+      // refresh so the now-read row drops out instead of lingering with
+      // muted styling. On the All view, the optimistic state is enough.
+      if (onUnreadFilter) router.refresh();
     });
   }
 

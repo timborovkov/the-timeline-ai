@@ -414,6 +414,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                           const result = await removeRelationshipAction({
                             id: r.id,
                             entityId: detail.id,
+                            otherEntityId: r.otherId,
                           });
                           if ('error' in result && result.error) setError(result.error);
                           else router.refresh();

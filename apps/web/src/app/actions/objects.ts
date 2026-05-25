@@ -153,7 +153,9 @@ export async function addRelationshipAction(input: unknown): Promise<ActionState
 }
 
 export async function removeRelationshipAction(input: unknown): Promise<ActionState> {
-  const parsed = z.object({ id: uuidSchema, entityId: uuidSchema }).safeParse(input);
+  const parsed = z
+    .object({ id: uuidSchema, entityId: uuidSchema, otherEntityId: uuidSchema.optional() })
+    .safeParse(input);
   if (!parsed.success) return { error: 'Invalid id' };
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
@@ -163,6 +165,12 @@ export async function removeRelationshipAction(input: unknown): Promise<ActionSt
       userId: r.userId,
     });
     revalidatePath(`/app/objects/${parsed.data.entityId}`);
+    // Revalidate the peer's detail page too — addRelationshipAction does
+    // the same, otherwise the other side keeps showing the now-deleted
+    // link until the user navigates away.
+    if (parsed.data.otherEntityId) {
+      revalidatePath(`/app/objects/${parsed.data.otherEntityId}`);
+    }
     return { ok: true };
   } catch (err) {
     return { error: friendlyError(err, 'Failed to unlink') };
@@ -277,6 +285,11 @@ export async function acceptObjectChangeAction(input: unknown): Promise<ActionSt
     });
     revalidatePath(`/app/objects/${parsed.data.entityId}`);
     revalidatePath('/app/inbox');
+    // Accepting may change status / stage / priority — same revalidation
+    // set as updateObjectAction so kanban / task columns reflect the move.
+    revalidatePath('/app/objects');
+    revalidatePath('/app/boards', 'layout');
+    revalidatePath('/app/tasks');
     return ok ? { ok: true } : { error: 'Suggestion no longer pending' };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Failed to accept' };

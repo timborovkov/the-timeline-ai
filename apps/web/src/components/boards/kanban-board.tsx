@@ -13,7 +13,7 @@ import {
 import { type objects } from '@timeline/shared';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useOptimistic, useTransition } from 'react';
+import { useOptimistic, useState, useTransition } from 'react';
 
 import { updateObjectAction } from '@/app/actions/objects';
 import { cn } from '@/lib/utils';
@@ -74,6 +74,7 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
     });
   const [items, applyMove] = useOptimistic(rows, applyOptimistic);
   const [, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -102,22 +103,32 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
     if (groupBy === 'status' && col === 'unset') return;
     startTransition(async () => {
       applyMove({ id, col });
+      setError(null);
       const patch =
         groupBy === 'priority'
           ? { id, priority: col === 'unset' ? null : Number(col) }
           : groupBy === 'stage'
             ? { id, stage: col === 'unset' ? null : col }
             : { id, status: col };
-      await updateObjectAction(patch);
-      // Refresh the server component for this route so the underlying
-      // `rows` prop reflects the new column before useOptimistic snaps
-      // back. See the `useOptimistic` comment above.
+      const result = await updateObjectAction(patch);
+      if ('error' in result && result.error) {
+        // Surface the failure so the user understands why the card just
+        // snapped back to its original column on the next render.
+        setError(result.error);
+      }
+      // Always refresh: on success the new column persists; on failure
+      // useOptimistic snaps back to the unchanged server rows.
       router.refresh();
     });
   }
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      {error && (
+        <p className="mb-2 text-sm text-destructive" role="status">
+          {error}
+        </p>
+      )}
       {/* Flex row with FIXED column widths. The previous
           `grid auto-cols-[minmax(240px,1fr)]` made each column compete for
           a 1fr share of the container — five columns squeezed below their
