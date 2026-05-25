@@ -63,6 +63,15 @@ const schema = z.object({
    * Resolution chain: AGENT_MODEL ?? CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini'.
    */
   AGENT_MODEL: z.string().optional(),
+  /**
+   * Phase 9 vision model for document OCR (PDFs, scanned images). Must
+   * support multimodal input (file + image content parts).
+   * Resolution chain: VISION_MODEL ?? CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini'.
+   * Tune for cost: GPT-4o-mini is the cheapest viable default; Claude
+   * Sonnet handles dense layouts (forms, tables) more faithfully but
+   * costs ~5x.
+   */
+  VISION_MODEL: z.string().optional(),
 
   // Telegram (Phase 2+)
   TELEGRAM_BOT_TOKEN: z.string().optional(),

@@ -56,8 +56,8 @@ tool. When in doubt, invoke the skill.
 - **Design system lives in [design.md](design.md).** If a screen disagrees with
   it, fix the screen — not the doc. If you're intentionally evolving the design
   language, update [design.md](design.md) in the same PR.
-- **One inference layer.** `llm.chat()`, `llm.embed()`, `llm.transcribe()` in
-  `packages/shared`. No direct OpenAI / OpenRouter SDK calls from app or
-  worker code.
+- **One inference layer.** `llm.chat()`, `llm.embed()`, `llm.transcribe()`,
+  `llm.extractTextFromMedia()` (Phase 9 vision OCR) in `packages/shared`.
+  No direct OpenAI / OpenRouter SDK calls from app or worker code.
 - **`pnpm` only** (no `npm` / `yarn`). Workspace packages are wired via
   Turborepo; `pnpm -r build` is the canonical build.

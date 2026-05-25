@@ -75,22 +75,44 @@ interface Harness {
   db: AnyDb;
   fetchBlob: ReturnType<typeof vi.fn>;
   enqueueEmbed: ReturnType<typeof vi.fn>;
+  extractFromMedia: ReturnType<typeof vi.fn>;
+  extractDocx: ReturnType<typeof vi.fn>;
   io: DocumentExtractIO;
 }
 
-async function makeHarness(blobBody: string): Promise<Harness> {
+async function makeHarness(
+  blobBody: string,
+  opts: {
+    visionResponse?: string;
+    docxResponse?: string;
+    visionModel?: string;
+  } = {},
+): Promise<Harness> {
   const pg = new PGlite();
   await applyMigrations(pg);
   await seedTeam(pg);
   const db = drizzle(pg) as unknown as AnyDb;
   const fetchBlob = vi.fn(async () => ({ body: Buffer.from(blobBody, 'utf-8') }));
   const enqueueEmbed = vi.fn(async (_data: queueNS.EmbedJobData) => undefined);
+  const extractFromMedia = vi.fn(async (_input: {
+    body: Buffer;
+    mediaType: string;
+    filename: string;
+  }) => ({
+    text: opts.visionResponse ?? 'mock vision output',
+    model: opts.visionModel ?? 'openai/gpt-4o-mini',
+  }));
+  const extractDocx = vi.fn(async (_body: Buffer) => ({
+    text: opts.docxResponse ?? 'mock docx content',
+  }));
   const io: DocumentExtractIO = {
     fetchBlob,
     enqueueEmbed,
     requireEnv: () => undefined, // Tests don't need the OPENROUTER gate.
+    extractFromMedia,
+    extractDocx,
   };
-  return { pg, db, fetchBlob, enqueueEmbed, io };
+  return { pg, db, fetchBlob, enqueueEmbed, extractFromMedia, extractDocx, io };
 }
 
 /**
@@ -290,10 +312,136 @@ describe('processDocumentExtractJob — privacy gate', () => {
 });
 
 describe('processDocumentExtractJob — content-type routing', () => {
-  it('stamps failed + throws UnrecoverableError for unsupported content type', async () => {
-    h = await makeHarness('binary-like content');
+  it('routes application/pdf through the vision extractor (LLM OCR)', async () => {
+    h = await makeHarness('%PDF-1.4 fake pdf bytes', {
+      visionResponse: '# Contract\n\nParties: Acme and Beta.\n\nTerms: ...',
+      visionModel: 'anthropic/claude-3-5-sonnet',
+    });
     const { versionId } = await createFinalisedDocument(h.db, {
-      name: 'scan.pdf',
+      name: 'contract.pdf',
+      contentType: 'application/pdf',
+    });
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(result.chunkCount).toBeGreaterThanOrEqual(1);
+    // Vision was called with the right mediaType + filename hint.
+    expect(h.extractFromMedia).toHaveBeenCalledOnce();
+    const call = h.extractFromMedia.mock.calls[0]![0] as {
+      mediaType: string;
+      filename: string;
+    };
+    expect(call.mediaType).toBe('application/pdf');
+    expect(call.filename).toBe('contract.pdf');
+    // DOCX path must NOT have been touched.
+    expect(h.extractDocx).not.toHaveBeenCalled();
+    // Version row records the vision model id so reprocess scripts can
+    // re-pick rows when the model changes.
+    const row = await h.pg.query<{ extraction_model_version: string }>(
+      `SELECT extraction_model_version FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(row.rows[0]?.extraction_model_version).toContain('anthropic/claude-3-5-sonnet');
+  });
+
+  it('routes image/* through the vision extractor', async () => {
+    h = await makeHarness('\xff\xd8\xff image bytes', {
+      visionResponse: 'whiteboard says: Q3 OKRs',
+    });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'whiteboard.jpg',
+      contentType: 'image/jpeg',
+    });
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(result.chunkCount).toBeGreaterThanOrEqual(1);
+    expect(h.extractFromMedia).toHaveBeenCalledOnce();
+    const call = h.extractFromMedia.mock.calls[0]![0] as {
+      mediaType: string;
+      filename: string;
+    };
+    expect(call.mediaType).toBe('image/jpeg');
+    expect(call.filename).toBe('whiteboard.jpg');
+    // The chunk text must come from the vision response, not the blob.
+    const chunk = await h.pg.query<{ text: string }>(
+      `SELECT text FROM document_chunks WHERE document_version_id = $1 ORDER BY chunk_index LIMIT 1`,
+      [versionId],
+    );
+    expect(chunk.rows[0]?.text).toContain('Q3 OKRs');
+  });
+
+  it('routes DOCX through mammoth (native), not the vision LLM', async () => {
+    // DOCX vision would cost ~50x more for worse output than mammoth's
+    // raw-text extraction. The routing must keep these on separate paths.
+    h = await makeHarness('PK fake docx bytes', {
+      docxResponse: 'Section 1\n\nThis is the contract body extracted from XML.',
+    });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'agreement.docx',
+      contentType:
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(result.chunkCount).toBeGreaterThanOrEqual(1);
+    expect(h.extractDocx).toHaveBeenCalledOnce();
+    // Vision must NOT have run.
+    expect(h.extractFromMedia).not.toHaveBeenCalled();
+  });
+
+  it('falls back to filename extension when content-type is application/octet-stream', async () => {
+    // RustFS sometimes loses the explicit Content-Type on PUT and the
+    // version row stores application/octet-stream. The extension fallback
+    // is what keeps a PDF uploaded with no MIME from stamping failed.
+    h = await makeHarness('%PDF bytes', { visionResponse: 'fallback works' });
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'noheader.pdf',
+      contentType: 'application/octet-stream',
+    });
+    await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(h.extractFromMedia).toHaveBeenCalledOnce();
+  });
+
+  it('still rejects truly unsupported content types (e.g. audio)', async () => {
+    h = await makeHarness('binary audio');
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'voice.mp3',
+      contentType: 'audio/mpeg',
+    });
+    await expect(
+      processDocumentExtractJob(
+        { db: h.db },
+        { documentVersionId: versionId, teamId: TEAM_ID },
+        h.io,
+      ),
+    ).rejects.toThrow(/content_type=audio\/mpeg not supported/);
+    const row = await h.pg.query<{ processing_status: string }>(
+      `SELECT processing_status FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(row.rows[0]?.processing_status).toBe('failed');
+    // Critically: neither extractor was called — the worker exited cleanly.
+    expect(h.extractFromMedia).not.toHaveBeenCalled();
+    expect(h.extractDocx).not.toHaveBeenCalled();
+  });
+
+  it('stamps failed when vision LLM throws (lets BullMQ retry)', async () => {
+    h = await makeHarness('%PDF bytes');
+    h.extractFromMedia.mockRejectedValueOnce(new Error('OpenRouter 429'));
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'doc.pdf',
       contentType: 'application/pdf',
     });
     await expect(
@@ -302,14 +450,13 @@ describe('processDocumentExtractJob — content-type routing', () => {
         { documentVersionId: versionId, teamId: TEAM_ID },
         h.io,
       ),
-    ).rejects.toThrow(/content_type=application\/pdf not supported/);
+    ).rejects.toThrow(/OpenRouter 429/);
     const row = await h.pg.query<{ processing_status: string; processing_error: string }>(
       `SELECT processing_status, processing_error FROM document_versions WHERE id = $1`,
       [versionId],
     );
     expect(row.rows[0]?.processing_status).toBe('failed');
-    expect(row.rows[0]?.processing_error).toContain('content_type=application/pdf');
-    expect(h.enqueueEmbed).not.toHaveBeenCalled();
+    expect(row.rows[0]?.processing_error).toContain('OpenRouter 429');
   });
 
   it('falls back to extension routing when content type is unset', async () => {

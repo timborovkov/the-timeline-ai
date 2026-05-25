@@ -12,10 +12,12 @@ import {
   getEnv,
   getObjectBuffer,
   getS3Client,
+  llm,
   queue,
 } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
+import mammoth from 'mammoth';
 
 const log = childLogger('worker:document-extract');
 
@@ -40,6 +42,22 @@ export interface DocumentExtractIO {
   /** Resolve env. Defaults to the process env via `getEnv()`. Tests can
    *  override to bypass the OPENROUTER_API_KEY gate. */
   requireEnv: () => void;
+  /**
+   * Run vision-based OCR / transcription on a binary document. Defaults
+   * to `llm.extractTextFromMedia` (OpenRouter vision model). Tests inject
+   * a fake so they can exercise the routing without hitting OpenRouter.
+   */
+  extractFromMedia: (input: {
+    body: Buffer;
+    mediaType: string;
+    filename: string;
+  }) => Promise<{ text: string; model: string }>;
+  /**
+   * Native DOCX text extraction via mammoth. Splitting this out from
+   * the worker body lets tests assert routing without needing a real
+   * .docx payload. Defaults to `mammoth.extractRawText`.
+   */
+  extractDocx: (body: Buffer) => Promise<{ text: string }>;
 }
 
 function defaultIO(): DocumentExtractIO {
@@ -53,6 +71,21 @@ function defaultIO(): DocumentExtractIO {
       if (!env.OPENROUTER_API_KEY) {
         throw new UnrecoverableError('document-extract: OPENROUTER_API_KEY not configured');
       }
+    },
+    async extractFromMedia(input) {
+      return llm.extractTextFromMedia({
+        body: input.body,
+        mediaType: input.mediaType,
+        filename: input.filename,
+      });
+    },
+    async extractDocx(body) {
+      // mammoth.extractRawText drops styles + structure but keeps reading
+      // order — best fit for retrieval. Pass-through warnings array is
+      // ignored; mammoth surfaces things like "unrecognised paragraph
+      // style" which don't change the text.
+      const result = await mammoth.extractRawText({ buffer: body });
+      return { text: result.value };
     },
   };
 }
@@ -186,7 +219,25 @@ export async function processDocumentExtractJob(
   }
 
   const contentType = (version.contentType ?? '').toLowerCase();
-  const text = await routeContentToText({ contentType, body, name: document.name });
+  let text: string | null;
+  let extractionModel: string = EXTRACT_CODE_VERSION;
+  try {
+    const routed = await routeContentToText(
+      { contentType, body, name: document.name },
+      io,
+    );
+    text = routed.text;
+    if (routed.model) extractionModel = routed.model;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    await deps.db
+      .update(documentVersions)
+      .set({ processingStatus: 'failed', processingError: message.slice(0, 500) })
+      .where(eq(documentVersions.id, version.id));
+    // Transient LLM / mammoth errors bubble up so BullMQ retries. The
+    // version row records the last error so the operator sees progress.
+    throw err;
+  }
   if (text === null) {
     const reason = `content_type=${contentType || 'unknown'} not supported`;
     await deps.db
@@ -242,7 +293,14 @@ export async function processDocumentExtractJob(
       .set({
         processingStatus: 'chunked',
         processingError: null,
-        extractionModelVersion: EXTRACT_CODE_VERSION,
+        // Stamp both the code-rev tag AND the model id (when vision was
+        // used) so the redocument-extract script can re-pick versions
+        // whose extractor changed without forcing a full re-extract of
+        // text-only documents.
+        extractionModelVersion:
+          extractionModel === EXTRACT_CODE_VERSION
+            ? EXTRACT_CODE_VERSION
+            : `${EXTRACT_CODE_VERSION}+${extractionModel}`,
       })
       .where(eq(documentVersions.id, version.id));
     return inserted.map((r) => r.id);
@@ -295,20 +353,27 @@ export function startDocumentExtractWorker(
 }
 
 /**
- * Route a document body to plain text. Returns null when no extractor
- * matches — the caller stamps the version row 'failed' and the operator
- * can revisit.
+ * Route a document body to plain text. Returns `{ text: null }` when no
+ * extractor matches — the caller stamps the version row 'failed' and
+ * the operator can revisit.
  *
- * Today supports text/* and markdown directly. PDF, DOCX, and image
- * (LLM-vision OCR) extractors land in follow-up PRs — the schema, queue,
- * and embed worker are in place so adding an extractor is mechanical.
+ * Routes:
+ *   - text/*, json, xml, recognised text-ish extensions → utf-8 read +
+ *     NUL-byte heuristic against accidentally treating binary as text.
+ *   - application/pdf, image/* → `io.extractFromMedia` (vision LLM via
+ *     OpenRouter). Returns the model id so the version row records
+ *     which model produced the text.
+ *   - DOCX (Office Open XML) → `io.extractDocx` (mammoth raw-text).
+ *     Native extraction is faster and free; vision is reserved for
+ *     formats that need OCR.
+ *   - Anything else → `{ text: null }`.
  */
-async function routeContentToText(input: {
-  contentType: string;
-  body: Buffer;
-  name: string;
-}): Promise<string | null> {
+async function routeContentToText(
+  input: { contentType: string; body: Buffer; name: string },
+  io: DocumentExtractIO,
+): Promise<{ text: string | null; model?: string }> {
   const ct = input.contentType;
+  // Text-ish routes first. These are cheapest and zero LLM cost.
   if (
     ct.startsWith('text/') ||
     ct === 'application/json' ||
@@ -323,14 +388,42 @@ async function routeContentToText(input: {
     let nul = 0;
     for (let i = 0; i < head.length; i++) {
       if (head.charCodeAt(i) === 0) nul++;
-      if (nul > 8) return null;
+      if (nul > 8) return { text: null };
     }
-    return text;
+    return { text };
   }
-  // PDF, DOCX, images, audio, video: not yet supported by this slice.
-  // Returning null lets the caller stamp a clear 'failed' reason and
-  // surfaces in the document detail UI.
-  return null;
+  // DOCX (Office Open XML) — native extraction via mammoth. Note: the
+  // MIME for .docx is the full ms-office identifier. Old-school .doc
+  // (binary BIFF) is NOT mammoth's domain and remains unsupported.
+  if (
+    ct === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    /\.docx$/i.test(input.name)
+  ) {
+    const { text } = await io.extractDocx(input.body);
+    return { text };
+  }
+  // PDF and image routes both go through the vision model. Vision can
+  // also handle scanned PDFs (no text layer) and screenshots without us
+  // needing to detect which kind we have.
+  if (ct === 'application/pdf' || /\.pdf$/i.test(input.name)) {
+    const result = await io.extractFromMedia({
+      body: input.body,
+      mediaType: 'application/pdf',
+      filename: input.name,
+    });
+    return { text: result.text, model: result.model };
+  }
+  if (ct.startsWith('image/')) {
+    const result = await io.extractFromMedia({
+      body: input.body,
+      mediaType: ct,
+      filename: input.name,
+    });
+    return { text: result.text, model: result.model };
+  }
+  // audio/video and anything else: out of scope for the extract worker.
+  // Audio goes through the transcribe worker; video has no route yet.
+  return { text: null };
 }
 
 // Re-exported for the redocument-extract script to share the same code

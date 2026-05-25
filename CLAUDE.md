@@ -63,7 +63,7 @@ non-negotiables:
   [`packages/shared/src/team-scope.ts`](packages/shared/src/team-scope.ts).
 - Raw events are append-only. Never mutate `raw_events` content.
 - The design system in [design.md](design.md) is the source of truth for UI.
-- One inference layer: `llm.chat()`, `llm.embed()`, `llm.transcribe()`.
+- One inference layer: `llm.chat()`, `llm.embed()`, `llm.transcribe()`, `llm.extractTextFromMedia()` (Phase 9 vision OCR).
 - `pnpm` only. `pnpm -r build` is the canonical build.
 
 ## Repo layout

@@ -19,7 +19,8 @@
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",
     "bullmq": "^5.0.0",
-    "drizzle-orm": "^0.38.0"
+    "drizzle-orm": "^0.38.0",
+    "mammoth": "^1.12.0"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.4.6",
