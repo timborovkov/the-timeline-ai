@@ -82,9 +82,9 @@ describe('extractTextFromMedia', () => {
     // mediaType by the time they reach the v3 model layer — both Image
     // and File parts ride the same "file" wire shape. Verify by mediaType
     // rather than by part type discriminator.
-    const userMsg = calls[0]!.prompt.find((m: { role: string }) => m.role === 'user');
-    expect(userMsg).toBeDefined();
-    const parts = userMsg!.content as { type: string; mediaType?: string }[];
+    const userMsg = calls[0]?.prompt.find((m: { role: string }) => m.role === 'user');
+    if (!userMsg) throw new Error('no user message captured');
+    const parts = userMsg.content as { type: string; mediaType?: string }[];
     expect(Array.isArray(parts)).toBe(true);
     const imageLike = parts.find((p) => p.mediaType === 'image/jpeg');
     expect(imageLike).toBeDefined();
@@ -101,8 +101,9 @@ describe('extractTextFromMedia', () => {
       { model },
     );
     expect(result.text).toContain('Contract');
-    const parts = calls[0]!.prompt.find((m: { role: string }) => m.role === 'user')!.content;
-    const filePart = (parts as { type: string }[]).find((p) => p.type === 'file');
+    const userMsg = calls[0]?.prompt.find((m: { role: string }) => m.role === 'user');
+    if (!userMsg) throw new Error('no user message captured');
+    const filePart = (userMsg.content as { type: string }[]).find((p) => p.type === 'file');
     expect(filePart).toMatchObject({
       type: 'file',
       mediaType: 'application/pdf',
@@ -116,8 +117,7 @@ describe('extractTextFromMedia', () => {
       extractTextFromMedia(
         {
           body: Buffer.from('PK'),
-          mediaType:
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          mediaType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         },
         { model },
       ),
@@ -132,7 +132,7 @@ describe('extractTextFromMedia', () => {
       { body: Buffer.from([0xff, 0xd8]), mediaType: 'image/jpeg' },
       { model },
     );
-    expect(calls[0]!.maxOutputTokens).toBe(8000);
+    expect(calls[0]?.maxOutputTokens).toBe(8000);
 
     const { model: model2, calls: calls2 } = makeCapturingModel('ok');
     await extractTextFromMedia(
@@ -143,7 +143,7 @@ describe('extractTextFromMedia', () => {
       },
       { model: model2 },
     );
-    expect(calls2[0]!.maxOutputTokens).toBe(500);
+    expect(calls2[0]?.maxOutputTokens).toBe(500);
   });
 
   it('attaches an OCR system prompt so output is plain transcription (no commentary)', async () => {
@@ -152,19 +152,17 @@ describe('extractTextFromMedia', () => {
       { body: Buffer.from([0xff, 0xd8]), mediaType: 'image/png' },
       { model },
     );
-    const systemMsg = calls[0]!.prompt.find((m: { role: string }) => m.role === 'system');
-    expect(systemMsg).toBeDefined();
+    const systemMsg = calls[0]?.prompt.find((m: { role: string }) => m.role === 'system');
+    if (!systemMsg) throw new Error('no system message captured');
     // System prompt must forbid commentary so chunks don't get garbage
     // preamble ("Here is the text:") that contaminates retrieval. The
     // v3 prompt normalises system content to either a string or an
     // array of text parts depending on the SDK version — handle both.
-    const sysContent = systemMsg!.content;
+    const sysContent = systemMsg.content;
     const text =
       typeof sysContent === 'string'
         ? sysContent
-        : (sysContent as { text?: string }[])
-            .map((c) => c.text ?? '')
-            .join('\n');
+        : (sysContent as { text?: string }[]).map((c) => c.text ?? '').join('\n');
     expect(text).toMatch(/no commentary|no preamble|transcribe faithfully/i);
   });
 

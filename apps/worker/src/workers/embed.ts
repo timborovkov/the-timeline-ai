@@ -521,10 +521,7 @@ async function buildObjectChangePlan(db: Db, data: queue.EmbedJobData): Promise<
  * is a clean no-op rather than a stamped failure (the deleteDocument
  * scope path separately issues deletePoints to flush any prior points).
  */
-async function buildDocChunkPlan(
-  db: Db,
-  data: queue.EmbedJobData,
-): Promise<EmbedPlan | null> {
+async function buildDocChunkPlan(db: Db, data: queue.EmbedJobData): Promise<EmbedPlan | null> {
   if (!('documentChunkId' in data) || !data.documentChunkId) {
     throw new UnrecoverableError('embed: doc_chunk scope job missing documentChunkId');
   }

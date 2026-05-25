@@ -71,12 +71,11 @@ async function main(): Promise<void> {
       isNull(documents.deletedAt),
     ];
     if (cursor) {
-      conditions.push(
-        or(
-          gt(documentChunks.createdAt, cursor.createdAt),
-          and(eq(documentChunks.createdAt, cursor.createdAt), gt(documentChunks.id, cursor.id)),
-        )!,
+      const tupleCondition = or(
+        gt(documentChunks.createdAt, cursor.createdAt),
+        and(eq(documentChunks.createdAt, cursor.createdAt), gt(documentChunks.id, cursor.id)),
       );
+      if (tupleCondition) conditions.push(tupleCondition);
     }
     const page = await db
       .select({

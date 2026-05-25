@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  createFolderAction,
+  finalizeDocumentVersionAction,
+  renameDocumentAction,
+  requestDocumentUploadAction,
+} from './documents.js';
+
+import type * as SharedModuleNS from '@timeline/shared';
+
 /**
  * Server-action tests for `documents.ts`. Mocks the auth chokepoint
  * (auth + resolveActiveTeam) and the @timeline/shared IO surface
@@ -54,8 +63,7 @@ vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
 vi.mock('@timeline/shared', async () => {
-  const actual =
-    await vi.importActual<typeof import('@timeline/shared')>('@timeline/shared');
+  const actual = await vi.importActual<typeof SharedModuleNS>('@timeline/shared');
   return {
     ...actual,
     withTeam: () => fakes.fakeScope,
@@ -74,14 +82,14 @@ vi.mock('@timeline/shared', async () => {
 });
 
 // Aliases for ergonomic use in test bodies.
-const { fakeAuth, fakeResolveActiveTeam, fakeScope, fakeEnqueueDocExtract, fakeGetSignedPutUrl, fakeHeadObject } = fakes;
-
-import {
-  createFolderAction,
-  finalizeDocumentVersionAction,
-  renameDocumentAction,
-  requestDocumentUploadAction,
-} from './documents.js';
+const {
+  fakeAuth,
+  fakeResolveActiveTeam,
+  fakeScope,
+  fakeEnqueueDocExtract,
+  fakeGetSignedPutUrl,
+  fakeHeadObject,
+} = fakes;
 
 const DOC_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const VERSION_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';

@@ -286,9 +286,7 @@ describe('createQdrantClient', () => {
     const body = search.body as {
       filter: { must_not?: { key: string; match: { value: string } }[] };
     };
-    expect(body.filter.must_not).toEqual([
-      { key: 'source_kind', match: { value: 'doc_chunk' } },
-    ]);
+    expect(body.filter.must_not).toEqual([{ key: 'source_kind', match: { value: 'doc_chunk' } }]);
   });
 
   it('sourceKind=doc_chunk search MUST source_kind and drops the must_not exclusion', async () => {
@@ -299,7 +297,7 @@ describe('createQdrantClient', () => {
     if (!search) throw new Error('no search call captured');
     const body = search.body as {
       filter: {
-        must: ({ key?: string; should?: unknown[] } | unknown)[];
+        must: unknown[];
         must_not?: unknown[];
       };
     };
@@ -329,7 +327,7 @@ describe('createQdrantClient', () => {
     if (!search) throw new Error('no search call captured');
     const body = search.body as {
       filter: {
-        must: ({ key: string; match: { value?: string; any?: string[] } } | unknown)[];
+        must: unknown[];
       };
     };
     const docMust = body.filter.must.find(

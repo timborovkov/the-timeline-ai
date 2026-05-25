@@ -1,13 +1,7 @@
-import {
-  type Db,
-  documentChunks,
-  documents,
-  documentVersions,
-} from '@timeline/db';
+import { type Db, documentChunks, documents, documentVersions } from '@timeline/db';
 import {
   childLogger,
   chunkText,
-  estimateTokens,
   getDocumentsBucket,
   getEnv,
   getObjectBuffer,
@@ -121,7 +115,7 @@ const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
  * pass either finds the version past 'chunked' and exits or hits the
  * unique constraint and rolls back).
  */
-export interface DocumentExtractResult {
+interface DocumentExtractResult {
   documentVersionId: string;
   chunkCount?: number;
   skipped?: boolean;
@@ -153,9 +147,7 @@ export async function processDocumentExtractJob(
     })
     .from(documentVersions)
     .innerJoin(documents, eq(documents.id, documentVersions.documentId))
-    .where(
-      and(eq(documentVersions.id, documentVersionId), eq(documentVersions.teamId, teamId)),
-    )
+    .where(and(eq(documentVersions.id, documentVersionId), eq(documentVersions.teamId, teamId)))
     .limit(1);
   const hit = rows[0];
   if (!hit) {
@@ -222,10 +214,7 @@ export async function processDocumentExtractJob(
   let text: string | null;
   let extractionModel: string = EXTRACT_CODE_VERSION;
   try {
-    const routed = await routeContentToText(
-      { contentType, body, name: document.name },
-      io,
-    );
+    const routed = await routeContentToText({ contentType, body, name: document.name }, io);
     text = routed.text;
     if (routed.model) extractionModel = routed.model;
   } catch (err: unknown) {
@@ -426,8 +415,3 @@ async function routeContentToText(
   // Audio goes through the transcribe worker; video has no route yet.
   return { text: null };
 }
-
-// Re-exported for the redocument-extract script to share the same code
-// version tag — the script's "is this version already at the current
-// extractor?" check needs the same string the worker stamps.
-export { EXTRACT_CODE_VERSION, estimateTokens };

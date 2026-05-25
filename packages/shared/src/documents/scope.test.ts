@@ -213,9 +213,9 @@ describe('document scope — folder constraints', () => {
     const scope = withTeam(db, TEAM_ID, USER_A);
     const parent = await scope.createFolder({ name: 'parent' });
     const child = await scope.createFolder({ name: 'child', parentFolderId: parent.id });
-    await expect(
-      scope.moveFolder({ id: parent.id, parentFolderId: child.id }),
-    ).rejects.toThrow(/subtree/);
+    await expect(scope.moveFolder({ id: parent.id, parentFolderId: child.id })).rejects.toThrow(
+      /subtree/,
+    );
   });
 
   it('rejects duplicate folder names within the same parent (COALESCE-null-root unique)', async () => {

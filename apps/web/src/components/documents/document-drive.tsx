@@ -12,8 +12,8 @@ import {
   finalizeDocumentVersionAction,
   requestDocumentUploadAction,
 } from '@/app/actions/documents';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 interface FolderItem {
   id: string;
@@ -153,17 +153,14 @@ export function DocumentDrive({ currentFolderId, breadcrumbs, folders, documents
             <Upload className="mr-2 h-4 w-4" />
             {uploading ? `Uploading ${uploading}…` : 'Upload'}
           </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden"
-            onChange={onFileChange}
-          />
+          <input ref={fileInputRef} type="file" className="hidden" onChange={onFileChange} />
         </div>
       </header>
 
       <div
-        onDragOver={(e) => e.preventDefault()}
+        onDragOver={(e) => {
+          e.preventDefault();
+        }}
         onDrop={onDrop}
         className="rounded-xl border border-dashed border-border bg-card/30 p-6"
       >
@@ -193,7 +190,9 @@ export function DocumentDrive({ currentFolderId, breadcrumbs, folders, documents
                       </Link>
                       <button
                         type="button"
-                        onClick={() => onDeleteFolder(f.id)}
+                        onClick={() => {
+                          onDeleteFolder(f.id);
+                        }}
                         className="text-xs text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-foreground"
                       >
                         Delete

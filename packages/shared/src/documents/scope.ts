@@ -6,6 +6,12 @@ import {
   folders,
   rawEvents,
 } from '@timeline/db';
+import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
+
+import { embed as defaultEmbed, type EmbedResult } from '../llm/embed.js';
+import { getQdrantClient, type SearchHit, type SearchOpts } from '../qdrant/client.js';
+
+import { buildDocumentObjectKey } from './object-key.js';
 
 // drizzle's transaction callback gives a PgTransaction that has the same
 // fluent methods we use here (`insert`, `select`, `update`) but is not
@@ -13,12 +19,6 @@ import {
 // can accept either.
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
-import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
-
-import { embed as defaultEmbed, type EmbedResult } from '../llm/embed.js';
-import { getQdrantClient, type SearchHit, type SearchOpts } from '../qdrant/client.js';
-
-import { buildDocumentObjectKey } from './object-key.js';
 
 /**
  * Phase 9 — document drive methods for the team scope. Factored out of
@@ -301,10 +301,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     return folder;
   }
 
-  async function assertNotDescendant(
-    folderId: string,
-    potentialAncestorId: string,
-  ): Promise<void> {
+  async function assertNotDescendant(folderId: string, potentialAncestorId: string): Promise<void> {
     // Walks parent chain of `folderId` and refuses if `potentialAncestorId`
     // appears — prevents moving a folder into its own subtree.
     let cursor: string | null = folderId;
@@ -338,7 +335,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         .from(folders)
         .where(and(...conditions))
         .orderBy(asc(folders.name));
-      return rows as FolderRow[];
+      return rows;
     },
 
     async getFolder(id: string): Promise<FolderRow | null> {
@@ -370,7 +367,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         .returning();
       const row = rows[0];
       if (!row) throw new Error('Failed to create folder');
-      return row as FolderRow;
+      return row;
     },
 
     async renameFolder(args: { id: string; name: string }): Promise<FolderRow> {
@@ -384,13 +381,10 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         .returning();
       const row = rows[0];
       if (!row) throw new Error('Failed to rename folder');
-      return row as FolderRow;
+      return row;
     },
 
-    async moveFolder(args: {
-      id: string;
-      parentFolderId: string | null;
-    }): Promise<FolderRow> {
+    async moveFolder(args: { id: string; parentFolderId: string | null }): Promise<FolderRow> {
       await ensureMember();
       const existing = await getFolderRaw(args.id);
       if (!existing) throw new Error('Folder not found');
@@ -405,7 +399,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         .returning();
       const row = rows[0];
       if (!row) throw new Error('Failed to move folder');
-      return row as FolderRow;
+      return row;
     },
 
     async softDeleteFolder(id: string): Promise<void> {
@@ -447,7 +441,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         .where(and(...conditions))
         .orderBy(desc(documents.updatedAt))
         .limit(args.limit ?? 200);
-      return rows as DocumentRow[];
+      return rows;
     },
 
     async getDocument(id: string): Promise<DocumentRow | null> {
@@ -544,7 +538,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           .returning();
         const row = rows[0];
         if (!row) throw new Error('Failed to create document version');
-        return row as DocumentVersionRow;
+        return row;
       });
     },
 
@@ -568,7 +562,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         .from(documentVersions)
         .where(eq(documentVersions.documentId, document.id))
         .orderBy(desc(documentVersions.version));
-      return rows as DocumentVersionRow[];
+      return rows;
     },
 
     /**
@@ -588,12 +582,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         const vrows = await tx
           .select()
           .from(documentVersions)
-          .where(
-            and(
-              eq(documentVersions.id, input.versionId),
-              eq(documentVersions.teamId, teamId),
-            ),
-          )
+          .where(and(eq(documentVersions.id, input.versionId), eq(documentVersions.teamId, teamId)))
           .limit(1);
         const version = vrows[0] as DocumentVersionRow | undefined;
         if (!version) throw new Error('Document version not found');
@@ -612,8 +601,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         // against UI double-clicks, retried server actions, and Next.js's
         // automatic action replay after a transient error.
         if (version.sourceEventId) {
-          const action: 'upload' | 'new_version' =
-            version.version === 1 ? 'upload' : 'new_version';
+          const action: 'upload' | 'new_version' = version.version === 1 ? 'upload' : 'new_version';
           return { document, version, eventId: version.sourceEventId, action };
         }
 
@@ -685,10 +673,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       });
     },
 
-    async moveDocument(args: {
-      id: string;
-      folderId: string | null;
-    }): Promise<DocumentRow> {
+    async moveDocument(args: { id: string; folderId: string | null }): Promise<DocumentRow> {
       await ensureMember();
       const existing = await getDocumentRaw(args.id);
       if (!existing) throw new Error('Document not found');
@@ -917,10 +902,12 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
      * by the existing rawEvents predicate via a sub-query is unnecessary —
      * we filter source='document' AND visibility predicate inline).
      */
-    async listRecentDocumentChanges(args: {
-      since?: Date;
-      limit?: number;
-    } = {}): Promise<
+    async listRecentDocumentChanges(
+      args: {
+        since?: Date;
+        limit?: number;
+      } = {},
+    ): Promise<
       {
         id: string;
         occurredAt: Date;
@@ -992,18 +979,13 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         })
         .from(documentVersions)
         .innerJoin(documents, eq(documents.id, documentVersions.documentId))
-        .where(
-          and(
-            eq(documentVersions.id, versionId),
-            eq(documentVersions.teamId, teamId),
-          ),
-        )
+        .where(and(eq(documentVersions.id, versionId), eq(documentVersions.teamId, teamId)))
         .limit(1);
       const r = rows[0];
       if (!r) return null;
       return {
-        document: r.document as DocumentRow,
-        version: r.version as DocumentVersionRow,
+        document: r.document,
+        version: r.version,
       };
     },
   };

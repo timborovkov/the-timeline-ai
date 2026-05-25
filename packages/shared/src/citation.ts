@@ -44,7 +44,7 @@ export function parseCitations(text: string): CitationPart[] {
     DOC_RE.lastIndex = 0;
     const docMatch = DOC_RE.exec(raw);
     DOC_RE.lastIndex = 0;
-    if (docMatch && docMatch[1] && docMatch[3]) {
+    if (docMatch?.[1] && docMatch[3]) {
       parts.push({
         type: 'doc',
         documentId: docMatch[1],

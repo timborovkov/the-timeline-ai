@@ -74,47 +74,10 @@ export async function createFolderAction(
   return { ok: true };
 }
 
-const renameFolderSchema = z.object({
-  id: folderIdSchema,
-  name: z.string().trim().min(1).max(200),
-});
-
-export async function renameFolderAction(
-  input: z.input<typeof renameFolderSchema>,
-): Promise<Result> {
-  const got = await withScopeOrError();
-  if ('error' in got) return { ok: false, error: got.error };
-  const parsed = renameFolderSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid' };
-  try {
-    await got.scope.renameFolder(parsed.data);
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
-  }
-  revalidatePath('/app/documents');
-  return { ok: true };
-}
-
-const moveFolderSchema = z.object({
-  id: folderIdSchema,
-  parentFolderId: folderIdSchema.nullable(),
-});
-
-export async function moveFolderAction(
-  input: z.input<typeof moveFolderSchema>,
-): Promise<Result> {
-  const got = await withScopeOrError();
-  if ('error' in got) return { ok: false, error: got.error };
-  const parsed = moveFolderSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid' };
-  try {
-    await got.scope.moveFolder(parsed.data);
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
-  }
-  revalidatePath('/app/documents');
-  return { ok: true };
-}
+// NOTE: renameFolderAction + moveFolderAction are deferred until the
+// document-drive UI gains rename / move dialogs. The underlying scope
+// methods exist on @timeline/shared and are tested in scope.test.ts;
+// re-adding the action wrappers is a one-file change when the UI ships.
 
 export async function deleteFolderAction(id: string): Promise<Result> {
   const got = await withScopeOrError();
@@ -285,26 +248,9 @@ export async function renameDocumentAction(
   return { ok: true };
 }
 
-const moveDocumentSchema = z.object({
-  id: documentIdSchema,
-  folderId: folderIdSchema.nullable(),
-});
-
-export async function moveDocumentAction(
-  input: z.input<typeof moveDocumentSchema>,
-): Promise<Result> {
-  const got = await withScopeOrError();
-  if ('error' in got) return { ok: false, error: got.error };
-  const parsed = moveDocumentSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid' };
-  try {
-    await got.scope.moveDocument(parsed.data);
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
-  }
-  revalidatePath('/app/documents');
-  return { ok: true };
-}
+// NOTE: moveDocumentAction is deferred until the document-drive UI gains
+// a move dialog. The scope.moveDocument method exists on @timeline/shared
+// and is tested in scope.test.ts.
 
 export async function deleteDocumentAction(id: string): Promise<Result> {
   const got = await withScopeOrError();
@@ -319,45 +265,10 @@ export async function deleteDocumentAction(id: string): Promise<Result> {
   return { ok: true };
 }
 
-export async function restoreDocumentAction(id: string): Promise<Result> {
-  const got = await withScopeOrError();
-  if ('error' in got) return { ok: false, error: got.error };
-  if (!UUID_RE.test(id)) return { ok: false, error: 'Invalid id' };
-  try {
-    await got.scope.restoreDocument(id);
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
-  }
-  revalidatePath('/app/documents');
-  return { ok: true };
-}
-
-const setVisibilitySchema = z.object({
-  id: documentIdSchema,
-  visibility: z.enum(['team', 'private', 'specific_users']),
-  visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
-});
-
-export async function setDocumentVisibilityAction(
-  input: z.input<typeof setVisibilitySchema>,
-): Promise<Result> {
-  const got = await withScopeOrError();
-  if ('error' in got) return { ok: false, error: got.error };
-  const parsed = setVisibilitySchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid' };
-  try {
-    await got.scope.setDocumentVisibility({
-      id: parsed.data.id,
-      visibility: parsed.data.visibility,
-      visibilityUserIds: parsed.data.visibilityUserIds ?? null,
-    });
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
-  }
-  revalidatePath('/app/documents');
-  revalidatePath(`/app/documents/${parsed.data.id}`);
-  return { ok: true };
-}
+// NOTE: restoreDocumentAction + setDocumentVisibilityAction are deferred
+// until the UI surfaces deleted-documents (for restore) and a share
+// dialog (for visibility). Underlying scope methods exist on
+// @timeline/shared and are exercised by scope.test.ts.
 
 /**
  * Return a short-lived signed GET URL for a specific document version's

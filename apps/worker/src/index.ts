@@ -26,9 +26,7 @@ async function main(): Promise<void> {
   // Register the hourly overdue-scan repeatable. BullMQ keys by jobId so a
   // duplicate call on the next deploy is a no-op.
   await queue.scheduleOverdueScan();
-  log.info(
-    'transcribe + extract + embed + overdue + document-extract workers started',
-  );
+  log.info('transcribe + extract + embed + overdue + document-extract workers started');
 
   const shutdown = async (signal: string): Promise<void> => {
     log.info({ signal }, 'received shutdown signal');

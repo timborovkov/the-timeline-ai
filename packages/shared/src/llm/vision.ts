@@ -132,8 +132,7 @@ export async function extractTextFromMedia(
           contentPart,
           {
             type: 'text',
-            text:
-              'Transcribe the attached document to plain text. Follow the formatting rules in the system prompt.',
+            text: 'Transcribe the attached document to plain text. Follow the formatting rules in the system prompt.',
           },
         ],
       },

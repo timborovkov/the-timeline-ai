@@ -51,7 +51,10 @@ function parseArgs(): Args {
   for (const arg of args) {
     if (arg.startsWith('--team=')) teamId = arg.slice('--team='.length);
     else if (arg.startsWith('--status=')) {
-      const raw = arg.slice('--status='.length).split(',').map((s) => s.trim());
+      const raw = arg
+        .slice('--status='.length)
+        .split(',')
+        .map((s) => s.trim());
       const filtered = raw.filter((s): s is ProcessingStatus =>
         (VALID_STATUSES as string[]).includes(s),
       );
@@ -88,12 +91,11 @@ async function main(): Promise<void> {
     ];
     if (cursor) {
       // (createdAt, id) tuple cursor — stable across ties on createdAt.
-      conditions.push(
-        or(
-          gt(documentVersions.createdAt, cursor.createdAt),
-          and(eq(documentVersions.createdAt, cursor.createdAt), gt(documentVersions.id, cursor.id)),
-        )!,
+      const tupleCondition = or(
+        gt(documentVersions.createdAt, cursor.createdAt),
+        and(eq(documentVersions.createdAt, cursor.createdAt), gt(documentVersions.id, cursor.id)),
       );
+      if (tupleCondition) conditions.push(tupleCondition);
     }
     const page = await db
       .select({

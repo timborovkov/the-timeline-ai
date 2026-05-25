@@ -3,21 +3,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import {
-  type Db,
-  documentChunks,
-  documents,
-  documentVersions,
-} from '@timeline/db';
+import { type Db, documentChunks, documents, documentVersions } from '@timeline/db';
 import { withTeam, type queue as queueNS } from '@timeline/shared';
-import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  type DocumentExtractIO,
-  processDocumentExtractJob,
-} from './documentExtract.js';
+import { type DocumentExtractIO, processDocumentExtractJob } from './documentExtract.js';
 
 /**
  * Real-DB integration tests for the documentExtract worker handler.
@@ -92,19 +84,20 @@ async function makeHarness(
   await applyMigrations(pg);
   await seedTeam(pg);
   const db = drizzle(pg) as unknown as AnyDb;
-  const fetchBlob = vi.fn(async () => ({ body: Buffer.from(blobBody, 'utf-8') }));
-  const enqueueEmbed = vi.fn(async (_data: queueNS.EmbedJobData) => undefined);
-  const extractFromMedia = vi.fn(async (_input: {
-    body: Buffer;
-    mediaType: string;
-    filename: string;
-  }) => ({
-    text: opts.visionResponse ?? 'mock vision output',
-    model: opts.visionModel ?? 'openai/gpt-4o-mini',
-  }));
-  const extractDocx = vi.fn(async (_body: Buffer) => ({
-    text: opts.docxResponse ?? 'mock docx content',
-  }));
+  // vi.fn signatures kept sync — eslint flags `async` without `await` as
+  // useless. Wrap in Promise.resolve so the surface matches the interface
+  // (which returns a Promise) without an empty async function.
+  const fetchBlob = vi.fn(() => Promise.resolve({ body: Buffer.from(blobBody, 'utf-8') }));
+  const enqueueEmbed = vi.fn((_data: queueNS.EmbedJobData) => Promise.resolve(undefined));
+  const extractFromMedia = vi.fn((_input: { body: Buffer; mediaType: string; filename: string }) =>
+    Promise.resolve({
+      text: opts.visionResponse ?? 'mock vision output',
+      model: opts.visionModel ?? 'openai/gpt-4o-mini',
+    }),
+  );
+  const extractDocx = vi.fn((_body: Buffer) =>
+    Promise.resolve({ text: opts.docxResponse ?? 'mock docx content' }),
+  );
   const io: DocumentExtractIO = {
     fetchBlob,
     enqueueEmbed,
@@ -144,10 +137,15 @@ async function createFinalisedDocument(
   return { documentId: created.document.id, versionId: finalised.version.id };
 }
 
-let h: Harness;
+// `h` is assigned at the top of every `it`. We declare it as `Harness`
+// (not `| undefined`) so individual tests don't need to narrow it on each
+// access. The afterEach unconditionally closes; the previous tests have
+// always assigned a fresh harness by the time we reach this hook (BullMQ
+// errors would surface on the worker before its teardown).
+let h: Harness = undefined as unknown as Harness;
 
 afterEach(async () => {
-  if (h?.pg) await h.pg.close();
+  await h.pg.close();
 });
 
 describe('processDocumentExtractJob — happy path', () => {
@@ -175,13 +173,13 @@ describe('processDocumentExtractJob — happy path', () => {
       [versionId],
     );
     expect(chunks.rows.length).toBe(result.chunkCount);
-    chunks.rows.forEach((r, i) => expect(r.chunk_index).toBe(i));
+    chunks.rows.forEach((r, i) => {
+      expect(r.chunk_index).toBe(i);
+    });
     // One embed job per chunk, each carrying the documentChunkId on the
     // doc_chunk variant of the discriminated EmbedJobData union.
     expect(h.enqueueEmbed).toHaveBeenCalledTimes(result.chunkCount ?? 0);
-    const enqueued = h.enqueueEmbed.mock.calls.map(
-      (c) => c[0] as queueNS.EmbedJobData,
-    );
+    const enqueued = h.enqueueEmbed.mock.calls.map((c) => c[0] as queueNS.EmbedJobData);
     for (const job of enqueued) {
       expect(job.teamId).toBe(TEAM_ID);
       // Narrow via the discriminator before reading per-variant fields.
@@ -266,20 +264,16 @@ describe('processDocumentExtractJob — short-circuits', () => {
       `SELECT count(*)::text AS c FROM document_chunks WHERE document_version_id = $1`,
       [versionId],
     );
-    expect(
-      (chunksAfterSecond.rows[0] as { c: string }).c,
-    ).toBe((chunksAfterFirst.rows[0] as { c: string }).c);
+    expect((chunksAfterSecond.rows[0] as { c: string }).c).toBe(
+      (chunksAfterFirst.rows[0] as { c: string }).c,
+    );
   });
 
   it('throws UnrecoverableError for non-existent version (does not enqueue)', async () => {
     h = await makeHarness('content');
     const FAKE = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
     await expect(
-      processDocumentExtractJob(
-        { db: h.db },
-        { documentVersionId: FAKE, teamId: TEAM_ID },
-        h.io,
-      ),
+      processDocumentExtractJob({ db: h.db }, { documentVersionId: FAKE, teamId: TEAM_ID }, h.io),
     ).rejects.toThrow(/not found/);
     expect(h.enqueueEmbed).not.toHaveBeenCalled();
   });
@@ -332,7 +326,7 @@ describe('processDocumentExtractJob — content-type routing', () => {
     expect(result.chunkCount).toBeGreaterThanOrEqual(1);
     // Vision was called with the right mediaType + filename hint.
     expect(h.extractFromMedia).toHaveBeenCalledOnce();
-    const call = h.extractFromMedia.mock.calls[0]![0] as {
+    const call = h.extractFromMedia.mock.calls[0]?.[0] as {
       mediaType: string;
       filename: string;
     };
@@ -364,7 +358,7 @@ describe('processDocumentExtractJob — content-type routing', () => {
     );
     expect(result.chunkCount).toBeGreaterThanOrEqual(1);
     expect(h.extractFromMedia).toHaveBeenCalledOnce();
-    const call = h.extractFromMedia.mock.calls[0]![0] as {
+    const call = h.extractFromMedia.mock.calls[0]?.[0] as {
       mediaType: string;
       filename: string;
     };
@@ -386,8 +380,7 @@ describe('processDocumentExtractJob — content-type routing', () => {
     });
     const { versionId } = await createFinalisedDocument(h.db, {
       name: 'agreement.docx',
-      contentType:
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     });
     const result = await processDocumentExtractJob(
       { db: h.db },

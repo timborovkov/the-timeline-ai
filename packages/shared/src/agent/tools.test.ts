@@ -335,7 +335,9 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
     const forbidden = ['documentId', 'folderId', 'folderPath', 'ownerUserId', 'currentVersionId'];
     for (const k of forbidden) expect(out).not.toHaveProperty(k);
     // The version row carries the same contract.
-    const v = (out.versions as Record<string, unknown>[])[0]!;
+    const versions = out.versions as Record<string, unknown>[];
+    const v = versions[0];
+    if (!v) throw new Error('expected at least one version in get_document output');
     const vRequired = [
       'version_id',
       'version',
@@ -346,7 +348,14 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
       'created_at',
     ];
     for (const k of vRequired) expect(v).toHaveProperty(k);
-    const vForbidden = ['id', 'documentId', 'byteSize', 'contentType', 'uploadedByUserId', 'processingStatus'];
+    const vForbidden = [
+      'id',
+      'documentId',
+      'byteSize',
+      'contentType',
+      'uploadedByUserId',
+      'processingStatus',
+    ];
     for (const k of vForbidden) expect(v).not.toHaveProperty(k);
     // Dates are serialised to ISO strings (the LLM can't parse Date objects).
     expect(typeof out.created_at).toBe('string');

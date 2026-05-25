@@ -75,7 +75,10 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
   }
 
   function onDelete(): void {
-    if (!window.confirm('Delete this document? Versions stay in storage; the drive entry is hidden.')) return;
+    if (
+      !window.confirm('Delete this document? Versions stay in storage; the drive entry is hidden.')
+    )
+      return;
     startTransition(async () => {
       const res = await deleteDocumentAction(document.id);
       if (!res.ok) toast.error(res.error ?? 'Delete failed');
@@ -106,11 +109,7 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
     <div className="space-y-6">
       <div>
         <Link
-          href={
-            document.folderId
-              ? `/app/documents?folder=${document.folderId}`
-              : '/app/documents'
-          }
+          href={document.folderId ? `/app/documents?folder=${document.folderId}` : '/app/documents'}
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="mr-1 h-3.5 w-3.5" />

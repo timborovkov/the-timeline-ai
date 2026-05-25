@@ -91,6 +91,6 @@ describe('chunkText', () => {
   it('records tokenCount that scales with text length', () => {
     const short = chunkText('short text');
     const long = chunkText('a sentence. '.repeat(50));
-    expect(long[0]!.tokenCount).toBeGreaterThan(short[0]!.tokenCount);
+    expect(long[0]?.tokenCount ?? 0).toBeGreaterThan(short[0]?.tokenCount ?? 0);
   });
 });
