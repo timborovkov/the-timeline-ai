@@ -1,6 +1,7 @@
 'use client';
 
 import { type objects } from '@timeline/shared';
+import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
 import {
@@ -49,6 +50,7 @@ function statusOptions(type: string): string[] {
 }
 
 export function ObjectDetailClient({ detail, userId }: Props) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [noteBody, setNoteBody] = useState('');
@@ -62,6 +64,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
     startTransition(async () => {
       const result = await updateObjectAction({ id: detail.id, [field]: value });
       if ('error' in result && result.error) setError(result.error);
+      else router.refresh();
     });
   }
 
@@ -77,6 +80,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
         setError(result.error);
       } else {
         setNoteBody('');
+        router.refresh();
       }
     });
   }
@@ -237,6 +241,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                                 setError(result.error);
                               } else {
                                 setEditingNoteId(null);
+                                router.refresh();
                               }
                             });
                           }}
@@ -284,6 +289,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                                 entityId: detail.id,
                               });
                               if ('error' in result && result.error) setError(result.error);
+                              else router.refresh();
                             });
                           }}
                           className="text-destructive hover:underline"
@@ -371,7 +377,10 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                   kind: linkKind,
                 });
                 if ('error' in result && result.error) setError(result.error);
-                else setLinkId('');
+                else {
+                  setLinkId('');
+                  router.refresh();
+                }
               });
             }}
             className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary hover:bg-primary/20 disabled:opacity-50"
@@ -407,6 +416,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                             entityId: detail.id,
                           });
                           if ('error' in result && result.error) setError(result.error);
+                          else router.refresh();
                         });
                       }}
                       className="text-xs text-destructive hover:underline"
@@ -459,6 +469,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                                 entityId: detail.id,
                               });
                               if ('error' in result && result.error) setError(result.error);
+                              else router.refresh();
                             });
                           }}
                           className="rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 text-primary hover:bg-primary/20 disabled:opacity-50"
@@ -476,6 +487,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
                                 entityId: detail.id,
                               });
                               if ('error' in result && result.error) setError(result.error);
+                              else router.refresh();
                             });
                           }}
                           className="rounded-md border px-2 py-0.5 text-muted-foreground hover:bg-accent disabled:opacity-50"
@@ -501,6 +513,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
             startTransition(async () => {
               const result = await archiveObjectAction({ id: detail.id });
               if ('error' in result && result.error) setError(result.error);
+              else router.refresh();
             });
           }}
           className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50"

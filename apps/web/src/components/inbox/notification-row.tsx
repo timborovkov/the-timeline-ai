@@ -30,10 +30,7 @@ export function NotificationRow({ id, kind, summary, entityId, createdAt, initia
   }
 
   return (
-    <li
-      className={`rounded-lg border px-4 py-3 text-sm ${read ? 'bg-card/40' : 'bg-card'}`}
-      onMouseEnter={markRead}
-    >
+    <li className={`rounded-lg border px-4 py-3 text-sm ${read ? 'bg-card/40' : 'bg-card'}`}>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

@@ -118,6 +118,10 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
     await objects.archiveObject(db, r.scope, parsed.data.id, { kind: 'user', userId: r.userId });
     revalidatePath('/app/objects');
     revalidatePath(`/app/objects/${parsed.data.id}`);
+    // Archived objects must drop out of any board/kanban view that was
+    // surfacing them. Matches the revalidation set in updateObjectAction.
+    revalidatePath('/app/boards', 'layout');
+    revalidatePath('/app/tasks');
     return { ok: true };
   } catch (err) {
     return { error: friendlyError(err, 'Failed to archive') };
