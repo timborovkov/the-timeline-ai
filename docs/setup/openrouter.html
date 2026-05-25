@@ -49,17 +49,17 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         The embedding model is pinned. Changing it invalidates the entire vector index — re-embed
         before changing.
       </p>
-      <pre><code>EMBEDDING_MODEL=openai/text-embedding-3-small
-EMBEDDING_DIMENSIONS=1536
-TRANSCRIPTION_MODEL=openai/whisper-1
-CHAT_MODEL_DEFAULT=anthropic/claude-3.7-sonnet
+      <pre><code>EMBEDDING_MODEL=perplexity/pplx-embed-v1-4b
+EMBEDDING_DIMENSIONS=2560
+TRANSCRIPTION_MODEL=openai/whisper-large-v3
+CHAT_MODEL_DEFAULT=qwen/qwen3.7-max
 # Phase 4: cheap model used by the extract worker. Falls back to
 # CHAT_MODEL_DEFAULT when unset.
-EXTRACTION_MODEL=openai/gpt-4o-mini
+EXTRACTION_MODEL=deepseek/deepseek-v4-flash
 # Phase 6: model used by /api/chat. Lets us point chat at a stronger
 # model than extraction without changing extraction behavior. Falls back
 # to CHAT_MODEL_DEFAULT when unset.
-AGENT_MODEL=anthropic/claude-3.7-sonnet
+AGENT_MODEL=qwen/qwen3.7-max
 </code></pre>
 
       <h2 id="smoke-test">3. Quick smoke test</h2>

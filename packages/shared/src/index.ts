@@ -17,3 +17,5 @@ export * as rateLimit from './rate-limit/index.js';
 export * from './chunk.js';
 export * from './citation.js';
 export * from './documents/index.js';
+export * as meetingBots from './meeting-bots/index.js';
+export * as meetingsScope from './meetings/index.js';

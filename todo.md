@@ -4,14 +4,14 @@ Ordered roadmap. Keep this file short: shipped work is bundled, open work is act
 
 ## Current Status
 
-Phases 0-8 are shipped on `main`. Phase 9 (Team Document Drive) is in
-review on this branch: foundation + worker + UI + tests across three
-slices, full build green, 196 tests across `@timeline/shared`,
-`@timeline/worker`, and `@timeline/web`.
+Phases 0-9 are shipped on `main`. Phase 10 (Meeting Bots — Recall.ai) is in
+review on this branch: provider adapter + schema + webhooks + scope helpers
++ worker + UI + docs, full build/lint/format green, 230 tests across
+`@timeline/shared`, `@timeline/worker`, and `@timeline/web`.
 
 Open PRs not counted here yet:
 
-- Phase 9 — Team Document Drive (this branch).
+- Phase 10 — Meeting Bots (this branch).
 
 ## Completed Bundle
 
@@ -107,17 +107,20 @@ Goal: let the timeline agent join Google Meet, Microsoft Teams, and Zoom calls, 
 
 Default provider: **Recall.ai** (proven in the sister project Vernix at `/Users/timborovkov/Desktop/Projects/Vernix`). The adapter layer keeps it swappable for Attendee.dev (self-hosted, cost control), Meeting BaaS, or future native Meet/Teams APIs. Reusable patterns from Vernix worth borrowing: webhook → Zod validation → DB lookup by botId metadata; split signed status webhook from unsigned realtime transcript webhook; pre-built provider adapter shape. We diverge from Vernix on storage — meeting chunks go into the **shared team Qdrant collection** with `source_kind=meeting_chunk` + `meeting_id` payload, not a per-meeting collection, to keep retrieval uniform with the rest of the org map.
 
-- [ ] Pick provider — default Recall.ai. Document the per-minute cost, silent vs. recording modes, and fallbacks (Attendee.dev, Meeting BaaS, native APIs) in `docs/setup/meeting-bots.html`.
-- [ ] Add provider adapter at `packages/shared/src/meeting-bots/` with a `MeetingBotProvider` interface — `joinMeeting(url, opts)`, `leaveMeeting(botId)`, `getStatus(botId)`. Recall.ai first impl; reference Vernix `src/lib/meeting-bot/recall.ts` for shape (botId, metadata round-trip, silent/voice modes).
-- [ ] Schema: extend `raw_events.source` enum with `'meeting'`. New `meetings` table — `id, team_id, provider_id (e.g. recall:botId), meeting_url, title, status (pending|joining|active|processing|completed|failed), started_at, ended_at, participants jsonb, metadata jsonb`. New `meeting_transcript_chunks` — `id, meeting_id, speaker, text, start_ms, end_ms, raw_event_id`. Each finalized chunk produces a `raw_events` row (source=meeting) so it flows through the existing extract → embed pipeline; chunks are also embedded directly so retrieval works at speaker/utterance granularity.
-- [ ] Webhook handlers under `apps/web/src/app/api/webhooks/recall/` — split `status` (Svix-signed, bot/call lifecycle) from `transcript` (unsigned realtime, validated by Zod + botId→meeting lookup). Mirror Vernix's `src/app/api/webhooks/recall/{status,transcript}/route.ts`.
-- [ ] Bot lifecycle worker: on `bot.call_ended` flip meeting to `processing`; on `transcript.done` run end-of-meeting summary, extract action items as tasks/object updates, finalize embeddings, mark `completed`. Re-use the existing extract worker — don't fork.
-- [ ] Visibility: meetings default to `team`. Host can set `private` or `specific_users` before or during the call via the same control as other sources.
-- [ ] UI surface — "Schedule meeting bot" entry in the capture composer: paste a Meet/Teams/Zoom link, choose silent vs. recording, choose visibility, optional title/agenda. Live indicator while the bot is in the call. Meeting page shows transcript, summary, extracted facts/tasks, and the timeline events generated.
-- [ ] Calendar integration (stretch — can move to Phase 11): connect Google Calendar / Outlook so the bot auto-joins meetings on a user's calendar; opt-in per calendar.
-- [ ] Cost guardrails: per-team monthly minute cap with admin override. Track per-meeting minutes in a `meeting_usage` row (mirrors Vernix `usageEvents`).
-- [ ] Reliability: bot-failed events surface in the failed-jobs queue (Phase 12/13 monitoring dashboard) with retry/rejoin.
-- [ ] Privacy/compliance: explicit "bot is recording" notice in the meeting, retention policy for raw audio (default: discard after transcript+embed completes), team-level toggle to require host consent before the bot joins.
+Phase 10 ships silent transcript capture only — no voice/agent mode, no
+calendar auto-join (both removed from scope per the build decision; revisit
+in a follow-up phase if/when there's demand).
+
+- [x] Pick provider — Recall.ai is the default. Per-minute cost, silent-mode default, and Attendee.dev / Meeting BaaS / native-API fallbacks documented in [`docs/setup/meeting-bots.html`](docs/setup/meeting-bots.html).
+- [x] Provider adapter at [`packages/shared/src/meeting-bots/`](packages/shared/src/meeting-bots/) implements `MeetingBotProvider` (`joinMeeting` / `leaveMeeting` / `getStatus`). Recall.ai shape mirrors Vernix `src/lib/meeting-bot/recall.ts` — silent-only (no `output_media`, no voice secrets), botId + metadata round-trip, Token-prefixed auth.
+- [x] Schema: `raw_events.source` extended with `'meeting'`; new [`meetings`](packages/db/src/schema/meetings.ts), `meeting_transcript_chunks`, `meeting_usage`, and `team_meeting_settings` tables. Migration [`0011_phase10_meetings.sql`](packages/db/drizzle/0011_phase10_meetings.sql). Each finalised chunk lands as a `raw_events` row (source=meeting) AND a `meeting_transcript_chunks` row; both are embedded — raw_event via the standard scope, chunk via `source_kind='meeting_chunk'` for utterance-granular retrieval. Idempotent under webhook replay via partial unique indices on `(team_id, source_metadata->>'meeting_chunk_provider_id')` and `(meeting_id, provider_chunk_id)`.
+- [x] Webhook handlers under [`apps/web/src/app/api/webhooks/recall/`](apps/web/src/app/api/webhooks/recall/) — `status` is Svix-signed (custom HMAC-SHA256 verifier in [`packages/shared/src/meeting-bots/svix.ts`](packages/shared/src/meeting-bots/svix.ts); accepts both `svix-*` and `webhook-*` headers); `transcript` is unsigned and validated by Zod + botId→meeting lookup + per-bot rate limit.
+- [x] Bot lifecycle worker [`apps/worker/src/workers/meetingFinalize.ts`](apps/worker/src/workers/meetingFinalize.ts): on `bot.call_ended` the status webhook flips the meeting to `processing` and enqueues finalize, which generates the summary, extracts action items, records minutes (idempotent via `meeting_usage` unique index), and flips to `completed`. Per-utterance fact extraction reuses the existing extract worker — no fork.
+- [x] Visibility: meetings default to `team`. Compose with `private` (creator only) or `specific_users` — the visibility is copied onto every generated `raw_events` row so the existing `visibilityFilter` works unchanged. Per-utterance overrides are not in scope.
+- [x] UI surface — [`/app/meetings`](apps/web/src/app/app/meetings/page.tsx) lists recent meetings + current-month minutes against the team cap. [`ScheduleMeetingBotForm`](apps/web/src/components/meeting-forms.tsx) takes URL, optional title, visibility, and consent. Meeting detail page shows status, speaker-by-speaker transcript, summary, and (once finalised) extracted action items.
+- [x] Cost guardrails: per-team monthly minute cap (`team_meeting_settings.meeting_minutes_cap`, default 600) with admin override flag. Each finalised meeting writes a `meeting_usage` row; the schedule action sums the current month before allowing a new bot. 0 = disabled, null = unlimited.
+- [x] Privacy/compliance: `require_host_consent` (default true) blocks scheduling unless the caller has ticked the consent box. Timestamp stored on `meetings.metadata.consent_given_at`. Raw audio is NOT copied to S3 — Recall's default retention applies to the recording artifact; the transcript text is the only persistent record.
+- [ ] Reliability follow-up: surface bot-failed states in the Phase 12/13 monitoring dashboard with retry/rejoin. Failure is captured cleanly on `meetings.status='failed'` today; a dedicated dashboard ships with that phase.
 
 ## Phase 11 — Third-Party Integrations And Custom MCPs
 

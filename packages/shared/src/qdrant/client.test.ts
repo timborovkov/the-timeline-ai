@@ -118,6 +118,10 @@ const samplePayload: QdrantPayload = {
   folder_id: null,
   owner_user_id: null,
   updated_at: null,
+  // Phase 10 meeting-chunk fields.
+  meeting_id: null,
+  meeting_chunk_id: null,
+  speaker: null,
 };
 
 describe('createQdrantClient', () => {
@@ -284,9 +288,11 @@ describe('createQdrantClient', () => {
     const search = calls.find((c) => c.url.endsWith('/points/search'));
     if (!search) throw new Error('no search call captured');
     const body = search.body as {
-      filter: { must_not?: { key: string; match: { value: string } }[] };
+      filter: { must_not?: { key: string; match: { any: string[] } }[] };
     };
-    expect(body.filter.must_not).toEqual([{ key: 'source_kind', match: { value: 'doc_chunk' } }]);
+    expect(body.filter.must_not).toEqual([
+      { key: 'source_kind', match: { any: ['doc_chunk', 'meeting_chunk'] } },
+    ]);
   });
 
   it('sourceKind=doc_chunk search MUST source_kind and drops the must_not exclusion', async () => {

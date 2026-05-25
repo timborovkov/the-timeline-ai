@@ -14,3 +14,4 @@ export * from './notifications.js';
 export * from './chat-sessions.js';
 export * from './chat-messages.js';
 export * from './documents.js';
+export * from './meetings.js';

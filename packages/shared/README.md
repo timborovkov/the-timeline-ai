@@ -1,6 +1,6 @@
 # @timeline/shared
 
-Cross-package code: the `withTeam` team-scope helper, the single `llm` inference layer, Qdrant + S3 wrappers, Telegram and Postmark dispatchers, BullMQ queue names, the objects module, the documents module (Phase 9 — folders/documents/versions/chunks scope + RustFS object-key builder + text chunker), and shared env parsing.
+Cross-package code: the `withTeam` team-scope helper, the single `llm` inference layer, Qdrant + S3 wrappers, Telegram and Postmark dispatchers, BullMQ queue names, the objects module, the documents module (Phase 9 — folders/documents/versions/chunks scope + RustFS object-key builder + text chunker), the meeting-bots module (Phase 10 — Recall.ai provider + Svix webhook verifier) and meetings scope (meeting/chunk/usage helpers), and shared env parsing.
 
 ## Why it exists
 
@@ -19,7 +19,7 @@ import { withTeam, llm } from "@timeline/shared";
 const scoped = withTeam(db, teamId, userId);
 const events = await scoped.select().from(raw_events);
 
-const { text } = await llm.chat({ messages, model: "anthropic/claude-3.7-sonnet" });
+const { text } = await llm.chat({ messages, model: "qwen/qwen3.7-max" });
 ```
 
 Workspace commands:
@@ -34,3 +34,4 @@ pnpm --filter @timeline/shared test
 - DB layer: [packages/db/README.md](../db/README.md).
 - Provider strategy and pinning: [docs/setup/openrouter.html](../../docs/setup/openrouter.html).
 - Telegram / Postmark dispatchers: [docs/setup/telegram.html](../../docs/setup/telegram.html), [docs/setup/postmark.html](../../docs/setup/postmark.html).
+- Meeting bots (Phase 10): [docs/setup/meeting-bots.html](../../docs/setup/meeting-bots.html).

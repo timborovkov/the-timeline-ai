@@ -19,7 +19,12 @@ export type SourceKind =
   | 'entity'
   // Phase 9: documents are chunked; each chunk gets its own point so the
   // agent can cite a specific piece of a document at a specific version.
-  | 'doc_chunk';
+  | 'doc_chunk'
+  // Phase 10: meeting transcripts are also chunked per utterance group,
+  // so retrieval can match an individual speaker turn at the chunk level
+  // (in addition to the per-utterance raw_event point written via the
+  // standard 'raw_event' scope).
+  | 'meeting_chunk';
 
 export interface QdrantPayload {
   team_id: string;
@@ -53,7 +58,7 @@ export interface QdrantPayload {
   entity_ids: string[];
   occurred_at: string;
   author_user_id: string | null;
-  source: 'web' | 'telegram' | 'email' | 'system' | 'document';
+  source: 'web' | 'telegram' | 'email' | 'system' | 'document' | 'meeting';
   visibility: 'team' | 'private' | 'specific_users';
   /**
    * Users explicitly granted visibility when `visibility === 'specific_users'`.
@@ -80,6 +85,13 @@ export interface QdrantPayload {
   owner_user_id: string | null;
   /** document_versions.createdAt as ISO. Lets recency filters work on docs. */
   updated_at: string | null;
+  // ---- Phase 10 meeting-chunk-only fields. Null on every other source_kind.
+  /** meetings.id. Set only for source_kind='meeting_chunk'. */
+  meeting_id: string | null;
+  /** meeting_transcript_chunks.id. Set only for source_kind='meeting_chunk'. */
+  meeting_chunk_id: string | null;
+  /** Speaker label reported by the provider, or null if unattributed. */
+  speaker: string | null;
 }
 
 export interface SearchOpts {
@@ -380,14 +392,15 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
         }
       }
     } else {
-      // Phase 9: when sourceKind is unspecified the caller is doing a
-      // timeline-flavoured search (searchEvents). Document chunks must NOT
-      // surface there — they have their own retrieval path via
-      // searchDocumentChunks. Pre-Phase-9 points without `source_kind`
-      // pass this filter because Qdrant's `must_not.match.value` does not
-      // match a missing field.
+      // Phase 9/10: when sourceKind is unspecified the caller is doing a
+      // timeline-flavoured search (searchEvents). Per-chunk points
+      // (doc_chunk, meeting_chunk) must NOT surface there — they have
+      // their own retrieval paths. The parent raw_event point is still
+      // matched. Pre-Phase-9 points without `source_kind` pass this
+      // filter because Qdrant's `must_not.match.value` does not match a
+      // missing field.
       (filter as { must_not?: unknown[] }).must_not = [
-        { key: 'source_kind', match: { value: 'doc_chunk' } },
+        { key: 'source_kind', match: { any: ['doc_chunk', 'meeting_chunk'] } },
       ];
     }
     if (extraMust.length > 0) {

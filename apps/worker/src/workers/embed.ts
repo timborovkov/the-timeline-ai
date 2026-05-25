@@ -6,6 +6,8 @@ import {
   entities as entitiesTable,
   facts as factsTable,
   factEntities,
+  meetings as meetingsTable,
+  meetingTranscriptChunks,
   objectChanges as objectChangesTable,
   objectNotes as objectNotesTable,
   rawEvents,
@@ -26,7 +28,7 @@ interface RawEventRow {
   contentText: string | null;
   occurredAt: Date;
   authorUserId: string | null;
-  source: 'web' | 'telegram' | 'email' | 'system' | 'document';
+  source: 'web' | 'telegram' | 'email' | 'system' | 'document' | 'meeting';
   visibility: 'private' | 'team' | 'specific_users';
   visibilityUserIds: string[] | null;
   sourceMetadata: unknown;
@@ -91,6 +93,11 @@ function blankNonEventPayload(args: {
     folder_id: null,
     owner_user_id: null,
     updated_at: null,
+    // Phase 10 meeting-chunk fields. Null on non-meeting points; meeting
+    // chunk plans override below.
+    meeting_id: null,
+    meeting_chunk_id: null,
+    speaker: null,
   };
 }
 
@@ -252,6 +259,8 @@ async function buildPlan(
       return buildEntityPlan(db, data);
     case 'doc_chunk':
       return buildDocChunkPlan(db, data);
+    case 'meeting_chunk':
+      return buildMeetingChunkPlan(db, data);
   }
 }
 
@@ -615,6 +624,61 @@ async function buildEntityPlan(db: Db, data: queue.EmbedJobData): Promise<EmbedP
     payloadOverrides: {
       entity_id: row.id,
       object_id: row.id,
+    },
+  };
+}
+
+/**
+ * Phase 10 — meeting transcript chunks. Each chunk's text is embedded
+ * with `source_kind='meeting_chunk'`, payload carrying meeting_id +
+ * speaker so retrieval can match an individual utterance. Soft-deleted
+ * parent meeting or non-team visibility → clean no-op (no Qdrant write,
+ * no stamped failure), matching the doc_chunk privacy contract.
+ */
+async function buildMeetingChunkPlan(db: Db, data: queue.EmbedJobData): Promise<EmbedPlan | null> {
+  if (!('meetingChunkId' in data) || !data.meetingChunkId) {
+    throw new UnrecoverableError('embed: meeting_chunk scope job missing meetingChunkId');
+  }
+  const rows = await db
+    .select({
+      chunk: meetingTranscriptChunks,
+      meeting: meetingsTable,
+    })
+    .from(meetingTranscriptChunks)
+    .innerJoin(meetingsTable, eq(meetingsTable.id, meetingTranscriptChunks.meetingId))
+    .where(eq(meetingTranscriptChunks.id, data.meetingChunkId))
+    .limit(1);
+  const hit = rows[0];
+  if (!hit) {
+    throw new UnrecoverableError(`meeting chunk ${data.meetingChunkId} not found`);
+  }
+  if (hit.chunk.teamId !== data.teamId) {
+    throw new UnrecoverableError(
+      `meeting chunk ${data.meetingChunkId} team mismatch (job=${data.teamId}, row=${hit.chunk.teamId})`,
+    );
+  }
+  // Privacy gate: same shape as doc_chunk. We never send non-team
+  // transcript text to OpenRouter or write it to Qdrant. visibility is
+  // inherited from meetings.default_visibility; per-utterance overrides
+  // are not supported in Phase 10.
+  if (hit.meeting.defaultVisibility !== 'team') return null;
+  const text = hit.chunk.text.trim();
+  if (!text) return null;
+  return {
+    text,
+    scope: 'meeting_chunk',
+    sourceKind: 'meeting_chunk',
+    sourceId: hit.chunk.id,
+    occurredAt: hit.meeting.startedAt ?? hit.chunk.createdAt,
+    authorUserId: hit.meeting.createdByUserId,
+    payloadOverrides: {
+      source: 'meeting',
+      event_id: hit.chunk.rawEventId,
+      visibility: hit.meeting.defaultVisibility,
+      visibility_user_ids: hit.meeting.visibilityUserIds,
+      meeting_id: hit.meeting.id,
+      meeting_chunk_id: hit.chunk.id,
+      speaker: hit.chunk.speaker,
     },
   };
 }

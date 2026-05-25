@@ -16,6 +16,10 @@ export const QUEUE_NAMES = {
   // The `documentExtract` worker fans out to many `embed` jobs (one per
   // chunk) once chunking succeeds; embed shares the existing queue.
   documentExtract: 'document-extract',
+  // Phase 10: end-of-meeting finalisation — summary, action-item
+  // extraction, usage recording. Triggered by the Recall status webhook
+  // on `bot.call_ended` / `transcript.done`.
+  meetingFinalize: 'meeting-finalize',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -120,7 +124,8 @@ export type EmbedJobData =
   | EmbedObjectNoteJobData
   | EmbedObjectChangeJobData
   | EmbedEntityJobData
-  | EmbedDocChunkJobData;
+  | EmbedDocChunkJobData
+  | EmbedMeetingChunkJobData;
 
 interface EmbedJobBase {
   teamId: string;
@@ -174,6 +179,19 @@ export interface EmbedEntityJobData extends EmbedJobBase {
 export interface EmbedDocChunkJobData extends EmbedJobBase {
   scope: 'doc_chunk';
   documentChunkId: string;
+}
+
+/**
+ * Phase 10: one job per `meeting_transcript_chunks` row. The worker
+ * hydrates chunk + parent meeting, stamps a `source_kind='meeting_chunk'`
+ * payload, and upserts via `buildPointId('meeting_chunk', chunkId, model)`.
+ * Idempotent under duplicate enqueue. The parent raw_event (per-utterance)
+ * is embedded by the standard raw_event job; this is the second, utterance-
+ * granular point.
+ */
+export interface EmbedMeetingChunkJobData extends EmbedJobBase {
+  scope: 'meeting_chunk';
+  meetingChunkId: string;
 }
 
 let _embedQueue: Queue<EmbedJobData> | undefined;
@@ -238,6 +256,14 @@ export async function enqueueDocChunkEmbedJob(
   opts: { targetCollection?: string } = {},
 ): Promise<void> {
   await enqueueEmbedJob({ scope: 'doc_chunk', teamId, documentChunkId, ...opts });
+}
+
+export async function enqueueMeetingChunkEmbedJob(
+  teamId: string,
+  meetingChunkId: string,
+  opts: { targetCollection?: string } = {},
+): Promise<void> {
+  await enqueueEmbedJob({ scope: 'meeting_chunk', teamId, meetingChunkId, ...opts });
 }
 
 export async function closeEmbedQueue(): Promise<void> {
@@ -331,5 +357,42 @@ export async function closeDocumentExtractQueue(): Promise<void> {
   if (!_documentExtractQueue) return;
   const q = _documentExtractQueue;
   _documentExtractQueue = undefined;
+  await q.close().catch(() => undefined);
+}
+
+// Phase 10 — Meeting finalize. Triggered by the status webhook when the
+// bot reports call_ended or transcript.done. Worker generates summary,
+// extracts action items, records minutes.
+export interface MeetingFinalizeJobData {
+  meetingId: string;
+  teamId: string;
+}
+
+let _meetingFinalizeQueue: Queue<MeetingFinalizeJobData> | undefined;
+
+export function getMeetingFinalizeQueue(): Queue<MeetingFinalizeJobData> {
+  if (_meetingFinalizeQueue) return _meetingFinalizeQueue;
+  _meetingFinalizeQueue = new Queue<MeetingFinalizeJobData>(QUEUE_NAMES.meetingFinalize, {
+    connection: getRedisConnection(),
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5000 },
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  });
+  return _meetingFinalizeQueue;
+}
+
+export async function enqueueMeetingFinalizeJob(data: MeetingFinalizeJobData): Promise<void> {
+  // Worker-side idempotency: a finalised meeting is a no-op on re-run,
+  // and the `meeting_usage` unique index protects minute double-counting.
+  await getMeetingFinalizeQueue().add('meeting-finalize', data);
+}
+
+export async function closeMeetingFinalizeQueue(): Promise<void> {
+  if (!_meetingFinalizeQueue) return;
+  const q = _meetingFinalizeQueue;
+  _meetingFinalizeQueue = undefined;
   await q.close().catch(() => undefined);
 }

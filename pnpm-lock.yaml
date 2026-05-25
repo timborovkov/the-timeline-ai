@@ -8,9 +8,6 @@ importers:
 
   .:
     devDependencies:
-      '@electric-sql/pglite':
-        specifier: ^0.4.6
-        version: 0.4.6
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.0.0
         version: 8.59.4(@typescript-eslint/parser@8.59.4(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3)
@@ -156,6 +153,9 @@ importers:
       mammoth:
         specifier: ^1.12.0
         version: 1.12.0
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
     devDependencies:
       '@electric-sql/pglite':
         specifier: ^0.4.6
@@ -234,6 +234,9 @@ importers:
         specifier: ^3.23.0
         version: 3.25.76
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.4.6
+        version: 0.4.6
       '@types/bcryptjs':
         specifier: ^2.4.6
         version: 2.4.6

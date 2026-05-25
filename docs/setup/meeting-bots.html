@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Meeting bot setup (Recall.ai)</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <main id="main">
+      <h1>Meeting bot setup</h1>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-25</span></div>
+      <p class="tldr">
+        Paste a Google Meet, Microsoft Teams, or Zoom link into
+        <code>/app/meetings</code>. A silent <strong>Recall.ai</strong> bot joins, streams the
+        transcript back via webhook, and every utterance lands on the timeline.
+      </p>
+
+      <p>
+        Phase 10 adds meetings as a first-class source alongside Telegram, email, web capture, and
+        documents. The bot joins silently (it appears as a participant but does not speak or stream
+        video). Each finalised utterance is written as a <code>raw_events</code> row with
+        <code>source='meeting'</code> AND as a <code>meeting_transcript_chunks</code> row so the
+        existing extract / embed / visibility pipeline lights up unchanged while the meeting detail
+        page renders a structured speaker-by-speaker transcript.
+      </p>
+
+      <h2 id="provider">Why Recall.ai (and what else works)</h2>
+      <p>
+        Recall.ai is the default provider — proven in the sister project Vernix, handles all three
+        platforms (Meet / Teams / Zoom) with one API, ships a hosted bot fleet so we don't run audio
+        infrastructure. Per-minute pricing applies; check current rates at
+        <a href="https://recall.ai">recall.ai</a>.
+      </p>
+      <p>
+        The provider lives behind a <code>MeetingBotProvider</code> interface
+        (<code>packages/shared/src/meeting-bots/</code>). Swapping to one of the alternatives below
+        is a single-file change — webhook routes, scope helpers, and the worker all stay the same.
+      </p>
+      <ul>
+        <li>
+          <strong>Attendee.dev</strong> — self-hosted, cheaper per minute, more ops overhead. Use if
+          Recall.ai cost becomes the bottleneck.
+        </li>
+        <li><strong>Meeting BaaS</strong> — similar to Recall, alternative pricing.</li>
+        <li>
+          <strong>Native APIs</strong> (Google Meet Media API, Teams Real-Time Media) — lowest cost
+          but each platform is a separate integration.
+        </li>
+      </ul>
+
+      <h2 id="account">1. Account + API key</h2>
+      <ol>
+        <li>Sign up at <a href="https://recall.ai">recall.ai</a>.</li>
+        <li>Create an API key from the Recall dashboard.</li>
+        <li>Copy the <strong>Region URL</strong> (default <code>us-west-2</code>).</li>
+      </ol>
+      <pre><code>RECALL_API_KEY=...
+RECALL_BASE_URL=https://us-west-2.recall.ai/api/v1
+</code></pre>
+
+      <h2 id="webhooks">2. Webhook endpoints</h2>
+      <p>
+        Two webhooks. Status events are Svix-signed; transcript events are unsigned and validated by
+        bot id lookup.
+      </p>
+      <ol>
+        <li>
+          <strong>Status webhook</strong> (Svix-signed). In the Recall dashboard, configure the
+          webhook URL to:
+          <pre><code>https://&lt;your-app-domain&gt;/api/webhooks/recall/status
+</code></pre>
+          Copy the Svix signing secret it generates. Set:
+          <pre><code>RECALL_STATUS_WEBHOOK_SECRET=whsec_...
+</code></pre>
+        </li>
+        <li>
+          <strong>Transcript webhook</strong>. We pass this URL to Recall on every
+          <code>POST /bot</code> call.
+          <strong>By default it is derived from <code>AUTH_URL</code></strong> (your app's public
+          origin, already required by Auth.js) plus the fixed route path, so most installs need no
+          additional config — the bot posts to
+          <code>${AUTH_URL}/api/webhooks/recall/transcript</code>. Set
+          <code>RECALL_TRANSCRIPT_WEBHOOK_URL</code> only when transcripts should hit a different
+          origin (proxy, tunnel for local dev, separate webhook ingress):
+          <pre><code># Optional — defaults to AUTH_URL + /api/webhooks/recall/transcript
+RECALL_TRANSCRIPT_WEBHOOK_URL=https://&lt;your-app-domain&gt;/api/webhooks/recall/transcript
+</code></pre>
+          This endpoint is NOT Svix-signed — Recall does not sign realtime transcript events.
+          Authentication relies on:
+          <ul>
+            <li>
+              <strong>Bot id lookup</strong> — bots are issued by Recall after our authenticated
+              <code>joinMeeting</code> call. A forged bot id can't match any meeting in our
+              database.
+            </li>
+            <li><strong>Zod validation</strong> — malformed payloads are rejected.</li>
+            <li><strong>Rate limit</strong> — 600 transcript events/minute per bot.</li>
+          </ul>
+        </li>
+      </ol>
+
+      <h2 id="display-name">3. Bot display name (optional)</h2>
+      <p>
+        The bot still appears as a participant in silent mode — every meeting platform surfaces it
+        in the participant list. Set a recognisable name so attendees know what it is:
+      </p>
+      <pre><code>RECALL_BOT_DISPLAY_NAME=Timeline
+</code></pre>
+
+      <h2 id="cost">Cost guardrails</h2>
+      <p>
+        <code>team_meeting_settings.meeting_minutes_cap</code> sets a per-team monthly cap (default
+        <strong>600 minutes</strong>). Set to <code>0</code> to disable bots for a team. Set to
+        <code>null</code> for unlimited. Admins can toggle
+        <code>meeting_minutes_admin_override</code> to ignore the cap during a launch / incident
+        window.
+      </p>
+      <p>
+        Each finalised meeting writes a row to <code>meeting_usage</code>. The
+        <code>scheduleMeetingBotAction</code> server action sums the current month's minutes before
+        allowing a new bot to join.
+      </p>
+
+      <h2 id="privacy">Privacy and consent</h2>
+      <p>
+        <code>team_meeting_settings.require_host_consent</code> (default <strong>true</strong>)
+        forces the user scheduling the bot to tick a consent box confirming participants will be
+        told the bot is recording. The timestamp is stored on
+        <code>meetings.metadata.consent_given_at</code>.
+      </p>
+      <p>
+        We do <strong>not</strong> retain the raw audio. The Recall recording artifact remains on
+        Recall's storage under their default retention; we explicitly do not copy it to our S3.
+        Transcript text + summary land on the timeline; audio does not.
+      </p>
+
+      <h2 id="local-dev">Local development</h2>
+      <p>Use ngrok or Cloudflare Tunnel to expose <code>localhost:3000</code> to Recall:</p>
+      <pre><code>ngrok http 3000
+# point RECALL_TRANSCRIPT_WEBHOOK_URL at the public ngrok URL
+</code></pre>
+      <p>
+        The Recall dashboard supports a test bot you can attach to a Meet you control. The
+        transcript webhook fires within a few seconds of each utterance.
+      </p>
+
+      <h2 id="troubleshooting">Troubleshooting</h2>
+      <ul>
+        <li>
+          <strong>Meeting stuck in <code>joining</code></strong> — check Recall dashboard for the
+          bot's status. Recall surfaces fatal errors (e.g. host blocked the join) on the bot detail
+          page.
+        </li>
+        <li>
+          <strong>No transcript chunks landing</strong> — verify
+          <code>RECALL_TRANSCRIPT_WEBHOOK_URL</code> is publicly reachable. Check the web app logs
+          for <code>web:api:recall:transcript</code> entries.
+        </li>
+        <li>
+          <strong>401 on status webhook</strong> — Svix signature mismatch. Re-copy the signing
+          secret from the Recall dashboard into <code>RECALL_STATUS_WEBHOOK_SECRET</code>.
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

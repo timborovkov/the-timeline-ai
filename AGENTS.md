@@ -61,3 +61,9 @@ tool. When in doubt, invoke the skill.
   No direct OpenAI / OpenRouter SDK calls from app or worker code.
 - **`pnpm` only** (no `npm` / `yarn`). Workspace packages are wired via
   Turborepo; `pnpm -r build` is the canonical build.
+- **Meeting bots are silent + consent-gated.** Phase 10 ships transcript
+  capture only — no voice/agent mode. `team_meeting_settings
+  .require_host_consent` (default true) blocks scheduling unless the
+  caller has explicitly confirmed participants will be informed. Raw
+  audio is NOT copied to S3; transcript text is the only persistent
+  record.
