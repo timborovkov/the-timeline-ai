@@ -552,25 +552,35 @@ interface RunAskInput {
 }
 
 async function runAsk(input: RunAskInput): Promise<void> {
-  // Two-phase idempotency. Telegram redelivers the webhook on timeout, not on
-  // an HTTP 200, so:
+  // Three-phase idempotency. Telegram redelivers the webhook on timeout, not
+  // on HTTP 200, so:
   //
-  //   1. Claim with a short TTL at entry — covers a concurrent retry that
-  //      arrives while the first attempt is still running.
-  //   2. Extend to a long TTL when the runner completes (success or handled
-  //      failure). Once we've paid OpenRouter, a duplicate response is worse
-  //      than a missed one; never re-run the agent for the same update_id.
+  //   1. Claim with a short TTL at entry — a concurrent retry that arrives
+  //      while the first attempt is still running sees the key and drops.
+  //   2. While the runner is in-flight, a heartbeat refreshes the TTL every
+  //      ASK_HEARTBEAT_INTERVAL_MS so a long multi-step agent run cannot
+  //      outlast the claim. On process death the heartbeat stops and the key
+  //      expires on its own within ASK_INFLIGHT_TTL_SEC.
+  //   3. Once the runner completes (success or handled error), extend to the
+  //      long completed-TTL. OpenRouter has been billed, so a duplicate
+  //      response is worse than a missed one — never re-run the agent for
+  //      the same update_id.
   //
-  // A killed process never reaches step 2; the short TTL expires on its own
-  // and the next redelivery is unblocked. We do NOT release the key on a
-  // caught exception: the webhook still returns 200, so Telegram won't retry
-  // anyway and a duplicate response to a manually-replayed update would be
-  // worse than the missed reply we already logged.
+  // We do NOT release the key on a caught exception: the webhook still
+  // returns 200, so Telegram won't auto-retry and a duplicate response to a
+  // manually-replayed update would be worse than the missed reply we've
+  // already logged. If a final send failed, runAskInner caches the answer
+  // text so a future delivery (or a dedup-hit on retry) can still deliver
+  // without re-billing.
   const claimed = await claimAskUpdate(input.updateId, ASK_INFLIGHT_TTL_SEC);
   if (!claimed) {
     log.info({ updateId: input.updateId, tgUserId: input.tgUserId }, 'ask_update_dedup');
+    // First attempt may have paid for an answer but failed to deliver it.
+    // Best-effort redelivery from the answer cache.
+    await deliverPendingAnswer(input.tg, input.chatId, input.updateId);
     return;
   }
+  const stopHeartbeat = startAskHeartbeat(input.updateId);
   try {
     await runAskInner(input);
   } catch (err) {
@@ -579,6 +589,7 @@ async function runAsk(input: RunAskInput): Promise<void> {
       'ask_failed',
     );
   } finally {
+    stopHeartbeat();
     await extendAskClaim(input.updateId, ASK_COMPLETED_TTL_SEC).catch(() => undefined);
   }
 }
@@ -671,29 +682,42 @@ async function runAskInner(input: RunAskInput): Promise<void> {
     await sendWithRetry(input.tg, { chat_id: input.chatId, text });
     return;
   }
-  await sendWithRetry(input.tg, { chat_id: input.chatId, text: result.answer });
+  // Cache the paid answer BEFORE attempting to send. If the send fails or
+  // the process dies between here and clear, the next delivery (manual
+  // replay or a still-in-flight Telegram retry) can deliver from cache
+  // without re-billing OpenRouter.
+  await cachePendingAnswer(input.updateId, result.answer).catch(() => undefined);
+  const delivered = await sendWithRetry(input.tg, {
+    chat_id: input.chatId,
+    text: result.answer,
+  });
+  if (delivered) {
+    await clearPendingAnswer(input.updateId).catch(() => undefined);
+  } else {
+    log.error(
+      { updateId: input.updateId, chatId: input.chatId, tgUserId: input.tgUserId },
+      'ask_answer_undelivered',
+    );
+  }
 }
 
 /**
  * Telegram redelivers a webhook when the handler exceeds the bot-API timeout
- * (~60s). `/ask` runs the agent inline and can approach that limit, so we
- * dedupe by `update_id`:
+ * (~60s). `/ask` runs the agent inline and may exceed that limit on
+ * multi-step runs, so we dedupe by `update_id`. See `runAsk` for the
+ * three-phase claim/heartbeat/extend lifecycle.
  *
- *   1. Claim with a short TTL (~90s) at entry. A concurrent retry while the
- *      first attempt is still running sees the key and silently drops.
- *   2. Extend to a long TTL (~10m) when the runner finishes (success or
- *      handled error). Once OpenRouter has been billed, a duplicate response
- *      is worse than a missed one — never re-run the agent for the same id.
- *
- * A killed process never reaches step 2; the short TTL expires on its own
- * and the next redelivery is unblocked.
- *
- * Without Redis we fail-open: capture and answer keep working at the cost of
- * possible double-billing during a Redis outage.
+ * Without Redis everything fails-open: capture and answer keep working at the
+ * cost of possible double-billing during a Redis outage.
  */
-const ASK_INFLIGHT_TTL_SEC = 90;
+const ASK_INFLIGHT_TTL_SEC = 180;
+const ASK_HEARTBEAT_INTERVAL_MS = 60_000;
 const ASK_COMPLETED_TTL_SEC = 600;
+/** TTL on a cached but undelivered answer. One hour is long enough for an
+ *  operator to manually replay a missed update; longer just wastes Redis. */
+const ASK_ANSWER_CACHE_TTL_SEC = 3600;
 const askClaimKey = (updateId: number): string => `tg:ask:seen:${updateId}`;
+const askAnswerKey = (updateId: number): string => `tg:ask:answer:${updateId}`;
 
 async function claimAskUpdate(updateId: number, ttlSec: number): Promise<boolean> {
   try {
@@ -709,6 +733,59 @@ async function claimAskUpdate(updateId: number, ttlSec: number): Promise<boolean
 async function extendAskClaim(updateId: number, ttlSec: number): Promise<void> {
   const conn = getRedisConnection();
   await conn.set(askClaimKey(updateId), '1', 'EX', ttlSec);
+}
+
+/**
+ * Refresh the dedup claim's TTL on an interval while the agent runs. Returns
+ * a stop fn for the caller to invoke in `finally`. On process death the
+ * interval stops and the key expires within `ASK_INFLIGHT_TTL_SEC`, which
+ * lets a subsequent redelivery proceed.
+ */
+function startAskHeartbeat(updateId: number): () => void {
+  const timer = setInterval(() => {
+    extendAskClaim(updateId, ASK_INFLIGHT_TTL_SEC).catch(() => undefined);
+  }, ASK_HEARTBEAT_INTERVAL_MS);
+  // Node's Timeout has `unref` so a stuck heartbeat doesn't keep the worker
+  // process alive past shutdown.
+  if (typeof timer.unref === 'function') timer.unref();
+  return () => {
+    clearInterval(timer);
+  };
+}
+
+async function cachePendingAnswer(updateId: number, text: string): Promise<void> {
+  const conn = getRedisConnection();
+  await conn.set(askAnswerKey(updateId), text, 'EX', ASK_ANSWER_CACHE_TTL_SEC);
+}
+
+async function clearPendingAnswer(updateId: number): Promise<void> {
+  const conn = getRedisConnection();
+  await conn.del(askAnswerKey(updateId));
+}
+
+/**
+ * On a dedup-hit, attempt to deliver any answer the first attempt paid for
+ * but failed to send. Cached entries are removed on successful delivery so
+ * the next retry doesn't re-send.
+ */
+async function deliverPendingAnswer(
+  tg: TelegramApi,
+  chatId: number,
+  updateId: number,
+): Promise<void> {
+  let text: string | null = null;
+  try {
+    const conn = getRedisConnection();
+    text = await conn.get(askAnswerKey(updateId));
+  } catch (err) {
+    log.warn({ err: (err as Error).message, updateId }, 'ask_answer_cache_unavailable');
+    return;
+  }
+  if (!text) return;
+  const delivered = await sendWithRetry(tg, { chat_id: chatId, text });
+  if (delivered) {
+    await clearPendingAnswer(updateId).catch(() => undefined);
+  }
 }
 
 async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Promise<void> {
