@@ -1,6 +1,6 @@
 # @timeline/worker
 
-BullMQ workers for the async processing pipeline: transcribe, extract, embed, document-extract, overdue-scan. One Node entry point per queue, all sharing the same image and codebase.
+BullMQ workers for the async processing pipeline: transcribe, extract, embed, document-extract, meeting-finalize, overdue-scan. One Node entry point per queue, all sharing the same image and codebase.
 
 ## Why it exists
 
@@ -24,9 +24,12 @@ Production start commands are per-worker (see [docs/railway.html](../../docs/rai
 - `node dist/workers/transcribe.js`
 - `node dist/workers/extract.js`
 - `node dist/workers/embed.js`
+- `node dist/workers/documentExtract.js`
+- `node dist/workers/meetingFinalize.js`
 
 ## Where it fits
 
 - Pipeline overview: [docs/product-brief.html](../../docs/product-brief.html).
 - Re-extract / re-embed procedures: [docs/setup/openrouter.html](../../docs/setup/openrouter.html).
 - Local walkthrough (Phase 3+): [docs/setup/local.html](../../docs/setup/local.html).
+- Meeting bots (Phase 10): [docs/setup/meeting-bots.html](../../docs/setup/meeting-bots.html).
