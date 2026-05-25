@@ -99,6 +99,7 @@ export function MergeEntityPanel({ entityId, entityName }: Props) {
           <button
             type="button"
             onClick={() => {
+              setConfirmOpen(false);
               setTarget(null);
               setQuery('');
             }}
