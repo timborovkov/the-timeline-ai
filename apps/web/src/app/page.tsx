@@ -271,9 +271,10 @@ function Hero() {
               updates itself.
             </h1>
             <p className="mt-8 max-w-prose text-lg leading-relaxed text-fg-muted">
-              Voice-note after the call. Forward the email. Drop a Google Meet, Teams, or Zoom
-              link and a silent bot takes notes. The agent extracts who, what, and when — reconciled against everything your team has ever said.
-              Ask it anything; every answer cites the raw event it came from.
+              Voice-note after the call. Forward the email. Drop a Google Meet, Teams, or Zoom link
+              and a silent bot takes notes. The agent extracts who, what, and when — reconciled
+              against everything your team has ever said. Ask it anything; every answer cites the
+              raw event it came from.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
               <Button asChild size="lg">
