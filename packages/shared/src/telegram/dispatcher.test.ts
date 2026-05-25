@@ -142,6 +142,8 @@ describe('handleUpdate (fake-token guard)', () => {
       editMessageText: () => Promise.resolve(),
       getFile: () => Promise.reject(new Error('not used')),
       downloadFile: () => Promise.reject(new Error('not used')),
+      setMessageReaction: () => Promise.resolve(),
+      sendChatAction: () => Promise.resolve(),
     };
     const result = await handleUpdate({ db: fakeDb, tg: fakeTg }, { not_an_update: true });
     expect(result.ok).toBe(false);

@@ -9,7 +9,10 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, sql } from 'drizzle-orm';
 
+import { askAgent } from '../agent/ask.js';
 import { childLogger } from '../logger.js';
+import { getRedisConnection } from '../queue/connection.js';
+import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '../rate-limit/index.js';
 
 import { type TelegramApi } from './api.js';
 import {
@@ -231,6 +234,9 @@ async function dispatchCommand(
       return;
     case '/help':
       await cmdHelpDm(ctx);
+      return;
+    case '/ask':
+      await cmdAskDm(ctx, command.arg);
       return;
     default:
       await ctx.tg.sendMessage({
@@ -491,13 +497,296 @@ async function cmdHelpDm(ctx: DmContext): Promise<void> {
   await ctx.tg.sendMessage({
     chat_id: ctx.message.chat.id,
     text:
+      `Plain messages here are saved to your team's timeline (👀 = received).\n` +
+      `Use /ask to query the timeline.\n\n` +
       `Commands (DM):\n` +
-      `/link <token>   connect this DM to a team\n` +
-      `/team           list linked teams; /team N switches\n` +
-      `/whereami       show current active team\n` +
-      `/unlink         disconnect all teams\n` +
-      `/help           this message`,
+      `/ask <question>  ask the timeline (e.g. /ask what did we ship this week?)\n` +
+      `/link <token>    connect this DM to a team\n` +
+      `/team            list linked teams; /team N switches\n` +
+      `/whereami        show current active team\n` +
+      `/unlink          disconnect all teams\n` +
+      `/help            this message`,
   });
+}
+
+async function cmdAskDm(ctx: DmContext, arg: string): Promise<void> {
+  await runAsk({
+    tg: ctx.tg,
+    db: ctx.db,
+    chatId: ctx.message.chat.id,
+    tgUserId: ctx.tgUser.id,
+    updateId: ctx.updateId,
+    teamId: ctx.activeTeamId,
+    userId: ctx.tgUserRow.userId,
+    userName: tgDisplayName(ctx.tgUser),
+    question: arg,
+  });
+}
+
+function tgDisplayName(u: TgUser): string {
+  const parts = [u.first_name, u.last_name].filter((p): p is string => !!p && p.length > 0);
+  if (parts.length > 0) return parts.join(' ');
+  if (u.username) return `@${u.username}`;
+  return 'a teammate';
+}
+
+/**
+ * Shared `/ask` runner used by both DM and group dispatchers. Validates that
+ * the chat has a team to answer against and that the sender is a known user
+ * (TeamScope requires a real userId — unverified senders can't pose as a
+ * teammate). Per-user rate-limited tighter than ingest because each call hits
+ * OpenRouter.
+ */
+interface RunAskInput {
+  tg: TelegramApi;
+  db: Db;
+  chatId: number;
+  tgUserId: number;
+  /** Telegram update_id — used to dedupe webhook retries so a slow agent
+   *  call doesn't get replayed (and re-billed) when Telegram retries. */
+  updateId: number;
+  teamId: string | null;
+  userId: string | null;
+  userName: string;
+  question: string;
+}
+
+async function runAsk(input: RunAskInput): Promise<void> {
+  // Three-phase idempotency. Telegram redelivers the webhook on timeout, not
+  // on HTTP 200, so:
+  //
+  //   1. Claim with a short TTL at entry — a concurrent retry that arrives
+  //      while the first attempt is still running sees the key and drops.
+  //   2. While the runner is in-flight, a heartbeat refreshes the TTL every
+  //      ASK_HEARTBEAT_INTERVAL_MS so a long multi-step agent run cannot
+  //      outlast the claim. On process death the heartbeat stops and the key
+  //      expires on its own within ASK_INFLIGHT_TTL_SEC.
+  //   3. Once the runner completes (success or handled error), extend to the
+  //      long completed-TTL. OpenRouter has been billed, so a duplicate
+  //      response is worse than a missed one — never re-run the agent for
+  //      the same update_id.
+  //
+  // We do NOT release the key on a caught exception: the webhook still
+  // returns 200, so Telegram won't auto-retry and a duplicate response to a
+  // manually-replayed update would be worse than the missed reply we've
+  // already logged. If a final send failed, runAskInner caches the answer
+  // text so a future delivery (or a dedup-hit on retry) can still deliver
+  // without re-billing.
+  const claimed = await claimAskUpdate(input.updateId, ASK_INFLIGHT_TTL_SEC);
+  if (!claimed) {
+    log.info({ updateId: input.updateId, tgUserId: input.tgUserId }, 'ask_update_dedup');
+    // First attempt may have paid for an answer but failed to deliver it.
+    // Best-effort redelivery from the answer cache.
+    await deliverPendingAnswer(input.tg, input.chatId, input.updateId);
+    return;
+  }
+  const stopHeartbeat = startAskHeartbeat(input.updateId);
+  try {
+    await runAskInner(input);
+  } catch (err) {
+    log.error(
+      { err, updateId: input.updateId, tgUserId: input.tgUserId, chatId: input.chatId },
+      'ask_failed',
+    );
+  } finally {
+    stopHeartbeat();
+    await extendAskClaim(input.updateId, ASK_COMPLETED_TTL_SEC).catch(() => undefined);
+  }
+}
+
+/**
+ * Send a Telegram message with bounded retries. Used by `/ask` so a transient
+ * Bot-API hiccup doesn't lose an answer we already paid OpenRouter to produce
+ * — the webhook returns 200 either way and Telegram never automatically
+ * resends, so we have to be the one that retries.
+ */
+async function sendWithRetry(
+  tg: TelegramApi,
+  payload: { chat_id: number; text: string },
+): Promise<boolean> {
+  const delaysMs = [0, 250, 1000];
+  let lastErr: unknown;
+  for (const delayMs of delaysMs) {
+    if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    try {
+      await tg.sendMessage(payload);
+      return true;
+    } catch (err) {
+      lastErr = err;
+      log.warn({ err, chatId: payload.chat_id }, 'tg_send_retry');
+    }
+  }
+  log.error({ err: lastErr, chatId: payload.chat_id }, 'tg_send_failed');
+  return false;
+}
+
+async function runAskInner(input: RunAskInput): Promise<void> {
+  const question = input.question.trim();
+  if (!question) {
+    await sendWithRetry(input.tg, {
+      chat_id: input.chatId,
+      text: 'Usage: /ask <question>. Example: /ask what did we ship this week?',
+    });
+    return;
+  }
+  if (!input.teamId) {
+    await sendWithRetry(input.tg, {
+      chat_id: input.chatId,
+      text: 'No team to ask. Run /link <token> first.',
+    });
+    return;
+  }
+  if (!input.userId) {
+    await sendWithRetry(input.tg, {
+      chat_id: input.chatId,
+      text:
+        'Your Telegram account is not linked to a workspace user — /ask needs a verified ' +
+        'identity. Re-run /link to attach this chat.',
+    });
+    return;
+  }
+  const rl = await checkRateLimit({
+    key: rateLimitKey('tg', 'ask', input.tgUserId),
+    ...RATE_LIMITS.telegramAsk,
+  });
+  if (!rl.ok) {
+    await sendWithRetry(input.tg, {
+      chat_id: input.chatId,
+      text: `Slow down — /ask is limited to ${RATE_LIMITS.telegramAsk.capacity}/min. Try again in ${Math.ceil(
+        rl.retryAfterMs / 1000,
+      )}s.`,
+    });
+    return;
+  }
+  // Best-effort typing indicator while the agent runs. Don't await the
+  // promise's failure path — a chat-action error must not block the answer.
+  void input.tg.sendChatAction({ chat_id: input.chatId, action: 'typing' }).catch(() => {
+    /* ignore */
+  });
+  const result = await askAgent({
+    db: input.db,
+    teamId: input.teamId,
+    userId: input.userId,
+    userName: input.userName,
+    question,
+  });
+  if (!result.ok) {
+    const text =
+      result.error === 'unconfigured'
+        ? 'Chat is not configured on this server (missing OPENROUTER_API_KEY or QDRANT_URL).'
+        : result.error === 'not_a_member'
+          ? 'Your linked workspace user is no longer a member of this team. Ask a teammate to re-invite you.'
+          : result.error === 'no_team'
+            ? 'Could not load that team. Try /whereami and /team to confirm the active team.'
+            : "Couldn't answer that — try again.";
+    await sendWithRetry(input.tg, { chat_id: input.chatId, text });
+    return;
+  }
+  const delivered = await sendWithRetry(input.tg, {
+    chat_id: input.chatId,
+    text: result.answer,
+  });
+  if (!delivered) {
+    // Stash the paid answer ONLY after every send attempt failed. Caching
+    // before the send opens a race: a Telegram redelivery arriving while
+    // the first attempt is still inside sendWithRetry would hit dedup,
+    // read the cache, and send the same answer a second time. The crash
+    // window between a successful agent run and the first sendMessage
+    // attempt is much smaller than the redelivery race, and a missed
+    // reply is preferable to a duplicate.
+    await cachePendingAnswer(input.updateId, result.answer).catch(() => undefined);
+    log.error(
+      { updateId: input.updateId, chatId: input.chatId, tgUserId: input.tgUserId },
+      'ask_answer_undelivered',
+    );
+  }
+}
+
+/**
+ * Telegram redelivers a webhook when the handler exceeds the bot-API timeout
+ * (~60s). `/ask` runs the agent inline and may exceed that limit on
+ * multi-step runs, so we dedupe by `update_id`. See `runAsk` for the
+ * three-phase claim/heartbeat/extend lifecycle.
+ *
+ * Without Redis everything fails-open: capture and answer keep working at the
+ * cost of possible double-billing during a Redis outage.
+ */
+const ASK_INFLIGHT_TTL_SEC = 180;
+const ASK_HEARTBEAT_INTERVAL_MS = 60_000;
+const ASK_COMPLETED_TTL_SEC = 600;
+/** TTL on a cached but undelivered answer. One hour is long enough for an
+ *  operator to manually replay a missed update; longer just wastes Redis. */
+const ASK_ANSWER_CACHE_TTL_SEC = 3600;
+const askClaimKey = (updateId: number): string => `tg:ask:seen:${updateId}`;
+const askAnswerKey = (updateId: number): string => `tg:ask:answer:${updateId}`;
+
+async function claimAskUpdate(updateId: number, ttlSec: number): Promise<boolean> {
+  try {
+    const conn = getRedisConnection();
+    const reply = await conn.set(askClaimKey(updateId), '1', 'EX', ttlSec, 'NX');
+    return reply === 'OK';
+  } catch (err) {
+    log.warn({ err: (err as Error).message, updateId }, 'ask_dedup_unavailable');
+    return true;
+  }
+}
+
+async function extendAskClaim(updateId: number, ttlSec: number): Promise<void> {
+  const conn = getRedisConnection();
+  await conn.set(askClaimKey(updateId), '1', 'EX', ttlSec);
+}
+
+/**
+ * Refresh the dedup claim's TTL on an interval while the agent runs. Returns
+ * a stop fn for the caller to invoke in `finally`. On process death the
+ * interval stops and the key expires within `ASK_INFLIGHT_TTL_SEC`, which
+ * lets a subsequent redelivery proceed.
+ */
+function startAskHeartbeat(updateId: number): () => void {
+  const timer = setInterval(() => {
+    extendAskClaim(updateId, ASK_INFLIGHT_TTL_SEC).catch(() => undefined);
+  }, ASK_HEARTBEAT_INTERVAL_MS);
+  // Node's Timeout has `unref` so a stuck heartbeat doesn't keep the worker
+  // process alive past shutdown.
+  if (typeof timer.unref === 'function') timer.unref();
+  return () => {
+    clearInterval(timer);
+  };
+}
+
+async function cachePendingAnswer(updateId: number, text: string): Promise<void> {
+  const conn = getRedisConnection();
+  await conn.set(askAnswerKey(updateId), text, 'EX', ASK_ANSWER_CACHE_TTL_SEC);
+}
+
+async function clearPendingAnswer(updateId: number): Promise<void> {
+  const conn = getRedisConnection();
+  await conn.del(askAnswerKey(updateId));
+}
+
+/**
+ * On a dedup-hit, attempt to deliver any answer the first attempt paid for
+ * but failed to send. Cached entries are removed on successful delivery so
+ * the next retry doesn't re-send.
+ */
+async function deliverPendingAnswer(
+  tg: TelegramApi,
+  chatId: number,
+  updateId: number,
+): Promise<void> {
+  let text: string | null = null;
+  try {
+    const conn = getRedisConnection();
+    text = await conn.get(askAnswerKey(updateId));
+  } catch (err) {
+    log.warn({ err: (err as Error).message, updateId }, 'ask_answer_cache_unavailable');
+    return;
+  }
+  if (!text) return;
+  const delivered = await sendWithRetry(tg, { chat_id: chatId, text });
+  if (delivered) {
+    await clearPendingAnswer(updateId).catch(() => undefined);
+  }
 }
 
 async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Promise<void> {
@@ -522,6 +811,22 @@ async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Prom
   });
   await maybeEnqueueExtract(ctx, inserted);
   await maybeEnqueueEmbed(ctx, inserted);
+  if (inserted && !isEdit) {
+    await ackReaction(ctx.tg, ctx.message.chat.id, ctx.message.message_id);
+  }
+}
+
+/**
+ * Best-effort ingest ack. We don't await failures because a missing reaction
+ * is a UX nicety, not a correctness signal — the event itself is already
+ * durable in `raw_events`.
+ */
+async function ackReaction(tg: TelegramApi, chatId: number, messageId: number): Promise<void> {
+  try {
+    await tg.setMessageReaction({ chat_id: chatId, message_id: messageId, emoji: '👀' });
+  } catch (err) {
+    log.warn({ err }, 'setMessageReaction failed');
+  }
 }
 
 /**
@@ -646,6 +951,9 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
     });
     await maybeEnqueueExtract(ctx, inserted);
     await maybeEnqueueEmbed(ctx, inserted);
+    if (inserted && !isEdit) {
+      await ackReaction(ctx.tg, ctx.message.chat.id, ctx.message.message_id);
+    }
   }
 }
 
@@ -683,11 +991,34 @@ async function dispatchGroupCommand(
       await ctx.tg.sendMessage({
         chat_id: ctx.message.chat.id,
         text:
+          `Plain messages here are saved to the bound team's timeline (👀 = received).\n` +
+          `Use /ask to query the timeline.\n\n` +
           `Commands (group):\n` +
-          `/link <token>   bind this group to a team (admin only)\n` +
-          `/whereami       show the bound team\n` +
-          `/unlink         unbind (admin only)\n` +
-          `/help           this message`,
+          `/ask <question>  ask the timeline\n` +
+          `/link <token>    bind this group to a team (admin only)\n` +
+          `/whereami        show the bound team\n` +
+          `/unlink          unbind (admin only)\n` +
+          `/help            this message`,
+      });
+      return;
+    case '/ask':
+      if (!ctx.tgUser || !ctx.tgUserRow) {
+        await ctx.tg.sendMessage({
+          chat_id: ctx.message.chat.id,
+          text: 'Cannot identify the sender. /ask needs a verified Telegram user.',
+        });
+        return;
+      }
+      await runAsk({
+        tg: ctx.tg,
+        db: ctx.db,
+        chatId: ctx.message.chat.id,
+        tgUserId: ctx.tgUser.id,
+        updateId: ctx.updateId,
+        teamId: ctx.binding?.teamId ?? null,
+        userId: ctx.tgUserRow.userId,
+        userName: tgDisplayName(ctx.tgUser),
+        question: command.arg,
       });
       return;
     case '/team':

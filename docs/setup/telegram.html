@@ -137,6 +137,13 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
           <code>/whereami</code> confirms attribution; <code>/team</code> lists linked teams;
           <code>/team 2</code> switches to the second; the next DM message lands on the new team.
         </li>
+        <li>
+          <code>/ask &lt;question&gt;</code> queries the team's timeline through the same agent
+          pipeline as <code>/app/chat</code>. Plain (non-command) messages are still captured as
+          notes and acknowledged with a <code>👀</code> reaction so it's obvious they landed.
+          Rate-limited per Telegram user (10/min) because each <code>/ask</code> runs the agent
+          against OpenRouter.
+        </li>
       </ol>
       <p>
         For groups: have a team admin generate a <strong>group</strong> token, add the bot to a

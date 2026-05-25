@@ -15,11 +15,11 @@ Open PRs not counted here yet:
 
 - [x] **Foundations and deployment:** pnpm/Turborepo monorepo, TypeScript project refs, lint/format/knip/build CI, Dockerfiles, local Docker Compose stack, `.env.example`, Railway service configs, Railway project/environments/services, deploy-time migrations, `/api/health`.
 - [x] **Teams and basic capture:** auth, teams, members, invites, team switcher, `raw_events`, team-scoped query helpers, row visibility filtering, text capture, timeline list.
-- [x] **Telegram ingest:** link tokens, personal/group bindings, `/start`, `/link`, `/team`, `/whereami`, `/unlink`, `/help`, text ingest, edit handling, unverified Telegram attribution.
+- [x] **Telegram ingest:** link tokens, personal/group bindings, `/start`, `/link`, `/team`, `/whereami`, `/unlink`, `/help`, text ingest, edit handling, unverified Telegram attribution, `👀` reaction ack on every ingested message, and `/ask <question>` for in-chat agent answers (DM + group, rate-limited 10/min per Telegram user, reuses the same `withTeam` scope + agent tools as `/api/chat` via `agent.askAgent`).
 - [x] **Voice and workers:** BullMQ queues, transcribe/extract/embed worker entry points, RustFS/S3 wrapper, Telegram audio ingest, web audio recording, transcription worker, timeline audio playback.
 - [x] **Extraction and entities:** `entities`, `facts`, `fact_entities`, structured LLM extraction, entity resolution, merge UI, entity profile pages, re-extraction script.
 - [x] **Embeddings and search:** Qdrant wrapper, event/fact embeddings, team/visibility-scoped vector queries, semantic search API/UI, re-embed script.
-- [x] **Agent chat:** streaming chat UI, scoped tools, cited answers, shared `withTeam` data access, prompt/tool guardrails, hard tool-call cap.
+- [x] **Agent chat:** streaming chat UI, scoped tools, cited answers, shared `withTeam` data access, prompt/tool guardrails, hard tool-call cap. Also exposed in Telegram via `/ask` (non-streaming wrapper at `packages/shared/src/agent/ask.ts` reuses the same system prompt + tool set).
 - [x] **Email ingest:** per-team inbound addresses, Postmark webhook, sender verification, parsing, attachment storage, audio attachment routing, CC/BCC forwarding, forwarded-header parsing, thread linking, retryable infra failures.
 - [x] **Observability baseline:** structured pino logging across web, worker, and shared packages.
 
