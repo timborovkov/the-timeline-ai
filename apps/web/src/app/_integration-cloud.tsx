@@ -72,7 +72,10 @@ export function IntegrationCloud() {
 
       <p className="text-center text-xs text-fg-dim">
         Works with any MCP-compatible server. Custom servers connect under{' '}
-        <Link href="/sign-up" className="underline-offset-4 hover:text-fg hover:underline">
+        <Link
+          href="/app/team/mcp-servers"
+          className="underline-offset-4 hover:text-fg hover:underline"
+        >
           team settings
         </Link>{' '}
         — bring your own auth.
