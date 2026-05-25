@@ -537,7 +537,7 @@ function tgDisplayName(u: TgUser): string {
  * teammate). Per-user rate-limited tighter than ingest because each call hits
  * OpenRouter.
  */
-async function runAsk(input: {
+interface RunAskInput {
   tg: TelegramApi;
   db: Db;
   chatId: number;
@@ -549,18 +549,29 @@ async function runAsk(input: {
   userId: string | null;
   userName: string;
   question: string;
-}): Promise<void> {
-  // Idempotency gate: if Telegram retries this update_id (typical when the
-  // webhook handler takes longer than ~60s, which can happen when the agent
-  // runs multi-tool turns), short-circuit so we don't bill OpenRouter twice
-  // and the user doesn't get duplicate replies. Fail-open when Redis is
-  // unavailable — capture and answer keep working at the cost of possible
-  // double-billing during an outage.
-  const claimed = await claimAskUpdate(input.updateId);
+}
+
+async function runAsk(input: RunAskInput): Promise<void> {
+  // Two-phase idempotency: claim with a short TTL that covers an in-flight
+  // attempt, then EXTEND on success so a completed answer isn't retried, or
+  // DELETE on caught failure so a Telegram redelivery after a crash can try
+  // again. A killed process leaves the short key behind; it expires within
+  // the retry window and the next delivery is free to run.
+  const claimed = await claimAskUpdate(input.updateId, ASK_INFLIGHT_TTL_SEC);
   if (!claimed) {
     log.info({ updateId: input.updateId, tgUserId: input.tgUserId }, 'ask_update_dedup');
     return;
   }
+  try {
+    await runAskInner(input);
+    await extendAskClaim(input.updateId, ASK_COMPLETED_TTL_SEC).catch(() => undefined);
+  } catch (err) {
+    await releaseAskClaim(input.updateId).catch(() => undefined);
+    throw err;
+  }
+}
+
+async function runAskInner(input: RunAskInput): Promise<void> {
   const question = input.question.trim();
   if (!question) {
     await input.tg.sendMessage({
@@ -626,25 +637,48 @@ async function runAsk(input: {
 }
 
 /**
- * Claim a Telegram update_id for /ask processing. Returns `true` if this is
- * the first time we've seen it (caller should proceed), `false` if it's a
- * duplicate webhook delivery (caller should silently drop).
+ * Telegram redelivers a webhook when the handler exceeds the bot-API timeout
+ * (~60s). `/ask` runs the agent inline and can approach that limit, so we
+ * dedupe by `update_id`:
  *
- * Backed by Redis SET NX with a 10-minute TTL — long enough to cover
- * Telegram's retry window for a slow handler, short enough that the key set
- * stays bounded. Without Redis we fail-open: capture is correctness, this
- * dedup is only a cost/UX guard.
+ *   1. Claim with a short TTL (~90s) at entry. A concurrent retry while the
+ *      first attempt is still running sees the key and silently drops.
+ *   2. Extend to a long TTL (~10m) after the agent answer is sent. A retry
+ *      that arrives later (Telegram's later attempts can come minutes apart)
+ *      still sees the key and skips re-running the agent.
+ *   3. If processing throws before a reply is sent, DELETE the key so a
+ *      subsequent redelivery can try again — otherwise a paid /ask could end
+ *      with no answer.
+ *
+ * A killed process never reaches step 2 or 3; the short TTL from step 1
+ * expires on its own and the next redelivery is unblocked.
+ *
+ * Without Redis we fail-open: capture and answer keep working at the cost of
+ * possible double-billing during a Redis outage.
  */
-async function claimAskUpdate(updateId: number): Promise<boolean> {
+const ASK_INFLIGHT_TTL_SEC = 90;
+const ASK_COMPLETED_TTL_SEC = 600;
+const askClaimKey = (updateId: number): string => `tg:ask:seen:${updateId}`;
+
+async function claimAskUpdate(updateId: number, ttlSec: number): Promise<boolean> {
   try {
     const conn = getRedisConnection();
-    const key = `tg:ask:seen:${updateId}`;
-    const reply = await conn.set(key, '1', 'EX', 600, 'NX');
+    const reply = await conn.set(askClaimKey(updateId), '1', 'EX', ttlSec, 'NX');
     return reply === 'OK';
   } catch (err) {
     log.warn({ err: (err as Error).message, updateId }, 'ask_dedup_unavailable');
     return true;
   }
+}
+
+async function extendAskClaim(updateId: number, ttlSec: number): Promise<void> {
+  const conn = getRedisConnection();
+  await conn.set(askClaimKey(updateId), '1', 'EX', ttlSec);
+}
+
+async function releaseAskClaim(updateId: number): Promise<void> {
+  const conn = getRedisConnection();
+  await conn.del(askClaimKey(updateId));
 }
 
 async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Promise<void> {
