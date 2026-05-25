@@ -10,6 +10,7 @@ import { RailNav } from '@/components/rail-nav';
 import { SkipLink } from '@/components/skip-link';
 import { TeamSwitcher } from '@/components/team-switcher';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserMenu } from '@/components/user-menu';
 
 interface Props {
@@ -32,22 +33,28 @@ export function AppShell({ active, memberships, user, children }: Props) {
       <SkipLink />
       <div className="flex min-h-screen w-full bg-bg">
         {/* ── Left rail (desktop) ─────────────────────────────────── */}
-        <aside
-          aria-label="Sidebar"
-          className="sticky top-0 hidden h-screen w-14 shrink-0 flex-col items-center border-r border-border bg-surface py-3 md:flex"
-        >
-          <span
-            aria-hidden="true"
-            className="grid size-7 place-items-center rounded-sm font-mono text-[11px] font-bold text-signal"
-            title="The Timeline"
+        <TooltipProvider>
+          <aside
+            aria-label="Sidebar"
+            className="sticky top-0 hidden h-screen w-14 shrink-0 flex-col items-center border-r border-border bg-surface py-3 md:flex"
           >
-            ▦
-          </span>
-          <RailNav />
-          <div className="mt-auto flex flex-col items-center gap-1">
-            <TeamSwitcher active={active} memberships={memberships} variant="rail" />
-          </div>
-        </aside>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  aria-label="The Timeline"
+                  className="grid size-7 place-items-center rounded-sm font-mono text-[11px] font-bold text-signal"
+                >
+                  ▦
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="right">The Timeline</TooltipContent>
+            </Tooltip>
+            <RailNav />
+            <div className="mt-auto flex flex-col items-center gap-1">
+              <TeamSwitcher active={active} memberships={memberships} variant="rail" />
+            </div>
+          </aside>
+        </TooltipProvider>
 
         {/* ── Main column ─────────────────────────────────────────── */}
         <div className="flex min-w-0 flex-1 flex-col">
