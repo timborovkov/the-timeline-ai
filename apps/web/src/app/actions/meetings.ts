@@ -182,26 +182,8 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
   return { ok: true, meetingId };
 }
 
-const updateSettingsSchema = z.object({
-  meetingMinutesCap: z.number().int().min(0).max(100000).nullable().optional(),
-  meetingMinutesAdminOverride: z.boolean().optional(),
-  requireHostConsent: z.boolean().optional(),
-});
-
-export async function updateMeetingSettingsAction(
-  input: z.input<typeof updateSettingsSchema>,
-): Promise<Result> {
-  const parsed = updateSettingsSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
-  }
-  const got = await withScopeOrError();
-  if ('error' in got) return { ok: false, error: got.error };
-  try {
-    await got.scope.upsertMeetingSettings(parsed.data);
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
-  }
-  revalidatePath('/app/meetings');
-  return { ok: true };
-}
+// Note: meeting settings management (cap, consent, admin override) is
+// surfaced via the team settings UI in a follow-up phase. When that lands,
+// re-add a `updateMeetingSettingsAction` here that calls
+// `scope.upsertMeetingSettings`. The underlying scope method is already
+// tested.

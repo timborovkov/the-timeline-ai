@@ -23,7 +23,7 @@ import type {
 
 const log = childLogger('shared:meeting-bots:recall');
 
-export interface RecallProviderOptions {
+interface RecallProviderOptions {
   /** Override the configured API key. Tests pass a stub. */
   apiKey?: string;
   /** Override the base URL. Defaults to env. */

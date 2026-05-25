@@ -15,7 +15,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const DEFAULT_TOLERANCE_SEC = 5 * 60;
 
-export interface SvixVerifyInput {
+interface SvixVerifyInput {
   body: string;
   /** Header bag — case-insensitive lookup. */
   headers: Headers;
