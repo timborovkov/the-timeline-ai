@@ -39,126 +39,147 @@ const finalizeSchema = z.object({
     .max(50),
 });
 
+interface MeetingFinalizeIO {
+  /** Inject the LLM call so tests can run without OpenRouter. Defaults to
+   *  the real `llm.chatStructured` in production. */
+  chatStructured?: typeof llm.chatStructured;
+  /** Override the model id passed to the LLM. */
+  modelId?: string;
+}
+
+interface ProcessResult {
+  skipped?: 'already_completed';
+  meetingId?: string;
+  minutes?: number;
+  actionItems?: number;
+}
+
+/**
+ * Pure processing function. Exported separately from the BullMQ worker so
+ * tests can call it directly with an injected DB + LLM stub.
+ */
+export async function processMeetingFinalizeJob(
+  deps: MeetingFinalizeDeps,
+  data: queue.MeetingFinalizeJobData,
+  io: MeetingFinalizeIO = {},
+): Promise<ProcessResult> {
+  const { meetingId, teamId } = data;
+  const env = getEnv();
+  if (!env.OPENROUTER_API_KEY && !io.chatStructured) {
+    throw new UnrecoverableError('meeting-finalize: OPENROUTER_API_KEY not configured');
+  }
+
+  const rows = await deps.db
+    .select()
+    .from(meetingsTable)
+    .where(eq(meetingsTable.id, meetingId))
+    .limit(1);
+  const meeting = rows[0];
+  if (!meeting) {
+    throw new UnrecoverableError(`meeting ${meetingId} not found`);
+  }
+  if (meeting.teamId !== teamId) {
+    throw new UnrecoverableError(`meeting ${meetingId} team mismatch`);
+  }
+  if (meeting.status === 'completed') {
+    // Already finalised — re-run is a no-op. Usage row is also
+    // protected by its unique index.
+    return { skipped: 'already_completed' };
+  }
+
+  const chunks = await deps.db
+    .select()
+    .from(meetingTranscriptChunks)
+    .where(
+      and(
+        eq(meetingTranscriptChunks.meetingId, meetingId),
+        eq(meetingTranscriptChunks.teamId, teamId),
+      ),
+    )
+    .orderBy(asc(meetingTranscriptChunks.startMs));
+
+  // No transcript captured — mark completed without summary so the UI
+  // stops showing "processing", but skip the LLM call.
+  let summary: string | null = null;
+  let actionItems: { text: string; owner: string | null }[] = [];
+  let modelUsed: string | null = null;
+  if (chunks.length > 0) {
+    const transcriptText = chunks
+      .map((c) => `[${String(Math.floor(c.startMs / 1000))}s] ${c.speaker ?? 'Unknown'}: ${c.text}`)
+      .join('\n');
+    try {
+      const chat = io.chatStructured ?? llm.chatStructured;
+      const result = await chat({
+        schema: finalizeSchema,
+        ...(io.modelId ? { model: io.modelId } : {}),
+        system:
+          'You are summarising a meeting transcript. Produce a concise summary (3-5 sentences) and an array of concrete action items mentioned during the meeting. If no action items are present, return an empty array. Do NOT invent owners — only set "owner" when the transcript clearly attributes the task to a named person.',
+        prompt: `Meeting${meeting.title ? ` "${meeting.title}"` : ''} transcript:\n\n${transcriptText.slice(0, 60000)}`,
+      });
+      summary = result.object.summary;
+      actionItems = result.object.action_items.map(
+        (a: { text: string; owner?: string | null | undefined }) => ({
+          text: a.text,
+          owner: a.owner ?? null,
+        }),
+      );
+      modelUsed = result.model;
+    } catch (err) {
+      log.error({ err, meetingId }, 'finalize_llm_failed');
+      throw err;
+    }
+  }
+
+  // Compute minutes used. Use meeting duration if available, else
+  // fall back to last chunk end_ms.
+  let minutes = 0;
+  if (meeting.startedAt && meeting.endedAt) {
+    minutes = Math.max(
+      1,
+      Math.ceil((meeting.endedAt.getTime() - meeting.startedAt.getTime()) / 60000),
+    );
+  } else if (chunks.length > 0) {
+    const last = chunks[chunks.length - 1];
+    if (last) minutes = Math.max(1, Math.ceil(last.endMs / 60000));
+  }
+
+  // Patch the meeting metadata + status. Idempotent: a second run sees
+  // status='completed' above and short-circuits.
+  const metadataPatch: Record<string, unknown> = {
+    finalized_at: new Date().toISOString(),
+  };
+  if (summary) metadataPatch.summary = summary;
+  if (modelUsed) metadataPatch.summary_model = modelUsed;
+  if (actionItems.length > 0) metadataPatch.action_items = actionItems;
+  const patchJson = JSON.stringify(metadataPatch);
+  // Merge metadata jsonb in a single UPDATE so the status flip + metadata
+  // patch are atomic.
+  await deps.db
+    .update(meetingsTable)
+    .set({
+      status: 'completed',
+      updatedAt: new Date(),
+      metadata: sql`COALESCE(${meetingsTable.metadata}, '{}'::jsonb) || ${patchJson}::jsonb`,
+    })
+    .where(eq(meetingsTable.id, meetingId));
+
+  // Usage. Idempotent via unique index on meeting_id.
+  if (minutes > 0) {
+    // We can't reach team-scope from here without a userId; insert
+    // directly via the db helper. The schema enforces team_id NOT NULL
+    // FK so the row can't escape the team.
+    await deps.db.insert(meetingUsage).values({ teamId, meetingId, minutes }).onConflictDoNothing();
+  }
+
+  return { meetingId, minutes, actionItems: actionItems.length };
+}
+
 export function startMeetingFinalizeWorker(
   deps: MeetingFinalizeDeps,
 ): Worker<queue.MeetingFinalizeJobData> {
   const worker = new Worker<queue.MeetingFinalizeJobData>(
     queue.QUEUE_NAMES.meetingFinalize,
-    async (job: Job<queue.MeetingFinalizeJobData>) => {
-      const { meetingId, teamId } = job.data;
-      const env = getEnv();
-      if (!env.OPENROUTER_API_KEY) {
-        throw new UnrecoverableError('meeting-finalize: OPENROUTER_API_KEY not configured');
-      }
-
-      const rows = await deps.db
-        .select()
-        .from(meetingsTable)
-        .where(eq(meetingsTable.id, meetingId))
-        .limit(1);
-      const meeting = rows[0];
-      if (!meeting) {
-        throw new UnrecoverableError(`meeting ${meetingId} not found`);
-      }
-      if (meeting.teamId !== teamId) {
-        throw new UnrecoverableError(`meeting ${meetingId} team mismatch`);
-      }
-      if (meeting.status === 'completed') {
-        // Already finalised — re-run is a no-op. Usage row is also
-        // protected by its unique index.
-        return { skipped: 'already_completed' };
-      }
-
-      const chunks = await deps.db
-        .select()
-        .from(meetingTranscriptChunks)
-        .where(
-          and(
-            eq(meetingTranscriptChunks.meetingId, meetingId),
-            eq(meetingTranscriptChunks.teamId, teamId),
-          ),
-        )
-        .orderBy(asc(meetingTranscriptChunks.startMs));
-
-      // No transcript captured — mark completed without summary so the UI
-      // stops showing "processing", but skip the LLM call.
-      let summary: string | null = null;
-      let actionItems: { text: string; owner: string | null }[] = [];
-      let modelUsed: string | null = null;
-      if (chunks.length > 0) {
-        const transcriptText = chunks
-          .map(
-            (c) =>
-              `[${String(Math.floor(c.startMs / 1000))}s] ${c.speaker ?? 'Unknown'}: ${c.text}`,
-          )
-          .join('\n');
-        try {
-          const result = await llm.chatStructured({
-            schema: finalizeSchema,
-            system:
-              'You are summarising a meeting transcript. Produce a concise summary (3-5 sentences) and an array of concrete action items mentioned during the meeting. If no action items are present, return an empty array. Do NOT invent owners — only set "owner" when the transcript clearly attributes the task to a named person.',
-            prompt: `Meeting${meeting.title ? ` "${meeting.title}"` : ''} transcript:\n\n${transcriptText.slice(0, 60000)}`,
-          });
-          summary = result.object.summary;
-          actionItems = result.object.action_items.map(
-            (a: { text: string; owner?: string | null | undefined }) => ({
-              text: a.text,
-              owner: a.owner ?? null,
-            }),
-          );
-          modelUsed = result.model;
-        } catch (err) {
-          log.error({ err, meetingId }, 'finalize_llm_failed');
-          throw err;
-        }
-      }
-
-      // Compute minutes used. Use meeting duration if available, else
-      // fall back to last chunk end_ms.
-      let minutes = 0;
-      if (meeting.startedAt && meeting.endedAt) {
-        minutes = Math.max(
-          1,
-          Math.ceil((meeting.endedAt.getTime() - meeting.startedAt.getTime()) / 60000),
-        );
-      } else if (chunks.length > 0) {
-        const last = chunks[chunks.length - 1];
-        if (last) minutes = Math.max(1, Math.ceil(last.endMs / 60000));
-      }
-
-      // Patch the meeting metadata + status. Idempotent: a second run sees
-      // status='completed' above and short-circuits.
-      const metadataPatch: Record<string, unknown> = {
-        finalized_at: new Date().toISOString(),
-      };
-      if (summary) metadataPatch.summary = summary;
-      if (modelUsed) metadataPatch.summary_model = modelUsed;
-      if (actionItems.length > 0) metadataPatch.action_items = actionItems;
-      const patchJson = JSON.stringify(metadataPatch);
-      // Merge metadata jsonb in a single UPDATE so the status flip + metadata
-      // patch are atomic.
-      await deps.db
-        .update(meetingsTable)
-        .set({
-          status: 'completed',
-          updatedAt: new Date(),
-          metadata: sql`COALESCE(${meetingsTable.metadata}, '{}'::jsonb) || ${patchJson}::jsonb`,
-        })
-        .where(eq(meetingsTable.id, meetingId));
-
-      // Usage. Idempotent via unique index on meeting_id.
-      if (minutes > 0) {
-        // We can't reach team-scope from here without a userId; insert
-        // directly via the db helper. The schema enforces team_id NOT NULL
-        // FK so the row can't escape the team.
-        await deps.db
-          .insert(meetingUsage)
-          .values({ teamId, meetingId, minutes })
-          .onConflictDoNothing();
-      }
-
-      return { meetingId, minutes, actionItems: actionItems.length };
-    },
+    async (job: Job<queue.MeetingFinalizeJobData>) => processMeetingFinalizeJob(deps, job.data),
     {
       connection: queue.getRedisConnection(),
       // Single concurrency per process — meeting summarisation is rare

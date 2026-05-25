@@ -192,6 +192,38 @@ async function appendMeetingChunkTx(
   return { chunkId, rawEventId, deduplicated };
 }
 
+/**
+ * System-mode lookup keyed on the provider's bot id. Used by the Recall
+ * status + transcript webhooks, which run without a session and need to
+ * resolve a meeting before they can build a `withTeam` scope. Bot ids
+ * are globally-unique Recall UUIDs, so a botId match is itself the
+ * authorisation signal — there's no team/user context to verify yet.
+ *
+ * Extracted from the scope (which requires `ensureMember`) so route
+ * handlers can stay thin and mockable.
+ */
+export async function lookupMeetingByBotId(
+  db: Db,
+  botId: string,
+): Promise<Pick<
+  MeetingRow,
+  'id' | 'teamId' | 'createdByUserId' | 'status' | 'platform' | 'provider'
+> | null> {
+  const rows = await db
+    .select({
+      id: meetings.id,
+      teamId: meetings.teamId,
+      createdByUserId: meetings.createdByUserId,
+      status: meetings.status,
+      platform: meetings.platform,
+      provider: meetings.provider,
+    })
+    .from(meetings)
+    .where(eq(meetings.providerBotId, botId))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export function createMeetingScope(deps: MeetingScopeDeps) {
   const { db, teamId, userId, ensureMember } = deps;
 

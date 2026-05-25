@@ -1,0 +1,236 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { PGlite } from '@electric-sql/pglite';
+import {
+  type Db,
+  meetings as meetingsTable,
+  meetingTranscriptChunks,
+  meetingUsage,
+} from '@timeline/db';
+import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { processMeetingFinalizeJob } from './meetingFinalize.js';
+
+/**
+ * Integration tests for the meeting-finalize worker handler. Uses pglite
+ * for Postgres + an injected LLM stub so no OpenRouter / Redis is required.
+ *
+ * What these prove that mocks-only tests cannot:
+ *   - Real status flips ('processing' → 'completed') land in actual rows.
+ *   - meeting_usage row is written exactly once (unique index on meeting_id)
+ *     even when the worker is re-run.
+ *   - Empty-transcript meetings still complete without calling the LLM.
+ *   - Re-running on an already-completed meeting is a clean no-op.
+ *   - Metadata merge: existing keys are preserved; summary + action_items
+ *     are appended; finalized_at is set.
+ */
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_DIR = join(__dirname, '../../../../packages/db/drizzle');
+
+async function applyMigrations(pg: PGlite): Promise<void> {
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  for (const file of files) {
+    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
+    const statements = sql
+      .split('--> statement-breakpoint')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && s !== 'SELECT 1;');
+    for (const stmt of statements) {
+      await pg.exec(stmt);
+    }
+  }
+}
+
+const TEAM_ID = '11111111-1111-1111-1111-111111111111';
+const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const MEETING_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
+async function seed(pg: PGlite): Promise<void> {
+  await pg.exec(`INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 't', 'Test');`);
+  await pg.exec(`INSERT INTO users (id, email) VALUES ('${USER_ID}', 'a@x');`);
+  await pg.exec(
+    `INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${USER_ID}', 'owner');`,
+  );
+}
+
+async function seedMeeting(
+  db: Db,
+  opts: {
+    status?: 'pending' | 'joining' | 'active' | 'processing' | 'completed' | 'failed';
+    startedAt?: Date;
+    endedAt?: Date;
+    metadata?: Record<string, unknown>;
+  } = {},
+): Promise<void> {
+  await db.insert(meetingsTable).values({
+    id: MEETING_ID,
+    teamId: TEAM_ID,
+    createdByUserId: USER_ID,
+    provider: 'recall',
+    platform: 'meet',
+    meetingUrl: 'https://meet.google.com/test',
+    status: opts.status ?? 'processing',
+    defaultVisibility: 'team',
+    startedAt: opts.startedAt ?? new Date('2026-05-25T10:00:00Z'),
+    endedAt: opts.endedAt ?? new Date('2026-05-25T10:30:00Z'),
+    metadata: opts.metadata ?? {},
+  });
+}
+
+async function seedChunk(db: Db, i: number, text: string, speaker: string | null): Promise<void> {
+  await db.insert(meetingTranscriptChunks).values({
+    meetingId: MEETING_ID,
+    teamId: TEAM_ID,
+    speaker,
+    text,
+    startMs: i * 5000,
+    endMs: (i + 1) * 5000,
+    providerChunkId: `utt-${String(i)}`,
+  });
+}
+
+function makeChatStub(
+  summary = 'Three-sentence summary.',
+  actionItems: { text: string; owner?: string | null }[] = [],
+) {
+  return vi.fn().mockResolvedValue({
+    object: { summary, action_items: actionItems },
+    model: 'test-model@1.0',
+  });
+}
+
+let pg: PGlite;
+let db: ReturnType<typeof drizzle>;
+
+beforeEach(async () => {
+  pg = new PGlite();
+  await applyMigrations(pg);
+  await seed(pg);
+  db = drizzle(pg);
+});
+
+describe('processMeetingFinalizeJob', () => {
+  it('flips status to completed, writes summary + action items, records minutes', async () => {
+    await seedMeeting(db as never);
+    await seedChunk(db as never, 0, 'Hello, this is Alice.', 'Alice');
+    await seedChunk(db as never, 1, 'Bob will own the migration.', 'Bob');
+
+    const chat = makeChatStub('Meeting summary here.', [
+      { text: 'Bob owns the migration', owner: 'Bob' },
+      { text: 'Schedule design review' },
+    ]);
+
+    const result = await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+
+    expect(chat).toHaveBeenCalledOnce();
+    expect(result.actionItems).toBe(2);
+    expect(result.minutes).toBe(30);
+
+    const rows = await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID));
+    const row = rows[0];
+    expect(row?.status).toBe('completed');
+    const meta = row?.metadata as Record<string, unknown>;
+    expect(meta.summary).toBe('Meeting summary here.');
+    expect(meta.summary_model).toBe('test-model@1.0');
+    expect(
+      (meta.action_items as { text: string; owner: string | null }[]).map((a) => a.owner),
+    ).toEqual(['Bob', null]);
+    expect(meta.finalized_at).toBeTypeOf('string');
+
+    const usage = await db
+      .select()
+      .from(meetingUsage)
+      .where(eq(meetingUsage.meetingId, MEETING_ID));
+    expect(usage).toHaveLength(1);
+    expect(usage[0]?.minutes).toBe(30);
+  });
+
+  it('empty transcript: completes without calling the LLM', async () => {
+    await seedMeeting(db as never);
+    const chat = makeChatStub();
+    const result = await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+    expect(chat).not.toHaveBeenCalled();
+    expect(result.actionItems).toBe(0);
+    const row = (await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID)))[0];
+    expect(row?.status).toBe('completed');
+    const meta = row?.metadata as Record<string, unknown>;
+    expect(meta.summary).toBeUndefined();
+    expect(meta.finalized_at).toBeTypeOf('string');
+  });
+
+  it('idempotent: re-running on a completed meeting is a no-op', async () => {
+    await seedMeeting(db as never, {
+      status: 'completed',
+      metadata: { summary: 'original summary', finalized_at: '2026-05-25T10:35:00Z' },
+    });
+    await seedChunk(db as never, 0, 'late chunk', 'Charlie');
+    const chat = makeChatStub('SHOULD NOT BE WRITTEN');
+
+    const result = await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+
+    expect(result.skipped).toBe('already_completed');
+    expect(chat).not.toHaveBeenCalled();
+    const row = (await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID)))[0];
+    expect((row?.metadata as Record<string, unknown>).summary).toBe('original summary');
+  });
+
+  it('usage row is unique per meeting (re-insert is no-op)', async () => {
+    await seedMeeting(db as never);
+    await seedChunk(db as never, 0, 'Hello.', 'Alice');
+    const chat = makeChatStub();
+
+    await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+
+    // Force a re-run by manually flipping status back to processing.
+    await db
+      .update(meetingsTable)
+      .set({ status: 'processing' })
+      .where(eq(meetingsTable.id, MEETING_ID));
+
+    await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+
+    const usage = await db
+      .select()
+      .from(meetingUsage)
+      .where(eq(meetingUsage.meetingId, MEETING_ID));
+    expect(usage).toHaveLength(1);
+  });
+
+  it('team mismatch throws UnrecoverableError', async () => {
+    await seedMeeting(db as never);
+    await expect(
+      processMeetingFinalizeJob(
+        { db: db as never },
+        { meetingId: MEETING_ID, teamId: '99999999-9999-9999-9999-999999999999' },
+        { chatStructured: makeChatStub() as never },
+      ),
+    ).rejects.toThrow(/team mismatch/);
+  });
+});

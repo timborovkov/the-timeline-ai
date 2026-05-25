@@ -1,6 +1,12 @@
-import { meetings as meetingsTable } from '@timeline/db';
-import { childLogger, email, getEnv, queue, rateLimit, withTeam } from '@timeline/shared';
-import { eq } from 'drizzle-orm';
+import {
+  childLogger,
+  email,
+  getEnv,
+  meetingsScope,
+  queue,
+  rateLimit,
+  withTeam,
+} from '@timeline/shared';
 import { z } from 'zod';
 
 import { db } from '@/lib/db';
@@ -168,16 +174,7 @@ export async function POST(req: Request): Promise<Response> {
 
   // Look up meeting by botId. No team scope on the lookup itself — bot
   // ids are globally unique (Recall UUIDs).
-  const meetingRows = await db
-    .select({
-      id: meetingsTable.id,
-      teamId: meetingsTable.teamId,
-      createdByUserId: meetingsTable.createdByUserId,
-    })
-    .from(meetingsTable)
-    .where(eq(meetingsTable.providerBotId, chunk.botId))
-    .limit(1);
-  const meeting = meetingRows[0];
+  const meeting = await meetingsScope.lookupMeetingByBotId(db, chunk.botId);
   if (!meeting) {
     log.info({ botId: chunk.botId }, 'no_meeting_for_bot');
     return Response.json({ ok: true, reason: 'no_meeting' }, { status: 200 });

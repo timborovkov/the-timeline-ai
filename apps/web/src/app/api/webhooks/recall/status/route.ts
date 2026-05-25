@@ -1,6 +1,4 @@
-import { meetings as meetingsTable } from '@timeline/db';
-import { childLogger, getEnv, meetingBots, queue, withTeam } from '@timeline/shared';
-import { eq } from 'drizzle-orm';
+import { childLogger, getEnv, meetingBots, meetingsScope, queue, withTeam } from '@timeline/shared';
 import { z } from 'zod';
 
 import { db } from '@/lib/db';
@@ -83,18 +81,9 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   // Resolve the meeting by bot id only — no team scope, this is the
-  // webhook's authoritative lookup.
-  const meetingRows = await db
-    .select({
-      id: meetingsTable.id,
-      teamId: meetingsTable.teamId,
-      createdByUserId: meetingsTable.createdByUserId,
-      status: meetingsTable.status,
-    })
-    .from(meetingsTable)
-    .where(eq(meetingsTable.providerBotId, botId))
-    .limit(1);
-  const meeting = meetingRows[0];
+  // webhook's authoritative lookup. See lookupMeetingByBotId for the
+  // rationale.
+  const meeting = await meetingsScope.lookupMeetingByBotId(db, botId);
   if (!meeting) {
     log.warn({ botId, event: parsed.event }, 'meeting_not_found_for_bot');
     return Response.json({ ok: true, reason: 'meeting_not_found' }, { status: 200 });
