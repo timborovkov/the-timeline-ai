@@ -1,6 +1,8 @@
 # ---- Claude ----
 .claude/worktrees/
 .claude/*.lock
+.claude/launch.json
+.skill-archive/
 
 # ---- Dependencies ----
 node_modules/
