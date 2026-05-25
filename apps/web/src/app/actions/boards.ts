@@ -61,7 +61,11 @@ export async function deleteBoardAction(input: unknown): Promise<ActionState> {
   if (!parsed.success) return { error: 'Invalid id' };
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
-  const ok = await objects.deleteBoardView(db, r.scope, parsed.data.id);
-  revalidatePath('/app/boards');
-  return ok ? { ok: true } : { error: 'Board not found' };
+  try {
+    const ok = await objects.deleteBoardView(db, r.scope, parsed.data.id);
+    revalidatePath('/app/boards');
+    return ok ? { ok: true } : { error: 'Board not found' };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to delete board' };
+  }
 }

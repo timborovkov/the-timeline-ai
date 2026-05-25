@@ -12,9 +12,13 @@ export async function archiveChatSessionAction(input: unknown): Promise<ActionSt
   if (!parsed.success) return { error: 'Invalid id' };
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
-  await objects.archiveChatSession(db, r.scope, parsed.data.sessionId);
-  revalidatePath('/app/chat');
-  return { ok: true };
+  try {
+    await objects.archiveChatSession(db, r.scope, parsed.data.sessionId);
+    revalidatePath('/app/chat');
+    return { ok: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to archive session' };
+  }
 }
 
 export async function unpinChatSessionAction(input: unknown): Promise<ActionState> {
