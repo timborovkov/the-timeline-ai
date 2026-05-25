@@ -37,11 +37,7 @@ export interface TelegramApi {
    * React to a message with a single emoji. Best-effort: callers should swallow
    * errors so a failed reaction never breaks the surrounding flow (ingest, ack).
    */
-  setMessageReaction(input: {
-    chat_id: number;
-    message_id: number;
-    emoji: string;
-  }): Promise<void>;
+  setMessageReaction(input: { chat_id: number; message_id: number; emoji: string }): Promise<void>;
   /**
    * Show a typing indicator in the chat. Auto-expires after ~5s on Telegram's
    * side. Used to acknowledge expensive commands like `/ask` while the agent
@@ -99,9 +95,7 @@ export class HttpTelegramApi implements TelegramApi {
     return this.call<TelegramFileInfo>('getFile', input);
   }
 
-  async setMessageReaction(
-    input: Parameters<TelegramApi['setMessageReaction']>[0],
-  ): Promise<void> {
+  async setMessageReaction(input: Parameters<TelegramApi['setMessageReaction']>[0]): Promise<void> {
     await this.call('setMessageReaction', {
       chat_id: input.chat_id,
       message_id: input.message_id,
