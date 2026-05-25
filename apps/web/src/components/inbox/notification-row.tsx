@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
 
@@ -23,6 +23,14 @@ export function NotificationRow({ id, kind, summary, entityId, createdAt, initia
   // the unread dot — the server action runs async without blocking the
   // navigation.
   const [read, setRead] = useState(initiallyRead);
+  // Sync from props when the parent refreshes (e.g. MarkAllReadButton
+  // calls router.refresh() and notifications now report as read). Only
+  // ratchet toward "read" — never override a local optimistic-read back
+  // to unread, since the user's click is the authoritative intent and
+  // the server may not have caught up yet.
+  useEffect(() => {
+    if (initiallyRead) setRead(true);
+  }, [initiallyRead]);
 
   function markRead(): void {
     if (read) return;

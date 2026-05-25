@@ -1,5 +1,12 @@
 import { Skeleton } from '@/components/ui/skeleton';
 
+/**
+ * Board detail can render as kanban, table, or list — three structurally
+ * different layouts, and we don't know which until `board.kind` loads.
+ * Any committed body shape would mismatch two of the three. Render the
+ * header only and leave the body area to the real page; the layout shift
+ * is bounded to the body, the header position stays stable.
+ */
 export default function BoardDetailLoading() {
   return (
     <div>
@@ -11,15 +18,6 @@ export default function BoardDetailLoading() {
         </div>
         <Skeleton className="h-9 w-9 rounded-md" />
       </header>
-
-      <ul className="space-y-2">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <li key={i} className="rounded-md border bg-card px-4 py-3">
-            <Skeleton className="h-4 w-2/3" />
-            <Skeleton className="mt-2 h-3 w-1/3" />
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
