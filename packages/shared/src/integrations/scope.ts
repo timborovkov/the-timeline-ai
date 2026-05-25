@@ -267,7 +267,11 @@ export function createIntegrationScope(deps: {
   }
 
   async function listAudit(integrationId?: string | null, limit = 100) {
-    await ensureMember();
+    // Defense in depth: the /app/team/integrations/audit page admin-gates
+    // before calling, but a future caller might forget. Audit rows
+    // contain provider metadata + sync error payloads that the rest of
+    // the integration surface restricts to admins.
+    await ensureMember('admin');
     const conditions = [eq(integrationAuditLog.teamId, teamId)];
     if (integrationId) {
       conditions.push(eq(integrationAuditLog.integrationId, integrationId));

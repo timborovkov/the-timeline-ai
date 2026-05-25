@@ -432,7 +432,12 @@ export const googleDriveProvider: IntegrationProvider = {
     if (typeof body.refresh_token === 'string') tokens.refresh_token = body.refresh_token;
     // Fetch the user's primary email + sub for displayName / externalAccountId.
     let displayName = 'Google Drive';
+    // externalAccountId MUST be the stable Google subject id so reconnects
+    // upsert on the existing integration row. A random fallback would
+    // silently produce duplicate integrations every reconnect — fail
+    // the OAuth flow instead and let the user retry.
     let sub = '';
+    let userInfoOk = false;
     try {
       const info = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { authorization: `Bearer ${access}` },
@@ -443,13 +448,19 @@ export const googleDriveProvider: IntegrationProvider = {
         if (j.sub) {
           sub = j.sub;
           tokens.sub = j.sub;
+          userInfoOk = true;
         }
       }
     } catch (err) {
       log.warn({ err }, 'failed to fetch userinfo');
     }
+    if (!userInfoOk || !sub) {
+      throw new Error(
+        'google_userinfo_lookup_failed: could not resolve the authenticated user subject id from /oauth2/v3/userinfo — reconnect and try again',
+      );
+    }
     return {
-      externalAccountId: sub || `gdrive-${Math.random().toString(36).slice(2, 10)}`,
+      externalAccountId: sub,
       displayName,
       scopes: SCOPES,
       tokens: tokens as unknown as Record<string, unknown>,

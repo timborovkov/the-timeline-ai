@@ -14,6 +14,14 @@ export default async function IntegrationAuditPage() {
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
   const scope = withTeam(db, active.teamId, session.user.id);
+  // Audit rows can contain provider/external_account_id metadata + sync
+  // error details (file/issue names, partial payloads) that the rest of
+  // the integration mutations gate to admins. Match that posture here.
+  try {
+    await scope.requireMembership('admin');
+  } catch {
+    redirect('/app/team/integrations');
+  }
   const rows = await scope.integrations.listAudit(null, 200);
   return (
     <div className="mx-auto max-w-4xl space-y-6">

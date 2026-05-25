@@ -224,7 +224,11 @@ export function createMcpScope(deps: {
           updatedAt: new Date(),
         },
       });
+    // Personal servers are cached under `teamId:userId`; team-shared
+    // servers under just `teamId`. Invalidate both so a personal-MCP
+    // owner doesn't see empty tools until the 5-min TTL expires.
     getMcpManager().invalidate(teamId);
+    getMcpManager().invalidate(`${teamId}:${userId}`);
   }
 
   async function persistOauthPending(

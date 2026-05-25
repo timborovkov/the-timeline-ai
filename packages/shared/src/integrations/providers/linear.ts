@@ -495,8 +495,12 @@ export const linearProvider: IntegrationProvider = {
       expires_at: Date.now() + expiresIn * 1000,
       scope: typeof body.scope === 'string' ? body.scope : SCOPES.join(','),
     };
-    let orgName = 'Linear';
-    let orgId = '';
+    // externalAccountId MUST be the stable Linear org id so reconnects
+    // upsert on the existing integration row. A random fallback would
+    // silently produce duplicate integrations every reconnect — fail
+    // the OAuth flow instead and let the user retry.
+    let orgName: string;
+    let orgId: string;
     try {
       const data = await gql<{
         viewer: { organization: { id: string; name: string }; email: string };
@@ -505,9 +509,12 @@ export const linearProvider: IntegrationProvider = {
       orgId = data.viewer.organization.id;
     } catch (err) {
       log.warn({ err }, 'failed to fetch linear viewer');
+      throw new Error(
+        'linear_viewer_lookup_failed: could not resolve the authenticated org id from viewer — reconnect and try again',
+      );
     }
     return {
-      externalAccountId: orgId || `linear-${Math.random().toString(36).slice(2, 10)}`,
+      externalAccountId: orgId,
       displayName: orgName,
       scopes: SCOPES,
       tokens: tokens as unknown as Record<string, unknown>,

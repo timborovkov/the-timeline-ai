@@ -20,13 +20,16 @@ const PING_TIMEOUT_MS = 10_000;
 async function pingServer(db: Db, serverId: string): Promise<{ ok: boolean; error?: string }> {
   // Reuse the existing manager's discoverTools handshake — it already does
   // the initialize + tools/list round trip and updates lastConnectedAt /
-  // lastError as a side effect. We invalidate first so the cache won't
-  // mask a freshly-broken server.
+  // lastError as a side effect. We invalidate by team after fetching the
+  // row so the next chat turn picks up fresh tool state instead of
+  // serving a stale 5-min-cached list. (The manager keys its cache on
+  // teamId or teamId:userId — never on serverId.)
   const mgr = mcp.getMcpManager();
-  mgr.invalidate(serverId);
   const rows = await db.select().from(mcpServers).where(eq(mcpServers.id, serverId)).limit(1);
   const row = rows[0];
   if (!row) return { ok: false, error: 'not_found' };
+  mgr.invalidate(row.teamId);
+  if (row.userId) mgr.invalidate(`${row.teamId}:${row.userId}`);
   let timer: NodeJS.Timeout | undefined;
   try {
     await Promise.race([

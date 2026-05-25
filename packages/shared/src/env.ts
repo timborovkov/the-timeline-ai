@@ -165,6 +165,12 @@ const schema = z.object({
   GITHUB_APP_CLIENT_ID: z.string().optional(),
   GITHUB_APP_CLIENT_SECRET: z.string().optional(),
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
+  // HMAC secret for Google Drive push-channel tokens. The Drive watch
+  // registration sets channel_token = HMAC-SHA256(secret, integration.id)
+  // so the /api/webhooks/google-drive handler can verify the inbound
+  // x-goog-channel-token. Without it, anyone who guesses or leaks an
+  // integration UUID can trigger sync jobs for that team.
+  GOOGLE_DRIVE_WEBHOOK_SECRET: z.string().optional(),
 
   // Custom MCP servers. The state JWT carries (team_id, mcp_server_id)
   // through the OAuth dance and is HS256-signed with this secret. Falls
