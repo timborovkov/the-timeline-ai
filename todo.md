@@ -4,12 +4,14 @@ Ordered roadmap. Keep this file short: shipped work is bundled, open work is act
 
 ## Current Status
 
-Phases 0-7 are shipped on `main` via PRs #1-#9. Railway deploy work is complete, deploy-time migrations are wired, and pino logging is live via PR #11.
+Phases 0-8 are shipped on `main`. Phase 9 (Team Document Drive) is in
+review on this branch: foundation + worker + UI + tests across three
+slices, full build green, 196 tests across `@timeline/shared`,
+`@timeline/worker`, and `@timeline/web`.
 
 Open PRs not counted here yet:
 
-- PR #10 — UI redesign: spacious editorial calm, mobile nav, loading/error states.
-- PR #12 — Telegram webhook auto-registration on web startup.
+- Phase 9 — Team Document Drive (this branch).
 
 ## Completed Bundle
 
