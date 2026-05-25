@@ -23,6 +23,40 @@ interface DocumentExtractWorkerDeps {
   db: Db;
 }
 
+/**
+ * Injectable IO surface for the document-extract handler. Production wires
+ * the real S3 client + BullMQ queue (see `defaultProcessDeps`); tests pass
+ * fakes that record what the handler would have done without touching
+ * RustFS or Redis.
+ */
+export interface DocumentExtractIO {
+  /** Fetch the blob from object storage. Defaults to RustFS via S3 SDK. */
+  fetchBlob: (
+    objectKey: string,
+    maxBytes: number,
+  ) => Promise<{ body: Buffer; contentType?: string }>;
+  /** Enqueue one embed job per chunk. Defaults to the real BullMQ queue. */
+  enqueueEmbed: (data: queue.EmbedJobData) => Promise<void>;
+  /** Resolve env. Defaults to the process env via `getEnv()`. Tests can
+   *  override to bypass the OPENROUTER_API_KEY gate. */
+  requireEnv: () => void;
+}
+
+function defaultIO(): DocumentExtractIO {
+  return {
+    async fetchBlob(objectKey, maxBytes) {
+      return getObjectBuffer(getS3Client(), getDocumentsBucket(), objectKey, maxBytes);
+    },
+    enqueueEmbed: queue.enqueueEmbedJob,
+    requireEnv() {
+      const env = getEnv();
+      if (!env.OPENROUTER_API_KEY) {
+        throw new UnrecoverableError('document-extract: OPENROUTER_API_KEY not configured');
+      }
+    },
+  };
+}
+
 // Code-version tag stamped on every successful extraction so the
 // `redocument-extract` script can re-drive jobs whose chunking policy
 // predates a change.
@@ -54,186 +88,195 @@ const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
  * pass either finds the version past 'chunked' and exits or hits the
  * unique constraint and rolls back).
  */
+export interface DocumentExtractResult {
+  documentVersionId: string;
+  chunkCount?: number;
+  skipped?: boolean;
+  reason?: string;
+}
+
+/**
+ * Pure-ish job handler. Called by the BullMQ Worker (production) and
+ * directly by tests with injected IO. Side effects:
+ *   - DB writes (status, chunks)
+ *   - blob read via `io.fetchBlob`
+ *   - embed enqueue via `io.enqueueEmbed`
+ * No direct Redis/S3 references; both go through `io`.
+ */
+export async function processDocumentExtractJob(
+  deps: DocumentExtractWorkerDeps,
+  data: queue.DocumentExtractJobData,
+  io: DocumentExtractIO = defaultIO(),
+): Promise<DocumentExtractResult> {
+  const { documentVersionId, teamId, targetCollection } = data;
+  io.requireEnv();
+
+  const lockKey = sql`hashtextextended(${documentVersionId}, 0)`;
+
+  const rows = await deps.db
+    .select({
+      version: documentVersions,
+      document: documents,
+    })
+    .from(documentVersions)
+    .innerJoin(documents, eq(documents.id, documentVersions.documentId))
+    .where(
+      and(eq(documentVersions.id, documentVersionId), eq(documentVersions.teamId, teamId)),
+    )
+    .limit(1);
+  const hit = rows[0];
+  if (!hit) {
+    throw new UnrecoverableError(`document version ${documentVersionId} not found`);
+  }
+  const version = hit.version;
+  const document = hit.document;
+
+  if (document.deletedAt) {
+    // Document was deleted between enqueue and process. Don't error;
+    // the doc-chunks for this version will be cleaned up via the
+    // separate deletePoints path when the delete action ran.
+    return { documentVersionId, skipped: true, reason: 'document_deleted' };
+  }
+
+  // Already past 'chunked' (the embed worker promotes to 'embedded'
+  // once chunks land in Qdrant). Replays from the redocument-extract
+  // script intentionally re-enter here; the user must reset the
+  // status row first if they want a true re-extract.
+  if (version.processingStatus === 'chunked' || version.processingStatus === 'embedded') {
+    return { documentVersionId, skipped: true, reason: 'already_processed' };
+  }
+
+  if (document.visibility !== 'team') {
+    await deps.db
+      .update(documentVersions)
+      .set({
+        processingStatus: 'failed',
+        processingError: `visibility=${document.visibility} not processed`,
+      })
+      .where(eq(documentVersions.id, version.id));
+    return {
+      documentVersionId,
+      skipped: true,
+      reason: `visibility=${document.visibility}`,
+    };
+  }
+
+  // Mark as extracting so concurrent enqueues see progress.
+  await deps.db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
+    await tx
+      .update(documentVersions)
+      .set({ processingStatus: 'extracting', processingError: null })
+      .where(eq(documentVersions.id, version.id));
+  });
+
+  // Bounds-check before reading the body. RustFS HEAD is cheap and
+  // surfaces oversize uploads without consuming bandwidth.
+  let body: Buffer;
+  try {
+    const fetched = await io.fetchBlob(version.objectKey, MAX_DOCUMENT_BYTES);
+    body = fetched.body;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    await deps.db
+      .update(documentVersions)
+      .set({ processingStatus: 'failed', processingError: message.slice(0, 500) })
+      .where(eq(documentVersions.id, version.id));
+    throw err;
+  }
+
+  const contentType = (version.contentType ?? '').toLowerCase();
+  const text = await routeContentToText({ contentType, body, name: document.name });
+  if (text === null) {
+    const reason = `content_type=${contentType || 'unknown'} not supported`;
+    await deps.db
+      .update(documentVersions)
+      .set({ processingStatus: 'failed', processingError: reason })
+      .where(eq(documentVersions.id, version.id));
+    // Don't retry — adding a new extractor changes the policy, not
+    // the input. UnrecoverableError stops the BullMQ retry loop.
+    throw new UnrecoverableError(reason);
+  }
+
+  if (!text.trim()) {
+    const reason = 'no text extracted';
+    await deps.db
+      .update(documentVersions)
+      .set({ processingStatus: 'failed', processingError: reason })
+      .where(eq(documentVersions.id, version.id));
+    throw new UnrecoverableError(reason);
+  }
+
+  const chunks = chunkText(text);
+  if (chunks.length === 0) {
+    const reason = 'chunker produced no chunks';
+    await deps.db
+      .update(documentVersions)
+      .set({ processingStatus: 'failed', processingError: reason })
+      .where(eq(documentVersions.id, version.id));
+    throw new UnrecoverableError(reason);
+  }
+
+  // Single transaction: replace any existing chunks for this version
+  // (re-extract case) and stamp status. The unique index on
+  // (document_version_id, chunk_index) plus this transaction means
+  // concurrent jobs cannot interleave half-runs.
+  const insertedIds = await deps.db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
+    await tx.delete(documentChunks).where(eq(documentChunks.documentVersionId, version.id));
+    const inserted = await tx
+      .insert(documentChunks)
+      .values(
+        chunks.map((c) => ({
+          teamId,
+          documentId: document.id,
+          documentVersionId: version.id,
+          chunkIndex: c.index,
+          text: c.text,
+          tokenCount: c.tokenCount,
+        })),
+      )
+      .returning({ id: documentChunks.id });
+    await tx
+      .update(documentVersions)
+      .set({
+        processingStatus: 'chunked',
+        processingError: null,
+        extractionModelVersion: EXTRACT_CODE_VERSION,
+      })
+      .where(eq(documentVersions.id, version.id));
+    return inserted.map((r) => r.id);
+  });
+
+  // Fan out embed jobs. Each chunk's embed point id is deterministic
+  // so duplicate enqueues are safe.
+  for (const chunkId of insertedIds) {
+    await io.enqueueEmbed({
+      rawEventId: version.sourceEventId ?? chunkId,
+      teamId,
+      documentChunkId: chunkId,
+      ...(targetCollection ? { targetCollection } : {}),
+    });
+  }
+
+  log.info(
+    {
+      documentVersionId,
+      chunkCount: chunks.length,
+      tokenTotal: chunks.reduce((sum, c) => sum + c.tokenCount, 0),
+    },
+    'document chunked',
+  );
+  return { documentVersionId, chunkCount: chunks.length };
+}
+
 export function startDocumentExtractWorker(
   deps: DocumentExtractWorkerDeps,
 ): Worker<queue.DocumentExtractJobData> {
+  const io = defaultIO();
   const worker = new Worker<queue.DocumentExtractJobData>(
     queue.QUEUE_NAMES.documentExtract,
-    async (job: Job<queue.DocumentExtractJobData>) => {
-      const { documentVersionId, teamId, targetCollection } = job.data;
-      const env = getEnv();
-      if (!env.OPENROUTER_API_KEY) {
-        throw new UnrecoverableError('document-extract: OPENROUTER_API_KEY not configured');
-      }
-
-      const lockKey = sql`hashtextextended(${documentVersionId}, 0)`;
-
-      const rows = await deps.db
-        .select({
-          version: documentVersions,
-          document: documents,
-        })
-        .from(documentVersions)
-        .innerJoin(documents, eq(documents.id, documentVersions.documentId))
-        .where(
-          and(
-            eq(documentVersions.id, documentVersionId),
-            eq(documentVersions.teamId, teamId),
-          ),
-        )
-        .limit(1);
-      const hit = rows[0];
-      if (!hit) {
-        throw new UnrecoverableError(`document version ${documentVersionId} not found`);
-      }
-      const version = hit.version;
-      const document = hit.document;
-
-      if (document.deletedAt) {
-        // Document was deleted between enqueue and process. Don't error;
-        // the doc-chunks for this version will be cleaned up via the
-        // separate deletePoints path when the delete action ran.
-        return { documentVersionId, skipped: true, reason: 'document_deleted' };
-      }
-
-      // Already past 'chunked' (the embed worker promotes to 'embedded'
-      // once chunks land in Qdrant). Replays from the redocument-extract
-      // script intentionally re-enter here; the user must reset the
-      // status row first if they want a true re-extract.
-      if (version.processingStatus === 'chunked' || version.processingStatus === 'embedded') {
-        return { documentVersionId, skipped: true, reason: 'already_processed' };
-      }
-
-      if (document.visibility !== 'team') {
-        await deps.db
-          .update(documentVersions)
-          .set({
-            processingStatus: 'failed',
-            processingError: `visibility=${document.visibility} not processed`,
-          })
-          .where(eq(documentVersions.id, version.id));
-        return {
-          documentVersionId,
-          skipped: true,
-          reason: `visibility=${document.visibility}`,
-        };
-      }
-
-      // Mark as extracting so concurrent enqueues see progress.
-      await deps.db.transaction(async (tx) => {
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
-        await tx
-          .update(documentVersions)
-          .set({ processingStatus: 'extracting', processingError: null })
-          .where(eq(documentVersions.id, version.id));
-      });
-
-      // Bounds-check before reading the body. RustFS HEAD is cheap and
-      // surfaces oversize uploads without consuming bandwidth.
-      let body: Buffer;
-      try {
-        const fetched = await getObjectBuffer(
-          getS3Client(),
-          getDocumentsBucket(),
-          version.objectKey,
-          MAX_DOCUMENT_BYTES,
-        );
-        body = fetched.body;
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        await deps.db
-          .update(documentVersions)
-          .set({ processingStatus: 'failed', processingError: message.slice(0, 500) })
-          .where(eq(documentVersions.id, version.id));
-        throw err;
-      }
-
-      const contentType = (version.contentType ?? '').toLowerCase();
-      const text = await routeContentToText({ contentType, body, name: document.name });
-      if (text === null) {
-        const reason = `content_type=${contentType || 'unknown'} not supported`;
-        await deps.db
-          .update(documentVersions)
-          .set({ processingStatus: 'failed', processingError: reason })
-          .where(eq(documentVersions.id, version.id));
-        // Don't retry — adding a new extractor changes the policy, not
-        // the input. UnrecoverableError stops the BullMQ retry loop.
-        throw new UnrecoverableError(reason);
-      }
-
-      if (!text.trim()) {
-        const reason = 'no text extracted';
-        await deps.db
-          .update(documentVersions)
-          .set({ processingStatus: 'failed', processingError: reason })
-          .where(eq(documentVersions.id, version.id));
-        throw new UnrecoverableError(reason);
-      }
-
-      const chunks = chunkText(text);
-      if (chunks.length === 0) {
-        const reason = 'chunker produced no chunks';
-        await deps.db
-          .update(documentVersions)
-          .set({ processingStatus: 'failed', processingError: reason })
-          .where(eq(documentVersions.id, version.id));
-        throw new UnrecoverableError(reason);
-      }
-
-      // Single transaction: replace any existing chunks for this version
-      // (re-extract case) and stamp status. The unique index on
-      // (document_version_id, chunk_index) plus this transaction means
-      // concurrent jobs cannot interleave half-runs.
-      const insertedIds = await deps.db.transaction(async (tx) => {
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
-        await tx
-          .delete(documentChunks)
-          .where(eq(documentChunks.documentVersionId, version.id));
-        const inserted = await tx
-          .insert(documentChunks)
-          .values(
-            chunks.map((c) => ({
-              teamId,
-              documentId: document.id,
-              documentVersionId: version.id,
-              chunkIndex: c.index,
-              text: c.text,
-              tokenCount: c.tokenCount,
-            })),
-          )
-          .returning({ id: documentChunks.id });
-        await tx
-          .update(documentVersions)
-          .set({
-            processingStatus: 'chunked',
-            processingError: null,
-            extractionModelVersion: EXTRACT_CODE_VERSION,
-          })
-          .where(eq(documentVersions.id, version.id));
-        return inserted.map((r) => r.id);
-      });
-
-      // Fan out embed jobs. Each chunk's embed point id is deterministic
-      // so duplicate enqueues are safe.
-      for (const chunkId of insertedIds) {
-        await queue.enqueueEmbedJob({
-          rawEventId: version.sourceEventId ?? chunkId,
-          teamId,
-          documentChunkId: chunkId,
-          ...(targetCollection ? { targetCollection } : {}),
-        });
-      }
-
-      log.info(
-        {
-          documentVersionId,
-          chunkCount: chunks.length,
-          tokenTotal: chunks.reduce((sum, c) => sum + c.tokenCount, 0),
-        },
-        'document chunked',
-      );
-      return { documentVersionId, chunkCount: chunks.length };
-    },
+    async (job: Job<queue.DocumentExtractJobData>) => processDocumentExtractJob(deps, job.data, io),
     {
       connection: queue.getRedisConnection(),
       // PDF / vision extraction will be CPU- or LLM-bound; keep modest

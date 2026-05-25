@@ -1,0 +1,390 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { PGlite } from '@electric-sql/pglite';
+import {
+  type Db,
+  documentChunks,
+  documents,
+  documentVersions,
+} from '@timeline/db';
+import { withTeam, type queue as queueNS } from '@timeline/shared';
+import { drizzle } from 'drizzle-orm/pglite';
+import { eq } from 'drizzle-orm';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  type DocumentExtractIO,
+  processDocumentExtractJob,
+} from './documentExtract.js';
+
+/**
+ * Real-DB integration tests for the documentExtract worker handler.
+ * Uses pglite for Postgres + injected fakes for S3 and the embed queue
+ * so no Redis or RustFS connection is required.
+ *
+ * What these prove that mocks-only tests cannot:
+ *   - Status transitions land in actual rows (pending → extracting →
+ *     chunked, or → failed with an error message).
+ *   - Chunks are inserted with monotonic indices and the
+ *     (document_version_id, chunk_index) unique index works.
+ *   - Re-running on an already-chunked version is a no-op (idempotency).
+ *   - One embed job is enqueued per chunk, carrying the right
+ *     documentChunkId + the document's source_event_id as rawEventId.
+ *   - Soft-deleted documents are skipped without touching status.
+ *   - Unsupported content-types stamp `processing_status='failed'` with
+ *     a clear message and throw UnrecoverableError.
+ *   - Privacy gate: non-`team` visibility documents never produce chunks.
+ */
+
+type AnyDb = Db;
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_DIR = join(__dirname, '../../../../packages/db/drizzle');
+
+async function applyMigrations(pg: PGlite): Promise<void> {
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  for (const file of files) {
+    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
+    const statements = sql
+      .split('--> statement-breakpoint')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && s !== 'SELECT 1;');
+    for (const stmt of statements) {
+      await pg.exec(stmt);
+    }
+  }
+}
+
+const TEAM_ID = '11111111-1111-1111-1111-111111111111';
+const USER_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+async function seedTeam(pg: PGlite): Promise<void> {
+  await pg.exec(`INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 't', 'Test Team');`);
+  await pg.exec(`INSERT INTO users (id, email) VALUES ('${USER_A}', 'a@test.local');`);
+  await pg.exec(
+    `INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${USER_A}', 'owner');`,
+  );
+}
+
+interface Harness {
+  pg: PGlite;
+  db: AnyDb;
+  fetchBlob: ReturnType<typeof vi.fn>;
+  enqueueEmbed: ReturnType<typeof vi.fn>;
+  io: DocumentExtractIO;
+}
+
+async function makeHarness(blobBody: string): Promise<Harness> {
+  const pg = new PGlite();
+  await applyMigrations(pg);
+  await seedTeam(pg);
+  const db = drizzle(pg) as unknown as AnyDb;
+  const fetchBlob = vi.fn(async () => ({ body: Buffer.from(blobBody, 'utf-8') }));
+  const enqueueEmbed = vi.fn(async (_data: queueNS.EmbedJobData) => undefined);
+  const io: DocumentExtractIO = {
+    fetchBlob,
+    enqueueEmbed,
+    requireEnv: () => undefined, // Tests don't need the OPENROUTER gate.
+  };
+  return { pg, db, fetchBlob, enqueueEmbed, io };
+}
+
+/**
+ * Helper: create a document via the scope, finalize the upload event,
+ * and return the version row. Mirrors what the web finalize action
+ * would do.
+ */
+async function createFinalisedDocument(
+  db: AnyDb,
+  opts: {
+    name: string;
+    contentType: string;
+    visibility?: 'team' | 'private' | 'specific_users';
+  },
+): Promise<{ documentId: string; versionId: string }> {
+  const scope = withTeam(db, TEAM_ID, USER_A);
+  const created = await scope.createDocument({
+    name: opts.name,
+    folderId: null,
+    filename: opts.name,
+    contentType: opts.contentType,
+    visibility: opts.visibility ?? 'team',
+  });
+  const finalised = await scope.finalizeDocumentVersion({
+    versionId: created.version.id,
+    byteSize: 1024,
+    contentType: opts.contentType,
+  });
+  return { documentId: created.document.id, versionId: finalised.version.id };
+}
+
+let h: Harness;
+
+afterEach(async () => {
+  if (h?.pg) await h.pg.close();
+});
+
+describe('processDocumentExtractJob — happy path', () => {
+  it('chunks a text document, inserts chunks, enqueues one embed per chunk', async () => {
+    h = await makeHarness('Hello world. This is a small text doc.');
+    const { documentId, versionId } = await createFinalisedDocument(h.db, {
+      name: 'notes.txt',
+      contentType: 'text/plain',
+    });
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(result.chunkCount).toBeGreaterThanOrEqual(1);
+    // Status promoted to 'chunked'.
+    const status = await h.pg.query<{ processing_status: string }>(
+      `SELECT processing_status FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(status.rows[0]?.processing_status).toBe('chunked');
+    // Chunks landed with monotonic indices.
+    const chunks = await h.pg.query<{ chunk_index: number }>(
+      `SELECT chunk_index FROM document_chunks WHERE document_version_id = $1 ORDER BY chunk_index`,
+      [versionId],
+    );
+    expect(chunks.rows.length).toBe(result.chunkCount);
+    chunks.rows.forEach((r, i) => expect(r.chunk_index).toBe(i));
+    // One embed job per chunk, each carrying the documentChunkId.
+    expect(h.enqueueEmbed).toHaveBeenCalledTimes(result.chunkCount ?? 0);
+    const enqueued = h.enqueueEmbed.mock.calls.map(
+      (c) => c[0] as queueNS.EmbedJobData,
+    );
+    for (const job of enqueued) {
+      expect(job.teamId).toBe(TEAM_ID);
+      expect(job.documentChunkId).toBeTruthy();
+      // rawEventId should be the document's upload event id, not the chunk id.
+      expect(job.rawEventId).not.toBe(job.documentChunkId);
+    }
+    // documentId loaded for cross-checking the upload event source id.
+    expect(documentId).toBeTruthy();
+  });
+
+  it('threads targetCollection through every embed job', async () => {
+    h = await makeHarness('content');
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'a.txt',
+      contentType: 'text/plain',
+    });
+    await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID, targetCollection: 'docs_v2' },
+      h.io,
+    );
+    for (const call of h.enqueueEmbed.mock.calls) {
+      expect((call[0] as queueNS.EmbedJobData).targetCollection).toBe('docs_v2');
+    }
+  });
+});
+
+describe('processDocumentExtractJob — short-circuits', () => {
+  it('skips a soft-deleted document without touching status or chunks', async () => {
+    h = await makeHarness('content');
+    const { documentId, versionId } = await createFinalisedDocument(h.db, {
+      name: 'gone.txt',
+      contentType: 'text/plain',
+    });
+    await withTeam(h.db, TEAM_ID, USER_A).softDeleteDocument(documentId);
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe('document_deleted');
+    expect(h.enqueueEmbed).not.toHaveBeenCalled();
+    // Status stays at 'pending' — the worker did not stamp.
+    const status = await h.pg.query<{ processing_status: string }>(
+      `SELECT processing_status FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(status.rows[0]?.processing_status).toBe('pending');
+  });
+
+  it('is idempotent: a second run on an already-chunked version is a no-op', async () => {
+    h = await makeHarness('idempotent content here');
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'idem.txt',
+      contentType: 'text/plain',
+    });
+    await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    const callsAfterFirst = h.enqueueEmbed.mock.calls.length;
+    const chunksAfterFirst = await h.pg.query(
+      `SELECT count(*)::text AS c FROM document_chunks WHERE document_version_id = $1`,
+      [versionId],
+    );
+    // Second run.
+    const second = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(second.skipped).toBe(true);
+    expect(second.reason).toBe('already_processed');
+    // No additional embed enqueues.
+    expect(h.enqueueEmbed.mock.calls.length).toBe(callsAfterFirst);
+    // Chunk count unchanged (no duplicate inserts).
+    const chunksAfterSecond = await h.pg.query(
+      `SELECT count(*)::text AS c FROM document_chunks WHERE document_version_id = $1`,
+      [versionId],
+    );
+    expect(
+      (chunksAfterSecond.rows[0] as { c: string }).c,
+    ).toBe((chunksAfterFirst.rows[0] as { c: string }).c);
+  });
+
+  it('throws UnrecoverableError for non-existent version (does not enqueue)', async () => {
+    h = await makeHarness('content');
+    const FAKE = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+    await expect(
+      processDocumentExtractJob(
+        { db: h.db },
+        { documentVersionId: FAKE, teamId: TEAM_ID },
+        h.io,
+      ),
+    ).rejects.toThrow(/not found/);
+    expect(h.enqueueEmbed).not.toHaveBeenCalled();
+  });
+});
+
+describe('processDocumentExtractJob — privacy gate', () => {
+  it('stamps failed and skips when document visibility is not "team"', async () => {
+    h = await makeHarness('private content');
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'private.txt',
+      contentType: 'text/plain',
+      visibility: 'private',
+    });
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toContain('visibility=private');
+    // Status is stamped 'failed' with the visibility reason so the
+    // redocument-extract script can re-pick it up after a relaxation.
+    const row = await h.pg.query<{ processing_status: string; processing_error: string }>(
+      `SELECT processing_status, processing_error FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(row.rows[0]?.processing_status).toBe('failed');
+    expect(row.rows[0]?.processing_error).toContain('visibility=private');
+    // Critically: blob was never fetched, no embed jobs enqueued.
+    expect(h.fetchBlob).not.toHaveBeenCalled();
+    expect(h.enqueueEmbed).not.toHaveBeenCalled();
+  });
+});
+
+describe('processDocumentExtractJob — content-type routing', () => {
+  it('stamps failed + throws UnrecoverableError for unsupported content type', async () => {
+    h = await makeHarness('binary-like content');
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'scan.pdf',
+      contentType: 'application/pdf',
+    });
+    await expect(
+      processDocumentExtractJob(
+        { db: h.db },
+        { documentVersionId: versionId, teamId: TEAM_ID },
+        h.io,
+      ),
+    ).rejects.toThrow(/content_type=application\/pdf not supported/);
+    const row = await h.pg.query<{ processing_status: string; processing_error: string }>(
+      `SELECT processing_status, processing_error FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(row.rows[0]?.processing_status).toBe('failed');
+    expect(row.rows[0]?.processing_error).toContain('content_type=application/pdf');
+    expect(h.enqueueEmbed).not.toHaveBeenCalled();
+  });
+
+  it('falls back to extension routing when content type is unset', async () => {
+    h = await makeHarness('# Markdown\n\nHello world.');
+    // Pass empty contentType — the router should still accept .md via
+    // the filename extension fallback.
+    const scope = withTeam(h.db, TEAM_ID, USER_A);
+    const created = await scope.createDocument({
+      name: 'README.md',
+      folderId: null,
+      filename: 'README.md',
+      contentType: 'application/octet-stream',
+    });
+    const finalised = await scope.finalizeDocumentVersion({
+      versionId: created.version.id,
+      byteSize: 25,
+      contentType: 'application/octet-stream',
+    });
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: finalised.version.id, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(result.chunkCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('refuses obvious binary content even when extension looks text-ish', async () => {
+    // 16 NUL bytes in the head — the heuristic should reject.
+    h = await makeHarness('\0'.repeat(20) + 'rest');
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'fake.txt',
+      contentType: 'text/plain',
+    });
+    await expect(
+      processDocumentExtractJob(
+        { db: h.db },
+        { documentVersionId: versionId, teamId: TEAM_ID },
+        h.io,
+      ),
+    ).rejects.toThrow();
+    const row = await h.pg.query<{ processing_status: string }>(
+      `SELECT processing_status FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(row.rows[0]?.processing_status).toBe('failed');
+  });
+});
+
+describe('processDocumentExtractJob — fetchBlob failure', () => {
+  it('stamps failed and rethrows when the blob fetch errors (lets BullMQ retry)', async () => {
+    h = await makeHarness('content');
+    const { versionId } = await createFinalisedDocument(h.db, {
+      name: 'a.txt',
+      contentType: 'text/plain',
+    });
+    h.fetchBlob.mockRejectedValueOnce(new Error('S3 timeout'));
+    await expect(
+      processDocumentExtractJob(
+        { db: h.db },
+        { documentVersionId: versionId, teamId: TEAM_ID },
+        h.io,
+      ),
+    ).rejects.toThrow(/S3 timeout/);
+    const row = await h.pg.query<{ processing_status: string; processing_error: string }>(
+      `SELECT processing_status, processing_error FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(row.rows[0]?.processing_status).toBe('failed');
+    expect(row.rows[0]?.processing_error).toContain('S3 timeout');
+  });
+});
+
+// Keep the unused imports load-bearing so future tests can use the schema
+// objects directly. Without this, dead-import lint complains.
+void documentChunks;
+void documents;
+void documentVersions;
+void eq;

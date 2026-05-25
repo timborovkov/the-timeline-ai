@@ -12,6 +12,7 @@
     "redocument-extract": "tsx src/scripts/redocument-extract.ts",
     "redocument-embed": "tsx src/scripts/redocument-embed.ts",
     "lint": "eslint src",
+    "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -21,8 +22,10 @@
     "drizzle-orm": "^0.38.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.4.6",
     "@types/node": "^20.0.0",
     "tsx": "^4.19.0",
-    "typescript": "*"
+    "typescript": "*",
+    "vitest": "^4.1.6"
   }
 }
