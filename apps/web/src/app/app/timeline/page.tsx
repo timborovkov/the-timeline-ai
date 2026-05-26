@@ -1,11 +1,17 @@
-import { telegramChatBindings, telegramUserTeams, users } from '@timeline/db';
+import {
+  integrations as integrationsTable,
+  mcpServers,
+  telegramChatBindings,
+  telegramUserTeams,
+  users,
+} from '@timeline/db';
 import {
   getAudioBucket,
   getS3PresignClient,
   getSignedGetObjectUrl,
   withTeam,
 } from '@timeline/shared';
-import { count, eq, inArray } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull } from 'drizzle-orm';
 import { Cable, Send } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -62,7 +68,7 @@ export default async function TimelinePage({ searchParams }: Props) {
   const sp = await searchParams;
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
-  const [linkedTgUsers, boundTgChats, connectedIntegrations] = await Promise.all([
+  const [linkedTgUsers, boundTgChats, nativeIntegrations, teamMcpServers] = await Promise.all([
     db
       .select({ total: count() })
       .from(telegramUserTeams)
@@ -71,9 +77,18 @@ export default async function TimelinePage({ searchParams }: Props) {
       .select({ total: count() })
       .from(telegramChatBindings)
       .where(eq(telegramChatBindings.teamId, active.teamId)),
-    scope.integrations.listIntegrations(),
+    db
+      .select({ total: count() })
+      .from(integrationsTable)
+      .where(eq(integrationsTable.teamId, active.teamId)),
+    db
+      .select({ total: count() })
+      .from(mcpServers)
+      .where(and(eq(mcpServers.teamId, active.teamId), isNull(mcpServers.userId))),
   ]);
   const telegramConnectionCount = (linkedTgUsers[0]?.total ?? 0) + (boundTgChats[0]?.total ?? 0);
+  const integrationConnectionCount =
+    (nativeIntegrations[0]?.total ?? 0) + (teamMcpServers[0]?.total ?? 0);
 
   // Parse once so the indicator chip, the open-state of <details>, the form
   // inputs, and the actual query all agree on what's filtered. Raw
@@ -199,7 +214,7 @@ export default async function TimelinePage({ searchParams }: Props) {
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              {connectedIntegrations.length} connected
+              {integrationConnectionCount} connected
             </div>
             <Link href="/app/team/integrations" className="text-signal underline">
               Open integrations

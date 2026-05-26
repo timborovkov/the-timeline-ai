@@ -53,7 +53,7 @@ export default async function TeamSettingsPage() {
             <CardTitle>Team identity</CardTitle>
           </CardHeader>
           <CardContent>
-            <RenameTeamForm currentName={active.teamName} />
+            <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
           </CardContent>
         </Card>
       ) : null}

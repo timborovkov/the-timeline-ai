@@ -39,10 +39,11 @@ export function CreateTeamForm({ id = 'new-team-name' }: { id?: string }) {
   );
 }
 
-export function RenameTeamForm({ currentName }: { currentName: string }) {
+export function RenameTeamForm({ currentName, teamId }: { currentName: string; teamId: string }) {
   const [state, action] = useFormState<RenameTeamState, FormData>(renameTeamAction, {});
   return (
     <form action={action} className="space-y-3">
+      <input type="hidden" name="teamId" value={teamId} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="flex-1 space-y-2">
           <Label htmlFor="team-name">Team name</Label>
