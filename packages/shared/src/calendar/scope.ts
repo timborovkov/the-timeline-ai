@@ -7,6 +7,7 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 
+import { getQdrantClient, buildPointId } from '../qdrant/client.js';
 import { enqueueCalendarEventEmbedJob } from '../queue/queues.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
@@ -384,11 +385,34 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
 
         if (!updated) return null;
 
+        const newVis = patch.visibility ?? row.visibility;
+        const newVisUserIds = patch.visibilityUserIds ?? row.visibilityUserIds;
+        const newTitle = patch.title ?? row.title;
+
+        // Sync linked raw_events: title, time, AND visibility must stay
+        // in lockstep with the calendar event. Without the visibility
+        // update, the timeline's visibilityFilter keeps serving full
+        // content to teammates after the event goes private.
+        const linkedRawEventIds = [row.startAtRawEventId, row.scheduledRawEventId].filter(
+          (rid): rid is string => rid !== null && rid.length > 0,
+        );
+        if (linkedRawEventIds.length > 0) {
+          const rawPatch: Record<string, unknown> = {
+            visibility: newVis,
+            visibilityUserIds: newVisUserIds,
+          };
+          for (const rid of linkedRawEventIds) {
+            await tx.update(rawEvents).set(rawPatch).where(eq(rawEvents.id, rid));
+          }
+        }
+
         if ((patch.startAt || patch.title) && row.startAtRawEventId) {
-          const rawPatch: Record<string, unknown> = {};
-          if (patch.startAt) rawPatch.occurredAt = patch.startAt;
-          rawPatch.contentText = patch.title ?? row.title;
-          await tx.update(rawEvents).set(rawPatch).where(eq(rawEvents.id, row.startAtRawEventId));
+          const startRawPatch: Record<string, unknown> = { contentText: newTitle };
+          if (patch.startAt) startRawPatch.occurredAt = patch.startAt;
+          await tx
+            .update(rawEvents)
+            .set(startRawPatch)
+            .where(eq(rawEvents.id, row.startAtRawEventId));
         }
 
         if (patch.title && row.scheduledRawEventId) {
@@ -402,17 +426,27 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           teamId,
           authorUserId: userId,
           source: 'calendar',
-          contentText: `Updated: ${patch.title ?? row.title}`,
+          contentText: `Updated: ${newTitle}`,
           occurredAt: new Date(),
-          visibility: patch.visibility ?? row.visibility,
-          visibilityUserIds: patch.visibilityUserIds ?? row.visibilityUserIds,
+          visibility: newVis,
+          visibilityUserIds: newVisUserIds,
           sourceMetadata: {
             calendar_event_id: id,
             action: 'updated',
           },
         });
 
-        await enqueueCalendarEventEmbedJob(teamId, id);
+        // If the event is still team-visible, re-embed with updated content.
+        // If it went non-team, delete the old Qdrant point so stale content
+        // doesn't surface in semantic search.
+        if (newVis === 'team') {
+          await enqueueCalendarEventEmbedJob(teamId, id);
+        } else {
+          const client = getQdrantClient();
+          const models = ['openai/text-embedding-3-small'];
+          const pointIds = models.map((m) => buildPointId('calendar_event', id, m));
+          await client.deletePoints(pointIds).catch(() => undefined);
+        }
 
         return redactIfNeeded(updated as CalendarEventRow);
       });
@@ -466,6 +500,11 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
             action: 'cancelled',
           },
         });
+
+        const client = getQdrantClient();
+        const models = ['openai/text-embedding-3-small'];
+        const pointIds = models.map((m) => buildPointId('calendar_event', id, m));
+        await client.deletePoints(pointIds).catch(() => undefined);
 
         return true;
       });
