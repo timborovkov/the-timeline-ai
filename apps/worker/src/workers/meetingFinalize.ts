@@ -115,6 +115,23 @@ async function enqueueRawEventPipeline(
   ]);
 }
 
+async function enqueueMeetingChunkEmbeds(
+  env: ReturnType<typeof getEnv>,
+  io: MeetingFinalizeIO,
+  meetingChunkIds: string[],
+  teamId: string,
+) {
+  if (meetingChunkIds.length === 0) return;
+  if (!env.REDIS_URL && !io.enqueueEmbedJob) return;
+
+  const enqueueEmbedJob = io.enqueueEmbedJob ?? queue.enqueueEmbedJob;
+  await Promise.all(
+    meetingChunkIds.map((meetingChunkId) =>
+      enqueueEmbedJob({ scope: 'meeting_chunk', meetingChunkId, teamId }),
+    ),
+  );
+}
+
 async function summarizeTranscript(
   meeting: typeof meetingsTable.$inferSelect,
   chunks: TranscriptChunk[],
@@ -183,7 +200,16 @@ export async function processMeetingFinalizeJob(
     // worker-idempotent.
     const rawEventId = await findFinalizedRawEventId(deps.db, meetingId, teamId);
     if (rawEventId) {
-      await enqueueRawEventPipeline(env, io, rawEventId, teamId);
+      const chunks = await loadMeetingChunks(deps.db, meetingId, teamId);
+      await Promise.all([
+        enqueueRawEventPipeline(env, io, rawEventId, teamId),
+        enqueueMeetingChunkEmbeds(
+          env,
+          io,
+          chunks.map((c) => c.id),
+          teamId,
+        ),
+      ]);
     }
     return { skipped: 'already_completed', meetingId };
   }
@@ -312,7 +338,7 @@ export async function processMeetingFinalizeJob(
           .set({ status: 'completed', updatedAt: new Date() })
           .where(eq(meetingsTable.id, meetingId));
 
-        return { minutes, rawEventId };
+        return { minutes, rawEventId, meetingChunkIds: finalChunks.map((c) => c.id) };
       });
 
       if ('retryChunks' in finalized) {
@@ -321,7 +347,10 @@ export async function processMeetingFinalizeJob(
       }
 
       if (finalized.rawEventId) {
-        await enqueueRawEventPipeline(env, io, finalized.rawEventId, teamId);
+        await Promise.all([
+          enqueueRawEventPipeline(env, io, finalized.rawEventId, teamId),
+          enqueueMeetingChunkEmbeds(env, io, finalized.meetingChunkIds, teamId),
+        ]);
       }
 
       return {

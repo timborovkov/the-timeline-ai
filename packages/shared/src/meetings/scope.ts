@@ -20,6 +20,7 @@ type MeetingStatus = 'pending' | 'joining' | 'active' | 'processing' | 'complete
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
+type TranscriptChunk = typeof meetingTranscriptChunks.$inferSelect;
 
 export interface MeetingScopeDeps {
   db: Db;
@@ -72,6 +73,52 @@ export interface AppendChunkInput {
 export interface AppendChunkResult {
   chunkId: string;
   deduplicated: boolean;
+}
+
+function formatTranscript(chunks: TranscriptChunk[]): string {
+  return chunks
+    .map((c) => `[${String(Math.floor(c.startMs / 1000))}s] ${c.speaker ?? 'Unknown'}: ${c.text}`)
+    .join('\n');
+}
+
+async function refreshFinalizedMeetingEvent(
+  tx: DbOrTx,
+  args: { meetingId: string; teamId: string; rawEventId: string },
+) {
+  const chunks = await tx
+    .select()
+    .from(meetingTranscriptChunks)
+    .where(
+      and(
+        eq(meetingTranscriptChunks.meetingId, args.meetingId),
+        eq(meetingTranscriptChunks.teamId, args.teamId),
+      ),
+    )
+    .orderBy(asc(meetingTranscriptChunks.startMs));
+
+  const speakers = [...new Set(chunks.map((c) => c.speaker).filter(Boolean))];
+  const contentText = chunks.length > 0 ? formatTranscript(chunks) : 'Meeting (no transcript)';
+  const metadataPatch = JSON.stringify({
+    speakers,
+    chunk_count: chunks.length,
+    summary_stale_at: new Date().toISOString(),
+  });
+
+  await tx
+    .update(rawEvents)
+    .set({
+      contentText,
+      sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'summary' - 'action_items') || ${metadataPatch}::jsonb`,
+    })
+    .where(and(eq(rawEvents.id, args.rawEventId), eq(rawEvents.teamId, args.teamId)));
+
+  await tx
+    .update(meetings)
+    .set({
+      metadata: sql`(COALESCE(${meetings.metadata}, '{}'::jsonb) - 'summary' - 'summary_model' - 'action_items') || ${metadataPatch}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(meetings.id, args.meetingId), eq(meetings.teamId, args.teamId)));
 }
 
 /**
@@ -152,8 +199,21 @@ async function appendMeetingChunkTx(
             sql`${meetingTranscriptChunks.rawEventId} IS NULL`,
           ),
         );
+      await refreshFinalizedMeetingEvent(tx, {
+        meetingId: args.meetingId,
+        teamId: args.teamId,
+        rawEventId,
+      });
     }
     return { chunkId, deduplicated: true };
+  }
+
+  if (rawEventId) {
+    await refreshFinalizedMeetingEvent(tx, {
+      meetingId: args.meetingId,
+      teamId: args.teamId,
+      rawEventId,
+    });
   }
 
   return { chunkId, deduplicated: false };

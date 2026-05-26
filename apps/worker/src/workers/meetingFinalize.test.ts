@@ -127,11 +127,17 @@ describe('processMeetingFinalizeJob', () => {
       { text: 'Bob owns the migration', owner: 'Bob' },
       { text: 'Schedule design review' },
     ]);
+    const enqueueExtractJob = vi.fn().mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn().mockResolvedValue(undefined);
 
     const result = await processMeetingFinalizeJob(
       { db: db as never },
       { meetingId: MEETING_ID, teamId: TEAM_ID },
-      { chatStructured: chat as never },
+      {
+        chatStructured: chat as never,
+        enqueueExtractJob: enqueueExtractJob as never,
+        enqueueEmbedJob: enqueueEmbedJob as never,
+      },
     );
 
     expect(chat).toHaveBeenCalledOnce();
@@ -166,6 +172,24 @@ describe('processMeetingFinalizeJob', () => {
     expect(eventMeta.summary).toBe('Meeting summary here.');
     expect(eventMeta.speakers).toEqual(['Alice', 'Bob']);
     expect(eventMeta.duration_minutes).toBe(30);
+    expect(enqueueExtractJob).toHaveBeenCalledWith({ rawEventId: events[0]?.id, teamId: TEAM_ID });
+
+    const chunks = await db
+      .select()
+      .from(meetingTranscriptChunks)
+      .where(eq(meetingTranscriptChunks.meetingId, MEETING_ID));
+    for (const chunk of chunks) {
+      expect(enqueueEmbedJob).toHaveBeenCalledWith({
+        scope: 'meeting_chunk',
+        meetingChunkId: chunk.id,
+        teamId: TEAM_ID,
+      });
+    }
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'raw_event',
+      rawEventId: events[0]?.id,
+      teamId: TEAM_ID,
+    });
   });
 
   it('empty transcript: completes without calling the LLM', async () => {
@@ -253,6 +277,17 @@ describe('processMeetingFinalizeJob', () => {
     expect(enqueueEmbedJob).toHaveBeenCalledWith({
       scope: 'raw_event',
       rawEventId: event?.id,
+      teamId: TEAM_ID,
+    });
+    const chunk = (
+      await db
+        .select()
+        .from(meetingTranscriptChunks)
+        .where(eq(meetingTranscriptChunks.meetingId, MEETING_ID))
+    )[0];
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'meeting_chunk',
+      meetingChunkId: chunk?.id,
       teamId: TEAM_ID,
     });
   });

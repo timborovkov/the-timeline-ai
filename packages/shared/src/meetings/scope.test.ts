@@ -107,6 +107,11 @@ describe('meetings scope', () => {
     const m = await scope.createMeeting({
       platform: 'zoom',
       meetingUrl: 'https://zoom.us/j/1',
+      metadata: {
+        summary: 'Old summary',
+        summary_model: 'test-model',
+        action_items: [{ text: 'Old action', owner: null }],
+      },
     });
     await scope.updateMeetingStatus(m.id, 'completed');
     const eventRows = await db
@@ -122,9 +127,13 @@ describe('meetings scope', () => {
           meeting_id: m.id,
           meeting_chunk_provider_id: `meeting-finalized:${m.id}`,
           chunk_count: 0,
+          summary: 'Old summary',
+          action_items: [{ text: 'Old action', owner: null }],
         },
       })
       .returning({ id: rawEvents.id });
+    const rawEventId = eventRows[0]?.id;
+    if (!rawEventId) throw new Error('missing raw event');
 
     const result = await scope.appendMeetingChunk({
       meetingId: m.id,
@@ -141,7 +150,23 @@ describe('meetings scope', () => {
       .where(
         eq(meetingTranscriptChunks.id, result?.chunkId ?? '00000000-0000-0000-0000-000000000000'),
       );
-    expect(chunkRows[0]?.rawEventId).toBe(eventRows[0]?.id);
+    expect(chunkRows[0]?.rawEventId).toBe(rawEventId);
+
+    const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
+    expect(event?.contentText).toBe('[1s] Alice: late utterance');
+    const eventMeta = event?.sourceMetadata as Record<string, unknown>;
+    expect(eventMeta.chunk_count).toBe(1);
+    expect(eventMeta.speakers).toEqual(['Alice']);
+    expect(eventMeta.summary).toBeUndefined();
+    expect(eventMeta.action_items).toBeUndefined();
+    expect(eventMeta.summary_stale_at).toBeTypeOf('string');
+
+    const meeting = (await db.select().from(meetings).where(eq(meetings.id, m.id)))[0];
+    const meetingMeta = meeting?.metadata as Record<string, unknown>;
+    expect(meetingMeta.summary).toBeUndefined();
+    expect(meetingMeta.summary_model).toBeUndefined();
+    expect(meetingMeta.action_items).toBeUndefined();
+    expect(meetingMeta.summary_stale_at).toBeTypeOf('string');
   });
 
   it('updateMeetingStatus flips status and merges metadata', async () => {
