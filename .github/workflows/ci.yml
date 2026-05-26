@@ -14,20 +14,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        # Pin to v4.4.0 SHA explicitly. The v4 tag was previously resolving
-        # to a v4.3.0 SHA whose codeload archive was persistently returning
-        # 404 from the Azure-hosted runners — re-runs stayed broken. Newer
-        # SHA bypasses the bad cache.
-        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
-        with:
-          version: 9.12.0
-
+      # Use corepack instead of `pnpm/action-setup`. The latter's codeload
+      # archives have been intermittently 404ing from GitHub-hosted runners
+      # across multiple v4.x SHAs. Corepack ships with Node and pins pnpm
+      # via the project's `packageManager` field — same effect, no external
+      # action download.
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: pnpm
+
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.12.0 --activate
+
+      - name: Configure pnpm store cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
