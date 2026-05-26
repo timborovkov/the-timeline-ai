@@ -70,24 +70,33 @@ export async function writeIntegrationEvents(deps: {
   const inserted = await deps.db
     .insert(rawEvents)
     .values(values)
-    .onConflictDoNothing()
-    .returning({ id: rawEvents.id });
+    .returning({
+      id: rawEvents.id,
+      dedupKey: sql<string>`${rawEvents.sourceMetadata} ->> 'dedup_key'`,
+    })
+    .onConflictDoNothing();
 
   await Promise.all(
     inserted.map((row) => enqueueEmbedJob({ scope: 'raw_event', teamId, rawEventId: row.id })),
   );
 
-  // Dedupe by externalId within the batch (a single PR can fire
-  // pr.updated AND pr.review.approved in one webhook; both carry the
-  // same objectMap).
+  // Workspace-object upsert only fires for events that actually
+  // inserted (i.e. the dedup_key wasn't already on raw_events). A
+  // webhook replay that produces zero new raw_events shouldn't bump
+  // mapped-entity rows or re-enqueue object embed jobs — that would
+  // re-embed unchanged entities every time the same payload arrives.
+  // Dedupe by externalId within the surviving set (a single PR can
+  // fire pr.updated AND pr.review.approved in one webhook; both carry
+  // the same objectMap).
+  const insertedDedupKeys = new Set(inserted.map((r) => r.dedupKey));
   const byExternal = new Map<string, IntegrationEvent & { objectMap: ObjectMapping }>();
   for (const evt of deps.events) {
-    if (evt.objectMap) {
-      byExternal.set(
-        evt.objectMap.externalId,
-        evt as IntegrationEvent & { objectMap: ObjectMapping },
-      );
-    }
+    if (!evt.objectMap) continue;
+    if (!insertedDedupKeys.has(evt.dedupKey)) continue;
+    byExternal.set(
+      evt.objectMap.externalId,
+      evt as IntegrationEvent & { objectMap: ObjectMapping },
+    );
   }
   if (byExternal.size > 0) {
     await upsertWorkspaceObjects(deps.db, deps.integration, [...byExternal.values()]);

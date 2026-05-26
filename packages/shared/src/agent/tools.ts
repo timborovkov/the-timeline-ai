@@ -18,13 +18,30 @@ const sourceKindSchema = z.enum([
   'object_note',
   'object_change',
   'entity',
+  // Phase 11 — integration sync rows are indexed by the embed worker
+  // with source_kind='integration_event' on the Qdrant payload. Without
+  // this value the agent can't narrow semantic search to integration
+  // points even though they exist in the index.
+  'integration_event',
+]);
+
+// Mirrors the `event_source` pg enum. Kept in lockstep with the
+// outbound MCP server's `tools/list` schema and `event-writer.ts`.
+const eventSourceSchema = z.enum([
+  'web',
+  'telegram',
+  'email',
+  'system',
+  'document',
+  'meeting',
+  'integration',
 ]);
 
 const searchTimelineInput = z.object({
   query: z.string().trim().min(1).max(500),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
-  source: z.enum(['web', 'telegram', 'email', 'system']).optional(),
+  source: eventSourceSchema.optional(),
   entityIds: z.array(z.string().regex(UUID_RE)).max(20).optional(),
   /**
    * Narrow vector search to a subset of source kinds. Defaults to all kinds
@@ -32,7 +49,7 @@ const searchTimelineInput = z.object({
    * anchored kinds (raw_event, fact). Workspace-graph kinds are filterable
    * but currently surface via the entity / object tools, not this one.
    */
-  sourceKind: z.union([sourceKindSchema, z.array(sourceKindSchema).max(6)]).optional(),
+  sourceKind: z.union([sourceKindSchema, z.array(sourceKindSchema).max(7)]).optional(),
   limit: z.number().int().min(1).max(20).optional(),
 });
 
@@ -44,7 +61,7 @@ const listEventsInput = z.object({
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
   authorUserId: z.string().regex(UUID_RE).optional(),
-  source: z.enum(['web', 'telegram', 'email', 'system']).optional(),
+  source: eventSourceSchema.optional(),
   limit: z.number().int().min(1).max(50).optional(),
 });
 
