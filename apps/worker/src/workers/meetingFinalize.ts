@@ -144,8 +144,9 @@ export async function processMeetingFinalizeJob(
     if (last) minutes = Math.max(1, Math.ceil(last.endMs / 60000));
   }
 
-  // Patch the meeting metadata + status. Idempotent: a second run sees
-  // status='completed' above and short-circuits.
+  // Patch meeting metadata first, but do NOT flip status yet. Status
+  // only moves to 'completed' after the raw_event + backfill succeed so
+  // a crash mid-way causes a retry instead of silently skipping.
   const metadataPatch: Record<string, unknown> = {
     finalized_at: new Date().toISOString(),
   };
@@ -156,7 +157,6 @@ export async function processMeetingFinalizeJob(
   await deps.db
     .update(meetingsTable)
     .set({
-      status: 'completed',
       updatedAt: new Date(),
       metadata: sql`COALESCE(${meetingsTable.metadata}, '{}'::jsonb) || ${patchJson}::jsonb`,
     })
@@ -178,15 +178,14 @@ export async function processMeetingFinalizeJob(
       : null;
   const contentText = fullTranscript ?? 'Meeting (no transcript)';
 
+  const dedupKey = `meeting-finalized:${meetingId}`;
   const sourceMetadata: Record<string, unknown> = {
     meeting_id: meetingId,
     platform: meeting.platform,
     speakers,
     duration_minutes: minutes,
     chunk_count: chunks.length,
-    // Reuses the existing raw_events_meeting_chunk_id_unq partial unique
-    // index for DB-level dedup if finalize runs twice.
-    meeting_chunk_provider_id: `meeting-finalized:${meetingId}`,
+    meeting_chunk_provider_id: dedupKey,
   };
   if (meeting.title) sourceMetadata.title = meeting.title;
   if (summary) sourceMetadata.summary = summary;
@@ -206,7 +205,24 @@ export async function processMeetingFinalizeJob(
     })
     .onConflictDoNothing()
     .returning({ id: rawEvents.id });
-  const rawEventId = eventInsert[0]?.id;
+
+  let rawEventId = eventInsert[0]?.id;
+
+  // On dedup conflict (prior run inserted but crashed before completing),
+  // look up the existing row so backfill + enqueue still run.
+  if (!rawEventId) {
+    const existing = await deps.db
+      .select({ id: rawEvents.id })
+      .from(rawEvents)
+      .where(
+        and(
+          eq(rawEvents.teamId, teamId),
+          sql`(${rawEvents.sourceMetadata} ->> 'meeting_chunk_provider_id') = ${dedupKey}`,
+        ),
+      )
+      .limit(1);
+    rawEventId = existing[0]?.id;
+  }
 
   if (rawEventId) {
     // Backfill rawEventId on all chunks so Qdrant meeting_chunk points
@@ -233,6 +249,13 @@ export async function processMeetingFinalizeJob(
   if (minutes > 0) {
     await deps.db.insert(meetingUsage).values({ teamId, meetingId, minutes }).onConflictDoNothing();
   }
+
+  // Status flip is last — a crash anywhere above means the retry will
+  // re-enter and complete the remaining steps.
+  await deps.db
+    .update(meetingsTable)
+    .set({ status: 'completed', updatedAt: new Date() })
+    .where(eq(meetingsTable.id, meetingId));
 
   return { meetingId, minutes, actionItems: actionItems.length };
 }
