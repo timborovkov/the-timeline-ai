@@ -256,6 +256,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
     ),
   );
+  const activeRawEventFilter = sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`;
 
   let membershipPromise: Promise<TeamRole> | undefined;
 
@@ -296,7 +297,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     return db
       .select()
       .from(rawEvents)
-      .where(and(inArray(rawEvents.id, ids), eq(rawEvents.teamId, teamId), visibilityFilter));
+      .where(
+        and(
+          inArray(rawEvents.id, ids),
+          eq(rawEvents.teamId, teamId),
+          visibilityFilter,
+          activeRawEventFilter,
+        ),
+      );
   }
 
   /**
@@ -394,7 +402,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
     async listEvents(filters: EventListFilters = {}) {
       await ensureMember();
-      const conditions = [eq(rawEvents.teamId, teamId), visibilityFilter];
+      const conditions = [eq(rawEvents.teamId, teamId), visibilityFilter, activeRawEventFilter];
       if (filters.authorUserId) {
         conditions.push(eq(rawEvents.authorUserId, filters.authorUserId));
       }
@@ -418,7 +426,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       const rows = await db
         .select()
         .from(rawEvents)
-        .where(and(eq(rawEvents.id, id), eq(rawEvents.teamId, teamId), visibilityFilter))
+        .where(
+          and(
+            eq(rawEvents.id, id),
+            eq(rawEvents.teamId, teamId),
+            visibilityFilter,
+            activeRawEventFilter,
+          ),
+        )
         .limit(1);
       return rows[0] ?? null;
     },

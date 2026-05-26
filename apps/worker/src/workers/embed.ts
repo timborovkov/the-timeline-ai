@@ -275,6 +275,22 @@ async function buildPlan(
   }
 }
 
+export async function buildPlanForTests(
+  db: Db,
+  data: queue.EmbedJobData,
+  scope: qdrant.PointScope,
+): Promise<{
+  text: string;
+  scope: qdrant.PointScope;
+  sourceKind: qdrant.SourceKind;
+  sourceId: string;
+  payloadOverrides: Partial<qdrant.QdrantPayload>;
+  occurredAt: Date;
+  authorUserId: string | null;
+} | null> {
+  return buildPlan(db, data, scope);
+}
+
 async function buildEventOrFactPlan(
   db: Db,
   data: queue.EmbedJobData,
@@ -739,7 +755,7 @@ async function buildCalendarEventPlan(db: Db, data: queue.EmbedJobData): Promise
     authorUserId: row.createdByUserId,
     payloadOverrides: {
       source: 'calendar',
-      event_id: row.scheduledRawEventId,
+      event_id: row.startAtRawEventId ?? row.scheduledRawEventId,
       visibility: row.visibility,
       visibility_user_ids: row.visibilityUserIds,
     },

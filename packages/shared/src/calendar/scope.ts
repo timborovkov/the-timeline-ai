@@ -220,10 +220,16 @@ async function assertEntitiesBelongToTeam(
 }
 
 async function deleteCalendarEventPoints(eventId: string): Promise<void> {
-  const client = getQdrantClient();
-  const models = ['openai/text-embedding-3-small'];
-  const pointIds = models.map((m) => buildPointId('calendar_event', eventId, m));
-  await client.deletePoints(pointIds).catch(() => undefined);
+  try {
+    const client = getQdrantClient();
+    const models = ['openai/text-embedding-3-small'];
+    const pointIds = models.map((m) => buildPointId('calendar_event', eventId, m));
+    await client.deletePoints(pointIds);
+  } catch {
+    // Calendar deletion should not fail just because semantic search cleanup
+    // is temporarily unavailable. The embed coverage/reembed scripts can
+    // reconcile stale points later.
+  }
 }
 
 export function createCalendarScope(deps: CalendarScopeDeps) {
@@ -605,14 +611,17 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           .set({ deletedAt: new Date(), updatedAt: new Date() })
           .where(eq(calendarEvents.id, id));
 
-        if (row.startAtRawEventId) {
+        const linkedRawEventIds = [row.startAtRawEventId, row.scheduledRawEventId].filter(
+          (rid): rid is string => rid !== null && rid.length > 0,
+        );
+        if (linkedRawEventIds.length > 0) {
           const tombstone = JSON.stringify({ deleted: true });
           await tx
             .update(rawEvents)
             .set({
               sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${tombstone}::jsonb`,
             })
-            .where(eq(rawEvents.id, row.startAtRawEventId));
+            .where(inArray(rawEvents.id, linkedRawEventIds));
         }
 
         await tx.insert(rawEvents).values({
