@@ -130,26 +130,28 @@ Goal: give the timeline a proper calendar layer. The internal timeline calendar 
 
 ### Schema and data model
 
-- [ ] `calendar_events` table (new first-class table, NOT an entity type): team-scoped, title, description, `start_at`/`end_at` timestamps (UTC), `timezone` (IANA, e.g. `America/New_York`), all-day flag, location, visibility (`private`/`team`/`specific_users`), `show_as` (busy/free), creator user, `reminder_minutes` (nullable, overrides team default), source (`internal`/`google`/`caldav`), `external_calendar_id`, `external_event_id`, sync cursor fields, `agent_suggested` boolean, `deleted_at` (soft-delete), `sourceMetadata` JSONB. Migration `0012_phase11_calendar.sql`.
+- [x] `calendar_events` table (new first-class table, NOT an entity type): team-scoped, title, description, `start_at`/`end_at` timestamps (UTC), `timezone` (IANA, e.g. `America/New_York`), all-day flag, location, visibility (`private`/`team`/`specific_users`), `show_as` (busy/free), creator user, `reminder_minutes` (nullable, overrides team default), source (`internal`/`google`/`caldav`), `external_calendar_id`, `external_event_id`, `agent_suggested` boolean, `deleted_at` (soft-delete), and `metadata` JSONB. Migrations `0017_phase11_calendar.sql` and `0018_phase11_calendar_dedup.sql`.
 - [ ] Recurrence: `rrule` (RFC 5545) column on parent event. Worker materializes individual occurrences into `calendar_events` rows on a 3-month rolling window. Self-referential FK `recurring_parent_id` → `calendar_events.id`. `original_start_at` (stable occurrence identifier, survives rescheduling). `is_exception` flag for manually-edited occurrences (re-expansion skips these). "Edit this" = mark exception. "Edit all future" = delete-and-reexpand non-exception children ≥ now.
-- [ ] `calendar_event_entities` join table: `(calendar_event_id, entity_id, relationship_type)` for explicit object/entity links. Implicit links happen through extraction on the raw_events.
-- [ ] `team_calendar_settings` table: `default_reminder_minutes` (default 15), team-level calendar preferences.
+- [x] `calendar_event_entities` join table: `(calendar_event_id, entity_id, relationship_type)` for explicit object/entity links. Scope helpers verify linked entities belong to the active team before insert. Implicit links happen through extraction on the raw_events.
+- [x] `team_calendar_settings` table: `default_reminder_minutes` (default 15), team-level calendar preferences.
 - [ ] `connected_calendars` table: per-user external calendar connections. Provider (`google`/`caldav`), OAuth tokens / CalDAV credentials, selected calendars, `is_private` boolean, sync cursor, last sync state, default visibility for imported events.
 
 ### Timeline integration
 
-- [ ] Two `raw_events` rows per calendar event: one at creation time (`occurred_at` = now, `source='calendar'`, action = `'scheduled'`) and one at the event's `start_at` (`occurred_at` = event start, action = `'event'`). Updates/deletes write additional raw_events at mutation time.
-- [ ] Calendar event embeddings: `source_kind='calendar_event'` in Qdrant. Agent can answer "when is…" / "what's coming up…" via vector search. Agent tool descriptions note the 3-month materialization window so responses acknowledge limits for far-future queries.
-- [ ] Private event rendering: private events are opaque to teammates, not invisible. Calendar UI shows "busy" blocks for other users' private events (time + owner, no content). Application-layer redaction in the calendar query endpoint — if `visibility='private' AND author != current_user`, return `{ start_at, end_at, owner, title: "Busy" }`. Agent and timeline use existing visibility filter unchanged.
+- [x] Two `raw_events` rows per calendar event: one at creation time (`occurred_at` = now, `source='calendar'`, action = `'scheduled'`) and one at the event's `start_at` (`occurred_at` = event start, action = `'event'`). User-visible updates/deletes write additional raw_events at mutation time.
+- [x] Calendar event embeddings: `source_kind='calendar_event'` in Qdrant. Team-visible events enqueue embeddings after the DB transaction commits; private/specific-user updates and deletes remove stale Qdrant points after commit. `embed-coverage` counts active team-visible calendar events.
+- [x] Private event rendering: private events are opaque to teammates, not invisible. Calendar UI shows "Busy" blocks for other users' private events. Application-layer redaction in the calendar scope returns busy content while preserving time blocks; agent and timeline use existing visibility filtering unchanged.
 
 ### UI
 
-- [ ] Timeline calendar UI: month/week/day views at `/app/calendar`. Events render inline on the main timeline alongside regular events (future events shown in "scheduled" style, past events shown as occurred). Create/edit/delete with full audit trail via raw_events.
+- [x] Timeline calendar UI: month view at `/app/calendar` with event creation and detail links. The grid renders events spanning into the visible month, including events that start before the month and end inside it. Create/edit/delete uses the calendar scope's raw-event audit trail.
+- [ ] Week/day calendar views.
 - [ ] Recurring event editing UI: "this event" / "this and all future" / "all events" edit modes. Exception badge on modified occurrences.
 
 ### Agent surface
 
-- [ ] Agent calendar tools: `suggest_calendar_event`, `list_calendar_events`, `update_calendar_event`. Agent proposes events with `agent_suggested=true` — surfaced as suggestions, accepted/rejected like object changes (consistent trust boundary: agent suggests, human approves).
+- [x] Agent calendar tools: `suggest_calendar_event`, `list_calendar_events`, and `get_calendar_event`. Agent-created suggestions use `agent_suggested=true`; human review UI remains a follow-up.
+- [ ] Calendar update tool and accept/reject UI for agent-suggested calendar events.
 
 ### External calendar sync (import-only for MVP)
 

@@ -2,10 +2,11 @@ import {
   calendarEventEntities,
   calendarEvents,
   type Db,
+  entities,
   rawEvents,
   teamCalendarSettings,
 } from '@timeline/db';
-import { and, asc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import { getQdrantClient, buildPointId } from '../qdrant/client.js';
 import { enqueueCalendarEventEmbedJob } from '../queue/queues.js';
@@ -14,6 +15,7 @@ type Visibility = 'private' | 'team' | 'specific_users';
 type CalendarEventSource = 'internal' | 'google' | 'caldav';
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
+type CalendarQdrantAction = 'embed' | 'delete' | null;
 
 export interface CalendarScopeDeps {
   db: Db;
@@ -179,6 +181,51 @@ async function insertCalendarRawEvents(
   };
 }
 
+function uniqueIds(ids: string[]): string[] {
+  return [...new Set(ids)];
+}
+
+function sameDate(a: Date | null | undefined, b: Date | null | undefined): boolean {
+  if (!a || !b) return a === b;
+  return a.getTime() === b.getTime();
+}
+
+function sameStringArray(a: string[] | null | undefined, b: string[] | null | undefined): boolean {
+  if (!a || !b) return a === b;
+  if (a.length !== b.length) return false;
+  return a.every((value, index) => value === b[index]);
+}
+
+function sameJson(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+async function assertEntitiesBelongToTeam(
+  tx: DbOrTx,
+  args: { teamId: string; entityIds: string[] },
+): Promise<string[]> {
+  const entityIds = uniqueIds(args.entityIds);
+  if (entityIds.length === 0) return [];
+
+  const rows = await tx
+    .select({ id: entities.id })
+    .from(entities)
+    .where(and(eq(entities.teamId, args.teamId), inArray(entities.id, entityIds)));
+
+  if (rows.length !== entityIds.length) {
+    throw new Error('One or more linked entities were not found');
+  }
+
+  return entityIds;
+}
+
+async function deleteCalendarEventPoints(eventId: string): Promise<void> {
+  const client = getQdrantClient();
+  const models = ['openai/text-embedding-3-small'];
+  const pointIds = models.map((m) => buildPointId('calendar_event', eventId, m));
+  await client.deletePoints(pointIds).catch(() => undefined);
+}
+
 export function createCalendarScope(deps: CalendarScopeDeps) {
   const { db, teamId, userId, ensureMember } = deps;
 
@@ -224,9 +271,12 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         throw new Error('End time must be after start time');
       }
 
-      return db.transaction(async (tx) => {
+      const created = await db.transaction(async (tx) => {
         const vis = input.visibility ?? 'team';
         const visUserIds = input.visibilityUserIds ?? null;
+        const linkedEntityIds = input.linkedEntityIds
+          ? await assertEntitiesBelongToTeam(tx, { teamId, entityIds: input.linkedEntityIds })
+          : [];
 
         const [row] = await tx
           .insert(calendarEvents)
@@ -265,9 +315,9 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           .set({ scheduledRawEventId, startAtRawEventId })
           .where(eq(calendarEvents.id, row.id));
 
-        if (input.linkedEntityIds && input.linkedEntityIds.length > 0) {
+        if (linkedEntityIds.length > 0) {
           await tx.insert(calendarEventEntities).values(
-            input.linkedEntityIds.map((entityId) => ({
+            linkedEntityIds.map((entityId) => ({
               calendarEventId: row.id,
               entityId,
               teamId,
@@ -281,10 +331,14 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           startAtRawEventId,
         };
 
-        await enqueueCalendarEventEmbedJob(teamId, row.id);
-
         return redactIfNeeded(updated);
       });
+
+      if (created.visibility === 'team') {
+        await enqueueCalendarEventEmbedJob(teamId, created.id);
+      }
+
+      return created;
     },
 
     async getCalendarEvent(id: string): Promise<CalendarEventWithRedaction | null> {
@@ -338,7 +392,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     ): Promise<CalendarEventWithRedaction | null> {
       await ensureMember();
 
-      return db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         const existing = await tx
           .select()
           .from(calendarEvents)
@@ -354,6 +408,49 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
 
         const row = existing[0];
         if (!row) return null;
+
+        const changedFields = new Set<keyof UpdateCalendarEventInput>();
+        if (patch.title !== undefined && patch.title !== row.title) changedFields.add('title');
+        if (patch.description !== undefined && patch.description !== row.description) {
+          changedFields.add('description');
+        }
+        if (patch.startAt !== undefined && !sameDate(patch.startAt, row.startAt)) {
+          changedFields.add('startAt');
+        }
+        if (patch.endAt !== undefined && !sameDate(patch.endAt, row.endAt)) {
+          changedFields.add('endAt');
+        }
+        if (patch.timezone !== undefined && patch.timezone !== row.timezone) {
+          changedFields.add('timezone');
+        }
+        if (patch.allDay !== undefined && patch.allDay !== row.allDay) {
+          changedFields.add('allDay');
+        }
+        if (patch.location !== undefined && patch.location !== row.location) {
+          changedFields.add('location');
+        }
+        if (patch.visibility !== undefined && patch.visibility !== row.visibility) {
+          changedFields.add('visibility');
+        }
+        if (
+          patch.visibilityUserIds !== undefined &&
+          !sameStringArray(patch.visibilityUserIds, row.visibilityUserIds)
+        ) {
+          changedFields.add('visibilityUserIds');
+        }
+        if (patch.reminderMinutes !== undefined && patch.reminderMinutes !== row.reminderMinutes) {
+          changedFields.add('reminderMinutes');
+        }
+        if (
+          patch.metadata !== undefined &&
+          !sameJson(patch.metadata, row.metadata as Record<string, unknown>)
+        ) {
+          changedFields.add('metadata');
+        }
+
+        if (changedFields.size === 0) {
+          return { event: redactIfNeeded(row as CalendarEventRow), qdrantAction: null };
+        }
 
         const effectiveStart = patch.startAt ?? row.startAt;
         const effectiveEnd = patch.endAt ?? row.endAt;
@@ -388,6 +485,30 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         const newVis = patch.visibility ?? row.visibility;
         const newVisUserIds = patch.visibilityUserIds ?? row.visibilityUserIds;
         const newTitle = patch.title ?? row.title;
+        const timelineFields: (keyof UpdateCalendarEventInput)[] = [
+          'title',
+          'description',
+          'startAt',
+          'endAt',
+          'timezone',
+          'allDay',
+          'location',
+          'visibility',
+          'visibilityUserIds',
+        ];
+        const hasTimelineChange = timelineFields.some((field) => changedFields.has(field));
+        const hasEmbeddingChange = [
+          'title',
+          'description',
+          'startAt',
+          'endAt',
+          'timezone',
+          'location',
+          'visibility',
+          'visibilityUserIds',
+        ].some((field) => changedFields.has(field as keyof UpdateCalendarEventInput));
+        const hasVisibilityChange =
+          changedFields.has('visibility') || changedFields.has('visibilityUserIds');
 
         // Sync linked raw_events: title, time, AND visibility must stay
         // in lockstep with the calendar event. Without the visibility
@@ -396,7 +517,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         const linkedRawEventIds = [row.startAtRawEventId, row.scheduledRawEventId].filter(
           (rid): rid is string => rid !== null && rid.length > 0,
         );
-        if (linkedRawEventIds.length > 0) {
+        if (hasVisibilityChange && linkedRawEventIds.length > 0) {
           const rawPatch: Record<string, unknown> = {
             visibility: newVis,
             visibilityUserIds: newVisUserIds,
@@ -422,40 +543,47 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
             .where(eq(rawEvents.id, row.scheduledRawEventId));
         }
 
-        await tx.insert(rawEvents).values({
-          teamId,
-          authorUserId: userId,
-          source: 'calendar',
-          contentText: `Updated: ${newTitle}`,
-          occurredAt: new Date(),
-          visibility: newVis,
-          visibilityUserIds: newVisUserIds,
-          sourceMetadata: {
-            calendar_event_id: id,
-            action: 'updated',
-          },
-        });
+        if (hasTimelineChange) {
+          await tx.insert(rawEvents).values({
+            teamId,
+            authorUserId: userId,
+            source: 'calendar',
+            contentText: `Updated: ${newTitle}`,
+            occurredAt: new Date(),
+            visibility: newVis,
+            visibilityUserIds: newVisUserIds,
+            sourceMetadata: {
+              calendar_event_id: id,
+              action: 'updated',
+            },
+          });
+        }
 
+        let qdrantAction: CalendarQdrantAction = null;
         // If the event is still team-visible, re-embed with updated content.
         // If it went non-team, delete the old Qdrant point so stale content
         // doesn't surface in semantic search.
-        if (newVis === 'team') {
-          await enqueueCalendarEventEmbedJob(teamId, id);
-        } else {
-          const client = getQdrantClient();
-          const models = ['openai/text-embedding-3-small'];
-          const pointIds = models.map((m) => buildPointId('calendar_event', id, m));
-          await client.deletePoints(pointIds).catch(() => undefined);
+        if (hasEmbeddingChange) {
+          qdrantAction = newVis === 'team' ? 'embed' : 'delete';
         }
 
-        return redactIfNeeded(updated as CalendarEventRow);
+        return { event: redactIfNeeded(updated as CalendarEventRow), qdrantAction };
       });
+
+      if (!result) return null;
+      if (result.qdrantAction === 'embed') {
+        await enqueueCalendarEventEmbedJob(teamId, id);
+      } else if (result.qdrantAction === 'delete') {
+        await deleteCalendarEventPoints(id);
+      }
+
+      return result.event;
     },
 
     async deleteCalendarEvent(id: string): Promise<boolean> {
       await ensureMember();
 
-      return db.transaction(async (tx) => {
+      const deleted = await db.transaction(async (tx) => {
         const existing = await tx
           .select()
           .from(calendarEvents)
@@ -501,13 +629,14 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           },
         });
 
-        const client = getQdrantClient();
-        const models = ['openai/text-embedding-3-small'];
-        const pointIds = models.map((m) => buildPointId('calendar_event', id, m));
-        await client.deletePoints(pointIds).catch(() => undefined);
-
         return true;
       });
+
+      if (deleted) {
+        await deleteCalendarEventPoints(id);
+      }
+
+      return deleted;
     },
 
     async linkEntity(
@@ -516,10 +645,28 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       relationshipType = 'related',
     ): Promise<void> {
       await ensureMember();
-      await db
-        .insert(calendarEventEntities)
-        .values({ calendarEventId, entityId, teamId, relationshipType })
-        .onConflictDoNothing();
+      await db.transaction(async (tx) => {
+        const [eventRow] = await tx
+          .select({ id: calendarEvents.id })
+          .from(calendarEvents)
+          .where(
+            and(
+              eq(calendarEvents.id, calendarEventId),
+              eq(calendarEvents.teamId, teamId),
+              isNull(calendarEvents.deletedAt),
+              calendarWriteVisibility,
+            ),
+          )
+          .limit(1);
+        if (!eventRow) throw new Error('Calendar event not found');
+
+        await assertEntitiesBelongToTeam(tx, { teamId, entityIds: [entityId] });
+
+        await tx
+          .insert(calendarEventEntities)
+          .values({ calendarEventId, entityId, teamId, relationshipType })
+          .onConflictDoNothing();
+      });
     },
 
     async unlinkEntity(calendarEventId: string, entityId: string): Promise<void> {

@@ -41,6 +41,10 @@ function isSameDay(a: Date, b: Date): boolean {
   );
 }
 
+function dayKey(date: Date): string {
+  return `${String(date.getFullYear())}-${String(date.getMonth())}-${String(date.getDate())}`;
+}
+
 function formatTime(dateStr: string, timezone: string): string {
   return new Date(dateStr).toLocaleTimeString([], {
     hour: '2-digit',
@@ -68,14 +72,24 @@ export function CalendarView({ events }: CalendarViewProps) {
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
     for (const ev of events) {
-      const d = new Date(ev.startAt);
-      const key = `${String(d.getFullYear())}-${String(d.getMonth())}-${String(d.getDate())}`;
-      const list = map.get(key) ?? [];
-      list.push(ev);
-      map.set(key, list);
+      const start = new Date(ev.startAt);
+      const end = new Date(ev.endAt);
+      for (const day of days) {
+        const nextDay = new Date(day);
+        nextDay.setDate(nextDay.getDate() + 1);
+        if (start < nextDay && end > day) {
+          const key = dayKey(day);
+          const list = map.get(key) ?? [];
+          list.push(ev);
+          map.set(key, list);
+        }
+      }
+    }
+    for (const dayEvents of map.values()) {
+      dayEvents.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
     }
     return map;
-  }, [events]);
+  }, [days, events]);
 
   function navigate(direction: -1 | 1) {
     let newMonth = month + direction;
@@ -146,7 +160,7 @@ export function CalendarView({ events }: CalendarViewProps) {
           <div key={`pad-${String(i)}`} className="min-h-24 bg-background p-1" />
         ))}
         {days.map((day) => {
-          const key = `${String(day.getFullYear())}-${String(day.getMonth())}-${String(day.getDate())}`;
+          const key = dayKey(day);
           const dayEvents = eventsByDay.get(key) ?? [];
           const isToday = isSameDay(day, now);
 
