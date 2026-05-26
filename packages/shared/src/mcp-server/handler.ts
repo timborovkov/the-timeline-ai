@@ -66,7 +66,14 @@ const TOOLS = [
       properties: {
         from: { type: 'string', format: 'date-time' },
         to: { type: 'string', format: 'date-time' },
-        source: { type: 'string', enum: ['web', 'telegram', 'email', 'system'] },
+        source: {
+          type: 'string',
+          // Mirrors the `event_source` pg enum and the runtime allow-list
+          // in callTool below. Strict MCP clients that validate args
+          // against this schema couldn't request integration / document
+          // / meeting rows otherwise.
+          enum: ['web', 'telegram', 'email', 'system', 'document', 'meeting', 'integration'],
+        },
         limit: { type: 'integer', minimum: 1, maximum: 50 },
       },
     },

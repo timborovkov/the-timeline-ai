@@ -45,18 +45,19 @@ export interface OAuthTokenSet {
   expires_at?: number;
 }
 
-const PREREGISTERED: PreregisteredClient[] = [];
-
 /**
  * Read pre-registered MCP OAuth clients from env. Format:
  *   MCP_PREREGISTERED_<NAME>_ORIGIN=https://...
  *   MCP_PREREGISTERED_<NAME>_CLIENT_ID=...
  *   MCP_PREREGISTERED_<NAME>_CLIENT_SECRET=... (optional for public clients)
  *
- * Called lazily so adding a server doesn't require restart.
+ * Re-reads `process.env` on every call. The scan is cheap (a handful of
+ * regex matches against env keys) and a stale cache made the previous
+ * docs ("adding a server doesn't require restart") a lie — any env vars
+ * added after the first lookup were silently ignored.
  */
 export function listPreregisteredClients(): PreregisteredClient[] {
-  if (PREREGISTERED.length > 0) return PREREGISTERED;
+  const out: PreregisteredClient[] = [];
   const seen = new Set<string>();
   for (const key of Object.keys(process.env)) {
     const m = /^MCP_PREREGISTERED_([A-Z0-9_]+)_ORIGIN$/.exec(key);
@@ -70,9 +71,9 @@ export function listPreregisteredClients(): PreregisteredClient[] {
     if (!origin || !clientId) continue;
     const entry: PreregisteredClient = { origin, clientId };
     if (clientSecret) entry.clientSecret = clientSecret;
-    PREREGISTERED.push(entry);
+    out.push(entry);
   }
-  return PREREGISTERED;
+  return out;
 }
 
 export function findPreregisteredClient(serverUrl: string): PreregisteredClient | null {
