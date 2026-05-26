@@ -138,8 +138,8 @@ Goal: give the timeline a proper calendar layer. The internal timeline calendar 
 
 ### Timeline integration
 
-- [x] Two `raw_events` rows per calendar event: one at creation time (`occurred_at` = now, `source='calendar'`, action = `'scheduled'`) and one at the event's `start_at` (`occurred_at` = event start, action = `'event'`). User-visible updates/deletes write additional raw_events at mutation time; deletes tombstone the linked scheduled/event rows so active timeline reads only show the cancellation audit row.
-- [x] Calendar event embeddings: `source_kind='calendar_event'` in Qdrant. Team-visible events enqueue embeddings after the DB transaction commits; private/specific-user updates and deletes remove stale Qdrant points after commit. Search payloads hydrate through the start-at raw event, whose text mirrors the rich calendar summary, so results carry the event occurrence timestamp and details. `embed-coverage` counts active team-visible calendar events.
+- [x] Two `raw_events` rows per calendar event: one at creation time (`occurred_at` = now, `source='calendar'`, action = `'scheduled'`) and one at the event's `start_at` (`occurred_at` = event start, action = `'event'`). User-visible updates/deletes write additional raw_events at mutation time; deletes tombstone the linked scheduled/event rows so active timeline reads and direct event lookups only show the cancellation audit row.
+- [x] Calendar event embeddings: `source_kind='calendar_event'` in Qdrant. Team-visible events enqueue embeddings after the DB transaction commits; private/specific-user updates and deletes remove stale Qdrant points for the configured embedding model after commit. Search payloads hydrate through the start-at raw event, whose text mirrors the rich calendar summary, so results carry the event occurrence timestamp and details. `embed-coverage` counts active team-visible calendar events.
 - [x] Private event rendering: private events are opaque to teammates, not invisible. Calendar UI shows "Busy" blocks for other users' private events. Application-layer redaction in the calendar scope returns busy content while preserving time blocks; agent and timeline use existing visibility filtering unchanged.
 
 ### UI
@@ -150,7 +150,7 @@ Goal: give the timeline a proper calendar layer. The internal timeline calendar 
 
 ### Agent surface
 
-- [x] Agent calendar tools: `suggest_calendar_event`, `list_calendar_events`, and `get_calendar_event`. Agent-created suggestions use `agent_suggested=true`; human review UI remains a follow-up.
+- [x] Agent calendar tools: `suggest_calendar_event`, `list_calendar_events`, and `get_calendar_event`. Unbounded calendar listing defaults to upcoming events. Agent-created suggestions use `agent_suggested=true`; human review UI remains a follow-up.
 - [ ] Calendar update tool and accept/reject UI for agent-suggested calendar events.
 
 ### External calendar sync (import-only for MVP)

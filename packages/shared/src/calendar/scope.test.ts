@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import { calendarEvents, rawEvents } from '@timeline/db';
+import { calendarEventEntities, calendarEvents, entities, rawEvents } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -15,9 +15,11 @@ const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const USER_B_ID = 'bbbbbbbb-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const CALENDAR_EVENT_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const SCHEDULED_RAW_EVENT_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const START_RAW_EVENT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+const ENTITY_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 
 async function applyMigrations(pg: PGlite): Promise<void> {
   const files = readdirSync(MIGRATIONS_DIR)
@@ -38,8 +40,12 @@ async function applyMigrations(pg: PGlite): Promise<void> {
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 't', 'Test');`);
   await pg.exec(`INSERT INTO users (id, email) VALUES ('${USER_ID}', 'a@x');`);
+  await pg.exec(`INSERT INTO users (id, email) VALUES ('${USER_B_ID}', 'b@x');`);
   await pg.exec(
     `INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${USER_ID}', 'owner');`,
+  );
+  await pg.exec(
+    `INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${USER_B_ID}', 'member');`,
   );
 }
 
@@ -144,5 +150,61 @@ describe('calendar scope', () => {
       action: 'event',
       deleted: true,
     });
+  });
+
+  it('getEventWithFacts does not return tombstoned calendar timeline rows', async () => {
+    await db.insert(rawEvents).values({
+      id: START_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'calendar',
+      contentText: 'Launch review',
+      occurredAt: new Date('2026-05-27T09:00:00Z'),
+      visibility: 'team',
+      sourceMetadata: {
+        calendar_event_id: CALENDAR_EVENT_ID,
+        action: 'event',
+        deleted: true,
+      },
+    });
+
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await expect(scope.getEventWithFacts(START_RAW_EVENT_ID)).resolves.toBeNull();
+  });
+
+  it('unlinkEntity requires write access to the calendar event', async () => {
+    await db.insert(entities).values({
+      id: ENTITY_ID,
+      teamId: TEAM_ID,
+      type: 'project',
+      canonicalName: 'Launch',
+    });
+    await db.insert(calendarEvents).values({
+      id: CALENDAR_EVENT_ID,
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      title: 'Private launch review',
+      startAt: new Date('2026-05-27T09:00:00Z'),
+      endAt: new Date('2026-05-27T10:00:00Z'),
+      timezone: 'UTC',
+      visibility: 'private',
+      metadata: {},
+    });
+    await db.insert(calendarEventEntities).values({
+      calendarEventId: CALENDAR_EVENT_ID,
+      entityId: ENTITY_ID,
+      teamId: TEAM_ID,
+    });
+
+    const teammateScope = withTeam(db as never, TEAM_ID, USER_B_ID);
+    await expect(teammateScope.calendar.unlinkEntity(CALENDAR_EVENT_ID, ENTITY_ID)).rejects.toThrow(
+      'Calendar event not found',
+    );
+
+    const rows = await db
+      .select()
+      .from(calendarEventEntities)
+      .where(eq(calendarEventEntities.calendarEventId, CALENDAR_EVENT_ID));
+    expect(rows).toHaveLength(1);
   });
 });

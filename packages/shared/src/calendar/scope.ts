@@ -8,6 +8,7 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
+import { getEnv } from '../env.js';
 import { getQdrantClient, buildPointId } from '../qdrant/client.js';
 import { enqueueCalendarEventEmbedJob } from '../queue/queues.js';
 
@@ -244,7 +245,8 @@ async function assertEntitiesBelongToTeam(
 async function deleteCalendarEventPoints(eventId: string): Promise<void> {
   try {
     const client = getQdrantClient();
-    const models = ['openai/text-embedding-3-small'];
+    const activeModel = getEnv().EMBEDDING_MODEL ?? 'openai/text-embedding-3-small';
+    const models = uniqueIds([activeModel, 'openai/text-embedding-3-small']);
     const pointIds = models.map((m) => buildPointId('calendar_event', eventId, m));
     await client.deletePoints(pointIds);
   } catch {
@@ -724,15 +726,31 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
 
     async unlinkEntity(calendarEventId: string, entityId: string): Promise<void> {
       await ensureMember();
-      await db
-        .delete(calendarEventEntities)
-        .where(
-          and(
-            eq(calendarEventEntities.calendarEventId, calendarEventId),
-            eq(calendarEventEntities.entityId, entityId),
-            eq(calendarEventEntities.teamId, teamId),
-          ),
-        );
+      await db.transaction(async (tx) => {
+        const [eventRow] = await tx
+          .select({ id: calendarEvents.id })
+          .from(calendarEvents)
+          .where(
+            and(
+              eq(calendarEvents.id, calendarEventId),
+              eq(calendarEvents.teamId, teamId),
+              isNull(calendarEvents.deletedAt),
+              calendarWriteVisibility,
+            ),
+          )
+          .limit(1);
+        if (!eventRow) throw new Error('Calendar event not found');
+
+        await tx
+          .delete(calendarEventEntities)
+          .where(
+            and(
+              eq(calendarEventEntities.calendarEventId, calendarEventId),
+              eq(calendarEventEntities.entityId, entityId),
+              eq(calendarEventEntities.teamId, teamId),
+            ),
+          );
+      });
     },
 
     async getLinkedEntities(calendarEventId: string) {

@@ -661,7 +661,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       const eventRows = await db
         .select()
         .from(rawEvents)
-        .where(and(eq(rawEvents.id, id), eq(rawEvents.teamId, teamId), visibilityFilter))
+        .where(
+          and(
+            eq(rawEvents.id, id),
+            eq(rawEvents.teamId, teamId),
+            visibilityFilter,
+            activeRawEventFilter,
+          ),
+        )
         .limit(1);
       const event = eventRows[0];
       if (!event) return null;

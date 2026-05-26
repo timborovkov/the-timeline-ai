@@ -898,6 +898,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           const opts: Parameters<typeof scope.calendar.listCalendarEvents>[0] = {};
           if (input.from) opts.from = new Date(input.from);
           if (input.to) opts.to = new Date(input.to);
+          if (!input.from && !input.to) opts.from = new Date();
           if (input.limit) opts.limit = input.limit;
           const events = await scope.calendar.listCalendarEvents(opts);
           return {
