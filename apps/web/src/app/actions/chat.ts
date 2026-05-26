@@ -1,11 +1,9 @@
 'use server';
 
-import { objects } from '@timeline/shared';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
-import { db } from '@/lib/db';
 
 export async function archiveChatSessionAction(input: unknown): Promise<ActionState> {
   const parsed = z.object({ sessionId: uuidSchema }).safeParse(input);
@@ -13,7 +11,7 @@ export async function archiveChatSessionAction(input: unknown): Promise<ActionSt
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
   try {
-    await objects.archiveChatSession(db, r.scope, parsed.data.sessionId);
+    await r.scope.objects.archiveChatSession(parsed.data.sessionId);
     revalidatePath('/app/chat');
     return { ok: true };
   } catch (err) {
@@ -27,7 +25,7 @@ export async function unpinChatSessionAction(input: unknown): Promise<ActionStat
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
   try {
-    await objects.linkChatSessionToObject(db, r.scope, parsed.data.sessionId, null);
+    await r.scope.objects.linkChatSessionToObject(parsed.data.sessionId, null);
     revalidatePath('/app/chat');
     return { ok: true };
   } catch (err) {

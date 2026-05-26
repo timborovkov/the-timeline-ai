@@ -5,7 +5,6 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
-import { db } from '@/lib/db';
 
 const objectTypeSchema = z.enum(objects.OBJECT_TYPES);
 
@@ -40,7 +39,7 @@ export async function saveBoardAction(input: unknown): Promise<ActionState> {
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
   try {
-    const row = await objects.saveBoardView(db, r.scope, {
+    const row = await r.scope.objects.saveBoardView({
       id: parsed.data.id,
       name: parsed.data.name,
       kind: parsed.data.kind,
@@ -62,7 +61,7 @@ export async function deleteBoardAction(input: unknown): Promise<ActionState> {
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
   try {
-    const ok = await objects.deleteBoardView(db, r.scope, parsed.data.id);
+    const ok = await r.scope.objects.deleteBoardView(parsed.data.id);
     revalidatePath('/app/boards');
     return ok ? { ok: true } : { error: 'Board not found' };
   } catch (err) {

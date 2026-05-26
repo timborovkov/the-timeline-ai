@@ -1,4 +1,4 @@
-import { objects, withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared';
 import { notFound, redirect } from 'next/navigation';
 
 import { ObjectDetailClient } from '@/components/objects/object-detail-client';
@@ -31,10 +31,10 @@ export default async function ObjectDetailPage({ params }: PageProps) {
   // AFTER so the banner reflects "changes since the previous visit."
   // Moving markVisited above getObject would zero the banner forever
   // after the first load.
-  const detail = await objects.getObject(db, scope, id);
+  const detail = await scope.objects.getObject(id);
   if (!detail) notFound();
 
-  await objects.markVisited(db, scope, detail.id);
+  await scope.objects.markVisited(detail.id);
 
   return (
     <div className="mx-auto max-w-4xl">

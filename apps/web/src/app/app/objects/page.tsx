@@ -1,4 +1,4 @@
-import { objects, withTeam } from '@timeline/shared';
+import { type objects, withTeam } from '@timeline/shared';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -49,7 +49,7 @@ export default async function ObjectsIndexPage({
   if (type) filter.type = type;
   if (status) filter.status = status;
 
-  const rows = await objects.listObjects(db, scope, filter);
+  const rows = await scope.objects.listObjects(filter);
 
   const grouped = new Map<string, typeof rows>();
   for (const row of rows) {

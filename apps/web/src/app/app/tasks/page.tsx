@@ -1,4 +1,4 @@
-import { objects, withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared';
 import { redirect } from 'next/navigation';
 
 import { KanbanBoard } from '@/components/boards/kanban-board';
@@ -16,7 +16,7 @@ export default async function TasksPage() {
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const rows = await objects.listObjects(db, scope, {
+  const rows = await scope.objects.listObjects({
     type: 'task',
     archived: false,
     limit: 500,

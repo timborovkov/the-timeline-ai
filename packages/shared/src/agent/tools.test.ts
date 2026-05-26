@@ -23,17 +23,20 @@ import { buildAgentTools } from './tools.js';
  */
 
 interface FakeScope {
-  searchEvents: ReturnType<typeof vi.fn>;
-  getEntity: ReturnType<typeof vi.fn>;
-  listEvents: ReturnType<typeof vi.fn>;
-  getEventWithFacts: ReturnType<typeof vi.fn>;
-  // Phase 9 — document drive surface. Each new tool calls exactly one of these.
-  searchDocumentChunks: ReturnType<typeof vi.fn>;
-  getDocument: ReturnType<typeof vi.fn>;
-  listDocumentVersions: ReturnType<typeof vi.fn>;
-  folderPath: ReturnType<typeof vi.fn>;
-  getDocumentChunk: ReturnType<typeof vi.fn>;
-  listRecentDocumentChanges: ReturnType<typeof vi.fn>;
+  timeline: {
+    searchEvents: ReturnType<typeof vi.fn>;
+    getEntity: ReturnType<typeof vi.fn>;
+    listEvents: ReturnType<typeof vi.fn>;
+    getEventWithFacts: ReturnType<typeof vi.fn>;
+  };
+  documents: {
+    searchDocumentChunks: ReturnType<typeof vi.fn>;
+    getDocument: ReturnType<typeof vi.fn>;
+    listDocumentVersions: ReturnType<typeof vi.fn>;
+    folderPath: ReturnType<typeof vi.fn>;
+    getDocumentChunk: ReturnType<typeof vi.fn>;
+    listRecentDocumentChanges: ReturnType<typeof vi.fn>;
+  };
   calendar: {
     listCalendarEvents: ReturnType<typeof vi.fn>;
   };
@@ -41,16 +44,20 @@ interface FakeScope {
 
 function makeFakeScope(): FakeScope {
   return {
-    searchEvents: vi.fn(),
-    getEntity: vi.fn(),
-    listEvents: vi.fn(),
-    getEventWithFacts: vi.fn(),
-    searchDocumentChunks: vi.fn(),
-    getDocument: vi.fn(),
-    listDocumentVersions: vi.fn(),
-    folderPath: vi.fn(),
-    getDocumentChunk: vi.fn(),
-    listRecentDocumentChanges: vi.fn(),
+    timeline: {
+      searchEvents: vi.fn(),
+      getEntity: vi.fn(),
+      listEvents: vi.fn(),
+      getEventWithFacts: vi.fn(),
+    },
+    documents: {
+      searchDocumentChunks: vi.fn(),
+      getDocument: vi.fn(),
+      listDocumentVersions: vi.fn(),
+      folderPath: vi.fn(),
+      getDocumentChunk: vi.fn(),
+      listRecentDocumentChanges: vi.fn(),
+    },
     calendar: {
       listCalendarEvents: vi.fn(),
     },
@@ -82,7 +89,7 @@ describe('buildAgentTools — team isolation', () => {
 
   it('get_event with a cross-team event_id returns { found: false } (scope returns null)', async () => {
     const scope = makeFakeScope();
-    scope.getEventWithFacts.mockResolvedValue(null);
+    scope.timeline.getEventWithFacts.mockResolvedValue(null);
     const tools = buildAgentTools(scope as unknown as TeamScope);
     // The agent passes a hostile UUID that belongs to team B; the bound
     // scope's SQL filter drops it and returns null. The tool must NOT
@@ -92,24 +99,24 @@ describe('buildAgentTools — team isolation', () => {
       opts: unknown,
     ) => Promise<unknown>;
     const result = await exec({ id: TEAM_B_EVENT_ID }, {});
-    expect(scope.getEventWithFacts).toHaveBeenCalledWith(TEAM_B_EVENT_ID);
+    expect(scope.timeline.getEventWithFacts).toHaveBeenCalledWith(TEAM_B_EVENT_ID);
     expect(result).toEqual({ found: false });
   });
 
   it('get_entity with a cross-team entity_id resolves via scope (returns { found: false })', async () => {
     const scope = makeFakeScope();
-    scope.getEntity.mockResolvedValue(null);
+    scope.timeline.getEntity.mockResolvedValue(null);
     const tools = buildAgentTools(scope as unknown as TeamScope);
     const exec = tools.get_entity?.execute as (
       input: { idOrName: string },
       opts: unknown,
     ) => Promise<unknown>;
     const result = await exec({ idOrName: TEAM_B_ENTITY_ID }, {});
-    expect(scope.getEntity).toHaveBeenCalledWith(TEAM_B_ENTITY_ID, expect.any(Object));
+    expect(scope.timeline.getEntity).toHaveBeenCalledWith(TEAM_B_ENTITY_ID, expect.any(Object));
     // The tool passes a `{ factLimit, coOccurringLimit }` cap to bound
     // payload size — assert that's what's flowing through (not e.g. a
     // hostile teamId smuggled in via the options bag).
-    const opts = scope.getEntity.mock.calls[0]?.[1] as Record<string, unknown>;
+    const opts = scope.timeline.getEntity.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(opts).not.toHaveProperty('teamId');
     expect(opts).not.toHaveProperty('userId');
     expect(result).toEqual({ found: false });
@@ -117,18 +124,18 @@ describe('buildAgentTools — team isolation', () => {
 
   it('get_entity with an alias-collision name still routes through scope', async () => {
     // "Acme Corp" might exist on both team A and team B. The tool passes
-    // the string straight to scope.getEntity, which case-insensitively
+    // the string straight to scope.timeline.getEntity, which case-insensitively
     // matches ONLY within the bound team. We assert the tool relays
     // whatever scope returns and never short-circuits.
     const scope = makeFakeScope();
-    scope.getEntity.mockResolvedValue(null);
+    scope.timeline.getEntity.mockResolvedValue(null);
     const tools = buildAgentTools(scope as unknown as TeamScope);
     const exec = tools.get_entity?.execute as (
       input: { idOrName: string },
       opts: unknown,
     ) => Promise<unknown>;
     const result = await exec({ idOrName: 'Acme Corp' }, {});
-    expect(scope.getEntity).toHaveBeenCalledWith('Acme Corp', expect.any(Object));
+    expect(scope.timeline.getEntity).toHaveBeenCalledWith('Acme Corp', expect.any(Object));
     expect(result).toEqual({ found: false });
   });
 
@@ -138,29 +145,29 @@ describe('buildAgentTools — team isolation', () => {
     // hits by team_id; here we only verify the tool does not silently
     // re-key or expand the filter.
     const scope = makeFakeScope();
-    scope.searchEvents.mockResolvedValue([]);
+    scope.timeline.searchEvents.mockResolvedValue([]);
     const tools = buildAgentTools(scope as unknown as TeamScope);
     const exec = tools.search_timeline?.execute as (
       input: unknown,
       opts: unknown,
     ) => Promise<unknown>;
     await exec({ query: 'leak attempt', entityIds: [TEAM_B_ENTITY_ID] }, {});
-    expect(scope.searchEvents).toHaveBeenCalledWith(
+    expect(scope.timeline.searchEvents).toHaveBeenCalledWith(
       expect.objectContaining({ query: 'leak attempt', entityIds: [TEAM_B_ENTITY_ID] }),
     );
     // No teamId / userId smuggled into the call.
-    const passed = scope.searchEvents.mock.calls[0]?.[0] as Record<string, unknown>;
+    const passed = scope.timeline.searchEvents.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(passed).not.toHaveProperty('teamId');
     expect(passed).not.toHaveProperty('userId');
   });
 
   it('list_events forwards authorUserId verbatim — scope must enforce team', async () => {
     const scope = makeFakeScope();
-    scope.listEvents.mockResolvedValue([]);
+    scope.timeline.listEvents.mockResolvedValue([]);
     const tools = buildAgentTools(scope as unknown as TeamScope);
     const exec = tools.list_events?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
     await exec({ authorUserId: '00000000-0000-0000-0000-000000000001' }, {});
-    expect(scope.listEvents).toHaveBeenCalledWith(
+    expect(scope.timeline.listEvents).toHaveBeenCalledWith(
       expect.objectContaining({ authorUserId: '00000000-0000-0000-0000-000000000001' }),
     );
   });
@@ -187,7 +194,7 @@ describe('buildAgentTools — team isolation', () => {
 
   it('tool execute catches thrown errors and returns { error } — keeps stream alive', async () => {
     const scope = makeFakeScope();
-    scope.getEventWithFacts.mockRejectedValue(new Error('db down'));
+    scope.timeline.getEventWithFacts.mockRejectedValue(new Error('db down'));
     const tools = buildAgentTools(scope as unknown as TeamScope);
     const exec = tools.get_event?.execute as (
       input: { id: string },
@@ -229,14 +236,17 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
     // a filter. The scope's searchDocumentChunks is responsible for the
     // team gate; the tool must not smuggle teamId/userId or rebind.
     const scope = makeFakeScope();
-    scope.searchDocumentChunks.mockResolvedValue([]);
+    scope.documents.searchDocumentChunks.mockResolvedValue([]);
     const tools = buildAgentTools(scope as unknown as TeamScope);
     const exec = tools.search_documents?.execute as (
       input: unknown,
       opts: unknown,
     ) => Promise<unknown>;
     await exec({ query: 'pricing', documentId: DOC_ID, folderIds: [FOLDER_ID] }, {});
-    const passed = scope.searchDocumentChunks.mock.calls[0]?.[0] as Record<string, unknown>;
+    const passed = scope.documents.searchDocumentChunks.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
     expect(passed.query).toBe('pricing');
     expect(passed.documentId).toBe(DOC_ID);
     expect(passed.folderIds).toEqual([FOLDER_ID]);
@@ -246,7 +256,7 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
 
   it('search_documents fences chunk snippets to prevent prompt injection', async () => {
     const scope = makeFakeScope();
-    scope.searchDocumentChunks.mockResolvedValue([
+    scope.documents.searchDocumentChunks.mockResolvedValue([
       {
         documentId: DOC_ID,
         documentVersionId: VERSION_ID,
@@ -279,7 +289,7 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
 
   it('get_document returns null payload when scope reports not found', async () => {
     const scope = makeFakeScope();
-    scope.getDocument.mockResolvedValue(null);
+    scope.documents.getDocument.mockResolvedValue(null);
     const tools = buildAgentTools(scope as unknown as TeamScope);
     const exec = tools.get_document?.execute as (
       input: { id: string },
@@ -289,9 +299,9 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
     // isn't visible. Tool must NOT synthesize data and must NOT call
     // listDocumentVersions / folderPath when there's no document.
     const result = await exec({ id: DOC_ID }, {});
-    expect(scope.getDocument).toHaveBeenCalledWith(DOC_ID);
-    expect(scope.listDocumentVersions).not.toHaveBeenCalled();
-    expect(scope.folderPath).not.toHaveBeenCalled();
+    expect(scope.documents.getDocument).toHaveBeenCalledWith(DOC_ID);
+    expect(scope.documents.listDocumentVersions).not.toHaveBeenCalled();
+    expect(scope.documents.folderPath).not.toHaveBeenCalled();
     expect(result).toEqual({ found: false });
   });
 
@@ -303,7 +313,7 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
     // contract by asserting BOTH the required snake_case keys exist AND
     // the camelCase forms do NOT — catches a one-character rename slip.
     const scope = makeFakeScope();
-    scope.getDocument.mockResolvedValue({
+    scope.documents.getDocument.mockResolvedValue({
       id: DOC_ID,
       teamId: 'team-a',
       folderId: FOLDER_ID,
@@ -316,7 +326,7 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
       updatedAt: new Date('2026-05-01'),
       deletedAt: null,
     });
-    scope.listDocumentVersions.mockResolvedValue([
+    scope.documents.listDocumentVersions.mockResolvedValue([
       {
         id: VERSION_ID,
         teamId: 'team-a',
@@ -335,7 +345,7 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
         createdAt: new Date('2026-01-01'),
       },
     ]);
-    scope.folderPath.mockResolvedValue('/Deals/Acme');
+    scope.documents.folderPath.mockResolvedValue('/Deals/Acme');
     const tools = buildAgentTools(scope as unknown as TeamScope);
     const exec = tools.get_document?.execute as (
       input: { id: string },
@@ -391,7 +401,7 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
 
   it('get_document_chunk fences text and returns null when chunk is not visible', async () => {
     const scope = makeFakeScope();
-    scope.getDocumentChunk.mockResolvedValue(null);
+    scope.documents.getDocumentChunk.mockResolvedValue(null);
     const tools = buildAgentTools(scope as unknown as TeamScope);
     const exec = tools.get_document_chunk?.execute as (
       input: { id: string },
@@ -401,7 +411,7 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
     const result = await exec({ id: CHUNK_ID }, {});
     expect(result).toEqual({ found: false });
 
-    scope.getDocumentChunk.mockResolvedValue({
+    scope.documents.getDocumentChunk.mockResolvedValue({
       id: CHUNK_ID,
       teamId: 'team-a',
       documentId: DOC_ID,
@@ -420,14 +430,17 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
 
   it('list_recent_document_changes accepts optional since / limit, never teamId', async () => {
     const scope = makeFakeScope();
-    scope.listRecentDocumentChanges.mockResolvedValue([]);
+    scope.documents.listRecentDocumentChanges.mockResolvedValue([]);
     const tools = buildAgentTools(scope as unknown as TeamScope);
     const exec = tools.list_recent_document_changes?.execute as (
       input: unknown,
       opts: unknown,
     ) => Promise<unknown>;
     await exec({ since: '2026-01-01T00:00:00Z', limit: 10 }, {});
-    const passed = scope.listRecentDocumentChanges.mock.calls[0]?.[0] as Record<string, unknown>;
+    const passed = scope.documents.listRecentDocumentChanges.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
     expect(passed.limit).toBe(10);
     expect(passed.since).toBeInstanceOf(Date);
     expect(passed).not.toHaveProperty('teamId');
@@ -443,7 +456,7 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
     // Garbage documentId → schema parse fails → safe() wraps into
     // { error: 'tool_failed' }. The scope is never reached.
     const result = await exec({ query: 'x', documentId: 'not-a-uuid' }, {});
-    expect(scope.searchDocumentChunks).not.toHaveBeenCalled();
+    expect(scope.documents.searchDocumentChunks).not.toHaveBeenCalled();
     expect(result).toEqual({ error: 'tool_failed' });
   });
 });

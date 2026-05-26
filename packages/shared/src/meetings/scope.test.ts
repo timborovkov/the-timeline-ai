@@ -53,7 +53,7 @@ describe('meetings scope', () => {
   });
 
   it('createMeeting persists row with defaults and team scoping', async () => {
-    const scope = withTeam(db as never, TEAM_ID, USER_A);
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
     const m = await scope.createMeeting({
       platform: 'meet',
       meetingUrl: 'https://meet.google.com/abc',
@@ -65,7 +65,7 @@ describe('meetings scope', () => {
   });
 
   it('appendMeetingChunk writes chunk with idempotency (no per-chunk raw_event)', async () => {
-    const scope = withTeam(db as never, TEAM_ID, USER_A);
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
     const m = await scope.createMeeting({
       platform: 'zoom',
       meetingUrl: 'https://zoom.us/j/1',
@@ -103,7 +103,7 @@ describe('meetings scope', () => {
   });
 
   it('appendMeetingChunk links late chunks to an existing finalized meeting event', async () => {
-    const scope = withTeam(db as never, TEAM_ID, USER_A);
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
     const m = await scope.createMeeting({
       platform: 'zoom',
       meetingUrl: 'https://zoom.us/j/1',
@@ -170,7 +170,7 @@ describe('meetings scope', () => {
   });
 
   it('appendMeetingChunk replay after finalize preserves existing summary metadata', async () => {
-    const scope = withTeam(db as never, TEAM_ID, USER_A);
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
     const m = await scope.createMeeting({
       platform: 'zoom',
       meetingUrl: 'https://zoom.us/j/1',
@@ -245,7 +245,7 @@ describe('meetings scope', () => {
   });
 
   it('updateMeetingStatus flips status and merges metadata', async () => {
-    const scope = withTeam(db as never, TEAM_ID, USER_A);
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
     const m = await scope.createMeeting({
       platform: 'meet',
       meetingUrl: 'https://meet.google.com/x',
@@ -263,7 +263,7 @@ describe('meetings scope', () => {
   });
 
   it('records and sums meeting minutes per month', async () => {
-    const scope = withTeam(db as never, TEAM_ID, USER_A);
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
     const m = await scope.createMeeting({
       platform: 'meet',
       meetingUrl: 'https://meet.google.com/x',

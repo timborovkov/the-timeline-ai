@@ -13,18 +13,18 @@
       ],
       "project": ["src/**/*.{ts,tsx}"],
       "ignore": ["src/components/ui/**"],
-      "ignoreDependencies": ["tailwindcss", "radix-ui"]
+      "ignoreDependencies": ["tailwindcss"]
     },
     "apps/worker": {
-      "entry": ["src/index.ts", "src/scripts/*.ts"],
+      "entry": ["src/scripts/*.ts"],
       "project": ["src/**/*.ts"]
     },
     "packages/db": {
-      "entry": ["src/index.ts", "src/schema/**/*.ts", "src/migrate.ts"],
+      "entry": ["src/schema/**/*.ts", "src/migrate.ts"],
       "project": ["src/**/*.ts"]
     },
     "packages/shared": {
-      "entry": ["src/index.ts", "src/**/*.test.ts"],
+      "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.ts"],
       "ignoreDependencies": ["pino-pretty"]
     }

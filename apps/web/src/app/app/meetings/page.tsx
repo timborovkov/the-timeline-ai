@@ -16,9 +16,9 @@ export default async function MeetingsPage() {
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
 
-  const list = await scope.listMeetings({ limit: 50 });
-  const usedMinutes = await scope.getCurrentMonthMinutes();
-  const settings = await scope.getMeetingSettings();
+  const list = await scope.meetings.listMeetings({ limit: 50 });
+  const usedMinutes = await scope.meetings.getCurrentMonthMinutes();
+  const settings = await scope.meetings.getMeetingSettings();
   const cap = settings.meetingMinutesCap;
 
   return (

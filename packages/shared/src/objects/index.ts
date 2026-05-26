@@ -1,7 +1,7 @@
 /**
  * Phase 8 — workspace object helpers.
  *
- * All public functions take a `TeamScope` constructed via `withTeam`, so
+ * All public functions take a `TeamScopeCore` constructed via `withTeam`, so
  * team isolation + membership are already enforced upstream. The helpers
  * never read the team_id off the function argument — they read it off the
  * scope. That's the chokepoint that keeps a typo in a caller from leaking
@@ -26,7 +26,7 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, sql } from 'dri
 import { childLogger } from '../logger.js';
 import * as embedQueue from '../queue/queues.js';
 
-import type { TeamScope } from '../team-scope.js';
+import type { TeamScopeCore } from '../team-scope.js';
 
 const embedLog = childLogger('objects:embed');
 
@@ -159,7 +159,7 @@ function toArray<T>(v: T | T[] | undefined): T[] | undefined {
 
 export async function listObjects(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   filter: ObjectListFilter = {},
 ): Promise<ObjectRow[]> {
   await scope.requireMembership();
@@ -237,7 +237,7 @@ export interface ObjectDetail extends ObjectRow {
 
 export async function getObject(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   idOrName: string,
 ): Promise<ObjectDetail | null> {
   await scope.requireMembership();
@@ -468,7 +468,7 @@ export interface CreateObjectInput {
 
 export async function createObject(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   input: CreateObjectInput,
 ): Promise<ObjectRow> {
   await scope.requireMembership();
@@ -624,7 +624,7 @@ export async function createObject(
   return result;
 }
 
-interface UpdateActor {
+export interface UpdateActor {
   kind: ActorKind;
   userId: string | null;
 }
@@ -639,7 +639,7 @@ interface UpdateActor {
  */
 export async function updateObject(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   entityId: string,
   patch: ObjectPatch,
   actor: UpdateActor,
@@ -831,7 +831,7 @@ export async function updateObject(
 
 export async function archiveObject(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   entityId: string,
   actor: UpdateActor,
 ): Promise<ObjectRow> {
@@ -841,7 +841,7 @@ export async function archiveObject(
 
 export async function unarchiveObject(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   entityId: string,
   actor: UpdateActor,
 ): Promise<ObjectRow> {
@@ -851,7 +851,7 @@ export async function unarchiveObject(
 
 export async function addRelationship(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   input: {
     fromEntityId: string;
     toEntityId: string;
@@ -959,7 +959,7 @@ export async function addRelationship(
 
 export async function removeRelationship(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   relationshipId: string,
   actor: UpdateActor = { kind: 'user', userId: null },
 ): Promise<boolean> {
@@ -1036,7 +1036,7 @@ export async function removeRelationship(
 /** Notes are mutable; every CRUD writes raw_events + object_changes for audit. */
 export async function createNote(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   input: { entityId: string; body: string; authorUserId: string },
 ): Promise<{ id: string }> {
   await scope.requireMembership();
@@ -1112,7 +1112,7 @@ export async function createNote(
 
 export async function updateNote(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   input: { noteId: string; body: string; actorUserId: string },
 ): Promise<boolean> {
   await scope.requireMembership();
@@ -1189,7 +1189,7 @@ export async function updateNote(
 
 export async function deleteNote(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   input: { noteId: string; actorUserId: string },
 ): Promise<boolean> {
   await scope.requireMembership();
@@ -1249,7 +1249,7 @@ export async function deleteNote(
   });
 }
 
-export async function markVisited(db: Db, scope: TeamScope, entityId: string): Promise<void> {
+export async function markVisited(db: Db, scope: TeamScopeCore, entityId: string): Promise<void> {
   await scope.requireMembership();
   if (!UUID_RE.test(entityId)) return;
   await db
@@ -1287,7 +1287,7 @@ export interface NotificationRow {
 
 export async function listNotifications(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   filter: { unreadOnly?: boolean; limit?: number } = {},
 ): Promise<NotificationRow[]> {
   await scope.requireMembership();
@@ -1317,7 +1317,7 @@ export async function listNotifications(
   }));
 }
 
-export async function unreadNotificationCount(db: Db, scope: TeamScope): Promise<number> {
+export async function unreadNotificationCount(db: Db, scope: TeamScopeCore): Promise<number> {
   await scope.requireMembership();
   const rows = await db
     .select({ c: sql<number>`COUNT(*)::int` })
@@ -1334,7 +1334,7 @@ export async function unreadNotificationCount(db: Db, scope: TeamScope): Promise
 
 export async function markNotificationRead(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   notificationId: string,
 ): Promise<boolean> {
   await scope.requireMembership();
@@ -1354,7 +1354,7 @@ export async function markNotificationRead(
   return result.length > 0;
 }
 
-export async function markAllNotificationsRead(db: Db, scope: TeamScope): Promise<number> {
+export async function markAllNotificationsRead(db: Db, scope: TeamScopeCore): Promise<number> {
   await scope.requireMembership();
   const result = await db
     .update(notifications)
@@ -1390,7 +1390,7 @@ export interface ChatMessageRow {
 
 export async function listChatSessions(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   filter: { pinnedEntityId?: string; limit?: number; includeArchived?: boolean } = {},
 ): Promise<ChatSessionRow[]> {
   await scope.requireMembership();
@@ -1422,7 +1422,7 @@ export async function listChatSessions(
 
 export async function createChatSession(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   input: { title?: string | null; pinnedEntityId?: string | null } = {},
 ): Promise<ChatSessionRow> {
   await scope.requireMembership();
@@ -1465,7 +1465,7 @@ export async function createChatSession(
  */
 export async function chatSessionExists(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   sessionId: string,
 ): Promise<boolean> {
   await scope.requireMembership();
@@ -1492,7 +1492,7 @@ export async function chatSessionExists(
 
 export async function getChatSession(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   sessionId: string,
 ): Promise<{ session: ChatSessionRow; messages: ChatMessageRow[] } | null> {
   await scope.requireMembership();
@@ -1549,7 +1549,7 @@ export interface AppendChatMessageInput {
 
 export async function appendChatMessages(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   sessionId: string,
   messages: AppendChatMessageInput[],
 ): Promise<void> {
@@ -1594,7 +1594,7 @@ export async function appendChatMessages(
 
 export async function setChatSessionTitle(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   sessionId: string,
   title: string,
 ): Promise<void> {
@@ -1615,7 +1615,7 @@ export async function setChatSessionTitle(
 
 export async function linkChatSessionToObject(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   sessionId: string,
   entityId: string | null,
 ): Promise<void> {
@@ -1651,7 +1651,7 @@ export async function linkChatSessionToObject(
 
 export async function archiveChatSession(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   sessionId: string,
 ): Promise<void> {
   await scope.requireMembership();
@@ -1683,7 +1683,7 @@ export interface BoardViewRow {
   updatedAt: Date;
 }
 
-export async function listBoardViews(db: Db, scope: TeamScope): Promise<BoardViewRow[]> {
+export async function listBoardViews(db: Db, scope: TeamScopeCore): Promise<BoardViewRow[]> {
   await scope.requireMembership();
   const rows = await db
     .select()
@@ -1705,7 +1705,7 @@ export async function listBoardViews(db: Db, scope: TeamScope): Promise<BoardVie
 
 export async function getBoardView(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   id: string,
 ): Promise<BoardViewRow | null> {
   await scope.requireMembership();
@@ -1732,7 +1732,7 @@ export async function getBoardView(
 
 export async function saveBoardView(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   input: {
     id?: string;
     name: string;
@@ -1824,7 +1824,7 @@ export interface ObjectChangeRow {
 
 export async function listObjectChanges(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   filter: {
     entityId?: string;
     status?: 'applied' | 'suggested' | 'rejected';
@@ -1936,7 +1936,7 @@ function normalizeProposedValue(
  */
 export async function proposeObjectChange(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   input: ProposeObjectChangeInput,
 ): Promise<{ id: string }> {
   await scope.requireMembership();
@@ -2035,7 +2035,7 @@ export async function proposeObjectChange(
  */
 export async function acceptObjectChange(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   changeId: string,
   actor: UpdateActor,
 ): Promise<boolean> {
@@ -2139,7 +2139,7 @@ export async function acceptObjectChange(
 
 export async function rejectObjectChange(
   db: Db,
-  scope: TeamScope,
+  scope: TeamScopeCore,
   changeId: string,
 ): Promise<boolean> {
   await scope.requireMembership();
@@ -2158,7 +2158,7 @@ export async function rejectObjectChange(
   return result.length > 0;
 }
 
-export async function deleteBoardView(db: Db, scope: TeamScope, id: string): Promise<boolean> {
+export async function deleteBoardView(db: Db, scope: TeamScopeCore, id: string): Promise<boolean> {
   await scope.requireMembership();
   if (!UUID_RE.test(id)) return false;
   const rows = await db
@@ -2167,3 +2167,55 @@ export async function deleteBoardView(db: Db, scope: TeamScope, id: string): Pro
     .returning({ id: boardViews.id });
   return rows.length > 0;
 }
+
+export function createObjectScope(db: Db, scope: TeamScopeCore) {
+  return {
+    listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
+    getObject: (idOrName: string) => getObject(db, scope, idOrName),
+    createObject: (input: CreateObjectInput) => createObject(db, scope, input),
+    updateObject: (entityId: string, patch: ObjectPatch, actor: UpdateActor) =>
+      updateObject(db, scope, entityId, patch, actor),
+    archiveObject: (entityId: string, actor: UpdateActor) =>
+      archiveObject(db, scope, entityId, actor),
+    unarchiveObject: (entityId: string, actor: UpdateActor) =>
+      unarchiveObject(db, scope, entityId, actor),
+    addRelationship: (input: Parameters<typeof addRelationship>[2]) =>
+      addRelationship(db, scope, input),
+    removeRelationship: (id: string, actor: UpdateActor) =>
+      removeRelationship(db, scope, id, actor),
+    createNote: (input: Parameters<typeof createNote>[2]) => createNote(db, scope, input),
+    updateNote: (input: Parameters<typeof updateNote>[2]) => updateNote(db, scope, input),
+    deleteNote: (input: Parameters<typeof deleteNote>[2]) => deleteNote(db, scope, input),
+    markVisited: (entityId: string) => markVisited(db, scope, entityId),
+    listNotifications: (filter?: Parameters<typeof listNotifications>[2]) =>
+      listNotifications(db, scope, filter),
+    unreadNotificationCount: () => unreadNotificationCount(db, scope),
+    markNotificationRead: (id: string) => markNotificationRead(db, scope, id),
+    markAllNotificationsRead: () => markAllNotificationsRead(db, scope),
+    listChatSessions: (filter?: Parameters<typeof listChatSessions>[2]) =>
+      listChatSessions(db, scope, filter),
+    createChatSession: (input?: Parameters<typeof createChatSession>[2]) =>
+      createChatSession(db, scope, input),
+    chatSessionExists: (sessionId: string) => chatSessionExists(db, scope, sessionId),
+    getChatSession: (sessionId: string) => getChatSession(db, scope, sessionId),
+    appendChatMessages: (sessionId: string, messages: AppendChatMessageInput[]) =>
+      appendChatMessages(db, scope, sessionId, messages),
+    setChatSessionTitle: (sessionId: string, title: string) =>
+      setChatSessionTitle(db, scope, sessionId, title),
+    linkChatSessionToObject: (sessionId: string, entityId: string | null) =>
+      linkChatSessionToObject(db, scope, sessionId, entityId),
+    archiveChatSession: (sessionId: string) => archiveChatSession(db, scope, sessionId),
+    listBoardViews: () => listBoardViews(db, scope),
+    getBoardView: (id: string) => getBoardView(db, scope, id),
+    saveBoardView: (input: Parameters<typeof saveBoardView>[2]) => saveBoardView(db, scope, input),
+    listObjectChanges: (filter?: Parameters<typeof listObjectChanges>[2]) =>
+      listObjectChanges(db, scope, filter),
+    proposeObjectChange: (input: ProposeObjectChangeInput) => proposeObjectChange(db, scope, input),
+    acceptObjectChange: (changeId: string, actor: UpdateActor) =>
+      acceptObjectChange(db, scope, changeId, actor),
+    rejectObjectChange: (changeId: string) => rejectObjectChange(db, scope, changeId),
+    deleteBoardView: (id: string) => deleteBoardView(db, scope, id),
+  };
+}
+
+export type ObjectScope = ReturnType<typeof createObjectScope>;

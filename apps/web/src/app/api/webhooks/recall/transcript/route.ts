@@ -182,7 +182,7 @@ export async function POST(req: Request): Promise<Response> {
 
   try {
     const scope = withTeam(db, meeting.teamId, meeting.createdByUserId ?? meeting.teamId);
-    const result = await scope.appendMeetingChunk({
+    const result = await scope.meetings.appendMeetingChunk({
       meetingId: meeting.id,
       speaker: chunk.speaker,
       text: chunk.text,

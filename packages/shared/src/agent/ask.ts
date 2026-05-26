@@ -53,7 +53,7 @@ export async function askAgent(input: AskAgentInput, deps: ChatDeps = {}): Promi
     return { ok: false, error: 'not_a_member' };
   }
 
-  const team = await scope.team();
+  const team = await scope.timeline.team();
   if (!team) return { ok: false, error: 'no_team' };
 
   const system = buildSystemPrompt({

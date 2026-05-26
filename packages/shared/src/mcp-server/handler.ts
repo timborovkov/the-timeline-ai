@@ -189,7 +189,7 @@ async function callTool(
     case 'timeline.search_events': {
       const query = typeof args.query === 'string' ? args.query : '';
       const limit = typeof args.limit === 'number' ? args.limit : 10;
-      const hits = await scope.searchEvents({ query, limit });
+      const hits = await scope.timeline.searchEvents({ query, limit });
       return {
         count: hits.length,
         results: hits.map((r) => ({
@@ -203,7 +203,7 @@ async function callTool(
     }
     case 'timeline.get_event': {
       const id = typeof args.id === 'string' ? args.id : '';
-      const ev = await scope.getEvent(id);
+      const ev = await scope.timeline.getEvent(id);
       if (!ev) return { found: false };
       return {
         found: true,
@@ -217,7 +217,7 @@ async function callTool(
       };
     }
     case 'timeline.list_events': {
-      const filters: Parameters<typeof scope.listEvents>[0] = {};
+      const filters: Parameters<typeof scope.timeline.listEvents>[0] = {};
       if (typeof args.from === 'string') filters.from = new Date(args.from);
       if (typeof args.to === 'string') filters.to = new Date(args.to);
       if (typeof args.limit === 'number') filters.limit = args.limit;
@@ -236,7 +236,7 @@ async function callTool(
       if (typeof args.source === 'string' && ALLOWED_SOURCES.includes(args.source)) {
         filters.source = args.source;
       }
-      const rows = await scope.listEvents(filters);
+      const rows = await scope.timeline.listEvents(filters);
       return {
         count: rows.length,
         events: rows.map((r) => ({
@@ -249,13 +249,13 @@ async function callTool(
     }
     case 'timeline.get_entity': {
       const idOrName = typeof args.idOrName === 'string' ? args.idOrName : '';
-      const profile = await scope.getEntity(idOrName);
+      const profile = await scope.timeline.getEntity(idOrName);
       return profile ?? { found: false };
     }
     case 'timeline.search_documents': {
       const query = typeof args.query === 'string' ? args.query : '';
       const limit = typeof args.limit === 'number' ? args.limit : 10;
-      const hits = await scope.searchDocumentChunks({ query, limit });
+      const hits = await scope.documents.searchDocumentChunks({ query, limit });
       return { count: hits.length, results: hits };
     }
     default:
@@ -349,7 +349,7 @@ async function readResource(db: Db, teamId: string, uri: string): Promise<unknow
   const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
   const scope = withTeam(db, teamId, PSEUDO_USER, { skipMembershipCheck: true });
   if (uri === 'timeline://events/recent') {
-    const rows = await scope.listEvents({ limit: 50 });
+    const rows = await scope.timeline.listEvents({ limit: 50 });
     return rows.map((r) => ({
       id: r.id,
       source: r.source,

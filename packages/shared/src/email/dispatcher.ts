@@ -529,7 +529,7 @@ async function ingestForTeam(
     baseMetadata.postmark_message_id = postmarkMessageId;
   }
 
-  const createResult = await scope.createEmailEvent({
+  const createResult = await scope.timeline.createEmailEvent({
     authorUserId,
     messageId,
     inReplyTo: headersInReplyTo,
@@ -592,7 +592,7 @@ async function ingestForTeam(
         log.error({ teamId: team.id, key, err }, 'audio attachment upload failed');
         continue;
       }
-      const child = await scope.createEvent({
+      const child = await scope.timeline.createEvent({
         authorUserId,
         source: 'email',
         contentAudioUrl: key,

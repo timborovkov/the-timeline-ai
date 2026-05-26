@@ -60,7 +60,7 @@ export async function createFolderAction(
   const parsed = createFolderSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid' };
   try {
-    await got.scope.createFolder({
+    await got.scope.documents.createFolder({
       name: parsed.data.name,
       parentFolderId: parsed.data.parentFolderId ?? null,
       visibility: parsed.data.visibility,
@@ -84,7 +84,7 @@ export async function deleteFolderAction(id: string): Promise<Result> {
   if ('error' in got) return { ok: false, error: got.error };
   if (!UUID_RE.test(id)) return { ok: false, error: 'Invalid id' };
   try {
-    await got.scope.softDeleteFolder(id);
+    await got.scope.documents.softDeleteFolder(id);
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
   }
@@ -137,7 +137,7 @@ export async function requestDocumentUploadAction(
     let versionId: string;
     let objectKey: string;
     if (parsed.data.documentId) {
-      const v = await got.scope.addDocumentVersion({
+      const v = await got.scope.documents.addDocumentVersion({
         documentId: parsed.data.documentId,
         filename: parsed.data.filename,
         contentType: parsed.data.contentType,
@@ -146,7 +146,7 @@ export async function requestDocumentUploadAction(
       versionId = v.id;
       objectKey = v.objectKey;
     } else {
-      const created = await got.scope.createDocument({
+      const created = await got.scope.documents.createDocument({
         name: parsed.data.name,
         folderId: parsed.data.folderId ?? null,
         filename: parsed.data.filename,
@@ -194,7 +194,7 @@ export async function finalizeDocumentVersionAction(
     // row + write the timeline event. Without this, an abandoned PUT
     // could still produce a 'upload' raw_events row pointing at a
     // missing object.
-    const version = await got.scope.getDocumentVersion(parsed.data.versionId);
+    const version = await got.scope.documents.getDocumentVersion(parsed.data.versionId);
     if (!version) return { ok: false, error: 'Version not found' };
     const head = await headObject(getS3Client(), getDocumentsBucket(), version.objectKey);
     if (head.contentLength === undefined) {
@@ -203,7 +203,7 @@ export async function finalizeDocumentVersionAction(
     if (head.contentLength > MAX_UPLOAD_BYTES) {
       return { ok: false, error: 'File exceeds size limit' };
     }
-    const finalized = await got.scope.finalizeDocumentVersion({
+    const finalized = await got.scope.documents.finalizeDocumentVersion({
       versionId: parsed.data.versionId,
       byteSize: head.contentLength,
       contentType: head.contentType ?? version.contentType ?? 'application/octet-stream',
@@ -239,7 +239,7 @@ export async function renameDocumentAction(
   const parsed = renameDocumentSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid' };
   try {
-    await got.scope.renameDocument(parsed.data);
+    await got.scope.documents.renameDocument(parsed.data);
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
   }
@@ -257,7 +257,7 @@ export async function deleteDocumentAction(id: string): Promise<Result> {
   if ('error' in got) return { ok: false, error: got.error };
   if (!UUID_RE.test(id)) return { ok: false, error: 'Invalid id' };
   try {
-    await got.scope.softDeleteDocument(id);
+    await got.scope.documents.softDeleteDocument(id);
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
   }
@@ -282,10 +282,10 @@ export async function getDocumentDownloadUrlAction(input: {
   const got = await withScopeOrError();
   if ('error' in got) return { ok: false, error: got.error };
   if (!UUID_RE.test(input.versionId)) return { ok: false, error: 'Invalid id' };
-  const version = await got.scope.getDocumentVersion(input.versionId);
+  const version = await got.scope.documents.getDocumentVersion(input.versionId);
   if (!version) return { ok: false, error: 'Version not found' };
   // Re-check the parent document's visibility.
-  const document = await got.scope.getDocument(version.documentId);
+  const document = await got.scope.documents.getDocument(version.documentId);
   if (!document) return { ok: false, error: 'Document not found' };
   const url = await getSignedGetObjectUrl(
     getS3PresignClient(),

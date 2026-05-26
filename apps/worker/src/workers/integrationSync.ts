@@ -160,7 +160,7 @@ async function runOneIntegration(
               let contentType: string;
               if (existing.length > 0 && existing[0]) {
                 const doc = existing[0];
-                const version = await scope.addDocumentVersion({
+                const version = await scope.documents.addDocumentVersion({
                   documentId: doc.id,
                   filename: input.filename,
                   contentType: input.contentType,
@@ -170,7 +170,7 @@ async function runOneIntegration(
                 objectKey = version.objectKey;
                 contentType = version.contentType ?? input.contentType;
               } else {
-                const created = await scope.createDocument({
+                const created = await scope.documents.createDocument({
                   name: input.filename,
                   filename: input.filename,
                   contentType: input.contentType,
@@ -194,7 +194,7 @@ async function runOneIntegration(
                 contentType,
               });
               // Finalize the version and enqueue extraction.
-              await scope.finalizeDocumentVersion({
+              await scope.documents.finalizeDocumentVersion({
                 versionId,
                 contentType,
                 byteSize: input.body.byteLength,

@@ -94,7 +94,7 @@ describe('document scope — finalizeDocumentVersion idempotency (P1 fix)', () =
     // This is the P1 regression: a UI double-click or replayed server
     // action would previously write two "Uploaded foo.pdf" timeline
     // rows. The fix short-circuits on existing source_event_id.
-    const scope = withTeam(db, TEAM_ID, USER_A);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
     const created = await scope.createDocument({
       name: 'contract.pdf',
       folderId: null,
@@ -124,20 +124,20 @@ describe('document scope — finalizeDocumentVersion idempotency (P1 fix)', () =
     // Server actions are stateless — a retried action creates a fresh
     // withTeam call. The idempotency check lives in SQL, not in scope
     // memory, so it must hold across instances.
-    const scopeA = withTeam(db, TEAM_ID, USER_A);
-    const created = await scopeA.createDocument({
+    const A = withTeam(db, TEAM_ID, USER_A).documents;
+    const created = await A.createDocument({
       name: 'doc.txt',
       folderId: null,
       filename: 'doc.txt',
       contentType: 'text/plain',
     });
-    await scopeA.finalizeDocumentVersion({
+    await A.finalizeDocumentVersion({
       versionId: created.version.id,
       byteSize: 100,
       contentType: 'text/plain',
     });
-    const scopeB = withTeam(db, TEAM_ID, USER_A);
-    const replay = await scopeB.finalizeDocumentVersion({
+    const B = withTeam(db, TEAM_ID, USER_A).documents;
+    const replay = await B.finalizeDocumentVersion({
       versionId: created.version.id,
       byteSize: 100,
       contentType: 'text/plain',
@@ -152,8 +152,8 @@ describe('document scope — finalizeDocumentVersion idempotency (P1 fix)', () =
 
 describe('document scope — visibility filter', () => {
   it("user B cannot see user A's private document", async () => {
-    const scopeA = withTeam(db, TEAM_ID, USER_A);
-    const created = await scopeA.createDocument({
+    const A = withTeam(db, TEAM_ID, USER_A).documents;
+    const created = await A.createDocument({
       name: 'secret.txt',
       folderId: null,
       filename: 'secret.txt',
@@ -161,32 +161,32 @@ describe('document scope — visibility filter', () => {
       visibility: 'private',
     });
     // A sees it.
-    const listedByA = await scopeA.listDocuments({ folderId: null });
+    const listedByA = await A.listDocuments({ folderId: null });
     expect(listedByA.map((d) => d.id)).toContain(created.document.id);
-    expect(await scopeA.getDocument(created.document.id)).not.toBeNull();
+    expect(await A.getDocument(created.document.id)).not.toBeNull();
     // B does NOT.
-    const scopeB = withTeam(db, TEAM_ID, USER_B);
-    const listedByB = await scopeB.listDocuments({ folderId: null });
+    const B = withTeam(db, TEAM_ID, USER_B).documents;
+    const listedByB = await B.listDocuments({ folderId: null });
     expect(listedByB.map((d) => d.id)).not.toContain(created.document.id);
-    expect(await scopeB.getDocument(created.document.id)).toBeNull();
+    expect(await B.getDocument(created.document.id)).toBeNull();
   });
 
   it('team-visibility documents are visible to all team members', async () => {
-    const scopeA = withTeam(db, TEAM_ID, USER_A);
-    const created = await scopeA.createDocument({
+    const A = withTeam(db, TEAM_ID, USER_A).documents;
+    const created = await A.createDocument({
       name: 'shared.txt',
       folderId: null,
       filename: 'shared.txt',
       contentType: 'text/plain',
       visibility: 'team',
     });
-    const scopeB = withTeam(db, TEAM_ID, USER_B);
-    expect(await scopeB.getDocument(created.document.id)).not.toBeNull();
+    const B = withTeam(db, TEAM_ID, USER_B).documents;
+    expect(await B.getDocument(created.document.id)).not.toBeNull();
   });
 
   it('specific_users visibility honors the visibility_user_ids array', async () => {
-    const scopeA = withTeam(db, TEAM_ID, USER_A);
-    const created = await scopeA.createDocument({
+    const A = withTeam(db, TEAM_ID, USER_A).documents;
+    const created = await A.createDocument({
       name: 'targeted.txt',
       folderId: null,
       filename: 'targeted.txt',
@@ -195,22 +195,22 @@ describe('document scope — visibility filter', () => {
       visibilityUserIds: [USER_B],
     });
     // B is in the allowlist.
-    const scopeB = withTeam(db, TEAM_ID, USER_B);
-    expect(await scopeB.getDocument(created.document.id)).not.toBeNull();
+    const B = withTeam(db, TEAM_ID, USER_B).documents;
+    expect(await B.getDocument(created.document.id)).not.toBeNull();
     // Add a third user NOT in the allowlist — they shouldn't see it.
     const USER_C = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
     await pg.exec(`INSERT INTO users (id, email) VALUES ('${USER_C}', 'c@test.local');`);
     await pg.exec(
       `INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${USER_C}', 'member');`,
     );
-    const scopeC = withTeam(db, TEAM_ID, USER_C);
-    expect(await scopeC.getDocument(created.document.id)).toBeNull();
+    const C = withTeam(db, TEAM_ID, USER_C).documents;
+    expect(await C.getDocument(created.document.id)).toBeNull();
   });
 });
 
 describe('document scope — folder constraints', () => {
   it('refuses to move a folder into its own subtree (cycle prevention)', async () => {
-    const scope = withTeam(db, TEAM_ID, USER_A);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
     const parent = await scope.createFolder({ name: 'parent' });
     const child = await scope.createFolder({ name: 'child', parentFolderId: parent.id });
     await expect(scope.moveFolder({ id: parent.id, parentFolderId: child.id })).rejects.toThrow(
@@ -219,13 +219,13 @@ describe('document scope — folder constraints', () => {
   });
 
   it('rejects duplicate folder names within the same parent (COALESCE-null-root unique)', async () => {
-    const scope = withTeam(db, TEAM_ID, USER_A);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
     await scope.createFolder({ name: 'Contracts' });
     await expect(scope.createFolder({ name: 'Contracts' })).rejects.toThrow();
   });
 
   it('allows the same folder name in different parents', async () => {
-    const scope = withTeam(db, TEAM_ID, USER_A);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
     const a = await scope.createFolder({ name: 'A' });
     const b = await scope.createFolder({ name: 'B' });
     // "Reports" in folder A and "Reports" in folder B both succeed.
@@ -238,7 +238,7 @@ describe('document scope — folder constraints', () => {
 
 describe('document scope — soft delete + audit trail', () => {
   it('soft-deleted documents disappear from listDocuments but the audit row stays', async () => {
-    const scope = withTeam(db, TEAM_ID, USER_A);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
     const created = await scope.createDocument({
       name: 'oops.txt',
       folderId: null,
@@ -261,7 +261,7 @@ describe('document scope — soft delete + audit trail', () => {
   });
 
   it('restoreDocument brings the doc back into listDocuments', async () => {
-    const scope = withTeam(db, TEAM_ID, USER_A);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
     const created = await scope.createDocument({
       name: 'restoreme.txt',
       folderId: null,
@@ -279,7 +279,7 @@ describe('document scope — soft delete + audit trail', () => {
     // deleted folder must return null so the detail page, breadcrumbs,
     // and ancestry helper all hide it. restoreFolder bypasses
     // getFolderRaw so undelete still finds the row.
-    const scope = withTeam(db, TEAM_ID, USER_A);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
     const folder = await scope.createFolder({ name: 'Drafts' });
     expect(await scope.getFolder(folder.id)).not.toBeNull();
     await scope.softDeleteFolder(folder.id);
@@ -300,32 +300,32 @@ describe('document scope — soft delete + audit trail', () => {
     // didn't apply the visibility predicate at each step. The fix
     // adds folderVisibility to the per-row where-clause; the walk
     // stops at the invisible ancestor so the breadcrumb truncates.
-    const scopeA = withTeam(db, TEAM_ID, USER_A);
-    const secret = await scopeA.createFolder({
+    const A = withTeam(db, TEAM_ID, USER_A).documents;
+    const secret = await A.createFolder({
       name: 'Secret',
       visibility: 'private',
     });
-    const pub = await scopeA.createFolder({
+    const pub = await A.createFolder({
       name: 'Public',
       parentFolderId: secret.id,
       visibility: 'team',
     });
     // User A sees the full chain.
-    expect(await scopeA.folderAncestry(pub.id)).toEqual([
+    expect(await A.folderAncestry(pub.id)).toEqual([
       { id: secret.id, name: 'Secret' },
       { id: pub.id, name: 'Public' },
     ]);
     // User B sees only the team-visible leaf; "Secret" is not exposed.
-    const scopeB = withTeam(db, TEAM_ID, USER_B);
-    expect(await scopeB.folderAncestry(pub.id)).toEqual([{ id: pub.id, name: 'Public' }]);
+    const B = withTeam(db, TEAM_ID, USER_B).documents;
+    expect(await B.folderAncestry(pub.id)).toEqual([{ id: pub.id, name: 'Public' }]);
     // folderPath inherits the same protection.
-    expect(await scopeB.folderPath(pub.id)).toBe('/Public');
+    expect(await B.folderPath(pub.id)).toBe('/Public');
   });
 
   it('folderAncestry returns ancestors shallowest-first (replaces page breadcrumb walker)', async () => {
     // Pins the contract the page's breadcrumb code relies on after the
     // duplicated walker was removed.
-    const scope = withTeam(db, TEAM_ID, USER_A);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
     const a = await scope.createFolder({ name: 'A' });
     const b = await scope.createFolder({ name: 'B', parentFolderId: a.id });
     const c = await scope.createFolder({ name: 'C', parentFolderId: b.id });
@@ -342,7 +342,7 @@ describe('document scope — soft delete + audit trail', () => {
     // detail page, the agent's get_document tool, and the download
     // action all leaked content of "deleted" docs. The fix filters
     // by isNull(deletedAt) in getDocumentRaw.
-    const scope = withTeam(db, TEAM_ID, USER_A);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
     const created = await scope.createDocument({
       name: 'gone.txt',
       folderId: null,
@@ -364,7 +364,7 @@ describe('document scope — soft delete + audit trail', () => {
 
 describe('document scope — transactional invariant', () => {
   it('renameDocument writes exactly one rename raw_event per call', async () => {
-    const scope = withTeam(db, TEAM_ID, USER_A);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
     const created = await scope.createDocument({
       name: 'first.txt',
       folderId: null,
@@ -383,7 +383,7 @@ describe('document scope — transactional invariant', () => {
   });
 
   it('previous values are captured in the rename audit row', async () => {
-    const scope = withTeam(db, TEAM_ID, USER_A);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
     const created = await scope.createDocument({
       name: 'before.txt',
       folderId: null,

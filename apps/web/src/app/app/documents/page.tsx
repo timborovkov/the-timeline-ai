@@ -24,15 +24,15 @@ export default async function DocumentsPage({ searchParams }: Props) {
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
 
-  const currentFolder = folderParam ? await scope.getFolder(folderParam) : null;
+  const currentFolder = folderParam ? await scope.documents.getFolder(folderParam) : null;
   // Defense in depth: an unknown / invisible folder id silently falls back
   // to root rather than rendering a "Folder not found" page that leaks
   // the existence-or-not distinction.
   const folderId = currentFolder?.id ?? null;
   const [folders, documents, ancestry] = await Promise.all([
-    scope.listFolders({ parentFolderId: folderId }),
-    scope.listDocuments({ folderId }),
-    scope.folderAncestry(folderId),
+    scope.documents.listFolders({ parentFolderId: folderId }),
+    scope.documents.listDocuments({ folderId }),
+    scope.documents.folderAncestry(folderId),
   ]);
   // Prepend the root crumb. Scope returns ancestors only — the root
   // label is a UI concern, not data.

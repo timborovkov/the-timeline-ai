@@ -22,9 +22,9 @@ export default async function TeamSettingsPage() {
   const scope = withTeam(db, active.teamId, session.user.id);
   const role = await scope.requireMembership();
   const isAdmin = role === 'owner' || role === 'admin';
-  const team = await scope.team();
+  const team = await scope.timeline.team();
 
-  const memberRows = await scope.listMembers();
+  const memberRows = await scope.timeline.listMembers();
   const userIds = memberRows.map((m) => m.userId);
   const userInfo =
     userIds.length > 0

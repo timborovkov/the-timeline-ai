@@ -1,4 +1,4 @@
-import { objects, withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -23,7 +23,7 @@ export default async function InboxPage({
   const params = await searchParams;
   const unreadOnly = params.unread === '1';
 
-  const rows = await objects.listNotifications(db, scope, {
+  const rows = await scope.objects.listNotifications({
     unreadOnly,
     limit: 200,
   });

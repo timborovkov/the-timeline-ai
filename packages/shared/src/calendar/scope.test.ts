@@ -132,7 +132,7 @@ describe('calendar scope', () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     await expect(scope.calendar.deleteCalendarEvent(CALENDAR_EVENT_ID)).resolves.toBe(true);
 
-    const timelineRows = await scope.listEvents({ source: 'calendar' });
+    const timelineRows = await scope.timeline.listEvents({ source: 'calendar' });
     expect(timelineRows).toHaveLength(1);
     expect(timelineRows[0]?.contentText).toBe('Cancelled: Launch review');
 
@@ -169,7 +169,7 @@ describe('calendar scope', () => {
     });
 
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
-    await expect(scope.getEventWithFacts(START_RAW_EVENT_ID)).resolves.toBeNull();
+    await expect(scope.timeline.getEventWithFacts(START_RAW_EVENT_ID)).resolves.toBeNull();
   });
 
   it('unlinkEntity requires write access to the calendar event', async () => {
