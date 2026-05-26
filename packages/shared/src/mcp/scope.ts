@@ -271,16 +271,26 @@ export function createMcpScope(deps: {
       });
   }
 
-  async function loadOauthClientInfo(
-    mcpServerId: string,
-  ): Promise<{ clientInfo: Record<string, unknown> | null; codeVerifier: string | null }> {
+  async function loadOauthClientInfo(mcpServerId: string): Promise<{
+    clientInfo: Record<string, unknown> | null;
+    codeVerifier: string | null;
+    /**
+     * True once a real token blob has been persisted — i.e. callback
+     * has run at least once for this server. `persistOauthPending`
+     * leaves `expires_at` null; `persistOauthTokens` sets it. The
+     * callback uses this to decide whether to flip `enabled: true`
+     * (first connect) or leave the current admin-managed flag alone
+     * (re-auth after an admin disabled).
+     */
+    hasExistingTokens: boolean;
+  }> {
     // Mirror the gate used by persistOauthPending / persistOauthTokens:
     // personal servers are owner-only, team-shared servers are admin-only.
     // Without this, any team member could read another server's pending
     // OAuth state — including dynamically-registered client_secret and
     // PKCE code_verifier — by passing its UUID.
     const server = await getServer(mcpServerId);
-    if (!server) return { clientInfo: null, codeVerifier: null };
+    if (!server) return { clientInfo: null, codeVerifier: null, hasExistingTokens: false };
     if (server.userId) {
       if (server.userId !== userId) throw new Error('forbidden');
       await ensureMember();
@@ -293,7 +303,8 @@ export function createMcpScope(deps: {
       .where(and(eq(mcpOauthTokens.teamId, teamId), eq(mcpOauthTokens.mcpServerId, mcpServerId)))
       .limit(1);
     const row = rows[0];
-    if (!row) return { clientInfo: null, codeVerifier: null };
+    if (!row) return { clientInfo: null, codeVerifier: null, hasExistingTokens: false };
+    const hasExistingTokens = row.expiresAt !== null;
     let clientInfo: Record<string, unknown> | null = null;
     if (row.clientInfoCiphertext && row.clientInfoIv && row.clientInfoTag) {
       clientInfo = decryptJson({
@@ -302,7 +313,7 @@ export function createMcpScope(deps: {
         tag: row.clientInfoTag,
       }) as Record<string, unknown>;
     }
-    return { clientInfo, codeVerifier: row.codeVerifier };
+    return { clientInfo, codeVerifier: row.codeVerifier, hasExistingTokens };
   }
 
   async function discoverTools() {

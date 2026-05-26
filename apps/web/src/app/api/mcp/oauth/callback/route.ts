@@ -53,7 +53,9 @@ export async function GET(req: Request): Promise<Response> {
   } else if (server.userId !== session.user.id) {
     return new Response('forbidden', { status: 403 });
   }
-  const { clientInfo, codeVerifier } = await scope.mcp.loadOauthClientInfo(verified.mcpServerId);
+  const { clientInfo, codeVerifier, hasExistingTokens } = await scope.mcp.loadOauthClientInfo(
+    verified.mcpServerId,
+  );
   if (!clientInfo || !codeVerifier) {
     return new Response('missing_pending_state', { status: 400 });
   }
@@ -110,8 +112,15 @@ export async function GET(req: Request): Promise<Response> {
         codeVerifier: null,
       },
     );
-    // Flip the server to enabled and clear any pending-connection error.
-    await scope.mcp.updateServer(verified.mcpServerId, { enabled: true });
+    // First-connect: flip enabled true so the server starts serving
+    // tools. Re-auth (tokens existed before): leave `enabled` alone —
+    // if an admin deliberately disabled this server while authorization
+    // was in flight (or before a token refresh), completing OAuth must
+    // NOT silently re-enable it. The /reconnect path through the chat
+    // UI explicitly toggles enabled separately for the legitimate case.
+    if (!hasExistingTokens) {
+      await scope.mcp.updateServer(verified.mcpServerId, { enabled: true });
+    }
     return NextResponse.redirect(
       new URL(`/app/team/integrations?connected=${verified.mcpServerId}`, req.url),
     );
