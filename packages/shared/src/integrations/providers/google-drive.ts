@@ -219,6 +219,9 @@ interface DriveFile {
   webViewLink?: string;
   owners?: { displayName?: string; emailAddress?: string }[];
   parents?: string[];
+  /** Shared drive id when the file lives in a shared (Team) drive. Shared
+   *  drives don't expose the drive id via `parents` — only this field. */
+  driveId?: string;
 }
 
 interface DriveChange {
@@ -321,8 +324,14 @@ async function fetchChanges(
       pageToken,
       includeRemoved: 'true',
       fields:
-        'changes(changeType,removed,time,fileId,file(id,name,mimeType,modifiedTime,webViewLink,parents,owners(displayName,emailAddress))),nextPageToken,newStartPageToken',
+        'changes(changeType,removed,time,fileId,file(id,name,mimeType,modifiedTime,webViewLink,parents,driveId,owners(displayName,emailAddress))),nextPageToken,newStartPageToken',
       pageSize: '100',
+      // Required by the Drive API to receive changes from shared drives
+      // (Team Drives) at all, plus the `driveId` field. Without these
+      // params the feed only carries My Drive changes regardless of
+      // what scopes the OAuth grants.
+      includeItemsFromAllDrives: 'true',
+      supportsAllDrives: 'true',
     });
     const events: IntegrationEvent[] = [];
     const ancestorCache = new Map<string, boolean>();
@@ -336,13 +345,22 @@ async function fetchChanges(
       // parents on a tombstone to check otherwise.
       let inScope = c.removed === true;
       if (!inScope && c.file) {
-        inScope = await fileInSelectedSubtree(
-          tokens,
-          c.file.id,
-          c.file.parents ?? [],
-          selectedFolderIds,
-          ancestorCache,
-        );
+        // Shared-drive files don't expose the shared-drive id via
+        // `parents` — only via the top-level `driveId`. Check that
+        // first so `drive.shared_drive` selections actually match,
+        // then fall back to the parent walk for My Drive / nested
+        // folder selections.
+        if (c.file.driveId && selectedFolderIds.has(c.file.driveId)) {
+          inScope = true;
+        } else {
+          inScope = await fileInSelectedSubtree(
+            tokens,
+            c.file.id,
+            c.file.parents ?? [],
+            selectedFolderIds,
+            ancestorCache,
+          );
+        }
       }
       if (!inScope) continue;
       const evt = changeToEvent(integration, c);
@@ -409,7 +427,19 @@ async function fetchChanges(
       return;
     }
   }
-  if (safety >= 50) log.warn({ integrationId: integration.id }, 'drive changes hit page cap');
+  // Hit the 50-page safety cap with more pages still available. Persist
+  // the next `pageToken` so the following tick resumes where we stopped
+  // instead of restarting from the stored token and reprocessing the
+  // same window forever. Surfaces in audit so operators can spot the
+  // accounts that consistently exceed the cap.
+  if (pageToken) {
+    await ctx.saveCursor(resourceType, { page_token: pageToken });
+    await ctx.recordAudit('drive_page_cap_hit', {
+      integration_id: integration.id,
+      next_page_token: pageToken,
+    });
+    log.warn({ integrationId: integration.id }, 'drive changes hit page cap');
+  }
 }
 
 export const googleDriveProvider: IntegrationProvider = {
