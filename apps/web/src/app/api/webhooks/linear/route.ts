@@ -1,9 +1,33 @@
-import { integrations as integrationsTable } from '@timeline/db';
+import { integrationSelections, integrations as integrationsTable } from '@timeline/db';
 import { email, integrations as integrationsLib, queue, rateLimit } from '@timeline/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
+
+// Pull the Linear team id out of a webhook payload. The schema varies by
+// entity type — Linear puts it at different paths for Issue vs Comment
+// vs Project. Returns null when no team id can be resolved (we treat
+// that as "can't filter; drop conservatively" against selections).
+function extractLinearTeamId(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const p = payload as Record<string, unknown>;
+  const data = p.data as Record<string, unknown> | undefined;
+  if (!data) return null;
+  // Top-level teamId on the webhook envelope (Issue, Project).
+  if (typeof data.teamId === 'string') return data.teamId;
+  // Nested team object (some entity types).
+  const team = data.team as Record<string, unknown> | undefined;
+  if (team && typeof team.id === 'string') return team.id;
+  // Comment payloads carry the issue object with a teamId/team.
+  const issue = data.issue as Record<string, unknown> | undefined;
+  if (issue) {
+    if (typeof issue.teamId === 'string') return issue.teamId;
+    const issueTeam = issue.team as Record<string, unknown> | undefined;
+    if (issueTeam && typeof issueTeam.id === 'string') return issueTeam.id;
+  }
+  return null;
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -57,8 +81,51 @@ export async function POST(req: Request): Promise<Response> {
   if (rows.length === 0) {
     return NextResponse.json({ ok: true, reason: 'no_matching_tenant' }, { status: 200 });
   }
+  // Phase 11 — respect linear.team selections. The scheduled sync only
+  // pulls data for selected teams; the webhook should match. Pull the
+  // payload's team id once, then filter each integration's selections
+  // against it. An integration with no linear.team selections drops
+  // the event (same strict posture as github.repo).
+  const payloadTeamId = extractLinearTeamId(payload);
+  const selectionRows = await db
+    .select({
+      integrationId: integrationSelections.integrationId,
+      externalId: integrationSelections.externalId,
+    })
+    .from(integrationSelections)
+    .where(
+      and(
+        eq(integrationSelections.selectionKind, 'linear.team'),
+        inArray(
+          integrationSelections.integrationId,
+          rows.map((r) => r.id),
+        ),
+      ),
+    );
+  const teamsByIntegration = new Map<string, Set<string>>();
+  for (const r of selectionRows) {
+    let set = teamsByIntegration.get(r.integrationId);
+    if (!set) {
+      set = new Set();
+      teamsByIntegration.set(r.integrationId, set);
+    }
+    set.add(r.externalId);
+  }
   for (const integration of rows) {
     try {
+      const selectedTeams = teamsByIntegration.get(integration.id);
+      const matches =
+        // If selections exist for this integration: payload team id must
+        // be present AND must be one of the selected teams. If we can't
+        // resolve a team id from the payload, drop (conservative).
+        selectedTeams && selectedTeams.size > 0
+          ? payloadTeamId !== null && selectedTeams.has(payloadTeamId)
+          : // No selections recorded: drop everything for this integration,
+            // matching github.repo's "explicit opt-in required" posture.
+            false;
+      if (!matches) {
+        continue;
+      }
       const provider = integrationsLib.getProvider('linear');
       const events = (await provider.handleWebhook?.({ integration, payload })) ?? [];
       if (events.length > 0) {
