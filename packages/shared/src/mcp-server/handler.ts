@@ -217,9 +217,20 @@ async function callTool(
       const rows = await scope.listEvents(filters);
       // Source filter is applied after the fact since listEvents doesn't
       // accept it. Bounded by `limit` so the post-filter doesn't blow up.
+      // Allowed sources mirror the `event_source` pg enum so callers can
+      // narrow on integration / document / meeting rows too, not just
+      // the four legacy values.
+      const ALLOWED_SOURCES = [
+        'web',
+        'telegram',
+        'email',
+        'system',
+        'document',
+        'meeting',
+        'integration',
+      ];
       const filtered =
-        typeof args.source === 'string' &&
-        ['web', 'telegram', 'email', 'system'].includes(args.source)
+        typeof args.source === 'string' && ALLOWED_SOURCES.includes(args.source)
           ? rows.filter((r) => r.source === args.source)
           : rows;
       return {

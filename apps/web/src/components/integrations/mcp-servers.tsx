@@ -64,6 +64,33 @@ function AddCustomMcpServerForm({
         alert(`Add failed: ${text}`);
         return;
       }
+      // If the server was created as OAuth, immediately bounce into the
+      // authorize roundtrip — otherwise the row sits disabled until the
+      // user finds the Connect button in the connected list. Mirrors
+      // the catalog connect flow.
+      const data = (await res.json().catch(() => ({}))) as {
+        id?: string;
+        needsOauth?: boolean;
+      };
+      if (data.needsOauth && data.id) {
+        const oauth = await fetch('/api/mcp/oauth/start', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ mcpServerId: data.id }),
+        });
+        if (!oauth.ok) {
+          alert(`OAuth start failed: ${await oauth.text()}`);
+          router.refresh();
+          if (onDone) onDone();
+          return;
+        }
+        const oauthData = (await oauth.json()) as { url?: string; error?: string };
+        if (oauthData.url) {
+          window.location.href = oauthData.url;
+          return;
+        }
+        alert(`OAuth start failed: ${oauthData.error ?? 'unknown'}`);
+      }
       router.refresh();
       if (onDone) onDone();
     } finally {

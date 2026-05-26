@@ -321,23 +321,30 @@ async function fetchChanges(
     const events: IntegrationEvent[] = [];
     const ancestorCache = new Map<string, boolean>();
     for (const c of page.changes ?? []) {
-      const evt = changeToEvent(integration, c);
-      if (evt) events.push(evt);
-      // Body harvest: only for non-removed files in a selected subtree
-      // when the worker supplied a harvestDocument hook.
-      if (
-        !c.removed &&
-        c.file &&
-        ctx.harvestDocument &&
-        selectedFolderIds.size > 0 &&
-        (await fileInSelectedSubtree(
+      // Subtree gate applies to BOTH event writes and body harvest. The
+      // Drive changes feed is account-wide, but the team has opted in to
+      // specific folders / shared drives — matches the opt-in posture
+      // GitHub (repo selections) and Linear (team selections) use.
+      // Removed-file changes pass through so deletions for previously
+      // selected files still produce a tombstone event; we don't have
+      // parents on a tombstone to check otherwise.
+      let inScope = c.removed === true;
+      if (!inScope && c.file) {
+        inScope = await fileInSelectedSubtree(
           tokens,
           c.file.id,
           c.file.parents ?? [],
           selectedFolderIds,
           ancestorCache,
-        ))
-      ) {
+        );
+      }
+      if (!inScope) continue;
+      const evt = changeToEvent(integration, c);
+      if (evt) events.push(evt);
+      // Body harvest: only for non-removed files when the worker
+      // supplied a harvestDocument hook. Subtree membership was already
+      // checked above.
+      if (!c.removed && c.file && ctx.harvestDocument) {
         try {
           const download = await downloadFileBody(tokens, c.file.id, c.file.mimeType);
           if (download) {
