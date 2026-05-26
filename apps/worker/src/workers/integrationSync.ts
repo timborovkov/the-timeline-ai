@@ -85,7 +85,33 @@ async function runOneIntegration(
     // headless / system integrations (no connectedByUserId) we skip the
     // hook entirely — the integration_event row still lands.
     const harvestableUserId = integration.connectedByUserId;
-    const harvestEnabled = integration.provider === 'google_drive' && harvestableUserId !== null;
+    // Verify the connector is still a team member before mounting the
+    // harvest hook. If they've left, withTeam would throw on
+    // createDocument / addDocumentVersion and abort the whole sync —
+    // not just harvest. Dropping the hook keeps integration_event
+    // writes flowing; only document-body harvest pauses until an admin
+    // reconnects under a current member's identity.
+    const harvestUserStillMember =
+      harvestableUserId !== null
+        ? await integrationsLib.adminVerifyTeamMember(db, integration.teamId, harvestableUserId)
+        : false;
+    if (
+      integration.provider === 'google_drive' &&
+      harvestableUserId !== null &&
+      !harvestUserStillMember
+    ) {
+      await integrationsLib.adminRecordAudit(
+        db,
+        integration.teamId,
+        'harvest_skipped_connector_left',
+        { connectedByUserId: harvestableUserId },
+        { integrationId },
+      );
+    }
+    const harvestEnabled =
+      integration.provider === 'google_drive' &&
+      harvestableUserId !== null &&
+      harvestUserStillMember;
 
     const ctx: integrationsLib.SyncContext = {
       async writeEvents(events) {

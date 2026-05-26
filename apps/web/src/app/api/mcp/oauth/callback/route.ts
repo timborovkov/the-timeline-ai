@@ -83,6 +83,17 @@ export async function GET(req: Request): Promise<Response> {
       codeVerifier,
     });
     const expiresAt = tokens.expires_at ? new Date(tokens.expires_at) : null;
+    // Always persist `__discovery` on the clientInfo blob — refresh now
+    // strictly requires it. Legacy pending rows (created before /start
+    // pinned discovery) fell back to fresh-discovery above, but without
+    // also stamping that discovery onto the stored clientInfo the row
+    // would still be missing `__discovery` and the next refresh would
+    // trip `oauth_refresh_no_pinned_discovery` even though connect just
+    // succeeded.
+    const persistedClientInfo: Record<string, unknown> = {
+      ...clientInfo,
+      __discovery: discovery,
+    };
     await scope.mcp.persistOauthTokens(
       verified.mcpServerId,
       {
@@ -94,7 +105,7 @@ export async function GET(req: Request): Promise<Response> {
       },
       expiresAt,
       {
-        clientInfo,
+        clientInfo: persistedClientInfo,
         // Clear the verifier now that the code was redeemed (replay defense).
         codeVerifier: null,
       },

@@ -418,6 +418,14 @@ export class McpClientManager {
       .limit(1);
     const server = rows[0];
     if (!server) throw new Error('MCP server not found');
+    // Re-check server.enabled at call time. discoverTools rebuilds the
+    // cache and excludes disabled servers, but the 5-min per-user cached
+    // toolMap may still hold a mapping to a server an admin just
+    // disabled. Hard-fail here so the agent gets a clear error instead
+    // of silently exercising a server the operator pulled.
+    if (!server.enabled) {
+      throw new Error(`MCP server disabled: ${server.name}`);
+    }
     // Re-check disabledTools at call time. discoverTools filters them out
     // of tools/list, but the 5-min cached toolMap may still hold a tool
     // that was disabled after the last discovery — both the agent and

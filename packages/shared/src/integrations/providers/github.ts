@@ -39,9 +39,51 @@ const SCOPES = ['repo', 'read:org'];
 
 interface GithubTokens {
   access_token: string;
+  refresh_token?: string;
+  refresh_token_expires_at?: number;
   scope?: string;
   token_type?: string;
   expires_at?: number;
+}
+
+/**
+ * Refresh a GitHub App user-to-server access token. GitHub Apps with the
+ * "expire user authorization tokens" option issue 8-hour access tokens
+ * + 6-month refresh tokens; the legacy OAuth-app path issues long-lived
+ * tokens without a refresh leg. Returns the input unchanged when no
+ * refresh_token is stored (legacy install or the option is disabled).
+ */
+async function ensureGithubAccessToken(tokens: GithubTokens): Promise<GithubTokens> {
+  const env = getEnv();
+  if (!env.GITHUB_APP_CLIENT_ID || !env.GITHUB_APP_CLIENT_SECRET) return tokens;
+  const now = Date.now();
+  // 60s skew on access-token expiry — concurrent in-flight calls don't
+  // hit a 401 race on GitHub's side.
+  if (tokens.expires_at && tokens.expires_at > now + 60_000) return tokens;
+  if (!tokens.refresh_token) return tokens;
+  // Refresh-token has its own 6-month TTL; surfacing this lets the
+  // caller catch it explicitly and surface needs_reauth.
+  if (tokens.refresh_token_expires_at && tokens.refresh_token_expires_at <= now) {
+    throw new Error('github_refresh_token_expired — reconnect required');
+  }
+  const body = await postJson(TOKEN_URL, {
+    client_id: env.GITHUB_APP_CLIENT_ID,
+    client_secret: env.GITHUB_APP_CLIENT_SECRET,
+    grant_type: 'refresh_token',
+    refresh_token: tokens.refresh_token,
+  });
+  const access = typeof body.access_token === 'string' ? body.access_token : '';
+  if (!access) return tokens;
+  const expiresIn = Number(body.expires_in ?? 0);
+  const refreshExpiresIn = Number(body.refresh_token_expires_in ?? 0);
+  return {
+    ...tokens,
+    access_token: access,
+    ...(expiresIn ? { expires_at: now + expiresIn * 1000 } : {}),
+    ...(typeof body.refresh_token === 'string' ? { refresh_token: body.refresh_token } : {}),
+    ...(refreshExpiresIn ? { refresh_token_expires_at: now + refreshExpiresIn * 1000 } : {}),
+    ...(typeof body.scope === 'string' ? { scope: body.scope } : {}),
+  };
 }
 
 async function postJson(
@@ -517,10 +559,20 @@ export const githubProvider: IntegrationProvider = {
     });
     const access = typeof body.access_token === 'string' ? body.access_token : '';
     if (!access) throw new Error('GitHub token exchange returned no access_token');
+    const now = Date.now();
+    const expiresIn = Number(body.expires_in ?? 0);
+    const refreshExpiresIn = Number(body.refresh_token_expires_in ?? 0);
     const tokens: GithubTokens = {
       access_token: access,
       token_type: typeof body.token_type === 'string' ? body.token_type : 'Bearer',
       scope: typeof body.scope === 'string' ? body.scope : SCOPES.join(' '),
+      // GitHub App "expire user authorization tokens" installs issue
+      // refresh_token + refresh_token_expires_in (6 months). Capture
+      // both — without them the worker can't refresh after the 8h
+      // access token lapses and the only recovery is a reconnect.
+      ...(typeof body.refresh_token === 'string' ? { refresh_token: body.refresh_token } : {}),
+      ...(expiresIn ? { expires_at: now + expiresIn * 1000 } : {}),
+      ...(refreshExpiresIn ? { refresh_token_expires_at: now + refreshExpiresIn * 1000 } : {}),
     };
     // externalAccountId MUST be the GitHub numeric user id so reconnects
     // upsert on the existing integration row instead of creating a new
@@ -561,10 +613,15 @@ export const githubProvider: IntegrationProvider = {
   },
 
   async backfill({ tokens, selections, ctx }) {
+    const input = tokens as GithubTokens;
+    const fresh = await ensureGithubAccessToken(input);
+    if (fresh.access_token !== input.access_token) {
+      await ctx.persistTokens(fresh as unknown as Record<string, unknown>);
+    }
     for (const sel of selections) {
       if (sel.kind !== 'github.repo') continue;
       try {
-        const next = await syncRepo(tokens as GithubTokens, sel.externalId, {}, ctx);
+        const next = await syncRepo(fresh, sel.externalId, {}, ctx);
         await ctx.saveCursor(`github.repo:${sel.externalId}`, next);
       } catch (err) {
         log.warn({ err, repo: sel.externalId }, 'github backfill failed for repo');
@@ -573,11 +630,16 @@ export const githubProvider: IntegrationProvider = {
   },
 
   async incrementalSync({ tokens, selections, ctx }) {
+    const input = tokens as GithubTokens;
+    const fresh = await ensureGithubAccessToken(input);
+    if (fresh.access_token !== input.access_token) {
+      await ctx.persistTokens(fresh as unknown as Record<string, unknown>);
+    }
     for (const sel of selections) {
       if (sel.kind !== 'github.repo') continue;
       const cursor = (await ctx.loadCursor(`github.repo:${sel.externalId}`)) as RepoCursor;
       try {
-        const next = await syncRepo(tokens as GithubTokens, sel.externalId, cursor, ctx);
+        const next = await syncRepo(fresh, sel.externalId, cursor, ctx);
         await ctx.saveCursor(`github.repo:${sel.externalId}`, next);
       } catch (err) {
         log.warn({ err, repo: sel.externalId }, 'github incremental sync failed for repo');
