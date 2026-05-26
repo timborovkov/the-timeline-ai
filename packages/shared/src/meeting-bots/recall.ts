@@ -118,9 +118,10 @@ export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingB
       // Always use Recall's own transcription engine (Whisper-based)
       // with auto language detection. Platform captions are unreliable
       // for multilingual teams.
-      const transcriptProvider = input.language
-        ? { default: { language: input.language } }
-        : { default: {} };
+      const recallStreamingProvider: { mode: 'prioritize_low_latency'; language_code?: string } = {
+        mode: 'prioritize_low_latency',
+      };
+      if (input.language) recallStreamingProvider.language_code = input.language;
 
       const body = {
         meeting_url: input.meetingUrl,
@@ -138,7 +139,7 @@ export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingB
           },
         ],
         recording_config: {
-          transcript: { provider: transcriptProvider },
+          transcript: { provider: { recallai_streaming: recallStreamingProvider } },
           realtime_endpoints: [
             {
               type: 'webhook',
