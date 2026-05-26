@@ -106,7 +106,13 @@ export async function writeIntegrationEvents(deps: {
   // the same objectMap).
   const insertedDedupKeys = new Set(inserted.map((r) => r.dedupKey));
   const byExternal = new Map<string, IntegrationEvent & { objectMap: ObjectMapping }>();
-  for (const evt of deps.events) {
+  // Iterate `uniqueEvents` (the dedup-winning list) instead of
+  // `deps.events` so the objectMap paired with each externalId comes
+  // from the SAME event whose raw_events row landed. Iterating the
+  // pre-dedup list would let a later same-dedupKey event silently
+  // override the winner's objectMap and decouple the entity row from
+  // the stored raw_event content.
+  for (const evt of uniqueEvents) {
     if (!evt.objectMap) continue;
     if (!insertedDedupKeys.has(evt.dedupKey)) continue;
     byExternal.set(
