@@ -119,9 +119,8 @@ GITHUB_WEBHOOK_SECRET=...</code></pre>
         <li><strong>Custom header</strong> — arbitrary header name + value.</li>
         <li>
           <strong>OAuth</strong> — server speaks the MCP OAuth dance; state JWT-equivalent is
-          HS256-signed with <code>MCP_OAUTH_STATE_SECRET</code> (falls back to
-          <code>AUTH_SECRET</code>). Access tokens auto-refresh on expiry; if refresh fails the chat
-          inline-renders a <em>Reconnect</em> button.
+          HS256-signed with <code>AUTH_SECRET</code> (no extra env var). Access tokens auto-refresh
+          on expiry; if refresh fails the chat inline-renders a <em>Reconnect</em> button.
         </li>
       </ul>
       <p>

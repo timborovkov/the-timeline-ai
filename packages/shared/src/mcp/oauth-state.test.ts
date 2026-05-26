@@ -6,19 +6,15 @@ import { signOAuthState, verifyOAuthState } from './oauth-state.js';
 
 describe('mcp/oauth-state', () => {
   const originalSecret = process.env.AUTH_SECRET;
-  const originalMcpSecret = process.env.MCP_OAUTH_STATE_SECRET;
 
   beforeEach(() => {
     process.env.AUTH_SECRET = 'a-test-auth-secret-that-is-long-enough';
-    delete process.env.MCP_OAUTH_STATE_SECRET;
     resetEnvForTests();
   });
 
   afterEach(() => {
     if (originalSecret === undefined) delete process.env.AUTH_SECRET;
     else process.env.AUTH_SECRET = originalSecret;
-    if (originalMcpSecret === undefined) delete process.env.MCP_OAUTH_STATE_SECRET;
-    else process.env.MCP_OAUTH_STATE_SECRET = originalMcpSecret;
     resetEnvForTests();
   });
 
@@ -43,10 +39,6 @@ describe('mcp/oauth-state', () => {
 
   it('rejects expired tokens', () => {
     const now = Date.now();
-    // Mock by manually constructing an expired payload would require
-    // exposing internals; rely on the TTL check by signing then advancing
-    // the clock — Date.now isn't monkey-patched, so verify TTL math by
-    // signing far in the past via env shadow.
     const tok = signOAuthState({ teamId: 't', mcpServerId: 's', userId: 'u' });
     const verified = verifyOAuthState(tok);
     expect(verified).not.toBeNull();
@@ -60,12 +52,11 @@ describe('mcp/oauth-state', () => {
     expect(verifyOAuthState('a.b.c')).toBeNull();
   });
 
-  it('prefers MCP_OAUTH_STATE_SECRET over AUTH_SECRET when set', () => {
-    process.env.MCP_OAUTH_STATE_SECRET = 'a-distinct-mcp-secret-value';
-    resetEnvForTests();
+  it('rejects tokens signed under a different AUTH_SECRET', () => {
     const tok = signOAuthState({ teamId: 't', mcpServerId: 's', userId: 'u' });
-    // Tokens signed with one secret should not validate under another.
-    process.env.MCP_OAUTH_STATE_SECRET = 'a-different-mcp-secret-value';
+    // Rotating AUTH_SECRET invalidates all outstanding state tokens —
+    // same posture as rotating any HMAC signing key.
+    process.env.AUTH_SECRET = 'a-completely-different-auth-secret-value';
     resetEnvForTests();
     expect(verifyOAuthState(tok)).toBeNull();
   });

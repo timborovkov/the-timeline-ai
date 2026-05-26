@@ -171,12 +171,6 @@ const schema = z.object({
   // x-goog-channel-token. Without it, anyone who guesses or leaks an
   // integration UUID can trigger sync jobs for that team.
   GOOGLE_DRIVE_WEBHOOK_SECRET: z.string().optional(),
-
-  // Custom MCP servers. The state JWT carries (team_id, mcp_server_id)
-  // through the OAuth dance and is HS256-signed with this secret. Falls
-  // back to `AUTH_SECRET` when unset so dev environments work without
-  // extra setup.
-  MCP_OAUTH_STATE_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema>;

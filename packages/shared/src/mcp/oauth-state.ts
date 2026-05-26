@@ -4,9 +4,10 @@ import { getEnv } from '../env.js';
 
 // Phase 11 — Minimal stateful JWT-equivalent for the MCP OAuth dance.
 // Carries (teamId, mcpServerId, userId, issuedAt) and is HS256-MACed
-// with MCP_OAUTH_STATE_SECRET (falls back to AUTH_SECRET for dev). We
-// don't pull in `jose` because the requirements are trivial and adding
-// the dep just for this is not worth it.
+// with AUTH_SECRET — same secret NextAuth uses to sign session cookies,
+// so anyone with access to AUTH_SECRET could already forge sessions.
+// We don't pull in `jose` because the requirements are trivial and
+// adding the dep just for this is not worth it.
 //
 // Format: base64url(payload).base64url(sig)
 // where sig = HMAC-SHA256(secret, payload) and payload = base64url(json).
@@ -25,9 +26,9 @@ const STATE_TTL_MS = 15 * 60 * 1000;
 
 function getSecret(): string {
   const env = getEnv();
-  const s = env.MCP_OAUTH_STATE_SECRET ?? env.AUTH_SECRET;
-  if (!s) throw new Error('MCP_OAUTH_STATE_SECRET (or AUTH_SECRET) is required');
-  return s;
+  // AUTH_SECRET is already validated as a required, non-empty string in
+  // env.ts (min 16 chars) so this never throws in a well-configured env.
+  return env.AUTH_SECRET;
 }
 
 function b64url(buf: Buffer): string {
