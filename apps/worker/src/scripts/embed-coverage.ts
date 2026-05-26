@@ -125,10 +125,10 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
         ),
       ),
     // Phase 9 doc_chunk: chunks whose parent document is active (not
-    // soft-deleted) AND is team-visibility. Mirrors buildDocChunkPlan's
-    // skip rules — soft-deleted docs and private docs are intentionally
-    // not in Qdrant, so excluding them from the row count keeps drift
-    // honest.
+    // soft-deleted), team-visible, and non-empty after trimming. Mirrors
+    // buildDocChunkPlan's skip rules — soft-deleted/private docs and empty
+    // chunks are intentionally not in Qdrant, so excluding them from the
+    // row count keeps drift honest.
     db
       .select({ n: count() })
       .from(documentChunks)
@@ -138,9 +138,11 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
           eq(documentChunks.teamId, teamId),
           isNull(documents.deletedAt),
           eq(documents.visibility, 'team'),
+          sql`length(trim(${documentChunks.text})) > 0`,
         ),
       ),
-    // Phase 10 meeting_chunk: chunks whose parent meeting is team-visibility.
+    // Phase 10 meeting_chunk: chunks whose parent meeting is team-visibility
+    // and whose text is non-empty after trimming.
     db
       .select({ n: count() })
       .from(meetingTranscriptChunks)
@@ -149,6 +151,7 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
         and(
           eq(meetingTranscriptChunks.teamId, teamId),
           eq(meetingsTable.defaultVisibility, 'team'),
+          sql`length(trim(${meetingTranscriptChunks.text})) > 0`,
         ),
       ),
     // Phase 11 integration_event: subset of raw_events whose source is
