@@ -15,43 +15,13 @@ export const dynamic = 'force-dynamic';
 // their selections get events written, so a webhook for tenant A's
 // unselected repo can't write rows into tenant B's raw_events.
 
-function extractGithubTenantIds(payload: unknown): {
-  repoFullNames: string[];
-  accountIds: string[];
-} {
+function extractGithubTenantIds(payload: unknown): { repoFullNames: string[] } {
   const repos = new Set<string>();
-  const accounts = new Set<string>();
-  if (!payload || typeof payload !== 'object') {
-    return { repoFullNames: [], accountIds: [] };
-  }
+  if (!payload || typeof payload !== 'object') return { repoFullNames: [] };
   const p = payload as Record<string, unknown>;
   const repo = p.repository as Record<string, unknown> | undefined;
   if (repo && typeof repo.full_name === 'string') repos.add(repo.full_name);
-  // Stable identifiers that tie a delivery to a specific GitHub account
-  // / installation. Without this, a shared webhook URL+secret lets one
-  // team's delivery write into another tenant that merely added the same
-  // `owner/repo` string to its selections. We accept any of: GitHub
-  // App installation.id (App), repository.owner.id (numeric), or
-  // organization.id. All cast to strings to match the `external_account_id`
-  // column on the integrations table.
-  const installation = p.installation as Record<string, unknown> | undefined;
-  if (
-    installation &&
-    (typeof installation.id === 'number' || typeof installation.id === 'string')
-  ) {
-    accounts.add(String(installation.id));
-  }
-  if (repo) {
-    const owner = repo.owner as Record<string, unknown> | undefined;
-    if (owner && (typeof owner.id === 'number' || typeof owner.id === 'string')) {
-      accounts.add(String(owner.id));
-    }
-  }
-  const org = p.organization as Record<string, unknown> | undefined;
-  if (org && (typeof org.id === 'number' || typeof org.id === 'string')) {
-    accounts.add(String(org.id));
-  }
-  return { repoFullNames: Array.from(repos), accountIds: Array.from(accounts) };
+  return { repoFullNames: Array.from(repos) };
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -85,16 +55,19 @@ export async function POST(req: Request): Promise<Response> {
   // shape: if a team OAuthed as user X and X has 50 repos in their
   // org, webhooks for ALL 50 would write events even though the team
   // only selected one. Restrict to selection-matched integrations.
-  const { repoFullNames, accountIds } = extractGithubTenantIds(payload);
+  const { repoFullNames } = extractGithubTenantIds(payload);
   if (repoFullNames.length === 0) {
     return NextResponse.json({ ok: true, reason: 'no_repo_in_payload' }, { status: 200 });
   }
-  if (accountIds.length === 0) {
-    // Without an account/installation id we can't safely route this
-    // delivery — multiple tenants may share the same `owner/repo` string
-    // in their selections. Drop with 200 so GitHub doesn't retry-storm.
-    return NextResponse.json({ ok: true, reason: 'no_account_in_payload' }, { status: 200 });
-  }
+  // Tenant isolation is enforced at PUT-time on
+  // /api/integrations/manage/[id]/selections, where every proposed
+  // `external_id` is validated against `listSyncableResources` (the
+  // integration's actual OAuth scope). A team that doesn't have access
+  // to `tenantA/private-repo` cannot save it as a selection, so
+  // matching on selection alone is safe here. Cross-checking
+  // `external_account_id` against payload account ids would break
+  // org-owned repos (we store the OAuthing user's id, payloads carry
+  // the org/installation id).
   const selectionMatched = await db
     .select({ integrationId: integrationSelections.integrationId })
     .from(integrationSelections)
@@ -108,12 +81,6 @@ export async function POST(req: Request): Promise<Response> {
   if (matchedIntegrationIds.length === 0) {
     return NextResponse.json({ ok: true, reason: 'no_matching_selection' }, { status: 200 });
   }
-  // Cross-check: the integration must ALSO match the account/installation
-  // id from the payload. Selection-match alone isn't enough — `owner/repo`
-  // strings are not unique across GitHub (think forks, transferred repos),
-  // and on a shared webhook URL+secret a delivery for tenant A's account
-  // could otherwise write into tenant B's raw_events as long as B added
-  // the same `owner/repo` to its github.repo selections.
   const rows = await db
     .select()
     .from(integrationsTable)
@@ -122,7 +89,6 @@ export async function POST(req: Request): Promise<Response> {
         eq(integrationsTable.provider, 'github'),
         eq(integrationsTable.enabled, true),
         inArray(integrationsTable.id, matchedIntegrationIds),
-        inArray(integrationsTable.externalAccountId, accountIds),
       ),
     );
   if (rows.length === 0) {

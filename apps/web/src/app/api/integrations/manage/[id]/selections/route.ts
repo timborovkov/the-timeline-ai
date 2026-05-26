@@ -89,6 +89,39 @@ export async function PUT(
       { status: 400 },
     );
   }
+  // Validate every proposed selection against `listSyncableResources` —
+  // i.e. the integration's actual OAuth scope. Without this, an admin
+  // could PUT an arbitrary externalId (a repo, project, folder, etc.
+  // they don't actually have access to). On shared webhook URLs that's
+  // a tenant-isolation hole: any team that adds "tenantA/private-repo"
+  // to its selections receives tenantA's webhook payloads because the
+  // delivery router matches selections alone. Validate here once so the
+  // webhook + sync paths can trust the selection set.
+  const tokens = await scope.integrations.getIntegrationTokens(id);
+  if (!tokens) {
+    return NextResponse.json({ error: 'no_tokens — reconnect required' }, { status: 400 });
+  }
+  let resources: { externalId: string; kind: string }[];
+  try {
+    const provider = integrationsLib.getProvider(integration.provider);
+    resources = await provider.listSyncableResources(integration, tokens);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'list_resources_failed';
+    return NextResponse.json({ error: msg }, { status: 502 });
+  }
+  const allowed = new Set(resources.map((r) => `${r.kind}\x00${r.externalId}`));
+  const invalid = parsed.data.selections.filter(
+    (s) => !allowed.has(`${s.kind}\x00${s.externalId}`),
+  );
+  if (invalid.length > 0) {
+    return NextResponse.json(
+      {
+        error: 'selection_not_in_scope',
+        invalid: invalid.map((s) => ({ kind: s.kind, externalId: s.externalId })),
+      },
+      { status: 400 },
+    );
+  }
   await scope.integrations.setSelections(id, parsed.data.selections);
   await scope.integrations.recordAudit(
     'selections_updated',
