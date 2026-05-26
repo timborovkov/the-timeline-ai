@@ -10,9 +10,10 @@ import { db } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 /**
- * Per-user MCP overlay. Personal servers layer on top of the team catalog —
- * visible only to their owner, contributed to the agent's tool list only
- * for chats this user initiates.
+ * Personal MCP overlay. Servers visible only to the owner, layered on
+ * top of the team-shared catalog at /app/team/integrations. Same
+ * `McpServersUi` component as the team page so add / disable / test-call
+ * UX is identical.
  */
 export default async function PersonalMcpServersPage() {
   const session = await auth();
@@ -31,17 +32,17 @@ export default async function PersonalMcpServersPage() {
           { label: 'mine', value: servers.length },
         ]}
       />
-      <p className="text-sm text-fg-muted">
-        Personal MCP servers are visible only to you and contribute their tools to chats you start.
-        Use them for tools tied to your own accounts (e.g. personal Linear, scratch Postgres, your
-        own MCP servers in development).
-      </p>
       <a
-        href="/app/team/mcp-servers"
+        href="/app/team/integrations"
         className="text-sm text-signal underline-offset-4 hover:underline"
       >
-        ← Back to team MCP catalog
+        ← Back to integrations
       </a>
+      <p className="text-sm text-fg-muted">
+        MCP servers visible only to you. Tools from these contribute to chats you start; teammates
+        don&apos;t see them. Use this for tools tied to your own accounts (personal Linear, a
+        scratch Postgres MCP, an MCP server you&apos;re developing locally).
+      </p>
       <McpServersUi
         ownership="personal"
         servers={servers.map((s) => ({
