@@ -1,6 +1,6 @@
 import { integrationSelections, integrations as integrationsTable } from '@timeline/db';
 import { email, integrations as integrationsLib, queue, rateLimit } from '@timeline/shared';
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
@@ -9,30 +9,19 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // GitHub webhooks are signed with X-Hub-Signature-256 over the raw body.
-// We resolve the tenant from the payload (repository.full_name → integration
-// selection, then installation/org/owner/sender id → external_account_id)
-// before fanning out, so a webhook for tenant A can't write rows into tenant
-// B's raw_events.
+// We resolve the destination integration(s) from the payload by matching
+// repository.full_name against `integration_selections.external_id`
+// (kind=github.repo). Only integrations that have ADDED the repo to
+// their selections get events written, so a webhook for tenant A's
+// unselected repo can't write rows into tenant B's raw_events.
 
-function extractGithubTenantIds(payload: unknown): {
-  repoFullNames: string[];
-  externalAccountIds: string[];
-} {
+function extractGithubTenantIds(payload: unknown): { repoFullNames: string[] } {
   const repos = new Set<string>();
-  const accounts = new Set<string>();
-  if (!payload || typeof payload !== 'object') return { repoFullNames: [], externalAccountIds: [] };
+  if (!payload || typeof payload !== 'object') return { repoFullNames: [] };
   const p = payload as Record<string, unknown>;
   const repo = p.repository as Record<string, unknown> | undefined;
   if (repo && typeof repo.full_name === 'string') repos.add(repo.full_name);
-  const repoOwner = repo?.owner as Record<string, unknown> | undefined;
-  if (repoOwner && typeof repoOwner.id === 'number') accounts.add(String(repoOwner.id));
-  const org = p.organization as Record<string, unknown> | undefined;
-  if (org && typeof org.id === 'number') accounts.add(String(org.id));
-  const inst = p.installation as Record<string, unknown> | undefined;
-  if (inst && typeof inst.id === 'number') accounts.add(String(inst.id));
-  const sender = p.sender as Record<string, unknown> | undefined;
-  if (sender && typeof sender.id === 'number') accounts.add(String(sender.id));
-  return { repoFullNames: Array.from(repos), externalAccountIds: Array.from(accounts) };
+  return { repoFullNames: Array.from(repos) };
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -60,40 +49,29 @@ export async function POST(req: Request): Promise<Response> {
   } catch {
     return NextResponse.json({ ok: false, reason: 'bad_json' }, { status: 200 });
   }
-  // Resolve the originating tenant(s) from the payload before fanning out.
-  // Match an integration when EITHER (a) one of its selections references the
-  // exact repo full_name, or (b) its external_account_id matches one of the
-  // user/org/installation ids on the payload. Replay is still safe — the
-  // dedup_key partial unique index makes duplicate writes a no-op.
-  const { repoFullNames, externalAccountIds } = extractGithubTenantIds(payload);
-  if (repoFullNames.length === 0 && externalAccountIds.length === 0) {
-    return NextResponse.json({ ok: true, reason: 'no_tenant_ids' }, { status: 200 });
+  // Resolve which integrations actually care about this payload's repo.
+  // A team must have ADDED the repo to its github.repo selections — an
+  // account-id match alone isn't enough. Bugbot caught the original
+  // shape: if a team OAuthed as user X and X has 50 repos in their
+  // org, webhooks for ALL 50 would write events even though the team
+  // only selected one. Restrict to selection-matched integrations.
+  const { repoFullNames } = extractGithubTenantIds(payload);
+  if (repoFullNames.length === 0) {
+    return NextResponse.json({ ok: true, reason: 'no_repo_in_payload' }, { status: 200 });
   }
-  const integrationIdsByRepo =
-    repoFullNames.length > 0
-      ? (
-          await db
-            .select({ integrationId: integrationSelections.integrationId })
-            .from(integrationSelections)
-            .where(
-              and(
-                eq(integrationSelections.selectionKind, 'github.repo'),
-                inArray(integrationSelections.externalId, repoFullNames),
-              ),
-            )
-        ).map((r) => r.integrationId)
-      : [];
-  const matchClauses = [];
-  if (integrationIdsByRepo.length > 0) {
-    matchClauses.push(inArray(integrationsTable.id, integrationIdsByRepo));
+  const selectionMatched = await db
+    .select({ integrationId: integrationSelections.integrationId })
+    .from(integrationSelections)
+    .where(
+      and(
+        eq(integrationSelections.selectionKind, 'github.repo'),
+        inArray(integrationSelections.externalId, repoFullNames),
+      ),
+    );
+  const matchedIntegrationIds = Array.from(new Set(selectionMatched.map((r) => r.integrationId)));
+  if (matchedIntegrationIds.length === 0) {
+    return NextResponse.json({ ok: true, reason: 'no_matching_selection' }, { status: 200 });
   }
-  if (externalAccountIds.length > 0) {
-    matchClauses.push(inArray(integrationsTable.externalAccountId, externalAccountIds));
-  }
-  if (matchClauses.length === 0) {
-    return NextResponse.json({ ok: true, reason: 'no_matching_tenant' }, { status: 200 });
-  }
-  const tenantClause = matchClauses.length === 1 ? matchClauses[0] : or(...matchClauses);
   const rows = await db
     .select()
     .from(integrationsTable)
@@ -101,7 +79,7 @@ export async function POST(req: Request): Promise<Response> {
       and(
         eq(integrationsTable.provider, 'github'),
         eq(integrationsTable.enabled, true),
-        tenantClause,
+        inArray(integrationsTable.id, matchedIntegrationIds),
       ),
     );
   if (rows.length === 0) {
@@ -119,7 +97,8 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
   // Side benefit: kick an incremental sync so any missed events get
-  // back-filled from the cursor.
+  // back-filled from the cursor. incrementalSync internally walks the
+  // selections, so this is safe — unselected repos won't generate events.
   for (const integration of rows) {
     try {
       await queue.enqueueIntegrationSyncJob({
