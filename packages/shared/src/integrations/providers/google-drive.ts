@@ -492,22 +492,31 @@ export const googleDriveProvider: IntegrationProvider = {
   },
 
   async backfill({ integration, tokens, selections, ctx }) {
-    const refreshed = await ensureAccessToken(tokens as DriveTokens);
     const selected = new Set(
       selections
         .filter((s) => s.kind === 'drive.folder' || s.kind === 'drive.shared_drive')
         .map((s) => s.externalId),
     );
+    // Opt-in only. fetchChanges walks the whole Drive change feed
+    // unconditionally — selections only gate the document-body harvest
+    // step inside it. Without this guard, a Drive integration with no
+    // folder selections still writes change events for the entire
+    // drive into raw_events. Match webhook + Linear posture: an
+    // integration with no drive.folder / drive.shared_drive
+    // selections syncs nothing.
+    if (selected.size === 0) return;
+    const refreshed = await ensureAccessToken(tokens as DriveTokens);
     await fetchChanges(integration, refreshed, selected, ctx, 'drive.changes');
   },
 
   async incrementalSync({ integration, tokens, selections, ctx }) {
-    const refreshed = await ensureAccessToken(tokens as DriveTokens);
     const selected = new Set(
       selections
         .filter((s) => s.kind === 'drive.folder' || s.kind === 'drive.shared_drive')
         .map((s) => s.externalId),
     );
+    if (selected.size === 0) return;
+    const refreshed = await ensureAccessToken(tokens as DriveTokens);
     await fetchChanges(integration, refreshed, selected, ctx, 'drive.changes');
   },
 

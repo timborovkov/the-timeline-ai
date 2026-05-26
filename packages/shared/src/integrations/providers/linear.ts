@@ -536,6 +536,11 @@ export const linearProvider: IntegrationProvider = {
 
   async backfill({ tokens, selections, ctx }) {
     const teamIds = selections.filter((s) => s.kind === 'linear.team').map((s) => s.externalId);
+    // Opt-in only: an integration with no linear.team selections syncs
+    // nothing. Without this guard, paginate* drops the team filter when
+    // teamIds is empty and pulls the entire org — inconsistent with the
+    // webhook path (which drops empty-selection events).
+    if (teamIds.length === 0) return;
     const linearTokens = tokens as LinearTokens;
     const latestIssues = await paginateIssues(linearTokens, null, teamIds, ctx);
     const latestComments = await paginateComments(linearTokens, null, teamIds, ctx);
@@ -547,6 +552,7 @@ export const linearProvider: IntegrationProvider = {
 
   async incrementalSync({ tokens, selections, ctx }) {
     const teamIds = selections.filter((s) => s.kind === 'linear.team').map((s) => s.externalId);
+    if (teamIds.length === 0) return;
     const linearTokens = tokens as LinearTokens;
     const fallback = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
     const issuesCursor = (await ctx.loadCursor('linear.issues')) as LinearCursor;
