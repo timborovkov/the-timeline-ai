@@ -293,9 +293,8 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           if (input.to) filters.to = new Date(input.to);
           if (input.authorUserId) filters.authorUserId = input.authorUserId;
           if (input.limit) filters.limit = input.limit;
-          // Note: `source` not yet supported by listEvents; filter post-hoc.
-          const events = await scope.listEvents(filters);
-          const filtered = input.source ? events.filter((e) => e.source === input.source) : events;
+          if (input.source) filters.source = input.source;
+          const filtered = await scope.listEvents(filters);
           return {
             count: filtered.length,
             events: filtered.map((e) => ({

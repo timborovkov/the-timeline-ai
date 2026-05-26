@@ -55,6 +55,13 @@ export interface EventListFilters {
   /** Exclusive upper bound on `occurred_at`. Callers wanting "include all of
    *  day X" should pass midnight UTC of day X+1. */
   to?: Date;
+  /**
+   * Narrow to a specific `event_source` value. Pushes the predicate into
+   * SQL so `limit` bounds the matching rows (not the pre-filter window).
+   * Mirrors the pg enum: 'web' | 'telegram' | 'email' | 'system' |
+   * 'document' | 'meeting' | 'integration'.
+   */
+  source?: string;
   limit?: number;
 }
 
@@ -375,6 +382,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       }
       if (filters.from) conditions.push(gte(rawEvents.occurredAt, filters.from));
       if (filters.to) conditions.push(lt(rawEvents.occurredAt, filters.to));
+      if (filters.source) {
+        conditions.push(
+          eq(rawEvents.source, filters.source as (typeof rawEvents.source.enumValues)[number]),
+        );
+      }
       return db
         .select()
         .from(rawEvents)

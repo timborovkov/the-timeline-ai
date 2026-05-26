@@ -221,12 +221,9 @@ async function callTool(
       if (typeof args.from === 'string') filters.from = new Date(args.from);
       if (typeof args.to === 'string') filters.to = new Date(args.to);
       if (typeof args.limit === 'number') filters.limit = args.limit;
-      const rows = await scope.listEvents(filters);
-      // Source filter is applied after the fact since listEvents doesn't
-      // accept it. Bounded by `limit` so the post-filter doesn't blow up.
-      // Allowed sources mirror the `event_source` pg enum so callers can
-      // narrow on integration / document / meeting rows too, not just
-      // the four legacy values.
+      // Push the source predicate into SQL so `limit` bounds matching
+      // rows (not the pre-filter window). Mirrors the runtime
+      // allow-list + the `event_source` pg enum.
       const ALLOWED_SOURCES = [
         'web',
         'telegram',
@@ -236,13 +233,13 @@ async function callTool(
         'meeting',
         'integration',
       ];
-      const filtered =
-        typeof args.source === 'string' && ALLOWED_SOURCES.includes(args.source)
-          ? rows.filter((r) => r.source === args.source)
-          : rows;
+      if (typeof args.source === 'string' && ALLOWED_SOURCES.includes(args.source)) {
+        filters.source = args.source;
+      }
+      const rows = await scope.listEvents(filters);
       return {
-        count: filtered.length,
-        events: filtered.map((r) => ({
+        count: rows.length,
+        events: rows.map((r) => ({
           id: r.id,
           source: r.source,
           occurred_at: r.occurredAt,

@@ -1,4 +1,4 @@
-import { type Db, documents as documentsTable } from '@timeline/db';
+import { type Db, documents as documentsTable, getDbClient } from '@timeline/db';
 import {
   childLogger,
   getDocumentsBucket,
@@ -37,20 +37,23 @@ async function runOneIntegration(
   // walk the same cursor and burn provider API quota in parallel.
   // `pg_try_advisory_lock` returns false instantly if another session
   // holds the lock; we skip this run and let the in-flight one finish.
-  // The next tick / webhook will pick up any missed delta.
   //
-  // Session locks live across the whole worker run; release explicitly
-  // in `finally` so a crashed pool connection doesn't strand the lock.
-  // Tagged-template `sql\`…\`` parameterises `integrationId`; we avoid
-  // `sql.raw` + string interpolation here so the call is not
-  // injection-shaped even though the payload originates from BullMQ
-  // (which we control).
-  const lockRes = (await db.execute(
-    sql`SELECT pg_try_advisory_lock(hashtextextended(${integrationId}::text, 0)) AS locked`,
-  )) as unknown as { locked: boolean }[] | { rows: { locked: boolean }[] };
-  const lockedRow = Array.isArray(lockRes) ? lockRes[0] : lockRes.rows[0];
+  // Session locks live on the connection that acquired them. Drizzle's
+  // pooled client picks a different connection per query, so a naive
+  // `db.execute(pg_advisory_unlock)` would no-op on a different
+  // connection and strand the lock until the original was recycled.
+  // Pin one connection across both acquire + release via
+  // `postgres.reserve()`. The actual sync uses normal pooled
+  // connections — only the two lock statements need pinning.
+  const reserved = await getDbClient().reserve();
+  const lockRows =
+    (await reserved`SELECT pg_try_advisory_lock(hashtextextended(${integrationId}::text, 0)) AS locked`) as unknown as {
+      locked: boolean;
+    }[];
+  const lockedRow = lockRows[0];
   if (!lockedRow?.locked) {
     log.info({ integrationId, kind }, 'integration sync already running — skipping this tick');
+    reserved.release();
     return;
   }
   try {
@@ -207,11 +210,15 @@ async function runOneIntegration(
       throw err;
     }
   } finally {
-    // Release the session lock regardless of outcome. Parameterised the
-    // same way as the acquire above.
-    await db
-      .execute(sql`SELECT pg_advisory_unlock(hashtextextended(${integrationId}::text, 0))`)
-      .catch(() => undefined);
+    // Release the session lock on the SAME connection that acquired it
+    // (see `reserved` above), then return that connection to the pool.
+    try {
+      await reserved`SELECT pg_advisory_unlock(hashtextextended(${integrationId}::text, 0))`;
+    } catch {
+      // Swallow — the connection may have died mid-sync, in which case
+      // the lock is auto-released by Postgres anyway.
+    }
+    reserved.release();
   }
 }
 
