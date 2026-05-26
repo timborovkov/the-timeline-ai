@@ -22,16 +22,23 @@ interface McpServerRow {
 
 type AuthType = 'none' | 'bearer' | 'header' | 'basic' | 'url_key' | 'oauth';
 
-export function McpServersUi({
-  servers,
+/**
+ * Standalone add-server form. Mounted by either:
+ *   - <McpServersUi> on the personal MCP page (toggle button just above
+ *     the connected list), or
+ *   - the team /integrations page action bar (the "+ Add custom MCP
+ *     server" affordance — see <AddCustomMcpServerLauncher>).
+ */
+function AddCustomMcpServerForm({
   ownership,
+  onDone,
+  onCancel,
 }: {
-  servers: McpServerRow[];
-  ownership?: 'team' | 'personal';
+  ownership: 'team' | 'personal';
+  onDone?: () => void;
+  onCancel?: () => void;
 }) {
   const router = useRouter();
-  const isPersonal = ownership === 'personal';
-  const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [authType, setAuthType] = useState<AuthType>('none');
@@ -44,7 +51,7 @@ export function McpServersUi({
     setBusy(true);
     try {
       const body: Record<string, unknown> = { name, url, authType };
-      if (isPersonal) body.ownership = 'personal';
+      if (ownership === 'personal') body.ownership = 'personal';
       if (authType === 'bearer') body.authConfig = { token };
       else if (authType === 'header') body.authConfig = { name: headerName, value: headerValue };
       const res = await fetch('/api/team/mcp-servers', {
@@ -57,18 +64,151 @@ export function McpServersUi({
         alert(`Add failed: ${text}`);
         return;
       }
-      setName('');
-      setUrl('');
-      setAuthType('none');
-      setToken('');
-      setHeaderName('');
-      setHeaderValue('');
-      setShowAdd(false);
       router.refresh();
+      if (onDone) onDone();
     } finally {
       setBusy(false);
     }
   }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">New MCP server</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1">
+            <Label>Display name</Label>
+            <Input
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+              }}
+              placeholder="Context7"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>URL</Label>
+            <Input
+              value={url}
+              onChange={(e) => {
+                setUrl(e.target.value);
+              }}
+              placeholder="https://mcp.example.com/mcp"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Auth type</Label>
+            <select
+              className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-sm"
+              value={authType}
+              onChange={(e) => {
+                setAuthType(e.target.value as AuthType);
+              }}
+            >
+              <option value="none">None</option>
+              <option value="bearer">Bearer token</option>
+              <option value="header">Custom header</option>
+              <option value="oauth">OAuth (coming soon)</option>
+            </select>
+          </div>
+          {authType === 'bearer' ? (
+            <div className="space-y-1">
+              <Label>Token</Label>
+              <Input
+                type="password"
+                value={token}
+                onChange={(e) => {
+                  setToken(e.target.value);
+                }}
+              />
+            </div>
+          ) : null}
+          {authType === 'header' ? (
+            <>
+              <div className="space-y-1">
+                <Label>Header name</Label>
+                <Input
+                  value={headerName}
+                  onChange={(e) => {
+                    setHeaderName(e.target.value);
+                  }}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Header value</Label>
+                <Input
+                  type="password"
+                  value={headerValue}
+                  onChange={(e) => {
+                    setHeaderValue(e.target.value);
+                  }}
+                />
+              </div>
+            </>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" disabled={busy || !name || !url} onClick={() => void submit()}>
+            {busy ? 'Adding…' : 'Add'}
+          </Button>
+          {onCancel ? (
+            <Button size="sm" variant="ghost" onClick={onCancel}>
+              Cancel
+            </Button>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Self-contained "+ Add custom MCP server" button + collapsible form.
+ * Used in the integrations action bar on /app/team/integrations.
+ */
+export function AddCustomMcpServerLauncher({ ownership }: { ownership: 'team' | 'personal' }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        size="sm"
+        variant={open ? 'ghost' : 'default'}
+        onClick={() => {
+          setOpen((v) => !v);
+        }}
+      >
+        {open ? 'Cancel' : '+ Add custom MCP server'}
+      </Button>
+      {open ? (
+        <div className="col-span-full mt-2 w-full">
+          <AddCustomMcpServerForm
+            ownership={ownership}
+            onDone={() => {
+              setOpen(false);
+            }}
+            onCancel={() => {
+              setOpen(false);
+            }}
+          />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+export function McpServersUi({
+  servers,
+  ownership,
+  hideAddButton,
+}: {
+  servers: McpServerRow[];
+  ownership?: 'team' | 'personal';
+  hideAddButton?: boolean;
+}) {
+  const router = useRouter();
+  const [showAdd, setShowAdd] = useState(false);
 
   async function toggleEnabled(server: McpServerRow) {
     await fetch(`/api/team/mcp-servers/${server.id}`, {
@@ -121,111 +261,36 @@ export function McpServersUi({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-fg-muted">
-          Connect custom MCP servers to bring their tools into the agent. Tools are namespaced so
-          two servers exposing the same name can coexist.
-        </p>
-        <Button
-          size="sm"
-          onClick={() => {
-            setShowAdd((s) => !s);
-          }}
-        >
-          {showAdd ? 'Cancel' : 'Add server'}
-        </Button>
-      </div>
+    <div className="space-y-3">
+      {hideAddButton ? null : (
+        <div className="flex items-center justify-end">
+          <Button
+            size="sm"
+            onClick={() => {
+              setShowAdd((s) => !s);
+            }}
+          >
+            {showAdd ? 'Cancel' : '+ Add server'}
+          </Button>
+        </div>
+      )}
 
-      {showAdd ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">New MCP server</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1">
-                <Label>Display name</Label>
-                <Input
-                  value={name}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                  }}
-                  placeholder="Context7"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>URL</Label>
-                <Input
-                  value={url}
-                  onChange={(e) => {
-                    setUrl(e.target.value);
-                  }}
-                  placeholder="https://mcp.example.com/mcp"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Auth type</Label>
-                <select
-                  className="h-9 w-full rounded-md border border-border bg-surface px-2 text-sm"
-                  value={authType}
-                  onChange={(e) => {
-                    setAuthType(e.target.value as AuthType);
-                  }}
-                >
-                  <option value="none">None</option>
-                  <option value="bearer">Bearer token</option>
-                  <option value="header">Custom header</option>
-                  <option value="oauth">OAuth (coming soon)</option>
-                </select>
-              </div>
-              {authType === 'bearer' ? (
-                <div className="space-y-1">
-                  <Label>Token</Label>
-                  <Input
-                    type="password"
-                    value={token}
-                    onChange={(e) => {
-                      setToken(e.target.value);
-                    }}
-                  />
-                </div>
-              ) : null}
-              {authType === 'header' ? (
-                <>
-                  <div className="space-y-1">
-                    <Label>Header name</Label>
-                    <Input
-                      value={headerName}
-                      onChange={(e) => {
-                        setHeaderName(e.target.value);
-                      }}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>Header value</Label>
-                    <Input
-                      type="password"
-                      value={headerValue}
-                      onChange={(e) => {
-                        setHeaderValue(e.target.value);
-                      }}
-                    />
-                  </div>
-                </>
-              ) : null}
-            </div>
-            <Button size="sm" disabled={busy || !name || !url} onClick={() => void submit()}>
-              {busy ? 'Adding…' : 'Add'}
-            </Button>
-          </CardContent>
-        </Card>
+      {!hideAddButton && showAdd ? (
+        <AddCustomMcpServerForm
+          ownership={ownership ?? 'team'}
+          onDone={() => {
+            setShowAdd(false);
+          }}
+          onCancel={() => {
+            setShowAdd(false);
+          }}
+        />
       ) : null}
 
       {servers.length === 0 ? (
         <p className="text-sm text-fg-muted">No custom MCP servers connected.</p>
       ) : (
-        <ul className="divide-y divide-border rounded-md border border-border bg-surface">
+        <ul className="divide-y divide-border rounded-sm border border-border bg-surface">
           {servers.map((s) => (
             <li key={s.id} className="space-y-2 px-3 py-3">
               <div className="flex items-center gap-2">

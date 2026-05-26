@@ -3,6 +3,7 @@ import { withTeam } from '@timeline/shared';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
+import { Breadcrumb } from '@/components/breadcrumb';
 import { IndexStrip } from '@/components/index-strip';
 import { McpShareUi } from '@/components/integrations/mcp-share';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -44,7 +45,14 @@ export default async function McpSharePage() {
   }));
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-8">
+      <Breadcrumb
+        items={[
+          { label: 'Team', href: '/app/team' },
+          { label: 'Integrations', href: '/app/team/integrations' },
+          { label: 'Timeline as MCP' },
+        ]}
+      />
       <IndexStrip
         srLabel={`Timeline as MCP server · ${String(keys.length)} active keys`}
         segments={[
@@ -53,12 +61,6 @@ export default async function McpSharePage() {
           { label: 'keys', value: keys.length },
         ]}
       />
-      <a
-        href="/app/team/integrations"
-        className="text-sm text-signal underline-offset-4 hover:underline"
-      >
-        ← Back to integrations
-      </a>
       <McpShareUi keys={keys} />
     </div>
   );

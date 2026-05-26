@@ -1,6 +1,7 @@
 import { withTeam } from '@timeline/shared';
 import { redirect } from 'next/navigation';
 
+import { Breadcrumb } from '@/components/breadcrumb';
 import { IndexStrip } from '@/components/index-strip';
 import { McpServersUi } from '@/components/integrations/mcp-servers';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -11,9 +12,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Personal MCP overlay. Servers visible only to the owner, layered on
- * top of the team-shared catalog at /app/team/integrations. Same
- * `McpServersUi` component as the team page so add / disable / test-call
- * UX is identical.
+ * top of the team-shared catalog at /app/team/integrations.
  */
 export default async function PersonalMcpServersPage() {
   const session = await auth();
@@ -23,7 +22,14 @@ export default async function PersonalMcpServersPage() {
   const scope = withTeam(db, active.teamId, session.user.id);
   const servers = await scope.mcp.listPersonalServers();
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-8">
+      <Breadcrumb
+        items={[
+          { label: 'Team', href: '/app/team' },
+          { label: 'Integrations', href: '/app/team/integrations' },
+          { label: 'Personal MCP' },
+        ]}
+      />
       <IndexStrip
         srLabel={`Personal MCP servers · ${String(servers.length)} connected`}
         segments={[
@@ -32,16 +38,8 @@ export default async function PersonalMcpServersPage() {
           { label: 'mine', value: servers.length },
         ]}
       />
-      <a
-        href="/app/team/integrations"
-        className="text-sm text-signal underline-offset-4 hover:underline"
-      >
-        ← Back to integrations
-      </a>
       <p className="text-sm text-fg-muted">
-        MCP servers visible only to you. Tools from these contribute to chats you start; teammates
-        don&apos;t see them. Use this for tools tied to your own accounts (personal Linear, a
-        scratch Postgres MCP, an MCP server you&apos;re developing locally).
+        Visible only to you. Tools contribute to chats you start; teammates don&apos;t see them.
       </p>
       <McpServersUi
         ownership="personal"

@@ -33,9 +33,9 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
   }
 
   return (
-    <div className="grid gap-3 md:grid-cols-2">
+    <div className="grid auto-rows-fr gap-3 md:grid-cols-2">
       {catalog.map((c) => (
-        <Card key={c.id}>
+        <Card key={c.id} className="flex h-full flex-col">
           <CardHeader className="flex flex-row items-center gap-3">
             {/* Logo via /public/connectors/<id>.svg. Falls back gracefully if missing. */}
             <img
@@ -52,17 +52,19 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
               </span>
             ) : null}
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="flex flex-1 flex-col">
             <p className="text-sm text-fg-muted">{c.description}</p>
-            <Button
-              size="sm"
-              disabled={!c.available || pending === c.id}
-              onClick={() => {
-                void startConnect(c.id);
-              }}
-            >
-              {pending === c.id ? 'Redirecting…' : 'Connect'}
-            </Button>
+            <div className="mt-auto pt-3">
+              <Button
+                size="sm"
+                disabled={!c.available || pending === c.id}
+                onClick={() => {
+                  void startConnect(c.id);
+                }}
+              >
+                {pending === c.id ? 'Redirecting…' : 'Connect'}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ))}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,19 +19,107 @@ interface CatalogEntryProps {
   status: string;
 }
 
+const FILTER_THRESHOLD = 4;
+
 /**
  * One-click connect catalog for curated MCP servers. Each card knows its
  * pre-baked URL + auth type server-side (sourced from
  * `integrations.listCatalog()`); the client just posts the catalogId
  * (and a bearer token / header value when the entry needs one) to
  * /api/team/mcp-servers, then optionally kicks the OAuth start.
+ *
+ * Filter / search chrome surfaces once the catalog grows past
+ * FILTER_THRESHOLD entries — there's no value in chrome for a 3-entry
+ * grid.
  */
 export function McpCatalog({ entries }: { entries: CatalogEntryProps[] }) {
+  const [query, setQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
+  const categories = useMemo(() => {
+    const seen = new Set<string>();
+    for (const e of entries) seen.add(e.category);
+    return Array.from(seen).sort();
+  }, [entries]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return entries.filter((e) => {
+      if (activeCategory && e.category !== activeCategory) return false;
+      if (!q) return true;
+      return (
+        e.label.toLowerCase().includes(q) ||
+        e.description.toLowerCase().includes(q) ||
+        e.category.toLowerCase().includes(q)
+      );
+    });
+  }, [entries, query, activeCategory]);
+
+  const showFilters = entries.length >= FILTER_THRESHOLD;
+
   return (
-    <div className="grid gap-3 md:grid-cols-2">
-      {entries.map((e) => (
-        <CatalogCard key={e.id} entry={e} />
-      ))}
+    <div className="space-y-3">
+      {showFilters ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="sr-only" htmlFor="mcp-catalog-filter">
+            Filter MCP servers
+          </label>
+          <input
+            id="mcp-catalog-filter"
+            type="search"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+            }}
+            placeholder="Filter MCP servers…"
+            className="h-7 w-48 rounded-sm border border-border bg-surface-2 px-2 text-xs"
+          />
+          {categories.map((cat) => {
+            const active = activeCategory === cat;
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => {
+                  setActiveCategory(active ? null : cat);
+                }}
+                className={
+                  active
+                    ? 'rounded-sm border border-signal bg-signal/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-signal'
+                    : 'rounded-sm border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted hover:text-signal'
+                }
+              >
+                {cat}
+              </button>
+            );
+          })}
+          {query || activeCategory ? (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery('');
+                setActiveCategory(null);
+              }}
+              className="text-xs text-fg-dim hover:text-signal"
+            >
+              clear
+            </button>
+          ) : null}
+          <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+            {filtered.length} / {entries.length}
+          </span>
+        </div>
+      ) : null}
+
+      {filtered.length === 0 ? (
+        <p className="text-sm text-fg-muted">No MCP servers match this filter.</p>
+      ) : (
+        <div className="grid auto-rows-fr gap-3 md:grid-cols-2">
+          {filtered.map((e) => (
+            <CatalogCard key={e.id} entry={e} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -107,7 +195,7 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
   }
 
   return (
-    <Card>
+    <Card className="flex h-full flex-col">
       <CardHeader className="flex flex-row items-center gap-3">
         <img
           src={entry.logo}
@@ -121,12 +209,12 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
           {entry.category}
         </span>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="flex flex-1 flex-col">
         <p className="text-sm text-fg-muted">{entry.description}</p>
-        {entry.authHint ? <p className="text-xs text-fg-dim">{entry.authHint}</p> : null}
+        {entry.authHint ? <p className="mt-2 text-xs text-fg-dim">{entry.authHint}</p> : null}
 
         {open && entry.authType === 'bearer' ? (
-          <div className="space-y-2">
+          <div className="mt-3 space-y-2">
             <Label htmlFor={`bearer-${entry.id}`}>Bearer token</Label>
             <Input
               id={`bearer-${entry.id}`}
@@ -139,7 +227,7 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
           </div>
         ) : null}
         {open && entry.authType === 'header' ? (
-          <div className="space-y-2">
+          <div className="mt-3 space-y-2">
             <div>
               <Label htmlFor={`hn-${entry.id}`}>Header name</Label>
               <Input
@@ -164,7 +252,7 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
           </div>
         ) : null}
 
-        <div className="flex items-center gap-2">
+        <div className="mt-auto flex items-center gap-2 pt-3">
           {open && (entry.authType === 'bearer' || entry.authType === 'header') ? (
             <>
               <Button

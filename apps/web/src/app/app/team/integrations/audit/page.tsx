@@ -1,6 +1,7 @@
 import { withTeam } from '@timeline/shared';
 import { redirect } from 'next/navigation';
 
+import { Breadcrumb } from '@/components/breadcrumb';
 import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -24,7 +25,14 @@ export default async function IntegrationAuditPage() {
   }
   const rows = await scope.integrations.listAudit(null, 200);
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-8">
+      <Breadcrumb
+        items={[
+          { label: 'Team', href: '/app/team' },
+          { label: 'Integrations', href: '/app/team/integrations' },
+          { label: 'Audit log' },
+        ]}
+      />
       <IndexStrip
         srLabel={`Integration audit · ${String(rows.length)} rows`}
         segments={[
@@ -33,13 +41,7 @@ export default async function IntegrationAuditPage() {
           { label: 'rows', value: rows.length },
         ]}
       />
-      <a
-        href="/app/team/integrations"
-        className="text-sm text-signal underline-offset-4 hover:underline"
-      >
-        ← Back to integrations
-      </a>
-      <ul className="divide-y divide-border rounded-md border border-border bg-surface text-sm">
+      <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
         {rows.length === 0 ? (
           <li className="px-3 py-2 text-fg-muted">No audit entries yet.</li>
         ) : (

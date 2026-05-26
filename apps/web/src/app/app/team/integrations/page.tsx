@@ -1,11 +1,12 @@
 import { integrations as integrationsLib, withTeam } from '@timeline/shared';
 import { redirect } from 'next/navigation';
 
+import { Breadcrumb } from '@/components/breadcrumb';
 import { IndexStrip } from '@/components/index-strip';
 import { IntegrationsCatalog } from '@/components/integrations/catalog';
 import { ConnectedIntegrations } from '@/components/integrations/connected';
 import { McpCatalog } from '@/components/integrations/mcp-catalog';
-import { McpServersUi } from '@/components/integrations/mcp-servers';
+import { AddCustomMcpServerLauncher, McpServersUi } from '@/components/integrations/mcp-servers';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -13,10 +14,17 @@ import { db } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 /**
- * Single integrations page. Native connectors (Drive/Linear/GitHub),
- * MCP catalog (Notion/Slack/Atlassian/Figma/Sentry/Stripe), connected
- * list, and an "Add custom MCP server" affordance, all on one screen.
- * Separate /app/team/mcp-servers route was killed in favor of this.
+ * Single integrations page. Sits under /app/team. The layout is:
+ *   1. Breadcrumb  (Team / Integrations)
+ *   2. IndexStrip header
+ *   3. Top action bar: secondary nav chips + "+ Add custom MCP server"
+ *   4. Connected list (native + MCP) when anything is connected
+ *   5. Native catalog (Drive/Linear/GitHub) when env-configured
+ *   6. MCP catalog (Notion, Slack, Atlassian, Figma, Sentry, Stripe…)
+ *
+ * Secondary actions (Expose-as-MCP, Personal MCP, Audit log) live in the
+ * action bar — pinned at the top so they don't sink below the fold as
+ * the catalog grows.
  */
 export default async function IntegrationsPage({
   searchParams,
@@ -36,15 +44,17 @@ export default async function IntegrationsPage({
   ]);
   const nativeCatalog = integrationsLib.listAvailableProviders();
   const mcpCatalog = integrationsLib.listCatalog().filter((c) => c.kind === 'mcp' && c.mcpUrl);
-  // Hide MCP entries already connected (match by URL).
   const connectedUrls = new Set(mcpServers.map((s) => s.url));
   const mcpCatalogAvailable = mcpCatalog.filter((c) => !connectedUrls.has(c.mcpUrl ?? ''));
 
   const totalConnected = connected.length + mcpServers.length;
   const totalCatalog = nativeCatalog.length + mcpCatalogAvailable.length;
+  const hasAnything = totalConnected > 0 || totalCatalog > 0;
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
+      <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Integrations' }]} />
+
       <IndexStrip
         srLabel={`Integrations · ${String(totalConnected)} connected · ${String(totalCatalog)} in catalog`}
         segments={[
@@ -55,23 +65,32 @@ export default async function IntegrationsPage({
         ]}
       />
 
+      {/* Action bar. Stays above the fold; the three secondary links
+          previously buried under the catalog footer are chips here, and
+          the most-requested affordance ("+ Add custom MCP server") sits
+          on the right. */}
+      <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
+        <ActionChip href="/app/team/mcp-share" label="Expose as MCP →" />
+        <ActionChip href="/app/me/mcp-servers" label="Personal MCP →" />
+        <ActionChip href="/app/team/integrations/audit" label="Audit log →" />
+        <span className="ml-auto" />
+        <AddCustomMcpServerLauncher ownership="team" />
+      </div>
+
       {params.connected ? (
-        <div className="rounded-md border border-signal/40 bg-signal/10 px-3 py-2 text-sm text-signal">
+        <div className="rounded-sm border border-signal/40 bg-signal/10 px-3 py-2 text-sm text-signal">
           Connected to <span className="font-mono">{params.connected}</span>.
         </div>
       ) : null}
       {params.error ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className="rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           Connection failed: <span className="font-mono">{params.error}</span>
         </div>
       ) : null}
 
-      {/* Connected section: native + MCP servers, side by side. Empty
-          state lets the page lead with the catalog when nothing is
-          connected yet. */}
       {totalConnected > 0 ? (
         <section className="space-y-3">
-          <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">Connected</h2>
+          <SectionHeader>Connected</SectionHeader>
           {connected.length > 0 ? (
             <ConnectedIntegrations
               connected={connected.map((c) => ({
@@ -86,6 +105,7 @@ export default async function IntegrationsPage({
           ) : null}
           {mcpServers.length > 0 ? (
             <McpServersUi
+              hideAddButton
               servers={mcpServers.map((s) => ({
                 id: s.id,
                 name: s.name,
@@ -104,22 +124,16 @@ export default async function IntegrationsPage({
         </section>
       ) : null}
 
-      {/* Native integrations (only shown when env vars are configured). */}
       {nativeCatalog.length > 0 ? (
         <section className="space-y-3">
-          <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-            Drive, Linear, GitHub
-          </h2>
+          <SectionHeader>Drive · Linear · GitHub</SectionHeader>
           <IntegrationsCatalog catalog={nativeCatalog} />
         </section>
       ) : null}
 
-      {/* MCP catalog — one-click connect to curated MCP servers. */}
       {mcpCatalogAvailable.length > 0 ? (
         <section className="space-y-3">
-          <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
-            MCP servers
-          </h2>
+          <SectionHeader>MCP servers</SectionHeader>
           <McpCatalog
             entries={mcpCatalogAvailable.map((c) => ({
               id: c.id,
@@ -135,32 +149,35 @@ export default async function IntegrationsPage({
         </section>
       ) : null}
 
-      {/* Empty-state when nothing is configured at all. */}
-      {nativeCatalog.length === 0 && mcpCatalogAvailable.length === 0 && totalConnected === 0 ? (
+      {!hasAnything ? (
         <div className="rounded-sm border border-dashed border-border bg-surface p-6 text-sm text-fg-muted">
-          <p className="mb-1 font-medium text-fg">No integrations available yet.</p>
+          <p className="mb-1 font-medium text-fg">No integrations configured.</p>
           <p>
-            Set the OAuth client + webhook secret env vars on this deployment to enable Google
-            Drive, Linear, or GitHub. See{' '}
+            Add OAuth client + webhook secret env vars to enable Drive, Linear, or GitHub — see{' '}
             <a className="text-signal underline" href="/docs/setup/integrations.html">
-              the integrations setup doc
+              setup
             </a>
-            . Or add an arbitrary MCP-compatible server from the link below.
+            . Or add any MCP-compatible server above.
           </p>
         </div>
       ) : null}
-
-      <p className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-2 text-xs text-fg-dim">
-        <a className="hover:text-fg" href="/app/me/mcp-servers">
-          Personal MCP servers →
-        </a>
-        <a className="hover:text-fg" href="/app/team/mcp-share">
-          Expose this Timeline as an MCP server →
-        </a>
-        <a className="hover:text-fg" href="/app/team/integrations/audit">
-          Audit log →
-        </a>
-      </p>
     </div>
+  );
+}
+
+function SectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">{children}</h2>
+  );
+}
+
+function ActionChip({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      className="inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted hover:border-signal hover:text-signal"
+    >
+      {label}
+    </a>
   );
 }
