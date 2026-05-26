@@ -55,6 +55,27 @@ interface ProcessResult {
   actionItems?: number;
 }
 
+type TranscriptChunk = typeof meetingTranscriptChunks.$inferSelect;
+
+function formatTranscript(chunks: TranscriptChunk[]): string {
+  return chunks
+    .map((c) => `[${String(Math.floor(c.startMs / 1000))}s] ${c.speaker ?? 'Unknown'}: ${c.text}`)
+    .join('\n');
+}
+
+async function loadMeetingChunks(db: Db, meetingId: string, teamId: string) {
+  return db
+    .select()
+    .from(meetingTranscriptChunks)
+    .where(
+      and(
+        eq(meetingTranscriptChunks.meetingId, meetingId),
+        eq(meetingTranscriptChunks.teamId, teamId),
+      ),
+    )
+    .orderBy(asc(meetingTranscriptChunks.startMs));
+}
+
 /**
  * Pure processing function. Exported separately from the BullMQ worker so
  * tests can call it directly with an injected DB + LLM stub.
@@ -88,16 +109,7 @@ export async function processMeetingFinalizeJob(
     return { skipped: 'already_completed' };
   }
 
-  const chunks = await deps.db
-    .select()
-    .from(meetingTranscriptChunks)
-    .where(
-      and(
-        eq(meetingTranscriptChunks.meetingId, meetingId),
-        eq(meetingTranscriptChunks.teamId, teamId),
-      ),
-    )
-    .orderBy(asc(meetingTranscriptChunks.startMs));
+  const chunks = await loadMeetingChunks(deps.db, meetingId, teamId);
 
   // No transcript captured — mark completed without summary so the UI
   // stops showing "processing", but skip the LLM call.
@@ -105,9 +117,7 @@ export async function processMeetingFinalizeJob(
   let actionItems: { text: string; owner: string | null }[] = [];
   let modelUsed: string | null = null;
   if (chunks.length > 0) {
-    const transcriptText = chunks
-      .map((c) => `[${String(Math.floor(c.startMs / 1000))}s] ${c.speaker ?? 'Unknown'}: ${c.text}`)
-      .join('\n');
+    const transcriptText = formatTranscript(chunks);
     try {
       const chat = io.chatStructured ?? llm.chatStructured;
       const result = await chat({
@@ -131,133 +141,131 @@ export async function processMeetingFinalizeJob(
     }
   }
 
-  // Compute minutes used. Use meeting duration if available, else
-  // fall back to last chunk end_ms.
-  let minutes = 0;
-  if (meeting.startedAt && meeting.endedAt) {
-    minutes = Math.max(
-      1,
-      Math.ceil((meeting.endedAt.getTime() - meeting.startedAt.getTime()) / 60000),
-    );
-  } else if (chunks.length > 0) {
-    const last = chunks[chunks.length - 1];
-    if (last) minutes = Math.max(1, Math.ceil(last.endMs / 60000));
-  }
-
-  // Patch meeting metadata first, but do NOT flip status yet. Status
-  // only moves to 'completed' after the raw_event + backfill succeed so
-  // a crash mid-way causes a retry instead of silently skipping.
-  const metadataPatch: Record<string, unknown> = {
-    finalized_at: new Date().toISOString(),
-  };
-  if (summary) metadataPatch.summary = summary;
-  if (modelUsed) metadataPatch.summary_model = modelUsed;
-  if (actionItems.length > 0) metadataPatch.action_items = actionItems;
-  const patchJson = JSON.stringify(metadataPatch);
-  await deps.db
-    .update(meetingsTable)
-    .set({
-      updatedAt: new Date(),
-      metadata: sql`COALESCE(${meetingsTable.metadata}, '{}'::jsonb) || ${patchJson}::jsonb`,
-    })
-    .where(eq(meetingsTable.id, meetingId));
-
-  // Create ONE consolidated raw_events row so the meeting appears as a
-  // single timeline entry. contentText is the full speaker-attributed
-  // transcript (the raw source); the LLM summary lives in sourceMetadata
-  // so it's clearly tagged as derived.
-  const speakers = [...new Set(chunks.map((c) => c.speaker).filter(Boolean))];
-  const fullTranscript =
-    chunks.length > 0
-      ? chunks
-          .map(
-            (c) =>
-              `[${String(Math.floor(c.startMs / 1000))}s] ${c.speaker ?? 'Unknown'}: ${c.text}`,
-          )
-          .join('\n')
-      : null;
-  const contentText = fullTranscript ?? 'Meeting (no transcript)';
-
   const dedupKey = `meeting-finalized:${meetingId}`;
-  const sourceMetadata: Record<string, unknown> = {
-    meeting_id: meetingId,
-    platform: meeting.platform,
-    speakers,
-    duration_minutes: minutes,
-    chunk_count: chunks.length,
-    meeting_chunk_provider_id: dedupKey,
-  };
-  if (meeting.title) sourceMetadata.title = meeting.title;
-  if (summary) sourceMetadata.summary = summary;
-  if (actionItems.length > 0) sourceMetadata.action_items = actionItems;
+  const finalized = await deps.db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${meetingId}, 0))`);
+    const finalChunks = await loadMeetingChunks(tx as never, meetingId, teamId);
 
-  const eventInsert = await deps.db
-    .insert(rawEvents)
-    .values({
-      teamId,
-      authorUserId: meeting.createdByUserId,
-      source: 'meeting',
-      contentText,
-      occurredAt: meeting.startedAt ?? meeting.createdAt,
-      visibility: meeting.defaultVisibility,
-      visibilityUserIds: meeting.visibilityUserIds,
-      sourceMetadata,
-    })
-    .onConflictDoNothing()
-    .returning({ id: rawEvents.id });
-
-  let rawEventId = eventInsert[0]?.id;
-
-  // On dedup conflict (prior run inserted but crashed before completing),
-  // look up the existing row so backfill + enqueue still run.
-  if (!rawEventId) {
-    const existing = await deps.db
-      .select({ id: rawEvents.id })
-      .from(rawEvents)
-      .where(
-        and(
-          eq(rawEvents.teamId, teamId),
-          sql`(${rawEvents.sourceMetadata} ->> 'meeting_chunk_provider_id') = ${dedupKey}`,
-        ),
-      )
-      .limit(1);
-    rawEventId = existing[0]?.id;
-  }
-
-  if (rawEventId) {
-    // Backfill rawEventId on all chunks so Qdrant meeting_chunk points
-    // link back to the consolidated parent event for search attribution.
-    await deps.db
-      .update(meetingTranscriptChunks)
-      .set({ rawEventId })
-      .where(
-        and(
-          eq(meetingTranscriptChunks.meetingId, meetingId),
-          eq(meetingTranscriptChunks.teamId, teamId),
-        ),
+    // Compute minutes used from the freshest chunk set. Use meeting
+    // duration if available, else fall back to last chunk end_ms.
+    let minutes = 0;
+    if (meeting.startedAt && meeting.endedAt) {
+      minutes = Math.max(
+        1,
+        Math.ceil((meeting.endedAt.getTime() - meeting.startedAt.getTime()) / 60000),
       );
-
-    if (env.REDIS_URL) {
-      await Promise.all([
-        queue.enqueueExtractJob({ rawEventId, teamId }),
-        queue.enqueueEmbedJob({ scope: 'raw_event', rawEventId, teamId }),
-      ]);
+    } else if (finalChunks.length > 0) {
+      const last = finalChunks[finalChunks.length - 1];
+      if (last) minutes = Math.max(1, Math.ceil(last.endMs / 60000));
     }
+
+    // Patch meeting metadata first, but do NOT flip status yet. Status
+    // only moves to 'completed' after the raw_event + backfill succeed so
+    // a crash mid-way causes a retry instead of silently skipping.
+    const metadataPatch: Record<string, unknown> = {
+      finalized_at: new Date().toISOString(),
+    };
+    if (summary) metadataPatch.summary = summary;
+    if (modelUsed) metadataPatch.summary_model = modelUsed;
+    if (actionItems.length > 0) metadataPatch.action_items = actionItems;
+    const patchJson = JSON.stringify(metadataPatch);
+    await tx
+      .update(meetingsTable)
+      .set({
+        updatedAt: new Date(),
+        metadata: sql`COALESCE(${meetingsTable.metadata}, '{}'::jsonb) || ${patchJson}::jsonb`,
+      })
+      .where(eq(meetingsTable.id, meetingId));
+
+    // Create ONE consolidated raw_events row so the meeting appears as a
+    // single timeline entry. contentText is the full speaker-attributed
+    // transcript (the raw source); the LLM summary lives in sourceMetadata
+    // so it's clearly tagged as derived.
+    const speakers = [...new Set(finalChunks.map((c) => c.speaker).filter(Boolean))];
+    const fullTranscript = finalChunks.length > 0 ? formatTranscript(finalChunks) : null;
+    const contentText = fullTranscript ?? 'Meeting (no transcript)';
+    const sourceMetadata: Record<string, unknown> = {
+      meeting_id: meetingId,
+      platform: meeting.platform,
+      speakers,
+      duration_minutes: minutes,
+      chunk_count: finalChunks.length,
+      meeting_chunk_provider_id: dedupKey,
+    };
+    if (meeting.title) sourceMetadata.title = meeting.title;
+    if (summary) sourceMetadata.summary = summary;
+    if (actionItems.length > 0) sourceMetadata.action_items = actionItems;
+
+    const eventInsert = await tx
+      .insert(rawEvents)
+      .values({
+        teamId,
+        authorUserId: meeting.createdByUserId,
+        source: 'meeting',
+        contentText,
+        occurredAt: meeting.startedAt ?? meeting.createdAt,
+        visibility: meeting.defaultVisibility,
+        visibilityUserIds: meeting.visibilityUserIds,
+        sourceMetadata,
+      })
+      .onConflictDoNothing()
+      .returning({ id: rawEvents.id });
+
+    let rawEventId = eventInsert[0]?.id;
+
+    // On dedup conflict (prior run inserted but crashed before completing),
+    // look up the existing row so backfill + enqueue still run.
+    if (!rawEventId) {
+      const existing = await tx
+        .select({ id: rawEvents.id })
+        .from(rawEvents)
+        .where(
+          and(
+            eq(rawEvents.teamId, teamId),
+            sql`(${rawEvents.sourceMetadata} ->> 'meeting_chunk_provider_id') = ${dedupKey}`,
+          ),
+        )
+        .limit(1);
+      rawEventId = existing[0]?.id;
+    }
+
+    if (rawEventId) {
+      // Backfill rawEventId on all chunks so Qdrant meeting_chunk points
+      // link back to the consolidated parent event for search attribution.
+      await tx
+        .update(meetingTranscriptChunks)
+        .set({ rawEventId })
+        .where(
+          and(
+            eq(meetingTranscriptChunks.meetingId, meetingId),
+            eq(meetingTranscriptChunks.teamId, teamId),
+          ),
+        );
+    }
+
+    // Usage. Idempotent via unique index on meeting_id.
+    if (minutes > 0) {
+      await tx.insert(meetingUsage).values({ teamId, meetingId, minutes }).onConflictDoNothing();
+    }
+
+    // Status flip is last — a crash anywhere above means the retry will
+    // re-enter and complete the remaining steps.
+    await tx
+      .update(meetingsTable)
+      .set({ status: 'completed', updatedAt: new Date() })
+      .where(eq(meetingsTable.id, meetingId));
+
+    return { minutes, rawEventId };
+  });
+
+  if (finalized.rawEventId && env.REDIS_URL) {
+    await Promise.all([
+      queue.enqueueExtractJob({ rawEventId: finalized.rawEventId, teamId }),
+      queue.enqueueEmbedJob({ scope: 'raw_event', rawEventId: finalized.rawEventId, teamId }),
+    ]);
   }
 
-  // Usage. Idempotent via unique index on meeting_id.
-  if (minutes > 0) {
-    await deps.db.insert(meetingUsage).values({ teamId, meetingId, minutes }).onConflictDoNothing();
-  }
-
-  // Status flip is last — a crash anywhere above means the retry will
-  // re-enter and complete the remaining steps.
-  await deps.db
-    .update(meetingsTable)
-    .set({ status: 'completed', updatedAt: new Date() })
-    .where(eq(meetingsTable.id, meetingId));
-
-  return { meetingId, minutes, actionItems: actionItems.length };
+  return { meetingId, minutes: finalized.minutes, actionItems: actionItems.length };
 }
 
 export function startMeetingFinalizeWorker(

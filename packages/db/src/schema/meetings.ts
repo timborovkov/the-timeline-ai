@@ -109,8 +109,8 @@ export const meetingTranscriptChunks = pgTable(
     text: text('text').notNull(),
     startMs: integer('start_ms').notNull(),
     endMs: integer('end_ms').notNull(),
-    // Back-link to the audit raw_event row. Set in the same transaction as
-    // chunk insert so a stale chunk can never refer to a missing event.
+    // Back-link to the consolidated meeting raw_event. Finalize backfills
+    // existing chunks; chunks arriving after finalize attach during insert.
     rawEventId: uuid('raw_event_id').references(() => rawEvents.id, {
       onDelete: 'set null',
     }),

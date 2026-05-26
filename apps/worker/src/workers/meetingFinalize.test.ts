@@ -65,8 +65,8 @@ async function seedMeeting(
   db: Db,
   opts: {
     status?: 'pending' | 'joining' | 'active' | 'processing' | 'completed' | 'failed';
-    startedAt?: Date;
-    endedAt?: Date;
+    startedAt?: Date | null;
+    endedAt?: Date | null;
     metadata?: Record<string, unknown>;
   } = {},
 ): Promise<void> {
@@ -79,8 +79,8 @@ async function seedMeeting(
     meetingUrl: 'https://meet.google.com/test',
     status: opts.status ?? 'processing',
     defaultVisibility: 'team',
-    startedAt: opts.startedAt ?? new Date('2026-05-25T10:00:00Z'),
-    endedAt: opts.endedAt ?? new Date('2026-05-25T10:30:00Z'),
+    startedAt: 'startedAt' in opts ? opts.startedAt : new Date('2026-05-25T10:00:00Z'),
+    endedAt: 'endedAt' in opts ? opts.endedAt : new Date('2026-05-25T10:30:00Z'),
     metadata: opts.metadata ?? {},
   });
 }
@@ -183,6 +183,31 @@ describe('processMeetingFinalizeJob', () => {
     const meta = row?.metadata as Record<string, unknown>;
     expect(meta.summary).toBeUndefined();
     expect(meta.finalized_at).toBeTypeOf('string');
+  });
+
+  it('includes chunks appended while the LLM summary is in flight', async () => {
+    await seedMeeting(db as never, { endedAt: null });
+    await seedChunk(db as never, 0, 'Opening remarks.', 'Alice');
+    const chat = vi.fn().mockImplementation(async () => {
+      await seedChunk(db as never, 1, 'Trailing decision.', 'Bob');
+      return {
+        object: { summary: 'Summary from initial transcript.', action_items: [] },
+        model: 'test-model@1.0',
+      };
+    });
+
+    const result = await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+
+    expect(result.minutes).toBe(1);
+    const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+    expect(events).toHaveLength(1);
+    expect(events[0]?.contentText).toContain('[0s] Alice: Opening remarks.');
+    expect(events[0]?.contentText).toContain('[5s] Bob: Trailing decision.');
+    expect((events[0]?.sourceMetadata as Record<string, unknown>).chunk_count).toBe(2);
   });
 
   it('idempotent: re-running on a completed meeting is a no-op', async () => {

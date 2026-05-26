@@ -102,6 +102,7 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
         const isMeeting = event.source === 'meeting';
         const em = isEmail ? emailMeta(event.sourceMetadata) : null;
         const mm = isMeeting ? meetingMeta(event.sourceMetadata) : null;
+        const hasMeetingTranscript = isMeeting && (mm?.chunk_count ?? 0) > 0;
         const senderUnverified = Boolean(em?.sender_unverified);
         const authorLabel = author
           ? (author.name ?? author.email)
@@ -198,7 +199,11 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
                     <p className="text-sm italic text-fg-dim">(no speech detected)</p>
                   ) : (
                     <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
-                      {isMeeting ? '(transcript available)' : event.contentText}
+                      {isMeeting
+                        ? hasMeetingTranscript
+                          ? '(transcript available)'
+                          : '(no transcript captured)'
+                        : event.contentText}
                     </p>
                   )
                 ) : event.contentAudioUrl ? (

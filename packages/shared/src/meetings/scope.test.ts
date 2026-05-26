@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import { meetings, meetingTranscriptChunks } from '@timeline/db';
+import { meetings, meetingTranscriptChunks, rawEvents } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -100,6 +100,48 @@ describe('meetings scope', () => {
       .from(meetingTranscriptChunks)
       .where(eq(meetingTranscriptChunks.meetingId, m.id));
     expect(chunkRows).toHaveLength(1);
+  });
+
+  it('appendMeetingChunk links late chunks to an existing finalized meeting event', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_A);
+    const m = await scope.createMeeting({
+      platform: 'zoom',
+      meetingUrl: 'https://zoom.us/j/1',
+    });
+    await scope.updateMeetingStatus(m.id, 'completed');
+    const eventRows = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: USER_A,
+        source: 'meeting',
+        contentText: 'Meeting (no transcript)',
+        occurredAt: new Date('2026-05-25T10:00:00Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          meeting_id: m.id,
+          meeting_chunk_provider_id: `meeting-finalized:${m.id}`,
+          chunk_count: 0,
+        },
+      })
+      .returning({ id: rawEvents.id });
+
+    const result = await scope.appendMeetingChunk({
+      meetingId: m.id,
+      speaker: 'Alice',
+      text: 'late utterance',
+      startMs: 1000,
+      endMs: 2000,
+      providerChunkId: 'utt-late',
+    });
+
+    const chunkRows = await db
+      .select()
+      .from(meetingTranscriptChunks)
+      .where(
+        eq(meetingTranscriptChunks.id, result?.chunkId ?? '00000000-0000-0000-0000-000000000000'),
+      );
+    expect(chunkRows[0]?.rawEventId).toBe(eventRows[0]?.id);
   });
 
   it('updateMeetingStatus flips status and merges metadata', async () => {
