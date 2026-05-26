@@ -104,7 +104,11 @@ async function insertCalendarRawEvents(
     userId: string;
     calendarEventId: string;
     title: string;
+    description: string | null;
     startAt: Date;
+    endAt: Date;
+    timezone: string;
+    location: string | null;
     visibility: Visibility;
     visibilityUserIds: string[] | null;
   },
@@ -150,7 +154,7 @@ async function insertCalendarRawEvents(
       teamId: args.teamId,
       authorUserId: args.userId,
       source: 'calendar',
-      contentText: args.title,
+      contentText: buildCalendarTimelineText(args),
       occurredAt: args.startAt,
       visibility: args.visibility,
       visibilityUserIds: args.visibilityUserIds,
@@ -179,6 +183,24 @@ async function insertCalendarRawEvents(
     scheduledRawEventId: scheduledId ?? '',
     startAtRawEventId: startAtId ?? '',
   };
+}
+
+function buildCalendarTimelineText(args: {
+  title: string;
+  description?: string | null;
+  location?: string | null;
+  startAt: Date;
+  endAt: Date;
+  timezone: string;
+}): string {
+  const parts = [
+    args.title,
+    args.description ?? '',
+    args.location ? `at ${args.location}` : '',
+    `${args.startAt.toISOString()} to ${args.endAt.toISOString()}`,
+    args.timezone !== 'UTC' ? `(${args.timezone})` : '',
+  ];
+  return parts.filter((p) => p.length > 0).join(' | ');
 }
 
 function uniqueIds(ids: string[]): string[] {
@@ -311,7 +333,11 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           userId,
           calendarEventId: row.id,
           title: input.title,
+          description: input.description ?? null,
           startAt: input.startAt,
+          endAt: input.endAt,
+          timezone: input.timezone ?? 'UTC',
+          location: input.location ?? null,
           visibility: vis,
           visibilityUserIds: visUserIds,
         });
@@ -533,8 +559,26 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           }
         }
 
-        if ((patch.startAt || patch.title) && row.startAtRawEventId) {
-          const startRawPatch: Record<string, unknown> = { contentText: newTitle };
+        const hasOccurrenceContentChange = [
+          'title',
+          'description',
+          'startAt',
+          'endAt',
+          'timezone',
+          'location',
+        ].some((field) => changedFields.has(field as keyof UpdateCalendarEventInput));
+
+        if (hasOccurrenceContentChange && row.startAtRawEventId) {
+          const startRawPatch: Record<string, unknown> = {
+            contentText: buildCalendarTimelineText({
+              title: newTitle,
+              description: patch.description ?? row.description,
+              startAt: effectiveStart,
+              endAt: effectiveEnd,
+              timezone: patch.timezone ?? row.timezone,
+              location: patch.location ?? row.location,
+            }),
+          };
           if (patch.startAt) startRawPatch.occurredAt = patch.startAt;
           await tx
             .update(rawEvents)

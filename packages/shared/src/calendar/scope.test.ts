@@ -54,6 +54,38 @@ describe('calendar scope', () => {
     db = drizzle(pg);
   });
 
+  it('keeps the occurrence timeline row rich enough for search hydration', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    const event = await scope.calendar.createCalendarEvent({
+      title: 'Launch review',
+      description: 'Final launch readiness pass',
+      startAt: new Date('2026-05-27T09:00:00Z'),
+      endAt: new Date('2026-05-27T10:00:00Z'),
+      timezone: 'Europe/Tallinn',
+      location: 'Room 3',
+      visibility: 'private',
+    });
+
+    let rows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    let occurrence = rows.find((row) => row.id === event.startAtRawEventId);
+    expect(occurrence?.contentText).toBe(
+      'Launch review | Final launch readiness pass | at Room 3 | 2026-05-27T09:00:00.000Z to 2026-05-27T10:00:00.000Z | (Europe/Tallinn)',
+    );
+
+    await scope.calendar.updateCalendarEvent(event.id, {
+      description: 'Updated readiness pass',
+      location: 'Room 4',
+      endAt: new Date('2026-05-27T10:30:00Z'),
+    });
+
+    rows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    occurrence = rows.find((row) => row.id === event.startAtRawEventId);
+    expect(occurrence?.contentText).toBe(
+      'Launch review | Updated readiness pass | at Room 4 | 2026-05-27T09:00:00.000Z to 2026-05-27T10:30:00.000Z | (Europe/Tallinn)',
+    );
+  });
+
   it('deleteCalendarEvent tombstones both linked timeline rows', async () => {
     await db.insert(rawEvents).values([
       {
