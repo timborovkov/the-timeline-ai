@@ -23,3 +23,4 @@ export * as crypto from './crypto/index.js';
 export * as integrations from './integrations/index.js';
 export * as mcp from './mcp/index.js';
 export * as mcpServer from './mcp-server/index.js';
+export * as calendarScope from './calendar/index.js';

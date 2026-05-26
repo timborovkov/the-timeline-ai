@@ -140,7 +140,8 @@ export type EmbedJobData =
   | EmbedObjectChangeJobData
   | EmbedEntityJobData
   | EmbedDocChunkJobData
-  | EmbedMeetingChunkJobData;
+  | EmbedMeetingChunkJobData
+  | EmbedCalendarEventJobData;
 
 interface EmbedJobBase {
   teamId: string;
@@ -207,6 +208,11 @@ export interface EmbedDocChunkJobData extends EmbedJobBase {
 export interface EmbedMeetingChunkJobData extends EmbedJobBase {
   scope: 'meeting_chunk';
   meetingChunkId: string;
+}
+
+export interface EmbedCalendarEventJobData extends EmbedJobBase {
+  scope: 'calendar_event';
+  calendarEventId: string;
 }
 
 let _embedQueue: Queue<EmbedJobData> | undefined;
@@ -279,6 +285,14 @@ export async function enqueueMeetingChunkEmbedJob(
   opts: { targetCollection?: string } = {},
 ): Promise<void> {
   await enqueueEmbedJob({ scope: 'meeting_chunk', teamId, meetingChunkId, ...opts });
+}
+
+export async function enqueueCalendarEventEmbedJob(
+  teamId: string,
+  calendarEventId: string,
+  opts: { targetCollection?: string } = {},
+): Promise<void> {
+  await enqueueEmbedJob({ scope: 'calendar_event', teamId, calendarEventId, ...opts });
 }
 
 export async function closeEmbedQueue(): Promise<void> {

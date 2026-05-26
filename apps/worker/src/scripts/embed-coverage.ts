@@ -177,6 +177,7 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
     doc_chunk: docChunkRows[0]?.n ?? 0,
     meeting_chunk: meetingChunkRows[0]?.n ?? 0,
     integration_event: integrationEventRows[0]?.n ?? 0,
+    calendar_event: 0,
   };
 }
 

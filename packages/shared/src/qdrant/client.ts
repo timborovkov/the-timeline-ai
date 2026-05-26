@@ -31,7 +31,8 @@ export type SourceKind =
   // (source='integration') so this point gets the same payload shape
   // as raw_event; the source_kind discriminator lets the agent narrow
   // searches to integration-only hits.
-  | 'integration_event';
+  | 'integration_event'
+  | 'calendar_event';
 
 export interface QdrantPayload {
   team_id: string;
@@ -65,7 +66,15 @@ export interface QdrantPayload {
   entity_ids: string[];
   occurred_at: string;
   author_user_id: string | null;
-  source: 'web' | 'telegram' | 'email' | 'system' | 'document' | 'meeting' | 'integration';
+  source:
+    | 'web'
+    | 'telegram'
+    | 'email'
+    | 'system'
+    | 'document'
+    | 'meeting'
+    | 'integration'
+    | 'calendar';
   visibility: 'team' | 'private' | 'specific_users';
   /**
    * Users explicitly granted visibility when `visibility === 'specific_users'`.

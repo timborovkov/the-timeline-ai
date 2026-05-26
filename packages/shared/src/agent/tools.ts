@@ -18,11 +18,8 @@ const sourceKindSchema = z.enum([
   'object_note',
   'object_change',
   'entity',
-  // Phase 11 — integration sync rows are indexed by the embed worker
-  // with source_kind='integration_event' on the Qdrant payload. Without
-  // this value the agent can't narrow semantic search to integration
-  // points even though they exist in the index.
   'integration_event',
+  'calendar_event',
 ]);
 
 // Mirrors the `event_source` pg enum. Kept in lockstep with the
@@ -35,6 +32,7 @@ const eventSourceSchema = z.enum([
   'document',
   'meeting',
   'integration',
+  'calendar',
 ]);
 
 const searchTimelineInput = z.object({
@@ -876,6 +874,124 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
               folder_id: c.folderId,
               summary: c.summary,
             })),
+          };
+        }),
+    }),
+
+    list_calendar_events: tool({
+      description:
+        "List calendar events for this team within a date range. Returns id, title, start_at, end_at, timezone, location, visibility. Use for 'what's on my calendar', 'what's scheduled this week', or 'any meetings Thursday'. Note: recurring events are materialized up to 3 months ahead; results may be incomplete for dates beyond that window.",
+      inputSchema: z.object({
+        from: z.string().datetime().optional(),
+        to: z.string().datetime().optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      }),
+      execute: async (raw) =>
+        safe('list_calendar_events', async () => {
+          const input = z
+            .object({
+              from: z.string().datetime().optional(),
+              to: z.string().datetime().optional(),
+              limit: z.number().int().min(1).max(50).optional(),
+            })
+            .parse(raw);
+          const opts: Parameters<typeof scope.calendar.listCalendarEvents>[0] = {};
+          if (input.from) opts.from = new Date(input.from);
+          if (input.to) opts.to = new Date(input.to);
+          if (input.limit) opts.limit = input.limit;
+          const events = await scope.calendar.listCalendarEvents(opts);
+          return {
+            count: events.length,
+            events: events.map((e) => ({
+              id: e.id,
+              title: e.title,
+              start_at: e.startAt.toISOString(),
+              end_at: e.endAt.toISOString(),
+              timezone: e.timezone,
+              all_day: e.allDay,
+              location: e.location,
+              visibility: e.visibility,
+              redacted: e.redacted,
+              agent_suggested: e.agentSuggested,
+            })),
+          };
+        }),
+    }),
+
+    get_calendar_event: tool({
+      description:
+        'Fetch one calendar event by UUID. Returns full details including description, timezone, location, and visibility. Use this to drill into a specific event after listing.',
+      inputSchema: z.object({ id: z.string().regex(UUID_RE) }),
+      execute: async (raw) =>
+        safe('get_calendar_event', async () => {
+          const { id } = z.object({ id: z.string().regex(UUID_RE) }).parse(raw);
+          const event = await scope.calendar.getCalendarEvent(id);
+          if (!event) return { found: false };
+          return {
+            found: true,
+            id: event.id,
+            title: event.title,
+            description: event.redacted
+              ? null
+              : fenceExternalContent(event.description, {
+                  source: 'calendar',
+                  eventId: event.scheduledRawEventId ?? event.id,
+                }),
+            start_at: event.startAt.toISOString(),
+            end_at: event.endAt.toISOString(),
+            timezone: event.timezone,
+            all_day: event.allDay,
+            location: event.redacted ? null : event.location,
+            visibility: event.visibility,
+            redacted: event.redacted,
+            agent_suggested: event.agentSuggested,
+            created_by_user_id: event.createdByUserId,
+          };
+        }),
+    }),
+
+    suggest_calendar_event: tool({
+      description:
+        "Propose a new calendar event. Created with agent_suggested=true; a human reviews at /app/calendar. Use sparingly — only when the conversation clearly implies scheduling a specific event with a specific time. Always confirm the time with the user before suggesting. Set visibility to 'private' for personal events like dentist appointments.",
+      inputSchema: z.object({
+        title: z.string().trim().min(1).max(200),
+        startAt: z.string().datetime(),
+        endAt: z.string().datetime(),
+        timezone: z.string().max(100).optional(),
+        description: z.string().trim().max(1000).optional(),
+        location: z.string().trim().max(500).optional(),
+        visibility: z.enum(['team', 'private']).optional(),
+        reminderMinutes: z.number().int().min(0).max(1440).optional(),
+      }),
+      execute: async (raw) =>
+        safe('suggest_calendar_event', async () => {
+          const input = z
+            .object({
+              title: z.string().trim().min(1).max(200),
+              startAt: z.string().datetime(),
+              endAt: z.string().datetime(),
+              timezone: z.string().max(100).optional(),
+              description: z.string().trim().max(1000).optional(),
+              location: z.string().trim().max(500).optional(),
+              visibility: z.enum(['team', 'private']).optional(),
+              reminderMinutes: z.number().int().min(0).max(1440).optional(),
+            })
+            .parse(raw);
+          const created = await scope.calendar.createCalendarEvent({
+            title: input.title,
+            startAt: new Date(input.startAt),
+            endAt: new Date(input.endAt),
+            timezone: input.timezone ?? 'UTC',
+            description: input.description ?? null,
+            location: input.location ?? null,
+            visibility: input.visibility ?? 'team',
+            reminderMinutes: input.reminderMinutes ?? null,
+            agentSuggested: true,
+          });
+          return {
+            ok: true,
+            id: created.id,
+            message: `Suggested calendar event created. A teammate can review at /app/calendar/${created.id}.`,
           };
         }),
     }),
