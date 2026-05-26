@@ -25,6 +25,16 @@ export const QUEUE_NAMES = {
   // atomic — if Redis hiccups after the DB write, the job is lost). Mirrors
   // overdueScan: BullMQ repeatable, singleton consumer.
   janitor: 'janitor',
+  // Phase 11: third-party integration backfill + incremental sync. The
+  // worker walks the connected provider's API (Drive changes, Linear
+  // issues, GitHub PRs/issues), writes integration events into
+  // raw_events, and updates the per-resource cursor.
+  integrationSync: 'integration-sync',
+  // Phase 11: 5-minute MCP server health ping. Sends a cheap initialize
+  // request to every enabled MCP server, updates last_connected_at /
+  // last_error so the settings UI can surface degraded servers without
+  // needing a chat turn to discover them.
+  mcpHealth: 'mcp-health',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -450,5 +460,112 @@ export async function closeJanitorQueue(): Promise<void> {
   if (!_janitorQueue) return;
   const q = _janitorQueue;
   _janitorQueue = undefined;
+  await q.close().catch(() => undefined);
+}
+
+// Phase 11 — Integration sync. Job data is a discriminated union of
+// backfill (one-shot full walk) and incremental (delta from cursor).
+// Both run per (integration_id, resource_type or empty); the worker
+// resolves the provider and dispatches.
+export type IntegrationSyncJobData =
+  | {
+      kind: 'backfill';
+      integrationId: string;
+      teamId: string;
+      triggeredBy?: string;
+    }
+  | {
+      kind: 'incremental';
+      integrationId: string;
+      teamId: string;
+      triggeredBy?: string;
+    };
+
+let _integrationSyncQueue: Queue<IntegrationSyncJobData> | undefined;
+
+export function getIntegrationSyncQueue(): Queue<IntegrationSyncJobData> {
+  if (_integrationSyncQueue) return _integrationSyncQueue;
+  _integrationSyncQueue = new Queue<IntegrationSyncJobData>(QUEUE_NAMES.integrationSync, {
+    connection: getRedisConnection(),
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5000 },
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  });
+  return _integrationSyncQueue;
+}
+
+export async function enqueueIntegrationSyncJob(data: IntegrationSyncJobData): Promise<void> {
+  // No jobId-based dedup: idempotency lives in the raw_events
+  // dedup_key partial unique index and the per-resource cursor in
+  // integration_sync_state. A duplicate enqueue costs one extra API
+  // page fetch + a no-op DB upsert.
+  await getIntegrationSyncQueue().add('integration-sync', data);
+}
+
+/**
+ * Register the 5-minute repeatable that fans out incremental syncs to
+ * every enabled integration. Cheap when no integrations are configured;
+ * one synthetic job is enqueued per tick whose worker fans out.
+ */
+export async function scheduleIntegrationIncrementalSync(): Promise<void> {
+  await getIntegrationSyncQueue().add(
+    'integration-tick',
+    { kind: 'incremental', integrationId: '__tick__', teamId: '__tick__' },
+    {
+      repeat: { pattern: '*/5 * * * *' },
+      jobId: 'integration-sync-tick-5min',
+    },
+  );
+}
+
+export async function closeIntegrationSyncQueue(): Promise<void> {
+  if (!_integrationSyncQueue) return;
+  const q = _integrationSyncQueue;
+  _integrationSyncQueue = undefined;
+  await q.close().catch(() => undefined);
+}
+
+// Phase 11 — MCP health ping. Single synthetic tick fans out to every
+// enabled MCP server; the worker sweeps in one pass and updates
+// last_connected_at / last_error so the UI can show health without
+// waiting for a chat turn to surface a broken server.
+export interface McpHealthJobData {
+  triggeredAt?: string;
+}
+
+let _mcpHealthQueue: Queue<McpHealthJobData> | undefined;
+
+export function getMcpHealthQueue(): Queue<McpHealthJobData> {
+  if (_mcpHealthQueue) return _mcpHealthQueue;
+  _mcpHealthQueue = new Queue<McpHealthJobData>(QUEUE_NAMES.mcpHealth, {
+    connection: getRedisConnection(),
+    defaultJobOptions: {
+      attempts: 2,
+      backoff: { type: 'fixed', delay: 30_000 },
+      removeOnComplete: { age: 3600, count: 24 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  });
+  return _mcpHealthQueue;
+}
+
+export async function scheduleMcpHealthPing(): Promise<void> {
+  await getMcpHealthQueue().add(
+    'mcp-health-tick',
+    {},
+    {
+      repeat: { pattern: '*/5 * * * *' },
+      jobId: 'mcp-health-tick-5min',
+    },
+  );
+}
+
+export async function closeMcpHealthQueue(): Promise<void> {
+  if (!_mcpHealthQueue) return;
+  const q = _mcpHealthQueue;
+  _mcpHealthQueue = undefined;
   await q.close().catch(() => undefined);
 }

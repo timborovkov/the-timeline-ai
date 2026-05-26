@@ -155,6 +155,20 @@ export default async function TeamSettingsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Integrations</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            Connect Google Drive, Linear, GitHub, or any MCP-compatible server.
+          </p>
+          <Link href="/app/team/integrations" className="underline">
+            Open integrations →
+          </Link>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Create another team</CardTitle>
         </CardHeader>
         <CardContent>

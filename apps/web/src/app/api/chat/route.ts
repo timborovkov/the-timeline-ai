@@ -160,7 +160,19 @@ export async function POST(req: Request): Promise<Response> {
     userName,
     currentDate: new Date(),
   });
-  const tools = agent.buildAgentTools(scope);
+  // Phase 11 — merge any custom MCP tools the team has connected. The
+  // MCP manager caches per-team for 5 min so this is cheap on hot paths.
+  // Failures here (discovery failed, OAuth expired, server down) MUST
+  // NOT crash the chat — but we log them so they show up in observability
+  // instead of silently disappearing.
+  const mcpTools = await agent.buildMcpTools(scope).catch((err: unknown) => {
+    log.warn(
+      { err, teamId: active.teamId },
+      'mcp tool discovery failed; chat continues with native tools only',
+    );
+    return {};
+  });
+  const tools = { ...agent.buildAgentTools(scope), ...mcpTools };
 
   // Validate UIMessages BEFORE convertToModelMessages so a malformed client
   // (or attacker poking the endpoint) gets a clean 400 instead of an

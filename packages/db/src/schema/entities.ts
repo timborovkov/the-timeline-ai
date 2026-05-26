@@ -108,5 +108,16 @@ export const entities = pgTable(
     // GIN over aliases for alias-membership lookup. Team scoping happens via
     // the btree (entities_team_idx) — Postgres bitmap-ands the two.
     index('entities_aliases_gin').using('gin', sql`${table.aliases} jsonb_path_ops`),
+    // Phase 11 — Integration sync upsert. Partial unique index so the
+    // event-writer can `INSERT ... ON CONFLICT (...) DO UPDATE` per
+    // external resource in one query. Only covers integration-mapped
+    // rows; regular workspace objects don't trip this constraint.
+    uniqueIndex('entities_integration_external_id_unq')
+      .on(
+        table.teamId,
+        sql`((${table.metadata} ->> 'integration_provider'))`,
+        sql`((${table.metadata} ->> 'integration_external_id'))`,
+      )
+      .where(sql`${table.metadata} ? 'integration_external_id'`),
   ],
 );

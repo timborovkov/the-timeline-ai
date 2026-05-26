@@ -92,6 +92,34 @@
       "when": 1789171260000,
       "tag": "0012_phase10_meeting_raw_events_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795651200000,
+      "tag": "0013_phase11_integrations",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795651260000,
+      "tag": "0014_phase11_document_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1795651320000,
+      "tag": "0015_phase11_mcp_user_overlay",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795651380000,
+      "tag": "0016_phase11_mcp_outbound",
+      "breakpoints": true
     }
   ]
 }

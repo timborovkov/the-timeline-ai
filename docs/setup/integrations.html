@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Integrations &amp; custom MCPs (Phase 11)</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <main id="main">
+      <h1>Integrations &amp; custom MCPs</h1>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-25</span></div>
+      <p class="tldr">
+        Connect Google Drive, Linear, and GitHub from <code>/app/team/integrations</code>, or plug
+        arbitrary custom MCP servers in at <code>/app/team/mcp-servers</code>. Every synced external
+        event lands on the timeline as <code>source='integration'</code> and becomes searchable and
+        citable by the agent.
+      </p>
+
+      <h2 id="secrets">Encryption key (required first)</h2>
+      <p>
+        All integration auth (OAuth refresh + access tokens, bearer tokens, custom-header values,
+        basic-auth credentials, MCP dynamic-client secrets) is encrypted at rest with AES-256-GCM in
+        <code>packages/shared/src/crypto/secrets.ts</code>. Generate a 32-byte key and set
+        <code>SECRETS_ENCRYPTION_KEY</code> in your environment:
+      </p>
+      <pre><code>node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"</code></pre>
+      <p>
+        The first <code>encryptSecret()</code> call throws with a clear message if the key is
+        missing or the wrong length, so worker boot fails fast instead of writing plaintext.
+      </p>
+
+      <h2 id="google-drive">Google Drive</h2>
+      <ol>
+        <li>
+          Create an OAuth 2.0 client at
+          <a href="https://console.cloud.google.com/apis/credentials">console.cloud.google.com</a>
+          (type: <em>Web application</em>).
+        </li>
+        <li>
+          Add the redirect URI:
+          <code>{AUTH_URL}/api/integrations/google_drive/callback</code>.
+        </li>
+        <li>Enable the Google Drive API for the project.</li>
+        <li>
+          Set:
+          <pre><code>GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+# REQUIRED before accepting Drive webhooks. 32+ bytes of randomness.
+GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
+        </li>
+        <li>
+          Restart the web + worker services. The card on <code>/app/team/integrations</code> turns
+          from <em>Not configured</em> to <em>Connect</em>.
+        </li>
+        <li>
+          (Optional) Register a Drive push-notification channel for incremental sync. The channel
+          <code>token</code> must be
+          <code
+            >&lt;integration_id&gt;.&lt;HMAC-SHA256(GOOGLE_DRIVE_WEBHOOK_SECRET,
+            integration_id)&gt;</code
+          >; route hits <code>/api/webhooks/google-drive</code>. The handler refuses inbound
+          notifications when the secret is unset, and rejects bad signatures.
+        </li>
+      </ol>
+
+      <h2 id="linear">Linear</h2>
+      <ol>
+        <li>
+          Create an OAuth application at
+          <a href="https://linear.app/settings/api/applications"
+            >linear.app/settings/api/applications</a
+          >.
+        </li>
+        <li>Redirect URI: <code>{AUTH_URL}/api/integrations/linear/callback</code>.</li>
+        <li>
+          Set:
+          <pre><code>LINEAR_CLIENT_ID=...
+LINEAR_CLIENT_SECRET=...
+LINEAR_WEBHOOK_SECRET=...</code></pre>
+        </li>
+        <li>
+          In Linear Settings → API → Webhooks, point the webhook at
+          <code>{AUTH_URL}/api/webhooks/linear</code> with the secret above.
+        </li>
+      </ol>
+
+      <h2 id="github">GitHub</h2>
+      <ol>
+        <li>
+          Create an OAuth App (or a GitHub App with OAuth) at
+          <a href="https://github.com/settings/developers">github.com/settings/developers</a>.
+        </li>
+        <li>Callback URL: <code>{AUTH_URL}/api/integrations/github/callback</code>.</li>
+        <li>
+          Set:
+          <pre><code>GITHUB_APP_CLIENT_ID=...
+GITHUB_APP_CLIENT_SECRET=...
+GITHUB_WEBHOOK_SECRET=...</code></pre>
+        </li>
+        <li>
+          Add a webhook on each repo / org pointing at <code>{AUTH_URL}/api/webhooks/github</code>.
+          Content type <em>application/json</em>; secret matches the env var; subscribe to
+          <em>Pull requests</em> and <em>Issues</em>.
+        </li>
+      </ol>
+
+      <h2 id="mcp">Custom MCP servers (inbound)</h2>
+      <p>
+        Bring tools from any MCP-compatible server into the agent's toolset. Visit
+        <code>/app/team/mcp-servers</code> (team catalog — admins only) or
+        <code>/app/me/mcp-servers</code> (personal overlay — visible only to you, any member can
+        add). Pick an auth mode:
+      </p>
+      <ul>
+        <li><strong>None</strong> — public MCP servers with no auth.</li>
+        <li><strong>Bearer token</strong> — API keys / personal access tokens.</li>
+        <li><strong>Custom header</strong> — arbitrary header name + value.</li>
+        <li>
+          <strong>OAuth</strong> — server speaks the MCP OAuth dance; state JWT-equivalent is
+          HS256-signed with <code>AUTH_SECRET</code> (no extra env var). Access tokens auto-refresh
+          on expiry; if refresh fails the chat inline-renders a <em>Reconnect</em> button.
+        </li>
+      </ul>
+      <p>
+        Discovered tools appear under the server with a <em>Test call</em> button (admin for team
+        servers, owner for personal). Tools are namespaced as
+        <code>mcp__&lt;serverIdCompact&gt;__&lt;toolName&gt;</code> and merged into the agent's
+        toolset on every <code>/api/chat</code> request. Outputs are fenced through
+        <code>fenceExternalContent</code> so the agent treats them as untrusted data per Rule 8 of
+        the system prompt. A background <code>mcp-health</code> worker pings every enabled server on
+        a 5-minute schedule and surfaces <code>last_connected_at</code> / <code>last_error</code> in
+        the UI.
+      </p>
+
+      <h2 id="timeline-as-mcp">Timeline as an MCP server (outbound)</h2>
+      <p>
+        Expose this Timeline as an MCP server so external agents (Claude Desktop, Cursor, web-based
+        agents, etc.) can query its events, entities, and documents. Admins mint bearer keys at
+        <code>/app/team/mcp-share</code>:
+      </p>
+      <ol>
+        <li>Go to <code>/app/team/mcp-share</code> and copy the MCP endpoint URL shown there.</li>
+        <li>
+          Click <em>New key</em>, give it a label (e.g. "Claude Desktop — personal mac"), and copy
+          the one-time plaintext.
+        </li>
+        <li>
+          In the consuming agent, add an MCP server with:
+          <ul>
+            <li>URL: <code>{AUTH_URL}/api/mcp/server</code></li>
+            <li>Header: <code>Authorization: Bearer tla_...</code></li>
+          </ul>
+        </li>
+      </ol>
+      <p>
+        The server speaks MCP protocol <code>2024-11-05</code> over streamable HTTP. Methods:
+        <code>initialize</code>, <code>tools/list</code>, <code>tools/call</code>,
+        <code>resources/list</code>, <code>resources/read</code>, <code>prompts/list</code>,
+        <code>prompts/get</code>. Tools exposed:
+      </p>
+      <ul>
+        <li><code>timeline.search_events</code> — semantic search across raw events</li>
+        <li>
+          <code>timeline.get_event</code> / <code>timeline.list_events</code> — fetch + paginate
+        </li>
+        <li><code>timeline.get_entity</code> — lookup person / company / project / topic</li>
+        <li>
+          <code>timeline.search_documents</code> — semantic search across the team document drive
+        </li>
+      </ul>
+      <p>
+        <strong>Isolation:</strong> bearer keys are team-scoped, not per-user. The handler runs all
+        queries with a pseudo-zero-UUID actor so events with <code>visibility=private</code> or
+        <code>specific_users</code> stay invisible to outbound clients — only
+        <code>visibility=team</code> events flow out. Keys are stored as SHA-256 hashes (plaintext
+        shown once at creation). Revoke from the same page; revocation is immediate.
+      </p>
+      <p>
+        Wildcard CORS is set so browser-based agents work; Authorization-header auth means cookies
+        cannot authenticate the cross-origin call. Per-IP rate limit 600/min.
+      </p>
+
+      <h2 id="sync">How sync runs</h2>
+      <p>
+        A BullMQ repeatable enqueues an <code>integration-sync</code> tick every 5 minutes. The
+        worker fans out to every enabled integration and runs <code>incrementalSync()</code> on each
+        provider, using the per-resource cursor in <code>integration_sync_state</code>. Webhook hits
+        enqueue an extra one-shot incremental for the same integration.
+      </p>
+      <p>Manual full backfill from the CLI:</p>
+      <pre><code>pnpm --filter @timeline/worker integration-resync -- --team=&lt;uuid&gt; --from-zero</code></pre>
+
+      <h2 id="audit">Audit log</h2>
+      <p>
+        Every connect, sync start, sync finish, sync error, and replay writes a row in
+        <code>integration_audit_log</code>. <code>/app/team/integrations/audit</code> renders the
+        most recent 200 rows. The agent's <code>list_integrations</code> tool also surfaces
+        connected providers + their <code>last_synced_at</code>.
+      </p>
+
+      <h2 id="troubleshooting">Troubleshooting</h2>
+      <dl>
+        <dt>Webhook returns <code>bad_signature</code></dt>
+        <dd>
+          Check the secret env var matches what the provider's webhook UI shows. The signing
+          algorithm is HMAC-SHA256 over the raw body — make sure the provider hasn't re-serialised
+          the JSON in transit.
+        </dd>
+        <dt>Connect button stays disabled</dt>
+        <dd>
+          The provider's OAuth client env pair is missing or empty. Set both
+          <code>CLIENT_ID</code> and <code>CLIENT_SECRET</code> and restart.
+        </dd>
+        <dt>Sync runs but no timeline events</dt>
+        <dd>
+          The agent's dedup_key partial unique index makes replay a no-op. Use
+          <code>--from-zero</code> on the resync script to wipe the cursor and re-walk from provider
+          epoch.
+        </dd>
+      </dl>
+    </main>
+  </body>
+</html>

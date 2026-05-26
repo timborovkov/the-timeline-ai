@@ -19,3 +19,7 @@ export * from './citation.js';
 export * from './documents/index.js';
 export * as meetingBots from './meeting-bots/index.js';
 export * as meetingsScope from './meetings/index.js';
+export * as crypto from './crypto/index.js';
+export * as integrations from './integrations/index.js';
+export * as mcp from './mcp/index.js';
+export * as mcpServer from './mcp-server/index.js';

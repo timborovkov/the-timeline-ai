@@ -138,6 +138,39 @@ const schema = z.object({
    * generic provider name.
    */
   RECALL_BOT_DISPLAY_NAME: z.string().default('Timeline'),
+
+  // Phase 11 — Third-party integrations + custom MCPs.
+  //
+  // AES-256-GCM key (32 bytes, base64) used by
+  // `packages/shared/src/crypto/secrets.ts` to encrypt every integration
+  // auth secret (OAuth refresh+access tokens, bearer tokens, header
+  // values, basic auth, MCP dynamic-client secrets) at rest. Required
+  // when ANY integration or MCP server is configured. The helper throws
+  // on first encrypt/decrypt if unset.
+  //
+  // Generate with:
+  //   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  SECRETS_ENCRYPTION_KEY: z.string().optional(),
+
+  // Per-team integrations. The catalog hides any provider whose
+  // credentials aren't set; webhook secrets gate signature verification
+  // on the corresponding /api/webhooks/* endpoint.
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  LINEAR_CLIENT_ID: z.string().optional(),
+  LINEAR_CLIENT_SECRET: z.string().optional(),
+  LINEAR_WEBHOOK_SECRET: z.string().optional(),
+  GITHUB_APP_ID: z.string().optional(),
+  GITHUB_APP_PRIVATE_KEY: z.string().optional(),
+  GITHUB_APP_CLIENT_ID: z.string().optional(),
+  GITHUB_APP_CLIENT_SECRET: z.string().optional(),
+  GITHUB_WEBHOOK_SECRET: z.string().optional(),
+  // HMAC secret for Google Drive push-channel tokens. The Drive watch
+  // registration sets channel_token = HMAC-SHA256(secret, integration.id)
+  // so the /api/webhooks/google-drive handler can verify the inbound
+  // x-goog-channel-token. Without it, anyone who guesses or leaks an
+  // integration UUID can trigger sync jobs for that team.
+  GOOGLE_DRIVE_WEBHOOK_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema>;

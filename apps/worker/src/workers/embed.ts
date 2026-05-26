@@ -28,7 +28,7 @@ interface RawEventRow {
   contentText: string | null;
   occurredAt: Date;
   authorUserId: string | null;
-  source: 'web' | 'telegram' | 'email' | 'system' | 'document' | 'meeting';
+  source: 'web' | 'telegram' | 'email' | 'system' | 'document' | 'meeting' | 'integration';
   visibility: 'private' | 'team' | 'specific_users';
   visibilityUserIds: string[] | null;
   sourceMetadata: unknown;
@@ -371,10 +371,17 @@ async function buildEventOrFactPlan(
   if (!eventText) {
     throw new UnrecoverableError(`raw event ${rawEventId} has no content_text; nothing to embed`);
   }
+  // Phase 11 — events synced from third-party integrations are stamped
+  // with source_kind='integration_event' so the agent can narrow
+  // searches to external-system activity (search_integration_events
+  // tool) and embed-coverage can track drift per source. Everything
+  // else stays under 'raw_event'.
+  const sourceKind: qdrant.SourceKind =
+    row.source === 'integration' ? 'integration_event' : 'raw_event';
   return {
     text: eventText,
     scope: 'event',
-    sourceKind: 'raw_event',
+    sourceKind,
     sourceId: row.id,
     occurredAt: row.occurredAt,
     authorUserId: row.authorUserId,

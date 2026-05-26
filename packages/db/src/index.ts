@@ -33,6 +33,23 @@ export function getDb(): Db {
   return _db;
 }
 
+/**
+ * Raw postgres.js client. Use this when you need pool-level operations
+ * the drizzle wrapper doesn't expose — primarily `.reserve()` to pin a
+ * single connection across two queries (session-scoped advisory locks
+ * are the canonical case: `pg_try_advisory_lock` on connection A and
+ * `pg_advisory_unlock` on connection B is a no-op, so the lock leaks
+ * until A is recycled).
+ */
+export function getDbClient(): ReturnType<typeof postgres> {
+  if (_client) return _client;
+  // Side-effect: forces _client init via the drizzle path so we use the
+  // same pool as the rest of the app. getDb() always sets _client.
+  getDb();
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  return _client!;
+}
+
 export async function closeDb(): Promise<void> {
   if (_client) {
     await _client.end({ timeout: 5 });

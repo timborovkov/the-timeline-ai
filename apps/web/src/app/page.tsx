@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { AssociationLine } from './_concept-association-line';
+import { IntegrationCloud } from './_integration-cloud';
 
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
@@ -65,6 +66,7 @@ export default function LandingPage() {
         <Solution />
         <HowItWorks />
         <Surfaces />
+        <Integrations />
         <Receipts />
         <Principles />
         <FAQ />
@@ -827,6 +829,35 @@ function SurfaceTile({ label, body, coming }: { label: string; body: string; com
       </div>
       <p className="mt-4 text-base leading-[1.55] text-fg-muted">{body}</p>
     </div>
+  );
+}
+
+function Integrations() {
+  return (
+    <Section id="integrations">
+      <IndexStrip>INTEGRATIONS · BRING YOUR WHOLE STACK</IndexStrip>
+      <div className="mt-10 grid gap-12 lg:grid-cols-[1fr,2fr] lg:items-start">
+        <div className="space-y-4">
+          <h2 className="text-2xl font-medium tracking-tight text-fg sm:text-3xl">
+            Every system the team works in feeds the same timeline.
+          </h2>
+          <p className="text-base leading-[1.55] text-fg-muted">
+            Native sync for Drive, Linear, and GitHub. Anything else plugs in as an{' '}
+            <a
+              href="https://modelcontextprotocol.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-fg underline-offset-4 hover:underline"
+            >
+              MCP server
+            </a>{' '}
+            — Notion, Slack, Jira, Figma, Sentry, Stripe, your internal tool, anything that speaks
+            the protocol. The agent gets the tools; you don&apos;t write a connector.
+          </p>
+        </div>
+        <IntegrationCloud />
+      </div>
+    </Section>
   );
 }
 

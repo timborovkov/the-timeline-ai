@@ -4,6 +4,7 @@ import {
   bigint,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -87,6 +88,13 @@ export const documents = pgTable(
     ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
     visibility: eventVisibility('visibility').notNull().default('team'),
     visibilityUserIds: uuid('visibility_user_ids').array(),
+    /**
+     * Phase 11: free-form bag for integration provenance. The Drive
+     * harvest writes `{integration_id, integration_provider,
+     * integration_external_id}` here so subsequent syncs can find and
+     * update the same document row instead of duplicating.
+     */
+    metadata: jsonb('metadata').notNull().default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -97,6 +105,13 @@ export const documents = pgTable(
       .on(table.teamId)
       .where(sql`${table.deletedAt} IS NULL`),
     index('documents_team_owner_idx').on(table.teamId, table.ownerUserId),
+    index('documents_integration_external_id_idx')
+      .on(
+        table.teamId,
+        sql`((${table.metadata} ->> 'integration_provider'))`,
+        sql`((${table.metadata} ->> 'integration_external_id'))`,
+      )
+      .where(sql`${table.metadata} ? 'integration_external_id'`),
     uniqueIndex('documents_team_folder_name_unq')
       .on(
         table.teamId,

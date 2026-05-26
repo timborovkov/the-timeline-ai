@@ -23,6 +23,12 @@ export const eventSource = pgEnum('event_source', [
   // Recall.ai). Per-utterance raw_events are created by the transcript
   // webhook; the specific platform lives in source_metadata.platform.
   'meeting',
+  // Phase 11 — Third-party integration sync (Google Drive activity, Linear
+  // issue/comment changes, GitHub PR/issue/release events, MCP-tool-derived
+  // events, etc.). The provider lives in source_metadata.provider; the
+  // external object id in source_metadata.external_object_id; the dedup
+  // key in source_metadata.dedup_key.
+  'integration',
 ]);
 
 export const eventVisibility = pgEnum('event_visibility', ['private', 'team', 'specific_users']);
@@ -76,5 +82,18 @@ export const rawEvents = pgTable(
     uniqueIndex('raw_events_meeting_chunk_id_unq')
       .on(table.teamId, sql`((${table.sourceMetadata} ->> 'meeting_chunk_provider_id'))`)
       .where(sql`${table.sourceMetadata} ? 'meeting_chunk_provider_id'`),
+    // Phase 11 — Integration sync idempotency. Every integration event
+    // carries source_metadata.dedup_key (provider:resource:externalId or
+    // similar). Per-team uniqueness so two teams that mirror the same
+    // external object (e.g. both Linear-connected to the same issue id
+    // via cross-team workspaces) don't collide.
+    //
+    // No `source = 'integration'` filter for the same Postgres 55P04
+    // reason that gated the Phase 10 meeting index above. `dedup_key`
+    // is only ever set by `event-writer.ts`, so JSONB-key existence is
+    // sufficient.
+    uniqueIndex('raw_events_integration_dedup_unq')
+      .on(table.teamId, sql`((${table.sourceMetadata} ->> 'dedup_key'))`)
+      .where(sql`${table.sourceMetadata} ? 'dedup_key'`),
   ],
 );

@@ -14,7 +14,9 @@ import {
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import { createDocumentScope } from './documents/scope.js';
+import { createIntegrationScope } from './integrations/scope.js';
 import { embed as defaultEmbed, type EmbedResult } from './llm/embed.js';
+import { createMcpScope } from './mcp/scope.js';
 import { createMeetingScope } from './meetings/scope.js';
 import {
   getQdrantClient,
@@ -53,6 +55,13 @@ export interface EventListFilters {
   /** Exclusive upper bound on `occurred_at`. Callers wanting "include all of
    *  day X" should pass midnight UTC of day X+1. */
   to?: Date;
+  /**
+   * Narrow to a specific `event_source` value. Pushes the predicate into
+   * SQL so `limit` bounds the matching rows (not the pre-filter window).
+   * Mirrors the pg enum: 'web' | 'telegram' | 'email' | 'system' |
+   * 'document' | 'meeting' | 'integration'.
+   */
+  source?: string;
   limit?: number;
 }
 
@@ -98,7 +107,7 @@ export interface SearchEventsInput {
   query: string;
   from?: Date;
   to?: Date;
-  source?: 'web' | 'telegram' | 'email' | 'system';
+  source?: 'web' | 'telegram' | 'email' | 'system' | 'integration' | 'document' | 'meeting';
   entityIds?: string[];
   /**
    * Narrow vector search to a subset of Qdrant source kinds. Phase 8 adds
@@ -202,6 +211,17 @@ export interface TeamScopeDeps {
     vector: number[],
     opts: SearchOpts,
   ) => Promise<SearchHit[]>;
+  /**
+   * Skip the team-membership check on first query. Set only by trusted
+   * callers that have already authenticated the team boundary via some
+   * other mechanism (e.g. the Phase 11 outbound MCP server uses a bearer
+   * key that resolves to a team_id; the bearer-key check IS the
+   * membership proof). Visibility filtering still applies — pass an
+   * actor userId that the filter should treat as "not the author of any
+   * private event" (e.g. the zero UUID) so `private` and
+   * `specific_users` events stay invisible.
+   */
+  skipMembershipCheck?: boolean;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -231,6 +251,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   let membershipPromise: Promise<TeamRole> | undefined;
 
   function ensureMember(minRole: TeamRole = 'member'): Promise<TeamRole> {
+    if (deps.skipMembershipCheck) {
+      // Trusted-caller path (Phase 11 outbound MCP): membership has
+      // already been proven by the bearer-key resolution. Resolve as
+      // 'member' so any `requireMembership('admin')` call still throws —
+      // outbound MCP keys must never reach admin-only mutations.
+      return Promise.resolve('member' as TeamRole);
+    }
     membershipPromise ??= (async () => {
       const rows = await db
         .select({ role: teamMembers.role })
@@ -315,9 +342,25 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     ensureMember,
   });
 
+  const integrationScope = createIntegrationScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+
+  const mcpScope = createMcpScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+
   return {
     ...documentScope,
     ...meetingScope,
+    integrations: integrationScope,
+    mcp: mcpScope,
     teamId,
     userId,
 
@@ -339,6 +382,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       }
       if (filters.from) conditions.push(gte(rawEvents.occurredAt, filters.from));
       if (filters.to) conditions.push(lt(rawEvents.occurredAt, filters.to));
+      if (filters.source) {
+        conditions.push(
+          eq(rawEvents.source, filters.source as (typeof rawEvents.source.enumValues)[number]),
+        );
+      }
       return db
         .select()
         .from(rawEvents)
