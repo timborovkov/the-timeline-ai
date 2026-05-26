@@ -3,6 +3,7 @@ import {
   meetings,
   meetingTranscriptChunks,
   meetingUsage,
+  rawEvents,
   teamMeetingSettings,
 } from '@timeline/db';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
@@ -96,6 +97,21 @@ async function appendMeetingChunkTx(
     providerChunkId: string | null;
   },
 ): Promise<AppendChunkResult | null> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${args.meetingId}, 0))`);
+
+  const dedupKey = `meeting-finalized:${args.meetingId}`;
+  const eventRows = await tx
+    .select({ id: rawEvents.id })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, args.teamId),
+        sql`(${rawEvents.sourceMetadata} ->> 'meeting_chunk_provider_id') = ${dedupKey}`,
+      ),
+    )
+    .limit(1);
+  const rawEventId = eventRows[0]?.id ?? null;
+
   const chunkInsert = await tx
     .insert(meetingTranscriptChunks)
     .values({
@@ -106,6 +122,7 @@ async function appendMeetingChunkTx(
       startMs: args.startMs,
       endMs: args.endMs,
       providerChunkId: args.providerChunkId,
+      rawEventId,
     })
     .onConflictDoNothing()
     .returning({ id: meetingTranscriptChunks.id });
@@ -125,6 +142,17 @@ async function appendMeetingChunkTx(
       .limit(1);
     chunkId = existing[0]?.id;
     if (!chunkId) return null;
+    if (rawEventId) {
+      await tx
+        .update(meetingTranscriptChunks)
+        .set({ rawEventId })
+        .where(
+          and(
+            eq(meetingTranscriptChunks.id, chunkId),
+            sql`${meetingTranscriptChunks.rawEventId} IS NULL`,
+          ),
+        );
+    }
     return { chunkId, deduplicated: true };
   }
 
