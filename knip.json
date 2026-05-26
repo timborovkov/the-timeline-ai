@@ -7,6 +7,7 @@
     "apps/web": {
       "entry": [
         "src/app/**/{page,route,layout,loading,error,not-found,template,default,sitemap,robots,manifest,icon,apple-icon,opengraph-image,twitter-image}.{ts,tsx,js,jsx}",
+        "src/app/actions/*.ts",
         "src/middleware.{ts,tsx}",
         "postcss.config.{js,mjs,cjs,ts}"
       ],
