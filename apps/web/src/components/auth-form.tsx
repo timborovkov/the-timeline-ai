@@ -1,6 +1,7 @@
 'use client';
 
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 
 import { signInAction, signUpAction, type SignInState, type SignUpState } from '@/app/actions/auth';
 import { Button } from '@/components/ui/button';
@@ -17,7 +18,7 @@ function SubmitButton({ label }: { label: string }) {
 }
 
 export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
-  const [state, action] = useFormState<SignInState, FormData>(signInAction, {});
+  const [state, action] = useActionState<SignInState, FormData>(signInAction, {});
   return (
     <form action={action} className="space-y-4">
       {callbackUrl ? <input type="hidden" name="callbackUrl" value={callbackUrl} /> : null}
@@ -42,7 +43,7 @@ export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
 }
 
 export function SignUpForm({ inviteToken }: { inviteToken?: string }) {
-  const [state, action] = useFormState<SignUpState, FormData>(signUpAction, {});
+  const [state, action] = useActionState<SignUpState, FormData>(signUpAction, {});
   return (
     <form action={action} className="space-y-4">
       {inviteToken ? <input type="hidden" name="inviteToken" value={inviteToken} /> : null}
