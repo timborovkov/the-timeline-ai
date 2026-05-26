@@ -169,7 +169,13 @@ async function fileInSelectedSubtree(
   parents: string[],
   selectedIds: Set<string>,
   cache: Map<string, boolean>,
-  depthCap = 8,
+  // Drive folder nesting is bounded in practice by the user's appetite
+  // for clicking "New folder"; cap is intentionally generous (it
+  // bounds runaway loops and accidental cycles, not real trees). The
+  // per-page `cache` map collapses repeated ancestor walks within the
+  // same sync page so 32 hops is essentially free after the first
+  // file in a deep folder.
+  depthCap = 32,
 ): Promise<boolean> {
   if (selectedIds.size === 0) return false;
   if (selectedIds.has('root')) {

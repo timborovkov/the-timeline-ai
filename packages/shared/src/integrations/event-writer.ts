@@ -46,7 +46,23 @@ export async function writeIntegrationEvents(deps: {
   // for the configurable-private case.
   const authorUserId = deps.integration.connectedByUserId ?? null;
 
-  const values = deps.events.map((evt) => ({
+  // Dedupe by dedupKey within the batch. Postgres's
+  // `ON CONFLICT DO NOTHING` only resolves conflicts against existing
+  // rows — two rows in the same VALUES list that share the partial
+  // unique index's expression still raise
+  // `cardinality_violation`/`unique_violation` and fail the whole
+  // batch. A single sync page or coalesced webhook delivery can carry
+  // the same dedupKey twice (e.g. a PR webhook firing `pr.updated`
+  // and `pr.review.approved` for the same review), so collapse them
+  // here before the insert. First occurrence wins.
+  const seenDedup = new Set<string>();
+  const uniqueEvents = deps.events.filter((evt) => {
+    if (seenDedup.has(evt.dedupKey)) return false;
+    seenDedup.add(evt.dedupKey);
+    return true;
+  });
+
+  const values = uniqueEvents.map((evt) => ({
     teamId,
     authorUserId,
     source: 'integration' as const,

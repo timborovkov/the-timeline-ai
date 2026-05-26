@@ -5,10 +5,11 @@ import { decryptJson, encryptJson } from '../crypto/secrets.js';
 import { childLogger } from '../logger.js';
 
 import { buildAuth } from './auth.js';
-import { discoverOAuth, refreshToken as oauthRefreshToken } from './oauth-provider.js';
+import { refreshToken as oauthRefreshToken } from './oauth-provider.js';
 import { namespaceToolName } from './tool-namespace.js';
 
 import type { McpServerRow } from './auth.js';
+import type { discoverOAuth } from './oauth-provider.js';
 
 // Phase 11 — Minimal MCP-over-HTTP client. The full
 // @modelcontextprotocol/sdk supports stdio, SSE, and WebSocket transports;
@@ -140,7 +141,11 @@ async function loadOauthAccessToken(
   db: Db,
   teamId: string,
   serverId: string,
-  serverUrl: string,
+  // serverUrl previously used for fresh-discovery fallback on refresh;
+  // refresh now strictly requires pinned `__discovery` (see below), so
+  // the param is unused. Kept on the signature for call-site symmetry
+  // and the chance we surface a different error path in the future.
+  _serverUrl: string,
 ): Promise<string | null> {
   const rows = await db
     .select()
@@ -192,16 +197,24 @@ async function loadOauthAccessToken(
         tag: clientTag,
       }) as { client_id?: string; client_secret?: string; __discovery?: unknown };
       if (!clientInfo.client_id) return tokens.accessToken ?? null;
-      // Reuse the authorization-server metadata pinned at OAuth start so
-      // the refresh hits the same `token_endpoint` the user consented at.
-      // Without this, a connected MCP could rotate its well-known
+      // Refresh MUST reuse the authorization-server metadata pinned at
+      // OAuth start. A compromised MCP could rotate its well-known
       // response between authorize and refresh and divert the refresh
-      // token to a different public endpoint. Fall back to fresh
-      // discovery only for legacy rows persisted before pinning landed.
-      const discovery =
-        clientInfo.__discovery && typeof clientInfo.__discovery === 'object'
-          ? (clientInfo.__discovery as Awaited<ReturnType<typeof discoverOAuth>>)
-          : await discoverOAuth(serverUrl);
+      // token to a different public `token_endpoint`. If a legacy row
+      // is missing `__discovery` (pre-pinning), we surface
+      // needs_reauth instead of falling back to fresh discovery —
+      // forcing the operator to reconnect once is the safe outcome.
+      if (!clientInfo.__discovery || typeof clientInfo.__discovery !== 'object') {
+        await db
+          .update(mcpServers)
+          .set({
+            lastError: 'oauth_refresh_no_pinned_discovery — reconnect to re-pin token endpoint',
+            updatedAt: new Date(),
+          })
+          .where(eq(mcpServers.id, serverId));
+        return null;
+      }
+      const discovery = clientInfo.__discovery as Awaited<ReturnType<typeof discoverOAuth>>;
       const refreshed = await oauthRefreshToken({
         discovery,
         refreshToken: refreshTokenStr,
