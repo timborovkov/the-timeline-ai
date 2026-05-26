@@ -97,6 +97,12 @@ export function createIntegrationScope(deps: {
         // on via the settings UI — otherwise an OAuth reconnect would
         // resume a paused sync without anyone asking.
         set: {
+          // Refresh the connector to whichever admin re-authenticated —
+          // otherwise downstream paths like the Drive document-harvest
+          // run withTeam under the original (possibly long-gone) user
+          // id, which can mis-attribute or fail on visibility checks
+          // if that user has since left the team.
+          connectedByUserId: userId,
           displayName: input.displayName,
           scopes: input.scopes ?? [],
           authSecretCiphertext: encrypted?.ciphertext ?? null,
