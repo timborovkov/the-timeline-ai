@@ -1,13 +1,10 @@
 import { getEnv } from '../env.js';
-import { childLogger } from '../logger.js';
 
 import { githubProvider } from './providers/github.js';
 import { googleDriveProvider } from './providers/google-drive.js';
 import { linearProvider } from './providers/linear.js';
 
 import type { IntegrationProvider } from './types.js';
-
-const log = childLogger('integrations:registry');
 
 // Phase 11 — Provider registry + integration catalog.
 //
@@ -314,15 +311,9 @@ function resolveStatus(seed: CatalogSeed): IntegrationStatus {
     // case during static prerender of the landing page — the catalog
     // shouldn't fail the build just because there's no DB URL at
     // compile time. Treat any env-resolution error as "unconfigured".
-    //
-    // We log at warn level (debug-equivalent for build time, but visible
-    // at runtime). A "real" env misconfiguration in production will
-    // surface here as a worker / web log line instead of vanishing
-    // silently and rendering the provider as Not configured.
     try {
       return seed.envCheck?.() ? 'native_available' : 'native_unconfigured';
-    } catch (err) {
-      log.warn({ err, provider: seed.id }, 'env check threw — treating as unconfigured');
+    } catch {
       return 'native_unconfigured';
     }
   }

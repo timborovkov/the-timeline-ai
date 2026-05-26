@@ -1,5 +1,5 @@
 import { teamMembers, teams } from '@timeline/db';
-import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared';
+import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
 import { eq } from 'drizzle-orm';
 
 import { db } from './db';

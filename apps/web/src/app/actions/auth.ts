@@ -1,7 +1,8 @@
 'use server';
 
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
-import { buildInboundEmail, hashPassword, randomSlugSuffix, slugify } from '@timeline/shared';
+import { hashPassword } from '@timeline/shared/passwords';
+import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
 import { and, eq, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
