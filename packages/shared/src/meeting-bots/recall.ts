@@ -115,24 +115,21 @@ export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingB
     name: 'recall',
 
     async joinMeeting(input: JoinMeetingInput): Promise<JoinMeetingResult> {
-      // Bot configuration — silent capture only.
-      //   * `bot_name` shows in the participant list (platforms can't hide it).
-      //   * `metadata` round-trips internal meetingId; the transcript webhook
-      //     uses this to look up the right row without trusting URLs.
-      //   * `transcription_options` enables realtime delivery; provider type
-      //     defaults to Recall's bundled provider.
+      // Always use Recall's own transcription engine (Whisper-based)
+      // with auto language detection. Platform captions are unreliable
+      // for multilingual teams.
+      const transcriptProvider = input.language
+        ? { default: { language: input.language } }
+        : { default: {} };
+
       const body = {
         meeting_url: input.meetingUrl,
         bot_name: input.botName ?? botName,
-        // No `output_media` — silent mode. The bot does not speak or stream
-        // video back into the call.
         metadata: {
           meeting_id: input.meetingId,
           team_id: input.teamId,
           platform: input.platform,
         },
-        // Realtime transcript delivery. We POST each finalised utterance
-        // group at this URL; the route validates by `botId` lookup.
         realtime_endpoints: [
           {
             type: 'webhook',
@@ -140,11 +137,8 @@ export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingB
             events: ['transcript.data', 'transcript.partial_data'],
           },
         ],
-        // Recording config: capture audio + per-speaker channels for
-        // diarised transcripts. We do not retain the audio file ourselves
-        // (no S3 capture) — Recall's default retention applies.
         recording_config: {
-          transcript: { provider: { meeting_captions: {} } },
+          transcript: { provider: transcriptProvider },
           realtime_endpoints: [
             {
               type: 'webhook',

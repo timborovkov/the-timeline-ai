@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import { meetings, meetingTranscriptChunks, rawEvents } from '@timeline/db';
+import { meetings, meetingTranscriptChunks } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -64,7 +64,7 @@ describe('meetings scope', () => {
     expect(m.provider).toBe('recall');
   });
 
-  it('appendMeetingChunk writes raw_event + chunk in one transaction with idempotency', async () => {
+  it('appendMeetingChunk writes chunk with idempotency (no per-chunk raw_event)', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_A);
     const m = await scope.createMeeting({
       platform: 'zoom',
@@ -81,7 +81,6 @@ describe('meetings scope', () => {
     expect(r1).not.toBeNull();
     expect(r1?.deduplicated).toBe(false);
     expect(r1?.chunkId).toBeDefined();
-    expect(r1?.rawEventId).toBeDefined();
 
     // Idempotent second call with the same providerChunkId returns dedup=true.
     const r2 = await scope.appendMeetingChunk({
@@ -101,10 +100,6 @@ describe('meetings scope', () => {
       .from(meetingTranscriptChunks)
       .where(eq(meetingTranscriptChunks.meetingId, m.id));
     expect(chunkRows).toHaveLength(1);
-    const eventRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
-    // includes the chunk audit only — no other rows seeded.
-    expect(eventRows).toHaveLength(1);
-    expect(eventRows[0]?.source).toBe('meeting');
   });
 
   it('updateMeetingStatus flips status and merges metadata', async () => {

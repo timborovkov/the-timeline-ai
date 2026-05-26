@@ -8,6 +8,7 @@ import {
   meetings as meetingsTable,
   meetingTranscriptChunks,
   meetingUsage,
+  rawEvents,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -154,6 +155,17 @@ describe('processMeetingFinalizeJob', () => {
       .where(eq(meetingUsage.meetingId, MEETING_ID));
     expect(usage).toHaveLength(1);
     expect(usage[0]?.minutes).toBe(30);
+
+    // Consolidated raw_event: full transcript as contentText, summary in metadata
+    const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+    expect(events).toHaveLength(1);
+    expect(events[0]?.contentText).toContain('[0s] Alice: Hello, this is Alice.');
+    expect(events[0]?.contentText).toContain('[5s] Bob: Bob will own the migration.');
+    const eventMeta = events[0]?.sourceMetadata as Record<string, unknown>;
+    expect(eventMeta.meeting_id).toBe(MEETING_ID);
+    expect(eventMeta.summary).toBe('Meeting summary here.');
+    expect(eventMeta.speakers).toEqual(['Alice', 'Bob']);
+    expect(eventMeta.duration_minutes).toBe(30);
   });
 
   it('empty transcript: completes without calling the LLM', async () => {

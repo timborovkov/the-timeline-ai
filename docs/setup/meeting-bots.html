@@ -13,17 +13,18 @@
       <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-25</span></div>
       <p class="tldr">
         Paste a Google Meet, Microsoft Teams, or Zoom link into
-        <code>/app/meetings</code>. A silent <strong>Recall.ai</strong> bot joins, streams the
-        transcript back via webhook, and every utterance lands on the timeline.
+        <code>/app/meetings</code>. A silent <strong>Recall.ai</strong> bot joins, transcribes via
+        Recall's Whisper engine (auto language detection), and the meeting appears as a single
+        event on the timeline with summary, speakers, and action items.
       </p>
 
       <p>
         Phase 10 adds meetings as a first-class source alongside Telegram, email, web capture, and
         documents. The bot joins silently (it appears as a participant but does not speak or stream
-        video). Each finalised utterance is written as a <code>raw_events</code> row with
-        <code>source='meeting'</code> AND as a <code>meeting_transcript_chunks</code> row so the
-        existing extract / embed / visibility pipeline lights up unchanged while the meeting detail
-        page renders a structured speaker-by-speaker transcript.
+        video). Each finalised utterance is written as a <code>meeting_transcript_chunks</code> row
+        for the meeting detail UI and utterance-level search. When the call ends, the finalize
+        worker creates one consolidated <code>raw_events</code> row with the full transcript and
+        LLM-generated summary so the meeting appears as a single timeline entry.
       </p>
 
       <h2 id="provider">Why Recall.ai (and what else works)</h2>

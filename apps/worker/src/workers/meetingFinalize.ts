@@ -3,6 +3,7 @@ import {
   meetings as meetingsTable,
   meetingTranscriptChunks,
   meetingUsage,
+  rawEvents,
 } from '@timeline/db';
 import { childLogger, getEnv, llm, queue } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
@@ -152,8 +153,6 @@ export async function processMeetingFinalizeJob(
   if (modelUsed) metadataPatch.summary_model = modelUsed;
   if (actionItems.length > 0) metadataPatch.action_items = actionItems;
   const patchJson = JSON.stringify(metadataPatch);
-  // Merge metadata jsonb in a single UPDATE so the status flip + metadata
-  // patch are atomic.
   await deps.db
     .update(meetingsTable)
     .set({
@@ -163,11 +162,75 @@ export async function processMeetingFinalizeJob(
     })
     .where(eq(meetingsTable.id, meetingId));
 
+  // Create ONE consolidated raw_events row so the meeting appears as a
+  // single timeline entry. contentText is the full speaker-attributed
+  // transcript (the raw source); the LLM summary lives in sourceMetadata
+  // so it's clearly tagged as derived.
+  const speakers = [...new Set(chunks.map((c) => c.speaker).filter(Boolean))];
+  const fullTranscript =
+    chunks.length > 0
+      ? chunks
+          .map(
+            (c) =>
+              `[${String(Math.floor(c.startMs / 1000))}s] ${c.speaker ?? 'Unknown'}: ${c.text}`,
+          )
+          .join('\n')
+      : null;
+  const contentText = fullTranscript ?? 'Meeting (no transcript)';
+
+  const sourceMetadata: Record<string, unknown> = {
+    meeting_id: meetingId,
+    platform: meeting.platform,
+    speakers,
+    duration_minutes: minutes,
+    chunk_count: chunks.length,
+    // Reuses the existing raw_events_meeting_chunk_id_unq partial unique
+    // index for DB-level dedup if finalize runs twice.
+    meeting_chunk_provider_id: `meeting-finalized:${meetingId}`,
+  };
+  if (meeting.title) sourceMetadata.title = meeting.title;
+  if (summary) sourceMetadata.summary = summary;
+  if (actionItems.length > 0) sourceMetadata.action_items = actionItems;
+
+  const eventInsert = await deps.db
+    .insert(rawEvents)
+    .values({
+      teamId,
+      authorUserId: meeting.createdByUserId,
+      source: 'meeting',
+      contentText,
+      occurredAt: meeting.startedAt ?? meeting.createdAt,
+      visibility: meeting.defaultVisibility,
+      visibilityUserIds: meeting.visibilityUserIds,
+      sourceMetadata,
+    })
+    .onConflictDoNothing()
+    .returning({ id: rawEvents.id });
+  const rawEventId = eventInsert[0]?.id;
+
+  if (rawEventId) {
+    // Backfill rawEventId on all chunks so Qdrant meeting_chunk points
+    // link back to the consolidated parent event for search attribution.
+    await deps.db
+      .update(meetingTranscriptChunks)
+      .set({ rawEventId })
+      .where(
+        and(
+          eq(meetingTranscriptChunks.meetingId, meetingId),
+          eq(meetingTranscriptChunks.teamId, teamId),
+        ),
+      );
+
+    if (env.REDIS_URL) {
+      await Promise.all([
+        queue.enqueueExtractJob({ rawEventId, teamId }),
+        queue.enqueueEmbedJob({ scope: 'raw_event', rawEventId, teamId }),
+      ]);
+    }
+  }
+
   // Usage. Idempotent via unique index on meeting_id.
   if (minutes > 0) {
-    // We can't reach team-scope from here without a userId; insert
-    // directly via the db helper. The schema enforces team_id NOT NULL
-    // FK so the row can't escape the team.
     await deps.db.insert(meetingUsage).values({ teamId, meetingId, minutes }).onConflictDoNothing();
   }
 

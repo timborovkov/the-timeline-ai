@@ -20,17 +20,17 @@ import { users } from './users.js';
 // Zoom URL; a silent bot joins via the configured provider (Recall.ai by
 // default) and streams transcript chunks back via two webhooks (status +
 // transcript). Each finalised chunk becomes a `meeting_transcript_chunks`
-// row AND a `raw_events` row (source='meeting') so the existing extract /
-// embed / visibility pipeline lights up unchanged.
+// row (embedded via source_kind='meeting_chunk' for utterance-granular
+// search). When the meeting ends, the finalize worker creates ONE
+// consolidated `raw_events` row (source='meeting') with the full transcript
+// as contentText and the LLM summary in sourceMetadata.summary, then
+// backfills rawEventId on all chunks for search attribution.
 //
 // Why both tables?
-//   - raw_events: drives timeline, extract worker, embeddings, visibility.
-//     Anchors each chunk in the same source-of-truth log as Telegram and
-//     email events.
+//   - raw_events: one row per meeting — drives timeline, extract worker,
+//     embeddings, visibility. The meeting appears as a single event.
 //   - meeting_transcript_chunks: structured speaker / start_ms / end_ms /
-//     ordering for the meeting detail UI. Mirrors the
-//     `document_versions / document_chunks` pattern Phase 9 established
-//     for document drive.
+//     ordering for the meeting detail UI and utterance-level search.
 
 export const meetingStatus = pgEnum('meeting_status', [
   'pending',

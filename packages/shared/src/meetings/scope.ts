@@ -3,7 +3,6 @@ import {
   meetings,
   meetingTranscriptChunks,
   meetingUsage,
-  rawEvents,
   teamMeetingSettings,
 } from '@timeline/db';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
@@ -71,20 +70,19 @@ export interface AppendChunkInput {
 
 export interface AppendChunkResult {
   chunkId: string;
-  rawEventId: string;
   deduplicated: boolean;
 }
 
 /**
- * Append a finalised transcript chunk to a meeting. Wraps the chunk insert
- * + the audit raw_event insert in one transaction so a partial failure
- * cannot leave a chunk without its parent event (or vice versa).
+ * Append a finalised transcript chunk to a meeting. Only writes to
+ * `meeting_transcript_chunks` — no per-utterance `raw_events` row.
+ * A single consolidated raw_event is created by the meeting-finalize
+ * worker when the call ends.
  *
  * Idempotency: the unique partial index on
- * `(meeting_id, provider_chunk_id)` + the partial unique index on
- * `(team_id, sourceMetadata->>'meeting_chunk_provider_id')` make Recall
- * retries no-ops. The function returns `deduplicated: true` so the
- * webhook handler can skip downstream enqueues on retry.
+ * `(meeting_id, provider_chunk_id)` makes Recall retries no-ops.
+ * Returns `deduplicated: true` so the webhook handler can skip
+ * downstream enqueues on retry.
  */
 async function appendMeetingChunkTx(
   tx: DbOrTx,
@@ -96,66 +94,8 @@ async function appendMeetingChunkTx(
     startMs: number;
     endMs: number;
     providerChunkId: string | null;
-    occurredAt: Date;
-    visibility: Visibility;
-    visibilityUserIds: string[] | null;
-    platform: MeetingPlatform;
   },
 ): Promise<AppendChunkResult | null> {
-  // 1. Insert audit raw_event first (so chunk's raw_event_id FK is set
-  //    correctly even if the chunk insert hits a unique conflict and we
-  //    fall back to fetching the existing row). The unique index on
-  //    (team_id, sourceMetadata->>'meeting_chunk_provider_id') makes
-  //    this idempotent under Recall retries.
-  const metadata: Record<string, unknown> = {
-    meeting_id: args.meetingId,
-    platform: args.platform,
-    speaker: args.speaker,
-    start_ms: args.startMs,
-    end_ms: args.endMs,
-  };
-  if (args.providerChunkId) metadata.meeting_chunk_provider_id = args.providerChunkId;
-
-  const inserted = await tx
-    .insert(rawEvents)
-    .values({
-      teamId: args.teamId,
-      authorUserId: null,
-      source: 'meeting',
-      contentText: args.text,
-      occurredAt: args.occurredAt,
-      visibility: args.visibility,
-      visibilityUserIds: args.visibilityUserIds,
-      sourceMetadata: metadata,
-    })
-    .onConflictDoNothing()
-    .returning({ id: rawEvents.id });
-
-  let rawEventId = inserted[0]?.id;
-  let deduplicated = false;
-  if (!rawEventId) {
-    deduplicated = true;
-    if (!args.providerChunkId) {
-      // Without a provider id we can't recover the prior insert — bail.
-      return null;
-    }
-    const existing = await tx
-      .select({ id: rawEvents.id })
-      .from(rawEvents)
-      .where(
-        and(
-          eq(rawEvents.teamId, args.teamId),
-          eq(rawEvents.source, 'meeting'),
-          sql`(${rawEvents.sourceMetadata} ->> 'meeting_chunk_provider_id') = ${args.providerChunkId}`,
-        ),
-      )
-      .limit(1);
-    rawEventId = existing[0]?.id;
-    if (!rawEventId) return null;
-  }
-
-  // 2. Insert chunk row. Same idempotency story via the chunk's unique
-  //    partial index.
   const chunkInsert = await tx
     .insert(meetingTranscriptChunks)
     .values({
@@ -165,7 +105,6 @@ async function appendMeetingChunkTx(
       text: args.text,
       startMs: args.startMs,
       endMs: args.endMs,
-      rawEventId,
       providerChunkId: args.providerChunkId,
     })
     .onConflictDoNothing()
@@ -173,7 +112,6 @@ async function appendMeetingChunkTx(
 
   let chunkId = chunkInsert[0]?.id;
   if (!chunkId) {
-    deduplicated = true;
     if (!args.providerChunkId) return null;
     const existing = await tx
       .select({ id: meetingTranscriptChunks.id })
@@ -187,9 +125,10 @@ async function appendMeetingChunkTx(
       .limit(1);
     chunkId = existing[0]?.id;
     if (!chunkId) return null;
+    return { chunkId, deduplicated: true };
   }
 
-  return { chunkId, rawEventId, deduplicated };
+  return { chunkId, deduplicated: false };
 }
 
 /**
@@ -338,29 +277,12 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
     },
 
     async appendMeetingChunk(input: AppendChunkInput): Promise<AppendChunkResult | null> {
-      // The webhook runs as a system caller (no userId from session). We
-      // skip `ensureMember` here because the route resolves teamId from
-      // the meeting row up front and passes a system-scope. Callers that
-      // build a user scope and call this DO pass through the membership
-      // check at the route boundary.
       const meetingRow = await db
-        .select({
-          id: meetings.id,
-          teamId: meetings.teamId,
-          platform: meetings.platform,
-          defaultVisibility: meetings.defaultVisibility,
-          visibilityUserIds: meetings.visibilityUserIds,
-          startedAt: meetings.startedAt,
-        })
+        .select({ id: meetings.id, teamId: meetings.teamId })
         .from(meetings)
         .where(and(eq(meetings.id, input.meetingId), eq(meetings.teamId, teamId)))
         .limit(1);
-      const meeting = meetingRow[0];
-      if (!meeting) return null;
-
-      const occurredAt =
-        input.occurredAt ??
-        (meeting.startedAt ? new Date(meeting.startedAt.getTime() + input.startMs) : new Date());
+      if (!meetingRow[0]) return null;
 
       return db.transaction(async (tx) =>
         appendMeetingChunkTx(tx, {
@@ -371,10 +293,6 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
           startMs: input.startMs,
           endMs: input.endMs,
           providerChunkId: input.providerChunkId,
-          occurredAt,
-          visibility: meeting.defaultVisibility,
-          visibilityUserIds: meeting.visibilityUserIds,
-          platform: meeting.platform,
         }),
       );
     },
