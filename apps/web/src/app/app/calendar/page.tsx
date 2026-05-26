@@ -28,8 +28,8 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   const month =
     Number.isFinite(rawMonth) && rawMonth >= 0 && rawMonth <= 11 ? rawMonth : now.getMonth();
 
-  const from = new Date(year, month, 1);
-  const to = new Date(year, month + 1, 1);
+  const from = new Date(Date.UTC(year, month, 1));
+  const to = new Date(Date.UTC(year, month + 1, 1));
 
   const events = await scope.calendar.listCalendarEvents({ from, to });
 

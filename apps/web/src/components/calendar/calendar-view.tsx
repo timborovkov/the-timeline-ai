@@ -25,24 +25,24 @@ interface CalendarViewProps {
 
 function getDaysInMonth(year: number, month: number): Date[] {
   const days: Date[] = [];
-  const date = new Date(year, month, 1);
-  while (date.getMonth() === month) {
+  const date = new Date(Date.UTC(year, month, 1));
+  while (date.getUTCMonth() === month) {
     days.push(new Date(date));
-    date.setDate(date.getDate() + 1);
+    date.setUTCDate(date.getUTCDate() + 1);
   }
   return days;
 }
 
 function isSameDay(a: Date, b: Date): boolean {
   return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === b.getUTCDate()
   );
 }
 
 function dayKey(date: Date): string {
-  return `${String(date.getFullYear())}-${String(date.getMonth())}-${String(date.getDate())}`;
+  return `${String(date.getUTCFullYear())}-${String(date.getUTCMonth())}-${String(date.getUTCDate())}`;
 }
 
 function formatTime(dateStr: string, timezone: string): string {
@@ -67,7 +67,7 @@ export function CalendarView({ events }: CalendarViewProps) {
     Number.isFinite(rawMonth) && rawMonth >= 0 && rawMonth <= 11 ? rawMonth : now.getMonth();
 
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
-  const firstDayOfWeek = new Date(year, month, 1).getDay();
+  const firstDayOfWeek = new Date(Date.UTC(year, month, 1)).getUTCDay();
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
@@ -76,7 +76,7 @@ export function CalendarView({ events }: CalendarViewProps) {
       const end = new Date(ev.endAt);
       for (const day of days) {
         const nextDay = new Date(day);
-        nextDay.setDate(nextDay.getDate() + 1);
+        nextDay.setUTCDate(nextDay.getUTCDate() + 1);
         if (start < nextDay && end > day) {
           const key = dayKey(day);
           const list = map.get(key) ?? [];
@@ -104,9 +104,10 @@ export function CalendarView({ events }: CalendarViewProps) {
     router.push(`/app/calendar?year=${String(newYear)}&month=${String(newMonth)}`);
   }
 
-  const monthName = new Date(year, month).toLocaleString('default', {
+  const monthName = new Date(Date.UTC(year, month, 1)).toLocaleString('default', {
     month: 'long',
     year: 'numeric',
+    timeZone: 'UTC',
   });
 
   return (
@@ -172,7 +173,7 @@ export function CalendarView({ events }: CalendarViewProps) {
               <div
                 className={`mb-1 text-xs ${isToday ? 'font-bold text-signal' : 'text-muted-foreground'}`}
               >
-                {String(day.getDate())}
+                {String(day.getUTCDate())}
               </div>
               <div className="space-y-0.5">
                 {dayEvents.slice(0, 3).map((ev) => (

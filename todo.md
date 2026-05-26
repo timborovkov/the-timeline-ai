@@ -144,7 +144,7 @@ Goal: give the timeline a proper calendar layer. The internal timeline calendar 
 
 ### UI
 
-- [x] Timeline calendar UI: month view at `/app/calendar` with event creation and detail links. The grid renders events spanning into the visible month, including events that start before the month and end inside it. Create/edit/delete uses the calendar scope's raw-event audit trail.
+- [x] Timeline calendar UI: month view at `/app/calendar` with event creation and detail links. Server fetch ranges and client day buckets use the same UTC month boundaries, and the grid renders events spanning into the visible month, including events that start before the month and end inside it. Create/edit/delete uses the calendar scope's raw-event audit trail.
 - [ ] Week/day calendar views.
 - [ ] Recurring event editing UI: "this event" / "this and all future" / "all events" edit modes. Exception badge on modified occurrences.
 
