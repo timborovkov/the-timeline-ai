@@ -53,12 +53,29 @@ function fmtAddr(a: { email: string; name?: string } | undefined): string {
   return a.name ? `${a.name} <${a.email}>` : a.email;
 }
 
+interface MeetingMeta {
+  meeting_id?: string;
+  title?: string;
+  summary?: string;
+  speakers?: string[];
+  duration_minutes?: number;
+  chunk_count?: number;
+  action_items?: { text: string; owner: string | null }[];
+}
+
+function meetingMeta(meta: unknown): MeetingMeta | null {
+  if (typeof meta !== 'object' || meta === null) return null;
+  if (!('meeting_id' in meta)) return null;
+  return meta as MeetingMeta;
+}
+
 const SOURCE_LABEL: Record<string, string> = {
   email: 'EMAIL',
   telegram: 'TG',
   voice: 'VOICE',
   text: 'TEXT',
   system: 'SYS',
+  meeting: 'MEET',
 };
 
 /**
@@ -82,13 +99,19 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
       {events.map((event) => {
         const author = event.authorUserId ? authorMap.get(event.authorUserId) : null;
         const isEmail = event.source === 'email';
+        const isMeeting = event.source === 'meeting';
         const em = isEmail ? emailMeta(event.sourceMetadata) : null;
+        const mm = isMeeting ? meetingMeta(event.sourceMetadata) : null;
+        const meetingChunkCount =
+          isMeeting && typeof mm?.chunk_count === 'number' ? mm.chunk_count : null;
         const senderUnverified = Boolean(em?.sender_unverified);
         const authorLabel = author
           ? (author.name ?? author.email)
           : isEmail && em?.from
             ? fmtAddr(em.from)
-            : 'system';
+            : isMeeting && mm?.speakers?.length
+              ? mm.speakers.join(', ')
+              : 'system';
         const sourceLabel = SOURCE_LABEL[event.source] ?? event.source.toUpperCase();
         return (
           <li
@@ -120,6 +143,18 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
                 ) : null}
               </div>
               <div className="mt-1.5 space-y-2">
+                {isMeeting && mm ? (
+                  <>
+                    {mm.title ? <p className="text-sm font-medium text-fg">{mm.title}</p> : null}
+                    <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                      {mm.duration_minutes ? `${String(mm.duration_minutes)}min` : ''}
+                      {mm.duration_minutes && mm.speakers?.length ? ' · ' : ''}
+                      {mm.speakers?.length
+                        ? `${String(mm.speakers.length)} speaker${mm.speakers.length === 1 ? '' : 's'}`
+                        : ''}
+                    </p>
+                  </>
+                ) : null}
                 {isEmail && em?.subject ? (
                   <p className="text-sm font-medium text-fg">{em.subject}</p>
                 ) : null}
@@ -156,12 +191,20 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
                     </p>
                   )
                 ) : null}
-                {event.contentText !== null ? (
+                {isMeeting && mm?.summary ? (
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
+                    {mm.summary}
+                  </p>
+                ) : event.contentText !== null ? (
                   event.contentText.trim() === '' ? (
                     <p className="text-sm italic text-fg-dim">(no speech detected)</p>
                   ) : (
                     <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
-                      {event.contentText}
+                      {isMeeting && meetingChunkCount !== null
+                        ? meetingChunkCount > 0
+                          ? '(transcript available)'
+                          : '(no transcript captured)'
+                        : event.contentText}
                     </p>
                   )
                 ) : event.contentAudioUrl ? (
@@ -177,6 +220,23 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
                     [empty event]
                   </p>
                 )}
+                {isMeeting && mm?.action_items && mm.action_items.length > 0 ? (
+                  <ul className="mt-1 space-y-0.5 text-sm text-fg-muted">
+                    {mm.action_items.map((ai, i) => (
+                      <li key={i} className="flex items-start gap-1.5">
+                        <span className="mt-px text-fg-dim">-</span>
+                        <span>
+                          {ai.text}
+                          {ai.owner ? (
+                            <span className="ml-1 font-mono text-[11px] text-fg-dim">
+                              ({ai.owner})
+                            </span>
+                          ) : null}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             </div>
             <span

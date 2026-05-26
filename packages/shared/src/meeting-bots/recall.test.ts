@@ -56,7 +56,43 @@ describe('createRecallProvider', () => {
     expect(meta.meeting_id).toBe('m-1');
     expect(meta.team_id).toBe('t-1');
     expect(meta.platform).toBe('meet');
+    expect(body.recording_config).toMatchObject({
+      transcript: {
+        provider: {
+          recallai_streaming: {
+            mode: 'prioritize_low_latency',
+          },
+        },
+      },
+    });
     expect(body.output_media).toBeUndefined();
+  });
+
+  it('joinMeeting maps language to Recall.ai streaming language_code', async () => {
+    const { fetcher, calls } = makeFetcher(() => Response.json({ id: 'bot-123' }));
+    const provider = createRecallProvider({ fetcher });
+    await provider.joinMeeting({
+      meetingId: 'm-1',
+      teamId: 't-1',
+      meetingUrl: 'https://meet.google.com/abc-defg-hij',
+      platform: 'meet',
+      transcriptWebhookUrl: 'https://example.com/webhook',
+      language: 'en-US',
+    });
+
+    const call = calls[0];
+    if (!call) throw new Error('no call');
+    const body = JSON.parse(call.init.body as string) as Record<string, unknown>;
+    expect(body.recording_config).toMatchObject({
+      transcript: {
+        provider: {
+          recallai_streaming: {
+            language_code: 'en-US',
+            mode: 'prioritize_low_latency',
+          },
+        },
+      },
+    });
   });
 
   it('joinMeeting throws on non-2xx', async () => {

@@ -20,8 +20,8 @@ export const eventSource = pgEnum('event_source', [
   'system',
   'document',
   // Phase 10 — meeting bot transcripts (Google Meet / Teams / Zoom via
-  // Recall.ai). Per-utterance raw_events are created by the transcript
-  // webhook; the specific platform lives in source_metadata.platform.
+  // Recall.ai). The finalize worker creates one consolidated event per
+  // meeting; the specific platform lives in source_metadata.platform.
   'meeting',
   // Phase 11 — Third-party integration sync (Google Drive activity, Linear
   // issue/comment changes, GitHub PR/issue/release events, MCP-tool-derived
@@ -71,12 +71,9 @@ export const rawEvents = pgTable(
     uniqueIndex('raw_events_email_message_id_unq')
       .on(table.teamId, sql`((${table.sourceMetadata} ->> 'message_id'))`)
       .where(sql`${table.source} = 'email' AND ${table.sourceMetadata} ? 'message_id'`),
-    // Phase 10: meeting transcript chunks. Recall.ai retries the unsigned
-    // transcript webhook on a 5xx, and the `meeting_transcript_chunks`
-    // unique index already dedups in its own table — but the audit
-    // raw_event row was previously vulnerable to a double-insert when a
-    // retry hit before the prior insert committed. Same per-team scoping
-    // as email so a forged provider id can't collide across teams.
+    // Phase 10: one consolidated raw_event per finalized meeting. Same
+    // per-team scoping as email so a forged provider id can't collide
+    // across teams.
     // No `source = 'meeting'` filter: the enum value is added in the same
     // drizzle transaction as this index (Postgres 55P04 — unsafe use of
     // new enum value), and a `source::text` cast is STABLE so rejected by

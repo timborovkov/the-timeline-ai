@@ -9,6 +9,9 @@ export interface TranscribeInput {
    *  caller are no longer needed (they were used by the previous raw-fetch
    *  implementation). */
   audio: Buffer;
+  /** ISO-639-1 language hint (e.g. 'fi', 'en', 'de'). Improves accuracy
+   *  for non-English audio. Omit for auto-detection. */
+  language?: string;
 }
 
 export interface TranscribeResult {
@@ -66,6 +69,10 @@ export async function transcribeAudio(
 ): Promise<TranscribeResult> {
   const modelId = resolveModelId();
   const model = deps.model ?? buildDefaultModel(modelId);
-  const result = await aiTranscribe({ model, audio: input.audio });
+  const result = await aiTranscribe({
+    model,
+    audio: input.audio,
+    ...(input.language ? { providerOptions: { openai: { language: input.language } } } : {}),
+  });
   return { text: result.text, model: modelId };
 }

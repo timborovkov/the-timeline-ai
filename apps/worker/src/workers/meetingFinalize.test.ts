@@ -8,6 +8,7 @@ import {
   meetings as meetingsTable,
   meetingTranscriptChunks,
   meetingUsage,
+  rawEvents,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -64,8 +65,8 @@ async function seedMeeting(
   db: Db,
   opts: {
     status?: 'pending' | 'joining' | 'active' | 'processing' | 'completed' | 'failed';
-    startedAt?: Date;
-    endedAt?: Date;
+    startedAt?: Date | null;
+    endedAt?: Date | null;
     metadata?: Record<string, unknown>;
   } = {},
 ): Promise<void> {
@@ -78,8 +79,8 @@ async function seedMeeting(
     meetingUrl: 'https://meet.google.com/test',
     status: opts.status ?? 'processing',
     defaultVisibility: 'team',
-    startedAt: opts.startedAt ?? new Date('2026-05-25T10:00:00Z'),
-    endedAt: opts.endedAt ?? new Date('2026-05-25T10:30:00Z'),
+    startedAt: 'startedAt' in opts ? opts.startedAt : new Date('2026-05-25T10:00:00Z'),
+    endedAt: 'endedAt' in opts ? opts.endedAt : new Date('2026-05-25T10:30:00Z'),
     metadata: opts.metadata ?? {},
   });
 }
@@ -126,11 +127,17 @@ describe('processMeetingFinalizeJob', () => {
       { text: 'Bob owns the migration', owner: 'Bob' },
       { text: 'Schedule design review' },
     ]);
+    const enqueueExtractJob = vi.fn().mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn().mockResolvedValue(undefined);
 
     const result = await processMeetingFinalizeJob(
       { db: db as never },
       { meetingId: MEETING_ID, teamId: TEAM_ID },
-      { chatStructured: chat as never },
+      {
+        chatStructured: chat as never,
+        enqueueExtractJob: enqueueExtractJob as never,
+        enqueueEmbedJob: enqueueEmbedJob as never,
+      },
     );
 
     expect(chat).toHaveBeenCalledOnce();
@@ -154,6 +161,35 @@ describe('processMeetingFinalizeJob', () => {
       .where(eq(meetingUsage.meetingId, MEETING_ID));
     expect(usage).toHaveLength(1);
     expect(usage[0]?.minutes).toBe(30);
+
+    // Consolidated raw_event: full transcript as contentText, summary in metadata
+    const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+    expect(events).toHaveLength(1);
+    expect(events[0]?.contentText).toContain('[0s] Alice: Hello, this is Alice.');
+    expect(events[0]?.contentText).toContain('[5s] Bob: Bob will own the migration.');
+    const eventMeta = events[0]?.sourceMetadata as Record<string, unknown>;
+    expect(eventMeta.meeting_id).toBe(MEETING_ID);
+    expect(eventMeta.summary).toBe('Meeting summary here.');
+    expect(eventMeta.speakers).toEqual(['Alice', 'Bob']);
+    expect(eventMeta.duration_minutes).toBe(30);
+    expect(enqueueExtractJob).toHaveBeenCalledWith({ rawEventId: events[0]?.id, teamId: TEAM_ID });
+
+    const chunks = await db
+      .select()
+      .from(meetingTranscriptChunks)
+      .where(eq(meetingTranscriptChunks.meetingId, MEETING_ID));
+    for (const chunk of chunks) {
+      expect(enqueueEmbedJob).toHaveBeenCalledWith({
+        scope: 'meeting_chunk',
+        meetingChunkId: chunk.id,
+        teamId: TEAM_ID,
+      });
+    }
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'raw_event',
+      rawEventId: events[0]?.id,
+      teamId: TEAM_ID,
+    });
   });
 
   it('empty transcript: completes without calling the LLM', async () => {
@@ -171,6 +207,89 @@ describe('processMeetingFinalizeJob', () => {
     const meta = row?.metadata as Record<string, unknown>;
     expect(meta.summary).toBeUndefined();
     expect(meta.finalized_at).toBeTypeOf('string');
+  });
+
+  it('includes chunks appended while the LLM summary is in flight', async () => {
+    await seedMeeting(db as never, { endedAt: null });
+    await seedChunk(db as never, 0, 'Opening remarks.', 'Alice');
+    let appended = false;
+    const chat = vi.fn().mockImplementation(async ({ prompt }: { prompt: string }) => {
+      if (!appended) {
+        appended = true;
+        await seedChunk(db as never, 1, 'Trailing decision.', 'Bob');
+      }
+      return {
+        object: {
+          summary: prompt.includes('Trailing decision.')
+            ? 'Summary from final transcript.'
+            : 'Summary from initial transcript.',
+          action_items: [],
+        },
+        model: 'test-model@1.0',
+      };
+    });
+
+    const result = await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+
+    expect(chat).toHaveBeenCalledTimes(2);
+    const secondPrompt = (chat.mock.calls[1]?.[0] as { prompt: string } | undefined)?.prompt;
+    expect(secondPrompt).toContain('Trailing decision.');
+    expect(result.minutes).toBe(1);
+    const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+    expect(events).toHaveLength(1);
+    expect(events[0]?.contentText).toContain('[0s] Alice: Opening remarks.');
+    expect(events[0]?.contentText).toContain('[5s] Bob: Trailing decision.');
+    const eventMeta = events[0]?.sourceMetadata as Record<string, unknown>;
+    expect(eventMeta.chunk_count).toBe(2);
+    expect(eventMeta.summary).toBe('Summary from final transcript.');
+  });
+
+  it('re-enqueues extract and embed when retrying an already-completed meeting', async () => {
+    await seedMeeting(db as never);
+    await seedChunk(db as never, 0, 'Hello.', 'Alice');
+    const chat = makeChatStub();
+
+    await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+
+    const event = (await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting')))[0];
+    const enqueueExtractJob = vi.fn().mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn().mockResolvedValue(undefined);
+    const result = await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      {
+        chatStructured: chat as never,
+        enqueueExtractJob: enqueueExtractJob as never,
+        enqueueEmbedJob: enqueueEmbedJob as never,
+      },
+    );
+
+    expect(result.skipped).toBe('already_completed');
+    expect(enqueueExtractJob).toHaveBeenCalledWith({ rawEventId: event?.id, teamId: TEAM_ID });
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'raw_event',
+      rawEventId: event?.id,
+      teamId: TEAM_ID,
+    });
+    const chunk = (
+      await db
+        .select()
+        .from(meetingTranscriptChunks)
+        .where(eq(meetingTranscriptChunks.meetingId, MEETING_ID))
+    )[0];
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'meeting_chunk',
+      meetingChunkId: chunk?.id,
+      teamId: TEAM_ID,
+    });
   });
 
   it('idempotent: re-running on a completed meeting is a no-op', async () => {

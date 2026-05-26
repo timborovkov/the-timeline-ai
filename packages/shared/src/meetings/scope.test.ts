@@ -64,7 +64,7 @@ describe('meetings scope', () => {
     expect(m.provider).toBe('recall');
   });
 
-  it('appendMeetingChunk writes raw_event + chunk in one transaction with idempotency', async () => {
+  it('appendMeetingChunk writes chunk with idempotency (no per-chunk raw_event)', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_A);
     const m = await scope.createMeeting({
       platform: 'zoom',
@@ -81,7 +81,6 @@ describe('meetings scope', () => {
     expect(r1).not.toBeNull();
     expect(r1?.deduplicated).toBe(false);
     expect(r1?.chunkId).toBeDefined();
-    expect(r1?.rawEventId).toBeDefined();
 
     // Idempotent second call with the same providerChunkId returns dedup=true.
     const r2 = await scope.appendMeetingChunk({
@@ -101,10 +100,148 @@ describe('meetings scope', () => {
       .from(meetingTranscriptChunks)
       .where(eq(meetingTranscriptChunks.meetingId, m.id));
     expect(chunkRows).toHaveLength(1);
-    const eventRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
-    // includes the chunk audit only — no other rows seeded.
-    expect(eventRows).toHaveLength(1);
-    expect(eventRows[0]?.source).toBe('meeting');
+  });
+
+  it('appendMeetingChunk links late chunks to an existing finalized meeting event', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_A);
+    const m = await scope.createMeeting({
+      platform: 'zoom',
+      meetingUrl: 'https://zoom.us/j/1',
+      metadata: {
+        summary: 'Old summary',
+        summary_model: 'test-model',
+        action_items: [{ text: 'Old action', owner: null }],
+      },
+    });
+    await scope.updateMeetingStatus(m.id, 'completed');
+    const eventRows = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: USER_A,
+        source: 'meeting',
+        contentText: 'Meeting (no transcript)',
+        occurredAt: new Date('2026-05-25T10:00:00Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          meeting_id: m.id,
+          meeting_chunk_provider_id: `meeting-finalized:${m.id}`,
+          chunk_count: 0,
+          summary: 'Old summary',
+          action_items: [{ text: 'Old action', owner: null }],
+        },
+      })
+      .returning({ id: rawEvents.id });
+    const rawEventId = eventRows[0]?.id;
+    if (!rawEventId) throw new Error('missing raw event');
+
+    const result = await scope.appendMeetingChunk({
+      meetingId: m.id,
+      speaker: 'Alice',
+      text: 'late utterance',
+      startMs: 1000,
+      endMs: 2000,
+      providerChunkId: 'utt-late',
+    });
+
+    const chunkRows = await db
+      .select()
+      .from(meetingTranscriptChunks)
+      .where(
+        eq(meetingTranscriptChunks.id, result?.chunkId ?? '00000000-0000-0000-0000-000000000000'),
+      );
+    expect(chunkRows[0]?.rawEventId).toBe(rawEventId);
+
+    const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
+    expect(event?.contentText).toBe('[1s] Alice: late utterance');
+    const eventMeta = event?.sourceMetadata as Record<string, unknown>;
+    expect(eventMeta.chunk_count).toBe(1);
+    expect(eventMeta.speakers).toEqual(['Alice']);
+    expect(eventMeta.summary).toBeUndefined();
+    expect(eventMeta.action_items).toBeUndefined();
+    expect(eventMeta.summary_stale_at).toBeTypeOf('string');
+
+    const meeting = (await db.select().from(meetings).where(eq(meetings.id, m.id)))[0];
+    const meetingMeta = meeting?.metadata as Record<string, unknown>;
+    expect(meetingMeta.summary).toBeUndefined();
+    expect(meetingMeta.summary_model).toBeUndefined();
+    expect(meetingMeta.action_items).toBeUndefined();
+    expect(meetingMeta.summary_stale_at).toBeTypeOf('string');
+  });
+
+  it('appendMeetingChunk replay after finalize preserves existing summary metadata', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_A);
+    const m = await scope.createMeeting({
+      platform: 'zoom',
+      meetingUrl: 'https://zoom.us/j/1',
+      metadata: {
+        summary: 'Final summary',
+        summary_model: 'test-model',
+        action_items: [{ text: 'Final action', owner: null }],
+      },
+    });
+    const first = await scope.appendMeetingChunk({
+      meetingId: m.id,
+      speaker: 'Alice',
+      text: 'already captured',
+      startMs: 1000,
+      endMs: 2000,
+      providerChunkId: 'utt-replay',
+    });
+    expect(first?.deduplicated).toBe(false);
+    await scope.updateMeetingStatus(m.id, 'completed');
+    const eventRows = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: USER_A,
+        source: 'meeting',
+        contentText: '[1s] Alice: already captured',
+        occurredAt: new Date('2026-05-25T10:00:00Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          meeting_id: m.id,
+          meeting_chunk_provider_id: `meeting-finalized:${m.id}`,
+          chunk_count: 1,
+          summary: 'Final summary',
+          action_items: [{ text: 'Final action', owner: null }],
+        },
+      })
+      .returning({ id: rawEvents.id });
+    const rawEventId = eventRows[0]?.id;
+    if (!rawEventId) throw new Error('missing raw event');
+
+    const replay = await scope.appendMeetingChunk({
+      meetingId: m.id,
+      speaker: 'Alice',
+      text: 'already captured',
+      startMs: 1000,
+      endMs: 2000,
+      providerChunkId: 'utt-replay',
+    });
+
+    expect(replay?.deduplicated).toBe(true);
+    const chunk = (
+      await db
+        .select()
+        .from(meetingTranscriptChunks)
+        .where(eq(meetingTranscriptChunks.id, replay?.chunkId ?? ''))
+    )[0];
+    expect(chunk?.rawEventId).toBe(rawEventId);
+
+    const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
+    expect(event?.contentText).toBe('[1s] Alice: already captured');
+    const eventMeta = event?.sourceMetadata as Record<string, unknown>;
+    expect(eventMeta.summary).toBe('Final summary');
+    expect(eventMeta.action_items).toEqual([{ text: 'Final action', owner: null }]);
+    expect(eventMeta.summary_stale_at).toBeUndefined();
+
+    const meeting = (await db.select().from(meetings).where(eq(meetings.id, m.id)))[0];
+    const meetingMeta = meeting?.metadata as Record<string, unknown>;
+    expect(meetingMeta.summary).toBe('Final summary');
+    expect(meetingMeta.summary_model).toBe('test-model');
+    expect(meetingMeta.action_items).toEqual([{ text: 'Final action', owner: null }]);
+    expect(meetingMeta.summary_stale_at).toBeUndefined();
   });
 
   it('updateMeetingStatus flips status and merges metadata', async () => {

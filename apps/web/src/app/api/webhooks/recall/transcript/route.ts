@@ -196,18 +196,11 @@ export async function POST(req: Request): Promise<Response> {
     if (result.deduplicated) {
       return Response.json({ ok: true, reason: 'duplicate' }, { status: 200 });
     }
-    // Enqueue downstream embed + extract for the new raw_event AND a
-    // dedicated meeting_chunk embed for utterance-granular retrieval.
+    // Embed the chunk for utterance-granular search. No per-chunk
+    // raw_event — a single consolidated event is created by the
+    // meeting-finalize worker when the call ends.
     if (env.REDIS_URL) {
-      await Promise.all([
-        queue.enqueueExtractJob({ rawEventId: result.rawEventId, teamId: meeting.teamId }),
-        queue.enqueueEmbedJob({
-          scope: 'raw_event',
-          rawEventId: result.rawEventId,
-          teamId: meeting.teamId,
-        }),
-        queue.enqueueMeetingChunkEmbedJob(meeting.teamId, result.chunkId),
-      ]);
+      await queue.enqueueMeetingChunkEmbedJob(meeting.teamId, result.chunkId);
     }
     return Response.json({ ok: true, chunkId: result.chunkId }, { status: 200 });
   } catch (err) {
