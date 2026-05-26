@@ -274,7 +274,19 @@ export function createMcpScope(deps: {
   async function loadOauthClientInfo(
     mcpServerId: string,
   ): Promise<{ clientInfo: Record<string, unknown> | null; codeVerifier: string | null }> {
-    await ensureMember();
+    // Mirror the gate used by persistOauthPending / persistOauthTokens:
+    // personal servers are owner-only, team-shared servers are admin-only.
+    // Without this, any team member could read another server's pending
+    // OAuth state — including dynamically-registered client_secret and
+    // PKCE code_verifier — by passing its UUID.
+    const server = await getServer(mcpServerId);
+    if (!server) return { clientInfo: null, codeVerifier: null };
+    if (server.userId) {
+      if (server.userId !== userId) throw new Error('forbidden');
+      await ensureMember();
+    } else {
+      await ensureMember('admin');
+    }
     const rows = await db
       .select()
       .from(mcpOauthTokens)
