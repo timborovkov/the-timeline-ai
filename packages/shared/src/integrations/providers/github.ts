@@ -618,6 +618,7 @@ export const githubProvider: IntegrationProvider = {
     if (fresh.access_token !== input.access_token) {
       await ctx.persistTokens(fresh as unknown as Record<string, unknown>);
     }
+    const failures: { repo: string; error: string }[] = [];
     for (const sel of selections) {
       if (sel.kind !== 'github.repo') continue;
       try {
@@ -625,7 +626,23 @@ export const githubProvider: IntegrationProvider = {
         await ctx.saveCursor(`github.repo:${sel.externalId}`, next);
       } catch (err) {
         log.warn({ err, repo: sel.externalId }, 'github backfill failed for repo');
+        failures.push({
+          repo: sel.externalId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
+    }
+    // Surface per-repo failures via a throw — the worker catches and
+    // writes `last_error`. Otherwise a sync that hit 401/403/500 on
+    // every selected repo would still mark `last_synced_at` fresh and
+    // clear `last_error`, hiding the breakage from operators.
+    if (failures.length > 0) {
+      throw new Error(
+        `github_backfill_partial: ${String(failures.length)} repo(s) failed: ${failures
+          .map((f) => `${f.repo} (${f.error.slice(0, 80)})`)
+          .join('; ')
+          .slice(0, 400)}`,
+      );
     }
   },
 
@@ -635,6 +652,7 @@ export const githubProvider: IntegrationProvider = {
     if (fresh.access_token !== input.access_token) {
       await ctx.persistTokens(fresh as unknown as Record<string, unknown>);
     }
+    const failures: { repo: string; error: string }[] = [];
     for (const sel of selections) {
       if (sel.kind !== 'github.repo') continue;
       const cursor = (await ctx.loadCursor(`github.repo:${sel.externalId}`)) as RepoCursor;
@@ -643,7 +661,19 @@ export const githubProvider: IntegrationProvider = {
         await ctx.saveCursor(`github.repo:${sel.externalId}`, next);
       } catch (err) {
         log.warn({ err, repo: sel.externalId }, 'github incremental sync failed for repo');
+        failures.push({
+          repo: sel.externalId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
+    }
+    if (failures.length > 0) {
+      throw new Error(
+        `github_incremental_partial: ${String(failures.length)} repo(s) failed: ${failures
+          .map((f) => `${f.repo} (${f.error.slice(0, 80)})`)
+          .join('; ')
+          .slice(0, 400)}`,
+      );
     }
   },
 
