@@ -601,11 +601,21 @@ export const githubProvider: IntegrationProvider = {
   },
 
   async listSyncableResources(_integration, tokens): Promise<ProviderResource[]> {
-    const repos = await ghGet<GhRepo[]>(
-      tokens as GithubTokens,
-      '/user/repos?sort=updated&direction=desc&per_page=100',
-    );
-    return repos.map((r) => ({
+    // Paginate `/user/repos`. Without this only the first 100 repos are
+    // reachable — PUT /selections rejects anything outside this set, so
+    // any repo on page 2+ can't be selected, synced, or webhook-routed.
+    // Cap at 20 pages = 2000 repos: large enough that no real user hits
+    // it, small enough that a misbehaving token can't brick a sync tick.
+    const ghTokens = tokens as GithubTokens;
+    const all: GhRepo[] = [];
+    for (let page = 1; page <= 20; page++) {
+      const path = `/user/repos?sort=updated&direction=desc&per_page=100&page=${String(page)}`;
+      const batch = await ghGet<GhRepo[]>(ghTokens, path);
+      if (!Array.isArray(batch) || batch.length === 0) break;
+      all.push(...batch);
+      if (batch.length < 100) break;
+    }
+    return all.map((r) => ({
       externalId: r.full_name,
       label: r.full_name + (r.private ? ' (private)' : ''),
       kind: 'github.repo',
