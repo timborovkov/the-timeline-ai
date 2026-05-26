@@ -304,7 +304,29 @@ export function createMcpScope(deps: {
       .limit(1);
     const row = rows[0];
     if (!row) return { clientInfo: null, codeVerifier: null, hasExistingTokens: false };
-    const hasExistingTokens = row.expiresAt !== null;
+    // Distinguish first-connect from re-auth by peeking at the token
+    // blob itself: `persistOauthPending` stores `encryptJson({})` as a
+    // placeholder; `persistOauthTokens` replaces it with a blob that
+    // includes `accessToken`. Using the column-level `expiresAt`
+    // wouldn't work — many MCP servers (Notion, Slack, …) issue
+    // non-expiring access tokens, so a successful connect leaves
+    // `expiresAt` null and a later re-auth would be misclassified as
+    // first connect (and silently re-enable an admin-disabled server).
+    let hasExistingTokens = false;
+    try {
+      const tokenBlob = decryptJson({
+        ciphertext: row.tokenCiphertext,
+        iv: row.tokenIv,
+        tag: row.tokenTag,
+      }) as { accessToken?: unknown; access_token?: unknown };
+      hasExistingTokens =
+        typeof tokenBlob.accessToken === 'string' || typeof tokenBlob.access_token === 'string';
+    } catch {
+      // Corrupt blob → treat as first-connect to avoid blocking the
+      // user with no recovery path. Re-enabling a disabled server in
+      // this corner case is acceptable; the row is broken either way.
+      hasExistingTokens = false;
+    }
     let clientInfo: Record<string, unknown> | null = null;
     if (row.clientInfoCiphertext && row.clientInfoIv && row.clientInfoTag) {
       clientInfo = decryptJson({
