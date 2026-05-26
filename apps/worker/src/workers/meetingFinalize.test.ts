@@ -188,10 +188,19 @@ describe('processMeetingFinalizeJob', () => {
   it('includes chunks appended while the LLM summary is in flight', async () => {
     await seedMeeting(db as never, { endedAt: null });
     await seedChunk(db as never, 0, 'Opening remarks.', 'Alice');
-    const chat = vi.fn().mockImplementation(async () => {
-      await seedChunk(db as never, 1, 'Trailing decision.', 'Bob');
+    let appended = false;
+    const chat = vi.fn().mockImplementation(async ({ prompt }: { prompt: string }) => {
+      if (!appended) {
+        appended = true;
+        await seedChunk(db as never, 1, 'Trailing decision.', 'Bob');
+      }
       return {
-        object: { summary: 'Summary from initial transcript.', action_items: [] },
+        object: {
+          summary: prompt.includes('Trailing decision.')
+            ? 'Summary from final transcript.'
+            : 'Summary from initial transcript.',
+          action_items: [],
+        },
         model: 'test-model@1.0',
       };
     });
@@ -202,12 +211,50 @@ describe('processMeetingFinalizeJob', () => {
       { chatStructured: chat as never },
     );
 
+    expect(chat).toHaveBeenCalledTimes(2);
+    const secondPrompt = (chat.mock.calls[1]?.[0] as { prompt: string } | undefined)?.prompt;
+    expect(secondPrompt).toContain('Trailing decision.');
     expect(result.minutes).toBe(1);
     const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
     expect(events).toHaveLength(1);
     expect(events[0]?.contentText).toContain('[0s] Alice: Opening remarks.');
     expect(events[0]?.contentText).toContain('[5s] Bob: Trailing decision.');
-    expect((events[0]?.sourceMetadata as Record<string, unknown>).chunk_count).toBe(2);
+    const eventMeta = events[0]?.sourceMetadata as Record<string, unknown>;
+    expect(eventMeta.chunk_count).toBe(2);
+    expect(eventMeta.summary).toBe('Summary from final transcript.');
+  });
+
+  it('re-enqueues extract and embed when retrying an already-completed meeting', async () => {
+    await seedMeeting(db as never);
+    await seedChunk(db as never, 0, 'Hello.', 'Alice');
+    const chat = makeChatStub();
+
+    await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+
+    const event = (await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting')))[0];
+    const enqueueExtractJob = vi.fn().mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn().mockResolvedValue(undefined);
+    const result = await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      {
+        chatStructured: chat as never,
+        enqueueExtractJob: enqueueExtractJob as never,
+        enqueueEmbedJob: enqueueEmbedJob as never,
+      },
+    );
+
+    expect(result.skipped).toBe('already_completed');
+    expect(enqueueExtractJob).toHaveBeenCalledWith({ rawEventId: event?.id, teamId: TEAM_ID });
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'raw_event',
+      rawEventId: event?.id,
+      teamId: TEAM_ID,
+    });
   });
 
   it('idempotent: re-running on a completed meeting is a no-op', async () => {
