@@ -65,7 +65,21 @@ export default async function IntegrationsPage({
 
       <section className="space-y-3">
         <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">Catalog</h2>
-        <IntegrationsCatalog catalog={catalog} />
+        {catalog.length > 0 ? (
+          <IntegrationsCatalog catalog={catalog} />
+        ) : (
+          <div className="rounded-sm border border-dashed border-border bg-surface p-6 text-sm text-fg-muted">
+            <p className="mb-1 font-medium text-fg">No native integrations configured yet.</p>
+            <p>
+              Set the OAuth client + webhook secret env vars on this deployment to enable Google
+              Drive, Linear, or GitHub. See{' '}
+              <a className="text-signal underline" href="/docs/setup/integrations.html">
+                the integrations setup doc
+              </a>
+              . Custom MCP servers below work without env config.
+            </p>
+          </div>
+        )}
       </section>
 
       <p className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-2 text-xs text-fg-dim">

@@ -357,13 +357,19 @@ export interface LegacyCatalogEntry {
 }
 
 export function listAvailableProviders(): LegacyCatalogEntry[] {
+  // Hide unconfigured natives entirely. The card grid is for "things
+  // you can connect right now", not a teaser for what would be possible
+  // if an admin set env vars. Operators who want to enable a new native
+  // follow docs/setup/integrations.html and the card appears once the
+  // env vars land. This trades discoverability for a cleaner UI — the
+  // setup doc is linked from the page footer.
   return listCatalog()
-    .filter((c) => c.kind === 'native')
+    .filter((c) => c.kind === 'native' && c.status === 'native_available')
     .map((c) => ({
       id: c.id as 'google_drive' | 'linear' | 'github',
       label: c.label,
       description: c.description,
       logo: c.logo,
-      available: c.status === 'native_available',
+      available: true,
     }));
 }
