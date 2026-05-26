@@ -84,7 +84,19 @@ export function findPreregisteredClient(serverUrl: string): PreregisteredClient 
   }
   const origin = parsed.origin;
   for (const c of listPreregisteredClients()) {
-    if (origin === c.origin || serverUrl.startsWith(c.origin)) return c;
+    // Strict origin equality only. A naive `startsWith` lets
+    // `https://evil.example.com.attacker.com` match the
+    // `https://evil.example.com` env var and bind the wrong
+    // pre-registered OAuth client to an attacker-controlled
+    // discovery flow. Parse the configured origin the same way
+    // and compare via the URL spec's normalized `.origin`.
+    let configured: string;
+    try {
+      configured = new URL(c.origin).origin;
+    } catch {
+      continue;
+    }
+    if (origin === configured) return c;
   }
   return null;
 }

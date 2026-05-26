@@ -37,10 +37,18 @@ export async function writeIntegrationEvents(deps: {
 
   const visibility = deps.integration.visibilityDefault;
   const teamId = deps.integration.teamId;
+  // Attribute integration rows to the user who connected the integration.
+  // The team visibility predicate treats `visibility='private'` as visible
+  // only when `authorUserId = viewer`; without an attributed author, private
+  // events would match no one and silently disappear from search / chat /
+  // outbound MCP reads. Falling back to null is fine for the (default)
+  // `team` case — the OR-branch covers it — but it's the wrong default
+  // for the configurable-private case.
+  const authorUserId = deps.integration.connectedByUserId ?? null;
 
   const values = deps.events.map((evt) => ({
     teamId,
-    authorUserId: null,
+    authorUserId,
     source: 'integration' as const,
     contentText: evt.contentText,
     occurredAt: evt.occurredAt,
