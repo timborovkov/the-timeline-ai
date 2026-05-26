@@ -181,7 +181,20 @@ async function insertCalendarRawEvents(
 export function createCalendarScope(deps: CalendarScopeDeps) {
   const { db, teamId, userId, ensureMember } = deps;
 
-  const calendarVisibility = sql`(
+  // Read visibility: returns ALL private events (any user) so the
+  // application layer can redact them to "Busy" blocks. Without this,
+  // private events are filtered out entirely and teammates see no
+  // busy block at all.
+  const calendarReadVisibility = sql`(
+    ${calendarEvents.visibility} = 'team'
+    OR ${calendarEvents.visibility} = 'private'
+    OR ${calendarEvents.createdByUserId} = ${userId}::uuid
+    OR (${calendarEvents.visibility} = 'specific_users' AND ${userId}::uuid = ANY(${calendarEvents.visibilityUserIds}))
+  )`;
+
+  // Write visibility: only the creator or explicitly-listed users can
+  // modify/delete. Other users' private events are read-only (busy blocks).
+  const calendarWriteVisibility = sql`(
     ${calendarEvents.visibility} = 'team'
     OR ${calendarEvents.createdByUserId} = ${userId}::uuid
     OR (${calendarEvents.visibility} = 'specific_users' AND ${userId}::uuid = ANY(${calendarEvents.visibilityUserIds}))
@@ -283,7 +296,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
             eq(calendarEvents.id, id),
             eq(calendarEvents.teamId, teamId),
             isNull(calendarEvents.deletedAt),
-            calendarVisibility,
+            calendarReadVisibility,
           ),
         )
         .limit(1);
@@ -296,7 +309,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       opts: ListCalendarEventsInput = {},
     ): Promise<CalendarEventWithRedaction[]> {
       await ensureMember();
-      const conditions = [eq(calendarEvents.teamId, teamId), calendarVisibility];
+      const conditions = [eq(calendarEvents.teamId, teamId), calendarReadVisibility];
 
       if (!opts.includeDeleted) {
         conditions.push(isNull(calendarEvents.deletedAt));
@@ -333,13 +346,19 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
               eq(calendarEvents.id, id),
               eq(calendarEvents.teamId, teamId),
               isNull(calendarEvents.deletedAt),
-              calendarVisibility,
+              calendarWriteVisibility,
             ),
           )
           .limit(1);
 
         const row = existing[0];
         if (!row) return null;
+
+        const effectiveStart = patch.startAt ?? row.startAt;
+        const effectiveEnd = patch.endAt ?? row.endAt;
+        if (effectiveEnd <= effectiveStart) {
+          throw new Error('End time must be after start time');
+        }
 
         const setClause: Record<string, unknown> = { updatedAt: new Date() };
         if (patch.title !== undefined) setClause.title = patch.title;
@@ -365,14 +384,18 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
 
         if (!updated) return null;
 
-        if (patch.startAt && row.startAtRawEventId) {
+        if ((patch.startAt || patch.title) && row.startAtRawEventId) {
+          const rawPatch: Record<string, unknown> = {};
+          if (patch.startAt) rawPatch.occurredAt = patch.startAt;
+          rawPatch.contentText = patch.title ?? row.title;
+          await tx.update(rawEvents).set(rawPatch).where(eq(rawEvents.id, row.startAtRawEventId));
+        }
+
+        if (patch.title && row.scheduledRawEventId) {
           await tx
             .update(rawEvents)
-            .set({
-              occurredAt: patch.startAt,
-              contentText: patch.title ?? row.title,
-            })
-            .where(eq(rawEvents.id, row.startAtRawEventId));
+            .set({ contentText: `Scheduled: ${patch.title}` })
+            .where(eq(rawEvents.id, row.scheduledRawEventId));
         }
 
         await tx.insert(rawEvents).values({
@@ -407,7 +430,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
               eq(calendarEvents.id, id),
               eq(calendarEvents.teamId, teamId),
               isNull(calendarEvents.deletedAt),
-              calendarVisibility,
+              calendarWriteVisibility,
             ),
           )
           .limit(1);

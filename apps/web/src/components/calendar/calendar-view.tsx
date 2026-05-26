@@ -56,8 +56,11 @@ export function CalendarView({ events }: CalendarViewProps) {
   const yearParam = searchParams.get('year');
   const monthParam = searchParams.get('month');
   const now = new Date();
-  const year = yearParam ? parseInt(yearParam, 10) : now.getFullYear();
-  const month = monthParam ? parseInt(monthParam, 10) : now.getMonth();
+  const rawYear = yearParam ? parseInt(yearParam, 10) : NaN;
+  const rawMonth = monthParam ? parseInt(monthParam, 10) : NaN;
+  const year = Number.isFinite(rawYear) ? rawYear : now.getFullYear();
+  const month =
+    Number.isFinite(rawMonth) && rawMonth >= 0 && rawMonth <= 11 ? rawMonth : now.getMonth();
 
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const firstDayOfWeek = new Date(year, month, 1).getDay();
