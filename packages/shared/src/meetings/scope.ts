@@ -8,6 +8,8 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
+import { formatMeetingTranscript } from './transcript.js';
+
 // Phase 10 — meeting scope. Mirrors the documents scope pattern: a factory
 // returning per-(team,user) helpers that write every state transition
 // through a single chokepoint. Each transcript chunk insert creates an
@@ -20,7 +22,6 @@ type MeetingStatus = 'pending' | 'joining' | 'active' | 'processing' | 'complete
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
-type TranscriptChunk = typeof meetingTranscriptChunks.$inferSelect;
 
 export interface MeetingScopeDeps {
   db: Db;
@@ -75,12 +76,6 @@ export interface AppendChunkResult {
   deduplicated: boolean;
 }
 
-function formatTranscript(chunks: TranscriptChunk[]): string {
-  return chunks
-    .map((c) => `[${String(Math.floor(c.startMs / 1000))}s] ${c.speaker ?? 'Unknown'}: ${c.text}`)
-    .join('\n');
-}
-
 async function refreshFinalizedMeetingEvent(
   tx: DbOrTx,
   args: { meetingId: string; teamId: string; rawEventId: string },
@@ -97,7 +92,8 @@ async function refreshFinalizedMeetingEvent(
     .orderBy(asc(meetingTranscriptChunks.startMs));
 
   const speakers = [...new Set(chunks.map((c) => c.speaker).filter(Boolean))];
-  const contentText = chunks.length > 0 ? formatTranscript(chunks) : 'Meeting (no transcript)';
+  const contentText =
+    chunks.length > 0 ? formatMeetingTranscript(chunks) : 'Meeting (no transcript)';
   const metadataPatch = JSON.stringify({
     speakers,
     chunk_count: chunks.length,
@@ -199,11 +195,6 @@ async function appendMeetingChunkTx(
             sql`${meetingTranscriptChunks.rawEventId} IS NULL`,
           ),
         );
-      await refreshFinalizedMeetingEvent(tx, {
-        meetingId: args.meetingId,
-        teamId: args.teamId,
-        rawEventId,
-      });
     }
     return { chunkId, deduplicated: true };
   }

@@ -5,7 +5,7 @@ import {
   meetingUsage,
   rawEvents,
 } from '@timeline/db';
-import { childLogger, getEnv, llm, queue } from '@timeline/shared';
+import { childLogger, formatMeetingTranscript, getEnv, llm, queue } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -59,12 +59,6 @@ interface ProcessResult {
 }
 
 type TranscriptChunk = typeof meetingTranscriptChunks.$inferSelect;
-
-function formatTranscript(chunks: TranscriptChunk[]): string {
-  return chunks
-    .map((c) => `[${String(Math.floor(c.startMs / 1000))}s] ${c.speaker ?? 'Unknown'}: ${c.text}`)
-    .join('\n');
-}
 
 async function loadMeetingChunks(db: Db, meetingId: string, teamId: string) {
   return db
@@ -146,7 +140,7 @@ async function summarizeTranscript(
     };
   }
 
-  const transcriptText = formatTranscript(chunks);
+  const transcriptText = formatMeetingTranscript(chunks);
   const chat = io.chatStructured ?? llm.chatStructured;
   const result = await chat({
     schema: finalizeSchema,
@@ -230,7 +224,7 @@ export async function processMeetingFinalizeJob(
       const finalized = await deps.db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${meetingId}, 0))`);
         const finalChunks = await loadMeetingChunks(tx as never, meetingId, teamId);
-        const fullTranscript = finalChunks.length > 0 ? formatTranscript(finalChunks) : null;
+        const fullTranscript = finalChunks.length > 0 ? formatMeetingTranscript(finalChunks) : null;
         if ((fullTranscript ?? '') !== summarized.transcriptText) {
           return { retryChunks: finalChunks };
         }
