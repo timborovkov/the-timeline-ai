@@ -792,16 +792,35 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           if (parsed.historyLimit !== undefined) args.historyLimit = parsed.historyLimit;
           const result = await scope.integrations.getIntegrationResource(args);
           if (!result) return { found: false };
+          // canonical_name + metadata are provider-authored (GitHub PR
+          // titles, Linear issue summaries, Drive file labels, etc) and
+          // are untrusted external content per Rule 8. Stringify the
+          // metadata JSON and fence both fields so a prompt-injection
+          // payload in an upstream resource can't reach the model
+          // un-marked. status / priority / type / id are normalized
+          // values we set ourselves — safe to pass raw.
+          const fencedName = result.entity
+            ? (fenceExternalContent(result.entity.canonicalName, {
+                source: 'integration',
+                eventId: result.entity.id,
+              }) ?? '')
+            : null;
+          const fencedMetadata = result.entity
+            ? (fenceExternalContent(JSON.stringify(result.entity.metadata ?? {}), {
+                source: 'integration',
+                eventId: result.entity.id,
+              }) ?? '')
+            : null;
           return {
             found: true,
             entity: result.entity
               ? {
                   id: result.entity.id,
                   type: result.entity.type,
-                  canonical_name: result.entity.canonicalName,
+                  canonical_name: fencedName,
                   status: result.entity.status,
                   priority: result.entity.priority,
-                  metadata: result.entity.metadata,
+                  metadata: fencedMetadata,
                 }
               : null,
             history: result.history.map((h) => ({
