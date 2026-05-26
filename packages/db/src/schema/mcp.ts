@@ -21,9 +21,9 @@ const bytea = customType<{ data: Buffer; default: false }>({
   },
 });
 
-// Phase 11 — Custom MCP servers per team. Mirrors Vernix's `mcpServers`
-// shape but team-scoped: every server is owned by exactly one team and
-// every member of that team can see the tools it exposes to the agent.
+// Phase 11 — Custom MCP servers per team. Every server is owned by
+// exactly one team and every member of that team can see the tools it
+// exposes to the agent.
 export const mcpAuthType = pgEnum('mcp_auth_type', [
   'none',
   'bearer',

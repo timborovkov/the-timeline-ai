@@ -155,35 +155,15 @@ export default async function TeamSettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Integrations &amp; MCP</CardTitle>
+          <CardTitle>Integrations</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <p className="text-muted-foreground">
-            Connect Google Drive, Linear, GitHub, or any MCP-compatible server. Expose this Timeline
-            as an MCP server so external agents (Claude Desktop, Cursor, Vernix) can query it.
+            Connect Google Drive, Linear, GitHub, or any MCP-compatible server.
           </p>
-          <ul className="space-y-1.5">
-            <li>
-              <Link href="/app/team/integrations" className="underline">
-                Connect Drive / Linear / GitHub →
-              </Link>
-            </li>
-            <li>
-              <Link href="/app/team/mcp-servers" className="underline">
-                Team MCP servers →
-              </Link>
-            </li>
-            <li>
-              <Link href="/app/me/mcp-servers" className="underline">
-                My personal MCP servers →
-              </Link>
-            </li>
-            <li>
-              <Link href="/app/team/mcp-share" className="underline">
-                Expose this Timeline as an MCP server →
-              </Link>
-            </li>
-          </ul>
+          <Link href="/app/team/integrations" className="underline">
+            Open integrations →
+          </Link>
         </CardContent>
       </Card>
 

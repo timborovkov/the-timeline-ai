@@ -4,7 +4,7 @@
 -- existing raw_events → extract → embed pipeline. Four new tables hold the
 -- integration account, per-resource sync cursor, user-selected resources,
 -- and append-only audit log. Two more (`mcp_servers`, `mcp_oauth_tokens`)
--- back the custom-MCP feature mirroring Vernix's shape but team-scoped.
+-- back the custom-MCP feature, team-scoped.
 --
 -- All auth material is AES-256-GCM encrypted at rest via
 -- packages/shared/src/crypto/secrets.ts. The three columns per secret

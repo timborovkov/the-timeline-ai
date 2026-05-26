@@ -21,7 +21,7 @@ import type { McpServerRow } from './auth.js';
 // spec guarantees works for every compliant server.
 //
 // The team-scoped `McpClientManager` caches a discovered tool list per
-// team for 5 minutes, mirroring Vernix's behavior.
+// team for 5 minutes.
 
 const log = childLogger('mcp:client');
 

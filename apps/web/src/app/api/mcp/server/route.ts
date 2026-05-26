@@ -32,7 +32,7 @@ function withCors(res: Response): Response {
 
 /**
  * Timeline-as-MCP-server JSON-RPC endpoint. External agents (Claude
- * Desktop, Cursor, Vernix, etc.) point at this URL and authorise via a
+ * Desktop, Cursor, etc.) point at this URL and authorise via a
  * bearer key minted under /app/team/mcp-share.
  *
  * Path lives at `/api/mcp/server` rather than `/api/mcp` to avoid

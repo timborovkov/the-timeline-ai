@@ -1,10 +1,10 @@
 // Phase 11 — Namespace MCP tools per server so two servers exposing
-// `search` don't collide. Format mirrors Vernix and Claude Code:
+// `search` don't collide. Format matches Claude Code's MCP convention:
 //   mcp__<serverIdNoDashes>__<toolName>
 //
-// The serverId is the UUID with dashes removed (matches Vernix shape) so
-// the resulting tool name is a valid identifier in JSON-Schema and most
-// SDKs without quoting.
+// The serverId is the UUID with dashes removed so the resulting tool
+// name is a valid identifier in JSON-Schema and most SDKs without
+// quoting.
 
 export function namespaceToolName(serverId: string, toolName: string): string {
   const id = serverId.replace(/-/g, '');

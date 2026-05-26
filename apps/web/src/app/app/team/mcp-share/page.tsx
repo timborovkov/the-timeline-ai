@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Timeline-as-MCP-server settings. Admins mint bearer keys that grant
- * outside agents (Claude Desktop, Cursor, Vernix, etc.) read-only access
+ * outside agents (Claude Desktop, Cursor, etc.) read-only access
  * to the team's events / entities / documents via /api/mcp/server. The
  * MCP endpoint URL is shown here so the agent operator can paste both
  * the URL and the key into their client.

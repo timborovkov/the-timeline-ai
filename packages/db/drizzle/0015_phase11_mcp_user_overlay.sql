@@ -1,5 +1,5 @@
--- Phase 11 — Per-user MCP server overlay. Mirrors Vernix's pattern of
--- letting individual users layer personal MCPs on top of the team-shared
+-- Phase 11 — Per-user MCP server overlay. Lets individual users layer
+-- personal MCPs on top of the team-shared
 -- catalog. NULL user_id == team-shared (visible to every member); a
 -- non-NULL user_id == personal (visible only to that user).
 

@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 import { cn } from '@/lib/utils';
 
-// Landing-page integration cloud. Mirrors Vernix's IntegrationCloud
+// Landing-page integration cloud:
 // shape: featured logos in a grid + an example-prompt strip + an
 // extensibility tagline that points at /app/team/mcp-servers as the
 // long-tail escape hatch. Server component (catalog is static at build

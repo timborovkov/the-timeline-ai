@@ -68,43 +68,20 @@ export default async function IntegrationsPage({
         <IntegrationsCatalog catalog={catalog} />
       </section>
 
-      <section className="space-y-3">
-        <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">More</h2>
-        <ul className="text-sm">
-          <li>
-            <a
-              className="text-signal underline-offset-4 hover:underline"
-              href="/app/team/integrations/audit"
-            >
-              View audit log
-            </a>
-          </li>
-          <li>
-            <a
-              className="text-signal underline-offset-4 hover:underline"
-              href="/app/team/mcp-servers"
-            >
-              Manage custom MCP servers
-            </a>
-          </li>
-          <li>
-            <a
-              className="text-signal underline-offset-4 hover:underline"
-              href="/app/me/mcp-servers"
-            >
-              My personal MCP servers
-            </a>
-          </li>
-          <li>
-            <a
-              className="text-signal underline-offset-4 hover:underline"
-              href="/app/team/mcp-share"
-            >
-              Expose this Timeline as an MCP server
-            </a>
-          </li>
-        </ul>
-      </section>
+      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-2 text-xs text-fg-dim">
+        <a className="hover:text-fg" href="/app/team/mcp-servers">
+          Custom MCP server →
+        </a>
+        <a className="hover:text-fg" href="/app/me/mcp-servers">
+          Personal MCP servers →
+        </a>
+        <a className="hover:text-fg" href="/app/team/mcp-share">
+          Expose as MCP server →
+        </a>
+        <a className="hover:text-fg" href="/app/team/integrations/audit">
+          Audit log →
+        </a>
+      </p>
     </div>
   );
 }

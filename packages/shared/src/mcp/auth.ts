@@ -5,7 +5,7 @@ import type { mcpServers as mcpServersTable } from '@timeline/db';
 export type McpServerRow = typeof mcpServersTable.$inferSelect;
 
 // Phase 11 — Build the auth headers and URL for an MCP server based on
-// its row in `mcp_servers`. Mirrors Vernix's `auth.ts` but team-scoped
+// its row in `mcp_servers`. Team-scoped
 // and reads from the AES-256-GCM ciphertext columns.
 
 export interface BearerAuth {

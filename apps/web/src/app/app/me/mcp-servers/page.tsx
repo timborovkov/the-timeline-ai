@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 /**
  * Per-user MCP overlay. Personal servers layer on top of the team catalog —
  * visible only to their owner, contributed to the agent's tool list only
- * for chats this user initiates. Mirrors Vernix's user-scoped MCP pattern.
+ * for chats this user initiates.
  */
 export default async function PersonalMcpServersPage() {
   const session = await auth();

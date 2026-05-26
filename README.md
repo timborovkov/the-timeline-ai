@@ -15,8 +15,8 @@ a team document drive at `/app/documents` (folders, versioned uploads,
 chunked + embedded, cited inline with `[doc:<id>#v<n>:chunk:<id>]`), and
 third-party integrations (Google Drive, Linear, GitHub native + custom
 MCP servers per team or per user) at `/app/team/integrations` —
-plus a Vernix-style outbound MCP server at `/api/mcp/server` so external
-agents (Claude Desktop, Cursor, Vernix) can query this Timeline. Railway
+plus an outbound MCP server at `/api/mcp/server` so external
+agents (Claude Desktop, Cursor, etc.) can query this Timeline. Railway
 deployment, deploy-time migrations, and structured logging are in place.
 
 ## Read first

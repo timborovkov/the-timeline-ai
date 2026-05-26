@@ -5,7 +5,7 @@ import { users } from './users.js';
 
 /**
  * Phase 11 — Timeline-as-MCP-server bearer keys. Each row authorises one
- * external agent (Claude Desktop, Cursor, Vernix, etc.) to talk to a
+ * external agent (Claude Desktop, Cursor, etc.) to talk to a
  * team's timeline via /api/mcp/server. We persist only the SHA-256 of
  * the key so a DB leak can't replay tokens; the one-time plaintext is
  * shown to the user at creation and never again.

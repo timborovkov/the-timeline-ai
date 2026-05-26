@@ -8,12 +8,11 @@ import type {
   MeetingBotStatus,
 } from './types.js';
 
-// Recall.ai adapter. Shape borrowed from the proven Vernix integration
-// (sister project): single bot per meeting, silent mode (no audio/video
+// Recall.ai adapter: single bot per meeting, silent mode (no audio/video
 // output), realtime webhooks for transcript + status, metadata round-trip
 // of meetingId so webhooks can locate the meeting without trusting URLs.
 //
-// We diverge from Vernix on two points:
+// Design notes for this phase:
 //   * Single-team Qdrant collection (handled at the embed worker, not here).
 //   * No voice / agent mode this phase — `output_media` and voice secrets
 //     are deliberately omitted. Phase 10 is silent capture only.

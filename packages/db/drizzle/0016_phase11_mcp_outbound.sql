@@ -1,5 +1,5 @@
 -- Phase 11 — Timeline-as-MCP-server. API keys that grant outside agents
--- (Claude Desktop, Cursor, Vernix, etc.) bearer-auth access to a team's
+-- (Claude Desktop, Cursor, etc.) bearer-auth access to a team's
 -- timeline via the Timeline's MCP endpoint at /api/mcp/server.
 --
 -- Bearer-token flow rather than OAuth issuer for v1: the agent operator
