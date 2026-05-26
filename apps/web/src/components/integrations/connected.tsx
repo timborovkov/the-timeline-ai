@@ -25,7 +25,7 @@ export function ConnectedIntegrations({ connected }: { connected: ConnectedRow[]
   async function call(method: 'sync' | 'disconnect', id: string) {
     setBusy(`${method}:${id}`);
     try {
-      const res = await fetch(`/api/integrations/${id}/${method}`, { method: 'POST' });
+      const res = await fetch(`/api/integrations/manage/${id}/${method}`, { method: 'POST' });
       if (!res.ok) {
         const text = await res.text();
         alert(`${method} failed: ${text}`);
