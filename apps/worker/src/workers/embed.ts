@@ -1,4 +1,5 @@
 import {
+  calendarEvents as calendarEventsTable,
   type Db,
   documentChunks,
   documents,
@@ -28,7 +29,15 @@ interface RawEventRow {
   contentText: string | null;
   occurredAt: Date;
   authorUserId: string | null;
-  source: 'web' | 'telegram' | 'email' | 'system' | 'document' | 'meeting' | 'integration';
+  source:
+    | 'web'
+    | 'telegram'
+    | 'email'
+    | 'system'
+    | 'document'
+    | 'meeting'
+    | 'integration'
+    | 'calendar';
   visibility: 'private' | 'team' | 'specific_users';
   visibilityUserIds: string[] | null;
   sourceMetadata: unknown;
@@ -261,7 +270,25 @@ async function buildPlan(
       return buildDocChunkPlan(db, data);
     case 'meeting_chunk':
       return buildMeetingChunkPlan(db, data);
+    case 'calendar_event':
+      return buildCalendarEventPlan(db, data);
   }
+}
+
+export async function buildPlanForTests(
+  db: Db,
+  data: queue.EmbedJobData,
+  scope: qdrant.PointScope,
+): Promise<{
+  text: string;
+  scope: qdrant.PointScope;
+  sourceKind: qdrant.SourceKind;
+  sourceId: string;
+  payloadOverrides: Partial<qdrant.QdrantPayload>;
+  occurredAt: Date;
+  authorUserId: string | null;
+} | null> {
+  return buildPlan(db, data, scope);
 }
 
 async function buildEventOrFactPlan(
@@ -686,6 +713,51 @@ async function buildMeetingChunkPlan(db: Db, data: queue.EmbedJobData): Promise<
       meeting_id: hit.meeting.id,
       meeting_chunk_id: hit.chunk.id,
       speaker: hit.chunk.speaker,
+    },
+  };
+}
+
+async function buildCalendarEventPlan(db: Db, data: queue.EmbedJobData): Promise<EmbedPlan | null> {
+  if (!('calendarEventId' in data) || !data.calendarEventId) {
+    throw new UnrecoverableError('embed: calendar_event scope job missing calendarEventId');
+  }
+  const rows = await db
+    .select()
+    .from(calendarEventsTable)
+    .where(eq(calendarEventsTable.id, data.calendarEventId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) throw new UnrecoverableError(`calendar event ${data.calendarEventId} not found`);
+  if (row.teamId !== data.teamId) {
+    throw new UnrecoverableError(
+      `calendar event ${data.calendarEventId} team mismatch (job=${data.teamId}, row=${row.teamId})`,
+    );
+  }
+  if (row.deletedAt) return null;
+  if (row.visibility !== 'team') return null;
+
+  const parts = [
+    row.title,
+    row.description ?? '',
+    row.location ? `at ${row.location}` : '',
+    `${row.startAt.toISOString()} to ${row.endAt.toISOString()}`,
+    row.timezone !== 'UTC' ? `(${row.timezone})` : '',
+  ];
+  const text = parts.filter((p) => p.length > 0).join(' | ');
+  if (!text.trim()) return null;
+
+  return {
+    text,
+    scope: 'calendar_event',
+    sourceKind: 'calendar_event',
+    sourceId: row.id,
+    occurredAt: row.startAt,
+    authorUserId: row.createdByUserId,
+    payloadOverrides: {
+      source: 'calendar',
+      event_id: row.startAtRawEventId ?? row.scheduledRawEventId,
+      visibility: row.visibility,
+      visibility_user_ids: row.visibilityUserIds,
     },
   };
 }

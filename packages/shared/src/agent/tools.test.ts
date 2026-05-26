@@ -34,6 +34,9 @@ interface FakeScope {
   folderPath: ReturnType<typeof vi.fn>;
   getDocumentChunk: ReturnType<typeof vi.fn>;
   listRecentDocumentChanges: ReturnType<typeof vi.fn>;
+  calendar: {
+    listCalendarEvents: ReturnType<typeof vi.fn>;
+  };
 }
 
 function makeFakeScope(): FakeScope {
@@ -48,6 +51,9 @@ function makeFakeScope(): FakeScope {
     folderPath: vi.fn(),
     getDocumentChunk: vi.fn(),
     listRecentDocumentChanges: vi.fn(),
+    calendar: {
+      listCalendarEvents: vi.fn(),
+    },
   };
 }
 
@@ -157,6 +163,26 @@ describe('buildAgentTools — team isolation', () => {
     expect(scope.listEvents).toHaveBeenCalledWith(
       expect.objectContaining({ authorUserId: '00000000-0000-0000-0000-000000000001' }),
     );
+  });
+
+  it('list_calendar_events defaults to upcoming events when no range is provided', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-26T12:00:00Z'));
+    try {
+      const scope = makeFakeScope();
+      scope.calendar.listCalendarEvents.mockResolvedValue([]);
+      const tools = buildAgentTools(scope as unknown as TeamScope);
+      const exec = tools.list_calendar_events?.execute as (
+        input: unknown,
+        opts: unknown,
+      ) => Promise<unknown>;
+      await exec({}, {});
+      expect(scope.calendar.listCalendarEvents).toHaveBeenCalledWith({
+        from: new Date('2026-05-26T12:00:00Z'),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('tool execute catches thrown errors and returns { error } — keeps stream alive', async () => {

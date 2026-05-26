@@ -24,6 +24,7 @@
  *     [--threshold=0.01]   # default 1%
  */
 import {
+  calendarEvents,
   closeDb,
   documentChunks,
   documents,
@@ -82,6 +83,7 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
     docChunkRows,
     meetingChunkRows,
     integrationEventRows,
+    calendarEventRows,
   ] = await Promise.all([
     db
       .select({ n: count() })
@@ -164,6 +166,18 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
           eq(rawEvents.source, 'integration'),
         ),
       ),
+    // Phase 11 calendar_event: only active, team-visible calendar events
+    // are embedded by buildCalendarEventPlan.
+    db
+      .select({ n: count() })
+      .from(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.teamId, teamId),
+          isNull(calendarEvents.deletedAt),
+          eq(calendarEvents.visibility, 'team'),
+        ),
+      ),
   ]);
 
   const entityCount = entityRows[0]?.n ?? 0;
@@ -177,6 +191,7 @@ async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, 
     doc_chunk: docChunkRows[0]?.n ?? 0,
     meeting_chunk: meetingChunkRows[0]?.n ?? 0,
     integration_event: integrationEventRows[0]?.n ?? 0,
+    calendar_event: calendarEventRows[0]?.n ?? 0,
   };
 }
 
@@ -196,6 +211,7 @@ async function main(): Promise<void> {
     'doc_chunk',
     'meeting_chunk',
     'integration_event',
+    'calendar_event',
   ];
   const reports: KindReport[] = [];
   for (const kind of kinds) {

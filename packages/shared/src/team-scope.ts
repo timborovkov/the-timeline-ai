@@ -13,6 +13,7 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
+import { createCalendarScope } from './calendar/scope.js';
 import { createDocumentScope } from './documents/scope.js';
 import { createIntegrationScope } from './integrations/scope.js';
 import { embed as defaultEmbed, type EmbedResult } from './llm/embed.js';
@@ -107,7 +108,15 @@ export interface SearchEventsInput {
   query: string;
   from?: Date;
   to?: Date;
-  source?: 'web' | 'telegram' | 'email' | 'system' | 'integration' | 'document' | 'meeting';
+  source?:
+    | 'web'
+    | 'telegram'
+    | 'email'
+    | 'system'
+    | 'integration'
+    | 'document'
+    | 'meeting'
+    | 'calendar';
   entityIds?: string[];
   /**
    * Narrow vector search to a subset of Qdrant source kinds. Phase 8 adds
@@ -247,6 +256,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
     ),
   );
+  const activeRawEventFilter = sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`;
 
   let membershipPromise: Promise<TeamRole> | undefined;
 
@@ -287,7 +297,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     return db
       .select()
       .from(rawEvents)
-      .where(and(inArray(rawEvents.id, ids), eq(rawEvents.teamId, teamId), visibilityFilter));
+      .where(
+        and(
+          inArray(rawEvents.id, ids),
+          eq(rawEvents.teamId, teamId),
+          visibilityFilter,
+          activeRawEventFilter,
+        ),
+      );
   }
 
   /**
@@ -356,11 +373,20 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     ensureMember,
   });
 
+  const calendarScope = createCalendarScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+    requireTeamMember,
+  });
+
   return {
     ...documentScope,
     ...meetingScope,
     integrations: integrationScope,
     mcp: mcpScope,
+    calendar: calendarScope,
     teamId,
     userId,
 
@@ -376,7 +402,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
     async listEvents(filters: EventListFilters = {}) {
       await ensureMember();
-      const conditions = [eq(rawEvents.teamId, teamId), visibilityFilter];
+      const conditions = [eq(rawEvents.teamId, teamId), visibilityFilter, activeRawEventFilter];
       if (filters.authorUserId) {
         conditions.push(eq(rawEvents.authorUserId, filters.authorUserId));
       }
@@ -400,7 +426,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       const rows = await db
         .select()
         .from(rawEvents)
-        .where(and(eq(rawEvents.id, id), eq(rawEvents.teamId, teamId), visibilityFilter))
+        .where(
+          and(
+            eq(rawEvents.id, id),
+            eq(rawEvents.teamId, teamId),
+            visibilityFilter,
+            activeRawEventFilter,
+          ),
+        )
         .limit(1);
       return rows[0] ?? null;
     },
@@ -628,7 +661,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       const eventRows = await db
         .select()
         .from(rawEvents)
-        .where(and(eq(rawEvents.id, id), eq(rawEvents.teamId, teamId), visibilityFilter))
+        .where(
+          and(
+            eq(rawEvents.id, id),
+            eq(rawEvents.teamId, teamId),
+            visibilityFilter,
+            activeRawEventFilter,
+          ),
+        )
         .limit(1);
       const event = eventRows[0];
       if (!event) return null;

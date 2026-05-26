@@ -120,6 +120,20 @@
       "when": 1795651380000,
       "tag": "0016_phase11_mcp_outbound",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795651440000,
+      "tag": "0017_phase11_calendar",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795651500000,
+      "tag": "0018_phase11_calendar_dedup",
+      "breakpoints": true
     }
   ]
 }

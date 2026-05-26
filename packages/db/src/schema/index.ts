@@ -18,3 +18,4 @@ export * from './meetings.js';
 export * from './integrations.js';
 export * from './mcp.js';
 export * from './mcp-outbound.js';
+export * from './calendar-events.js';

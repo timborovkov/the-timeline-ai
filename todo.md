@@ -100,7 +100,7 @@ Foundation, processing pipeline, agent surface, and the document drive UI shippe
 - [x] Citation format extended: `[doc:<documentId>#v<version>:chunk:<chunkId>]` mandatory whenever the agent uses document content. System prompt bumped to `agent-v5-2026-05` with documents-as-untrusted-source clarification. Citation chip in `apps/web/src/components/chat/citation.tsx` resolves to `/app/documents/<documentId>?version=<n>#chunk-<chunkId>`.
 - [x] Reprocess / re-embed scripts: `redocument-extract` (re-drives the worker; `--force` resets pending), `redocument-embed` (per-chunk embed enqueue with `--target-collection` for zero-downtime model cutover). Mirror the existing `reembed.ts` / `reextract.ts` shape. (`apps/worker/src/scripts/`.)
 - [x] Safety: all deletes are soft (`deleted_at`); object blobs are retained. Deleted-document chunks are filtered out of search (worker skip-stamp + scope visibility join). Visibility changes write a `visibility_change` raw_event so audit is preserved. Hard purge is deferred to admin-only follow-up.
-- [ ] Per-team monthly vision-spend caps + dashboard. Vision tokens are 5-10x text tokens; without caps a 100-page PDF dump per team could surprise the bill. Tracked in Phase 12 (cost guardrails / monitoring).
+- [ ] Per-team monthly vision-spend caps + dashboard. Vision tokens are 5-10x text tokens; without caps a 100-page PDF dump per team could surprise the bill. Tracked in Phase 13 (cost guardrails / monitoring).
 - [ ] Dogfood content: contracts, deal docs, internal guides, policies, office rules, onboarding docs, customer notes. Pending real content.
 
 ## Phase 10 — Meeting Bots (Google Meet, Teams, Zoom)
@@ -122,9 +122,53 @@ in a follow-up phase if/when there's demand).
 - [x] UI surface — [`/app/meetings`](apps/web/src/app/app/meetings/page.tsx) lists recent meetings + current-month minutes against the team cap. [`ScheduleMeetingBotForm`](apps/web/src/components/meeting-forms.tsx) takes URL, optional title, visibility, and consent. Meeting detail page shows status, speaker-by-speaker transcript, summary, and (once finalised) extracted action items.
 - [x] Cost guardrails: per-team monthly minute cap (`team_meeting_settings.meeting_minutes_cap`, default 600) with admin override flag. Each finalised meeting writes a `meeting_usage` row; the schedule action sums the current month before allowing a new bot. 0 = disabled, null = unlimited.
 - [x] Privacy/compliance: `require_host_consent` (default true) blocks scheduling unless the caller has ticked the consent box. Timestamp stored on `meetings.metadata.consent_given_at`. Raw audio is NOT copied to S3 — Recall's default retention applies to the recording artifact; the transcript text is the only persistent record.
-- [ ] Reliability follow-up: surface bot-failed states in the Phase 12/13 monitoring dashboard with retry/rejoin. Failure is captured cleanly on `meetings.status='failed'` today; a dedicated dashboard ships with that phase.
+- [ ] Reliability follow-up: surface bot-failed states in the Phase 13/14 monitoring dashboard with retry/rejoin. Failure is captured cleanly on `meetings.status='failed'` today; a dedicated dashboard ships with that phase.
 
-## Phase 11 — Third-Party Integrations And Custom MCPs
+## Phase 11 — Calendar
+
+Goal: give the timeline a proper calendar layer. The internal timeline calendar is the primary surface — agents and users track deadlines, agreed meetings, follow-ups, and any time-anchored commitment here, just like objects and tasks live natively in the workspace. External calendar sync (Google Calendar, iCloud/CalDAV) layers on top as import-only; push-to-external is a low-priority post-MVP follow-up. No full two-way sync.
+
+### Schema and data model
+
+- [x] `calendar_events` table (new first-class table, NOT an entity type): team-scoped, title, description, `start_at`/`end_at` timestamps (UTC), `timezone` (IANA, e.g. `America/New_York`), all-day flag, location, visibility (`private`/`team`/`specific_users`), `show_as` (busy/free), creator user, `reminder_minutes` (nullable, overrides team default), source (`internal`/`google`/`caldav`), `external_calendar_id`, `external_event_id`, `agent_suggested` boolean, `deleted_at` (soft-delete), and `metadata` JSONB. Migrations `0017_phase11_calendar.sql` and `0018_phase11_calendar_dedup.sql`.
+- [ ] Recurrence: `rrule` (RFC 5545) column on parent event. Worker materializes individual occurrences into `calendar_events` rows on a 3-month rolling window. Self-referential FK `recurring_parent_id` → `calendar_events.id`. `original_start_at` (stable occurrence identifier, survives rescheduling). `is_exception` flag for manually-edited occurrences (re-expansion skips these). "Edit this" = mark exception. "Edit all future" = delete-and-reexpand non-exception children ≥ now.
+- [x] `calendar_event_entities` join table: `(calendar_event_id, entity_id, relationship_type)` for explicit object/entity links. Scope helpers verify linked entities belong to the active team before insert. Implicit links happen through extraction on the raw_events.
+- [x] `team_calendar_settings` table: `default_reminder_minutes` (default 15), team-level calendar preferences.
+- [ ] `connected_calendars` table: per-user external calendar connections. Provider (`google`/`caldav`), OAuth tokens / CalDAV credentials, selected calendars, `is_private` boolean, sync cursor, last sync state, default visibility for imported events.
+
+### Timeline integration
+
+- [x] Two `raw_events` rows per calendar event: one at creation time (`occurred_at` = now, `source='calendar'`, action = `'scheduled'`) and one at the event's `start_at` (`occurred_at` = event start, action = `'event'`). User-visible updates/deletes write additional raw_events at mutation time; deletes tombstone the linked scheduled/event rows so active timeline reads and direct event lookups only show the cancellation audit row.
+- [x] Calendar event embeddings: `source_kind='calendar_event'` in Qdrant. Team-visible events enqueue embeddings after the DB transaction commits; private/specific-user updates and deletes remove stale Qdrant points for the configured embedding model after commit. Search payloads hydrate through the start-at raw event, whose text mirrors the rich calendar summary, so results carry the event occurrence timestamp and details. `embed-coverage` counts active team-visible calendar events.
+- [x] Private event rendering: private events are opaque to teammates, not invisible. Calendar UI shows "Busy" blocks for other users' private events. Application-layer redaction in the calendar scope returns busy content while preserving time blocks; agent and timeline use existing visibility filtering unchanged.
+
+### UI
+
+- [x] Timeline calendar UI: month view at `/app/calendar` with event creation and detail links. Server fetch ranges and client day buckets use the same UTC month boundaries, and the grid renders events spanning into the visible month, including events that start before the month and end inside it. Create/edit/delete uses the calendar scope's raw-event audit trail.
+- [ ] Week/day calendar views.
+- [ ] Recurring event editing UI: "this event" / "this and all future" / "all events" edit modes. Exception badge on modified occurrences.
+
+### Agent surface
+
+- [x] Agent calendar tools: `suggest_calendar_event`, `list_calendar_events`, and `get_calendar_event`. Unbounded calendar listing defaults to upcoming events. Agent-created suggestions use `agent_suggested=true`; human review UI remains a follow-up.
+- [ ] Calendar update tool and accept/reject UI for agent-suggested calendar events.
+
+### External calendar sync (import-only for MVP)
+
+- [ ] Google Calendar connector: OAuth 2.0, incremental sync via `syncToken`, push notifications (webhooks) for near-real-time import. Provider adapter interface mirrors the meeting-bots pattern.
+- [ ] Generic CalDAV connector: covers iCloud, Fastmail, Nextcloud, Synology, etc. User provides server URL + credentials (app-specific password). Polling-based sync (CalDAV has no push). Same adapter interface as Google.
+- [ ] Imported events land as native `calendar_events` with `source='google'`/`source='caldav'` and back-reference `external_event_id` for dedup. Private connected calendars import with `visibility='private'`.
+- [ ] External event deletion: soft-delete the `calendar_events` row + tombstone marker on raw_events `sourceMetadata`. Timeline shows the event was cancelled; history preserved.
+- [ ] (Post-MVP, low priority) Push internal events to connected Google Calendar so they appear on the user's phone. Timeline is authoritative; outbound push is fire-and-forget.
+
+### Notifications and reminders
+
+- [ ] Dedicated reminder worker: BullMQ repeatable on 5-minute loop. Queries for events with reminders due in the next 5 minutes. Fires notifications. Stateless — no per-event scheduled jobs.
+- [ ] Reminder cascade: team default (`team_calendar_settings.default_reminder_minutes`) → per-event override (`calendar_events.reminder_minutes`). Two layers.
+- [ ] Daily digest: one summary of today's events per user per morning. Delivery channel is user's choice: inbox notification, email (Postmark outbound), and/or Telegram. Per-user delivery preferences (platform-wide, not calendar-specific — reusable for overdue alerts, agent suggestions, etc.).
+- [ ] Overdue/missed event alerts: extend existing overdue-scan worker to include calendar events past their `start_at` with no attendance/completion signal.
+
+## Phase 12 — Third-Party Integrations And Custom MCPs
 
 Goal: sync external systems into the same timeline/object pipeline. Integrations span three classes: (1) curated native connectors with provider-specific sync logic (Drive, Linear, GitHub), (2) curated MCP-backed connectors when an official MCP exists, and (3) **custom MCP servers** that any team can connect to bring their own tools and data.
 
@@ -158,7 +202,7 @@ using the new `SECRETS_ENCRYPTION_KEY` env var. Per-team helpers in
 - [x] Inline reconnect UX — `McpNeedsReauthError` ([`packages/shared/src/mcp/client.ts`](packages/shared/src/mcp/client.ts)) propagates through `buildMcpTools` as `{ ok: false, error: 'needs_reauth' }`. Chat `ToolStep` ([`apps/web/src/components/chat/tool-step.tsx`](apps/web/src/components/chat/tool-step.tsx)) renders a "Reconnect <server>" CTA inline; non-admins see an "ask a team admin" hint instead.
 - [x] **Timeline-as-MCP-server (outbound).** External agents (Claude Desktop, Cursor, etc.) can connect this Timeline as an MCP server. Endpoint [`/api/mcp/server`](apps/web/src/app/api/mcp/server/route.ts) speaks JSON-RPC 2.0 over streamable HTTP (`tools/list`, `tools/call`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get`); bearer auth via `tla_*` keys stored as SHA-256 hashes (migration `0016_phase11_mcp_outbound.sql`). Tools exposed: `timeline.search_events`, `get_event`, `list_events`, `get_entity`, `search_documents`. Outbound bearer keys never see `private` / `specific_users` events. Admins mint/revoke keys at [`/app/team/mcp-share`](apps/web/src/app/app/team/mcp-share/page.tsx). Wildcard CORS (Authorization-header auth so credentials-less). Setup walkthrough: [`docs/setup/integrations.html`](docs/setup/integrations.html).
 
-## Phase 12 — Polish And Hardening
+## Phase 13 — Polish And Hardening
 
 - [ ] Onboarding flow: new team creation includes Telegram bot setup, email forwarding, first document upload, and first integration setup.
 - [ ] Per-event visibility controls in UI (`private` / `team` / specific users). Defaults configurable per team/source.
@@ -168,7 +212,7 @@ using the new `SECRETS_ENCRYPTION_KEY` env var. Per-team helpers in
 - [ ] Performance: timeline pagination, object-page pagination, document search pagination, hot entity/object query caching.
 - [ ] User-facing docs for capture surfaces, document drive, boards, integrations, and object management.
 
-## Phase 13 — Backup And Operations
+## Phase 14 — Backup And Operations
 
 - [ ] RustFS backup cron service on Railway: nightly `rclone sync` to Backblaze B2 or chosen secondary store.
 - [ ] Qdrant snapshot cron: nightly snapshot via Qdrant API, uploaded to RustFS or B2.
@@ -176,7 +220,7 @@ using the new `SECRETS_ENCRYPTION_KEY` env var. Per-team helpers in
 - [ ] Run full restore drill from backups to a scratch environment. Repeat quarterly.
 - [ ] Monitoring dashboards: Railway metrics, Sentry, worker queue depth, document processing failures, integration sync failures, OpenRouter spend.
 
-## Phase 14 — Soft Launch
+## Phase 15 — Soft Launch
 
 - [ ] Closed beta with 3-5 friendly teams. Weekly feedback sessions.
 - [ ] Instrument capture friction: time from "open app" to "event recorded." Target: under 10 seconds for text, under 15 for voice.

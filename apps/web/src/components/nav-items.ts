@@ -1,5 +1,6 @@
 import {
   Box,
+  CalendarDays,
   CheckSquare,
   Clock,
   FolderOpen,
@@ -31,6 +32,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: '/app/objects', label: 'Objects', icon: Box },
   { href: '/app/documents', label: 'Documents', icon: FolderOpen },
   { href: '/app/meetings', label: 'Meetings', icon: Video },
+  { href: '/app/calendar', label: 'Calendar', icon: CalendarDays },
   { href: '/app/tasks', label: 'Tasks', icon: CheckSquare },
   { href: '/app/boards', label: 'Boards', icon: KanbanSquare },
   { href: '/app/inbox', label: 'Inbox', icon: Inbox },

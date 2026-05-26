@@ -115,7 +115,9 @@ packages/
             registry catalog, AES-GCM secrets helper), mcp module (Phase 11
             — JSON-RPC client, OAuth client + state JWT, SSRF guard,
             team+user-overlay scope), mcp-server module (Phase 11 outbound —
-            JSON-RPC handler, bearer-key mint/verify for /api/mcp/server)
+            JSON-RPC handler, bearer-key mint/verify for /api/mcp/server),
+            calendar module (Phase 11 — event scope, raw-event audit rows,
+            entity links, settings, and calendar embedding enqueue/delete)
 docs/
   setup/    External service walkthroughs (Telegram, OpenRouter, Postmark,
             Recall.ai meeting bots, Sentry, Railway, local dev,

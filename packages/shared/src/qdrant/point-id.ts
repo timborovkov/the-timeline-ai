@@ -24,7 +24,8 @@ export type PointScope =
   | 'doc_chunk'
   // Phase 10: meeting transcripts are chunked per utterance group; each
   // chunk gets its own point so search can match a specific speaker turn.
-  | 'meeting_chunk';
+  | 'meeting_chunk'
+  | 'calendar_event';
 
 export function buildPointId(scope: PointScope, sourceId: string, modelTag: string): string {
   const input = `${scope}:${sourceId}:${modelTag}`;

@@ -29,6 +29,10 @@ export const eventSource = pgEnum('event_source', [
   // external object id in source_metadata.external_object_id; the dedup
   // key in source_metadata.dedup_key.
   'integration',
+  // Phase 11 — Calendar events. Two raw_events per calendar event:
+  // source_metadata.action='scheduled' (at creation) and 'event' (at
+  // start_at). Calendar-specific metadata in source_metadata.calendar_event_id.
+  'calendar',
 ]);
 
 export const eventVisibility = pgEnum('event_visibility', ['private', 'team', 'specific_users']);
