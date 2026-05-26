@@ -74,7 +74,15 @@ export async function POST(req: Request): Promise<Response> {
     if (preregistered) {
       clientId = preregistered.clientId;
       clientSecret = preregistered.clientSecret;
-      clientInfoToStore = { client_id: clientId, preregistered: true };
+      // Persist the client_secret too — callback + refresh both read it
+      // out of this blob. Without it, confidential pre-registered clients
+      // can't complete the token exchange or any future refresh.
+      // Encrypted at rest via persistOauthPending's encryptJson.
+      clientInfoToStore = {
+        client_id: clientId,
+        preregistered: true,
+        ...(clientSecret ? { client_secret: clientSecret } : {}),
+      };
     } else {
       if (!discovery.registration_endpoint) {
         return NextResponse.json(

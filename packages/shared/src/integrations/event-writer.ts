@@ -213,9 +213,24 @@ async function upsertWorkspaceObjects(
   //    still lands in raw_events; only the workspace-object mapping is
   //    skipped for that one row.
   if (toInsert.length > 0) {
+    // Dedupe within the batch by `(type, canonical_name)` — the partial
+    // unique that `onConflictDoNothing` is meant to catch is a
+    // row-vs-existing predicate, so two new rows in the same VALUES list
+    // sharing the index expression still 23505 the whole batch. Real
+    // payloads can carry duplicates (two Linear projects sharing a
+    // title; two GitHub issues with the same number across forks). First
+    // occurrence wins; the second event's `objectMap` is dropped from
+    // mapping (its raw_event still lands).
+    const seenKey = new Set<string>();
+    const dedupedInsert = toInsert.filter((r) => {
+      const key = `${r.type}\x00${r.canonicalName}`;
+      if (seenKey.has(key)) return false;
+      seenKey.add(key);
+      return true;
+    });
     const inserted = await db
       .insert(entities)
-      .values(toInsert)
+      .values(dedupedInsert)
       .onConflictDoNothing()
       .returning({ id: entities.id });
     for (const r of inserted) affectedIds.push(r.id);
