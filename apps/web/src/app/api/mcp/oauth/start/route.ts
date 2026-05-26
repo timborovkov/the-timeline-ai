@@ -96,6 +96,12 @@ export async function POST(req: Request): Promise<Response> {
       clientSecret = issued.client_secret;
       clientInfoToStore = issued as unknown as Record<string, unknown>;
     }
+    // Pin the authorization-server metadata from THIS authorize roundtrip so
+    // the callback and any future refresh hit the same `token_endpoint` the
+    // user actually consented at. Without pinning, a malicious/compromised
+    // resource could rotate its well-known to point at a different token
+    // endpoint between authorize and callback (token exfiltration).
+    clientInfoToStore = { ...clientInfoToStore, __discovery: discovery };
 
     const { codeVerifier, codeChallenge } = mcp.generatePkcePair();
     await scope.mcp.persistOauthPending(server.id, codeVerifier, clientInfoToStore);

@@ -28,7 +28,7 @@ export async function GET(req: Request): Promise<Response> {
   const oauthError = url.searchParams.get('error');
   if (oauthError) {
     return NextResponse.redirect(
-      new URL(`/app/team/mcp-servers?error=${encodeURIComponent(oauthError)}`, req.url),
+      new URL(`/app/team/integrations?error=${encodeURIComponent(oauthError)}`, req.url),
     );
   }
   if (!code || !state) {
@@ -60,7 +60,17 @@ export async function GET(req: Request): Promise<Response> {
 
   const redirectUri = `${url.origin}/api/mcp/oauth/callback`;
   try {
-    const discovery = await mcp.discoverOAuth(server.url);
+    // Reuse the authorization-server metadata pinned at /start so the
+    // code exchange hits the same `token_endpoint` the user consented at.
+    // A connected MCP could otherwise rotate its well-known between
+    // authorize and callback and exfiltrate the code to a different
+    // token endpoint. Falls back to fresh discovery only for legacy
+    // pending rows persisted before pinning landed.
+    const pinned = (clientInfo as { __discovery?: unknown }).__discovery;
+    const discovery =
+      pinned && typeof pinned === 'object'
+        ? (pinned as Awaited<ReturnType<typeof mcp.discoverOAuth>>)
+        : await mcp.discoverOAuth(server.url);
     const clientId = (clientInfo as { client_id?: string }).client_id;
     const clientSecret = (clientInfo as { client_secret?: string }).client_secret;
     if (!clientId) throw new Error('client_id missing from stored client_info');
@@ -92,13 +102,13 @@ export async function GET(req: Request): Promise<Response> {
     // Flip the server to enabled and clear any pending-connection error.
     await scope.mcp.updateServer(verified.mcpServerId, { enabled: true });
     return NextResponse.redirect(
-      new URL(`/app/team/mcp-servers?connected=${verified.mcpServerId}`, req.url),
+      new URL(`/app/team/integrations?connected=${verified.mcpServerId}`, req.url),
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'mcp_oauth_callback_failed';
     log.warn({ err, mcpServerId: verified.mcpServerId }, 'mcp oauth callback failed');
     return NextResponse.redirect(
-      new URL(`/app/team/mcp-servers?error=${encodeURIComponent(msg)}`, req.url),
+      new URL(`/app/team/integrations?error=${encodeURIComponent(msg)}`, req.url),
     );
   }
 }

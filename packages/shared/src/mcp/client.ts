@@ -190,9 +190,18 @@ async function loadOauthAccessToken(
         ciphertext: clientCiphertext,
         iv: clientIv,
         tag: clientTag,
-      }) as { client_id?: string; client_secret?: string };
+      }) as { client_id?: string; client_secret?: string; __discovery?: unknown };
       if (!clientInfo.client_id) return tokens.accessToken ?? null;
-      const discovery = await discoverOAuth(serverUrl);
+      // Reuse the authorization-server metadata pinned at OAuth start so
+      // the refresh hits the same `token_endpoint` the user consented at.
+      // Without this, a connected MCP could rotate its well-known
+      // response between authorize and refresh and divert the refresh
+      // token to a different public endpoint. Fall back to fresh
+      // discovery only for legacy rows persisted before pinning landed.
+      const discovery =
+        clientInfo.__discovery && typeof clientInfo.__discovery === 'object'
+          ? (clientInfo.__discovery as Awaited<ReturnType<typeof discoverOAuth>>)
+          : await discoverOAuth(serverUrl);
       const refreshed = await oauthRefreshToken({
         discovery,
         refreshToken: refreshTokenStr,
