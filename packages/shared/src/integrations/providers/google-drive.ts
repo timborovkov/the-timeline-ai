@@ -519,6 +519,9 @@ export const googleDriveProvider: IntegrationProvider = {
     // selections syncs nothing.
     if (selected.size === 0) return;
     const refreshed = await ensureAccessToken(tokens as DriveTokens);
+    if (refreshed.access_token !== (tokens as DriveTokens).access_token) {
+      await ctx.persistTokens(refreshed as unknown as Record<string, unknown>);
+    }
     await fetchChanges(integration, refreshed, selected, ctx, 'drive.changes');
   },
 
@@ -530,6 +533,12 @@ export const googleDriveProvider: IntegrationProvider = {
     );
     if (selected.size === 0) return;
     const refreshed = await ensureAccessToken(tokens as DriveTokens);
+    if (refreshed.access_token !== (tokens as DriveTokens).access_token) {
+      // Persist the refreshed access_token + new expires_at so the next
+      // sync doesn't repeat the refresh roundtrip. Skipped when
+      // ensureAccessToken returned the same input (token still valid).
+      await ctx.persistTokens(refreshed as unknown as Record<string, unknown>);
+    }
     await fetchChanges(integration, refreshed, selected, ctx, 'drive.changes');
   },
 

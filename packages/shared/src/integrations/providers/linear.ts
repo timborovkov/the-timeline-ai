@@ -33,10 +33,54 @@ const SCOPES = ['read'];
 
 interface LinearTokens {
   access_token: string;
+  refresh_token?: string;
   token_type?: string;
   expires_in?: number;
   scope?: string;
   expires_at?: number;
+}
+
+/**
+ * Refresh a Linear access token. Linear access tokens default to ~1 year
+ * but can be invalidated by user revoke / scope changes; refresh_token
+ * grants survive those for our scopes when Linear hands one back.
+ * Returns the input unchanged if no refresh_token is stored, or if the
+ * current token has more than 24h of life left — refreshing more
+ * frequently than that burns API quota without benefit.
+ */
+async function ensureAccessToken(tokens: LinearTokens): Promise<LinearTokens> {
+  const env = getEnv();
+  if (!env.LINEAR_CLIENT_ID || !env.LINEAR_CLIENT_SECRET) {
+    return tokens;
+  }
+  const now = Date.now();
+  // Refresh skew: 24h. Linear tokens are long-lived enough that the
+  // 60s skew used by short-lived OAuth flows would never trigger.
+  const SKEW_MS = 24 * 60 * 60 * 1000;
+  if (tokens.expires_at && tokens.expires_at > now + SKEW_MS) return tokens;
+  if (!tokens.refresh_token) {
+    // No refresh token issued for this connection — leave the
+    // access_token in place. The next failing API call surfaces
+    // `last_error` and the operator reconnects.
+    return tokens;
+  }
+  const body = await postForm(TOKEN_URL, {
+    grant_type: 'refresh_token',
+    refresh_token: tokens.refresh_token,
+    client_id: env.LINEAR_CLIENT_ID,
+    client_secret: env.LINEAR_CLIENT_SECRET,
+  });
+  const access = typeof body.access_token === 'string' ? body.access_token : '';
+  if (!access) return tokens;
+  const expiresIn = Number(body.expires_in ?? 365 * 24 * 3600);
+  return {
+    ...tokens,
+    access_token: access,
+    expires_in: expiresIn,
+    expires_at: now + expiresIn * 1000,
+    ...(typeof body.refresh_token === 'string' ? { refresh_token: body.refresh_token } : {}),
+    ...(typeof body.scope === 'string' ? { scope: body.scope } : {}),
+  };
 }
 
 async function postForm(
@@ -494,6 +538,10 @@ export const linearProvider: IntegrationProvider = {
       expires_in: expiresIn,
       expires_at: Date.now() + expiresIn * 1000,
       scope: typeof body.scope === 'string' ? body.scope : SCOPES.join(','),
+      // Capture refresh_token when Linear issues one — without this the
+      // worker can't refresh after the access token lapses and the only
+      // recovery path is a manual reconnect.
+      ...(typeof body.refresh_token === 'string' ? { refresh_token: body.refresh_token } : {}),
     };
     // externalAccountId MUST be the stable Linear org id so reconnects
     // upsert on the existing integration row. A random fallback would
@@ -541,7 +589,13 @@ export const linearProvider: IntegrationProvider = {
     // teamIds is empty and pulls the entire org — inconsistent with the
     // webhook path (which drops empty-selection events).
     if (teamIds.length === 0) return;
-    const linearTokens = tokens as LinearTokens;
+    const input = tokens as LinearTokens;
+    const linearTokens = await ensureAccessToken(input);
+    if (linearTokens.access_token !== input.access_token) {
+      // Refreshed in-memory; write the new ciphertext back so the next
+      // sync starts from current state.
+      await ctx.persistTokens(linearTokens as unknown as Record<string, unknown>);
+    }
     const latestIssues = await paginateIssues(linearTokens, null, teamIds, ctx);
     const latestComments = await paginateComments(linearTokens, null, teamIds, ctx);
     const latestProjects = await paginateProjects(linearTokens, null, teamIds, ctx);
@@ -553,7 +607,11 @@ export const linearProvider: IntegrationProvider = {
   async incrementalSync({ tokens, selections, ctx }) {
     const teamIds = selections.filter((s) => s.kind === 'linear.team').map((s) => s.externalId);
     if (teamIds.length === 0) return;
-    const linearTokens = tokens as LinearTokens;
+    const input = tokens as LinearTokens;
+    const linearTokens = await ensureAccessToken(input);
+    if (linearTokens.access_token !== input.access_token) {
+      await ctx.persistTokens(linearTokens as unknown as Record<string, unknown>);
+    }
     const fallback = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
     const issuesCursor = (await ctx.loadCursor('linear.issues')) as LinearCursor;
     const commentsCursor = (await ctx.loadCursor('linear.comments')) as LinearCursor;

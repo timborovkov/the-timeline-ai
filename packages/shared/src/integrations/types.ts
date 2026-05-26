@@ -93,6 +93,14 @@ export interface SyncContext {
    * updates the existing document by adding a new version.
    */
   harvestDocument?(input: HarvestDocumentInput): Promise<{ documentId: string; versionId: string }>;
+  /**
+   * Persist refreshed OAuth tokens back to the integration row. Providers
+   * call this after `ensureAccessToken` (or the equivalent refresh path)
+   * returns a token blob distinct from the input — without this, the
+   * worker keeps the old ciphertext and every sync repeats the refresh.
+   * The worker writes via `adminPersistTokens` (AES-256-GCM at rest).
+   */
+  persistTokens(tokens: Record<string, unknown>): Promise<void>;
 }
 
 export interface ProviderResource {

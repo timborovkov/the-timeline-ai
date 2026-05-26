@@ -102,6 +102,13 @@ async function runOneIntegration(
       async loadCursor(resourceType) {
         return integrationsLib.adminLoadCursor(db, integrationId, resourceType);
       },
+      async persistTokens(tokens) {
+        // Provider refreshed an access token in-memory (Drive
+        // `ensureAccessToken`, Linear refresh path). Write the new
+        // ciphertext back so the next sync starts from current state
+        // rather than re-refreshing every tick. AES-256-GCM at rest.
+        await integrationsLib.adminPersistTokens(db, integrationId, tokens);
+      },
       ...(harvestEnabled && harvestableUserId
         ? {
             async harvestDocument(input) {
