@@ -1,12 +1,11 @@
 import { users } from '@timeline/db';
 import { composePostmarkHashAddress, withTeam } from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { removeMemberAction } from '@/app/actions/teams';
 import { IndexStrip } from '@/components/index-strip';
-import { CreateTeamForm, InviteMemberForm } from '@/components/team-forms';
+import { InviteMemberForm, RenameTeamForm } from '@/components/team-forms';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,6 +46,17 @@ export default async function TeamSettingsPage() {
           { label: 'members', value: memberRows.length },
         ]}
       />
+
+      {isAdmin ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Team identity</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RenameTeamForm currentName={active.teamName} />
+          </CardContent>
+        </Card>
+      ) : null}
 
       {team ? (
         <Card>
@@ -140,41 +150,6 @@ export default async function TeamSettingsPage() {
           </CardContent>
         </Card>
       ) : null}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Telegram</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <p className="text-muted-foreground">Capture from Telegram DMs and group chats.</p>
-          <Link href="/app/team/telegram" className="underline">
-            Manage Telegram links →
-          </Link>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Integrations</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <p className="text-muted-foreground">
-            Connect Google Drive, Linear, GitHub, or any MCP-compatible server.
-          </p>
-          <Link href="/app/team/integrations" className="underline">
-            Open integrations →
-          </Link>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Create another team</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <CreateTeamForm />
-        </CardContent>
-      </Card>
     </div>
   );
 }

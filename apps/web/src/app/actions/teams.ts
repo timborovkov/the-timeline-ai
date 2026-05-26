@@ -29,6 +29,7 @@ import { db } from '@/lib/db';
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const createTeamSchema = z.object({ name: z.string().min(1).max(80) });
+const renameTeamSchema = z.object({ name: z.string().trim().min(1).max(80) });
 
 export interface CreateTeamState {
   error?: string;
@@ -76,6 +77,41 @@ export async function createTeamAction(
   });
   revalidatePath('/app');
   redirect('/app/timeline');
+}
+
+export interface RenameTeamState {
+  error?: string;
+  ok?: boolean;
+}
+
+export async function renameTeamAction(
+  _prev: RenameTeamState,
+  formData: FormData,
+): Promise<RenameTeamState> {
+  const session = await auth();
+  if (!session?.user) return { error: 'Not signed in' };
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) return { error: 'No active team' };
+
+  const parsed = renameTeamSchema.safeParse({ name: formData.get('name') });
+  if (!parsed.success) return { error: 'Invalid team name' };
+
+  const scope = withTeam(db, active.teamId, session.user.id);
+  try {
+    await scope.requireMembership('admin');
+  } catch {
+    return { error: 'Only admins can rename a team' };
+  }
+
+  try {
+    await db.update(teams).set({ name: parsed.data.name }).where(eq(teams.id, active.teamId));
+  } catch {
+    return { error: 'Failed to rename team' };
+  }
+
+  revalidatePath('/app');
+  revalidatePath('/app/team');
+  return { ok: true };
 }
 
 const inviteSchema = z.object({

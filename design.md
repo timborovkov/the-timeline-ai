@@ -286,7 +286,8 @@ All icons from `lucide-react`. Canonical mapping:
 | Inbox       | `Inbox`         |
 | Team        | `Settings`      |
 
-Other recurring icons: `Send` (submit), `Search` (search inputs),
+Other recurring icons: `Send` (submit, Telegram connection), `Cable` (integrations),
+`Search` (search inputs),
 `Lock`/`Users` (visibility toggle), `Inbox` (empty timeline),
 `ChevronsUpDown` (team switcher), `User`/`LogOut` (user menu),
 `Sun`/`Moon`/`Monitor` (theme toggle), `PanelRight` (inspector toggle).

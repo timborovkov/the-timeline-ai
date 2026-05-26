@@ -5,8 +5,10 @@ import { useFormState, useFormStatus } from 'react-dom';
 import {
   createTeamAction,
   inviteMemberAction,
+  renameTeamAction,
   type CreateTeamState,
   type InviteState,
+  type RenameTeamState,
 } from '@/app/actions/teams';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,18 +23,35 @@ function Submit({ label }: { label: string }) {
   );
 }
 
-export function CreateTeamForm() {
+export function CreateTeamForm({ id = 'new-team-name' }: { id?: string }) {
   const [state, action] = useFormState<CreateTeamState, FormData>(createTeamAction, {});
   return (
-    <form action={action} className="flex items-end gap-3">
+    <form action={action} className="flex flex-col gap-3 sm:flex-row sm:items-end">
       <div className="flex-1 space-y-2">
-        <Label htmlFor="new-team-name">Team name</Label>
-        <Input id="new-team-name" name="name" placeholder="Acme Sales" required />
+        <Label htmlFor={id}>Team name</Label>
+        <Input id={id} name="name" placeholder="Acme Sales" required />
       </div>
       <Submit label="Create" />
       {state.error ? (
         <span className="self-center text-xs text-destructive">{state.error}</span>
       ) : null}
+    </form>
+  );
+}
+
+export function RenameTeamForm({ currentName }: { currentName: string }) {
+  const [state, action] = useFormState<RenameTeamState, FormData>(renameTeamAction, {});
+  return (
+    <form action={action} className="space-y-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="flex-1 space-y-2">
+          <Label htmlFor="team-name">Team name</Label>
+          <Input id="team-name" name="name" defaultValue={currentName} required maxLength={80} />
+        </div>
+        <Submit label="Rename" />
+      </div>
+      {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+      {state.ok ? <p className="text-sm text-muted-foreground">Team name updated.</p> : null}
     </form>
   );
 }

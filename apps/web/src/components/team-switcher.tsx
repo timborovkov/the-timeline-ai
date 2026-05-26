@@ -4,6 +4,7 @@ import { Check, ChevronsUpDown } from 'lucide-react';
 
 import type { TeamMembership } from '@/lib/active-team';
 
+import { CreateTeamForm } from '@/components/team-forms';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -80,6 +81,13 @@ export function TeamSwitcher({ active, memberships, variant = 'full' }: Props) {
             </DropdownMenuItem>
           </form>
         ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+          Create team
+        </DropdownMenuLabel>
+        <div className="px-2 pb-2 pt-1">
+          <CreateTeamForm id={`new-team-name-${variant}`} />
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
