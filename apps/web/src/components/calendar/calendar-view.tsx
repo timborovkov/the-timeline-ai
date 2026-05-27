@@ -64,6 +64,7 @@ interface Draft {
   location: string;
   visibility: 'team' | 'private' | 'specific_users';
   allDay: boolean;
+  timezone: string;
   startDate: string;
   endDate: string;
   startDateTime: string;
@@ -150,7 +151,7 @@ function eventTouchesDate(
   return Temporal.PlainDate.compare(start, date) <= 0 && Temporal.PlainDate.compare(end, date) >= 0;
 }
 
-function blankDraft(anchor: Temporal.PlainDate): Draft {
+function blankDraft(anchor: Temporal.PlainDate, timezone: string): Draft {
   const next = anchor.add({ days: 1 });
   return {
     title: '',
@@ -158,6 +159,7 @@ function blankDraft(anchor: Temporal.PlainDate): Draft {
     location: '',
     visibility: 'team',
     allDay: true,
+    timezone: assertValidTimezone(timezone),
     startDate: isoDate(anchor),
     endDate: isoDate(next),
     startDateTime: `${isoDate(anchor)}T09:00`,
@@ -178,6 +180,7 @@ function draftFromEvent(event: CalendarEvent, timezone: string): Draft {
         ? event.visibility
         : 'team',
     allDay: event.allDay,
+    timezone: displayTimezone,
     startDate: start.toPlainDate().toString(),
     endDate: end.toPlainDate().toString(),
     startDateTime: start.toString({ smallestUnit: 'minute' }),
@@ -202,7 +205,7 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
   }, [anchorKey, safeMode]);
   const currentToday = today(timezone);
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
-  const [draft, setDraft] = useState<Draft>(() => blankDraft(anchor));
+  const [draft, setDraft] = useState<Draft>(() => blankDraft(anchor, timezone));
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -232,7 +235,7 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
 
   function openCreate(day = anchor) {
     setEditing(null);
-    setDraft(blankDraft(day));
+    setDraft(blankDraft(day, timezone));
     setError(null);
     setOpen(true);
   }
@@ -253,10 +256,10 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
       return;
     }
     const times = draft.allDay
-      ? dateSpan(draft.startDate, draft.endDate, timezone)
+      ? dateSpan(draft.startDate, draft.endDate, draft.timezone)
       : {
-          start: localDateTime(draft.startDateTime, timezone),
-          end: localDateTime(draft.endDateTime, timezone),
+          start: localDateTime(draft.startDateTime, draft.timezone),
+          end: localDateTime(draft.endDateTime, draft.timezone),
         };
     if (
       Temporal.Instant.compare(
@@ -275,7 +278,7 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
         description: draft.description.trim() || undefined,
         startAt: times.start,
         endAt: times.end,
-        timezone,
+        timezone: draft.timezone,
         allDay: draft.allDay,
         location: draft.location.trim() || undefined,
         visibility: draft.visibility,
