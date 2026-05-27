@@ -79,8 +79,10 @@ pnpm db:migrate
         <li>Sign up as user A — you land on <code>/app/timeline</code> with a default team.</li>
         <li>Post a text note — appears in the timeline.</li>
         <li>
-          Go to <strong>Team settings</strong> → invite user B by email. Copy the invite URL shown
-          (no real email is sent in Phase 1; Postmark wiring is Phase 7).
+          Go to <strong>Team settings</strong> → invite user B by email. If
+          <code>POSTMARK_SERVER_TOKEN</code> and <code>TRANSACTIONAL_EMAIL_FROM</code> are set, user
+          B receives the invite email. Otherwise the invite is still created with a visible send
+          error and copyable fallback URL.
         </li>
         <li>
           Open the invite URL in an incognito window, sign up as user B → user B is added to the

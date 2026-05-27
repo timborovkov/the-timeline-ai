@@ -7,7 +7,7 @@ import {
   telegramUsers,
   telegramUserTeams,
 } from '@timeline/db';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { askAgent } from '../agent/ask.js';
 import { childLogger } from '../logger.js';
@@ -24,6 +24,9 @@ import {
 } from './types.js';
 
 const log = childLogger('telegram');
+
+type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
+type DbOrTx = Db | DbTx;
 
 /**
  * Audio ingest is dependency-injected so the dispatcher stays testable
@@ -296,7 +299,13 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
       const issuerStillMember = await tx
         .select({ role: teamMembers.role })
         .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, row.teamId), eq(teamMembers.userId, row.issuedByUserId)))
+        .where(
+          and(
+            eq(teamMembers.teamId, row.teamId),
+            eq(teamMembers.userId, row.issuedByUserId),
+            isNull(teamMembers.removedAt),
+          ),
+        )
         .limit(1);
       if (!issuerStillMember[0]) throw new Error('issuer_revoked');
 
@@ -1091,7 +1100,13 @@ async function cmdLinkGroup(ctx: GroupContext, arg: string): Promise<void> {
       const issuerRoleRows = await tx
         .select({ role: teamMembers.role })
         .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, row.teamId), eq(teamMembers.userId, row.issuedByUserId)))
+        .where(
+          and(
+            eq(teamMembers.teamId, row.teamId),
+            eq(teamMembers.userId, row.issuedByUserId),
+            isNull(teamMembers.removedAt),
+          ),
+        )
         .limit(1);
       const issuerRole = issuerRoleRows[0]?.role;
       if (issuerRole !== 'owner' && issuerRole !== 'admin') {
@@ -1317,7 +1332,12 @@ async function insertEvent(
     // /team or even /unlink between the original send and the edit; if we
     // used current context here, the edit would land on a different team
     // than the original (or be dropped entirely).
-    const original = await findOriginalEvent(db, input.message.chat.id, input.message.message_id);
+    const original = await findOriginalEvent(
+      db,
+      input.message.chat.id,
+      input.message.message_id,
+      teamId,
+    );
     if (original) {
       metadata.edits_event_id = original.id;
       teamId = original.teamId;
@@ -1348,7 +1368,13 @@ async function insertEvent(
     const stillMember = await db
       .select({ userId: teamMembers.userId })
       .from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, authorUserId)))
+      .where(
+        and(
+          eq(teamMembers.teamId, teamId),
+          eq(teamMembers.userId, authorUserId),
+          isNull(teamMembers.removedAt),
+        ),
+      )
       .limit(1);
     if (!stillMember[0]) {
       authorUserId = null;
@@ -1363,25 +1389,134 @@ async function insertEvent(
     ? (input.message.edit_date ?? input.message.date)
     : input.message.date;
 
-  // ON CONFLICT DO NOTHING against the partial unique index on
-  // (source_metadata->>'tg_update_id') WHERE source='telegram'. If Telegram
-  // retries an update because we didn't 200 in time (or the process crashed
-  // mid-handler), the second insert is a silent no-op instead of a duplicate
-  // row in the timeline.
-  const inserted = await db
-    .insert(rawEvents)
-    .values({
-      teamId,
-      authorUserId,
-      source: 'telegram',
-      contentText: input.text,
-      contentAudioUrl: input.audio?.key ?? null,
-      occurredAt: new Date(occurredAtSec * 1000),
-      sourceMetadata: metadata,
+  const eventValues = {
+    teamId,
+    authorUserId,
+    source: 'telegram' as const,
+    contentText: input.text,
+    contentAudioUrl: input.audio?.key ?? null,
+    occurredAt: new Date(occurredAtSec * 1000),
+    sourceMetadata: metadata,
+  };
+
+  async function insertRawEvent(tx: DbOrTx): Promise<{ id: string; teamId: string } | null> {
+    // ON CONFLICT DO NOTHING against the partial unique index on
+    // (source_metadata->>'tg_update_id') WHERE source='telegram'. If Telegram
+    // retries an update because we didn't 200 in time (or the process crashed
+    // mid-handler), the second insert is a silent no-op instead of a duplicate
+    // row in the timeline.
+    const inserted = await tx
+      .insert(rawEvents)
+      .values(eventValues)
+      .onConflictDoNothing()
+      .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
+    return inserted[0] ?? null;
+  }
+
+  if (input.isEdit) {
+    return db.transaction(async (tx) => {
+      await lockTelegramMessageRevisions(tx, {
+        teamId,
+        chatId: input.message.chat.id,
+        messageId: input.message.message_id,
+      });
+      const inserted = await insertRawEvent(tx);
+      const row = inserted ?? (await findEventByUpdateId(tx, input.updateId));
+      if (row) {
+        const latest = await findLatestTelegramRevision(tx, {
+          teamId,
+          chatId: input.message.chat.id,
+          messageId: input.message.message_id,
+        });
+        if (latest) {
+          await tombstoneSupersededTelegramRevisions(tx, {
+            teamId,
+            chatId: input.message.chat.id,
+            messageId: input.message.message_id,
+            supersededByEventId: latest.id,
+          });
+        }
+        return inserted && latest?.id === inserted.id ? inserted : null;
+      }
+      return null;
+    });
+  }
+
+  return insertRawEvent(db);
+}
+
+async function tombstoneSupersededTelegramRevisions(
+  db: DbOrTx,
+  input: {
+    teamId: string;
+    chatId: number;
+    messageId: number;
+    supersededByEventId: string;
+  },
+): Promise<void> {
+  const patch = JSON.stringify({
+    deleted: true,
+    delete_reason: 'telegram_superseded_by_edit',
+    deleted_at: new Date().toISOString(),
+    superseded_by_event_id: input.supersededByEventId,
+  });
+  await db
+    .update(rawEvents)
+    .set({
+      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
     })
-    .onConflictDoNothing()
-    .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
-  return inserted[0] ?? null;
+    .where(
+      and(
+        eq(rawEvents.teamId, input.teamId),
+        eq(rawEvents.source, 'telegram'),
+        ne(rawEvents.id, input.supersededByEventId),
+        sql`(${rawEvents.sourceMetadata} ->> 'tg_chat_id')::bigint = ${input.chatId}`,
+        sql`(${rawEvents.sourceMetadata} ->> 'tg_message_id')::bigint = ${input.messageId}`,
+        sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+      ),
+    );
+}
+
+async function lockTelegramMessageRevisions(
+  db: DbOrTx,
+  input: { teamId: string; chatId: number; messageId: number },
+): Promise<void> {
+  await db
+    .select({ id: rawEvents.id })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, input.teamId),
+        eq(rawEvents.source, 'telegram'),
+        sql`(${rawEvents.sourceMetadata} ->> 'tg_chat_id')::bigint = ${input.chatId}`,
+        sql`(${rawEvents.sourceMetadata} ->> 'tg_message_id')::bigint = ${input.messageId}`,
+      ),
+    )
+    .for('update');
+}
+
+async function findLatestTelegramRevision(
+  db: DbOrTx,
+  input: { teamId: string; chatId: number; messageId: number },
+): Promise<{ id: string } | null> {
+  const rows = await db
+    .select({ id: rawEvents.id })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, input.teamId),
+        eq(rawEvents.source, 'telegram'),
+        sql`(${rawEvents.sourceMetadata} ->> 'tg_chat_id')::bigint = ${input.chatId}`,
+        sql`(${rawEvents.sourceMetadata} ->> 'tg_message_id')::bigint = ${input.messageId}`,
+        sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+      ),
+    )
+    .orderBy(
+      desc(rawEvents.occurredAt),
+      sql`(${rawEvents.sourceMetadata} ->> 'tg_update_id')::bigint DESC`,
+    )
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 interface AudioIngestCtx {
@@ -1514,7 +1649,7 @@ async function ingestAudio(
 }
 
 async function findEventByUpdateId(
-  db: Db,
+  db: DbOrTx,
   updateId: number,
 ): Promise<{ id: string; teamId: string } | null> {
   const rows = await db
@@ -1531,9 +1666,10 @@ async function findEventByUpdateId(
 }
 
 async function findOriginalEvent(
-  db: Db,
+  db: DbOrTx,
   chatId: number,
   messageId: number,
+  preferredTeamId: string | null = null,
 ): Promise<{ id: string; teamId: string } | null> {
   // Excludes:
   //   - rows that are themselves edits (have edits_event_id)
@@ -1543,19 +1679,23 @@ async function findOriginalEvent(
   //     instead of the real first message once it lands.
   // Ordered by createdAt to keep behavior deterministic if more than one
   // row somehow matches.
-  const rows = await db
-    .select({ id: rawEvents.id, teamId: rawEvents.teamId })
-    .from(rawEvents)
-    .where(
-      and(
-        eq(rawEvents.source, 'telegram'),
-        sql`(${rawEvents.sourceMetadata} ->> 'tg_chat_id')::bigint = ${chatId}`,
-        sql`(${rawEvents.sourceMetadata} ->> 'tg_message_id')::bigint = ${messageId}`,
-        sql`(${rawEvents.sourceMetadata} ? 'edits_event_id') = false`,
-        sql`COALESCE((${rawEvents.sourceMetadata} ->> 'edit_orphan')::boolean, false) = false`,
-      ),
-    )
-    .orderBy(asc(rawEvents.createdAt))
-    .limit(1);
-  return rows[0] ?? null;
+  async function lookup(teamId: string | null): Promise<{ id: string; teamId: string } | null> {
+    const conditions = [
+      eq(rawEvents.source, 'telegram'),
+      sql`(${rawEvents.sourceMetadata} ->> 'tg_chat_id')::bigint = ${chatId}`,
+      sql`(${rawEvents.sourceMetadata} ->> 'tg_message_id')::bigint = ${messageId}`,
+      sql`(${rawEvents.sourceMetadata} ? 'edits_event_id') = false`,
+      sql`COALESCE((${rawEvents.sourceMetadata} ->> 'edit_orphan')::boolean, false) = false`,
+    ];
+    if (teamId) conditions.push(eq(rawEvents.teamId, teamId));
+    const rows = await db
+      .select({ id: rawEvents.id, teamId: rawEvents.teamId })
+      .from(rawEvents)
+      .where(and(...conditions))
+      .orderBy(asc(rawEvents.createdAt))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  return (preferredTeamId ? await lookup(preferredTeamId) : null) ?? lookup(null);
 }

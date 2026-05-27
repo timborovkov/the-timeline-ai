@@ -67,11 +67,17 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
     })
     .from(teamInvites)
     .innerJoin(teams, eq(teams.id, teamInvites.teamId))
-    .where(and(eq(teamInvites.token, token), isNull(teamInvites.acceptedAt)))
+    .where(
+      and(
+        eq(teamInvites.token, token),
+        isNull(teamInvites.acceptedAt),
+        isNull(teamInvites.revokedAt),
+      ),
+    )
     .limit(1);
   const invite = invites[0];
 
-  if (!invite || invite.expiresAt < new Date() || error === 'invalid') {
+  if (!invite || invite.expiresAt < new Date() || invite.role === 'owner' || error === 'invalid') {
     return (
       <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
         <Card>
@@ -105,6 +111,27 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
               <span className="font-medium text-foreground">{invite.email}</span>. Sign in with that
               email to accept.
             </p>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
+
+  if (error === 'already-member') {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
+        <Card>
+          <CardHeader>
+            <CardTitle>Already a member</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              This account is already a member of {invite.teamName}. Role changes happen from Team
+              settings.
+            </p>
+            <Button asChild>
+              <Link href="/app/timeline">Continue</Link>
+            </Button>
           </CardContent>
         </Card>
       </main>

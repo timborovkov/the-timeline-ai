@@ -35,7 +35,7 @@ vi.mock('@timeline/shared', async () => {
   return {
     ...actual,
     childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-    withTeam: () => ({ appendMeetingChunk: fakes.fakeAppendChunk }),
+    withTeam: () => ({ meetings: { appendMeetingChunk: fakes.fakeAppendChunk } }),
     meetingsScope: {
       ...actual.meetingsScope,
       lookupMeetingByBotId: fakes.fakeLookup,
@@ -221,15 +221,8 @@ describe('POST /api/webhooks/recall/transcript — happy path', () => {
       endMs: 1200,
       providerChunkId: 'utt-1',
     });
-    expect(fakes.fakeEnqueueExtract).toHaveBeenCalledWith({
-      rawEventId: 'event-1',
-      teamId: TEAM_ID,
-    });
-    expect(fakes.fakeEnqueueEmbed).toHaveBeenCalledWith({
-      scope: 'raw_event',
-      rawEventId: 'event-1',
-      teamId: TEAM_ID,
-    });
+    expect(fakes.fakeEnqueueExtract).not.toHaveBeenCalled();
+    expect(fakes.fakeEnqueueEmbed).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueMeetingChunk).toHaveBeenCalledWith(TEAM_ID, 'chunk-1');
   });
 

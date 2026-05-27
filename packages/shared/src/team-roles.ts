@@ -1,5 +1,5 @@
 import { teamMembers } from '@timeline/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 /**
  * Transaction-scoped utility: lock the team's owner rows and verify that
@@ -32,7 +32,13 @@ export async function assertNotLastOwner(
   const ownerRows = await t
     .select({ userId: teamMembers.userId })
     .from(teamMembers)
-    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.role, 'owner')))
+    .where(
+      and(
+        eq(teamMembers.teamId, teamId),
+        eq(teamMembers.role, 'owner'),
+        isNull(teamMembers.removedAt),
+      ),
+    )
     .for('update');
   const otherOwners = ownerRows.filter((r) => r.userId !== userId);
   if (otherOwners.length === 0) {

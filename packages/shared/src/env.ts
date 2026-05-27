@@ -80,6 +80,8 @@ const schema = z.object({
 
   // Postmark (Phase 7)
   POSTMARK_SERVER_TOKEN: z.string().optional(),
+  TRANSACTIONAL_EMAIL_FROM: z.string().optional(),
+  INVITE_EMAIL_FROM: z.string().optional(),
   POSTMARK_WEBHOOK_SECRET: z.string().optional(),
   /**
    * Public support/contact form destination. In production, support

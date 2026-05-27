@@ -18,8 +18,8 @@ Open PRs not counted here yet:
 ## Completed Bundle
 
 - [x] **Foundations and deployment:** pnpm/Turborepo monorepo, TypeScript project refs, lint/format/knip/build CI, Dockerfiles, local Docker Compose stack, `.env.example`, Railway service configs, Railway project/environments/services, deploy-time migrations, `/api/health`.
-- [x] **Teams and basic capture:** auth, teams, rename, members, invites, team switcher with team creation, `raw_events`, team-scoped query helpers, row visibility filtering, text capture, timeline list.
-- [x] **Telegram ingest:** link tokens, personal/group bindings, `/start`, `/link`, `/team`, `/whereami`, `/unlink`, `/help`, text ingest, edit handling, unverified Telegram attribution, `👀` reaction ack on every ingested message, and `/ask <question>` for in-chat agent answers (DM + group, rate-limited 10/min per Telegram user, reuses the same `withTeam` scope + agent tools as `/api/chat` via `agent.askAgent`).
+- [x] **Teams and basic capture:** auth, teams, rename, members, email-backed invites with resend/revoke, soft member removal, direct role management, team switcher with team creation, `raw_events`, team-scoped query helpers, row visibility filtering, text capture, timeline list.
+- [x] **Telegram ingest:** link tokens, personal/group bindings, `/start`, `/link`, `/team`, `/whereami`, `/unlink`, `/help`, text ingest, edit handling that keeps only the latest revision visible while preserving immutable audit rows, author/admin timeline removal, unverified Telegram attribution, `👀` reaction ack on every ingested message, and `/ask <question>` for in-chat agent answers (DM + group, rate-limited 10/min per Telegram user, reuses the same `withTeam` scope + agent tools as `/api/chat` via `agent.askAgent`).
 - [x] **Voice and workers:** BullMQ queues, transcribe/extract/embed worker entry points, RustFS/S3 wrapper, Telegram audio ingest, web audio recording, transcription worker, timeline audio playback.
 - [x] **Extraction and entities:** `entities`, `facts`, `fact_entities`, structured LLM extraction, entity resolution, merge UI, entity profile pages, re-extraction script.
 - [x] **Embeddings and search:** Qdrant wrapper, event/fact embeddings, team/visibility-scoped vector queries, semantic search API/UI, re-embed script.
@@ -31,7 +31,8 @@ Open PRs not counted here yet:
 
 - [x] Add per-user rate limits for `/api/search`, `/api/chat`, and capture/webhook endpoints. Redis token bucket in `packages/shared/src/rate-limit/`.
 - [x] Add Postmark IP allowlist and rate-limit 401s on `/api/email/inbound`. `POSTMARK_INBOUND_IPS` + per-IP 401 lockout via the shared token bucket.
-- [x] Add owner-safety rules: a team must always have at least one owner, or ownership must be transferred explicitly. Helper `assertNotLastOwner` in `packages/shared/src/team-roles.ts`; new `transferOwnershipAction` and `changeMemberRoleAction`.
+- [x] Add owner-safety rules: a team must always have at least one active owner, or ownership must be transferred explicitly. Helper `assertNotLastOwner` in `packages/shared/src/team-roles.ts`; `changeMemberRoleAction` handles owner/admin/member role changes with last-owner checks.
+- [x] Fully implement team invites: Postmark outbound invite emails, copy-link fallback, resend/revoke, pending invite management, one open invite per team/email, active-member rejection, and removed-member reactivation on accept.
 - [x] Decide whether OAuth signup should honor invite tokens. Today the GitHub button passes the token via a signed `pending_invite` cookie; `createUser` skips the default solo team when one is pending.
 - [x] Add web-path reconciler for orphaned transcribe/extract/embed jobs, including email attachment/audio child recovery where safe. `apps/web/src/lib/reconcile-jobs.ts` + `/api/cron/reconcile` gated on `CRON_SECRET`.
 - [x] Review prompt-injection boundaries for all source content the agent can read back, especially email bodies. Tool outputs now fence `content_text`/`snippet` in `<external_content>`; Rule 8 names the tag and `AGENT_PROMPT_VERSION` bumped to `agent-v3-2026-05`.
