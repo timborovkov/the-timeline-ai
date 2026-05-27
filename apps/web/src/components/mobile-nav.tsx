@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
 
 import { isNavItemActive, visibleNavItems } from '@/components/nav-items';
@@ -14,9 +15,10 @@ import { cn } from '@/lib/utils';
 interface Props {
   active: TeamMembership;
   memberships: TeamMembership[];
+  recipientInvites: RecipientInvite[];
 }
 
-export function MobileNav({ active, memberships }: Props) {
+export function MobileNav({ active, memberships, recipientInvites }: Props) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -132,7 +134,11 @@ export function MobileNav({ active, memberships }: Props) {
               })}
             </nav>
             <div className="mt-auto space-y-3 border-t border-border pt-4">
-              <TeamSwitcher active={active} memberships={memberships} />
+              <TeamSwitcher
+                active={active}
+                memberships={memberships}
+                recipientInvites={recipientInvites}
+              />
             </div>
           </aside>
         </div>

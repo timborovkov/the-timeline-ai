@@ -1,3 +1,4 @@
+import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
 import type { ReactNode } from 'react';
 
@@ -16,6 +17,7 @@ import { UserMenu } from '@/components/user-menu';
 interface Props {
   active: TeamMembership;
   memberships: TeamMembership[];
+  recipientInvites: RecipientInvite[];
   user: { name?: string | null; email?: string | null };
   children: ReactNode;
 }
@@ -27,7 +29,7 @@ interface Props {
  *   • collapsible 320px right inspector pane (hidden by default, opens
  *     when a citation chip / object reference is activated)
  */
-export function AppShell({ active, memberships, user, children }: Props) {
+export function AppShell({ active, memberships, recipientInvites, user, children }: Props) {
   return (
     <InspectorProvider>
       <SkipLink />
@@ -51,7 +53,12 @@ export function AppShell({ active, memberships, user, children }: Props) {
             </Tooltip>
             <RailNav role={active.role} />
             <div className="mt-auto flex flex-col items-center gap-1">
-              <TeamSwitcher active={active} memberships={memberships} variant="rail" />
+              <TeamSwitcher
+                active={active}
+                memberships={memberships}
+                recipientInvites={recipientInvites}
+                variant="rail"
+              />
             </div>
           </aside>
         </TooltipProvider>
@@ -60,7 +67,11 @@ export function AppShell({ active, memberships, user, children }: Props) {
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-bg/85 px-3 backdrop-blur md:px-4">
             <div className="flex items-center gap-2 md:hidden">
-              <MobileNav active={active} memberships={memberships} />
+              <MobileNav
+                active={active}
+                memberships={memberships}
+                recipientInvites={recipientInvites}
+              />
               <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg">
                 The Timeline
               </span>
