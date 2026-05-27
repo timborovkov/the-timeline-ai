@@ -44,12 +44,12 @@ const DOCUMENT_EXT = new Set([
 ]);
 const BLOCKED_EXT = new Set(['zip', 'gz', 'tgz', 'rar', '7z', 'exe', 'dmg', 'pkg', 'app', 'mov']);
 
-export type AttachmentDecision =
+type AttachmentDecision =
   | { kind: 'audio'; reason?: undefined }
   | { kind: 'document'; reason?: undefined }
   | { kind: 'skip'; reason: string };
 
-export interface AttachmentCandidate {
+interface AttachmentCandidate {
   filename: string;
   contentType?: string | null;
   sizeBytes?: number | null;

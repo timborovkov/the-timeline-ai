@@ -19,7 +19,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encryptJson, resetSecretsKeyCacheForTests } from '../crypto/secrets.js';
 import { resetEnvForTests } from '../env.js';
 
-import { handleSlackEnvelope, linkSlackUserFromOAuth } from './dispatcher.js';
+const askAgentMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../agent/ask.js', () => ({
+  askAgent: askAgentMock,
+}));
+
+import {
+  handleSlackEnvelope,
+  handleSlackSlashCommand,
+  linkSlackUserFromOAuth,
+} from './dispatcher.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
@@ -132,6 +142,7 @@ describe('Slack dispatcher routing', () => {
     process.env.SECRETS_ENCRYPTION_KEY = randomBytes(32).toString('base64');
     resetEnvForTests();
     resetSecretsKeyCacheForTests();
+    askAgentMock.mockResolvedValue({ ok: true, answer: 'answer' });
     pg = new PGlite();
     await applyMigrations(pg);
     await seedTeams(pg);
@@ -308,6 +319,47 @@ describe('Slack dispatcher routing', () => {
     expect(docs.rows[0]?.count).toBe('1');
     expect(upload).toHaveBeenCalledOnce();
     expect(enqueueExtract).toHaveBeenCalledOnce();
+  });
+
+  it('posts a slash command failure follow-up when the agent throws', async () => {
+    const fetchMock = installFetchMock();
+    askAgentMock.mockRejectedValueOnce(new Error('model offline'));
+    await seedWorkspace(db, TEAM_A);
+    await db.insert(slackUsers).values({
+      id: SLACK_USER_ROW_ID,
+      workspaceId: WORKSPACE_ID,
+      slackUserId: 'U_SLACK',
+      realName: 'Alice Slack',
+    });
+    await db.insert(slackUserTeams).values({
+      slackUserId: SLACK_USER_ROW_ID,
+      teamId: TEAM_A,
+      userId: USER_A,
+      linkedByUserId: USER_A,
+      isActive: true,
+    });
+
+    await handleSlackSlashCommand(
+      { db: db as never },
+      {
+        command: '/ask',
+        text: 'what changed?',
+        user_id: 'U_SLACK',
+        team_id: 'T_SLACK',
+        channel_id: 'C_DM',
+        response_url: 'https://hooks.slack.test/response',
+        trigger_id: 'trigger-failure',
+      },
+    );
+
+    const responseCall = fetchMock.mock.calls.find(
+      (call): call is [string, RequestInit] => call[0] === 'https://hooks.slack.test/response',
+    );
+    expect(responseCall?.[1].method).toBe('POST');
+    const body = responseCall?.[1].body;
+    expect(typeof body === 'string' ? body : '').toContain(
+      'Timeline could not answer that right now.',
+    );
   });
 
   it('attributes bound channel messages to the sender linked in that Timeline team', async () => {

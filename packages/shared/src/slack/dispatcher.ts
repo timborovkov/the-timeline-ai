@@ -150,18 +150,31 @@ export async function handleSlackSlashCommand(
     input.trigger_id ?? `${input.team_id}:${input.channel_id}:${input.user_id}:${question}`,
   );
   if (!claim) return;
-  const result = await askAgent({
-    db: deps.db,
-    teamId: linked.teamId,
-    userId: linked.userId,
-    userName: linked.displayName ?? 'a teammate',
-    question,
-  });
-  await api.postMessage({
-    channel: input.channel_id,
-    response_url: input.response_url,
-    text: result.ok ? result.answer : 'Timeline could not answer that right now.',
-  });
+  try {
+    const result = await askAgent({
+      db: deps.db,
+      teamId: linked.teamId,
+      userId: linked.userId,
+      userName: linked.displayName ?? 'a teammate',
+      question,
+    });
+    await api.postMessage({
+      channel: input.channel_id,
+      response_url: input.response_url,
+      text: result.ok ? result.answer : 'Timeline could not answer that right now.',
+    });
+  } catch (err) {
+    log.error({ err }, 'slack slash command answer failed');
+    await api
+      .postMessage({
+        channel: input.channel_id,
+        response_url: input.response_url,
+        text: 'Timeline could not answer that right now.',
+      })
+      .catch((postErr: unknown) => {
+        log.error({ err: postErr }, 'slack slash command failure response failed');
+      });
+  }
 }
 
 export async function upsertSlackWorkspaceFromOAuth(input: {
