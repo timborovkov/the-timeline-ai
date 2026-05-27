@@ -676,6 +676,10 @@ async function retryParsed(
       .update(integrations)
       .set({ lastError: null, updatedAt: new Date() })
       .where(and(eq(integrations.teamId, teamId), eq(integrations.id, parsed.artifactId)));
+    await db
+      .update(integrationSyncState)
+      .set({ lastError: null, updatedAt: new Date() })
+      .where(eq(integrationSyncState.integrationId, parsed.artifactId));
     await q.enqueueIntegrationSyncJob({
       kind: parsed.syncKind ?? 'incremental',
       integrationId: parsed.artifactId,

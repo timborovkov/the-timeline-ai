@@ -248,6 +248,40 @@ describe('job recovery scope', () => {
       teamId: TEAM_ID,
     });
   });
+
+  it('retry clears integration sync-state errors before enqueueing', async () => {
+    await pg.exec(`
+      INSERT INTO integrations (id, team_id, provider, display_name, external_account_id)
+      VALUES ('${INTEGRATION_ID}', '${TEAM_ID}', 'github', 'GitHub', 'gh-1');
+      INSERT INTO integration_sync_state (
+        integration_id,
+        resource_type,
+        last_status,
+        last_error,
+        updated_at
+      )
+      VALUES (
+        '${INTEGRATION_ID}',
+        'github.prs',
+        'failed',
+        'cursor failed',
+        now()
+      );
+    `);
+    const enqueueIntegrationSyncJob = vi.fn().mockResolvedValue(undefined);
+    const scope = scopeFor(ADMIN_ID, 'admin', { enqueueIntegrationSyncJob });
+    const [item] = await scope.listRecoverableJobs();
+    if (!item) throw new Error('expected recovery item');
+
+    await scope.retryRecoverableJob(item.id);
+
+    expect(enqueueIntegrationSyncJob).toHaveBeenCalledWith({
+      kind: 'incremental',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+    });
+    await expect(scope.listRecoverableJobs()).resolves.toEqual([]);
+  });
 });
 
 function scopeFor(
