@@ -1,6 +1,7 @@
 'use client';
 
 import { Temporal } from '@js-temporal/polyfill';
+import { isoWeekYear, startOfIsoWeek } from '@timeline/shared/time';
 import {
   CalendarDays,
   Check,
@@ -105,14 +106,6 @@ function isoDate(date: Temporal.PlainDate): string {
   return date.toString();
 }
 
-function startOfIsoWeek(date: Temporal.PlainDate): Temporal.PlainDate {
-  return date.subtract({ days: date.dayOfWeek - 1 });
-}
-
-function isoWeekYear(date: Temporal.PlainDate): number {
-  return date.add({ days: 4 - date.dayOfWeek }).year;
-}
-
 function monthGrid(anchor: Temporal.PlainDate): Temporal.PlainDate[] {
   const first = Temporal.PlainDate.from({ year: anchor.year, month: anchor.month, day: 1 });
   const start = startOfIsoWeek(first);
@@ -170,7 +163,10 @@ function draftFromEvent(event: CalendarEvent, timezone: string): Draft {
     title: event.redacted ? 'Busy' : event.title,
     description: event.description ?? '',
     location: event.location ?? '',
-    visibility: event.visibility === 'private' ? 'private' : 'team',
+    visibility:
+      event.visibility === 'private' || event.visibility === 'specific_users'
+        ? event.visibility
+        : 'team',
     allDay: event.allDay,
     startDate: start.toPlainDate().toString(),
     endDate: end.toPlainDate().toString(),
@@ -459,6 +455,9 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
                 >
                   <option value="team">Team</option>
                   <option value="private">Private</option>
+                  {draft.visibility === 'specific_users' ? (
+                    <option value="specific_users">Specific users</option>
+                  ) : null}
                 </select>
               </div>
             </div>

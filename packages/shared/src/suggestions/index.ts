@@ -507,6 +507,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         input.visibilityOwnerUserId ?? (visibility === 'team' ? null : userId);
       if (visibilityOwnerUserId) await deps.requireTeamMember(visibilityOwnerUserId);
       for (const uid of input.visibilityUserIds ?? []) await deps.requireTeamMember(uid);
+      const metadata = input.metadata ?? {};
 
       const row = await db.transaction(async (tx) => {
         const [inserted] = await tx
@@ -522,7 +523,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             visibility,
             visibilityOwnerUserId,
             visibilityUserIds: input.visibilityUserIds ?? null,
-            metadata: input.metadata ?? {},
+            metadata,
           })
           .onConflictDoUpdate({
             target: [agentSuggestions.teamId, agentSuggestions.dedupeKey],
@@ -531,6 +532,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               summary: input.summary ?? null,
               reason: input.reason ?? null,
               confidence: input.confidence ?? 'medium',
+              metadata: sql`${agentSuggestions.metadata} || ${JSON.stringify(metadata)}::jsonb`,
               updatedAt: new Date(),
             },
           })

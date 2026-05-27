@@ -43,6 +43,10 @@
     "./citation": {
       "import": "./dist/citation.js",
       "types": "./dist/citation.d.ts"
+    },
+    "./time": {
+      "import": "./dist/time/index.js",
+      "types": "./dist/time/index.d.ts"
     }
   },
   "main": "./dist/index.js",

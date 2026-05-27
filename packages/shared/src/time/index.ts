@@ -104,11 +104,11 @@ export function dateOnlyEventRange(
   };
 }
 
-function startOfIsoWeek(date: Temporal.PlainDate): Temporal.PlainDate {
+export function startOfIsoWeek(date: Temporal.PlainDate): Temporal.PlainDate {
   return date.subtract({ days: date.dayOfWeek - 1 });
 }
 
-function isoWeekYear(date: Temporal.PlainDate): number {
+export function isoWeekYear(date: Temporal.PlainDate): number {
   return date.add({ days: 4 - date.dayOfWeek }).year;
 }
 
