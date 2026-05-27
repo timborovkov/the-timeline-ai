@@ -70,7 +70,7 @@ export function ApprovalsClient({ suggestions }: Props) {
     startTransition(async () => {
       const result = await action();
       if (result.error) setError(result.error);
-      else router.refresh();
+      router.refresh();
     });
   }
 
