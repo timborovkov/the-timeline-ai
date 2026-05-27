@@ -73,7 +73,7 @@ export function classifyConversationalAttachment(input: AttachmentCandidate): At
   }
   if (contentType.startsWith('audio/')) return { kind: 'audio' };
   if (!contentType && AMBIGUOUS_MEDIA_EXT.has(ext)) {
-    return { kind: 'skip', reason: 'unsupported_type' };
+    return { kind: 'skip', reason: 'ambiguous_media_missing_content_type' };
   }
   if (AUDIO_EXT.has(ext)) return { kind: 'audio' };
   if (BLOCKED_EXT.has(ext)) {
