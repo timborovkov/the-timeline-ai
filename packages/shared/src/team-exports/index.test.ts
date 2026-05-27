@@ -62,7 +62,7 @@ async function seed(pg: PGlite): Promise<void> {
       (
         '${TEAM_EVENT_ID}', '${TEAM_ID}', '${OWNER_ID}', 'email', 'visible event',
         'audio/team.ogg', 'team',
-        '{"attachments":[{"filename":"deck.pdf","bucket":"attachments","key":"email/deck.pdf","size_bytes":10,"content_type":"application/pdf"}]}'::jsonb
+        '{"attachments":[{"kind":"metadata_kind","filename":"deck.pdf","bucket":"attachments","key":"email/deck.pdf","size_bytes":10,"content_type":"application/pdf"}]}'::jsonb
       ),
       (
         '${PRIVATE_EVENT_ID}', '${TEAM_ID}', '${OTHER_ID}', 'web', 'hidden event',

@@ -502,8 +502,8 @@ export async function buildTeamExportArchive(
       const bucket =
         attachment.bucket === 'audio' ? input.buckets.audio : input.buckets.attachments;
       fileRows.push({
-        kind: 'email_attachment',
         ...attachment,
+        kind: 'email_attachment',
         bucket,
         url: await input.signFileUrl({
           bucket,
