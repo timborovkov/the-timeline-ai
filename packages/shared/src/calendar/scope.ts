@@ -505,6 +505,12 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           throw new Error('End time must be after start time');
         }
 
+        const hasVisibilityChange =
+          changedFields.has('visibility') || changedFields.has('visibilityUserIds');
+        if (hasVisibilityChange && row.createdByUserId !== userId) {
+          throw new Error('Only the visibility owner can change this event');
+        }
+
         const newVis = patch.visibility ?? row.visibility;
         const newVisUserIds =
           patch.visibility !== undefined || patch.visibilityUserIds !== undefined
@@ -562,11 +568,6 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           'visibility',
           'visibilityUserIds',
         ].some((field) => changedFields.has(field as keyof UpdateCalendarEventInput));
-        const hasVisibilityChange =
-          changedFields.has('visibility') || changedFields.has('visibilityUserIds');
-        if (hasVisibilityChange && row.createdByUserId !== userId) {
-          throw new Error('Only the visibility owner can change this event');
-        }
 
         // Sync linked raw_events: title, time, AND visibility must stay
         // in lockstep with the calendar event. Without the visibility
