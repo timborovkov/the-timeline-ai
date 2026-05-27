@@ -76,6 +76,7 @@ export default async function InboxPage({
               kind={n.kind}
               summary={n.summary}
               entityId={n.entityId}
+              agentSuggestionId={n.agentSuggestionId}
               createdAt={n.createdAt.toISOString()}
               initiallyRead={n.readAt !== null}
             />

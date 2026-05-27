@@ -1512,6 +1512,7 @@ export interface NotificationRow {
     | 'agent_suggestion';
   entityId: string | null;
   objectChangeId: string | null;
+  agentSuggestionId: string | null;
   summary: string;
   payload: Record<string, unknown>;
   createdAt: Date;
@@ -1543,6 +1544,7 @@ export async function listNotifications(
     kind: r.kind,
     entityId: r.entityId,
     objectChangeId: r.objectChangeId,
+    agentSuggestionId: r.agentSuggestionId,
     summary: r.summary,
     payload: (r.payload ?? {}) as Record<string, unknown>,
     createdAt: r.createdAt,

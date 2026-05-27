@@ -5,6 +5,7 @@ import { getEnv } from '../env.js';
 import { streamChat, type ChatDeps } from '../llm/chat.js';
 import { childLogger } from '../logger.js';
 import { withTeam } from '../team-scope.js';
+import { workspaceTimeContext } from '../time/index.js';
 
 import { AGENT_PROMPT_VERSION, buildSystemPrompt } from './system-prompt.js';
 import { buildAgentTools } from './tools.js';
@@ -55,11 +56,14 @@ export async function askAgent(input: AskAgentInput, deps: ChatDeps = {}): Promi
 
   const team = await scope.timeline.team();
   if (!team) return { ok: false, error: 'no_team' };
+  const calendarSettings = await scope.calendar.getCalendarSettings();
+  const currentDate = new Date();
 
   const system = buildSystemPrompt({
     teamName: team.name,
     userName: input.userName ?? 'a teammate',
-    currentDate: new Date(),
+    currentDate,
+    workspaceTime: workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });
   const tools = buildAgentTools(scope);
 

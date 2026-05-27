@@ -33,3 +33,5 @@ export * as jobRecovery from './job-recovery/index.js';
 export * from './team-exports/index.js';
 export * as audit from './audit/index.js';
 export * as onboarding from './onboarding/index.js';
+export * as time from './time/index.js';
+export * as suggestions from './suggestions/index.js';

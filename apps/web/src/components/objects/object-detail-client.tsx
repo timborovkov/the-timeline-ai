@@ -2,7 +2,7 @@
 
 import { type objects } from '@timeline/shared';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { type ComponentProps, type ReactNode, useState, useTransition } from 'react';
 
 import {
   acceptObjectChangeAction,
@@ -16,6 +16,7 @@ import {
   updateObjectAction,
 } from '@/app/actions/objects';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
+import { ApprovalsClient } from '@/components/approvals/approvals-client';
 
 const RELATIONSHIP_KINDS = [
   'related',
@@ -28,10 +29,12 @@ const RELATIONSHIP_KINDS = [
 ] as const;
 
 type ObjectDetail = objects.ObjectDetail;
+type LocalSuggestion = ComponentProps<typeof ApprovalsClient>['suggestions'][number];
 
 interface Props {
   detail: ObjectDetail;
   userId: string;
+  suggestions: LocalSuggestion[];
 }
 
 // Per-type status vocabulary. Free-form text in the DB so callers can extend
@@ -50,7 +53,7 @@ function statusOptions(type: string): string[] {
   return STATUS_BY_TYPE[type] ?? ['open', 'active', 'archived'];
 }
 
-export function ObjectDetailClient({ detail, userId }: Props) {
+export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -136,6 +139,13 @@ export function ObjectDetailClient({ detail, userId }: Props) {
           </div>
         )}
       </header>
+
+      {suggestions.length > 0 ? (
+        <section className="space-y-3">
+          <h2 className="text-sm font-medium tracking-tight">Pending approvals</h2>
+          <ApprovalsClient suggestions={suggestions} />
+        </section>
+      ) : null}
 
       <section className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         <Field label="Status">
@@ -552,7 +562,7 @@ export function ObjectDetailClient({ detail, userId }: Props) {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">

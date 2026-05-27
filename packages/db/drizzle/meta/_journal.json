@@ -183,6 +183,13 @@
       "when": 1795651860000,
       "tag": "0025_phase13_pagination_caching",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1795651920000,
+      "tag": "0026_agent_suggestions",
+      "breakpoints": true
     }
   ]
 }

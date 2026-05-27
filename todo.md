@@ -146,13 +146,19 @@ Goal: give the timeline a proper calendar layer. The internal timeline calendar 
 ### UI
 
 - [x] Timeline calendar UI: month view at `/app/calendar` with event creation and detail links. Server fetch ranges and client day buckets use the same UTC month boundaries, and the grid renders events spanning into the visible month, including events that start before the month and end inside it. Create/edit/delete uses the calendar scope's raw-event audit trail.
-- [ ] Week/day calendar views.
+- [x] Replace the permanent create form with a shared calendar event editor dialog for create and edit. The editor supports timed vs all-day mode, date-only all-day events, timezone defaulting from workspace time context, visibility, location, description, and delete/cancel.
+- [x] Week/day calendar views use ISO weeks: Monday-first layout and visible ISO week numbers.
 - [ ] Recurring event editing UI: "this event" / "this and all future" / "all events" edit modes. Exception badge on modified occurrences.
 
 ### Agent surface
 
-- [x] Agent calendar tools: `suggest_calendar_event`, `list_calendar_events`, and `get_calendar_event`. Unbounded calendar listing defaults to upcoming events. Agent-created suggestions use `agent_suggested=true`; human review UI remains a follow-up.
-- [ ] Calendar update tool and accept/reject UI for agent-suggested calendar events.
+- [x] Agent calendar tools: `suggest_calendar_event`, `list_calendar_events`, and `get_calendar_event`. Unbounded calendar listing defaults to upcoming events. Calendar suggestions now write proposal-only `agent_suggestions` rows; acceptance creates canonical events through the existing calendar audit path.
+- [x] Workspace time context: add `team_calendar_settings.default_timezone`; inject compact current workspace time context into every agent turn; expose a deterministic time-resolution tool for relative phrases, ISO week ranges, all-day date spans, and UTC query ranges. Chat resolves against current workspace time; background extraction/suggestions resolve relative phrases against the source raw event's `occurred_at`.
+- [x] Unified agent suggestion model: add `agent_suggestions` as a bundle/header, `agent_suggestion_items` as per-output create/update/archive-or-cancel operations, and evidence links for proposal-only changes across objects, tasks, and calendar events. Suggestions are not canonical objects/events until accepted; approvals follow source visibility boundaries.
+- [x] Pending approvals UI: one cross-domain queue for suggested tasks/objects/object edits/calendar creates/calendar refinements/calendar cancels, with source citations, confidence/reason, accept/reject, accept-all, per-item accept/reject inside bundles, and contextual review on object/calendar pages.
+- [x] Calendar suggestions mirror object suggestion semantics: suggested creates and refinements stay in the unified queue until accepted. Date-only calendar mentions become all-day suggestions; later timed evidence can create a calendar refinement suggestion rather than a duplicate event.
+- [x] Background suggestion worker: separate from the existing facts/entities extract worker. After extraction, it reads the raw event, facts/entities, recent context, and existing workspace state to extract commitments from natural conversation and create/dedupe/merge suggestion bundles. Deterministic per-source dedupe prevents retry duplicates; conservative cross-event merging can attach additional evidence to an existing pending suggestion.
+- [x] Calendar update tool: propose updates/refinements against existing events through the unified suggestion model rather than mutating immediately. Accepting a refinement calls the existing calendar update/audit path.
 
 ### External calendar sync (import-only for MVP)
 

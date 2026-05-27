@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
+import { agentSuggestionItems, agentSuggestions } from './agent-suggestions.js';
 import { entities } from './entities.js';
 import { objectChanges } from './object-changes.js';
 import { teams } from './teams.js';
@@ -33,6 +34,15 @@ export const notifications = pgTable(
     objectChangeId: uuid('object_change_id').references(() => objectChanges.id, {
       onDelete: 'set null',
     }),
+    agentSuggestionId: uuid('agent_suggestion_id').references(() => agentSuggestions.id, {
+      onDelete: 'cascade',
+    }),
+    agentSuggestionItemId: uuid('agent_suggestion_item_id').references(
+      () => agentSuggestionItems.id,
+      {
+        onDelete: 'set null',
+      },
+    ),
     summary: text('summary').notNull(),
     payload: jsonb('payload').notNull().default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -53,5 +63,6 @@ export const notifications = pgTable(
       table.createdAt.desc(),
     ),
     index('notifications_team_entity_idx').on(table.teamId, table.entityId),
+    index('notifications_team_suggestion_idx').on(table.teamId, table.agentSuggestionId),
   ],
 );

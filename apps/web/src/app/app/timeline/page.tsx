@@ -6,7 +6,7 @@ import {
   withTeam,
 } from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
-import { Video } from 'lucide-react';
+import { CircleCheckBig, Video } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -65,9 +65,10 @@ export default async function TimelinePage({ searchParams }: Props) {
   const scope = withTeam(db, active.teamId, session.user.id);
   const role = await scope.requireMembership();
   const isAdmin = role === 'owner' || role === 'admin';
-  const [onboardingState, team] = await Promise.all([
+  const [onboardingState, team, pendingApprovals] = await Promise.all([
     scope.onboarding.getChecklistState(),
     scope.timeline.team(),
+    scope.suggestions.countPendingSuggestions(),
   ]);
   const telegramConnectionCount =
     onboardingState.connectionCounts.telegramUserTeams +
@@ -170,6 +171,19 @@ export default async function TimelinePage({ searchParams }: Props) {
             : ([] as const)),
         ]}
       />
+
+      {pendingApprovals > 0 ? (
+        <Link
+          href="/app/approvals"
+          className="flex items-center justify-between gap-3 border border-signal/40 bg-signal-soft px-3 py-2 text-sm text-signal transition-colors hover:bg-signal/20"
+        >
+          <span className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em]">
+            <CircleCheckBig className="h-4 w-4" />
+            {pendingApprovals} pending approval{pendingApprovals === 1 ? '' : 's'}
+          </span>
+          <span className="font-mono text-[11px] uppercase tracking-[0.12em]">Review</span>
+        </Link>
+      ) : null}
 
       <section
         id="capture"

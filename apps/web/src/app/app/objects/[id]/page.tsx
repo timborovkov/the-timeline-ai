@@ -35,10 +35,33 @@ export default async function ObjectDetailPage({ params }: PageProps) {
   if (!detail) notFound();
 
   await scope.objects.markVisited(detail.id);
+  const suggestions = (await scope.suggestions.listPendingSuggestions())
+    .map((bundle) => ({
+      ...bundle,
+      items: bundle.items.filter((item) => item.targetId === detail.id),
+    }))
+    .filter((bundle) => bundle.items.length > 0)
+    .map((bundle) => ({
+      id: bundle.id,
+      source: bundle.source,
+      status: bundle.status,
+      title: bundle.title,
+      summary: bundle.summary,
+      reason: bundle.reason,
+      confidence: bundle.confidence,
+      createdAt: bundle.createdAt.toISOString(),
+      items: bundle.items,
+      evidence: bundle.evidence.map((ev) => ({
+        rawEventId: ev.rawEventId,
+        quote: ev.quote,
+        source: ev.source,
+        occurredAt: ev.occurredAt ? ev.occurredAt.toISOString() : null,
+      })),
+    }));
 
   return (
     <div className="mx-auto max-w-4xl">
-      <ObjectDetailClient detail={detail} userId={session.user.id} />
+      <ObjectDetailClient detail={detail} userId={session.user.id} suggestions={suggestions} />
     </div>
   );
 }
