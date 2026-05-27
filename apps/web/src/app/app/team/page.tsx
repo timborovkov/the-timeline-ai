@@ -1,11 +1,12 @@
 import { users } from '@timeline/db';
-import { composePostmarkHashAddress, withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { removeMemberAction } from '@/app/actions/teams';
 import { IndexStrip } from '@/components/index-strip';
+import { TeamAccessPanel } from '@/components/team-access-panel';
 import { InviteMemberForm, RenameTeamForm } from '@/components/team-forms';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -75,51 +76,7 @@ export default async function TeamSettingsPage() {
         </Card>
       ) : null}
 
-      {team ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Email ingest</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              Forward, CC, or BCC any email to this address to add it to the timeline.
-            </p>
-            {/* Address selection:
-                - Production (team owns an MX domain): `team.inbound_email` is
-                  the canonical clean address (`<slug>@<your-domain>`). Show it.
-                - Dev (only Postmark's default address is wired): the column
-                  holds the `@inbound.invalid` placeholder backfilled by the
-                  Phase 7 migration; show the plus-addressed hash form
-                  computed from POSTMARK_INBOUND_ADDRESS instead.
-                - Migration (both configured, MX provisioned + dev fallback
-                  still wired): prefer the production address. Hash form is
-                  a fallback for routing, not a preferred display.
-
-                The detection: a real `inbound_email` doesn't end in
-                `@inbound.invalid`. That sentinel only appears on legacy
-                teams backfilled by migration 0006 before they got a real
-                domain, and is never produced by `buildInboundEmail` when
-                INBOUND_EMAIL_DOMAIN is set. */}
-            {(() => {
-              const productionAddr =
-                team.inboundEmail && !team.inboundEmail.endsWith('@inbound.invalid')
-                  ? team.inboundEmail
-                  : null;
-              const hashAddr = composePostmarkHashAddress(
-                team.slug,
-                process.env.POSTMARK_INBOUND_ADDRESS,
-              );
-              const primary = productionAddr ?? hashAddr;
-              if (!primary) return null;
-              return <code className="block rounded-md bg-muted px-3 py-2 text-sm">{primary}</code>;
-            })()}
-            <p className="text-xs text-muted-foreground">
-              Senders must match a team member&apos;s email to be attributed; unknown senders still
-              land but are tagged unverified.
-            </p>
-          </CardContent>
-        </Card>
-      ) : null}
+      <TeamAccessPanel team={team} />
 
       <Card>
         <CardHeader>

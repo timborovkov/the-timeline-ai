@@ -12,15 +12,16 @@ import {
   withTeam,
 } from '@timeline/shared';
 import { and, count, eq, inArray, isNull } from 'drizzle-orm';
-import { Cable, Send } from 'lucide-react';
+import { Video } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { CaptureForm } from '@/components/capture-form';
 import { IndexStrip } from '@/components/index-strip';
 import { SearchBar } from '@/components/search-bar';
+import { TeamAccessPanel } from '@/components/team-access-panel';
 import { TimelineList } from '@/components/timeline-list';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -68,24 +69,27 @@ export default async function TimelinePage({ searchParams }: Props) {
   const sp = await searchParams;
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
-  const [linkedTgUsers, boundTgChats, nativeIntegrations, teamMcpServers] = await Promise.all([
-    db
-      .select({ total: count() })
-      .from(telegramUserTeams)
-      .where(eq(telegramUserTeams.teamId, active.teamId)),
-    db
-      .select({ total: count() })
-      .from(telegramChatBindings)
-      .where(eq(telegramChatBindings.teamId, active.teamId)),
-    db
-      .select({ total: count() })
-      .from(integrationsTable)
-      .where(eq(integrationsTable.teamId, active.teamId)),
-    db
-      .select({ total: count() })
-      .from(mcpServers)
-      .where(and(eq(mcpServers.teamId, active.teamId), isNull(mcpServers.userId))),
-  ]);
+  const [team, linkedTgUsers, boundTgChats, nativeIntegrations, teamMcpServers] = await Promise.all(
+    [
+      scope.timeline.team(),
+      db
+        .select({ total: count() })
+        .from(telegramUserTeams)
+        .where(eq(telegramUserTeams.teamId, active.teamId)),
+      db
+        .select({ total: count() })
+        .from(telegramChatBindings)
+        .where(eq(telegramChatBindings.teamId, active.teamId)),
+      db
+        .select({ total: count() })
+        .from(integrationsTable)
+        .where(eq(integrationsTable.teamId, active.teamId)),
+      db
+        .select({ total: count() })
+        .from(mcpServers)
+        .where(and(eq(mcpServers.teamId, active.teamId), isNull(mcpServers.userId))),
+    ],
+  );
   const telegramConnectionCount = (linkedTgUsers[0]?.total ?? 0) + (boundTgChats[0]?.total ?? 0);
   const integrationConnectionCount =
     (nativeIntegrations[0]?.total ?? 0) + (teamMcpServers[0]?.total ?? 0);
@@ -192,35 +196,20 @@ export default async function TimelinePage({ searchParams }: Props) {
         <CaptureForm />
       </section>
 
-      <section aria-label="Connections" className="grid gap-3 md:grid-cols-2">
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
-            <CardTitle className="text-base">Telegram</CardTitle>
-            <Send className="size-4 text-fg-dim" aria-hidden="true" />
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              {telegramConnectionCount} linked
-            </div>
-            <Link href="/app/team/telegram" className="text-signal underline">
-              Manage Telegram links
+      <section aria-label="Team access" className="space-y-3">
+        <TeamAccessPanel
+          team={team}
+          telegramConnectionCount={telegramConnectionCount}
+          integrationConnectionCount={integrationConnectionCount}
+        />
+        <div className="flex justify-end">
+          <Button asChild variant="outline">
+            <Link href="/app/meetings">
+              <Video aria-hidden="true" />
+              Invite notetaker
             </Link>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
-            <CardTitle className="text-base">Integrations</CardTitle>
-            <Cable className="size-4 text-fg-dim" aria-hidden="true" />
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              {integrationConnectionCount} connected
-            </div>
-            <Link href="/app/team/integrations" className="text-signal underline">
-              Open integrations
-            </Link>
-          </CardContent>
-        </Card>
+          </Button>
+        </div>
       </section>
 
       <SearchBar initialQuery={sp.q ?? ''} />

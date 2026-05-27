@@ -32,7 +32,7 @@ export function ScheduleMeetingBotForm() {
         consentGiven: consent,
       });
       if (!res.ok) {
-        setError(res.error ?? 'Failed to schedule meeting bot');
+        setError(res.error ?? 'Failed to invite notetaker');
         return;
       }
       if (res.meetingId) {
@@ -57,7 +57,8 @@ export function ScheduleMeetingBotForm() {
           placeholder="https://meet.google.com/abc-defg-hij"
         />
         <p className="text-xs text-muted-foreground">
-          Google Meet, Microsoft Teams, or Zoom links are supported.
+          Google Meet, Microsoft Teams, or Zoom links are supported. The Timeline notetaker joins
+          silently and captures the transcript.
         </p>
       </div>
       <div className="space-y-2">
@@ -99,13 +100,13 @@ export function ScheduleMeetingBotForm() {
           className="mt-1"
         />
         <span>
-          I confirm that everyone in the meeting will be informed the Timeline bot is joining and
-          capturing transcript.
+          I confirm that everyone in the meeting will be informed the Timeline notetaker is joining
+          and capturing the transcript.
         </span>
       </label>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <Button type="submit" disabled={pending}>
-        {pending ? 'Scheduling…' : 'Schedule bot'}
+        {pending ? 'Inviting…' : 'Invite notetaker'}
       </Button>
     </form>
   );
@@ -129,7 +130,7 @@ export function CancelMeetingButton({ meetingId }: { meetingId: string }) {
         }
       }}
     >
-      {pending ? 'Cancelling…' : 'Cancel bot'}
+      {pending ? 'Cancelling…' : 'Cancel notetaker'}
     </Button>
   );
 }
