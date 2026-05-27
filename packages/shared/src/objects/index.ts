@@ -383,7 +383,9 @@ export async function getObjectSectionPage(
             isNull(entities.mergedIntoId),
             ...(cursorSql ? [cursorSql] : []),
           ),
-        ),
+        )
+        .orderBy(desc(entityRelationships.createdAt), desc(entityRelationships.id))
+        .limit(limit + 1),
       db
         .select({
           id: entityRelationships.id,
@@ -404,7 +406,9 @@ export async function getObjectSectionPage(
             isNull(entities.mergedIntoId),
             ...(cursorSql ? [cursorSql] : []),
           ),
-        ),
+        )
+        .orderBy(desc(entityRelationships.createdAt), desc(entityRelationships.id))
+        .limit(limit + 1),
     ]);
     const rows = [...outRows, ...inRows].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id),

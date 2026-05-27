@@ -22,17 +22,31 @@ export async function cachedJson<T>(
 ): Promise<T> {
   const env = getEnv();
   if (!env.REDIS_URL) return load();
+  let redis: ReturnType<typeof getRedisConnection> | null = null;
   try {
-    const redis = getRedisConnection();
+    redis = getRedisConnection();
     const hit = await redis.get(key);
-    if (hit) return JSON.parse(hit) as T;
-    const value = await load();
-    await redis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
-    return value;
+    if (hit) {
+      try {
+        return JSON.parse(hit) as T;
+      } catch (err) {
+        log.warn({ err: (err as Error).message, key }, 'cache_parse_failed');
+      }
+    }
   } catch (err) {
-    log.warn({ err: (err as Error).message, key }, 'cache_unavailable');
-    return load();
+    log.warn({ err: (err as Error).message, key }, 'cache_read_failed');
   }
+
+  const value = await load();
+
+  if (redis) {
+    try {
+      await redis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
+    } catch (err) {
+      log.warn({ err: (err as Error).message, key }, 'cache_write_failed');
+    }
+  }
+  return value;
 }
 
 export async function deleteCacheKey(key: string): Promise<void> {
