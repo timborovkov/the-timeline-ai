@@ -461,6 +461,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         ),
       );
     const bySource = new Map(rows.map((r) => [r.source, r] as const));
+    return materializeVisibilityDefault(source, bySource);
+  }
+
+  function materializeVisibilityDefault(
+    source: VisibilityDefaultSource,
+    bySource: Map<VisibilityDefaultSource, typeof teamVisibilityDefaults.$inferSelect>,
+  ): VisibilityDefaultRow {
     const row = bySource.get(source) ?? (source === 'team' ? undefined : bySource.get('team'));
     if (!row) {
       return {
@@ -624,7 +631,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       async getVisibilityDefaults(): Promise<VisibilityDefaultRow[]> {
         await ensureMember('admin');
         const sources = visibilityDefaultSource.enumValues;
-        return Promise.all(sources.map((source) => resolveVisibilityDefault(source)));
+        const rows = await db
+          .select()
+          .from(teamVisibilityDefaults)
+          .where(eq(teamVisibilityDefaults.teamId, teamId));
+        const bySource = new Map(rows.map((row) => [row.source, row] as const));
+        return sources.map((source) => materializeVisibilityDefault(source, bySource));
       },
 
       async setVisibilityDefault(input: SetVisibilityDefaultInput): Promise<VisibilityDefaultRow> {

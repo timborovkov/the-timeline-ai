@@ -426,8 +426,9 @@ async function ingestForTeam(
   }
   const scope = withTeam(deps.db, team.id, callerUserId);
   const emailDefault = await scope.timeline.resolveVisibilityDefault('email');
-  const emailVisibility = emailDefault.visibility === 'private' ? 'private' : 'team';
-  const visibilityOwnerUserId = authorUserId ?? emailDefault.sourceOwnerUserId ?? callerUserId;
+  const visibilityOwnerUserId = authorUserId ?? emailDefault.sourceOwnerUserId ?? null;
+  const resolvedEmailVisibility =
+    emailDefault.visibility === 'private' && visibilityOwnerUserId !== null ? 'private' : 'team';
 
   const contentText = chooseContentText(payload);
   const occurredAt = parseDateHeader(payload.Date) ?? new Date();
@@ -545,7 +546,7 @@ async function ingestForTeam(
     references,
     contentText,
     occurredAt,
-    visibility: emailVisibility,
+    visibility: resolvedEmailVisibility,
     visibilityOwnerUserId,
     sourceMetadata: baseMetadata,
   });
@@ -608,7 +609,7 @@ async function ingestForTeam(
         source: 'email',
         contentAudioUrl: key,
         occurredAt,
-        visibility: emailVisibility,
+        visibility: resolvedEmailVisibility,
         visibilityOwnerUserId,
         sourceMetadata: {
           parent_event_id: parentEventId,

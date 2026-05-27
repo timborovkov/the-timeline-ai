@@ -162,6 +162,32 @@ describe('withTeam namespaced port', () => {
     ).rejects.toThrow('specific_users visibility is not supported');
   });
 
+  it('materializes all visibility defaults from one settings fetch', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    await scope.timeline.setVisibilityDefault({
+      source: 'team',
+      visibility: 'private',
+      sourceOwnerUserId: USER_A,
+    });
+    await scope.timeline.setVisibilityDefault({ source: 'document', visibility: 'team' });
+
+    await expect(scope.timeline.getVisibilityDefaults()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'web',
+          visibility: 'private',
+          sourceOwnerUserId: USER_A,
+          inherited: true,
+        }),
+        expect.objectContaining({
+          source: 'document',
+          visibility: 'team',
+          inherited: false,
+        }),
+      ]),
+    );
+  });
+
   it('only the visibility owner can change an existing event visibility and audits it', async () => {
     const ownerScope = withTeam(db as never, TEAM_A, USER_A);
     const adminScope = withTeam(db as never, TEAM_A, USER_C);
