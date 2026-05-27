@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   dateOnlyEventRange,
+  localDateFromInstant,
   localDateSpanToUtcRange,
   resolveTimePhrase,
   workspaceTimeContext,
@@ -48,6 +49,11 @@ describe('resolveTimePhrase', () => {
 });
 
 describe('local date spans', () => {
+  it('extracts local dates from UTC instants in the target timezone', () => {
+    expect(localDateFromInstant('2026-06-01T15:00:00.000Z', 'Asia/Tokyo')).toBe('2026-06-02');
+    expect(localDateFromInstant('2026-06-02T04:00:00.000Z', 'America/New_York')).toBe('2026-06-02');
+  });
+
   it('converts all-day event dates to exclusive UTC instants across DST', () => {
     const range = localDateSpanToUtcRange('2026-03-29', '2026-03-30', 'Europe/Tallinn');
     expect(range.from.toISOString()).toBe('2026-03-28T22:00:00.000Z');

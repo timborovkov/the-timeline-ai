@@ -7,7 +7,12 @@ import { getMcpManager } from '../mcp/client.js';
 import * as objects from '../objects/index.js';
 import { suggestionDedupeKey } from '../suggestions/index.js';
 import { type TeamScope } from '../team-scope.js';
-import { localDateSpanToUtcRange, resolveTimePhrase, workspaceTimeContext } from '../time/index.js';
+import {
+  localDateFromInstant,
+  localDateSpanToUtcRange,
+  resolveTimePhrase,
+  workspaceTimeContext,
+} from '../time/index.js';
 
 const log = childLogger('agent:tools');
 
@@ -1086,8 +1091,8 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           let startDate = input.startDate;
           let endDate = input.endDate;
           if (allDay) {
-            startDate = input.startDate ?? input.startAt.slice(0, 10);
-            endDate = input.endDate ?? input.endAt.slice(0, 10);
+            startDate = input.startDate ?? localDateFromInstant(input.startAt, timezone);
+            endDate = input.endDate ?? localDateFromInstant(input.endAt, timezone);
             if (endDate <= startDate) {
               const d = new Date(`${startDate}T00:00:00.000Z`);
               d.setUTCDate(d.getUTCDate() + 1);

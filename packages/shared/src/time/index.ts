@@ -56,6 +56,13 @@ export function zonedDateTimeFromDate(date: Date, timezone: string): Temporal.Zo
   return instantFromDate(date).toZonedDateTimeISO(assertValidTimezone(timezone));
 }
 
+export function localDateFromInstant(isoInstant: string, timezone: string): string {
+  return Temporal.Instant.from(isoInstant)
+    .toZonedDateTimeISO(assertValidTimezone(timezone))
+    .toPlainDate()
+    .toString();
+}
+
 export function workspaceTimeContext(
   timezone: string,
   now: Date = new Date(),

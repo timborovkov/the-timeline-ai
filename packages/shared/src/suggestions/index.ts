@@ -14,7 +14,7 @@ import {
 import { and, asc, count, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { localDateSpanToUtcRange } from '../time/index.js';
+import { localDateFromInstant, localDateSpanToUtcRange } from '../time/index.js';
 
 import type {
   CalendarScope,
@@ -214,15 +214,6 @@ function oneDayAfter(date: string): string {
   const d = new Date(`${date}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + 1);
   return d.toISOString().slice(0, 10);
-}
-
-function localDateFromInstant(iso: string, timezone: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date(iso));
 }
 
 function normalizeAllDayRange(payload: {
