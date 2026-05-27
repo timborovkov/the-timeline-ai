@@ -33,4 +33,6 @@ export const RATE_LIMITS = {
    *  dozens of push events per minute) but low enough to choke a
    *  replay/forgery storm. */
   integrationWebhook: { capacity: 300, refillPerSec: 300 / 60 },
+  /** Public support/contact form: 5/min per identity or source IP. */
+  supportContact: { capacity: 5, refillPerSec: 5 / 60 },
 } as const;
