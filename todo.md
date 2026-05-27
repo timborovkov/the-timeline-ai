@@ -246,20 +246,27 @@ out of scope.
 
 ### Slice 13.3 — Generic trust audit log
 
-- [ ] Add a generic append-only `audit_log` table for sensitive reads/actions
+- [x] Add a generic append-only `audit_log` table for sensitive reads/actions
       going forward. Leave `integration_audit_log` as provider sync history.
-- [ ] Audit sensitive/security-relevant actions only: visibility changes,
+- [x] Audit sensitive/security-relevant actions only: visibility changes,
       private/restricted event detail reads, private/restricted document
       view/download/signed URL generation, team export creation, job
       retries/dismissals, settings changes, and integration/MCP
-      connect/disconnect.
-- [ ] Do not audit every timeline page load, team-visible row impression, or
+      connect/disconnect. Current product surfaces write trust-audit rows for
+      private/restricted event and document detail reads, document signed URL
+      generation, document visibility changes, team settings changes,
+      integration connect/disconnect/settings updates, custom MCP
+      connect/disconnect/settings updates, and Timeline-as-MCP key
+      mint/revoke. Future team export and job-dashboard slices should reuse
+      the existing `team.export_create`, `job.retry`, and `job.dismiss`
+      audit actions when those product paths land.
+- [x] Do not audit every timeline page load, team-visible row impression, or
       ordinary search result preview.
-- [ ] Make audit log visible to team owners/admins only, while preserving
+- [x] Make audit log visible to team owners/admins only, while preserving
       visibility boundaries. If the viewer cannot see a private/restricted
       target, show redacted target labels and ids, not titles, filenames, body
       text, or snippets.
-- [ ] Retain audit rows indefinitely with no user-facing delete. Audit metadata
+- [x] Retain audit rows indefinitely with no user-facing delete. Audit metadata
       must stay coarse and avoid raw sensitive content.
 
 ### Slice 13.4 — Team export job

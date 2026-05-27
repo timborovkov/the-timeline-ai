@@ -1,6 +1,7 @@
 import { users } from '@timeline/db';
 import { composePostmarkHashAddress, withTeam } from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { removeMemberAction } from '@/app/actions/teams';
@@ -54,6 +55,22 @@ export default async function TeamSettingsPage() {
           </CardHeader>
           <CardContent>
             <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {isAdmin ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Trust audit</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between gap-4">
+            <p className="text-sm text-muted-foreground">
+              Sensitive reads and security-relevant team actions.
+            </p>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/app/team/audit">Open audit</Link>
+            </Button>
           </CardContent>
         </Card>
       ) : null}

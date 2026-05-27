@@ -1,6 +1,7 @@
 'use server';
 
 import {
+  auditLog,
   teamInvites,
   teamMembers,
   teams,
@@ -108,7 +109,21 @@ export async function renameTeamAction(
   }
 
   try {
-    await db.update(teams).set({ name: parsed.data.name }).where(eq(teams.id, parsed.data.teamId));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(teams)
+        .set({ name: parsed.data.name })
+        .where(eq(teams.id, parsed.data.teamId));
+      await tx.insert(auditLog).values({
+        teamId: parsed.data.teamId,
+        actorUserId: session.user.id,
+        action: 'settings.change',
+        targetType: 'team',
+        targetId: parsed.data.teamId,
+        targetVisibility: 'team',
+        metadata: { setting: 'team.name' },
+      });
+    });
   } catch {
     return { error: 'Failed to rename team' };
   }
@@ -151,13 +166,24 @@ export async function inviteMemberAction(
   }
 
   const token = randomToken(24);
-  await db.insert(teamInvites).values({
-    teamId: active.teamId,
-    email: parsed.data.email,
-    role: parsed.data.role,
-    token,
-    invitedByUserId: session.user.id,
-    expiresAt: new Date(Date.now() + INVITE_TTL_MS),
+  await db.transaction(async (tx) => {
+    await tx.insert(teamInvites).values({
+      teamId: active.teamId,
+      email: parsed.data.email,
+      role: parsed.data.role,
+      token,
+      invitedByUserId: session.user.id,
+      expiresAt: new Date(Date.now() + INVITE_TTL_MS),
+    });
+    await tx.insert(auditLog).values({
+      teamId: active.teamId,
+      actorUserId: session.user.id,
+      action: 'settings.change',
+      targetType: 'team',
+      targetId: active.teamId,
+      targetVisibility: 'team',
+      metadata: { setting: 'team.invite', role: parsed.data.role },
+    });
   });
 
   const baseUrl = process.env.AUTH_URL ?? 'http://localhost:3000';
@@ -285,6 +311,15 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
           .set({ isActive: true })
           .where(eq(telegramUserTeams.id, oldest.id));
       }
+      await tx.insert(auditLog).values({
+        teamId: active.teamId,
+        actorUserId: session.user.id,
+        action: 'settings.change',
+        targetType: 'team',
+        targetId: active.teamId,
+        targetVisibility: 'team',
+        metadata: { setting: 'team.member_removed' },
+      });
     });
   } catch (e) {
     if (e instanceof Error && e.message === 'last_owner') return;

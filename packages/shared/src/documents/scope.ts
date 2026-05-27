@@ -1,5 +1,6 @@
 import {
   type Db,
+  auditLog,
   documentChunks,
   documents,
   documentVersions,
@@ -516,7 +517,21 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
     async getDocument(id: string): Promise<DocumentRow | null> {
       await ensureMember();
-      return getDocumentRaw(id);
+      const document = await getDocumentRaw(id);
+      if (document && document.visibility !== 'team') {
+        await db.insert(auditLog).values({
+          teamId,
+          actorUserId: userId,
+          action: 'document.detail_read',
+          targetType: 'document',
+          targetId: document.id,
+          targetVisibility: document.visibility,
+          targetOwnerUserId: document.ownerUserId,
+          targetVisibilityUserIds: document.visibilityUserIds,
+          metadata: {},
+        });
+      }
+      return document;
     },
 
     /**
@@ -844,6 +859,22 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           previous: {
             visibility: existing.visibility,
             visibilityUserIds: existing.visibilityUserIds,
+          },
+        });
+        await tx.insert(auditLog).values({
+          teamId,
+          actorUserId: userId,
+          action: 'document.visibility_change',
+          targetType: 'document',
+          targetId: row.id,
+          targetVisibility: row.visibility,
+          targetOwnerUserId: row.ownerUserId,
+          targetVisibilityUserIds: row.visibilityUserIds,
+          metadata: {
+            from: existing.visibility,
+            to: row.visibility,
+            previous_visibility_user_count: existing.visibilityUserIds?.length ?? 0,
+            visibility_user_count: row.visibilityUserIds?.length ?? 0,
           },
         });
         return row;

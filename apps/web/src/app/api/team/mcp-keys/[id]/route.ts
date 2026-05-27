@@ -1,6 +1,6 @@
-import { mcpOutboundKeys } from '@timeline/db';
+import { auditLog, mcpOutboundKeys } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -30,9 +30,31 @@ export async function DELETE(
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
   const { id } = await ctx.params;
-  await db
-    .update(mcpOutboundKeys)
-    .set({ revokedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(mcpOutboundKeys.id, id), eq(mcpOutboundKeys.teamId, active.teamId)));
+  const revoked = await db.transaction(async (tx) => {
+    const rows = await tx
+      .update(mcpOutboundKeys)
+      .set({ revokedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(mcpOutboundKeys.id, id),
+          eq(mcpOutboundKeys.teamId, active.teamId),
+          isNull(mcpOutboundKeys.revokedAt),
+        ),
+      )
+      .returning({ id: mcpOutboundKeys.id });
+    const row = rows[0];
+    if (!row) return null;
+    await tx.insert(auditLog).values({
+      teamId: active.teamId,
+      actorUserId: session.user.id,
+      action: 'mcp.disconnect',
+      targetType: 'mcp_outbound_key',
+      targetId: row.id,
+      targetVisibility: 'team',
+      metadata: { surface: 'timeline_as_mcp_server' },
+    });
+    return row;
+  });
+  if (!revoked) return NextResponse.json({ error: 'not_found' }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

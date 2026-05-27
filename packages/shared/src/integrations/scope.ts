@@ -1,5 +1,6 @@
 import {
   type Db,
+  auditLog,
   entities,
   integrationAuditLog,
   integrationProvider,
@@ -71,51 +72,62 @@ export function createIntegrationScope(deps: {
   async function createIntegration(input: CreateIntegrationInput): Promise<IntegrationRow> {
     await ensureMember('admin');
     const encrypted = input.tokens ? encryptJson(input.tokens) : undefined;
-    const rows = await db
-      .insert(integrationsTable)
-      .values({
-        teamId,
-        connectedByUserId: userId,
-        provider: input.provider,
-        displayName: input.displayName,
-        externalAccountId: input.externalAccountId ?? null,
-        scopes: input.scopes ?? [],
-        authSecretCiphertext: encrypted?.ciphertext ?? null,
-        authSecretIv: encrypted?.iv ?? null,
-        authSecretTag: encrypted?.tag ?? null,
-        visibilityDefault: input.visibilityDefault ?? 'team',
-      })
-      .onConflictDoUpdate({
-        target: [
-          integrationsTable.teamId,
-          integrationsTable.provider,
-          integrationsTable.externalAccountId,
-        ],
-        // Reconnect refreshes the tokens + display name + clears the
-        // last error, but does NOT silently re-enable an integration an
-        // admin explicitly disabled. The admin must flip `enabled` back
-        // on via the settings UI — otherwise an OAuth reconnect would
-        // resume a paused sync without anyone asking.
-        set: {
-          // Refresh the connector to whichever admin re-authenticated —
-          // otherwise downstream paths like the Drive document-harvest
-          // run withTeam under the original (possibly long-gone) user
-          // id, which can mis-attribute or fail on visibility checks
-          // if that user has since left the team.
+    return db.transaction(async (tx) => {
+      const rows = await tx
+        .insert(integrationsTable)
+        .values({
+          teamId,
           connectedByUserId: userId,
+          provider: input.provider,
           displayName: input.displayName,
+          externalAccountId: input.externalAccountId ?? null,
           scopes: input.scopes ?? [],
           authSecretCiphertext: encrypted?.ciphertext ?? null,
           authSecretIv: encrypted?.iv ?? null,
           authSecretTag: encrypted?.tag ?? null,
-          lastError: null,
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
-    const row = rows[0];
-    if (!row) throw new Error('Failed to create integration');
-    return row;
+          visibilityDefault: input.visibilityDefault ?? 'team',
+        })
+        .onConflictDoUpdate({
+          target: [
+            integrationsTable.teamId,
+            integrationsTable.provider,
+            integrationsTable.externalAccountId,
+          ],
+          // Reconnect refreshes the tokens + display name + clears the
+          // last error, but does NOT silently re-enable an integration an
+          // admin explicitly disabled. The admin must flip `enabled` back
+          // on via the settings UI — otherwise an OAuth reconnect would
+          // resume a paused sync without anyone asking.
+          set: {
+            // Refresh the connector to whichever admin re-authenticated —
+            // otherwise downstream paths like the Drive document-harvest
+            // run withTeam under the original (possibly long-gone) user
+            // id, which can mis-attribute or fail on visibility checks
+            // if that user has since left the team.
+            connectedByUserId: userId,
+            displayName: input.displayName,
+            scopes: input.scopes ?? [],
+            authSecretCiphertext: encrypted?.ciphertext ?? null,
+            authSecretIv: encrypted?.iv ?? null,
+            authSecretTag: encrypted?.tag ?? null,
+            lastError: null,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+      const row = rows[0];
+      if (!row) throw new Error('Failed to create integration');
+      await tx.insert(auditLog).values({
+        teamId,
+        actorUserId: userId,
+        action: 'integration.connect',
+        targetType: 'integration',
+        targetId: row.id,
+        targetVisibility: 'team',
+        metadata: { provider: row.provider, scope_count: row.scopes?.length ?? 0 },
+      });
+      return row;
+    });
   }
 
   async function updateIntegrationTokens(
@@ -137,17 +149,49 @@ export function createIntegrationScope(deps: {
 
   async function setIntegrationEnabled(id: string, enabled: boolean): Promise<void> {
     await ensureMember('admin');
-    await db
-      .update(integrationsTable)
-      .set({ enabled, updatedAt: new Date() })
-      .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)));
+    await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(integrationsTable)
+        .set({ enabled, updatedAt: new Date() })
+        .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)))
+        .returning({ id: integrationsTable.id });
+      const row = rows[0];
+      if (!row) throw new Error('Integration not found');
+      await tx.insert(auditLog).values({
+        teamId,
+        actorUserId: userId,
+        action: 'integration.settings_change',
+        targetType: 'integration',
+        targetId: row.id,
+        targetVisibility: 'team',
+        metadata: { field: 'enabled', enabled },
+      });
+    });
   }
 
   async function deleteIntegration(id: string): Promise<void> {
     await ensureMember('admin');
-    await db
-      .delete(integrationsTable)
-      .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)));
+    await db.transaction(async (tx) => {
+      const existingRows = await tx
+        .select({ id: integrationsTable.id, provider: integrationsTable.provider })
+        .from(integrationsTable)
+        .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)))
+        .limit(1);
+      const existing = existingRows[0];
+      if (!existing) throw new Error('Integration not found');
+      await tx
+        .delete(integrationsTable)
+        .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)));
+      await tx.insert(auditLog).values({
+        teamId,
+        actorUserId: userId,
+        action: 'integration.disconnect',
+        targetType: 'integration',
+        targetId: id,
+        targetVisibility: 'team',
+        metadata: { provider: existing.provider },
+      });
+    });
   }
 
   async function recordError(id: string, error: string | null): Promise<void> {
@@ -189,15 +233,25 @@ export function createIntegrationScope(deps: {
       await tx
         .delete(integrationSelections)
         .where(eq(integrationSelections.integrationId, integrationId));
-      if (selections.length === 0) return;
-      await tx.insert(integrationSelections).values(
-        selections.map((s) => ({
-          integrationId,
-          selectionKind: s.kind,
-          externalId: s.externalId,
-          externalLabel: s.label ?? null,
-        })),
-      );
+      if (selections.length > 0) {
+        await tx.insert(integrationSelections).values(
+          selections.map((s) => ({
+            integrationId,
+            selectionKind: s.kind,
+            externalId: s.externalId,
+            externalLabel: s.label ?? null,
+          })),
+        );
+      }
+      await tx.insert(auditLog).values({
+        teamId,
+        actorUserId: userId,
+        action: 'integration.settings_change',
+        targetType: 'integration',
+        targetId: integrationId,
+        targetVisibility: 'team',
+        metadata: { field: 'selections', selection_count: selections.length },
+      });
     });
   }
 
