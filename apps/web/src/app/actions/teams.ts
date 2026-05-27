@@ -239,7 +239,7 @@ export async function inviteMemberAction(
         .where(
           and(
             eq(teamInvites.teamId, active.teamId),
-            eq(teamInvites.email, parsed.data.email),
+            sql`lower(${teamInvites.email}) = ${parsed.data.email}`,
             isNull(teamInvites.acceptedAt),
             isNull(teamInvites.revokedAt),
           ),
