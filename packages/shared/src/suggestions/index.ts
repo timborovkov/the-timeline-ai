@@ -9,7 +9,7 @@ import {
   teamMembers,
   type Db,
 } from '@timeline/db';
-import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type {
@@ -323,6 +323,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   }
 
   async function applyItem(item: typeof agentSuggestionItems.$inferSelect): Promise<string | null> {
+    if (item.resultId) return item.resultId;
     if (item.status !== 'pending' && item.status !== 'failed') return item.resultId;
     const targetId = item.targetId;
     const payload = item.proposedPayload as Record<string, unknown>;
@@ -591,7 +592,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     async countPendingSuggestions(): Promise<number> {
       await ensureMember();
       const rows = await db
-        .select({ id: agentSuggestions.id })
+        .select({ total: count() })
         .from(agentSuggestions)
         .where(
           and(
@@ -599,7 +600,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
           ),
         );
-      return rows.length;
+      return rows[0]?.total ?? 0;
     },
 
     acceptSuggestionItem,

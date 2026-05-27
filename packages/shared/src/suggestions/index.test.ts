@@ -125,6 +125,42 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.count).toBe('1');
   });
 
+  it('does not recreate canonical records when retrying an item with a result id', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const existing = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Already applied task',
+      actor: { kind: 'agent', userId: null },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Retry create task',
+      dedupeKey: 'retry-with-result',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Already applied task',
+          dedupeKey: 'retry-with-result:item',
+          proposedPayload: { canonicalName: 'Already applied task' },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+    await pg.query(
+      `UPDATE agent_suggestion_items SET status = 'failed', result_id = $1 WHERE id = $2`,
+      [existing.id, itemId],
+    );
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ count: string }>(
+      `SELECT count(*)::text FROM entities WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Already applied task'`,
+    );
+    expect(result.rows[0]?.count).toBe('1');
+  });
+
   it('lists resolved suggestions when requested', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
