@@ -14,6 +14,8 @@ import { z } from 'zod';
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const SUGGESTION_CODE_VERSION = '2026-05-a';
 const RECENT_CONTEXT_LIMIT = 5;
+const CALENDAR_CONTEXT_PAST_DAYS = 30;
+const CALENDAR_CONTEXT_FUTURE_DAYS = 180;
 
 interface SuggestionWorkerDeps {
   db: Db;
@@ -53,6 +55,14 @@ function truncate(s: string, max: number): string {
 
 function firstSentence(s: string): string {
   return s.split(/[.!?\n]/)[0]?.trim() ?? s.trim();
+}
+
+function calendarContextRange(occurredAt: Date): { from: Date; to: Date } {
+  const from = new Date(occurredAt);
+  from.setUTCDate(from.getUTCDate() - CALENDAR_CONTEXT_PAST_DAYS);
+  const to = new Date(occurredAt);
+  to.setUTCDate(to.getUTCDate() + CALENDAR_CONTEXT_FUTURE_DAYS);
+  return { from, to };
 }
 
 function fallbackBundles(args: {
@@ -276,7 +286,10 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
         .orderBy(desc(rawEvents.occurredAt))
         .limit(RECENT_CONTEXT_LIMIT);
 
-      const calendarRows = await scope.calendar.listCalendarEvents({ limit: 40 });
+      const calendarRows = await scope.calendar.listCalendarEvents({
+        ...calendarContextRange(row.occurredAt),
+        limit: 40,
+      });
 
       const prompt = buildPrompt({
         text,
