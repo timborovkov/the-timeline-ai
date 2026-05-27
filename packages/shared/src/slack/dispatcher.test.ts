@@ -230,6 +230,27 @@ describe('Slack dispatcher routing', () => {
     );
   });
 
+  it('rejects event callbacks without a Slack team_id', async () => {
+    const result = await handleSlackEnvelope(
+      { db: db as never },
+      {
+        type: 'event_callback',
+        event_id: 'EvMissingTeam',
+        event_time: 1_700_000_000,
+        event: {
+          type: 'message',
+          channel: 'C_DOCS',
+          channel_type: 'channel',
+          user: 'U_SLACK',
+          text: 'hello',
+          ts: '1700000000.000100',
+        },
+      },
+    );
+
+    expect(result).toEqual({ ok: false });
+  });
+
   it('does not call the agent for a bare app mention', async () => {
     const fetchMock = installFetchMock();
     await seedBoundSlackUser(db, 'C_MENTIONS');
@@ -403,6 +424,18 @@ describe('Slack dispatcher routing', () => {
     expect(docs.rows[0]?.count).toBe('1');
     expect(upload).toHaveBeenCalledOnce();
     expect(enqueueExtract).toHaveBeenCalledOnce();
+    const editRows = await pg.query<{
+      occurred_at: Date;
+      source_metadata: Record<string, unknown>;
+    }>(
+      `SELECT occurred_at, source_metadata
+       FROM raw_events
+       WHERE source_metadata->>'slack_event_id' = 'EvEditedFile'`,
+    );
+    expect(editRows.rows[0]?.occurred_at.toISOString()).toBe('2023-11-14T22:13:30.000Z');
+    expect(editRows.rows[0]?.source_metadata).toMatchObject({
+      slack_event_ts: '1700000010.000100',
+    });
   });
 
   it('posts a slash command failure follow-up when the agent throws', async () => {

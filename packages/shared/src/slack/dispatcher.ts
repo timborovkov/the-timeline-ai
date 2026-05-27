@@ -423,6 +423,7 @@ async function handleMessageEvent(
   const text = message?.text ?? event.text ?? '';
   const ts = isEdit ? (message?.ts ?? event.previous_message?.ts) : (message?.ts ?? event.ts);
   if (!ts) return;
+  const eventTs = isEdit ? (event.event_ts ?? event.ts) : (event.event_ts ?? ts);
   const threadTs = message?.thread_ts ?? event.thread_ts;
   const files = message?.files ?? event.files ?? [];
 
@@ -444,7 +445,7 @@ async function handleMessageEvent(
     slack_channel_id: event.channel,
     slack_channel_type: event.channel_type ?? route.conversationType,
     slack_message_ts: ts,
-    slack_event_ts: event.event_ts ?? ts,
+    slack_event_ts: eventTs,
     slack_thread_ts: threadTs ?? null,
     slack_sender_id: senderId,
     slack_sender_name: senderDisplayName,
@@ -467,7 +468,7 @@ async function handleMessageEvent(
     teamId: route.teamId,
     authorUserId,
     text,
-    occurredAt: slackTsToDate(event.event_ts ?? ts),
+    occurredAt: slackTsToDate(eventTs),
     visibility: route.visibility,
     metadata,
     isEdit,

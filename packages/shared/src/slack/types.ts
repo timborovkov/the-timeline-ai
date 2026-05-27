@@ -67,7 +67,7 @@ export const slackEventCallbackSchema = z
   .object({
     type: z.literal('event_callback'),
     token: z.string().optional(),
-    team_id: z.string().optional(),
+    team_id: z.string(),
     api_app_id: z.string().optional(),
     event_id: z.string(),
     event_time: z.number().int().optional(),
