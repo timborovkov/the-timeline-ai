@@ -323,21 +323,21 @@ out of scope.
 
 ### Slice 13.7 — Public help docs and support contact
 
-- [ ] Build public Next.js help pages under `/help`, not repo-internal `docs/`.
+- [x] Build public Next.js help pages under `/help`, not repo-internal `docs/`.
       Use a lightweight dedicated docs layout with navbar, footer, theme
       toggle, links to the landing page, and auth-aware
       dashboard/sign-in/sign-up links.
-- [ ] First help pages: capture surfaces, document drive, boards,
+- [x] First help pages: capture surfaces, document drive, boards,
       integrations, object management, and a `/help` index.
-- [ ] Help pages may link to live app routes for signed-in users. Logged-out
+- [x] Help pages may link to live app routes for signed-in users. Logged-out
       users should see sign-in/sign-up CTAs instead of dead app links.
-- [ ] Add a public support/contact form with request type (`technical_support`,
+- [x] Add a public support/contact form with request type (`technical_support`,
       `sales`, or similar), name, email, message, current page, and signed-in
       user/team context when available.
-- [ ] Send support requests through Postmark to `SUPPORT_EMAIL` and store every
+- [x] Send support requests through Postmark to `SUPPORT_EMAIL` and store every
       request in a `support_requests` table so internal operators can inspect
       the DB. No in-app support admin UI is required for Phase 13.
-- [ ] Protect public support forms with Cloudflare Turnstile in production, a
+- [x] Protect public support forms with Cloudflare Turnstile in production, a
       honeypot field, and rate limits.
 
 ### Slice 13.8 — Standardized abuse-control rate limits

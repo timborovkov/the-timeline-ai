@@ -73,7 +73,7 @@ export default async function MeetingDetailPage({ params }: Props) {
         {chunks.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {meeting.status === 'pending' || meeting.status === 'joining'
-              ? 'Waiting for the bot to join…'
+              ? 'Waiting for the notetaker to join…'
               : 'No transcript chunks captured.'}
           </p>
         ) : (
