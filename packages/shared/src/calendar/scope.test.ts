@@ -201,6 +201,35 @@ describe('calendar scope', () => {
     expect(row?.visibilityUserIds).toBeNull();
   });
 
+  it('rejects non-owner visibility user changes even when visibility value is unchanged', async () => {
+    await db.insert(calendarEvents).values({
+      id: CALENDAR_EVENT_ID,
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      title: 'Team review',
+      startAt: new Date('2026-05-27T09:00:00Z'),
+      endAt: new Date('2026-05-27T10:00:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      metadata: {},
+    });
+
+    const teammateScope = withTeam(db as never, TEAM_ID, USER_B_ID);
+    await expect(
+      teammateScope.calendar.updateCalendarEvent(CALENDAR_EVENT_ID, {
+        visibility: 'team',
+        visibilityUserIds: [USER_B_ID],
+      }),
+    ).rejects.toThrow('Only the visibility owner can change this event');
+
+    const [row] = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.id, CALENDAR_EVENT_ID));
+    expect(row?.visibility).toBe('team');
+    expect(row?.visibilityUserIds).toBeNull();
+  });
+
   it('unlinkEntity requires write access to the calendar event', async () => {
     await db.insert(entities).values({
       id: ENTITY_ID,

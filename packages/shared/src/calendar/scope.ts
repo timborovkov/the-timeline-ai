@@ -506,14 +506,13 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         }
 
         const newVis = patch.visibility ?? row.visibility;
-        const newVisUserIds =
-          patch.visibility !== undefined || patch.visibilityUserIds !== undefined
-            ? await validateVisibilityUserIds(
-                newVis,
-                patch.visibilityUserIds ?? row.visibilityUserIds,
-                requireTeamMember,
-              )
-            : row.visibilityUserIds;
+        const newVisUserIds = hasVisibilityChange
+          ? await validateVisibilityUserIds(
+              newVis,
+              patch.visibilityUserIds ?? row.visibilityUserIds,
+              requireTeamMember,
+            )
+          : row.visibilityUserIds;
 
         const setClause: Record<string, unknown> = { updatedAt: new Date() };
         if (patch.title !== undefined) setClause.title = patch.title;
@@ -524,7 +523,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         if (patch.allDay !== undefined) setClause.allDay = patch.allDay;
         if (patch.location !== undefined) setClause.location = patch.location;
         if (patch.visibility !== undefined) setClause.visibility = patch.visibility;
-        if (patch.visibility !== undefined || patch.visibilityUserIds !== undefined) {
+        if (hasVisibilityChange) {
           setClause.visibilityUserIds = newVisUserIds;
         }
         if (patch.reminderMinutes !== undefined) setClause.reminderMinutes = patch.reminderMinutes;
