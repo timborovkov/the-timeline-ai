@@ -14,9 +14,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
+const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const REVIEWER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const OTHER_USER_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
+const OTHER_RAW_EVENT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 
 async function applyMigrations(pg: PGlite): Promise<void> {
   const files = readdirSync(MIGRATIONS_DIR)
@@ -35,15 +38,29 @@ async function applyMigrations(pg: PGlite): Promise<void> {
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
     INSERT INTO teams (id, slug, name)
-    VALUES ('${TEAM_ID}', 'team-a', 'Team A');
+    VALUES
+      ('${TEAM_ID}', 'team-a', 'Team A'),
+      ('${OTHER_TEAM_ID}', 'team-b', 'Team B');
     INSERT INTO users (id, email)
     VALUES
       ('${USER_ID}', 'a@example.com'),
-      ('${REVIEWER_ID}', 'b@example.com');
+      ('${REVIEWER_ID}', 'b@example.com'),
+      ('${OTHER_USER_ID}', 'c@example.com');
     INSERT INTO team_members (team_id, user_id, role)
     VALUES
       ('${TEAM_ID}', '${USER_ID}', 'owner'),
-      ('${TEAM_ID}', '${REVIEWER_ID}', 'member');
+      ('${TEAM_ID}', '${REVIEWER_ID}', 'member'),
+      ('${OTHER_TEAM_ID}', '${OTHER_USER_ID}', 'owner');
+    INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, occurred_at, visibility)
+    VALUES (
+      '${OTHER_RAW_EVENT_ID}',
+      '${OTHER_TEAM_ID}',
+      '${OTHER_USER_ID}',
+      'web',
+      'Other team event',
+      '2026-05-27T10:00:00.000Z',
+      'team'
+    );
   `);
 }
 
@@ -188,6 +205,100 @@ describe('suggestion scope', () => {
       `SELECT count(*)::text FROM entities WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Already applied task'`,
     );
     expect(result.rows[0]?.count).toBe('1');
+  });
+
+  it('finds an existing canonical create by suggestion item id when result bookkeeping was lost', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Retry create task without result id',
+      dedupeKey: 'retry-with-marker',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Task with marker',
+          dedupeKey: 'retry-with-marker:item',
+          proposedPayload: { canonicalName: 'Task with marker' },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+    await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Task with marker',
+      metadata: { agent_suggestion_item_id: itemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    await pg.query(
+      `UPDATE agent_suggestion_items SET status = 'failed', result_id = NULL WHERE id = $1`,
+      [itemId],
+    );
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ count: string }>(
+      `SELECT count(*)::text FROM entities WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Task with marker'`,
+    );
+    expect(result.rows[0]?.count).toBe('1');
+  });
+
+  it('rejects evidence links outside the caller-visible team boundary', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    await expect(
+      scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'chat',
+        title: 'Cross team evidence',
+        dedupeKey: 'cross-team-evidence',
+        evidence: [{ rawEventId: OTHER_RAW_EVENT_ID }],
+        items: [
+          {
+            operation: 'create',
+            targetKind: 'task',
+            title: 'Should fail',
+            dedupeKey: 'cross-team-evidence:item',
+            proposedPayload: { canonicalName: 'Should fail' },
+          },
+        ],
+      }),
+    ).rejects.toThrow(/visible events/);
+  });
+
+  it('normalizes all-day calendar suggestions as local exclusive date spans', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Create all-day event',
+      dedupeKey: 'all-day-local-date',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'NY all day',
+          dedupeKey: 'all-day-local-date:item',
+          proposedPayload: {
+            title: 'NY all day',
+            startAt: '2026-06-02T00:00:00.000Z',
+            endAt: '2026-06-03T00:00:00.000Z',
+            timezone: 'America/New_York',
+            allDay: true,
+            visibility: 'private',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ start_at: Date; end_at: Date }>(
+      `SELECT start_at, end_at FROM calendar_events WHERE team_id = '${TEAM_ID}' AND title = 'NY all day'`,
+    );
+    expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-02T04:00:00.000Z');
+    expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-03T04:00:00.000Z');
   });
 
   it('lists resolved suggestions when requested', async () => {

@@ -4,6 +4,8 @@ import {
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
+  calendarEvents,
+  entities,
   notifications,
   rawEvents,
   teamMembers,
@@ -11,6 +13,8 @@ import {
 } from '@timeline/db';
 import { and, asc, count, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
+
+import { localDateSpanToUtcRange } from '../time/index.js';
 
 import type {
   CalendarScope,
@@ -147,6 +151,7 @@ const calendarCreatePayload = z.object({
   visibilityUserIds: z.array(uuid).nullable().optional(),
   reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
   linkedEntityIds: z.array(uuid).max(20).optional(),
+  metadata: z.record(z.unknown()).optional(),
 });
 
 const calendarUpdatePayload = calendarCreatePayload.partial();
@@ -181,6 +186,37 @@ function suggestionVisibilityPredicate(teamId: string, userId: string) {
       ),
     ),
   );
+}
+
+function rawEventVisibilityPredicate(teamId: string, userId: string) {
+  return and(
+    eq(rawEvents.teamId, teamId),
+    or(
+      eq(rawEvents.visibility, 'team'),
+      and(eq(rawEvents.visibility, 'private'), eq(rawEvents.authorUserId, userId)),
+      and(
+        eq(rawEvents.visibility, 'specific_users'),
+        sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
+      ),
+    ),
+  );
+}
+
+function oneDayAfter(date: string): string {
+  const d = new Date(`${date}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function normalizeAllDayRange(payload: { startAt: string; endAt: string; timezone: string }): {
+  startAt: Date;
+  endAt: Date;
+} {
+  const startDate = payload.startAt.slice(0, 10);
+  let endDate = payload.endAt.slice(0, 10);
+  if (endDate <= startDate) endDate = oneDayAfter(startDate);
+  const range = localDateSpanToUtcRange(startDate, endDate, payload.timezone);
+  return { startAt: range.from, endAt: range.to };
 }
 
 function toBundle(
@@ -345,9 +381,53 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .onConflictDoNothing();
   }
 
+  async function validateEvidenceVisible(rawEventIds: string[]): Promise<void> {
+    const ids = Array.from(new Set(rawEventIds));
+    if (ids.length === 0) return;
+    const rows = await db
+      .select({ id: rawEvents.id })
+      .from(rawEvents)
+      .where(and(inArray(rawEvents.id, ids), rawEventVisibilityPredicate(teamId, userId)));
+    if (rows.length !== ids.length) {
+      throw new Error('Suggestion evidence must reference visible events in this team');
+    }
+  }
+
+  async function existingResultForItem(
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<string | null> {
+    if (item.operation !== 'create') return null;
+    if (item.targetKind === 'task' || item.targetKind === 'object') {
+      const rows = await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
+          ),
+        )
+        .limit(1);
+      return rows[0]?.id ?? null;
+    }
+    const rows = await db
+      .select({ id: calendarEvents.id })
+      .from(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.teamId, teamId),
+          sql`${calendarEvents.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
+        ),
+      )
+      .limit(1);
+    return rows[0]?.id ?? null;
+  }
+
   async function applyItem(item: typeof agentSuggestionItems.$inferSelect): Promise<string | null> {
     if (item.resultId) return item.resultId;
     if (item.status !== 'pending' && item.status !== 'failed') return item.resultId;
+    const existingResultId = await existingResultForItem(item);
+    if (existingResultId) return existingResultId;
     const targetId = item.targetId;
     const payload = item.proposedPayload as Record<string, unknown>;
 
@@ -366,8 +446,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (parsed.assigneeUserId !== undefined) input.assigneeUserId = parsed.assigneeUserId;
         if (parsed.dueAt !== undefined) input.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
         if (parsed.parentObjectId !== undefined) input.parentObjectId = parsed.parentObjectId;
-        if (parsed.sourceEventId !== undefined) input.sourceEventId = parsed.sourceEventId;
-        if (parsed.metadata !== undefined) input.metadata = parsed.metadata;
+        if (parsed.sourceEventId !== undefined) {
+          if (parsed.sourceEventId) await validateEvidenceVisible([parsed.sourceEventId]);
+          input.sourceEventId = parsed.sourceEventId;
+        }
+        input.metadata = {
+          ...(parsed.metadata ?? {}),
+          agent_suggestion_item_id: item.id,
+        };
         const created = await objects.createObject(input);
         return created.id;
       }
@@ -392,11 +478,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     if (item.operation === 'create') {
       const parsed = calendarCreatePayload.parse(payload);
+      const normalizedRange = parsed.allDay
+        ? normalizeAllDayRange({
+            startAt: parsed.startAt,
+            endAt: parsed.endAt,
+            timezone: parsed.timezone,
+          })
+        : { startAt: new Date(parsed.startAt), endAt: new Date(parsed.endAt) };
       const input: CreateCalendarEventInput = {
         title: parsed.title,
         description: parsed.description ?? null,
-        startAt: new Date(parsed.startAt),
-        endAt: new Date(parsed.endAt),
+        startAt: normalizedRange.startAt,
+        endAt: normalizedRange.endAt,
         timezone: parsed.timezone,
         allDay: parsed.allDay,
         location: parsed.location ?? null,
@@ -404,6 +497,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         visibilityUserIds: parsed.visibilityUserIds ?? null,
         reminderMinutes: parsed.reminderMinutes ?? null,
         agentSuggested: false,
+        metadata: {
+          ...(parsed.metadata ?? {}),
+          agent_suggestion_item_id: item.id,
+        },
       };
       if (parsed.linkedEntityIds !== undefined) input.linkedEntityIds = parsed.linkedEntityIds;
       const created = await calendar.createCalendarEvent(input);
@@ -415,8 +512,19 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const patch: UpdateCalendarEventInput = {};
       if (parsed.title !== undefined) patch.title = parsed.title;
       if (parsed.description !== undefined) patch.description = parsed.description;
-      if (parsed.startAt !== undefined) patch.startAt = new Date(parsed.startAt);
-      if (parsed.endAt !== undefined) patch.endAt = new Date(parsed.endAt);
+      if (parsed.allDay && parsed.startAt !== undefined && parsed.endAt !== undefined) {
+        const event = await calendar.getCalendarEvent(targetId);
+        const normalizedRange = normalizeAllDayRange({
+          startAt: parsed.startAt,
+          endAt: parsed.endAt,
+          timezone: parsed.timezone ?? event?.timezone ?? 'UTC',
+        });
+        patch.startAt = normalizedRange.startAt;
+        patch.endAt = normalizedRange.endAt;
+      } else {
+        if (parsed.startAt !== undefined) patch.startAt = new Date(parsed.startAt);
+        if (parsed.endAt !== undefined) patch.endAt = new Date(parsed.endAt);
+      }
       if (parsed.timezone !== undefined) patch.timezone = parsed.timezone;
       if (parsed.allDay !== undefined) patch.allDay = parsed.allDay;
       if (parsed.location !== undefined) patch.location = parsed.location;
@@ -531,6 +639,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (visibilityOwnerUserId) await deps.requireTeamMember(visibilityOwnerUserId);
       for (const uid of input.visibilityUserIds ?? []) await deps.requireTeamMember(uid);
       const metadata = input.metadata ?? {};
+      await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
 
       const row = await db.transaction(async (tx) => {
         const [inserted] = await tx

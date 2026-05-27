@@ -7,7 +7,7 @@ import { getMcpManager } from '../mcp/client.js';
 import * as objects from '../objects/index.js';
 import { suggestionDedupeKey } from '../suggestions/index.js';
 import { type TeamScope } from '../team-scope.js';
-import { resolveTimePhrase, workspaceTimeContext } from '../time/index.js';
+import { localDateSpanToUtcRange, resolveTimePhrase, workspaceTimeContext } from '../time/index.js';
 
 const log = childLogger('agent:tools');
 
@@ -1035,11 +1035,19 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
 
     suggest_calendar_event: tool({
       description:
-        "Propose a new calendar event. Records an approval-queue suggestion only; it does not create the canonical event until a human accepts it. Date-only scheduling should be represented as an all-day event. Set visibility to 'private' for personal events like dentist appointments.",
+        "Propose a new calendar event. Records an approval-queue suggestion only; it does not create the canonical event until a human accepts it. Date-only scheduling should be represented as an all-day event with startDate and exclusive endDate. Set visibility to 'private' for personal events like dentist appointments.",
       inputSchema: z.object({
         title: z.string().trim().min(1).max(200),
         startAt: z.string().datetime(),
         endAt: z.string().datetime(),
+        startDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        endDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
         timezone: z.string().max(100).optional(),
         allDay: z.boolean().optional(),
         description: z.string().trim().max(1000).optional(),
@@ -1054,6 +1062,14 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
               title: z.string().trim().min(1).max(200),
               startAt: z.string().datetime(),
               endAt: z.string().datetime(),
+              startDate: z
+                .string()
+                .regex(/^\d{4}-\d{2}-\d{2}$/)
+                .optional(),
+              endDate: z
+                .string()
+                .regex(/^\d{4}-\d{2}-\d{2}$/)
+                .optional(),
               timezone: z.string().max(100).optional(),
               allDay: z.boolean().optional(),
               description: z.string().trim().max(1000).optional(),
@@ -1064,13 +1080,33 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             .parse(raw);
           const settings = await scope.calendar.getCalendarSettings();
           const timezone = input.timezone ?? settings.defaultTimezone;
+          const allDay = input.allDay ?? false;
+          let startAt = input.startAt;
+          let endAt = input.endAt;
+          if (allDay) {
+            const startDate = input.startDate ?? input.startAt.slice(0, 10);
+            let endDate = input.endDate ?? input.endAt.slice(0, 10);
+            if (endDate <= startDate) {
+              const d = new Date(`${startDate}T00:00:00.000Z`);
+              d.setUTCDate(d.getUTCDate() + 1);
+              endDate = d.toISOString().slice(0, 10);
+            }
+            const range = localDateSpanToUtcRange(startDate, endDate, timezone);
+            startAt = range.from.toISOString();
+            endAt = range.to.toISOString();
+          }
+          const visibility = input.visibility ?? 'team';
           const dedupeKey = suggestionDedupeKey({
             tool: 'suggest_calendar_event',
             title: input.title,
-            startAt: input.startAt,
-            endAt: input.endAt,
+            startAt,
+            endAt,
             timezone,
-            allDay: input.allDay ?? false,
+            allDay,
+            visibility,
+            reminderMinutes: input.reminderMinutes ?? null,
+            location: input.location ?? null,
+            description: input.description ?? null,
           });
           const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
             source: 'chat',
@@ -1079,7 +1115,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             reason: 'The chat conversation implies a scheduled commitment.',
             confidence: 'medium',
             dedupeKey,
-            visibility: input.visibility ?? 'team',
+            visibility,
             items: [
               {
                 operation: 'create',
@@ -1088,13 +1124,13 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
                 dedupeKey,
                 proposedPayload: {
                   title: input.title,
-                  startAt: input.startAt,
-                  endAt: input.endAt,
+                  startAt,
+                  endAt,
                   timezone,
-                  allDay: input.allDay ?? false,
+                  allDay,
                   description: input.description ?? null,
                   location: input.location ?? null,
-                  visibility: input.visibility ?? 'team',
+                  visibility,
                   reminderMinutes: input.reminderMinutes ?? null,
                 },
               },

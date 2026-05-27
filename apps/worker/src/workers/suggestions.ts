@@ -174,33 +174,12 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
         throw new UnrecoverableError(`raw event ${rawEventId} team mismatch`);
       const text = row.contentText?.trim();
       if (!text) throw new UnrecoverableError(`raw event ${rawEventId} has no content_text`);
-      if (row.visibility !== 'team') {
-        await deps.db
-          .update(rawEvents)
-          .set({
-            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${JSON.stringify(
-              {
-                suggestions_skipped_at: new Date().toISOString(),
-                suggestions_skipped_reason: `visibility=${row.visibility}`,
-                suggestion_model_version: modelVersion,
-              },
-            )}::jsonb`,
-          })
-          .where(eq(rawEvents.id, rawEventId));
-        return;
-      }
 
       const meta =
         row.sourceMetadata && typeof row.sourceMetadata === 'object'
           ? (row.sourceMetadata as Record<string, unknown>)
           : {};
       if (meta.suggestion_model_version === modelVersion) return;
-
-      const scope = withTeam(deps.db, teamId, row.authorUserId ?? PSEUDO_USER, {
-        skipMembershipCheck: true,
-      });
-      const settings = await scope.calendar.getCalendarSettings();
-      const workspaceTime = time.workspaceTimeContext(settings.defaultTimezone, row.occurredAt);
 
       const factRows = await deps.db
         .select({ statement: factsTable.statement })
@@ -229,6 +208,60 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
       const activeAuthorUserId = memberRows.some((member) => member.userId === row.authorUserId)
         ? row.authorUserId
         : null;
+      const activeMemberIds = new Set(memberRows.map((member) => member.userId));
+      const activeVisibilityUserIds = (row.visibilityUserIds ?? []).filter((uid) =>
+        activeMemberIds.has(uid),
+      );
+      let scopeUserId = PSEUDO_USER;
+      let visibilityOwnerUserId: string | null = null;
+      let visibilityUserIds: string[] | null = null;
+
+      if (row.visibility === 'private') {
+        if (!activeAuthorUserId) {
+          await deps.db
+            .update(rawEvents)
+            .set({
+              sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${JSON.stringify(
+                {
+                  suggestions_skipped_at: new Date().toISOString(),
+                  suggestions_skipped_reason: 'private_author_not_active',
+                  suggestion_model_version: modelVersion,
+                },
+              )}::jsonb`,
+            })
+            .where(eq(rawEvents.id, rawEventId));
+          return;
+        }
+        scopeUserId = activeAuthorUserId;
+        visibilityOwnerUserId = activeAuthorUserId;
+      } else if (row.visibility === 'specific_users') {
+        if (activeVisibilityUserIds.length === 0) {
+          await deps.db
+            .update(rawEvents)
+            .set({
+              sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${JSON.stringify(
+                {
+                  suggestions_skipped_at: new Date().toISOString(),
+                  suggestions_skipped_reason: 'specific_users_empty',
+                  suggestion_model_version: modelVersion,
+                },
+              )}::jsonb`,
+            })
+            .where(eq(rawEvents.id, rawEventId));
+          return;
+        }
+        scopeUserId =
+          activeAuthorUserId && activeVisibilityUserIds.includes(activeAuthorUserId)
+            ? activeAuthorUserId
+            : (activeVisibilityUserIds[0] ?? PSEUDO_USER);
+        visibilityUserIds = activeVisibilityUserIds;
+      }
+
+      const scope = withTeam(deps.db, teamId, scopeUserId, {
+        skipMembershipCheck: true,
+      });
+      const settings = await scope.calendar.getCalendarSettings();
+      const workspaceTime = time.workspaceTimeContext(settings.defaultTimezone, row.occurredAt);
 
       const recentRows = await deps.db
         .select({ occurredAt: rawEvents.occurredAt, text: rawEvents.contentText })
@@ -301,8 +334,8 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
           confidence: bundle.confidence,
           dedupeKey: bundleDedupe,
           visibility: row.visibility,
-          visibilityOwnerUserId: null,
-          visibilityUserIds: row.visibilityUserIds,
+          visibilityOwnerUserId,
+          visibilityUserIds,
           evidence: [{ rawEventId, quote: bundle.quote ?? truncate(text, 500) }],
           metadata: { suggestion_model_version: modelVersion },
           items: bundle.items.map((item, index) => ({
