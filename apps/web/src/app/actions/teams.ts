@@ -188,8 +188,9 @@ export async function inviteMemberAction(
   if (!parsed.success) return { error: 'Invalid email' };
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  let callerRole: 'owner' | 'admin' | 'member';
   try {
-    const callerRole = await scope.requireMembership('admin');
+    callerRole = await scope.requireMembership('admin');
     if (parsed.data.role === 'admin' && callerRole !== 'owner') {
       return { error: 'Only owners can invite admins' };
     }
@@ -218,7 +219,7 @@ export async function inviteMemberAction(
       if (activeMembers[0]) throw new Error('already-member');
 
       const openInvites = await tx
-        .select({ id: teamInvites.id })
+        .select({ id: teamInvites.id, role: teamInvites.role })
         .from(teamInvites)
         .where(
           and(
@@ -231,6 +232,9 @@ export async function inviteMemberAction(
         .limit(1)
         .for('update');
       const existing = openInvites[0];
+      if (existing?.role === 'admin' && callerRole !== 'owner') {
+        throw new Error('admin-invite-owned-by-owner');
+      }
       const rows = existing
         ? await tx
             .update(teamInvites)
@@ -272,6 +276,9 @@ export async function inviteMemberAction(
   } catch (err) {
     if (err instanceof Error && err.message === 'already-member') {
       return { error: 'This person is already a member. Change their role from the members list.' };
+    }
+    if (err instanceof Error && err.message === 'admin-invite-owned-by-owner') {
+      return { error: 'Only owners can change an admin invite for this email.' };
     }
     return { error: 'Failed to create invite' };
   }
