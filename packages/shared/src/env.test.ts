@@ -28,7 +28,7 @@ describe('getEnv', () => {
 
   it('requires explicit dimensions for non-default embedding models', () => {
     setBaseEnv({
-      EMBEDDING_MODEL: 'perplexity/pplx-embed-v1-4b',
+      EMBEDDING_MODEL: 'openai/text-embedding-3-large',
       EMBEDDING_DIMENSIONS: undefined,
     });
 
@@ -37,10 +37,10 @@ describe('getEnv', () => {
 
   it('accepts non-default embedding models when dimensions are explicit', () => {
     setBaseEnv({
-      EMBEDDING_MODEL: 'perplexity/pplx-embed-v1-4b',
-      EMBEDDING_DIMENSIONS: '2560',
+      EMBEDDING_MODEL: 'openai/text-embedding-3-large',
+      EMBEDDING_DIMENSIONS: '3072',
     });
 
-    expect(getEnv().EMBEDDING_DIMENSIONS).toBe(2560);
+    expect(getEnv().EMBEDDING_DIMENSIONS).toBe(3072);
   });
 });

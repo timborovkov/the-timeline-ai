@@ -51,8 +51,8 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         <code>EMBEDDING_DIMENSIONS</code> explicitly so workers fail fast instead of writing
         wrong-sized vectors.
       </p>
-      <pre><code>EMBEDDING_MODEL=perplexity/pplx-embed-v1-4b
-EMBEDDING_DIMENSIONS=2560
+      <pre><code>EMBEDDING_MODEL=openai/text-embedding-3-small
+EMBEDDING_DIMENSIONS=1536
 TRANSCRIPTION_MODEL=openai/whisper-large-v3
 CHAT_MODEL_DEFAULT=qwen/qwen3.7-max
 # Phase 4: cheap model used by the extract worker. Falls back to
@@ -175,6 +175,16 @@ AGENT_MODEL=qwen/qwen3.7-max
         running and both <code>pnpm dev</code> (web) and the worker process started:
       </p>
       <ol>
+        <li>
+          Create the default Qdrant collection before the first embed worker write. The collection
+          vector size must match <code>EMBEDDING_DIMENSIONS=1536</code>; Qdrant rejects vectors from
+          a different-sized model.
+          <pre><code>curl -s -X PUT "$QDRANT_URL/collections/events" \
+  -H "content-type: application/json" \
+  -H "api-key: $QDRANT_API_KEY" \
+  -d '{"vectors":{"size":1536,"distance":"Cosine"}}'
+</code></pre>
+        </li>
         <li>
           Post 2–3 text notes on <code>/app/timeline</code>, e.g.
           <code>Met with John Ternus at Apple about SaaS licensing.</code> and
