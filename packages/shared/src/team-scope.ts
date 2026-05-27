@@ -695,6 +695,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           .limit(1);
         const existing = existingRows[0];
         if (!existing) return null;
+        if (existing.visibilityOwnerUserId === null) {
+          throw new Error('This event has no visibility owner');
+        }
         if (existing.visibilityOwnerUserId !== userId) {
           throw new Error('Only the visibility owner can change this event');
         }

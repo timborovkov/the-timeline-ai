@@ -1,6 +1,6 @@
 'use server';
 
-import { withTeam } from '@timeline/shared';
+import { childLogger, withTeam } from '@timeline/shared';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -8,6 +8,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
+const log = childLogger('web:actions:visibility');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const sourceSchema = z.enum([
@@ -74,7 +75,7 @@ export async function setVisibilityDefaultAction(
     revalidatePath('/app/timeline');
     return { ok: true };
   } catch (err) {
-    console.error('[visibility] failed to update default', err);
+    log.error({ err }, 'visibility_default_update_failed');
     return { error: err instanceof Error ? err.message : 'Failed to update visibility default' };
   }
 }
@@ -100,7 +101,7 @@ export async function setEventVisibilityAction(
     revalidatePath('/app/timeline');
     return { ok: true };
   } catch (err) {
-    console.error('[visibility] failed to update event visibility', err);
+    log.error({ err }, 'event_visibility_update_failed');
     return { error: err instanceof Error ? err.message : 'Failed to update event visibility' };
   }
 }
@@ -124,7 +125,7 @@ export async function setIntegrationVisibilityDefaultAction(
     revalidatePath('/app/team/integrations');
     return { ok: true };
   } catch (err) {
-    console.error('[visibility] failed to update integration default', err);
+    log.error({ err }, 'integration_visibility_default_update_failed');
     return {
       error: err instanceof Error ? err.message : 'Failed to update integration visibility default',
     };

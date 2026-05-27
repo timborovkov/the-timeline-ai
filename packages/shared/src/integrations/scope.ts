@@ -192,14 +192,16 @@ export function createIntegrationScope(deps: {
       visibilityDefaultUserIds,
       deps.requireTeamMember,
     );
-    await db
+    const rows = await db
       .update(integrationsTable)
       .set({
         visibilityDefault,
         visibilityDefaultUserIds: normalizedUserIds,
         updatedAt: new Date(),
       })
-      .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)));
+      .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)))
+      .returning({ id: integrationsTable.id });
+    if (!rows[0]) throw new Error('Integration not found');
   }
 
   async function deleteIntegration(id: string): Promise<void> {

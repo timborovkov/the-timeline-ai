@@ -242,4 +242,30 @@ describe('withTeam namespaced port', () => {
     const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, event.id));
     expect(row?.visibility).toBe('team');
   });
+
+  it('rejects visibility edits for ownerless legacy events with a clear error', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await scope.timeline.createEvent({
+      authorUserId: null,
+      visibilityOwnerUserId: null,
+      source: 'system',
+      contentText: 'legacy ownerless event',
+      visibility: 'team',
+    });
+
+    await expect(
+      scope.timeline.setEventVisibility(event.id, { visibility: 'private' }),
+    ).rejects.toThrow('This event has no visibility owner');
+  });
+
+  it('fails integration visibility updates for missing integrations', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+
+    await expect(
+      scope.integrations.setIntegrationVisibilityDefault(
+        '99999999-9999-9999-9999-999999999999',
+        'team',
+      ),
+    ).rejects.toThrow('Integration not found');
+  });
 });
