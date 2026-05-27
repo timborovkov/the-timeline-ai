@@ -36,7 +36,7 @@ import {
   type SourceKind,
 } from './qdrant/client.js';
 import { enqueueEmbedJob } from './queue/queues.js';
-import { normalizeVisibilityUserIds } from './visibility.js';
+import { normalizeVisibilityUserIds, rawEventVisibleToUser } from './visibility.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.
@@ -311,20 +311,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * to require a higher role than `member` (e.g. for admin-only operations).
  */
 export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScopeDeps = {}) {
-  const visibilityFilter = or(
-    eq(rawEvents.visibility, 'team'),
-    and(
-      eq(rawEvents.visibility, 'private'),
-      or(eq(rawEvents.authorUserId, userId), eq(rawEvents.visibilityOwnerUserId, userId)),
-    ),
-    and(
-      eq(rawEvents.visibility, 'specific_users'),
-      or(
-        eq(rawEvents.visibilityOwnerUserId, userId),
-        sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
-      ),
-    ),
-  );
+  const visibilityFilter = rawEventVisibleToUser(userId);
   const activeRawEventFilter = sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`;
 
   let membershipPromise: Promise<TeamRole> | undefined;

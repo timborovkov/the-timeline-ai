@@ -28,6 +28,7 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 
 import { childLogger } from '../logger.js';
 import { decodeCursor, pageWindow } from '../pagination.js';
 import * as embedQueue from '../queue/queues.js';
+import { rawEventVisibleToUser } from '../visibility.js';
 
 import type { TeamScopeCore } from '../team-scope.js';
 
@@ -246,14 +247,7 @@ export interface ObjectSectionPage {
 }
 
 function rawEventVisibility(scope: TeamScopeCore) {
-  return or(
-    eq(rawEvents.visibility, 'team'),
-    and(eq(rawEvents.visibility, 'private'), eq(rawEvents.authorUserId, scope.userId)),
-    and(
-      eq(rawEvents.visibility, 'specific_users'),
-      sql`${scope.userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
-    ),
-  );
+  return rawEventVisibleToUser(scope.userId);
 }
 
 function cursorCondition(

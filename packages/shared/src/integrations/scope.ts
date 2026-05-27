@@ -10,10 +10,10 @@ import {
   rawEvents,
   teamMembers,
 } from '@timeline/db';
-import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 
 import { decryptJson, encryptJson } from '../crypto/secrets.js';
-import { validateVisibilityUserIds } from '../visibility.js';
+import { rawEventVisibleToUser, validateVisibilityUserIds } from '../visibility.js';
 
 import type { IntegrationRow } from './types.js';
 
@@ -405,25 +405,7 @@ export function createIntegrationScope(deps: {
         ),
       )
       .limit(1);
-    // Same visibility predicate the rest of withTeam applies on raw_events.
-    // Without it, a non-author/non-owner team member could read history rows
-    // whose `visibility` is `private` or `specific_users` via the agent's
-    // get_integration_resource tool — bypassing the gate that getEventsByIds
-    // and searchEvents enforce.
-    const integrationVisibility = or(
-      eq(rawEvents.visibility, 'team'),
-      and(
-        eq(rawEvents.visibility, 'private'),
-        or(eq(rawEvents.authorUserId, userId), eq(rawEvents.visibilityOwnerUserId, userId)),
-      ),
-      and(
-        eq(rawEvents.visibility, 'specific_users'),
-        or(
-          eq(rawEvents.visibilityOwnerUserId, userId),
-          sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
-        ),
-      ),
-    );
+    const integrationVisibility = rawEventVisibleToUser(userId);
     const events = await db
       .select({
         id: rawEvents.id,

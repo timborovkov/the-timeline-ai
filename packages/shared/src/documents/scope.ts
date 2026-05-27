@@ -12,7 +12,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-o
 import { embed as defaultEmbed, type EmbedResult } from '../llm/embed.js';
 import { decodeCursor, pageWindow } from '../pagination.js';
 import { getQdrantClient, type SearchHit, type SearchOpts } from '../qdrant/client.js';
-import { validateVisibilityUserIds } from '../visibility.js';
+import { rawEventVisibleToUser, validateVisibilityUserIds } from '../visibility.js';
 
 import { buildDocumentObjectKey } from './object-key.js';
 
@@ -1105,20 +1105,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       const conditions = [
         eq(rawEvents.teamId, teamId),
         eq(rawEvents.source, 'document'),
-        or(
-          eq(rawEvents.visibility, 'team'),
-          and(
-            eq(rawEvents.visibility, 'private'),
-            or(eq(rawEvents.authorUserId, userId), eq(rawEvents.visibilityOwnerUserId, userId)),
-          ),
-          and(
-            eq(rawEvents.visibility, 'specific_users'),
-            or(
-              eq(rawEvents.visibilityOwnerUserId, userId),
-              sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
-            ),
-          ),
-        ),
+        rawEventVisibleToUser(userId),
       ];
       if (args.since) conditions.push(gte(rawEvents.occurredAt, args.since));
       const rows = await db
