@@ -1,6 +1,7 @@
 import { integrations as integrationsLib, withTeam } from '@timeline/shared';
 import { redirect } from 'next/navigation';
 
+import { ActionChip } from '@/components/action-chip';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { IndexStrip } from '@/components/index-strip';
 import { IntegrationsCatalog } from '@/components/integrations/catalog';
@@ -169,16 +170,5 @@ export default async function IntegrationsPage({
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
     <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">{children}</h2>
-  );
-}
-
-function ActionChip({ href, label }: { href: string; label: string }) {
-  return (
-    <a
-      href={href}
-      className="inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted hover:border-signal hover:text-signal"
-    >
-      {label}
-    </a>
   );
 }
