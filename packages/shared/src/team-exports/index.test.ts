@@ -110,6 +110,18 @@ async function seed(pg: PGlite): Promise<void> {
         '2026-05-27T12:00:00.000Z', '2026-05-27T13:00:00.000Z', 'private'
       );
 
+    INSERT INTO meeting_transcript_chunks (
+      meeting_id, team_id, speaker, text, start_ms, end_ms, raw_event_id
+    ) VALUES
+      (
+        '${MEETING_ID}', '${TEAM_ID}', 'Alice', 'visible live chunk',
+        0, 1000, null
+      ),
+      (
+        '${PRIVATE_MEETING_ID}', '${TEAM_ID}', 'Bob', 'hidden live chunk',
+        0, 1000, null
+      );
+
     INSERT INTO integrations (
       team_id, connected_by_user_id, provider, display_name, external_account_id,
       auth_secret_ciphertext, auth_secret_iv, auth_secret_tag
@@ -191,6 +203,9 @@ describe('team export archive', () => {
 
     const meetings = parseJsonl(await zipText(zip, 'meetings.jsonl'));
     expect(meetings.map((row) => row.id)).toEqual([MEETING_ID]);
+
+    const meetingChunks = parseJsonl(await zipText(zip, 'meeting_transcript_chunks.jsonl'));
+    expect(meetingChunks.map((row) => row.text)).toEqual(['visible live chunk']);
 
     const calendarEvents = parseJsonl(await zipText(zip, 'calendar_events.jsonl'));
     expect(calendarEvents.map((row) => row.id)).toEqual([CALENDAR_EVENT_ID]);

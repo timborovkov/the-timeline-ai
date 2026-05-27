@@ -29,3 +29,4 @@ export * as calendarScope from './calendar/index.js';
 export * as embedding from './embedding/index.js';
 export * as teamExports from './team-exports/index.js';
 export * from './team-exports/index.js';
+export * as onboarding from './onboarding/index.js';

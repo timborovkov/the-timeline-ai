@@ -370,16 +370,17 @@ export async function buildTeamExportArchive(
     .where(visibleMeetingFilter(input.teamId, input.requestedByUserId))
     .orderBy(asc(meetings.createdAt), asc(meetings.id));
   files['meetings.jsonl'] = addJsonl(zip, 'meetings.jsonl', meetingRows);
+  const meetingIds = meetingRows.map((meeting) => meeting.id);
 
   const meetingChunkRows =
-    eventIds.length > 0
+    meetingIds.length > 0
       ? await input.db
           .select()
           .from(meetingTranscriptChunks)
           .where(
             and(
               eq(meetingTranscriptChunks.teamId, input.teamId),
-              inArray(meetingTranscriptChunks.rawEventId, eventIds),
+              inArray(meetingTranscriptChunks.meetingId, meetingIds),
             ),
           )
           .orderBy(asc(meetingTranscriptChunks.createdAt), asc(meetingTranscriptChunks.id))
@@ -515,10 +516,6 @@ export async function buildTeamExportArchive(
   }
   files['files.jsonl'] = addJsonl(zip, 'files.jsonl', fileRows);
 
-  const hiddenEventsRows = await input.db
-    .select({ value: count() })
-    .from(rawEvents)
-    .where(hiddenRawEventFilter(input.teamId, input.requestedByUserId));
   const hiddenEventFileRows = await input.db
     .select({
       id: rawEvents.id,
@@ -564,7 +561,7 @@ export async function buildTeamExportArchive(
       0,
     );
   const omissions: TeamExportOmissions = {
-    raw_events: hiddenEventsRows[0]?.value ?? 0,
+    raw_events: hiddenEventFileRows.length,
     facts: hiddenFactsRows[0]?.value ?? 0,
     folders: hiddenFolderRows[0]?.value ?? 0,
     documents: hiddenDocsRows[0]?.value ?? 0,

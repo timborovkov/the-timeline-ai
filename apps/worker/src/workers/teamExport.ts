@@ -63,7 +63,7 @@ async function processTeamExportJob(
     });
 
     const completedAt = new Date();
-    const expiresAt = new Date(completedAt.getTime() + 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(built.manifest.expires_at);
     await deps.db.transaction(async (tx) => {
       await tx
         .update(teamExports)

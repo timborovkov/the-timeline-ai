@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { safeMarkOnboardingStep } from '@/lib/onboarding';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -102,6 +103,7 @@ export async function POST(req: Request): Promise<Response> {
         authType: entry.mcpAuthType,
         authConfig,
       });
+      await safeMarkOnboardingStep(scope, 'first_integration');
       return NextResponse.json({
         id: server.id,
         catalogId: entry.id,
@@ -131,6 +133,9 @@ export async function POST(req: Request): Promise<Response> {
       authConfig: custom.data.authConfig ?? null,
       ...(custom.data.ownership ? { ownership: custom.data.ownership } : {}),
     });
+    if (custom.data.ownership !== 'personal') {
+      await safeMarkOnboardingStep(scope, 'first_integration');
+    }
     return NextResponse.json({ id: server.id, needsOauth: custom.data.authType === 'oauth' });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'add_failed';

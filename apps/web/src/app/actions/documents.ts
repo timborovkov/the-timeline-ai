@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { safeMarkOnboardingStep } from '@/lib/onboarding';
 
 const log = childLogger('web:actions:documents');
 
@@ -212,6 +213,7 @@ export async function finalizeDocumentVersionAction(
       documentVersionId: finalized.version.id,
       teamId: got.teamId,
     });
+    await safeMarkOnboardingStep(got.scope, 'first_document');
     revalidatePath('/app/documents');
     revalidatePath(`/app/documents/${finalized.document.id}`);
     revalidatePath('/app/timeline');

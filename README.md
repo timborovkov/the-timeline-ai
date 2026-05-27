@@ -18,10 +18,11 @@ private busy-block redaction, and calendar-aware agent tools. Third-party
 integrations (Google Drive, Linear, GitHub native + custom MCP servers per
 team or per user) live at `/app/team/integrations` — plus an outbound MCP
 server at `/api/mcp/server` so external agents (Claude Desktop, Cursor,
-etc.) can query this Timeline. Public help docs live at `/help`, with a
-support/contact form that stores requests in Postgres and sends them through
-Postmark. Railway deployment, deploy-time migrations, and structured logging
-are in place.
+etc.) can query this Timeline. `/app/timeline` now includes a dismissible
+team onboarding tutorial for the core capture surfaces. Public help docs live
+at `/help`, with a support/contact form that stores requests in Postgres and
+sends them through Postmark. Railway deployment, deploy-time migrations, and
+structured logging are in place.
 
 ## Read first
 
