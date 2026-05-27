@@ -83,6 +83,7 @@ interface RecoveryIdentity {
 }
 
 interface EncodedRecoveryId extends RecoveryIdentity {
+  embedScope?: 'object' | 'entity';
   syncKind?: 'backfill' | 'incremental';
 }
 
@@ -533,7 +534,11 @@ async function embedJobToItem(
       .where(and(eq(entities.teamId, teamId), eq(entities.id, id), isNull(entities.mergedIntoId)))
       .limit(1);
     if (!rows[0]) return null;
-    return item('embedding', 'object', id, `Object: ${rows[0].name}`, { error, detectedAt });
+    return item('embedding', 'object', id, `Object: ${rows[0].name}`, {
+      embedScope: meta.scope,
+      error,
+      detectedAt,
+    });
   }
   if (meta.scope === 'doc_chunk' && typeof meta.documentChunkId === 'string') {
     const label = await visibleDocumentChunkLabelById(db, teamId, meta.documentChunkId);
@@ -621,7 +626,11 @@ async function retryEmbedding(
     if (!rawEventId) throw new Error('not_found');
     await q.enqueueEmbedJob({ scope: 'fact', rawEventId, factId: parsed.artifactId, teamId });
   } else if (parsed.artifactKind === 'object') {
-    await q.enqueueEmbedJob({ scope: 'entity', entityId: parsed.artifactId, teamId });
+    if (parsed.embedScope === 'object') {
+      await q.enqueueEmbedJob({ scope: 'object', objectId: parsed.artifactId, teamId });
+    } else {
+      await q.enqueueEmbedJob({ scope: 'entity', entityId: parsed.artifactId, teamId });
+    }
   } else if (parsed.artifactKind === 'document_chunk') {
     await q.enqueueEmbedJob({ scope: 'doc_chunk', documentChunkId: parsed.artifactId, teamId });
   } else if (parsed.artifactKind === 'calendar_event') {
@@ -779,6 +788,7 @@ function item(
     status?: JobRecoveryStatus;
     error?: string | null;
     detectedAt: Date;
+    embedScope?: 'object' | 'entity';
     syncKind?: 'backfill' | 'incremental';
   },
 ): JobRecoveryItem {
@@ -787,6 +797,7 @@ function item(
       kind,
       artifactKind,
       artifactId,
+      ...(opts.embedScope ? { embedScope: opts.embedScope } : {}),
       ...(opts.syncKind ? { syncKind: opts.syncKind } : {}),
     }),
     kind,
@@ -819,6 +830,9 @@ function decodeRecoveryId(id: string): EncodedRecoveryId {
     kind: parsed.kind,
     artifactKind: parsed.artifactKind,
     artifactId: parsed.artifactId,
+    ...(parsed.embedScope === 'object' || parsed.embedScope === 'entity'
+      ? { embedScope: parsed.embedScope }
+      : {}),
     ...(parsed.syncKind === 'backfill' || parsed.syncKind === 'incremental'
       ? { syncKind: parsed.syncKind }
       : {}),

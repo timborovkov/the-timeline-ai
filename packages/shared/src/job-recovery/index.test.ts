@@ -39,6 +39,7 @@ const RAW_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const PRIVATE_RAW_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const OTHER_TEAM_RAW_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const INTEGRATION_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+const OBJECT_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 
 let pg: PGlite;
 let db: ReturnType<typeof drizzle>;
@@ -108,6 +109,36 @@ describe('job recovery scope', () => {
       .where(eq(rawEvents.id, RAW_ID));
     expect(rows[0]?.meta).not.toHaveProperty('transcription_failed_at');
     expect(rows[0]?.meta).not.toHaveProperty('transcription_error');
+  });
+
+  it('retries object embedding with the original queue scope', async () => {
+    await pg.exec(`
+      INSERT INTO entities (id, team_id, type, canonical_name)
+      VALUES ('${OBJECT_ID}', '${TEAM_ID}', 'project', 'Apollo');
+    `);
+    const enqueueEmbedJob = vi.fn().mockResolvedValue(undefined);
+    const scope = scopeFor(ADMIN_ID, 'admin', {
+      enqueueEmbedJob,
+      getEmbedQueue: () =>
+        fakeQueue([
+          {
+            data: { scope: 'object', objectId: OBJECT_ID, teamId: TEAM_ID },
+            failedReason: 'embed failed',
+            finishedOn: Date.now(),
+          },
+        ]),
+    });
+    const [item] = await scope.listRecoverableJobs();
+    if (!item) throw new Error('expected recovery item');
+
+    await scope.retryRecoverableJob(item.id);
+
+    expect(item.artifactKind).toBe('object');
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'object',
+      objectId: OBJECT_ID,
+      teamId: TEAM_ID,
+    });
   });
 
   it('excludes repeatable ticks and unsupported low-level failed jobs', async () => {
