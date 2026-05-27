@@ -1,5 +1,5 @@
 import { teamMembers, teams } from '@timeline/db';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 
 import { db } from '@/lib/db';
@@ -24,7 +24,7 @@ async function listMemberships(userId: string): Promise<TeamMembership[]> {
     })
     .from(teamMembers)
     .innerJoin(teams, eq(teams.id, teamMembers.teamId))
-    .where(eq(teamMembers.userId, userId))
+    .where(and(eq(teamMembers.userId, userId), isNull(teamMembers.removedAt)))
     .orderBy(asc(teamMembers.createdAt));
   return rows.map((r) => ({
     teamId: r.teamId,
@@ -55,7 +55,13 @@ export async function verifyMembership(userId: string, teamId: string): Promise<
   const rows = await db
     .select({ teamId: teamMembers.teamId })
     .from(teamMembers)
-    .where(and(eq(teamMembers.userId, userId), eq(teamMembers.teamId, teamId)))
+    .where(
+      and(
+        eq(teamMembers.userId, userId),
+        eq(teamMembers.teamId, teamId),
+        isNull(teamMembers.removedAt),
+      ),
+    )
     .limit(1);
   return rows.length > 0;
 }

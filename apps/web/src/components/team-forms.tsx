@@ -58,7 +58,7 @@ export function RenameTeamForm({ currentName, teamId }: { currentName: string; t
   );
 }
 
-export function InviteMemberForm() {
+export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }) {
   const [state, action] = useActionState<InviteState, FormData>(inviteMemberAction, {});
   return (
     <form action={action} className="space-y-3">
@@ -82,7 +82,7 @@ export function InviteMemberForm() {
             className="h-10 rounded-md border border-input bg-background px-2 text-sm"
           >
             <option value="member">Member</option>
-            <option value="admin">Admin</option>
+            {canInviteAdmin ? <option value="admin">Admin</option> : null}
           </select>
         </div>
         <Submit label="Create invite" />
@@ -92,6 +92,14 @@ export function InviteMemberForm() {
         <div className="rounded-md border bg-muted p-3 text-xs">
           <p className="mb-1 font-medium">Invite link (copy and share):</p>
           <code className="break-all font-mono text-[12px]">{state.inviteUrl}</code>
+          {state.sendStatus === 'sent' ? (
+            <p className="mt-2 text-muted-foreground">Invite email sent.</p>
+          ) : null}
+          {state.sendStatus === 'failed' ? (
+            <p className="mt-2 text-destructive">
+              Email was not sent: {state.sendError ?? 'unknown error'}. The link still works.
+            </p>
+          ) : null}
         </div>
       ) : null}
     </form>

@@ -40,6 +40,7 @@ const PRIVATE_RAW_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const OTHER_TEAM_RAW_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const INTEGRATION_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const OBJECT_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+const ZERO_FACT_RAW_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
 
 let pg: PGlite;
 let db: ReturnType<typeof drizzle>;
@@ -109,6 +110,22 @@ describe('job recovery scope', () => {
       .where(eq(rawEvents.id, RAW_ID));
     expect(rows[0]?.meta).not.toHaveProperty('transcription_failed_at');
     expect(rows[0]?.meta).not.toHaveProperty('transcription_error');
+  });
+
+  it('does not flag successful zero-fact extraction as stuck', async () => {
+    await seedTextRawEvent(pg, RAW_ID, {
+      sourceMetadata: '{}',
+    });
+    await seedTextRawEvent(pg, ZERO_FACT_RAW_ID, {
+      sourceMetadata:
+        '{"extracted_at":"2026-05-27T10:00:00.000Z","extraction_model_version":"test-model"}',
+    });
+
+    const scope = scopeFor(ADMIN_ID, 'admin');
+    const items = await scope.listRecoverableJobs();
+    const extractionItems = items.filter((item) => item.kind === 'extraction');
+
+    expect(extractionItems.map((item) => item.artifactId)).toEqual([RAW_ID]);
   });
 
   it('retries object embedding with the original queue scope', async () => {
@@ -246,6 +263,37 @@ async function seedRawEventFailure(
       now() - interval '1 hour',
       '${visibility}',
       '{"transcription_failed_at":"2026-05-27T10:00:00.000Z","transcription_error":"codec failed"}'::jsonb
+    );
+  `);
+}
+
+async function seedTextRawEvent(
+  pg: PGlite,
+  id: string,
+  opts: { sourceMetadata: string },
+): Promise<void> {
+  await pg.exec(`
+    INSERT INTO raw_events (
+      id,
+      team_id,
+      author_user_id,
+      source,
+      content_text,
+      occurred_at,
+      created_at,
+      visibility,
+      source_metadata
+    )
+    VALUES (
+      '${id}',
+      '${TEAM_ID}',
+      '${ADMIN_ID}',
+      'web',
+      'Headed out',
+      now() - interval '1 hour',
+      now() - interval '1 hour',
+      'team',
+      '${opts.sourceMetadata}'::jsonb
     );
   `);
 }

@@ -9,7 +9,7 @@ import {
   rawEvents,
   teamMembers,
 } from '@timeline/db';
-import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
 
 import { decryptJson, encryptJson } from '../crypto/secrets.js';
 
@@ -430,7 +430,13 @@ export async function adminVerifyTeamMember(
   const rows = await db
     .select({ id: teamMembers.userId })
     .from(teamMembers)
-    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
+    .where(
+      and(
+        eq(teamMembers.teamId, teamId),
+        eq(teamMembers.userId, userId),
+        isNull(teamMembers.removedAt),
+      ),
+    )
     .limit(1);
   return rows.length > 0;
 }

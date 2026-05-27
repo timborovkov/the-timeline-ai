@@ -57,7 +57,7 @@ dashboard quirks:
 - [`docs/setup/telegram.html`](./docs/setup/telegram.html) — Telegram bot (Phase 2+).
 - [`docs/setup/openrouter.html`](./docs/setup/openrouter.html) — OpenRouter API
   (Phase 3+).
-- [`docs/setup/postmark.html`](./docs/setup/postmark.html) — inbound email and support/contact mail.
+- [`docs/setup/postmark.html`](./docs/setup/postmark.html) — inbound email, outbound team invites, and support/contact mail.
 - [`docs/setup/meeting-bots.html`](./docs/setup/meeting-bots.html) — Recall.ai meeting bots (Phase 10).
 - [`docs/setup/integrations.html`](./docs/setup/integrations.html) — third-party integrations (Drive/Linear/GitHub), custom MCP servers, and Timeline-as-MCP-server (Phase 11).
 - [`docs/setup/sentry.html`](./docs/setup/sentry.html) — error tracking.

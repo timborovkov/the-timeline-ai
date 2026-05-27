@@ -290,6 +290,8 @@ async function collectRawEventCandidates(
         activeRawEvent(),
         isNotNull(rawEvents.contentText),
         lt(rawEvents.createdAt, staleCutoff),
+        sql`${rawEvents.sourceMetadata} ->> 'extracted_at' IS NULL`,
+        sql`${rawEvents.sourceMetadata} ->> 'extraction_model_version' IS NULL`,
         notExists(
           db
             .select({ one: sql`1` })

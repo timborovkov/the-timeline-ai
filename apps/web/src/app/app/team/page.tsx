@@ -1,9 +1,14 @@
-import { users } from '@timeline/db';
+import { teamInvites, teamMembers, users } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
-import { inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import { removeMemberAction } from '@/app/actions/teams';
+import {
+  changeMemberRoleAction,
+  removeMemberAction,
+  resendInviteAction,
+  revokeInviteAction,
+} from '@/app/actions/teams';
 import { ActionChip } from '@/components/action-chip';
 import { IndexStrip } from '@/components/index-strip';
 import { TeamAccessPanel } from '@/components/team-access-panel';
@@ -24,10 +29,53 @@ export default async function TeamSettingsPage() {
   const scope = withTeam(db, active.teamId, session.user.id);
   const role = await scope.requireMembership();
   const isAdmin = role === 'owner' || role === 'admin';
+  const isOwner = role === 'owner';
   const team = await scope.timeline.team();
 
   const memberRows = await scope.timeline.listMembers();
-  const userIds = memberRows.map((m) => m.userId);
+  const removedRows = isAdmin
+    ? await db
+        .select({
+          userId: teamMembers.userId,
+          role: teamMembers.role,
+          removedAt: teamMembers.removedAt,
+        })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, active.teamId), isNotNull(teamMembers.removedAt)))
+        .orderBy(desc(teamMembers.removedAt))
+    : [];
+  const inviteRows = isAdmin
+    ? await db
+        .select({
+          id: teamInvites.id,
+          email: teamInvites.email,
+          role: teamInvites.role,
+          token: teamInvites.token,
+          expiresAt: teamInvites.expiresAt,
+          createdAt: teamInvites.createdAt,
+          lastSentAt: teamInvites.lastSentAt,
+          sendStatus: teamInvites.sendStatus,
+          sendError: teamInvites.sendError,
+          invitedByUserId: teamInvites.invitedByUserId,
+        })
+        .from(teamInvites)
+        .where(
+          and(
+            eq(teamInvites.teamId, active.teamId),
+            isNull(teamInvites.acceptedAt),
+            isNull(teamInvites.revokedAt),
+            isOwner ? undefined : eq(teamInvites.role, 'member'),
+          ),
+        )
+        .orderBy(desc(teamInvites.createdAt))
+    : [];
+  const userIds = Array.from(
+    new Set([
+      ...memberRows.map((m) => m.userId),
+      ...removedRows.map((m) => m.userId),
+      ...inviteRows.map((i) => i.invitedByUserId),
+    ]),
+  );
   const userInfo =
     userIds.length > 0
       ? await db
@@ -84,8 +132,26 @@ export default async function TeamSettingsPage() {
                     <span className="text-xs text-muted-foreground">{u?.email}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <Badge variant="outline">{m.role}</Badge>
-                    {isAdmin && m.userId !== session.user.id && m.role !== 'owner' ? (
+                    {isOwner && m.userId !== session.user.id ? (
+                      <form action={changeMemberRoleAction} className="flex items-center gap-2">
+                        <input type="hidden" name="userId" value={m.userId} />
+                        <select
+                          name="role"
+                          defaultValue={m.role}
+                          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                        >
+                          <option value="member">Member</option>
+                          <option value="admin">Admin</option>
+                          <option value="owner">Owner</option>
+                        </select>
+                        <Button type="submit" variant="outline" size="sm">
+                          Save
+                        </Button>
+                      </form>
+                    ) : (
+                      <Badge variant="outline">{m.role}</Badge>
+                    )}
+                    {isAdmin && m.userId !== session.user.id && (isOwner || m.role === 'member') ? (
                       <form action={removeMemberAction}>
                         <input type="hidden" name="userId" value={m.userId} />
                         <Button type="submit" variant="ghost" size="sm">
@@ -107,11 +173,96 @@ export default async function TeamSettingsPage() {
             <CardTitle>Invite a teammate</CardTitle>
           </CardHeader>
           <CardContent>
-            <InviteMemberForm />
-            <p className="mt-3 text-xs text-muted-foreground">
-              Email delivery lands in Phase 7. For now the invite link is shown here — copy and
-              share it manually.
-            </p>
+            <InviteMemberForm canInviteAdmin={isOwner} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {isAdmin ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Pending invites</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {inviteRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No pending invites.</p>
+            ) : (
+              <ul className="divide-y">
+                {inviteRows.map((invite) => {
+                  const inviter = userMap.get(invite.invitedByUserId);
+                  const url = `${process.env.AUTH_URL ?? 'http://localhost:3000'}/accept-invite/${invite.token}`;
+                  return (
+                    <li key={invite.id} className="space-y-2 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium">{invite.email}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {invite.role} · invited by{' '}
+                            {inviter?.name ?? inviter?.email ?? 'Unknown'} · expires{' '}
+                            {invite.expiresAt.toLocaleDateString()}
+                          </p>
+                          {invite.sendStatus === 'failed' ? (
+                            <p className="text-xs text-destructive">
+                              Email failed: {invite.sendError ?? 'unknown error'}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              Email {invite.sendStatus}
+                              {invite.lastSentAt
+                                ? ` · sent ${invite.lastSentAt.toLocaleDateString()}`
+                                : ''}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <form action={resendInviteAction}>
+                            <input type="hidden" name="inviteId" value={invite.id} />
+                            <Button type="submit" variant="outline" size="sm">
+                              Resend
+                            </Button>
+                          </form>
+                          <form action={revokeInviteAction}>
+                            <input type="hidden" name="inviteId" value={invite.id} />
+                            <Button type="submit" variant="ghost" size="sm">
+                              Revoke
+                            </Button>
+                          </form>
+                        </div>
+                      </div>
+                      <code className="block break-all rounded-md bg-muted px-3 py-2 text-[12px]">
+                        {url}
+                      </code>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {isAdmin && removedRows.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Removed members</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y">
+              {removedRows.map((m) => {
+                const u = userMap.get(m.userId);
+                return (
+                  <li key={m.userId} className="flex items-center justify-between py-3">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium">{u?.name ?? u?.email ?? m.userId}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {u?.email} · removed {m.removedAt?.toLocaleDateString()}
+                      </span>
+                    </div>
+                    <Badge variant="outline">{m.role}</Badge>
+                  </li>
+                );
+              })}
+            </ul>
           </CardContent>
         </Card>
       ) : null}
