@@ -343,18 +343,18 @@ out of scope.
 
 ### Slice 13.8 — Standardized abuse-control rate limits
 
-- [ ] Extend the typed rate-limit constants in
+- [x] Extend the typed rate-limit constants in
       `packages/shared/src/rate-limit/buckets.ts` so each public/expensive
       surface has an explicit named policy: signup, support form, AI chat,
       meeting scheduling, exports, document upload/finalize, and existing
       webhook buckets.
-- [ ] Use Cloudflare Turnstile only on public or anonymous abuse surfaces:
+- [x] Use Cloudflare Turnstile only on public or anonymous abuse surfaces:
       public support/contact and email/password registration. OAuth sign-up,
       signed-in chat, meetings, documents, integrations, and internal app forms
       rely on rate limits and existing quota/permission checks.
-- [ ] Add `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, and `SUPPORT_EMAIL` env
+- [x] Add `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, and `SUPPORT_EMAIL` env
       wiring and document the production behavior.
-- [ ] Keep usage tracking, billing dashboards, and model-spend caps out of Phase
+- [x] Keep usage tracking, billing dashboards, and model-spend caps out of Phase
       13.
 
 ## Phase 14 — Backup And Operations

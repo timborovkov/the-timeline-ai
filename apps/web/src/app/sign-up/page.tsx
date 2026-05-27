@@ -6,12 +6,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Separator } from '@/components/ui/separator';
 import { hasGitHubAuth } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 interface Props {
   searchParams: Promise<{ invite?: string }>;
 }
 
 export default async function SignUpPage({ searchParams }: Props) {
   const { invite } = await searchParams;
+  const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY ?? undefined;
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
       <Card>
@@ -44,7 +47,7 @@ export default async function SignUpPage({ searchParams }: Props) {
               </div>
             </>
           ) : null}
-          <SignUpForm inviteToken={invite} />
+          <SignUpForm inviteToken={invite} turnstileSiteKey={turnstileSiteKey} />
           <p className="text-sm text-muted-foreground">
             Already have an account?{' '}
             <Link

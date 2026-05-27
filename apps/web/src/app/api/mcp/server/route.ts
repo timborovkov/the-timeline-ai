@@ -46,8 +46,7 @@ export async function POST(req: Request): Promise<Response> {
   if (clientIp) {
     const rl = await rateLimit.checkRateLimit({
       key: rateLimit.rateLimitKey('mcp_server', 'ip', clientIp),
-      capacity: 600,
-      refillPerSec: 600 / 60,
+      ...rateLimit.RATE_LIMITS.mcpServer,
     });
     if (!rl.ok) {
       return withCors(

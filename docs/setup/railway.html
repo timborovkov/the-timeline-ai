@@ -95,6 +95,13 @@
         isn't a local-only default. Mark provider tokens (OpenRouter, Telegram, Postmark, Sentry) as
         <strong>secret</strong>.
       </p>
+      <p>
+        For production abuse controls, also set <code>TURNSTILE_SITE_KEY</code>,
+        <code>TURNSTILE_SECRET_KEY</code>, and <code>SUPPORT_EMAIL</code>. Turnstile is only
+        rendered on anonymous public forms: email/password registration and
+        <code>/help/support</code>. OAuth sign-up and signed-in app forms do not show CAPTCHA; they
+        use rate limits, permission checks, and product quotas instead.
+      </p>
 
       <h2 id="healthchecks">6. Healthchecks</h2>
       <p>

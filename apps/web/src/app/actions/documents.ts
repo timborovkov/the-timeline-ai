@@ -9,6 +9,7 @@ import {
   getSignedPutObjectUrl,
   headObject,
   queue,
+  rateLimit,
   withTeam,
 } from '@timeline/shared';
 import { revalidatePath } from 'next/cache';
@@ -131,6 +132,16 @@ export async function requestDocumentUploadAction(
 ): Promise<RequestUploadResult> {
   const got = await withScopeOrError();
   if ('error' in got) return { ok: false, error: got.error };
+  const rl = await rateLimit.checkRateLimit({
+    key: rateLimit.rateLimitKey('document_upload', 'user', got.userId),
+    ...rateLimit.RATE_LIMITS.documentUpload,
+  });
+  if (!rl.ok) {
+    return {
+      ok: false,
+      error: `Too many upload attempts. Try again in ${Math.ceil(rl.retryAfterMs / 1000)} seconds.`,
+    };
+  }
   const parsed = requestUploadSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid' };
   try {
@@ -187,6 +198,16 @@ export async function finalizeDocumentVersionAction(
 ): Promise<Result & { documentId?: string; processingStatus?: string }> {
   const got = await withScopeOrError();
   if ('error' in got) return { ok: false, error: got.error };
+  const rl = await rateLimit.checkRateLimit({
+    key: rateLimit.rateLimitKey('document_finalize', 'user', got.userId),
+    ...rateLimit.RATE_LIMITS.documentFinalize,
+  });
+  if (!rl.ok) {
+    return {
+      ok: false,
+      error: `Too many finalize attempts. Try again in ${Math.ceil(rl.retryAfterMs / 1000)} seconds.`,
+    };
+  }
   const parsed = finalizeSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid' };
 
