@@ -40,6 +40,12 @@ export async function POST(req: Request): Promise<Response> {
     response_url: form.get('response_url') ?? '',
     trigger_id: form.get('trigger_id') ?? undefined,
   };
+  if (input.command !== '/ask') {
+    return Response.json({
+      response_type: 'ephemeral',
+      text: 'Timeline only handles /ask from Slack.',
+    });
+  }
   const userLimit = await rateLimit.checkRateLimit({
     key: rateLimit.rateLimitKey('slack', 'ask', input.team_id, input.user_id),
     ...rateLimit.RATE_LIMITS.slackAsk,
