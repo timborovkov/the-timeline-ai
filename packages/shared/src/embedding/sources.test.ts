@@ -16,6 +16,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { renderRawEventForAi } from './raw-event-renderer.js';
 import { buildEmbeddingPlan } from './sources.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -167,6 +168,19 @@ describe('embedding source plans', () => {
     );
     expect(plan?.text).toContain('attachments contract.pdf');
     expect(plan?.text).toContain('Message:\nCan someone review the contract?');
+  });
+
+  it('caps long metadata snippets at the requested maximum length', () => {
+    const sender = 'A'.repeat(130);
+    const rendered = renderRawEventForAi({
+      source: 'slack',
+      contentText: 'hello',
+      sourceMetadata: { slack_sender_name: sender },
+    });
+
+    const renderedSender = rendered?.match(/sender ([A.]+)/)?.[1];
+    expect(renderedSender).toBe(`${'A'.repeat(117)}...`);
+    expect(renderedSender).toHaveLength(120);
   });
 
   it('skips document chunks unless the parent document is team-visible', async () => {

@@ -240,8 +240,10 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
       sourceUnverified: ctx.tgUserRow.userId === null,
       isEdit: false,
     });
-    await maybeEnqueueExtract(ctx, inserted);
-    await maybeEnqueueEmbed(ctx, inserted);
+    if (text.trim()) {
+      await maybeEnqueueExtract(ctx, inserted);
+      await maybeEnqueueEmbed(ctx, inserted);
+    }
     await ingestTelegramDocumentAttachment(ctx, fileAttachment, inserted);
     if (inserted) await ackReaction(ctx.tg, ctx.message.chat.id, ctx.message.message_id);
     return;
@@ -996,8 +998,10 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
       sourceUnverified: !ctx.tgUserRow?.userId,
       isEdit: false,
     });
-    await maybeEnqueueExtract(ctx, inserted);
-    await maybeEnqueueEmbed(ctx, inserted);
+    if (text.trim()) {
+      await maybeEnqueueExtract(ctx, inserted);
+      await maybeEnqueueEmbed(ctx, inserted);
+    }
     await ingestTelegramDocumentAttachment(ctx, fileAttachment, inserted);
     return;
   }

@@ -425,7 +425,7 @@ async function handleMessageEvent(
   });
   const target = inserted ?? (await findEventBySlackEventId(deps.db, slackEventId));
   if (target) {
-    await enqueueTextPipelines(deps, target);
+    if (text.trim()) await enqueueTextPipelines(deps, target);
     await processSlackAttachments(deps, api, {
       teamId: target.teamId,
       parentRawEventId: target.id,

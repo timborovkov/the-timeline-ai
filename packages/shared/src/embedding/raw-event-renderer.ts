@@ -15,7 +15,10 @@ function metadataString(meta: Metadata, key: string, max = 120): string | null {
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   const text = String(value).replace(/\s+/g, ' ').trim();
   if (!text) return null;
-  return text.length > max ? `${text.slice(0, max - 1)}...` : text;
+  if (text.length <= max) return text;
+  if (max <= 0) return '';
+  if (max <= 3) return '.'.repeat(max);
+  return `${text.slice(0, max - 3)}...`;
 }
 
 function renderTelegramContext(meta: Metadata): string | null {

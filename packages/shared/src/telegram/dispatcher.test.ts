@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { handleUpdate, parseCommand } from './dispatcher.js';
 import { verifyWebhookSecret } from './secret.js';
@@ -331,6 +331,38 @@ describe('handleUpdate telegram edit visibility', () => {
     const all = await allTelegramRows(pg);
     expect(all).toHaveLength(1);
     expect(all[0]?.content_text).toBe('one delivery');
+  });
+
+  it('does not enqueue text workers for file-only document messages', async () => {
+    const enqueueExtract = vi.fn();
+    const enqueueEmbed = vi.fn();
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: fakeTg,
+        extract: { enqueueExtract },
+        embed: { enqueueEmbed },
+      },
+      {
+        update_id: 205,
+        message: {
+          message_id: 25,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          document: {
+            file_id: 'doc-file',
+            file_name: 'contract.pdf',
+            mime_type: 'application/pdf',
+            file_size: 1024,
+          },
+        },
+      },
+    );
+
+    expect(enqueueExtract).not.toHaveBeenCalled();
+    expect(enqueueEmbed).not.toHaveBeenCalled();
   });
 
   it('acks DM captures but not group captures', async () => {
