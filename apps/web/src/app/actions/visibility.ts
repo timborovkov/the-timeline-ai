@@ -22,6 +22,11 @@ const sourceSchema = z.enum([
 ]);
 const visibilitySchema = z.enum(['team', 'private', 'specific_users']);
 
+export interface VisibilityActionState {
+  ok?: boolean;
+  error?: string;
+}
+
 async function scopeOrError() {
   const session = await auth();
   if (!session?.user) return { error: 'Not signed in' as const };
@@ -39,7 +44,10 @@ function optionalUuidFromForm(formData: FormData, name: string): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-export async function setVisibilityDefaultAction(formData: FormData): Promise<void> {
+export async function setVisibilityDefaultAction(
+  _prev: VisibilityActionState,
+  formData: FormData,
+): Promise<VisibilityActionState> {
   const parsed = z
     .object({
       source: sourceSchema,
@@ -51,10 +59,11 @@ export async function setVisibilityDefaultAction(formData: FormData): Promise<vo
       visibility: formData.get('visibility'),
       sourceOwnerUserId: optionalUuidFromForm(formData, 'sourceOwnerUserId'),
     });
-  if (!parsed.success) return;
+  if (!parsed.success) return { error: 'Invalid visibility default' };
   const got = await scopeOrError();
-  if ('error' in got) return;
+  if ('error' in got) return { error: got.error };
   try {
+    await got.scope.requireMembership('admin');
     await got.scope.timeline.setVisibilityDefault({
       source: parsed.data.source,
       visibility: parsed.data.visibility,
@@ -63,8 +72,10 @@ export async function setVisibilityDefaultAction(formData: FormData): Promise<vo
     });
     revalidatePath('/app/team');
     revalidatePath('/app/timeline');
+    return { ok: true };
   } catch (err) {
     console.error('[visibility] failed to update default', err);
+    return { error: err instanceof Error ? err.message : 'Failed to update visibility default' };
   }
 }
 

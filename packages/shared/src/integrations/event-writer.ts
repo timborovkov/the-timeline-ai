@@ -59,31 +59,49 @@ export async function writeIntegrationEvents(deps: {
     return true;
   });
 
-  const values = uniqueEvents.map((evt) => ({
-    teamId,
-    authorUserId,
-    visibilityOwnerUserId: deps.integration.connectedByUserId ?? null,
-    source: 'integration' as const,
-    contentText: evt.contentText,
-    occurredAt: evt.occurredAt,
-    visibility: evt.visibility ?? visibility,
-    visibilityUserIds:
-      (evt.visibility ?? visibility) === 'specific_users'
-        ? deps.integration.visibilityDefaultUserIds
-        : null,
-    sourceMetadata: {
-      provider: evt.provider,
-      integration_id: deps.integration.id,
-      external_object_id: evt.externalObjectId,
-      external_event_id: evt.externalEventId ?? null,
-      event_type: evt.eventType,
-      actor: evt.actor ?? null,
-      dedup_key: evt.dedupKey,
-      sync_at: new Date().toISOString(),
-      source_kind: 'integration_event',
-      ...(evt.extra ?? {}),
-    },
-  }));
+  const values = uniqueEvents.map((evt) => {
+    const visibilityOwnerUserId = deps.integration.connectedByUserId ?? null;
+    const requestedVisibility = evt.visibility ?? visibility;
+    const requestedUserIds =
+      requestedVisibility === 'specific_users'
+        ? (evt.visibilityUserIds ??
+          (visibility === 'specific_users' ? deps.integration.visibilityDefaultUserIds : null))
+        : null;
+    const hasSpecificUsers = (requestedUserIds?.length ?? 0) > 0;
+    const resolvedVisibility =
+      requestedVisibility === 'specific_users' && !hasSpecificUsers
+        ? visibility === 'private'
+          ? visibilityOwnerUserId
+            ? 'private'
+            : 'team'
+          : 'team'
+        : requestedVisibility === 'private' && !visibilityOwnerUserId
+          ? 'team'
+          : requestedVisibility;
+
+    return {
+      teamId,
+      authorUserId,
+      visibilityOwnerUserId,
+      source: 'integration' as const,
+      contentText: evt.contentText,
+      occurredAt: evt.occurredAt,
+      visibility: resolvedVisibility,
+      visibilityUserIds: resolvedVisibility === 'specific_users' ? requestedUserIds : null,
+      sourceMetadata: {
+        provider: evt.provider,
+        integration_id: deps.integration.id,
+        external_object_id: evt.externalObjectId,
+        external_event_id: evt.externalEventId ?? null,
+        event_type: evt.eventType,
+        actor: evt.actor ?? null,
+        dedup_key: evt.dedupKey,
+        sync_at: new Date().toISOString(),
+        source_kind: 'integration_event',
+        ...(evt.extra ?? {}),
+      },
+    };
+  });
 
   const inserted = await deps.db
     .insert(rawEvents)
