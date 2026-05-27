@@ -204,13 +204,154 @@ using the new `SECRETS_ENCRYPTION_KEY` env var. Per-team helpers in
 
 ## Phase 13 — Polish And Hardening
 
-- [ ] Onboarding flow: new team creation includes Telegram bot setup, email forwarding, first document upload, and first integration setup.
-- [ ] Per-event visibility controls in UI (`private` / `team` / specific users). Defaults configurable per team/source.
-- [ ] Audit log: who viewed/modified what. Useful for trust.
-- [ ] Team data export: full JSON dump including raw events, facts, objects, tasks, documents, document versions, integrations, and signed file URLs.
-- [ ] Background job monitoring dashboard. Failed jobs queue with retry UI.
-- [ ] Performance: timeline pagination, object-page pagination, document search pagination, hot entity/object query caching.
-- [ ] User-facing docs for capture surfaces, document drive, boards, integrations, and object management.
+Beta-readiness gate. Keep this phase split into independently reviewable slices;
+do not turn it into an enterprise compliance or billing pass. Usage tracking,
+right-to-be-forgotten deletion workflows, and global operator dashboards stay
+out of scope.
+
+### Slice 13.1 — Timeline onboarding tutorial
+
+- [ ] Add a dismissible onboarding checklist at the top of `/app/timeline`,
+      since the timeline is the app's landing page.
+- [ ] Track team-level completion with per-user dismissal. Any teammate
+      completing a setup step marks it done for the team; each user can hide
+      the checklist for themselves.
+- [ ] Treat onboarding as a tutorial, not a proof-of-ingest flow. Configuring
+      or opening the relevant surface is enough; do not require first
+      successful external data arrival.
+- [ ] Checklist steps: capture first note, connect Telegram, set up email
+      forwarding, upload first document, connect first integration.
+- [ ] Keep the checklist reopenable from a setup/help affordance in the app.
+
+### Slice 13.2 — Visibility defaults and one-off edits
+
+- [ ] Add source-specific visibility defaults with a team-wide fallback.
+      Defaults apply only to future captures/imports.
+- [ ] Sources needing explicit defaults: web text/audio capture, Telegram,
+      email, documents, meetings, integrations, and later external calendars.
+- [ ] Keep quick capture surfaces binary (`private` / `team`) for speed;
+      support `specific_users` where member-picking already fits the workflow:
+      documents, calendar events, meetings, integration defaults, and event
+      detail/edit surfaces.
+- [ ] Add an explicit `visibility_owner_user_id` concept for source-owned
+      events instead of overloading attribution. Defaults: web capture =
+      capturer, Telegram DM = linked user, Telegram group = group linker/source
+      owner, email = verified team sender else source owner, documents =
+      owner/uploader, meetings = scheduler, integrations = connector owner.
+- [ ] Only the visibility owner can change an existing event's visibility.
+      Admin/owner status does not grant access to private events and does not
+      allow rewriting someone else's event visibility.
+- [ ] Expanding or narrowing existing visibility is a one-off edit, not a bulk
+      retroactive default change. Audit every visibility change.
+
+### Slice 13.3 — Generic trust audit log
+
+- [ ] Add a generic append-only `audit_log` table for sensitive reads/actions
+      going forward. Leave `integration_audit_log` as provider sync history.
+- [ ] Audit sensitive/security-relevant actions only: visibility changes,
+      private/restricted event detail reads, private/restricted document
+      view/download/signed URL generation, team export creation, job
+      retries/dismissals, settings changes, and integration/MCP
+      connect/disconnect.
+- [ ] Do not audit every timeline page load, team-visible row impression, or
+      ordinary search result preview.
+- [ ] Make audit log visible to team owners/admins only, while preserving
+      visibility boundaries. If the viewer cannot see a private/restricted
+      target, show redacted target labels and ids, not titles, filenames, body
+      text, or snippets.
+- [ ] Retain audit rows indefinitely with no user-facing delete. Audit metadata
+      must stay coarse and avoid raw sensitive content.
+
+### Slice 13.4 — Team export job
+
+- [ ] Build async team data exports as a background job with status (`queued`,
+      `running`, `ready`, `failed`, `expired`) instead of a synchronous request.
+- [ ] Owners/admins can export team-visible data and source-owned admin data,
+      but cannot export other users' private/restricted content unless they are
+      already allowed to see it.
+- [ ] Generate a zip archive containing structured JSON/JSONL files such as
+      `manifest.json`, `raw_events.jsonl`, `facts.jsonl`, `objects.jsonl`,
+      `tasks.jsonl`, `documents.jsonl`, `document_versions.jsonl`,
+      `integrations.jsonl`, `audit_log.jsonl`, `files.jsonl`, and
+      `README.txt`.
+- [ ] Include signed file URLs in `files.jsonl`, not binary blobs in the zip.
+      Signed URLs and the export archive expire after 24 hours.
+- [ ] Never export integration secrets/tokens in plaintext. Include an
+      omissions summary/count for private or restricted records excluded from
+      the export.
+- [ ] Audit export creation and signed URL generation.
+
+### Slice 13.5 — Team-scoped job dashboard
+
+- [ ] Add a team-scoped product dashboard for owners/admins to recover failed
+      or stuck jobs that affect their own team's data. Do not build a
+      cross-team/internal operator dashboard in this phase.
+- [ ] Surface product nouns, not BullMQ internals: transcription, extraction,
+      embedding, document processing, meeting finalization, and integration
+      sync.
+- [ ] Provide retry UI only for idempotent jobs tied to visible team artifacts:
+      raw-event transcription/extraction/embedding, fact/object/document
+      chunk/calendar event embedding, document version extraction, meeting
+      finalization, and integration sync.
+- [ ] Provide an ignore/dismiss path for irrecoverable failures.
+- [ ] Do not expose repeatable scheduler ticks, external webhook delivery
+      failures, MCP health pings, or low-level jobs with no user-understandable
+      target.
+
+### Slice 13.6 — Pagination and caching
+
+- [ ] Add cursor pagination for the timeline; no unbounded timeline query should
+      remain on the main feed.
+- [ ] Paginate object-page sections independently: events, facts, changes,
+      tasks, and related records where needed.
+- [ ] Paginate document search results/chunks.
+- [ ] Introduce React Query selectively for interactive/paginated client-side
+      server state: infinite timeline pagination, object section pagination,
+      document search, job dashboard polling/retry status, and onboarding
+      checklist refreshes.
+- [ ] Keep simple RSC/server-action settings pages as-is; do not migrate the
+      whole app to React Query.
+- [ ] Add short-lived Redis caches for hot team/user/visibility-aware reads
+      where useful. Cache keys must include `teamId`, `userId`,
+      visibility-relevant filters, cursor/page params, and app version; no
+      cache may bypass per-user visibility checks.
+- [ ] Target correctness under large beta data first: roughly 50k+ raw events,
+      10k+ facts, and 5k+ documents/chunks per team should remain usable.
+
+### Slice 13.7 — Public help docs and support contact
+
+- [ ] Build public Next.js help pages under `/help`, not repo-internal `docs/`.
+      Use a lightweight dedicated docs layout with navbar, footer, theme
+      toggle, links to the landing page, and auth-aware
+      dashboard/sign-in/sign-up links.
+- [ ] First help pages: capture surfaces, document drive, boards,
+      integrations, object management, and a `/help` index.
+- [ ] Help pages may link to live app routes for signed-in users. Logged-out
+      users should see sign-in/sign-up CTAs instead of dead app links.
+- [ ] Add a public support/contact form with request type (`technical_support`,
+      `sales`, or similar), name, email, message, current page, and signed-in
+      user/team context when available.
+- [ ] Send support requests through Postmark to `SUPPORT_EMAIL` and store every
+      request in a `support_requests` table so internal operators can inspect
+      the DB. No in-app support admin UI is required for Phase 13.
+- [ ] Protect public support forms with Cloudflare Turnstile in production, a
+      honeypot field, and rate limits.
+
+### Slice 13.8 — Standardized abuse-control rate limits
+
+- [ ] Extend the typed rate-limit constants in
+      `packages/shared/src/rate-limit/buckets.ts` so each public/expensive
+      surface has an explicit named policy: signup, support form, AI chat,
+      meeting scheduling, exports, document upload/finalize, and existing
+      webhook buckets.
+- [ ] Use Cloudflare Turnstile only on public or anonymous abuse surfaces:
+      public support/contact and email/password registration. OAuth sign-up,
+      signed-in chat, meetings, documents, integrations, and internal app forms
+      rely on rate limits and existing quota/permission checks.
+- [ ] Add `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, and `SUPPORT_EMAIL` env
+      wiring and document the production behavior.
+- [ ] Keep usage tracking, billing dashboards, and model-spend caps out of Phase
+      13.
 
 ## Phase 14 — Backup And Operations
 

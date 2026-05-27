@@ -26,6 +26,8 @@ and structured logging are in place.
 - [`docs/product-brief.html`](./docs/product-brief.html) — what we're building and why.
 - [`todo.md`](./todo.md) — ordered build plan, phased.
 - [`design.md`](./design.md) — design system, the source of truth for UI.
+- [`CONTEXT.md`](./CONTEXT.md) — product language and domain glossary.
+- [`docs/adr/`](./docs/adr/) — durable architecture and product decisions.
 
 ## Local development
 
