@@ -24,6 +24,10 @@
       "import": "./dist/env.js",
       "types": "./dist/env.d.ts"
     },
+    "./email": {
+      "import": "./dist/email/index.js",
+      "types": "./dist/email/index.d.ts"
+    },
     "./passwords": {
       "import": "./dist/passwords.js",
       "types": "./dist/passwords.d.ts"

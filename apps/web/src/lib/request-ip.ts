@@ -1,3 +1,4 @@
+import { clientIpFromHeaders as sharedClientIpFromHeaders } from '@timeline/shared/email';
 import { headers } from 'next/headers';
 
 export async function clientIpFromRequestHeaders(): Promise<string | null> {
@@ -6,9 +7,5 @@ export async function clientIpFromRequestHeaders(): Promise<string | null> {
 }
 
 export function clientIpFromHeaders(h: Headers): string | null {
-  const cf = h.get('cf-connecting-ip');
-  if (cf) return cf;
-  const forwarded = h.get('x-forwarded-for');
-  if (forwarded) return forwarded.split(',')[0]?.trim() ?? null;
-  return h.get('x-real-ip');
+  return sharedClientIpFromHeaders(h);
 }
