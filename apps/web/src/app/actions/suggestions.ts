@@ -38,9 +38,7 @@ export async function rejectSuggestionItemAction(input: unknown): Promise<Action
   try {
     const ok = await r.scope.suggestions.rejectSuggestionItem(parsed.data.itemId);
     if (!ok) return { error: 'Suggestion item no longer pending' };
-    revalidatePath('/app/approvals');
-    revalidatePath('/app/timeline');
-    revalidatePath('/app/inbox');
+    revalidateSuggestionSurfaces();
     return { ok: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Failed to reject suggestion' };
