@@ -12,6 +12,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-o
 import { embed as defaultEmbed, type EmbedResult } from '../llm/embed.js';
 import { decodeCursor, pageWindow } from '../pagination.js';
 import { getQdrantClient, type SearchHit, type SearchOpts } from '../qdrant/client.js';
+import { validateVisibilityUserIds } from '../visibility.js';
 
 import { buildDocumentObjectKey } from './object-key.js';
 
@@ -228,15 +229,15 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     ),
   );
 
-  async function normalizeVisibilityUserIds(input: {
+  async function normalizeDocumentVisibilityUserIds(input: {
     visibility: Visibility;
     visibilityUserIds?: string[] | null;
   }): Promise<string[] | null> {
-    if (input.visibility !== 'specific_users') return null;
-    const clean = [...new Set(input.visibilityUserIds ?? [])];
-    if (clean.length === 0) throw new Error('specific_users visibility requires at least one user');
-    for (const uid of clean) await requireTeamMember(uid);
-    return clean;
+    return validateVisibilityUserIds(
+      input.visibility,
+      input.visibilityUserIds ?? null,
+      requireTeamMember,
+    );
   }
 
   function pathSegment(row: { name: string }): string {
@@ -572,7 +573,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       await ensureMember();
       if (input.parentFolderId) await assertFolderInTeam(input.parentFolderId);
       const visibility = input.visibility ?? 'team';
-      const visibilityUserIds = await normalizeVisibilityUserIds({
+      const visibilityUserIds = await normalizeDocumentVisibilityUserIds({
         visibility,
         visibilityUserIds: input.visibilityUserIds ?? null,
       });
@@ -694,7 +695,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       await ensureMember();
       if (input.folderId) await assertFolderInTeam(input.folderId);
       const visibility = input.visibility ?? 'team';
-      const visibilityUserIds = await normalizeVisibilityUserIds({
+      const visibilityUserIds = await normalizeDocumentVisibilityUserIds({
         visibility,
         visibilityUserIds: input.visibilityUserIds ?? null,
       });
@@ -985,7 +986,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       await ensureMember();
       const existing = await getDocumentRaw(input.id);
       if (!existing) throw new Error('Document not found');
-      const visibilityUserIds = await normalizeVisibilityUserIds(input);
+      const visibilityUserIds = await normalizeDocumentVisibilityUserIds(input);
       return db.transaction(async (tx) => {
         const rows = await tx
           .update(documents)

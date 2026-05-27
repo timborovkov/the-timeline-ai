@@ -13,6 +13,7 @@ import {
 import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
 
 import { decryptJson, encryptJson } from '../crypto/secrets.js';
+import { validateVisibilityUserIds } from '../visibility.js';
 
 import type { IntegrationRow } from './types.js';
 
@@ -41,19 +42,6 @@ export function createIntegrationScope(deps: {
   requireTeamMember?: (otherUserId: string) => Promise<void>;
 }) {
   const { db, teamId, userId, ensureMember } = deps;
-
-  async function validateVisibilityUserIds(
-    visibility: 'team' | 'private' | 'specific_users',
-    ids: string[] | null | undefined,
-  ): Promise<string[] | null> {
-    if (visibility !== 'specific_users') return null;
-    const clean = [...new Set(ids ?? [])];
-    if (clean.length === 0) throw new Error('specific_users visibility requires at least one user');
-    if (deps.requireTeamMember) {
-      for (const uid of clean) await deps.requireTeamMember(uid);
-    }
-    return clean;
-  }
 
   async function listIntegrations(): Promise<IntegrationRow[]> {
     await ensureMember();
@@ -91,6 +79,7 @@ export function createIntegrationScope(deps: {
     const visibilityDefaultUserIds = await validateVisibilityUserIds(
       visibilityDefault,
       input.visibilityDefaultUserIds ?? null,
+      deps.requireTeamMember,
     );
     const rows = await db
       .insert(integrationsTable)
@@ -225,6 +214,7 @@ export function createIntegrationScope(deps: {
     const normalizedUserIds = await validateVisibilityUserIds(
       visibilityDefault,
       visibilityDefaultUserIds,
+      deps.requireTeamMember,
     );
     await db
       .update(integrationsTable)

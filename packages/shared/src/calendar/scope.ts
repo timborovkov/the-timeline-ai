@@ -11,6 +11,7 @@ import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { getEnv } from '../env.js';
 import { getQdrantClient, buildPointId } from '../qdrant/client.js';
 import { enqueueCalendarEventEmbedJob } from '../queue/queues.js';
+import { validateVisibilityUserIds } from '../visibility.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
 type CalendarEventSource = 'internal' | 'google' | 'caldav';
@@ -294,17 +295,6 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     return { ...row, redacted: false };
   }
 
-  async function normalizeVisibilityUserIds(
-    visibility: Visibility,
-    ids: string[] | null | undefined,
-  ): Promise<string[] | null> {
-    if (visibility !== 'specific_users') return null;
-    const clean = [...new Set(ids ?? [])];
-    if (clean.length === 0) throw new Error('specific_users visibility requires at least one user');
-    for (const uid of clean) await requireTeamMember(uid);
-    return clean;
-  }
-
   return {
     async createCalendarEvent(
       input: CreateCalendarEventInput,
@@ -316,7 +306,11 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
 
       const created = await db.transaction(async (tx) => {
         const vis = input.visibility ?? 'team';
-        const visUserIds = await normalizeVisibilityUserIds(vis, input.visibilityUserIds ?? null);
+        const visUserIds = await validateVisibilityUserIds(
+          vis,
+          input.visibilityUserIds ?? null,
+          requireTeamMember,
+        );
         const linkedEntityIds = input.linkedEntityIds
           ? await assertEntitiesBelongToTeam(tx, { teamId, entityIds: input.linkedEntityIds })
           : [];
@@ -514,9 +508,10 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         const newVis = patch.visibility ?? row.visibility;
         const newVisUserIds =
           patch.visibility !== undefined || patch.visibilityUserIds !== undefined
-            ? await normalizeVisibilityUserIds(
+            ? await validateVisibilityUserIds(
                 newVis,
                 patch.visibilityUserIds ?? row.visibilityUserIds,
+                requireTeamMember,
               )
             : row.visibilityUserIds;
 

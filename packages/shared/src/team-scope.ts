@@ -37,6 +37,7 @@ import {
   type SourceKind,
 } from './qdrant/client.js';
 import { enqueueEmbedJob } from './queue/queues.js';
+import { normalizeVisibilityUserIds } from './visibility.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.
@@ -419,14 +420,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     }
   }
 
-  function normalizeVisibilityUserIds(
-    visibility: EventVisibility,
-    ids: string[] | null | undefined,
-  ): string[] | null {
-    if (visibility !== 'specific_users') return null;
-    const clean = [...new Set(ids ?? [])];
-    if (clean.length === 0) throw new Error('specific_users visibility requires at least one user');
-    return clean;
+  function sameVisibilityUsers(
+    a: string[] | null | undefined,
+    b: string[] | null | undefined,
+  ): boolean {
+    const left = [...new Set(a ?? [])].sort();
+    const right = [...new Set(b ?? [])].sort();
+    if (left.length !== right.length) return false;
+    return left.every((id, index) => id === right[index]);
   }
 
   async function validateVisibilityPatch(

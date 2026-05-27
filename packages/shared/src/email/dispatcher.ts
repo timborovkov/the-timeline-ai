@@ -427,8 +427,15 @@ async function ingestForTeam(
   const scope = withTeam(deps.db, team.id, callerUserId);
   const emailDefault = await scope.timeline.resolveVisibilityDefault('email');
   const visibilityOwnerUserId = authorUserId ?? emailDefault.sourceOwnerUserId ?? null;
-  const resolvedEmailVisibility =
-    emailDefault.visibility === 'private' && visibilityOwnerUserId !== null ? 'private' : 'team';
+  let resolvedEmailVisibility: 'private' | 'team' = 'team';
+  if (emailDefault.visibility === 'private' && visibilityOwnerUserId !== null) {
+    resolvedEmailVisibility = 'private';
+  } else if (emailDefault.visibility === 'specific_users') {
+    log.warn(
+      { teamId: team.id, source: emailDefault.source },
+      'email visibility default must be binary; falling back to team',
+    );
+  }
 
   const contentText = chooseContentText(payload);
   const occurredAt = parseDateHeader(payload.Date) ?? new Date();

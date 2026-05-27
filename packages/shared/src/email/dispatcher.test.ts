@@ -16,6 +16,27 @@ const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
+function inboundPayload(messageId: string) {
+  return {
+    MessageID: `postmark-${messageId}`,
+    Date: '2026-05-27T09:00:00Z',
+    Subject: 'Vendor note',
+    From: 'vendor@example.net',
+    FromName: 'Vendor',
+    FromFull: { Email: 'vendor@example.net', Name: 'Vendor' },
+    To: 'team-a@inbound.test',
+    ToFull: [{ Email: 'team-a@inbound.test', Name: 'Team A' }],
+    CcFull: [],
+    BccFull: [],
+    OriginalRecipient: '',
+    MailboxHash: 'team-a',
+    TextBody: 'Please review this.',
+    HtmlBody: '',
+    Headers: [{ Name: 'Message-ID', Value: `<${messageId}@example.net>` }],
+    Attachments: [],
+  };
+}
+
 async function applyMigrations(pg: PGlite): Promise<void> {
   const files = readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.sql'))
@@ -63,24 +84,7 @@ describe('email dispatcher', () => {
     await expect(
       handleInbound(
         { db: db as never, inboundDomain: 'inbound.test' },
-        {
-          MessageID: 'postmark-delivery-id',
-          Date: '2026-05-27T09:00:00Z',
-          Subject: 'Vendor note',
-          From: 'vendor@example.net',
-          FromName: 'Vendor',
-          FromFull: { Email: 'vendor@example.net', Name: 'Vendor' },
-          To: 'team-a@inbound.test',
-          ToFull: [{ Email: 'team-a@inbound.test', Name: 'Team A' }],
-          CcFull: [],
-          BccFull: [],
-          OriginalRecipient: '',
-          MailboxHash: 'team-a',
-          TextBody: 'Please review this.',
-          HtmlBody: '',
-          Headers: [{ Name: 'Message-ID', Value: '<vendor-note@example.net>' }],
-          Attachments: [],
-        },
+        inboundPayload('vendor-note'),
       ),
     ).resolves.toMatchObject({ ok: true, inserted: 1 });
 
@@ -89,5 +93,25 @@ describe('email dispatcher', () => {
     expect(row?.authorUserId).toBeNull();
     expect(row?.visibility).toBe('team');
     expect(row?.visibilityOwnerUserId).toBeNull();
+  });
+
+  it('treats unexpected email specific-users defaults as binary team visibility', async () => {
+    await db.insert(teamVisibilityDefaults).values({
+      teamId: TEAM_ID,
+      source: 'email',
+      visibility: 'specific_users',
+      visibilityUserIds: [USER_ID],
+    });
+
+    await expect(
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test' },
+        inboundPayload('specific-users-default'),
+      ),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    expect(row?.visibility).toBe('team');
+    expect(row?.visibilityUserIds).toBeNull();
   });
 });
