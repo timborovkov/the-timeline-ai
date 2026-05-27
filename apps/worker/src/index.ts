@@ -9,6 +9,7 @@ import { startJanitorWorker } from './workers/janitor.js';
 import { startMcpHealthWorker } from './workers/mcpHealth.js';
 import { startMeetingFinalizeWorker } from './workers/meetingFinalize.js';
 import { startOverdueWorker } from './workers/overdue.js';
+import { startTeamExportWorker } from './workers/teamExport.js';
 import { startTranscribeWorker } from './workers/transcribe.js';
 
 const log = childLogger('worker');
@@ -31,6 +32,7 @@ async function main(): Promise<void> {
   const janitorWorker = startJanitorWorker({ db });
   const integrationSyncWorker = startIntegrationSyncWorker({ db });
   const mcpHealthWorker = startMcpHealthWorker({ db });
+  const teamExportWorker = startTeamExportWorker({ db });
   // Register the hourly repeatables. BullMQ keys by jobId so a
   // duplicate call on the next deploy is a no-op.
   await queue.scheduleOverdueScan();
@@ -41,7 +43,7 @@ async function main(): Promise<void> {
   await queue.scheduleIntegrationIncrementalSync();
   await queue.scheduleMcpHealthPing();
   log.info(
-    'transcribe + extract + embed + overdue + document-extract + meeting-finalize + janitor + integration-sync + mcp-health workers started',
+    'transcribe + extract + embed + overdue + document-extract + meeting-finalize + janitor + integration-sync + mcp-health + team-export workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -57,6 +59,7 @@ async function main(): Promise<void> {
         janitorWorker.close(),
         integrationSyncWorker.close(),
         mcpHealthWorker.close(),
+        teamExportWorker.close(),
       ]);
       await queue.closeTranscribeQueue();
       await queue.closeExtractQueue();
@@ -67,6 +70,7 @@ async function main(): Promise<void> {
       await queue.closeJanitorQueue();
       await queue.closeIntegrationSyncQueue();
       await queue.closeMcpHealthQueue();
+      await queue.closeTeamExportQueue();
       await queue.closeRedisConnection();
     } catch (err: unknown) {
       log.error({ err }, 'shutdown error');

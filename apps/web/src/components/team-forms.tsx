@@ -4,6 +4,11 @@ import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import {
+  createTeamExportAction,
+  downloadTeamExportAction,
+  type CreateTeamExportState,
+} from '@/app/actions/team-exports';
+import {
   createTeamAction,
   inviteMemberAction,
   renameTeamAction,
@@ -103,5 +108,60 @@ export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }
         </div>
       ) : null}
     </form>
+  );
+}
+
+interface TeamExportRow {
+  id: string;
+  status: 'queued' | 'running' | 'ready' | 'failed' | 'expired';
+  createdAt: Date;
+  completedAt: Date | null;
+  expiresAt: Date | null;
+  error: string | null;
+}
+
+export function TeamExportPanel({ exports }: { exports: TeamExportRow[] }) {
+  const [state, action] = useActionState<CreateTeamExportState, FormData>(
+    createTeamExportAction,
+    {},
+  );
+  return (
+    <div className="space-y-4">
+      <form action={action} className="flex items-center justify-between gap-3">
+        <div className="space-y-1">
+          <p className="text-sm text-muted-foreground">
+            Builds a 24-hour archive of team data you are already allowed to see.
+          </p>
+          {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+          {state.ok ? <p className="text-sm text-muted-foreground">Export queued.</p> : null}
+        </div>
+        <Submit label="Start export" />
+      </form>
+
+      {exports.length > 0 ? (
+        <ul className="divide-y rounded-md border">
+          {exports.map((row) => (
+            <li key={row.id} className="flex items-center justify-between gap-3 p-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{row.status}</p>
+                <p className="text-xs text-muted-foreground">
+                  Created {row.createdAt.toLocaleString()}
+                  {row.expiresAt ? ` · expires ${row.expiresAt.toLocaleString()}` : ''}
+                </p>
+                {row.error ? <p className="text-xs text-destructive">{row.error}</p> : null}
+              </div>
+              {row.status === 'ready' ? (
+                <form action={downloadTeamExportAction}>
+                  <input type="hidden" name="exportId" value={row.id} />
+                  <Button type="submit" variant="outline" size="sm">
+                    Download
+                  </Button>
+                </form>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
