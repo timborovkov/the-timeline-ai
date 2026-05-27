@@ -1083,9 +1083,11 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           const allDay = input.allDay ?? false;
           let startAt = input.startAt;
           let endAt = input.endAt;
+          let startDate = input.startDate;
+          let endDate = input.endDate;
           if (allDay) {
-            const startDate = input.startDate ?? input.startAt.slice(0, 10);
-            let endDate = input.endDate ?? input.endAt.slice(0, 10);
+            startDate = input.startDate ?? input.startAt.slice(0, 10);
+            endDate = input.endDate ?? input.endAt.slice(0, 10);
             if (endDate <= startDate) {
               const d = new Date(`${startDate}T00:00:00.000Z`);
               d.setUTCDate(d.getUTCDate() + 1);
@@ -1126,6 +1128,8 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
                   title: input.title,
                   startAt,
                   endAt,
+                  ...(startDate ? { startDate } : {}),
+                  ...(endDate ? { endDate } : {}),
                   timezone,
                   allDay,
                   description: input.description ?? null,

@@ -144,6 +144,14 @@ const calendarCreatePayload = z.object({
   description: z.string().trim().max(2000).nullable().optional(),
   startAt: z.string().datetime(),
   endAt: z.string().datetime(),
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   timezone: z.string().max(100).default('UTC'),
   allDay: z.boolean().default(false),
   location: z.string().trim().max(500).nullable().optional(),
@@ -208,12 +216,27 @@ function oneDayAfter(date: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-function normalizeAllDayRange(payload: { startAt: string; endAt: string; timezone: string }): {
+function localDateFromInstant(iso: string, timezone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(iso));
+}
+
+function normalizeAllDayRange(payload: {
+  startAt: string;
+  endAt: string;
+  timezone: string;
+  startDate?: string;
+  endDate?: string;
+}): {
   startAt: Date;
   endAt: Date;
 } {
-  const startDate = payload.startAt.slice(0, 10);
-  let endDate = payload.endAt.slice(0, 10);
+  const startDate = payload.startDate ?? localDateFromInstant(payload.startAt, payload.timezone);
+  let endDate = payload.endDate ?? localDateFromInstant(payload.endAt, payload.timezone);
   if (endDate <= startDate) endDate = oneDayAfter(startDate);
   const range = localDateSpanToUtcRange(startDate, endDate, payload.timezone);
   return { startAt: range.from, endAt: range.to };
@@ -483,6 +506,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             startAt: parsed.startAt,
             endAt: parsed.endAt,
             timezone: parsed.timezone,
+            ...(parsed.startDate ? { startDate: parsed.startDate } : {}),
+            ...(parsed.endDate ? { endDate: parsed.endDate } : {}),
           })
         : { startAt: new Date(parsed.startAt), endAt: new Date(parsed.endAt) };
       const input: CreateCalendarEventInput = {
@@ -512,12 +537,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const patch: UpdateCalendarEventInput = {};
       if (parsed.title !== undefined) patch.title = parsed.title;
       if (parsed.description !== undefined) patch.description = parsed.description;
-      if (parsed.allDay && parsed.startAt !== undefined && parsed.endAt !== undefined) {
-        const event = await calendar.getCalendarEvent(targetId);
+      const event =
+        parsed.startAt !== undefined || parsed.endAt !== undefined
+          ? await calendar.getCalendarEvent(targetId)
+          : null;
+      const effectiveAllDay = parsed.allDay ?? event?.allDay ?? false;
+      if (effectiveAllDay && parsed.startAt !== undefined && parsed.endAt !== undefined) {
         const normalizedRange = normalizeAllDayRange({
           startAt: parsed.startAt,
           endAt: parsed.endAt,
           timezone: parsed.timezone ?? event?.timezone ?? 'UTC',
+          ...(parsed.startDate ? { startDate: parsed.startDate } : {}),
+          ...(parsed.endDate ? { endDate: parsed.endDate } : {}),
         });
         patch.startAt = normalizedRange.startAt;
         patch.endAt = normalizedRange.endAt;

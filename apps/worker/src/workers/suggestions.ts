@@ -106,6 +106,8 @@ function fallbackBundles(args: {
         title: String(taskPayload.canonicalName),
         startAt: resolved.from.toISOString(),
         endAt: resolved.to.toISOString(),
+        startDate: resolved.localStartDate,
+        endDate: resolved.localEndDate,
         timezone: args.timezone,
         allDay: true,
         visibility: 'team',

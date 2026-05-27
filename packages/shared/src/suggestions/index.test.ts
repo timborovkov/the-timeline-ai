@@ -282,6 +282,8 @@ describe('suggestion scope', () => {
             title: 'NY all day',
             startAt: '2026-06-02T00:00:00.000Z',
             endAt: '2026-06-03T00:00:00.000Z',
+            startDate: '2026-06-02',
+            endDate: '2026-06-03',
             timezone: 'America/New_York',
             allDay: true,
             visibility: 'private',
@@ -299,6 +301,81 @@ describe('suggestion scope', () => {
     );
     expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-02T04:00:00.000Z');
     expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-03T04:00:00.000Z');
+  });
+
+  it('does not double-normalize pre-normalized all-day suggestions in UTC+ timezones', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Create Tokyo all-day event',
+      dedupeKey: 'all-day-tokyo-normalized',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Tokyo all day',
+          dedupeKey: 'all-day-tokyo-normalized:item',
+          proposedPayload: {
+            title: 'Tokyo all day',
+            startAt: '2026-06-01T15:00:00.000Z',
+            endAt: '2026-06-02T15:00:00.000Z',
+            timezone: 'Asia/Tokyo',
+            allDay: true,
+            visibility: 'private',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ start_at: Date; end_at: Date }>(
+      `SELECT start_at, end_at FROM calendar_events WHERE team_id = '${TEAM_ID}' AND title = 'Tokyo all day'`,
+    );
+    expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-01T15:00:00.000Z');
+    expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-02T15:00:00.000Z');
+  });
+
+  it('normalizes all-day calendar updates when allDay is omitted from the patch', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const event = await scope.calendar.createCalendarEvent({
+      title: 'Existing all day',
+      startAt: new Date('2026-06-01T15:00:00.000Z'),
+      endAt: new Date('2026-06-02T15:00:00.000Z'),
+      timezone: 'Asia/Tokyo',
+      allDay: true,
+      visibility: 'private',
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Update all-day event',
+      dedupeKey: 'all-day-update-omitted-flag',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'calendar_event',
+          targetId: event.id,
+          title: 'Move all day',
+          dedupeKey: 'all-day-update-omitted-flag:item',
+          proposedPayload: {
+            startAt: '2026-06-02T15:00:00.000Z',
+            endAt: '2026-06-03T15:00:00.000Z',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ start_at: Date; end_at: Date }>(
+      `SELECT start_at, end_at FROM calendar_events WHERE id = '${event.id}'`,
+    );
+    expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-02T15:00:00.000Z');
+    expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-03T15:00:00.000Z');
   });
 
   it('lists resolved suggestions when requested', async () => {
