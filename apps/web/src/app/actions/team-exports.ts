@@ -2,7 +2,6 @@
 
 import { auditLog, teamExports } from '@timeline/db';
 import {
-  buildTeamExportObjectKey,
   getExportsBucket,
   getS3PresignClient,
   getSignedGetObjectUrl,
@@ -113,7 +112,13 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
   const rows = await db
     .select()
     .from(teamExports)
-    .where(and(eq(teamExports.teamId, active.teamId), eq(teamExports.id, exportId)))
+    .where(
+      and(
+        eq(teamExports.teamId, active.teamId),
+        eq(teamExports.id, exportId),
+        eq(teamExports.requestedByUserId, session.user.id),
+      ),
+    )
     .limit(1);
   const row = rows[0];
   if (row?.status !== 'ready' || !row.objectKey || !row.expiresAt) redirect('/app/team');
@@ -131,7 +136,7 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
   const url = await getSignedGetObjectUrl(
     getS3PresignClient(),
     getExportsBucket(),
-    row.objectKey || buildTeamExportObjectKey(active.teamId, row.id),
+    row.objectKey,
     ttlSec,
   );
   await db.insert(auditLog).values({
