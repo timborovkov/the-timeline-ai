@@ -15,8 +15,8 @@ import {
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
-import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
+import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
 
 const RELATIONSHIP_KINDS = [
   'related',
