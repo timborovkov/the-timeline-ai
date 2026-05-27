@@ -20,7 +20,7 @@ export function HelpShell({ children, isSignedIn }: HelpShellProps) {
   const currentPath = usePathname();
 
   return (
-    <div className="min-h-screen bg-bg text-fg">
+    <div className="min-h-screen overflow-x-hidden bg-bg text-fg">
       <header className="sticky top-0 z-50 border-b border-border bg-bg/90 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
           <Link href="/" aria-label="The Timeline home" className="hidden text-fg sm:block">
@@ -55,9 +55,9 @@ export function HelpShell({ children, isSignedIn }: HelpShellProps) {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-6xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[15rem_1fr]">
-        <aside className="lg:sticky lg:top-20 lg:self-start">
-          <nav className="flex gap-2 overflow-x-auto border-b border-border pb-3 lg:block lg:space-y-1 lg:overflow-visible lg:border-b-0 lg:pb-0">
+      <div className="mx-auto grid max-w-6xl min-w-0 gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[15rem_1fr]">
+        <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
+          <nav className="flex w-full max-w-full gap-2 overflow-x-auto border-b border-border pb-3 lg:block lg:space-y-1 lg:overflow-visible lg:border-b-0 lg:pb-0">
             {HELP_NAV.map(({ href, label, icon: Icon }) => {
               const active = currentPath === href;
               return (
