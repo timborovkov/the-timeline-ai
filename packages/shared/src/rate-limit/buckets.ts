@@ -13,8 +13,6 @@ export const RATE_LIMITS = {
   aiChat: { capacity: 20, refillPerSec: 20 / 60 },
   /** Meeting bot scheduling: 10/min per userId. Provider joins are expensive. */
   meetingScheduling: { capacity: 10, refillPerSec: 10 / 60 },
-  /** Team data export requests: 3/hour per userId. Export workers are IO-heavy. */
-  exports: { capacity: 3, refillPerSec: 3 / 3600 },
   /** Document presigned upload requests: 30/min per userId. */
   documentUpload: { capacity: 30, refillPerSec: 30 / 60 },
   /** Document finalize requests: 30/min per userId. Finalize enqueues OCR. */
