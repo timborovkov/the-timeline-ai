@@ -10,7 +10,7 @@ import {
   slackWorkspaceTeams,
   teamMembers,
 } from '@timeline/db';
-import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { askAgent } from '../agent/ask.js';
 import {
@@ -371,7 +371,8 @@ async function handleMessageEvent(
   if (!senderId || senderId === workspace.botUserId) return;
   const isEdit = event.subtype === 'message_changed';
   const text = message?.text ?? event.text ?? '';
-  const ts = message?.ts ?? event.ts;
+  const ts = isEdit ? (message?.ts ?? event.previous_message?.ts) : (message?.ts ?? event.ts);
+  if (!ts) return;
   const threadTs = message?.thread_ts ?? event.thread_ts;
   const files = message?.files ?? event.files ?? [];
 
@@ -404,7 +405,7 @@ async function handleMessageEvent(
   };
   if (route.conversationTitle) metadata.slack_channel_name = route.conversationTitle;
   if (isEdit)
-    metadata.edits_event_id = await findOriginalSlackEventId(
+    metadata.edits_event_id = await findRootSlackEventId(
       deps.db,
       route.teamId,
       workspace.id,
@@ -1020,15 +1021,28 @@ async function findLatestSlackRevision(
   return rows[0] ?? null;
 }
 
-async function findOriginalSlackEventId(
+async function findRootSlackEventId(
   db: Db,
   teamId: string,
   workspaceId: string,
   channelId: string,
   messageTs: string,
 ): Promise<string | null> {
-  const row = await findLatestSlackRevision(db, { teamId, workspaceId, channelId, messageTs });
-  return row?.id ?? null;
+  const rows = await db
+    .select({ id: rawEvents.id })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, teamId),
+        eq(rawEvents.source, 'slack'),
+        sql`${rawEvents.sourceMetadata} ->> 'slack_workspace_id' = ${workspaceId}`,
+        sql`${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${channelId}`,
+        sql`${rawEvents.sourceMetadata} ->> 'slack_message_ts' = ${messageTs}`,
+      ),
+    )
+    .orderBy(asc(rawEvents.occurredAt), asc(rawEvents.createdAt))
+    .limit(1);
+  return rows[0]?.id ?? null;
 }
 
 function slackTsToDate(ts: string): Date {

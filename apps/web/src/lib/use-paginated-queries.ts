@@ -213,7 +213,8 @@ export interface TimelineEvent {
     | 'document'
     | 'meeting'
     | 'integration'
-    | 'calendar';
+    | 'calendar'
+    | 'slack';
   contentText: string | null;
   contentAudioUrl: string | null;
   occurredAt: string;

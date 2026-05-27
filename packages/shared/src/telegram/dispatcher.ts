@@ -205,7 +205,7 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
       });
       return;
     }
-    await ingestAudio(
+    const insertedAudio = await ingestAudio(
       {
         db: ctx.db,
         tg: ctx.tg,
@@ -219,6 +219,7 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
       ctx.message.voice ? 'voice' : 'audio',
       ctx.activeTeamId,
     );
+    if (insertedAudio) await ackReaction(ctx.tg, ctx.message.chat.id, ctx.message.message_id);
     return;
   }
 
@@ -1606,12 +1607,12 @@ async function ingestAudio(
   payload: TgAudioPayload,
   kind: 'voice' | 'audio',
   teamId: string,
-): Promise<void> {
+): Promise<boolean> {
   if (!ctx.audio) {
     // No audio ingest deps wired (e.g. local dev without RustFS env). Phase 2
     // behavior for unsupported media: silently drop, log so it's visible.
     log.warn('audio message dropped — audio ingest not configured');
-    return;
+    return false;
   }
 
   let fileInfo;
@@ -1621,7 +1622,7 @@ async function ingestAudio(
     bytes = await ctx.tg.downloadFile(fileInfo.file_path);
   } catch (err) {
     log.error({ err }, 'audio fetch failed');
-    return;
+    return false;
   }
 
   const mimeType = payload.mime_type ?? (kind === 'voice' ? 'audio/ogg' : 'audio/mpeg');
@@ -1638,7 +1639,7 @@ async function ingestAudio(
     await ctx.audio.upload({ key, body: bytes, contentType: mimeType });
   } catch (err) {
     log.error({ err }, 'audio upload failed');
-    return;
+    return false;
   }
 
   const extra: Record<string, unknown> = {
@@ -1671,7 +1672,7 @@ async function ingestAudio(
   // try the enqueue again. BullMQ dedups on jobId=rawEventId, so this is
   // a no-op when the original enqueue already succeeded.
   const target = inserted ?? (await findEventByUpdateId(ctx.db, ctx.updateId));
-  if (!target) return;
+  if (!target) return false;
 
   try {
     await ctx.audio.enqueueTranscribe({
@@ -1702,6 +1703,7 @@ async function ingestAudio(
         log.error({ err: markErr }, 'failed to mark row failure');
       });
   }
+  return Boolean(inserted);
 }
 
 type TelegramDocumentAttachment =

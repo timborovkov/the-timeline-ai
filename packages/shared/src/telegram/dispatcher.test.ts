@@ -390,6 +390,34 @@ describe('handleUpdate telegram edit visibility', () => {
     );
     expect(reactions).toHaveLength(1);
 
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: {
+          ...tg,
+          getFile: () => Promise.resolve({ file_id: 'voice-file', file_path: 'voice.ogg' }),
+          downloadFile: () => Promise.resolve(Buffer.from('voice')),
+        },
+        audio: {
+          upload: () => Promise.resolve(),
+          enqueueTranscribe: () => Promise.resolve(),
+          buildAudioKey: ({ teamId, chatId, messageId, fileId, extension }) =>
+            `teams/${teamId}/telegram/${chatId}/${messageId}-${fileId}.${extension}`,
+        },
+      },
+      {
+        update_id: 212,
+        message: {
+          message_id: 23,
+          date: 1700000002,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          voice: { file_id: 'voice-file', duration: 4, mime_type: 'audio/ogg', file_size: 128 },
+        },
+      },
+    );
+    expect(reactions).toHaveLength(2);
+
     await pg.exec(`
       INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, bound_by_user_id, title)
       VALUES (-100, '${TEAM_ID}', '${USER_A}', 'Sales');
@@ -408,7 +436,7 @@ describe('handleUpdate telegram edit visibility', () => {
       },
     );
 
-    expect(reactions).toHaveLength(1);
+    expect(reactions).toHaveLength(2);
   });
 
   it('does not tombstone another team with matching Telegram chat and message ids', async () => {
