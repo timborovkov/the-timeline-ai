@@ -1,5 +1,5 @@
 import { rawEvents } from '@timeline/db';
-import { and, eq, not, or, sql } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 
 type VisibilityValue = 'private' | 'team' | 'specific_users';
 
@@ -40,7 +40,15 @@ export function rawEventVisibleToUser(userId: string) {
 }
 
 export function rawEventHiddenFromUser(userId: string) {
-  const visible = rawEventVisibleToUser(userId);
-  if (!visible) return sql`false`;
-  return not(visible);
+  return or(
+    and(
+      eq(rawEvents.visibility, 'private'),
+      sql`${rawEvents.authorUserId} IS DISTINCT FROM ${userId}::uuid`,
+      sql`${rawEvents.visibilityOwnerUserId} IS DISTINCT FROM ${userId}::uuid`,
+    ),
+    and(
+      eq(rawEvents.visibility, 'specific_users'),
+      sql`NOT COALESCE(${userId}::uuid = ANY(${rawEvents.visibilityUserIds}), false)`,
+    ),
+  );
 }

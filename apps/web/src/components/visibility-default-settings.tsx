@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { setVisibilityDefaultAction } from '@/app/actions/visibility';
 import { Button } from '@/components/ui/button';
@@ -68,6 +68,7 @@ export function VisibilityDefaultSettings({
 function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Member[] }) {
   const [state, action, pending] = useActionState(setVisibilityDefaultAction, {});
   const specificAllowed = SPECIFIC_OK.has(row.source);
+  const [selectedVisibility, setSelectedVisibility] = useState(row.visibility);
   return (
     <form action={action} className="space-y-2 rounded-sm border border-border p-3">
       <input type="hidden" name="source" value={row.source} />
@@ -80,7 +81,10 @@ function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Mem
         </div>
         <select
           name="visibility"
-          defaultValue={row.visibility}
+          value={selectedVisibility}
+          onChange={(e) => {
+            setSelectedVisibility(e.currentTarget.value as Visibility);
+          }}
           className="h-9 rounded-sm border border-border bg-bg px-2 text-sm"
         >
           <option value="team">Team</option>
@@ -103,7 +107,7 @@ function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Mem
           {pending ? 'Saving' : 'Save'}
         </Button>
       </div>
-      {specificAllowed ? (
+      {specificAllowed && selectedVisibility === 'specific_users' ? (
         <div className="flex flex-wrap gap-3 border-t border-border/60 pt-2">
           {members.map((m) => (
             <label key={m.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">

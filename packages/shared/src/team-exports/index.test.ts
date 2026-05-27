@@ -21,6 +21,7 @@ const OTHER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const TEAM_EVENT_ID = '22222222-2222-2222-2222-222222222222';
 const PRIVATE_EVENT_ID = '33333333-3333-3333-3333-333333333333';
 const SOURCE_OWNED_EVENT_ID = '33333333-3333-3333-3333-333333333334';
+const OWNERLESS_PRIVATE_EVENT_ID = '33333333-3333-3333-3333-333333333335';
 const DOC_ID = '44444444-4444-4444-4444-444444444444';
 const PRIVATE_DOC_ID = '55555555-5555-5555-5555-555555555555';
 const FOLDER_ID = '77777777-7777-7777-7777-777777777777';
@@ -73,6 +74,10 @@ async function seed(pg: PGlite): Promise<void> {
       (
         '${SOURCE_OWNED_EVENT_ID}', '${TEAM_ID}', '${OTHER_ID}', '${OWNER_ID}', 'integration',
         'source-owned event', null, 'private', '{}'::jsonb
+      ),
+      (
+        '${OWNERLESS_PRIVATE_EVENT_ID}', '${TEAM_ID}', null, null, 'email',
+        'ownerless private event', null, 'private', '{}'::jsonb
       );
 
     INSERT INTO facts (team_id, raw_event_id, statement, confidence, model_version) VALUES
@@ -232,7 +237,7 @@ describe('team export archive', () => {
     const manifest = JSON.parse(await zipText(zip, 'manifest.json')) as {
       omissions: Record<string, number>;
     };
-    expect(manifest.omissions.raw_events).toBe(1);
+    expect(manifest.omissions.raw_events).toBe(2);
     expect(manifest.omissions.facts).toBe(1);
     expect(manifest.omissions.folders).toBe(1);
     expect(manifest.omissions.documents).toBe(1);
