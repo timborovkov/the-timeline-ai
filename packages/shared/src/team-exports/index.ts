@@ -519,6 +519,14 @@ export async function buildTeamExportArchive(
     .select({ value: count() })
     .from(rawEvents)
     .where(hiddenRawEventFilter(input.teamId, input.requestedByUserId));
+  const hiddenEventFileRows = await input.db
+    .select({
+      id: rawEvents.id,
+      contentAudioUrl: rawEvents.contentAudioUrl,
+      sourceMetadata: rawEvents.sourceMetadata,
+    })
+    .from(rawEvents)
+    .where(hiddenRawEventFilter(input.teamId, input.requestedByUserId));
   const hiddenDocsRows = await input.db
     .select({ value: count() })
     .from(documents)
@@ -549,6 +557,12 @@ export async function buildTeamExportArchive(
     .select({ value: count() })
     .from(mcpOauthTokens)
     .where(eq(mcpOauthTokens.teamId, input.teamId));
+  const hiddenFileCount =
+    (hiddenDocVersionRows[0]?.value ?? 0) +
+    hiddenEventFileRows.reduce(
+      (total, event) => total + (event.contentAudioUrl ? 1 : 0) + attachmentRecords(event).length,
+      0,
+    );
   const omissions: TeamExportOmissions = {
     raw_events: hiddenEventsRows[0]?.value ?? 0,
     facts: hiddenFactsRows[0]?.value ?? 0,
@@ -557,7 +571,7 @@ export async function buildTeamExportArchive(
     document_versions: hiddenDocVersionRows[0]?.value ?? 0,
     meetings: hiddenMeetingRows[0]?.value ?? 0,
     calendar_events: hiddenCalendarRows[0]?.value ?? 0,
-    files: hiddenDocVersionRows[0]?.value ?? 0,
+    files: hiddenFileCount,
     integration_secrets:
       integrationRows.filter((row) => row.authSecretCiphertext).length +
       mcpRows.filter((row) => row.authConfigCiphertext).length +

@@ -66,7 +66,8 @@ async function seed(pg: PGlite): Promise<void> {
       ),
       (
         '${PRIVATE_EVENT_ID}', '${TEAM_ID}', '${OTHER_ID}', 'web', 'hidden event',
-        null, 'private', '{}'::jsonb
+        'audio/private.ogg', 'private',
+        '{"attachments":[{"filename":"hidden.pdf","bucket":"attachments","key":"email/hidden.pdf","size_bytes":20,"content_type":"application/pdf"}]}'::jsonb
       );
 
     INSERT INTO facts (team_id, raw_event_id, statement, confidence, model_version) VALUES
@@ -219,6 +220,7 @@ describe('team export archive', () => {
     expect(manifest.omissions.document_versions).toBe(1);
     expect(manifest.omissions.meetings).toBe(1);
     expect(manifest.omissions.calendar_events).toBe(1);
+    expect(manifest.omissions.files).toBe(3);
     expect(manifest.omissions.integration_secrets).toBe(2);
   });
 });
