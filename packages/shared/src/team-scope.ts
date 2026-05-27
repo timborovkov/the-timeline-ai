@@ -22,6 +22,7 @@ import { embed as defaultEmbed, type EmbedResult } from './llm/embed.js';
 import { createMcpScope } from './mcp/scope.js';
 import { createMeetingScope } from './meetings/scope.js';
 import { createObjectScope } from './objects/index.js';
+import { createOnboardingScope } from './onboarding/index.js';
 import {
   getQdrantClient,
   type SearchHit,
@@ -405,6 +406,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   });
 
   const auditScope = createAuditScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+
+  const onboardingScope = createOnboardingScope({
     db,
     teamId,
     userId,
@@ -1122,6 +1130,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     objects: createObjectScope(db, core),
     integrations: integrationScope,
     mcp: mcpScope,
+    onboarding: onboardingScope,
     calendar: calendarScope,
     audit: auditScope,
   };

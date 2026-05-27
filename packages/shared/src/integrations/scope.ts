@@ -178,7 +178,7 @@ export function createIntegrationScope(deps: {
         .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)))
         .limit(1);
       const existing = existingRows[0];
-      if (!existing) throw new Error('Integration not found');
+      if (!existing) return;
       await tx
         .delete(integrationsTable)
         .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)));

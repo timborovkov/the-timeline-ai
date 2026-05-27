@@ -52,14 +52,24 @@ describe('canSeeAuditTarget', () => {
 });
 
 describe('auditTargetPresentation', () => {
-  it('marks missing hydrated targets as redacted/unavailable', () => {
+  it('marks missing visible hydrated targets as unavailable without redacting', () => {
     expect(
       auditTargetPresentation({
         targetType: 'document',
         targetId: 'doc-1',
         visible: true,
       }),
-    ).toEqual({ targetLabel: 'Restricted document', redacted: true });
+    ).toEqual({ targetLabel: 'Unavailable document', redacted: false });
+  });
+
+  it('labels deleted team-visible integrations without a redacted badge', () => {
+    expect(
+      auditTargetPresentation({
+        targetType: 'integration',
+        targetId: 'integration-1',
+        visible: true,
+      }),
+    ).toEqual({ targetLabel: 'Deleted integration', redacted: false });
   });
 
   it('keeps generic labels for target types without hydration', () => {

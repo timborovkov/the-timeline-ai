@@ -71,6 +71,14 @@ function genericLabel(targetType: string, redacted: boolean): string {
   return `Restricted ${targetType.replace(/_/g, ' ')}`;
 }
 
+function unavailableLabel(targetType: string): string {
+  if (targetType === 'raw_event') return 'Unavailable event';
+  if (targetType === 'document') return 'Unavailable document';
+  if (targetType === 'integration') return 'Deleted integration';
+  if (targetType === 'mcp_server') return 'Deleted MCP server';
+  return `Unavailable ${targetType.replace(/_/g, ' ')}`;
+}
+
 const hydratedTargetTypes = new Set(['raw_event', 'document', 'integration', 'mcp_server']);
 
 export function auditTargetPresentation(args: {
@@ -84,9 +92,13 @@ export function auditTargetPresentation(args: {
     Boolean(args.targetId) &&
     hydratedTargetTypes.has(args.targetType) &&
     !args.label;
-  const redacted = !args.visible || missingHydratedTarget;
+  const redacted = !args.visible;
   return {
-    targetLabel: args.label ?? genericLabel(args.targetType, redacted),
+    targetLabel:
+      args.label ??
+      (missingHydratedTarget
+        ? unavailableLabel(args.targetType)
+        : genericLabel(args.targetType, redacted)),
     redacted,
   };
 }
