@@ -94,7 +94,6 @@ export async function GET(req: Request): Promise<Response> {
             .from(users)
             .where(inArray(users.id, authorIds))
         : [];
-    const audioUrls = await signAudio(result.items);
     return {
       items: result.items.map((event) => ({
         ...event,
@@ -103,9 +102,11 @@ export async function GET(req: Request): Promise<Response> {
       })),
       nextCursor: result.nextCursor,
       authors: Object.fromEntries(authorRows.map((row) => [row.id, row])),
-      audioUrls,
     };
   });
 
-  return Response.json(page);
+  return Response.json({
+    ...page,
+    audioUrls: await signAudio(page.items),
+  });
 }

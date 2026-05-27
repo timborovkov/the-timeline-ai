@@ -410,9 +410,9 @@ export async function getObjectSectionPage(
         .orderBy(desc(entityRelationships.createdAt), desc(entityRelationships.id))
         .limit(limit + 1),
     ]);
-    const rows = [...outRows, ...inRows].sort(
-      (a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id),
-    );
+    const rows = [...outRows, ...inRows]
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id))
+      .slice(0, limit + 1);
     return pageWindow(rows, limit, (row) => ({ at: row.createdAt.toISOString(), id: row.id }));
   }
   if (section === 'facts') {

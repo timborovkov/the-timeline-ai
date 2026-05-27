@@ -31,6 +31,7 @@ export async function GET(req: Request, { params }: Props): Promise<Response> {
   const cursor = url.searchParams.get('cursor');
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  await scope.requireMembership();
   const key = cacheKey(['object-section', active.teamId, session.user.id, id, section, cursor]);
   const page = await cachedJson(key, 30, async () => {
     const result = await scope.objects.getObjectSectionPage(id, section as Section, {

@@ -27,6 +27,7 @@ export async function GET(): Promise<Response> {
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) return Response.json({ error: 'no_active_team' }, { status: 400 });
   const scope = withTeam(db, active.teamId, session.user.id);
+  await scope.requireMembership();
 
   const key = cacheKey(['onboarding', active.teamId, session.user.id]);
   const state = await cachedJson(key, 30, async () => {
