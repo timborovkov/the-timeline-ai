@@ -1,7 +1,6 @@
 import { teamExports, teamInvites, teamMembers, users } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
 import { and, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import {
@@ -12,7 +11,6 @@ import {
 } from '@/app/actions/teams';
 import { ActionChip } from '@/components/action-chip';
 import { IndexStrip } from '@/components/index-strip';
-import { TeamAccessPanel } from '@/components/team-access-panel';
 import { InviteMemberForm, RenameTeamForm, TeamExportPanel } from '@/components/team-forms';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,7 +30,6 @@ export default async function TeamSettingsPage() {
   const role = await scope.requireMembership();
   const isAdmin = role === 'owner' || role === 'admin';
   const isOwner = role === 'owner';
-  const team = await scope.timeline.team();
 
   const memberRows = await scope.timeline.listMembers();
   if (isAdmin) {

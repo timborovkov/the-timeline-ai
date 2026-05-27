@@ -1,5 +1,4 @@
 import {
-  auditLog,
   type Db,
   auditLog,
   entities,
@@ -700,9 +699,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           throw new Error('Only the visibility owner can change this event');
         }
         const sameVisibility = existing.visibility === input.visibility;
-        const sameUsers =
-          (existing.visibilityUserIds ?? []).join('\0') === (visibilityUserIds ?? []).join('\0');
-        if (sameVisibility && sameUsers) return existing;
+        if (sameVisibility && sameVisibilityUsers(existing.visibilityUserIds, visibilityUserIds)) {
+          return existing;
+        }
 
         const updated = await db.transaction(async (tx) => {
           const updatedRows = await tx
@@ -724,10 +723,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           await tx.insert(auditLog).values({
             teamId,
             actorUserId: userId,
+            action: 'visibility_change',
             targetType: 'raw_event',
             targetId: id,
-            action: 'visibility_change',
-            payload: {
+            targetVisibility: row.visibility,
+            targetOwnerUserId: row.visibilityOwnerUserId,
+            targetVisibilityUserIds: row.visibilityUserIds,
+            metadata: {
               previous: {
                 visibility: existing.visibility,
                 visibilityUserIds: existing.visibilityUserIds,
@@ -754,25 +756,17 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         return updated;
       },
 
-      async listEvents(filters: EventListFilters = {}) {
-        await ensureMember();
-        const conditions = [eq(rawEvents.teamId, teamId), visibilityFilter, activeRawEventFilter];
-        if (filters.authorUserId) {
-          conditions.push(eq(rawEvents.authorUserId, filters.authorUserId));
-        }
-        if (filters.from) conditions.push(gte(rawEvents.occurredAt, filters.from));
-        if (filters.to) conditions.push(lt(rawEvents.occurredAt, filters.to));
-        if (filters.source) {
-          conditions.push(
-            eq(rawEvents.source, filters.source as (typeof rawEvents.source.enumValues)[number]),
-          );
-        }
-        return db
-          .select()
-          .from(rawEvents)
-          .where(and(...conditions))
-          .orderBy(desc(rawEvents.occurredAt))
-          .limit(filters.limit ?? 200);
+      listEvents,
+
+      async listEventsPage(
+        filters: EventListFilters = {},
+      ): Promise<PaginatedResult<typeof rawEvents.$inferSelect>> {
+        const limit = Math.min(Math.max(filters.limit ?? 30, 1), 100);
+        const rows = await listEvents({ ...filters, limit: limit + 1 });
+        return pageWindow(rows, limit, (row) => ({
+          at: row.occurredAt.toISOString(),
+          id: row.id,
+        }));
       },
 
       async getEvent(id: string) {

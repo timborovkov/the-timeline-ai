@@ -81,38 +81,11 @@ export function createIntegrationScope(deps: {
       input.visibilityDefaultUserIds ?? null,
       deps.requireTeamMember,
     );
-    const rows = await db
-      .insert(integrationsTable)
-      .values({
-        teamId,
-        connectedByUserId: userId,
-        provider: input.provider,
-        displayName: input.displayName,
-        externalAccountId: input.externalAccountId ?? null,
-        scopes: input.scopes ?? [],
-        authSecretCiphertext: encrypted?.ciphertext ?? null,
-        authSecretIv: encrypted?.iv ?? null,
-        authSecretTag: encrypted?.tag ?? null,
-        visibilityDefault,
-        visibilityDefaultUserIds,
-      })
-      .onConflictDoUpdate({
-        target: [
-          integrationsTable.teamId,
-          integrationsTable.provider,
-          integrationsTable.externalAccountId,
-        ],
-        // Reconnect refreshes the tokens + display name + clears the
-        // last error, but does NOT silently re-enable an integration an
-        // admin explicitly disabled. The admin must flip `enabled` back
-        // on via the settings UI — otherwise an OAuth reconnect would
-        // resume a paused sync without anyone asking.
-        set: {
-          // Refresh the connector to whichever admin re-authenticated —
-          // otherwise downstream paths like the Drive document-harvest
-          // run withTeam under the original (possibly long-gone) user
-          // id, which can mis-attribute or fail on visibility checks
-          // if that user has since left the team.
+    return db.transaction(async (tx) => {
+      const rows = await tx
+        .insert(integrationsTable)
+        .values({
+          teamId,
           connectedByUserId: userId,
           provider: input.provider,
           displayName: input.displayName,
@@ -121,7 +94,8 @@ export function createIntegrationScope(deps: {
           authSecretCiphertext: encrypted?.ciphertext ?? null,
           authSecretIv: encrypted?.iv ?? null,
           authSecretTag: encrypted?.tag ?? null,
-          visibilityDefault: input.visibilityDefault ?? 'team',
+          visibilityDefault,
+          visibilityDefaultUserIds,
         })
         .onConflictDoUpdate({
           target: [
@@ -146,6 +120,8 @@ export function createIntegrationScope(deps: {
             authSecretCiphertext: encrypted?.ciphertext ?? null,
             authSecretIv: encrypted?.iv ?? null,
             authSecretTag: encrypted?.tag ?? null,
+            visibilityDefault,
+            visibilityDefaultUserIds,
             lastError: null,
             updatedAt: new Date(),
           },

@@ -41,11 +41,13 @@ export default async function IntegrationsPage({
 
   const params = await searchParams;
   const scope = withTeam(db, active.teamId, session.user.id);
-  const [connected, mcpServers, members] = await Promise.all([
+  const [role, connected, mcpServers, members] = await Promise.all([
+    scope.requireMembership(),
     scope.integrations.listIntegrations(),
     scope.mcp.listTeamServers(),
     scope.timeline.listMembers(),
   ]);
+  const isAdmin = role === 'owner' || role === 'admin';
   const memberIds = members.map((m) => m.userId);
   const memberUsers =
     memberIds.length > 0

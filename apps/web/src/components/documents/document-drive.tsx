@@ -41,6 +41,7 @@ interface Props {
   breadcrumbs: Crumb[];
   folders: FolderItem[];
   documents: DocumentItem[];
+  documentsNextCursor: string | null;
   defaultVisibility: 'team' | 'private' | 'specific_users';
   defaultVisibilityUserIds: string[] | null;
   members: { id: string; label: string }[];
@@ -51,6 +52,7 @@ export function DocumentDrive({
   breadcrumbs,
   folders,
   documents,
+  documentsNextCursor,
   defaultVisibility,
   defaultVisibilityUserIds,
   members,
@@ -71,6 +73,11 @@ export function DocumentDrive({
   const [visibilityUserIds, setVisibilityUserIds] = useState<string[]>(
     defaultVisibilityUserIds ?? [],
   );
+  const documentQuery = useDocumentListQuery(currentFolderId, {
+    items: documents,
+    nextCursor: documentsNextCursor,
+  });
+  const visibleDocuments = documentQuery.data.pages.flatMap((page) => page.items);
 
   async function handleUploadFile(file: File): Promise<void> {
     setUploading((prev) => [...prev, file.name]);

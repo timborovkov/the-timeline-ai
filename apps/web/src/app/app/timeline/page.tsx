@@ -95,6 +95,7 @@ export default async function TimelinePage({ searchParams }: Props) {
     to: toQueryFilter,
     limit: 30,
   });
+  const events = eventPage.items;
   const webDefault = await scope.timeline.resolveVisibilityDefault('web');
   const quickCaptureVisibility = webDefault.visibility === 'private' ? 'private' : 'team';
 
@@ -267,11 +268,24 @@ export default async function TimelinePage({ searchParams }: Props) {
           </details>
         </div>
 
-        <TimelineList
-          events={events}
-          authorMap={authorMap}
-          audioUrlMap={audioUrlMap}
+        <TimelineFeed
+          initialPage={{
+            items: events.map((event) => ({
+              ...event,
+              occurredAt: event.occurredAt.toISOString(),
+              createdAt: event.createdAt.toISOString(),
+            })),
+            nextCursor: eventPage.nextCursor,
+            authors: Object.fromEntries(authorRows.map((row) => [row.id, row])),
+            audioUrls: Object.fromEntries(audioUrlMap),
+          }}
+          filters={{
+            author: authorFilter ?? null,
+            from: sp.from ?? null,
+            to: sp.to ?? null,
+          }}
           currentUserId={session.user.id}
+          isAdmin={isAdmin}
           members={members.map((m) => {
             const u = memberUserMap.get(m.userId);
             return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };

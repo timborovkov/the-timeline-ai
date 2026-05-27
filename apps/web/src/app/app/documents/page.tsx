@@ -32,7 +32,7 @@ export default async function DocumentsPage({ searchParams }: Props) {
   // to root rather than rendering a "Folder not found" page that leaks
   // the existence-or-not distinction.
   const folderId = currentFolder?.id ?? null;
-  const [folders, documents, ancestry, defaults, members] = await Promise.all([
+  const [folders, documentPage, ancestry, defaults, members] = await Promise.all([
     scope.documents.listFolders({ parentFolderId: folderId }),
     scope.documents.listDocumentsPage({ folderId, limit: 30 }),
     scope.documents.folderAncestry(folderId),

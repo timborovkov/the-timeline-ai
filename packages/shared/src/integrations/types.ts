@@ -55,6 +55,7 @@ export interface IntegrationEvent {
   actor?: { externalId?: string; name?: string; email?: string } | null;
   contentText: string;
   visibility?: 'team' | 'private' | 'specific_users';
+  visibilityUserIds?: string[] | null;
   /** Extra provider-specific fields merged into source_metadata. */
   extra?: Record<string, unknown>;
   /** Phase 11: optional workspace object mapping. */

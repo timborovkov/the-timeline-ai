@@ -1,6 +1,7 @@
 'use server';
 
 import {
+  auditLog,
   integrations,
   teamInvites,
   teamMembers,

@@ -1391,8 +1391,11 @@ async function insertEvent(
   if (sourceUnverified) metadata.source_unverified = true;
 
   const defaults = await resolveTelegramVisibilityDefault(db, teamId);
-  const visibilityOwnerUserId =
-    input.visibilityOwnerUserId ?? authorUserId ?? defaults.sourceOwnerUserId ?? null;
+  const visibilityOwnerUserId = await resolveTelegramVisibilityOwnerUserId(db, teamId, [
+    input.visibilityOwnerUserId ?? null,
+    authorUserId,
+    defaults.sourceOwnerUserId,
+  ]);
   const visibility =
     defaults.visibility === 'private' && visibilityOwnerUserId === null
       ? 'team'
@@ -1404,23 +1407,83 @@ async function insertEvent(
     ? (input.message.edit_date ?? input.message.date)
     : input.message.date;
 
-  // ON CONFLICT DO NOTHING against the partial unique index on
-  // (source_metadata->>'tg_update_id') WHERE source='telegram'. If Telegram
-  // retries an update because we didn't 200 in time (or the process crashed
-  // mid-handler), the second insert is a silent no-op instead of a duplicate
-  // row in the timeline.
-  const inserted = await db
-    .insert(rawEvents)
-    .values({
-      teamId,
-      authorUserId,
-      source: 'telegram',
-      contentText: input.text,
-      contentAudioUrl: input.audio?.key ?? null,
-      occurredAt: new Date(occurredAtSec * 1000),
-      visibility,
-      visibilityOwnerUserId,
-      sourceMetadata: metadata,
+  const eventValues = {
+    teamId,
+    authorUserId,
+    source: 'telegram' as const,
+    contentText: input.text,
+    contentAudioUrl: input.audio?.key ?? null,
+    occurredAt: new Date(occurredAtSec * 1000),
+    visibility,
+    visibilityOwnerUserId,
+    sourceMetadata: metadata,
+  };
+
+  async function insertRawEvent(tx: DbOrTx): Promise<{ id: string; teamId: string } | null> {
+    // ON CONFLICT DO NOTHING against the partial unique index on
+    // (source_metadata->>'tg_update_id') WHERE source='telegram'. If Telegram
+    // retries an update because we didn't 200 in time (or the process crashed
+    // mid-handler), the second insert is a silent no-op instead of a duplicate
+    // row in the timeline.
+    const inserted = await tx
+      .insert(rawEvents)
+      .values(eventValues)
+      .onConflictDoNothing()
+      .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
+    return inserted[0] ?? null;
+  }
+
+  if (input.isEdit) {
+    return db.transaction(async (tx) => {
+      await lockTelegramMessageRevisions(tx, {
+        teamId,
+        chatId: input.message.chat.id,
+        messageId: input.message.message_id,
+      });
+      const inserted = await insertRawEvent(tx);
+      const row = inserted ?? (await findEventByUpdateId(tx, input.updateId));
+      if (row) {
+        const latest = await findLatestTelegramRevision(tx, {
+          teamId,
+          chatId: input.message.chat.id,
+          messageId: input.message.message_id,
+        });
+        if (latest) {
+          await tombstoneSupersededTelegramRevisions(tx, {
+            teamId,
+            chatId: input.message.chat.id,
+            messageId: input.message.message_id,
+            supersededByEventId: latest.id,
+          });
+        }
+        return inserted && latest?.id === inserted.id ? inserted : null;
+      }
+      return null;
+    });
+  }
+
+  return insertRawEvent(db);
+}
+
+async function tombstoneSupersededTelegramRevisions(
+  db: DbOrTx,
+  input: {
+    teamId: string;
+    chatId: number;
+    messageId: number;
+    supersededByEventId: string;
+  },
+): Promise<void> {
+  const patch = JSON.stringify({
+    deleted: true,
+    delete_reason: 'telegram_superseded_by_edit',
+    deleted_at: new Date().toISOString(),
+    superseded_by_event_id: input.supersededByEventId,
+  });
+  await db
+    .update(rawEvents)
+    .set({
+      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
     })
     .where(
       and(
@@ -1432,6 +1495,29 @@ async function insertEvent(
         sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
       ),
     );
+}
+
+async function resolveTelegramVisibilityOwnerUserId(
+  db: DbOrTx,
+  teamId: string,
+  candidates: (string | null | undefined)[],
+): Promise<string | null> {
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const rows = await db
+      .select({ userId: teamMembers.userId })
+      .from(teamMembers)
+      .where(
+        and(
+          eq(teamMembers.teamId, teamId),
+          eq(teamMembers.userId, candidate),
+          isNull(teamMembers.removedAt),
+        ),
+      )
+      .limit(1);
+    if (rows[0]) return candidate;
+  }
+  return null;
 }
 
 async function lockTelegramMessageRevisions(

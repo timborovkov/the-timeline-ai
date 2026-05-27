@@ -51,24 +51,6 @@ async function seed(pg: PGlite): Promise<void> {
   `);
 }
 
-async function insertTelegramEvent(
-  pg: PGlite,
-  input: { id: string; authorUserId: string | null; text: string; deleted?: boolean },
-): Promise<void> {
-  const metadata = {
-    tg_chat_id: 42,
-    tg_chat_type: 'private',
-    tg_message_id: 10,
-    tg_update_id: Number(input.id.slice(-6)),
-    ...(input.deleted ? { deleted: true } : {}),
-  };
-  await pg.query(
-    `INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, occurred_at, source_metadata)
-     VALUES ($1, $2, $3, 'telegram', $4, now(), $5::jsonb)`,
-    [input.id, TEAM_A, input.authorUserId, input.text, JSON.stringify(metadata)],
-  );
-}
-
 describe('withTeam namespaced port', () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
@@ -230,7 +212,7 @@ describe('withTeam namespaced port', () => {
     const auditRows = await db.select().from(auditLog).where(eq(auditLog.targetId, event.id));
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]?.action).toBe('visibility_change');
-    expect(auditRows[0]?.payload).toMatchObject({
+    expect(auditRows[0]?.metadata).toMatchObject({
       previous: { visibility: 'team' },
       next: { visibility: 'specific_users', visibilityUserIds: [USER_B] },
     });

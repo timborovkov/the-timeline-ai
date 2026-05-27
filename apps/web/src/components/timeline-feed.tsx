@@ -15,9 +15,10 @@ interface Props {
   filters: { author?: string | null; from?: string | null; to?: string | null };
   currentUserId: string;
   isAdmin: boolean;
+  members: { id: string; label: string }[];
 }
 
-export function TimelineFeed({ initialPage, filters, currentUserId, isAdmin }: Props) {
+export function TimelineFeed({ initialPage, filters, currentUserId, isAdmin, members }: Props) {
   const query = useTimelineInfiniteQuery(filters, initialPage);
   const pages = query.data.pages;
   const events = pages.flatMap((page) => page.items);
@@ -46,6 +47,7 @@ export function TimelineFeed({ initialPage, filters, currentUserId, isAdmin }: P
         audioUrlMap={audioUrlMap}
         currentUserId={currentUserId}
         isAdmin={isAdmin}
+        members={members}
       />
       <div className="flex justify-center">
         <button

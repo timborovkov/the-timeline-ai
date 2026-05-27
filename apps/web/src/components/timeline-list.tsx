@@ -19,7 +19,8 @@ interface Props {
   /** Signed GET URLs keyed by event id. Missing entries render the player disabled. */
   audioUrlMap?: Map<string, string>;
   currentUserId: string;
-  members: { id: string; label: string }[];
+  isAdmin: boolean;
+  members?: { id: string; label: string }[];
 }
 
 // Mono ISO-ish timestamp for the left column. We render local time so the
@@ -101,7 +102,14 @@ const SOURCE_LABEL: Record<string, string> = {
  *   2026-05-25 14:02   miriam · "ship tomorrow"               EMAIL
  *   2026-05-25 13:48   jay · voice 2m11s · "cut docs"         VOICE
  */
-export function TimelineList({ events, authorMap, audioUrlMap, currentUserId, members }: Props) {
+export function TimelineList({
+  events,
+  authorMap,
+  audioUrlMap,
+  currentUserId,
+  isAdmin,
+  members = [],
+}: Props) {
   if (events.length === 0) {
     return (
       <div className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
