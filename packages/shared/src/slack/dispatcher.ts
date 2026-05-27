@@ -356,7 +356,7 @@ async function handleMessageEvent(
 ): Promise<void> {
   if (event.bot_id || event.user === workspace.botUserId) return;
   if (event.subtype === 'message_deleted') {
-    await tombstoneSlackSourceDelete(deps.db, {
+    await tombstoneSlackSourceDeletes(deps.db, {
       workspaceId: workspace.id,
       channel: event.channel,
       ts: event.deleted_ts ?? event.previous_message?.ts ?? event.ts,
@@ -921,9 +921,31 @@ async function findActiveSlackLink(
   return rows[0] ?? null;
 }
 
-async function tombstoneSlackSourceDelete(
+async function tombstoneSlackSourceDeletes(
   db: Db,
   input: { workspaceId: string; channel: string; ts: string },
+): Promise<void> {
+  const rows = await db
+    .selectDistinct({ teamId: rawEvents.teamId })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.source, 'slack'),
+        sql`${rawEvents.sourceMetadata} ->> 'slack_workspace_id' = ${input.workspaceId}`,
+        sql`${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${input.channel}`,
+        sql`${rawEvents.sourceMetadata} ->> 'slack_message_ts' = ${input.ts}`,
+        sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+      ),
+    );
+
+  for (const row of rows) {
+    await tombstoneSlackSourceDelete(db, { ...input, teamId: row.teamId });
+  }
+}
+
+async function tombstoneSlackSourceDelete(
+  db: Db,
+  input: { teamId: string; workspaceId: string; channel: string; ts: string },
 ): Promise<void> {
   const patch = JSON.stringify({
     deleted: true,
@@ -937,6 +959,7 @@ async function tombstoneSlackSourceDelete(
     })
     .where(
       and(
+        eq(rawEvents.teamId, input.teamId),
         eq(rawEvents.source, 'slack'),
         sql`${rawEvents.sourceMetadata} ->> 'slack_workspace_id' = ${input.workspaceId}`,
         sql`${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${input.channel}`,
