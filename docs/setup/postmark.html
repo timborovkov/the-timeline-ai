@@ -29,8 +29,14 @@
         <li>Copy the <strong>Server API Token</strong>.</li>
       </ol>
       <pre><code>POSTMARK_SERVER_TOKEN=...
+SUPPORT_EMAIL=support@example.com
 </code></pre>
-      <p>(Not used by the inbound webhook today — kept in env for the Phase 8 outbound work.)</p>
+      <p>
+        <code>POSTMARK_SERVER_TOKEN</code> is used for outbound support/contact mail from
+        <code>/help/support</code>. Set <code>SUPPORT_EMAIL</code> to a verified Postmark sender;
+        support requests are sent to that address and use the visitor's email as
+        <code>Reply-To</code>.
+      </p>
 
       <h2 id="inbound-stream">2. Inbound stream</h2>
       <ol>
