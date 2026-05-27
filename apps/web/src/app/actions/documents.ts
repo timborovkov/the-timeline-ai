@@ -308,12 +308,23 @@ export async function getDocumentDownloadUrlAction(input: {
   const version = await got.scope.documents.getDocumentVersion(input.versionId);
   if (!version) return { ok: false, error: 'Version not found' };
   // Re-check the parent document's visibility.
-  const document = await got.scope.documents.getDocument(version.documentId);
+  const document = await got.scope.documents.getDocument(version.documentId, {
+    auditDetailRead: false,
+  });
   if (!document) return { ok: false, error: 'Document not found' };
   const url = await getSignedGetObjectUrl(
     getS3PresignClient(),
     getDocumentsBucket(),
     version.objectKey,
   );
+  await got.scope.audit.record({
+    action: 'document.signed_url',
+    targetType: 'document',
+    targetId: document.id,
+    targetVisibility: document.visibility,
+    targetOwnerUserId: document.ownerUserId,
+    targetVisibilityUserIds: document.visibilityUserIds,
+    metadata: { version: version.version, purpose: 'download' },
+  });
   return { ok: true, url, filename: document.name };
 }
