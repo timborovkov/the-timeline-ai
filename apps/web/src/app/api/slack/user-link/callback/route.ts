@@ -12,7 +12,13 @@ export async function GET(req: Request): Promise<Response> {
   const code = url.searchParams.get('code');
   const rawState = url.searchParams.get('state');
   if (!code || !rawState) redirect('/app/team/slack?error=missing_oauth');
-  const state = slack.verifySlackOAuthState(rawState);
+  const state = (() => {
+    try {
+      return slack.verifySlackOAuthState(rawState);
+    } catch {
+      redirect('/app/team/slack?error=invalid_state');
+    }
+  })();
   if (state.kind !== 'user_link' || state.userId !== session.user.id) {
     redirect('/app/team/slack?error=invalid_state');
   }
