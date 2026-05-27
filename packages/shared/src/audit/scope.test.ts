@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { canSeeAuditTarget } from './scope.js';
+import { auditTargetPresentation, canSeeAuditTarget } from './scope.js';
 
 describe('canSeeAuditTarget', () => {
   it('allows team-visible targets', () => {
@@ -38,5 +38,27 @@ describe('canSeeAuditTarget', () => {
         targetVisibilityUserIds: ['viewer'],
       }),
     ).toBe(false);
+  });
+});
+
+describe('auditTargetPresentation', () => {
+  it('marks missing hydrated targets as redacted/unavailable', () => {
+    expect(
+      auditTargetPresentation({
+        targetType: 'document',
+        targetId: 'doc-1',
+        visible: true,
+      }),
+    ).toEqual({ targetLabel: 'Restricted document', redacted: true });
+  });
+
+  it('keeps generic labels for target types without hydration', () => {
+    expect(
+      auditTargetPresentation({
+        targetType: 'mcp_outbound_key',
+        targetId: 'key-1',
+        visible: true,
+      }),
+    ).toEqual({ targetLabel: 'mcp outbound key', redacted: false });
   });
 });

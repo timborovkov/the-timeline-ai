@@ -64,33 +64,38 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
   const minted = mcpServer.mintKey();
-  const row = await db.transaction(async (tx) => {
-    const rows = await tx
-      .insert(mcpOutboundKeys)
-      .values({
+  const row = await db
+    .transaction(async (tx) => {
+      const rows = await tx
+        .insert(mcpOutboundKeys)
+        .values({
+          teamId: active.teamId,
+          createdByUserId: session.user.id,
+          name: parsed.data.name,
+          keyHash: minted.hash,
+          keyPrefix: minted.prefix,
+        })
+        .returning();
+      const created = rows[0];
+      if (!created) throw new Error('create_failed');
+      await tx.insert(auditLog).values({
         teamId: active.teamId,
-        createdByUserId: session.user.id,
-        name: parsed.data.name,
-        keyHash: minted.hash,
-        keyPrefix: minted.prefix,
-      })
-      .returning();
-    const created = rows[0];
-    if (!created) throw new Error('create_failed');
-    await tx.insert(auditLog).values({
-      teamId: active.teamId,
-      actorUserId: session.user.id,
-      action: 'mcp.connect',
-      targetType: 'mcp_outbound_key',
-      targetId: created.id,
-      targetVisibility: 'team',
-      metadata: {
-        surface: 'timeline_as_mcp_server',
-        scope_count: Array.isArray(created.scopes) ? created.scopes.length : 0,
-      },
+        actorUserId: session.user.id,
+        action: 'mcp.connect',
+        targetType: 'mcp_outbound_key',
+        targetId: created.id,
+        targetVisibility: 'team',
+        metadata: {
+          surface: 'timeline_as_mcp_server',
+          scope_count: Array.isArray(created.scopes) ? created.scopes.length : 0,
+        },
+      });
+      return created;
+    })
+    .catch(() => {
+      return null;
     });
-    return created;
-  });
+  if (!row) return NextResponse.json({ error: 'create_failed' }, { status: 500 });
   // One-time plaintext — the only response that ever contains it.
   return NextResponse.json({
     id: row.id,

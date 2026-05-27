@@ -70,6 +70,26 @@ function genericLabel(targetType: string, redacted: boolean): string {
   return `Restricted ${targetType.replace(/_/g, ' ')}`;
 }
 
+const hydratedTargetTypes = new Set(['raw_event', 'document', 'integration', 'mcp_server']);
+
+export function auditTargetPresentation(args: {
+  targetType: string;
+  targetId: string | null;
+  visible: boolean;
+  label?: string | undefined;
+}): { targetLabel: string; redacted: boolean } {
+  const missingHydratedTarget =
+    args.visible &&
+    Boolean(args.targetId) &&
+    hydratedTargetTypes.has(args.targetType) &&
+    !args.label;
+  const redacted = !args.visible || missingHydratedTarget;
+  return {
+    targetLabel: args.label ?? genericLabel(args.targetType, redacted),
+    redacted,
+  };
+}
+
 export function createAuditScope(deps: {
   db: Db;
   teamId: string;
@@ -218,13 +238,19 @@ export function createAuditScope(deps: {
               : visible && row.targetId && row.targetType === 'mcp_server'
                 ? mcpLabels.get(row.targetId)
                 : undefined;
+      const presentation = auditTargetPresentation({
+        targetType: row.targetType,
+        targetId: row.targetId,
+        visible,
+        label,
+      });
       return {
         id: row.id,
         action: row.action,
         targetType: row.targetType,
         targetId: row.targetId,
-        targetLabel: label ?? genericLabel(row.targetType, !visible),
-        redacted: !visible,
+        targetLabel: presentation.targetLabel,
+        redacted: presentation.redacted,
         actor: { id: row.actorId, name: row.actorName, email: row.actorEmail },
         metadata: row.metadata as Record<string, unknown>,
         createdAt: row.createdAt,
