@@ -156,7 +156,7 @@ export function createIntegrationScope(deps: {
         .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)))
         .returning({ id: integrationsTable.id });
       const row = rows[0];
-      if (!row) throw new Error('Integration not found');
+      if (!row) return;
       await tx.insert(auditLog).values({
         teamId,
         actorUserId: userId,

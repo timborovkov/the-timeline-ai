@@ -1,6 +1,6 @@
 import { auditLog, mcpOutboundKeys } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -31,16 +31,20 @@ export async function DELETE(
   }
   const { id } = await ctx.params;
   const revoked = await db.transaction(async (tx) => {
+    const existingRows = await tx
+      .select({ id: mcpOutboundKeys.id, revokedAt: mcpOutboundKeys.revokedAt })
+      .from(mcpOutboundKeys)
+      .where(and(eq(mcpOutboundKeys.id, id), eq(mcpOutboundKeys.teamId, active.teamId)))
+      .limit(1)
+      .for('update');
+    const existing = existingRows[0];
+    if (!existing) return null;
+    if (existing.revokedAt) return existing;
+
     const rows = await tx
       .update(mcpOutboundKeys)
       .set({ revokedAt: new Date(), updatedAt: new Date() })
-      .where(
-        and(
-          eq(mcpOutboundKeys.id, id),
-          eq(mcpOutboundKeys.teamId, active.teamId),
-          isNull(mcpOutboundKeys.revokedAt),
-        ),
-      )
+      .where(and(eq(mcpOutboundKeys.id, id), eq(mcpOutboundKeys.teamId, active.teamId)))
       .returning({ id: mcpOutboundKeys.id });
     const row = rows[0];
     if (!row) return null;
