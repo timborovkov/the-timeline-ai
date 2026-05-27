@@ -9,12 +9,13 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_OFFSET = 500;
 
 const schema = z.object({
   query: z.string().trim().min(1).max(500),
   documentId: z.string().regex(UUID_RE).optional(),
   folderIds: z.array(z.string().regex(UUID_RE)).max(50).optional(),
-  offset: z.number().int().min(0).max(500).optional(),
+  offset: z.number().int().min(0).max(MAX_OFFSET).optional(),
   limit: z.number().int().min(1).max(30).optional(),
 });
 
@@ -64,6 +65,7 @@ export async function POST(req: Request): Promise<Response> {
       ...parsed.data,
       offset,
       limit,
+      maxOffset: MAX_OFFSET,
     });
   });
   return Response.json(page);

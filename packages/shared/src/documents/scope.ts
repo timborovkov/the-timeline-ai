@@ -181,6 +181,7 @@ export interface SearchDocumentChunksInput {
   folderIds?: string[];
   limit?: number;
   offset?: number;
+  maxOffset?: number;
 }
 
 export interface DocumentChunkSearchHit {
@@ -420,13 +421,19 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
     const hits = await searchFn(teamId, userId, vector, searchOpts);
     if (hits.length === 0) return { items: [], nextOffset: null };
+    const uncappedNextOffset = offset + limit;
+    const nextOffset =
+      hits.length > uncappedNextOffset &&
+      (input.maxOffset === undefined || uncappedNextOffset <= input.maxOffset)
+        ? uncappedNextOffset
+        : null;
     const pageHits = hits.slice(offset, offset + limit);
 
     const chunkIds = pageHits
       .map((h) => h.payload.document_chunk_id)
       .filter((id): id is string => typeof id === 'string');
     if (chunkIds.length === 0) {
-      return { items: [], nextOffset: hits.length > offset + limit ? offset + limit : null };
+      return { items: [], nextOffset };
     }
 
     const rows = await db
@@ -479,7 +486,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
     return {
       items,
-      nextOffset: hits.length > offset + limit ? offset + limit : null,
+      nextOffset,
     };
   }
 
