@@ -20,17 +20,3 @@ CREATE INDEX IF NOT EXISTS "documents_team_folder_updated_id_idx"
   ON "documents" USING btree ("team_id", "folder_id", "updated_at", "id");
 CREATE INDEX IF NOT EXISTS "document_chunks_team_document_idx"
   ON "document_chunks" USING btree ("team_id", "document_id");
-
-CREATE TABLE IF NOT EXISTS "team_onboarding_state" (
-  "team_id" uuid PRIMARY KEY REFERENCES "teams"("id") ON DELETE cascade,
-  "completed_keys" jsonb DEFAULT '[]'::jsonb NOT NULL,
-  "updated_at" timestamp with time zone DEFAULT now() NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS "user_onboarding_state" (
-  "team_id" uuid NOT NULL REFERENCES "teams"("id") ON DELETE cascade,
-  "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE cascade,
-  "dismissed_at" timestamp with time zone,
-  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-  CONSTRAINT "user_onboarding_state_team_id_user_id_pk" PRIMARY KEY ("team_id", "user_id")
-);

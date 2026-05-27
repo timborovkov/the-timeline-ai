@@ -49,7 +49,7 @@ export function AppShell({ active, memberships, user, children }: Props) {
               </TooltipTrigger>
               <TooltipContent side="right">The Timeline</TooltipContent>
             </Tooltip>
-            <RailNav />
+            <RailNav role={active.role} />
             <div className="mt-auto flex flex-col items-center gap-1">
               <TeamSwitcher active={active} memberships={memberships} variant="rail" />
             </div>

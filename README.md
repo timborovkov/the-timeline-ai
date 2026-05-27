@@ -21,7 +21,8 @@ server at `/api/mcp/server` so external agents (Claude Desktop, Cursor,
 etc.) can query this Timeline. The main timeline, object sections, document
 lists, and document search are paginated for large beta workspaces, with
 short-lived visibility-aware Redis caches and React Query only on interactive
-surfaces. Public help docs live at `/help`, with a
+surfaces. `/app/timeline` includes a dismissible team onboarding tutorial for
+the core capture surfaces. Public help docs live at `/help`, with a
 support/contact form that stores requests in Postgres and sends them through
 Postmark. Railway deployment, deploy-time migrations, and structured logging
 are in place.

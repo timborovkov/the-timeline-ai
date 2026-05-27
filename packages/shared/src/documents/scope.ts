@@ -967,8 +967,9 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
       const hits = await searchFn(teamId, userId, vector, searchOpts);
       if (hits.length === 0) return [];
+      const pageHits = hits.slice(input.offset ?? 0);
 
-      const chunkIds = hits
+      const chunkIds = pageHits
         .map((h) => h.payload.document_chunk_id)
         .filter((id): id is string => typeof id === 'string');
       if (chunkIds.length === 0) return [];
@@ -1000,7 +1001,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       const byId = new Map(rows.map((r) => [r.chunkId, r]));
 
       const out: DocumentChunkSearchHit[] = [];
-      for (const hit of hits.slice(input.offset ?? 0)) {
+      for (const hit of pageHits) {
         if (hit.payload.team_id !== teamId) continue;
         const cid = hit.payload.document_chunk_id;
         if (!cid) continue;

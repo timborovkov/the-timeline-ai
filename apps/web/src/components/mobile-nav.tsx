@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 
 import type { TeamMembership } from '@/lib/active-team';
 
-import { NAV_ITEMS, isNavItemActive } from '@/components/nav-items';
+import { isNavItemActive, visibleNavItems } from '@/components/nav-items';
 import { TeamSwitcher } from '@/components/team-switcher';
 import { cn } from '@/lib/utils';
 
@@ -107,7 +107,7 @@ export function MobileNav({ active, memberships }: Props) {
               </button>
             </div>
             <nav aria-label="Primary" className="mt-8 flex flex-col gap-1">
-              {NAV_ITEMS.map((item) => {
+              {visibleNavItems(active.role).map((item) => {
                 const isActive = isNavItemActive(item, pathname);
                 const Icon = item.icon;
                 return (

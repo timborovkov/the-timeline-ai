@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-import { NAV_ITEMS, isNavItemActive } from '@/components/nav-items';
+import type { TeamMembership } from '@/lib/active-team';
+
+import { isNavItemActive, visibleNavItems } from '@/components/nav-items';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -13,11 +15,11 @@ import { cn } from '@/lib/utils';
  * surfacing the label; active route shows a 2px signal-color left bar +
  * signal text. Expects a TooltipProvider higher in the tree.
  */
-export function RailNav() {
+export function RailNav({ role }: { role: TeamMembership['role'] }) {
   const pathname = usePathname();
   return (
     <nav aria-label="Primary" className="mt-4 flex flex-col items-center gap-1">
-      {NAV_ITEMS.map((item) => {
+      {visibleNavItems(role).map((item) => {
         const active = isNavItemActive(item, pathname);
         const Icon = item.icon;
         return (

@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { safeMarkOnboardingStep } from '@/lib/onboarding';
 
 const LINK_TOKEN_TTL_MS = 15 * 60 * 1000;
 
@@ -64,7 +65,9 @@ async function generateLinkTokenAction(
     targetTgUsername,
     expiresAt,
   });
+  await safeMarkOnboardingStep(teamScope, 'telegram');
   revalidatePath('/app/team/telegram');
+  revalidatePath('/app/timeline');
   return { token, scope, expiresAt: expiresAt.toISOString() };
 }
 

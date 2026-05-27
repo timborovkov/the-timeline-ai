@@ -1,18 +1,33 @@
-import { jsonb, pgTable, primaryKey, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { pgEnum, pgTable, primaryKey, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import { teams } from './teams.js';
 import { users } from './users.js';
 
-export const teamOnboardingState = pgTable('team_onboarding_state', {
-  teamId: uuid('team_id')
-    .primaryKey()
-    .references(() => teams.id, { onDelete: 'cascade' }),
-  completedKeys: jsonb('completed_keys').notNull().default([]),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const onboardingStep = pgEnum('onboarding_step', [
+  'first_note',
+  'telegram',
+  'email_forwarding',
+  'first_document',
+  'first_integration',
+]);
 
-export const userOnboardingState = pgTable(
-  'user_onboarding_state',
+export const teamOnboardingCompletions = pgTable(
+  'team_onboarding_completions',
+  {
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    step: onboardingStep('step').notNull(),
+    completedByUserId: uuid('completed_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    completedAt: timestamp('completed_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.teamId, table.step] })],
+);
+
+export const userOnboardingDismissals = pgTable(
+  'user_onboarding_dismissals',
   {
     teamId: uuid('team_id')
       .notNull()
@@ -20,8 +35,7 @@ export const userOnboardingState = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    dismissedAt: timestamp('dismissed_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [primaryKey({ columns: [table.teamId, table.userId] })],
 );

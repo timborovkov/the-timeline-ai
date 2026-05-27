@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { safeMarkOnboardingStep } from '@/lib/onboarding';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -97,6 +98,7 @@ export async function GET(
       { provider, externalAccountId: result.externalAccountId, displayName: result.displayName },
       created.id,
     );
+    await safeMarkOnboardingStep(scope, 'first_integration');
     return NextResponse.redirect(
       new URL(`/app/team/integrations?connected=${provider}&integrationId=${created.id}`, req.url),
     );

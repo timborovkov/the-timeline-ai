@@ -203,6 +203,11 @@ Linear-tight on operational surfaces. Comfortable on mobile and on forms.
   decorative page headers: `EVENTS · 2,847 TOTAL · LAST 14d · TEAM acme · FILTER →`.
   Top + bottom hairline border. Inspired by `git log --stat` and Bloomberg
   terminal header bars.
+- **Setup checklist** — `<TimelineOnboardingChecklist />`. A dense,
+  dismissible tutorial panel at the top of `/app/timeline`. It uses a
+  hairline-bounded header, mono progress counter, and five equal cells for
+  capture surfaces. Completion uses the signal accent; incomplete steps stay
+  neutral.
 - **Inspector pane** — `<InspectorPane>` with `<InspectorHead>` (mono
   uppercase + ID), `<InspectorBody>` (key/value `<dl>`, mono), and
   `<InspectorQuote>` (Switzer, signal-color left border) for surfacing
