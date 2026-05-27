@@ -226,6 +226,9 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
         .innerJoin(users, eq(users.id, teamMembers.userId))
         .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)))
         .limit(50);
+      const activeAuthorUserId = memberRows.some((member) => member.userId === row.authorUserId)
+        ? row.authorUserId
+        : null;
 
       const recentRows = await deps.db
         .select({ occurredAt: rawEvents.occurredAt, text: rawEvents.contentText })
@@ -280,7 +283,7 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
               text,
               timezone: settings.defaultTimezone,
               occurredAt: row.occurredAt,
-              authorUserId: row.authorUserId,
+              authorUserId: activeAuthorUserId,
             });
 
       for (const bundle of bundles) {
@@ -298,7 +301,7 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
           confidence: bundle.confidence,
           dedupeKey: bundleDedupe,
           visibility: row.visibility,
-          visibilityOwnerUserId: row.authorUserId,
+          visibilityOwnerUserId: null,
           visibilityUserIds: row.visibilityUserIds,
           evidence: [{ rawEventId, quote: bundle.quote ?? truncate(text, 500) }],
           metadata: { suggestion_model_version: modelVersion },

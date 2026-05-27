@@ -1,7 +1,12 @@
 'use client';
 
 import { Temporal } from '@js-temporal/polyfill';
-import { isoWeekYear, startOfIsoWeek } from '@timeline/shared/time';
+import {
+  assertValidTimezone,
+  isoWeekYear,
+  localDateSpanToUtcRange,
+  startOfIsoWeek,
+} from '@timeline/shared/time';
 import {
   CalendarDays,
   Check,
@@ -89,9 +94,8 @@ function dateSpan(
   endDate: string,
   timezone: string,
 ): { start: string; end: string } {
-  const start = Temporal.PlainDate.from(startDate).toZonedDateTime(timezone).toInstant().toString();
-  const end = Temporal.PlainDate.from(endDate).toZonedDateTime(timezone).toInstant().toString();
-  return { start, end };
+  const range = localDateSpanToUtcRange(startDate, endDate, timezone);
+  return { start: range.from.toISOString(), end: range.to.toISOString() };
 }
 
 function eventLocalStart(event: CalendarEvent, timezone: string): Temporal.PlainDateTime {
@@ -135,8 +139,13 @@ function eventTouchesDate(
   date: Temporal.PlainDate,
   timezone: string,
 ): boolean {
-  const start = Temporal.Instant.from(event.startAt).toZonedDateTimeISO(timezone).toPlainDate();
-  const rawEnd = Temporal.Instant.from(event.endAt).toZonedDateTimeISO(timezone).toPlainDate();
+  const displayTimezone = event.allDay ? assertValidTimezone(event.timezone) : timezone;
+  const start = Temporal.Instant.from(event.startAt)
+    .toZonedDateTimeISO(displayTimezone)
+    .toPlainDate();
+  const rawEnd = Temporal.Instant.from(event.endAt)
+    .toZonedDateTimeISO(displayTimezone)
+    .toPlainDate();
   const end = event.allDay ? rawEnd.subtract({ days: 1 }) : rawEnd;
   return Temporal.PlainDate.compare(start, date) <= 0 && Temporal.PlainDate.compare(end, date) >= 0;
 }
@@ -157,8 +166,9 @@ function blankDraft(anchor: Temporal.PlainDate): Draft {
 }
 
 function draftFromEvent(event: CalendarEvent, timezone: string): Draft {
-  const start = eventLocalStart(event, timezone);
-  const end = eventLocalEnd(event, timezone);
+  const displayTimezone = event.allDay ? assertValidTimezone(event.timezone) : timezone;
+  const start = eventLocalStart(event, displayTimezone);
+  const end = eventLocalEnd(event, displayTimezone);
   return {
     title: event.redacted ? 'Busy' : event.title,
     description: event.description ?? '',
