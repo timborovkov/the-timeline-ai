@@ -67,6 +67,8 @@ export interface CreateSuggestionInput {
   items: SuggestionItemInput[];
 }
 
+export type SuggestionListStatus = 'pending' | 'resolved' | 'failed' | 'all';
+
 export interface SuggestionBundle {
   id: string;
   source: 'chat' | 'background';
@@ -421,15 +423,30 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .limit(1);
     const row = rows[0];
     if (!row) return false;
+    const [claimed] = await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resolvedAt: new Date(),
+        resolvedByUserId: userId,
+        updatedAt: new Date(),
+        failureReason: null,
+      })
+      .where(
+        and(
+          eq(agentSuggestionItems.id, itemId),
+          isNull(agentSuggestionItems.resolvedAt),
+          inArray(agentSuggestionItems.status, ['pending', 'failed']),
+        ),
+      )
+      .returning({ id: agentSuggestionItems.id });
+    if (!claimed) return false;
     try {
       const resultId = await applyItem(row.item);
       await db
         .update(agentSuggestionItems)
         .set({
-          status: 'accepted',
           resultId,
-          resolvedAt: new Date(),
-          resolvedByUserId: userId,
           updatedAt: new Date(),
           failureReason: null,
         })
@@ -442,6 +459,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .set({
           status: 'failed',
           failureReason: err instanceof Error ? err.message : 'Failed to apply suggestion',
+          resolvedAt: null,
+          resolvedByUserId: null,
           updatedAt: new Date(),
         })
         .where(eq(agentSuggestionItems.id, itemId));
@@ -450,12 +469,42 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
+  async function listSuggestions(
+    opts: { status?: SuggestionListStatus; limit?: number } = {},
+  ): Promise<SuggestionBundle[]> {
+    await ensureMember();
+    const status = opts.status ?? 'pending';
+    const conditions = [suggestionVisibilityPredicate(teamId, userId)];
+    if (status === 'pending') {
+      conditions.push(inArray(agentSuggestions.status, ['pending', 'partially_resolved']));
+    } else if (status === 'resolved') {
+      conditions.push(inArray(agentSuggestions.status, ['accepted', 'rejected']));
+    } else if (status === 'failed') {
+      conditions.push(
+        sql`EXISTS (
+	          SELECT 1 FROM ${agentSuggestionItems}
+	          WHERE ${agentSuggestionItems.suggestionId} = ${agentSuggestions.id}
+	            AND ${agentSuggestionItems.status} = 'failed'
+	        )`,
+      );
+    }
+    const rows = await db
+      .select()
+      .from(agentSuggestions)
+      .where(and(...conditions))
+      .orderBy(desc(agentSuggestions.createdAt))
+      .limit(Math.min(Math.max(opts.limit ?? 100, 1), 200));
+    const bundles = await Promise.all(rows.map((bundleRow) => loadBundle(bundleRow.id)));
+    return bundles.filter((b): b is SuggestionBundle => b !== null);
+  }
+
   return {
     async createOrMergeSuggestionBundle(input: CreateSuggestionInput): Promise<SuggestionBundle> {
       await ensureMember();
       if (input.items.length === 0) throw new Error('Suggestion requires at least one item');
       const visibility = input.visibility ?? 'team';
-      const visibilityOwnerUserId = input.visibilityOwnerUserId ?? userId;
+      const visibilityOwnerUserId =
+        input.visibilityOwnerUserId ?? (visibility === 'team' ? null : userId);
       if (visibilityOwnerUserId) await deps.requireTeamMember(visibilityOwnerUserId);
       for (const uid of input.visibilityUserIds ?? []) await deps.requireTeamMember(uid);
 
@@ -529,21 +578,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       return loaded;
     },
 
+    listSuggestions,
+
     async listPendingSuggestions(): Promise<SuggestionBundle[]> {
-      await ensureMember();
-      const rows = await db
-        .select()
-        .from(agentSuggestions)
-        .where(
-          and(
-            suggestionVisibilityPredicate(teamId, userId),
-            inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
-          ),
-        )
-        .orderBy(desc(agentSuggestions.createdAt))
-        .limit(100);
-      const bundles = await Promise.all(rows.map((row) => loadBundle(row.id)));
-      return bundles.filter((b): b is SuggestionBundle => b !== null);
+      return listSuggestions({ status: 'pending' });
     },
 
     getSuggestion: loadBundle,
@@ -580,7 +618,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .limit(1);
       const row = rows[0];
       if (!row) return false;
-      await db
+      const [rejected] = await db
         .update(agentSuggestionItems)
         .set({
           status: 'rejected',
@@ -588,7 +626,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           resolvedByUserId: userId,
           updatedAt: new Date(),
         })
-        .where(eq(agentSuggestionItems.id, itemId));
+        .where(
+          and(
+            eq(agentSuggestionItems.id, itemId),
+            isNull(agentSuggestionItems.resolvedAt),
+            inArray(agentSuggestionItems.status, ['pending', 'failed']),
+          ),
+        )
+        .returning({ id: agentSuggestionItems.id });
+      if (!rejected) return false;
       await refreshBundleStatus(row.suggestion.id, userId);
       return true;
     },

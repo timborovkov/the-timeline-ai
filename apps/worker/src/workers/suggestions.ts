@@ -1,5 +1,4 @@
 import {
-  calendarEvents,
   entities,
   facts as factsTable,
   rawEvents,
@@ -241,17 +240,7 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
         .orderBy(desc(rawEvents.occurredAt))
         .limit(RECENT_CONTEXT_LIMIT);
 
-      const calendarRows = await deps.db
-        .select({
-          id: calendarEvents.id,
-          title: calendarEvents.title,
-          startAt: calendarEvents.startAt,
-          allDay: calendarEvents.allDay,
-        })
-        .from(calendarEvents)
-        .where(and(eq(calendarEvents.teamId, teamId), isNull(calendarEvents.deletedAt)))
-        .orderBy(desc(calendarEvents.startAt))
-        .limit(40);
+      const calendarRows = await scope.calendar.listCalendarEvents({ limit: 40 });
 
       const prompt = buildPrompt({
         text,
@@ -265,12 +254,14 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
           name: e.name,
           status: e.status,
         })),
-        calendar: calendarRows.map((ev) => ({
-          id: ev.id,
-          title: ev.title,
-          startAt: ev.startAt.toISOString(),
-          allDay: ev.allDay,
-        })),
+        calendar: calendarRows
+          .filter((ev) => ev.visibility === 'team')
+          .map((ev) => ({
+            id: ev.id,
+            title: ev.title,
+            startAt: ev.startAt.toISOString(),
+            allDay: ev.allDay,
+          })),
         recent: recentRows,
       });
 
