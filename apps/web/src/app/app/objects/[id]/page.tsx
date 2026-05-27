@@ -5,6 +5,7 @@ import { ObjectDetailClient } from '@/components/objects/object-detail-client';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -41,23 +42,7 @@ export default async function ObjectDetailPage({ params }: PageProps) {
       items: bundle.items.filter((item) => item.targetId === detail.id),
     }))
     .filter((bundle) => bundle.items.length > 0)
-    .map((bundle) => ({
-      id: bundle.id,
-      source: bundle.source,
-      status: bundle.status,
-      title: bundle.title,
-      summary: bundle.summary,
-      reason: bundle.reason,
-      confidence: bundle.confidence,
-      createdAt: bundle.createdAt.toISOString(),
-      items: bundle.items,
-      evidence: bundle.evidence.map((ev) => ({
-        rawEventId: ev.rawEventId,
-        quote: ev.quote,
-        source: ev.source,
-        occurredAt: ev.occurredAt ? ev.occurredAt.toISOString() : null,
-      })),
-    }));
+    .map(serializeSuggestionBundle);
 
   return (
     <div className="mx-auto max-w-4xl">

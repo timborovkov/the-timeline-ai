@@ -6,6 +6,7 @@ import { CalendarView } from '@/components/calendar/calendar-view';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 interface PageProps {
   searchParams: Promise<{ date?: string; view?: string }>;
@@ -59,23 +60,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
       items: bundle.items.filter((item) => item.targetKind === 'calendar_event'),
     }))
     .filter((bundle) => bundle.items.length > 0)
-    .map((bundle) => ({
-      id: bundle.id,
-      source: bundle.source,
-      status: bundle.status,
-      title: bundle.title,
-      summary: bundle.summary,
-      reason: bundle.reason,
-      confidence: bundle.confidence,
-      createdAt: bundle.createdAt.toISOString(),
-      items: bundle.items,
-      evidence: bundle.evidence.map((ev) => ({
-        rawEventId: ev.rawEventId,
-        quote: ev.quote,
-        source: ev.source,
-        occurredAt: ev.occurredAt ? ev.occurredAt.toISOString() : null,
-      })),
-    }));
+    .map(serializeSuggestionBundle);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">

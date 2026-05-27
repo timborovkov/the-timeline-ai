@@ -7,6 +7,7 @@ import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 const STATUS_FILTERS = ['pending', 'failed', 'resolved', 'all'] as const;
 
@@ -57,25 +58,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
           </Link>
         ))}
       </nav>
-      <ApprovalsClient
-        suggestions={suggestions.map((s) => ({
-          id: s.id,
-          source: s.source,
-          status: s.status,
-          title: s.title,
-          summary: s.summary,
-          reason: s.reason,
-          confidence: s.confidence,
-          createdAt: s.createdAt.toISOString(),
-          items: s.items,
-          evidence: s.evidence.map((ev) => ({
-            rawEventId: ev.rawEventId,
-            quote: ev.quote,
-            source: ev.source,
-            occurredAt: ev.occurredAt?.toISOString() ?? null,
-          })),
-        }))}
-      />
+      <ApprovalsClient suggestions={suggestions.map(serializeSuggestionBundle)} />
     </div>
   );
 }

@@ -109,6 +109,10 @@ function startOfIsoWeek(date: Temporal.PlainDate): Temporal.PlainDate {
   return date.subtract({ days: date.dayOfWeek - 1 });
 }
 
+function isoWeekYear(date: Temporal.PlainDate): number {
+  return date.add({ days: 4 - date.dayOfWeek }).year;
+}
+
 function monthGrid(anchor: Temporal.PlainDate): Temporal.PlainDate[] {
   const first = Temporal.PlainDate.from({ year: anchor.year, month: anchor.month, day: 1 });
   const start = startOfIsoWeek(first);
@@ -124,7 +128,7 @@ function titleFor(mode: CalendarViewMode, anchor: Temporal.PlainDate): string {
   if (mode === 'day') {
     return anchor.toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   }
-  if (mode === 'week') return `Week ${String(anchor.weekOfYear)}, ${String(anchor.year)}`;
+  if (mode === 'week') return `Week ${String(anchor.weekOfYear)}, ${String(isoWeekYear(anchor))}`;
   return anchor.toLocaleString('en-US', { month: 'long', year: 'numeric' });
 }
 
@@ -181,8 +185,15 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
   const mode = (searchParams.get('view') as CalendarViewMode | null) ?? 'month';
   const safeMode: CalendarViewMode = ['month', 'week', 'day'].includes(mode) ? mode : 'month';
   const anchor = parseDateParam(searchParams.get('date'), timezone);
-  const visibleDays =
-    safeMode === 'month' ? monthGrid(anchor) : safeMode === 'week' ? weekGrid(anchor) : [anchor];
+  const anchorKey = anchor.toString();
+  const visibleDays = useMemo(() => {
+    const stableAnchor = Temporal.PlainDate.from(anchorKey);
+    return safeMode === 'month'
+      ? monthGrid(stableAnchor)
+      : safeMode === 'week'
+        ? weekGrid(stableAnchor)
+        : [stableAnchor];
+  }, [anchorKey, safeMode]);
   const currentToday = today(timezone);
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
   const [draft, setDraft] = useState<Draft>(() => blankDraft(anchor));
