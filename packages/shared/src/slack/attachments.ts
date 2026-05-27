@@ -41,18 +41,7 @@ const DOCUMENT_EXT = new Set([
   'gif',
   'docx',
 ]);
-const BLOCKED_EXT = new Set([
-  'zip',
-  'gz',
-  'tgz',
-  'rar',
-  '7z',
-  'exe',
-  'dmg',
-  'pkg',
-  'app',
-  'mov',
-]);
+const BLOCKED_EXT = new Set(['zip', 'gz', 'tgz', 'rar', '7z', 'exe', 'dmg', 'pkg', 'app', 'mov']);
 
 export type AttachmentDecision =
   | { kind: 'audio'; reason?: undefined }
