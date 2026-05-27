@@ -442,6 +442,40 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     isTeamMember,
   };
 
+  async function listEvents(
+    filters: EventListFilters = {},
+  ): Promise<(typeof rawEvents.$inferSelect)[]> {
+    await ensureMember();
+    const conditions = [eq(rawEvents.teamId, teamId), visibilityFilter, activeRawEventFilter];
+    if (filters.authorUserId) {
+      conditions.push(eq(rawEvents.authorUserId, filters.authorUserId));
+    }
+    if (filters.from) conditions.push(gte(rawEvents.occurredAt, filters.from));
+    if (filters.to) conditions.push(lt(rawEvents.occurredAt, filters.to));
+    if (filters.source) {
+      conditions.push(
+        eq(rawEvents.source, filters.source as (typeof rawEvents.source.enumValues)[number]),
+      );
+    }
+    const cursor = decodeCursor(filters.cursor);
+    if (filters.cursor && !cursor) throw new Error('Invalid cursor');
+    if (cursor) {
+      const cursorDate = new Date(cursor.at);
+      conditions.push(
+        or(
+          lt(rawEvents.occurredAt, cursorDate),
+          and(eq(rawEvents.occurredAt, cursorDate), lt(rawEvents.id, cursor.id)),
+        ),
+      );
+    }
+    return db
+      .select()
+      .from(rawEvents)
+      .where(and(...conditions))
+      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+      .limit(filters.limit ?? 200);
+  }
+
   return {
     ...core,
     timeline: {
@@ -451,78 +485,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         return rows[0] ?? null;
       },
 
-      async listEvents(filters: EventListFilters = {}) {
-        await ensureMember();
-        const conditions = [eq(rawEvents.teamId, teamId), visibilityFilter, activeRawEventFilter];
-        if (filters.authorUserId) {
-          conditions.push(eq(rawEvents.authorUserId, filters.authorUserId));
-        }
-        if (filters.from) conditions.push(gte(rawEvents.occurredAt, filters.from));
-        if (filters.to) conditions.push(lt(rawEvents.occurredAt, filters.to));
-        if (filters.source) {
-          conditions.push(
-            eq(rawEvents.source, filters.source as (typeof rawEvents.source.enumValues)[number]),
-          );
-        }
-        const cursor = decodeCursor(filters.cursor);
-        if (filters.cursor && !cursor) throw new Error('Invalid cursor');
-        if (cursor) {
-          const cursorDate = new Date(cursor.at);
-          conditions.push(
-            or(
-              lt(rawEvents.occurredAt, cursorDate),
-              and(eq(rawEvents.occurredAt, cursorDate), lt(rawEvents.id, cursor.id)),
-            ),
-          );
-        }
-        return db
-          .select()
-          .from(rawEvents)
-          .where(and(...conditions))
-          .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
-          .limit(filters.limit ?? 200);
-      },
+      listEvents,
 
       async listEventsPage(
         filters: EventListFilters = {},
       ): Promise<PaginatedResult<typeof rawEvents.$inferSelect>> {
         const limit = Math.min(Math.max(filters.limit ?? 30, 1), 100);
-        await ensureMember();
-        const rows = await db
-          .select()
-          .from(rawEvents)
-          .where(
-            and(
-              eq(rawEvents.teamId, teamId),
-              visibilityFilter,
-              activeRawEventFilter,
-              ...(filters.authorUserId ? [eq(rawEvents.authorUserId, filters.authorUserId)] : []),
-              ...(filters.from ? [gte(rawEvents.occurredAt, filters.from)] : []),
-              ...(filters.to ? [lt(rawEvents.occurredAt, filters.to)] : []),
-              ...(filters.source
-                ? [
-                    eq(
-                      rawEvents.source,
-                      filters.source as (typeof rawEvents.source.enumValues)[number],
-                    ),
-                  ]
-                : []),
-              ...(() => {
-                const cursor = decodeCursor(filters.cursor);
-                if (filters.cursor && !cursor) throw new Error('Invalid cursor');
-                if (!cursor) return [];
-                const cursorDate = new Date(cursor.at);
-                return [
-                  or(
-                    lt(rawEvents.occurredAt, cursorDate),
-                    and(eq(rawEvents.occurredAt, cursorDate), lt(rawEvents.id, cursor.id)),
-                  ),
-                ];
-              })(),
-            ),
-          )
-          .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
-          .limit(limit + 1);
+        const rows = await listEvents({ ...filters, limit: limit + 1 });
         return pageWindow(rows, limit, (row) => ({
           at: row.occurredAt.toISOString(),
           id: row.id,
