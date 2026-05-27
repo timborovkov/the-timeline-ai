@@ -66,7 +66,7 @@ vi.mock('@timeline/shared', async () => {
   const actual = await vi.importActual<typeof SharedModuleNS>('@timeline/shared');
   return {
     ...actual,
-    withTeam: () => fakes.fakeScope,
+    withTeam: () => ({ documents: fakes.fakeScope }),
     getDocumentsBucket: () => 'test-documents',
     getS3Client: () => ({}) as unknown,
     getS3PresignClient: () => ({}) as unknown,

@@ -1,8 +1,13 @@
-import { pgEnum, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { index, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import { users } from './users.js';
 
 export const teamRole = pgEnum('team_role', ['owner', 'admin', 'member']);
+export const teamInviteSendStatus = pgEnum('team_invite_send_status', [
+  'pending',
+  'sent',
+  'failed',
+]);
 
 export const teams = pgTable('teams', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -29,22 +34,47 @@ export const teamMembers = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     role: teamRole('role').notNull().default('member'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    removedAt: timestamp('removed_at', { withTimezone: true }),
+    removedByUserId: uuid('removed_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
   },
-  (table) => [primaryKey({ columns: [table.teamId, table.userId] })],
+  (table) => [
+    primaryKey({ columns: [table.teamId, table.userId] }),
+    index('team_members_team_active_idx').on(table.teamId, table.removedAt),
+    index('team_members_user_active_idx').on(table.userId, table.removedAt),
+  ],
 );
 
-export const teamInvites = pgTable('team_invites', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  teamId: uuid('team_id')
-    .notNull()
-    .references(() => teams.id, { onDelete: 'cascade' }),
-  email: text('email').notNull(),
-  role: teamRole('role').notNull().default('member'),
-  token: text('token').notNull().unique(),
-  invitedByUserId: uuid('invited_by_user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const teamInvites = pgTable(
+  'team_invites',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    role: teamRole('role').notNull().default('member'),
+    token: text('token').notNull().unique(),
+    invitedByUserId: uuid('invited_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    acceptedByUserId: uuid('accepted_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedByUserId: uuid('revoked_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    lastSentAt: timestamp('last_sent_at', { withTimezone: true }),
+    sendStatus: teamInviteSendStatus('send_status').notNull().default('pending'),
+    sendError: text('send_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('team_invites_team_created_idx').on(table.teamId, table.createdAt),
+    index('team_invites_team_email_idx').on(table.teamId, table.email),
+  ],
+);
