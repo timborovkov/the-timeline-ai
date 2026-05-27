@@ -3,23 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Postmark inbound email setup</title>
+    <title>Postmark email setup</title>
     <link rel="stylesheet" href="../styles.css" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
-      <h1>Postmark inbound email setup</h1>
+      <h1>Postmark email setup</h1>
       <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-22</span></div>
-      <p class="tldr">
-        Per-team inbound address: <code>&lt;team-slug&gt;@&lt;INBOUND_EMAIL_DOMAIN&gt;</code>.
-        Forward, CC, or BCC to it and the message lands on the timeline.
-      </p>
+      <p class="tldr">Postmark powers inbound timeline capture and outbound team invite emails.</p>
 
       <p>
         Per-team email ingest. A team's address is
         <code>&lt;team-slug&gt;@&lt;INBOUND_EMAIL_DOMAIN&gt;</code>, populated automatically on team
-        creation. Forward, CC, or BCC any mail to that address and it lands in the timeline.
+        creation. Forward, CC, or BCC any mail to that address and it lands in the timeline. The
+        same Postmark server token is also used to send transactional team invite emails.
       </p>
 
       <h2 id="account">1. Account + server</h2>
@@ -32,13 +30,27 @@
 SUPPORT_EMAIL=support@example.com
 </code></pre>
       <p>
-        <code>POSTMARK_SERVER_TOKEN</code> is used for outbound support/contact mail from
-        <code>/help/support</code>. Set <code>SUPPORT_EMAIL</code> to a verified Postmark sender;
-        support requests are sent to that address and use the visitor's email as
-        <code>Reply-To</code>.
+        <code>POSTMARK_SERVER_TOKEN</code> is used for outbound transactional email: team invites
+        and support/contact mail from <code>/help/support</code>. Set
+        <code>SUPPORT_EMAIL</code> to a verified Postmark sender; support requests are sent to that
+        address and use the visitor's email as <code>Reply-To</code>. The inbound webhook is
+        authenticated separately via <code>POSTMARK_WEBHOOK_SECRET</code>.
       </p>
 
-      <h2 id="inbound-stream">2. Inbound stream</h2>
+      <h2 id="outbound-invites">2. Outbound invite email</h2>
+      <ol>
+        <li>In Postmark, configure an outbound sender signature or verified domain.</li>
+        <li>Set the sender address in the app environment.</li>
+      </ol>
+      <pre><code>TRANSACTIONAL_EMAIL_FROM="The Timeline &lt;invites@your-domain.com&gt;"
+</code></pre>
+      <p>
+        Team settings sends invite emails after the invite row is committed. If Postmark is
+        unavailable or these outbound env vars are missing, the invite is still created, the UI
+        shows the send failure, and admins can copy the fallback invite URL or resend later.
+      </p>
+
+      <h2 id="inbound-stream">3. Inbound stream</h2>
       <ol>
         <li>In the server, go to <strong>Inbound</strong> → set up an inbound stream.</li>
         <li>
@@ -50,7 +62,7 @@ SUPPORT_EMAIL=support@example.com
         <li>Set the <strong>Include attachments</strong> option to <strong>Yes</strong>.</li>
       </ol>
 
-      <h2 id="webhook-auth">3. Webhook authentication (Basic Auth)</h2>
+      <h2 id="webhook-auth">4. Webhook authentication (Basic Auth)</h2>
       <p>
         We verify every inbound request via HTTP Basic Auth. Postmark sends the configured
         user/password in the <code>Authorization</code> header; the handler compares in constant
@@ -79,7 +91,7 @@ SUPPORT_EMAIL=support@example.com
       <pre><code>POSTMARK_INBOUND_IPS=3.134.147.250/32,50.31.156.6/32
 </code></pre>
 
-      <h2 id="inbound-domain">4. Inbound email domain</h2>
+      <h2 id="inbound-domain">5. Inbound email domain</h2>
       <p>
         Each team gets <code>&lt;team-slug&gt;@&lt;INBOUND_EMAIL_DOMAIN&gt;</code>. Configure MX
         records for that domain to point at Postmark.
@@ -92,7 +104,7 @@ SUPPORT_EMAIL=support@example.com
         you need to flip a legacy team to the production domain.
       </p>
 
-      <h2 id="what-gets-ingested">5. What gets ingested</h2>
+      <h2 id="what-gets-ingested">6. What gets ingested</h2>
       <p>For each inbound delivery the dispatcher:</p>
       <ol>
         <li>Parses the Postmark payload (Zod schema).</li>

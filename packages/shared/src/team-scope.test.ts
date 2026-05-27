@@ -201,4 +201,22 @@ describe('withTeam namespaced port', () => {
       'Only Telegram events can be removed this way',
     );
   });
+
+  it('rejects removed members at the team-scope chokepoint', async () => {
+    await pg.exec(`
+      UPDATE team_members
+      SET removed_at = now(), removed_by_user_id = '${USER_A}'
+      WHERE team_id = '${TEAM_A}' AND user_id = '${USER_B}';
+    `);
+
+    const removedScope = withTeam(db as never, TEAM_A, USER_B);
+
+    await expect(removedScope.requireMembership()).rejects.toThrow('Not a member of this team');
+    await expect(removedScope.timeline.listMembers()).rejects.toThrow('Not a member of this team');
+
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    await expect(ownerScope.timeline.listMembers()).resolves.toEqual([
+      expect.objectContaining({ userId: USER_A, role: 'owner' }),
+    ]);
+  });
 });

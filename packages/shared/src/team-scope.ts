@@ -281,7 +281,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       const rows = await db
         .select({ role: teamMembers.role })
         .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
+        .where(
+          and(
+            eq(teamMembers.teamId, teamId),
+            eq(teamMembers.userId, userId),
+            isNull(teamMembers.removedAt),
+          ),
+        )
         .limit(1);
       const row = rows[0];
       if (!row) throw new Error('Not a member of this team');
@@ -334,7 +340,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         const rows = await db
           .select({ id: teamMembers.userId })
           .from(teamMembers)
-          .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, otherUserId)))
+          .where(
+            and(
+              eq(teamMembers.teamId, teamId),
+              eq(teamMembers.userId, otherUserId),
+              isNull(teamMembers.removedAt),
+            ),
+          )
           .limit(1);
         return rows.length > 0;
       })();
@@ -716,7 +728,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             createdAt: teamMembers.createdAt,
           })
           .from(teamMembers)
-          .where(eq(teamMembers.teamId, teamId))
+          .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)))
           .orderBy(asc(teamMembers.createdAt));
       },
 

@@ -7,7 +7,7 @@ import {
   telegramUsers,
   telegramUserTeams,
 } from '@timeline/db';
-import { and, asc, desc, eq, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { askAgent } from '../agent/ask.js';
 import { childLogger } from '../logger.js';
@@ -299,7 +299,13 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
       const issuerStillMember = await tx
         .select({ role: teamMembers.role })
         .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, row.teamId), eq(teamMembers.userId, row.issuedByUserId)))
+        .where(
+          and(
+            eq(teamMembers.teamId, row.teamId),
+            eq(teamMembers.userId, row.issuedByUserId),
+            isNull(teamMembers.removedAt),
+          ),
+        )
         .limit(1);
       if (!issuerStillMember[0]) throw new Error('issuer_revoked');
 
@@ -1094,7 +1100,13 @@ async function cmdLinkGroup(ctx: GroupContext, arg: string): Promise<void> {
       const issuerRoleRows = await tx
         .select({ role: teamMembers.role })
         .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, row.teamId), eq(teamMembers.userId, row.issuedByUserId)))
+        .where(
+          and(
+            eq(teamMembers.teamId, row.teamId),
+            eq(teamMembers.userId, row.issuedByUserId),
+            isNull(teamMembers.removedAt),
+          ),
+        )
         .limit(1);
       const issuerRole = issuerRoleRows[0]?.role;
       if (issuerRole !== 'owner' && issuerRole !== 'admin') {
@@ -1356,7 +1368,13 @@ async function insertEvent(
     const stillMember = await db
       .select({ userId: teamMembers.userId })
       .from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, authorUserId)))
+      .where(
+        and(
+          eq(teamMembers.teamId, teamId),
+          eq(teamMembers.userId, authorUserId),
+          isNull(teamMembers.removedAt),
+        ),
+      )
       .limit(1);
     if (!stillMember[0]) {
       authorUserId = null;
