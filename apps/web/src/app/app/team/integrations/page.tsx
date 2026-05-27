@@ -73,6 +73,7 @@ export default async function IntegrationsPage({
         <ActionChip href="/app/team/mcp-share" label="Expose as MCP →" />
         <ActionChip href="/app/me/mcp-servers" label="Personal MCP →" />
         <ActionChip href="/app/team/integrations/audit" label="Audit log →" />
+        <ActionChip href="/app/team/jobs" label="Job recovery →" />
         <span className="ml-auto" />
         <AddCustomMcpServerLauncher ownership="team" />
       </div>

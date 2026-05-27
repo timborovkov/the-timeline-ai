@@ -18,8 +18,9 @@ private busy-block redaction, and calendar-aware agent tools. Third-party
 integrations (Google Drive, Linear, GitHub native + custom MCP servers per
 team or per user) live at `/app/team/integrations` — plus an outbound MCP
 server at `/api/mcp/server` so external agents (Claude Desktop, Cursor,
-etc.) can query this Timeline. Railway deployment, deploy-time migrations,
-and structured logging are in place.
+etc.) can query this Timeline. Owners/admins can recover team-scoped failed
+or stuck product jobs at `/app/team/jobs`. Railway deployment, deploy-time
+migrations, and structured logging are in place.
 
 ## Read first
 

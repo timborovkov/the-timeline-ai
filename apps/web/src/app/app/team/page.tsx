@@ -48,6 +48,13 @@ export default async function TeamSettingsPage() {
       />
 
       {isAdmin ? (
+        <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
+          <ActionChip href="/app/team/jobs" label="Job recovery →" />
+          <ActionChip href="/app/team/integrations/audit" label="Integration audit →" />
+        </div>
+      ) : null}
+
+      {isAdmin ? (
         <Card>
           <CardHeader>
             <CardTitle>Team identity</CardTitle>
@@ -151,5 +158,16 @@ export default async function TeamSettingsPage() {
         </Card>
       ) : null}
     </div>
+  );
+}
+
+function ActionChip({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      className="inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted hover:border-signal hover:text-signal"
+    >
+      {label}
+    </a>
   );
 }

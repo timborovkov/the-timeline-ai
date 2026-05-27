@@ -16,6 +16,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizz
 import { createCalendarScope } from './calendar/scope.js';
 import { createDocumentScope } from './documents/scope.js';
 import { createIntegrationScope } from './integrations/scope.js';
+import { createJobRecoveryScope } from './job-recovery/index.js';
 import { embed as defaultEmbed, type EmbedResult } from './llm/embed.js';
 import { createMcpScope } from './mcp/scope.js';
 import { createMeetingScope } from './meetings/scope.js';
@@ -388,6 +389,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     userId,
     ensureMember,
     requireTeamMember,
+  });
+
+  const jobRecoveryScope = createJobRecoveryScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
   });
 
   const core: TeamScopeCore = {
@@ -1023,6 +1031,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     integrations: integrationScope,
     mcp: mcpScope,
     calendar: calendarScope,
+    jobRecovery: jobRecoveryScope,
   };
 }
 

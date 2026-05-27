@@ -59,6 +59,13 @@ the product. It exists to answer who accessed or changed sensitive team data,
 not to track every ordinary page view.
 _Avoid_: Timeline, activity feed
 
+**Job Recovery Dashboard**:
+A team-scoped owner/admin surface for retrying or dismissing failed and stuck
+product jobs tied to visible team artifacts, such as transcription,
+extraction, embedding, document processing, meeting finalization, and
+integration sync.
+_Avoid_: Operator dashboard, BullMQ dashboard, queue admin
+
 **Integration Audit Log**:
 The operational history of an integration, such as connection, sync, replay,
 and provider errors. It is not the general trust audit log.

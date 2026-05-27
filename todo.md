@@ -283,18 +283,21 @@ out of scope.
 
 ### Slice 13.5 — Team-scoped job dashboard
 
-- [ ] Add a team-scoped product dashboard for owners/admins to recover failed
+- [x] Add a team-scoped product dashboard for owners/admins to recover failed
       or stuck jobs that affect their own team's data. Do not build a
-      cross-team/internal operator dashboard in this phase.
-- [ ] Surface product nouns, not BullMQ internals: transcription, extraction,
+      cross-team/internal operator dashboard in this phase. Shipped at
+      `/app/team/jobs`, gated by `requireMembership('admin')`.
+- [x] Surface product nouns, not BullMQ internals: transcription, extraction,
       embedding, document processing, meeting finalization, and integration
       sync.
-- [ ] Provide retry UI only for idempotent jobs tied to visible team artifacts:
+- [x] Provide retry UI only for idempotent jobs tied to visible team artifacts:
       raw-event transcription/extraction/embedding, fact/object/document
       chunk/calendar event embedding, document version extraction, meeting
       finalization, and integration sync.
-- [ ] Provide an ignore/dismiss path for irrecoverable failures.
-- [ ] Do not expose repeatable scheduler ticks, external webhook delivery
+- [x] Provide an ignore/dismiss path for irrecoverable failures. Dismissals are
+      team-wide in `job_recovery_dismissals`; retry clears the dismissal before
+      re-enqueueing.
+- [x] Do not expose repeatable scheduler ticks, external webhook delivery
       failures, MCP health pings, or low-level jobs with no user-understandable
       target.
 
