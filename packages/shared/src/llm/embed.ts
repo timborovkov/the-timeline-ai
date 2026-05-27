@@ -1,7 +1,7 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { embed as aiEmbed, type EmbeddingModel } from 'ai';
 
-import { getEnv } from '../env.js';
+import { DEFAULT_EMBEDDING_MODEL, getEnv } from '../env.js';
 
 export interface EmbedInput {
   text: string;
@@ -19,7 +19,7 @@ export interface EmbedDeps {
 
 function resolveModelId(): string {
   const env = getEnv();
-  return env.EMBEDDING_MODEL ?? 'openai/text-embedding-3-small';
+  return env.EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODEL;
 }
 
 function buildDefaultModel(modelId: string): EmbeddingModel {
