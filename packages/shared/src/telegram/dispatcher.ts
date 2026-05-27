@@ -15,6 +15,7 @@ import { askAgent } from '../agent/ask.js';
 import {
   classifyConversationalAttachment,
   CONVERSATIONAL_ATTACHMENT_LIMITS,
+  extensionOf,
 } from '../conversational/attachments.js';
 import { buildDocumentObjectKey } from '../documents/object-key.js';
 import { childLogger } from '../logger.js';
@@ -248,7 +249,11 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
       await maybeEnqueueExtract(ctx, inserted);
       await maybeEnqueueEmbed(ctx, inserted);
     }
-    await ingestTelegramDocumentAttachment(ctx, fileAttachment, inserted);
+    await ingestTelegramDocumentAttachment(
+      ctx,
+      fileAttachment,
+      inserted ? { ...inserted, authorUserId: ctx.tgUserRow.userId } : null,
+    );
     if (inserted) await ackReaction(ctx.tg, ctx.message.chat.id, ctx.message.message_id);
     return;
   }
@@ -1006,7 +1011,11 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
       await maybeEnqueueExtract(ctx, inserted);
       await maybeEnqueueEmbed(ctx, inserted);
     }
-    await ingestTelegramDocumentAttachment(ctx, fileAttachment, inserted);
+    await ingestTelegramDocumentAttachment(
+      ctx,
+      fileAttachment,
+      inserted ? { ...inserted, authorUserId: ctx.tgUserRow?.userId ?? null } : null,
+    );
     return;
   }
 
@@ -1739,18 +1748,29 @@ function pickTelegramDocumentAttachment(message: TgMessage): TelegramDocumentAtt
 }
 
 async function ingestTelegramDocumentAttachment(
-  ctx: { db: Db; tg: TelegramApi; documents?: DocumentAttachmentDeps; message: TgMessage },
+  ctx: {
+    db: Db;
+    tg: TelegramApi;
+    audio?: AudioIngestDeps;
+    documents?: DocumentAttachmentDeps;
+    message: TgMessage;
+  },
   attachment: TelegramDocumentAttachment,
-  parent: { id: string; teamId: string } | null,
+  parent: { id: string; teamId: string; authorUserId: string | null } | null,
 ): Promise<void> {
-  if (!parent || !ctx.documents) return;
-  const documentDeps = ctx.documents;
+  if (!parent) return;
   const sizeBytes = attachment.payload.file_size ?? null;
   const decision = classifyConversationalAttachment({
     filename: attachment.filename,
     contentType: attachment.contentType,
     sizeBytes,
   });
+  if (decision.kind === 'audio') {
+    await ingestTelegramDocumentAudioAttachment(ctx, attachment, parent);
+    return;
+  }
+  if (!ctx.documents) return;
+  const documentDeps = ctx.documents;
   if (decision.kind !== 'document') {
     const patch = JSON.stringify({
       attachment_skips: [
@@ -1758,7 +1778,7 @@ async function ingestTelegramDocumentAttachment(
           source: 'telegram',
           file_id: attachment.payload.file_id,
           filename: attachment.filename,
-          reason: decision.kind === 'skip' ? decision.reason : 'audio_uses_audio_pipeline',
+          reason: decision.reason,
         },
       ],
     });
@@ -1792,7 +1812,7 @@ async function ingestTelegramDocumentAttachment(
       .values({
         teamId: parent.teamId,
         name: attachment.filename,
-        ownerUserId: null,
+        ownerUserId: parent.authorUserId,
         visibility: 'team',
         metadata: {
           source: 'telegram',
@@ -1813,7 +1833,7 @@ async function ingestTelegramDocumentAttachment(
       .insert(rawEvents)
       .values({
         teamId: parent.teamId,
-        authorUserId: null,
+        authorUserId: parent.authorUserId,
         source: 'document',
         contentText: `Uploaded ${attachment.filename}`,
         visibility: 'team',
@@ -1838,7 +1858,7 @@ async function ingestTelegramDocumentAttachment(
         objectKey: key,
         byteSize: bytes.length,
         contentType,
-        uploadedByUserId: null,
+        uploadedByUserId: parent.authorUserId,
         sourceEventId: event.id,
         processingStatus: 'pending',
       })
@@ -1852,6 +1872,131 @@ async function ingestTelegramDocumentAttachment(
     await documentDeps.upload({ key, body: bytes, contentType });
     await documentDeps.enqueueExtract({ documentVersionId: version.id, teamId: parent.teamId });
   });
+}
+
+async function ingestTelegramDocumentAudioAttachment(
+  ctx: { db: Db; tg: TelegramApi; audio?: AudioIngestDeps; message: TgMessage },
+  attachment: TelegramDocumentAttachment,
+  parent: { id: string; teamId: string; authorUserId: string | null },
+): Promise<void> {
+  if (!ctx.audio) {
+    await recordTelegramAttachmentSkip(ctx.db, parent.id, {
+      source: 'telegram',
+      file_id: attachment.payload.file_id,
+      filename: attachment.filename,
+      reason: 'audio_ingest_not_configured',
+    });
+    return;
+  }
+
+  let fileInfo;
+  let bytes: Buffer;
+  try {
+    fileInfo = await ctx.tg.getFile({ file_id: attachment.payload.file_id });
+    bytes = await ctx.tg.downloadFile(
+      fileInfo.file_path,
+      CONVERSATIONAL_ATTACHMENT_LIMITS.maxBytes,
+    );
+    if (bytes.length > CONVERSATIONAL_ATTACHMENT_LIMITS.maxBytes) throw new Error('file_oversize');
+  } catch (err) {
+    log.error({ err }, 'telegram document audio fetch failed');
+    await recordTelegramAttachmentSkip(ctx.db, parent.id, {
+      source: 'telegram',
+      file_id: attachment.payload.file_id,
+      filename: attachment.filename,
+      reason:
+        err instanceof Error && err.message === 'file_oversize' ? 'oversize' : 'download_failed',
+    });
+    return;
+  }
+
+  const contentType = attachment.contentType ?? 'application/octet-stream';
+  const extension = extensionOf(attachment.filename) || extForMime(contentType, 'bin');
+  const key = ctx.audio.buildAudioKey({
+    teamId: parent.teamId,
+    chatId: ctx.message.chat.id,
+    messageId: ctx.message.message_id,
+    fileId: attachment.payload.file_id,
+    extension,
+  });
+
+  try {
+    await ctx.audio.upload({ key, body: bytes, contentType });
+  } catch (err) {
+    log.error({ err }, 'telegram document audio upload failed');
+    await recordTelegramAttachmentSkip(ctx.db, parent.id, {
+      source: 'telegram',
+      file_id: attachment.payload.file_id,
+      filename: attachment.filename,
+      reason: 'upload_failed',
+    });
+    return;
+  }
+
+  const rows = await ctx.db
+    .insert(rawEvents)
+    .values({
+      teamId: parent.teamId,
+      authorUserId: parent.authorUserId,
+      source: 'telegram',
+      contentText: null,
+      contentAudioUrl: key,
+      visibility: 'team',
+      sourceMetadata: telegramAttachmentMetadata(ctx.message, {
+        tg_attachment_kind: 'audio',
+        tg_file_id: attachment.payload.file_id,
+        tg_file_name: attachment.filename,
+        tg_parent_raw_event_id: parent.id,
+        audio_mime_type: contentType,
+        audio_file_size: attachment.payload.file_size ?? null,
+      }),
+    })
+    .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
+  const row = rows[0];
+  if (!row) return;
+
+  try {
+    await ctx.audio.enqueueTranscribe({
+      rawEventId: row.id,
+      teamId: row.teamId,
+      audioKey: key,
+    });
+  } catch (err) {
+    log.error({ err }, 'telegram document audio transcribe enqueue failed');
+  }
+}
+
+function telegramAttachmentMetadata(
+  message: TgMessage,
+  extra: Record<string, unknown>,
+): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {
+    tg_chat_id: message.chat.id,
+    tg_chat_type: message.chat.type,
+    tg_message_id: message.message_id,
+    ...extra,
+  };
+  if (message.chat.title) metadata.tg_chat_title = message.chat.title;
+  if (message.from) {
+    metadata.tg_user_id = message.from.id;
+    if (message.from.username) metadata.tg_username = message.from.username;
+  }
+  if (message.caption) metadata.tg_caption = message.caption;
+  return metadata;
+}
+
+async function recordTelegramAttachmentSkip(
+  db: Db,
+  parentRawEventId: string,
+  skip: Record<string, unknown>,
+): Promise<void> {
+  const patch = JSON.stringify({ attachment_skips: [skip] });
+  await db
+    .update(rawEvents)
+    .set({
+      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+    })
+    .where(eq(rawEvents.id, parentRawEventId));
 }
 
 async function findEventByUpdateId(

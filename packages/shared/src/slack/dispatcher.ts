@@ -446,7 +446,7 @@ async function handleMessageEvent(
   if (inserted) {
     if (text.trim()) await enqueueTextPipelines(deps, inserted);
   }
-  if (target) {
+  if (!isEdit && target) {
     await processSlackAttachments(deps, api, {
       teamId: target.teamId,
       parentRawEventId: target.id,

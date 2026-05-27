@@ -439,6 +439,60 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(reactions).toHaveLength(2);
   });
 
+  it('transcribes audio files sent through the Telegram document picker', async () => {
+    const upload = vi.fn().mockResolvedValue(undefined);
+    const enqueueTranscribe = vi.fn().mockResolvedValue(undefined);
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: {
+          ...fakeTg,
+          getFile: () => Promise.resolve({ file_id: 'song-file', file_path: 'song.mp3' }),
+          downloadFile: () => Promise.resolve(Buffer.from('audio-bytes')),
+        },
+        audio: {
+          upload,
+          enqueueTranscribe,
+          buildAudioKey: ({ teamId, chatId, messageId, fileId, extension }) =>
+            `teams/${teamId}/telegram/${chatId}/${messageId}-${fileId}.${extension}`,
+        },
+      },
+      {
+        update_id: 213,
+        message: {
+          message_id: 24,
+          date: 1700000003,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          document: {
+            file_id: 'song-file',
+            file_name: 'song.mp3',
+            mime_type: 'audio/mpeg',
+            file_size: 128,
+          },
+        },
+      },
+    );
+
+    expect(upload).toHaveBeenCalledOnce();
+    expect(enqueueTranscribe).toHaveBeenCalledOnce();
+    const rows = await pg.query<{
+      content_audio_url: string | null;
+      metadata: Record<string, unknown>;
+    }>(
+      `SELECT content_audio_url, source_metadata AS metadata
+       FROM raw_events
+       WHERE content_audio_url IS NOT NULL`,
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]?.content_audio_url).toContain('song-file.mp3');
+    expect(rows.rows[0]?.metadata).toMatchObject({
+      tg_attachment_kind: 'audio',
+      tg_file_id: 'song-file',
+    });
+  });
+
   it('does not tombstone another team with matching Telegram chat and message ids', async () => {
     await pg.query(
       `INSERT INTO raw_events (team_id, source, content_text, occurred_at, source_metadata)

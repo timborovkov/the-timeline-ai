@@ -235,6 +235,81 @@ describe('Slack dispatcher routing', () => {
     expect(enqueueExtract).toHaveBeenCalledOnce();
   });
 
+  it('does not duplicate Slack attachments when a message with files is edited', async () => {
+    await seedWorkspace(db, TEAM_A);
+    await db.insert(slackConversationBindings).values({
+      workspaceId: WORKSPACE_ID,
+      teamId: TEAM_A,
+      slackConversationId: 'C_DOCS',
+      conversationType: 'channel',
+      title: 'docs',
+      boundByUserId: USER_A,
+      enabled: true,
+    });
+    await db.insert(slackUsers).values({
+      id: SLACK_USER_ROW_ID,
+      workspaceId: WORKSPACE_ID,
+      slackUserId: 'U_SLACK',
+      realName: 'Alice Slack',
+    });
+    await db.insert(slackUserTeams).values({
+      slackUserId: SLACK_USER_ROW_ID,
+      teamId: TEAM_A,
+      userId: USER_A,
+      linkedByUserId: USER_A,
+      isActive: true,
+    });
+    const upload = vi.fn().mockResolvedValue(undefined);
+    const enqueueExtract = vi.fn().mockResolvedValue(undefined);
+    const file = {
+      id: 'F_EDIT',
+      name: 'edited-plan.pdf',
+      mimetype: 'application/pdf',
+      size: 8,
+      url_private_download: 'https://files.example/edited-plan.pdf',
+    };
+
+    await handleSlackEnvelope(
+      { db: db as never, documents: { upload, enqueueExtract } },
+      slackEnvelope('EvOriginalFile', {
+        type: 'message',
+        subtype: 'file_share',
+        channel: 'C_DOCS',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: 'original',
+        ts: '1700000003.000100',
+        files: [file],
+      }),
+    );
+    await handleSlackEnvelope(
+      { db: db as never, documents: { upload, enqueueExtract } },
+      slackEnvelope('EvEditedFile', {
+        type: 'message',
+        subtype: 'message_changed',
+        channel: 'C_DOCS',
+        channel_type: 'channel',
+        ts: '1700000010.000100',
+        message: {
+          user: 'U_SLACK',
+          text: 'edited',
+          ts: '1700000003.000100',
+          files: [file],
+        },
+        previous_message: {
+          user: 'U_SLACK',
+          text: 'original',
+          ts: '1700000003.000100',
+        },
+      }),
+    );
+
+    const docs = await pg.query<{ count: string }>('SELECT count(*)::text AS count FROM documents');
+    expect(docs.rows[0]?.count).toBe('1');
+    expect(upload).toHaveBeenCalledOnce();
+    expect(enqueueExtract).toHaveBeenCalledOnce();
+  });
+
   it('attributes bound channel messages to the sender linked in that Timeline team', async () => {
     await seedWorkspace(db, TEAM_A);
     await db.insert(slackWorkspaceTeams).values({
