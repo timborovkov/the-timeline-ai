@@ -1,4 +1,4 @@
-import { type Db, mcpOauthTokens, mcpServers } from '@timeline/db';
+import { type Db, auditLog, mcpOauthTokens, mcpServers } from '@timeline/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 
 import { decryptJson, encryptJson } from '../crypto/secrets.js';
@@ -92,25 +92,38 @@ export function createMcpScope(deps: {
     }
     // OAuth servers start disabled — the callback flips them on once tokens land.
     const enabled = input.authType !== 'oauth';
-    const rows = await db
-      .insert(mcpServers)
-      .values({
+    const row = await db.transaction(async (tx) => {
+      const rows = await tx
+        .insert(mcpServers)
+        .values({
+          teamId,
+          userId: ownership === 'personal' ? userId : null,
+          addedByUserId: userId,
+          name: input.name,
+          url: input.url,
+          authType: input.authType,
+          authConfigCiphertext: enc?.ciphertext ?? null,
+          authConfigIv: enc?.iv ?? null,
+          authConfigTag: enc?.tag ?? null,
+          enabled,
+        })
+        .returning();
+      const created = rows[0];
+      if (!created) throw new Error('Failed to add MCP server');
+      await tx.insert(auditLog).values({
         teamId,
-        userId: ownership === 'personal' ? userId : null,
-        addedByUserId: userId,
-        name: input.name,
-        url: input.url,
-        authType: input.authType,
-        authConfigCiphertext: enc?.ciphertext ?? null,
-        authConfigIv: enc?.iv ?? null,
-        authConfigTag: enc?.tag ?? null,
-        enabled,
-      })
-      .returning();
+        actorUserId: userId,
+        action: 'mcp.connect',
+        targetType: 'mcp_server',
+        targetId: created.id,
+        targetVisibility: created.userId ? 'private' : 'team',
+        targetOwnerUserId: created.userId,
+        metadata: { auth_type: created.authType, ownership },
+      });
+      return created;
+    });
     getMcpManager().invalidate(`${teamId}:${userId}`);
     getMcpManager().invalidate(teamId);
-    const row = rows[0];
-    if (!row) throw new Error('Failed to add MCP server');
     return row;
   }
 
@@ -150,10 +163,27 @@ export function createMcpScope(deps: {
         updates.authConfigTag = enc.tag;
       }
     }
-    await db
-      .update(mcpServers)
-      .set(updates)
-      .where(and(eq(mcpServers.id, id), eq(mcpServers.teamId, teamId)));
+    await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(mcpServers)
+        .set(updates)
+        .where(and(eq(mcpServers.id, id), eq(mcpServers.teamId, teamId)))
+        .returning({ id: mcpServers.id });
+      if (!rows[0]) throw new Error('MCP server not found');
+      await tx.insert(auditLog).values({
+        teamId,
+        actorUserId: userId,
+        action: 'mcp.settings_change',
+        targetType: 'mcp_server',
+        targetId: id,
+        targetVisibility: existing.userId ? 'private' : 'team',
+        targetOwnerUserId: existing.userId,
+        metadata: {
+          fields: Object.keys(patch).filter((key) => key !== 'authConfig'),
+          auth_config_changed: patch.authConfig !== undefined,
+        },
+      });
+    });
     getMcpManager().invalidate(teamId);
     getMcpManager().invalidate(`${teamId}:${userId}`);
   }
@@ -167,7 +197,22 @@ export function createMcpScope(deps: {
     } else {
       await ensureMember('admin');
     }
-    await db.delete(mcpServers).where(and(eq(mcpServers.id, id), eq(mcpServers.teamId, teamId)));
+    await db.transaction(async (tx) => {
+      await tx.delete(mcpServers).where(and(eq(mcpServers.id, id), eq(mcpServers.teamId, teamId)));
+      await tx.insert(auditLog).values({
+        teamId,
+        actorUserId: userId,
+        action: 'mcp.disconnect',
+        targetType: 'mcp_server',
+        targetId: id,
+        targetVisibility: existing.userId ? 'private' : 'team',
+        targetOwnerUserId: existing.userId,
+        metadata: {
+          auth_type: existing.authType,
+          ownership: existing.userId ? 'personal' : 'team',
+        },
+      });
+    });
     getMcpManager().invalidate(teamId);
     getMcpManager().invalidate(`${teamId}:${userId}`);
   }
@@ -192,38 +237,50 @@ export function createMcpScope(deps: {
     }
     const enc = encryptJson(tokens);
     const clientEnc = opts.clientInfo ? encryptJson(opts.clientInfo) : undefined;
-    await db
-      .insert(mcpOauthTokens)
-      .values({
-        teamId,
-        mcpServerId,
-        tokenCiphertext: enc.ciphertext,
-        tokenIv: enc.iv,
-        tokenTag: enc.tag,
-        expiresAt,
-        clientInfoCiphertext: clientEnc?.ciphertext ?? null,
-        clientInfoIv: clientEnc?.iv ?? null,
-        clientInfoTag: clientEnc?.tag ?? null,
-        codeVerifier: opts.codeVerifier ?? null,
-      })
-      .onConflictDoUpdate({
-        target: [mcpOauthTokens.teamId, mcpOauthTokens.mcpServerId],
-        set: {
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(mcpOauthTokens)
+        .values({
+          teamId,
+          mcpServerId,
           tokenCiphertext: enc.ciphertext,
           tokenIv: enc.iv,
           tokenTag: enc.tag,
           expiresAt,
-          ...(clientEnc
-            ? {
-                clientInfoCiphertext: clientEnc.ciphertext,
-                clientInfoIv: clientEnc.iv,
-                clientInfoTag: clientEnc.tag,
-              }
-            : {}),
-          ...(opts.codeVerifier !== undefined ? { codeVerifier: opts.codeVerifier } : {}),
-          updatedAt: new Date(),
-        },
+          clientInfoCiphertext: clientEnc?.ciphertext ?? null,
+          clientInfoIv: clientEnc?.iv ?? null,
+          clientInfoTag: clientEnc?.tag ?? null,
+          codeVerifier: opts.codeVerifier ?? null,
+        })
+        .onConflictDoUpdate({
+          target: [mcpOauthTokens.teamId, mcpOauthTokens.mcpServerId],
+          set: {
+            tokenCiphertext: enc.ciphertext,
+            tokenIv: enc.iv,
+            tokenTag: enc.tag,
+            expiresAt,
+            ...(clientEnc
+              ? {
+                  clientInfoCiphertext: clientEnc.ciphertext,
+                  clientInfoIv: clientEnc.iv,
+                  clientInfoTag: clientEnc.tag,
+                }
+              : {}),
+            ...(opts.codeVerifier !== undefined ? { codeVerifier: opts.codeVerifier } : {}),
+            updatedAt: new Date(),
+          },
+        });
+      await tx.insert(auditLog).values({
+        teamId,
+        actorUserId: userId,
+        action: 'mcp.connect',
+        targetType: 'mcp_server',
+        targetId: mcpServerId,
+        targetVisibility: server.userId ? 'private' : 'team',
+        targetOwnerUserId: server.userId,
+        metadata: { auth_type: server.authType, oauth: true },
       });
+    });
     // Personal servers are cached under `teamId:userId`; team-shared
     // servers under just `teamId`. Invalidate both so a personal-MCP
     // owner doesn't see empty tools until the 5-min TTL expires.

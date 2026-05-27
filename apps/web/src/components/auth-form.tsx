@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import { signInAction, signUpAction, type SignInState, type SignUpState } from '@/app/actions/auth';
+import { TurnstileWidget } from '@/components/turnstile-widget';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -42,7 +43,13 @@ export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
   );
 }
 
-export function SignUpForm({ inviteToken }: { inviteToken?: string }) {
+export function SignUpForm({
+  inviteToken,
+  turnstileSiteKey,
+}: {
+  inviteToken?: string;
+  turnstileSiteKey?: string;
+}) {
   const [state, action] = useActionState<SignUpState, FormData>(signUpAction, {});
   return (
     <form action={action} className="space-y-4">
@@ -66,6 +73,7 @@ export function SignUpForm({ inviteToken }: { inviteToken?: string }) {
           required
         />
       </div>
+      <TurnstileWidget siteKey={turnstileSiteKey} />
       {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
       <SubmitButton label="Create account" />
     </form>

@@ -292,6 +292,8 @@ async function collectRawEventCandidates(
         lt(rawEvents.createdAt, staleCutoff),
         sql`${rawEvents.sourceMetadata} ->> 'extracted_at' IS NULL`,
         sql`${rawEvents.sourceMetadata} ->> 'extraction_model_version' IS NULL`,
+        sql`${rawEvents.sourceMetadata} ->> 'extraction_failed_at' IS NULL`,
+        sql`${rawEvents.sourceMetadata} ->> 'reconcile_giveup_extract' IS NULL`,
         notExists(
           db
             .select({ one: sql`1` })
@@ -721,6 +723,8 @@ async function assertArtifactVisible(
     if (!rows[0]) throw new Error('not_found');
     return;
   }
+  const artifactKind: 'calendar_event' = parsed.artifactKind;
+  void artifactKind;
   const needsTeamVisibility = parsed.kind === 'embedding';
   if (
     !(await visibleCalendarLabelById(db, teamId, userId, parsed.artifactId, needsTeamVisibility))

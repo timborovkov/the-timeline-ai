@@ -180,6 +180,13 @@ LOG_LEVEL=info
         <code>S3_ENDPOINT</code> stays on the private network — workers and server-side code keep
         using it.
       </p>
+      <p>
+        <strong>About <code>TURNSTILE_*</code>:</strong> Turnstile is used only on anonymous abuse
+        surfaces: email/password registration and the public support/contact form. OAuth signup and
+        signed-in product flows rely on Redis-backed rate limits, team permissions, and existing
+        quota checks. In production, leave neither key blank; the server action rejects missing or
+        invalid Turnstile tokens.
+      </p>
 
       <h2 id="staging-vs-production">Staging vs production</h2>
       <p>

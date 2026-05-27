@@ -19,11 +19,13 @@ integrations (Google Drive, Linear, GitHub native + custom MCP servers per
 team or per user) live at `/app/team/integrations` — plus an outbound MCP
 server at `/api/mcp/server` so external agents (Claude Desktop, Cursor,
 etc.) can query this Timeline. `/app/timeline` now includes a dismissible
-team onboarding tutorial for the core capture surfaces. Public help docs live at `/help`, with a
-support/contact form that stores requests in Postgres and sends them through
-Postmark. Owners/admins can recover team-scoped failed or stuck product jobs
-at `/app/team/jobs`. Railway deployment, deploy-time migrations, and
-structured logging are in place.
+team onboarding tutorial for the core capture surfaces. Public help docs live
+at `/help`, with a support/contact form that stores requests in Postgres,
+sends them through Postmark, and uses Turnstile in production. Email/password
+registration is also Turnstile-protected; signed-in expensive surfaces use
+named Redis-backed rate-limit policies. Owners/admins can recover team-scoped
+failed or stuck product jobs at `/app/team/jobs`. Railway deployment,
+deploy-time migrations, and structured logging are in place.
 
 ## Read first
 

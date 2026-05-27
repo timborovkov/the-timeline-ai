@@ -41,6 +41,7 @@ const OTHER_TEAM_RAW_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const INTEGRATION_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const OBJECT_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 const ZERO_FACT_RAW_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+const FAILED_EXTRACTION_RAW_ID = '12121212-1212-1212-1212-121212121212';
 
 let pg: PGlite;
 let db: ReturnType<typeof drizzle>;
@@ -126,6 +127,28 @@ describe('job recovery scope', () => {
     const extractionItems = items.filter((item) => item.kind === 'extraction');
 
     expect(extractionItems.map((item) => item.artifactId)).toEqual([RAW_ID]);
+  });
+
+  it('keeps failed zero-fact extraction out of stuck extraction results', async () => {
+    await seedTextRawEvent(pg, RAW_ID, {
+      sourceMetadata: '{}',
+    });
+    await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
+      sourceMetadata:
+        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed"}',
+    });
+
+    const scope = scopeFor(ADMIN_ID, 'admin');
+    const items = await scope.listRecoverableJobs();
+    const failedItem = items.find(
+      (item) => item.kind === 'extraction' && item.artifactId === FAILED_EXTRACTION_RAW_ID,
+    );
+    const stuckIds = items
+      .filter((item) => item.kind === 'extraction' && item.status === 'stuck')
+      .map((item) => item.artifactId);
+
+    expect(failedItem).toMatchObject({ kind: 'extraction', status: 'failed' });
+    expect(stuckIds).toEqual([RAW_ID]);
   });
 
   it('retries object embedding with the original queue scope', async () => {

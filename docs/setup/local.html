@@ -46,6 +46,11 @@ ln -sf ../../.env apps/web/.env
       </ul>
 
       <p>The rest of the defaults already match <code>docker-compose.yml</code>.</p>
+      <p>
+        <code>TURNSTILE_SITE_KEY</code>, <code>TURNSTILE_SECRET_KEY</code>, and
+        <code>SUPPORT_EMAIL</code> can stay empty locally. Empty Turnstile secrets fail open outside
+        production so developers can create email/password accounts without a Cloudflare widget.
+      </p>
 
       <p>Start infra:</p>
       <pre><code>docker compose up -d

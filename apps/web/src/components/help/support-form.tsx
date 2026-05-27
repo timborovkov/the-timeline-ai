@@ -1,9 +1,9 @@
 'use client';
 
-import Script from 'next/script';
 import { useActionState, useEffect, useState } from 'react';
 
 import { submitSupportRequestAction, type SupportFormState } from '@/app/actions/support';
+import { TurnstileWidget } from '@/components/turnstile-widget';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,9 +33,6 @@ export function SupportForm({
 
   return (
     <form action={action} className="space-y-5">
-      {turnstileSiteKey ? (
-        <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
-      ) : null}
       <input type="hidden" name="currentPage" value={currentPage} />
       <div className="hidden" aria-hidden="true">
         <Label htmlFor="support-company">Company website</Label>
@@ -102,7 +99,7 @@ export function SupportForm({
       </div>
 
       {turnstileSiteKey ? (
-        <div className="cf-turnstile" data-sitekey={turnstileSiteKey} />
+        <TurnstileWidget siteKey={turnstileSiteKey} />
       ) : requiresTurnstile ? (
         <p className="text-sm text-danger">Support form protection is not configured.</p>
       ) : null}
