@@ -20,6 +20,7 @@ import { CaptureForm } from '@/components/capture-form';
 import { IndexStrip } from '@/components/index-strip';
 import { SearchBar } from '@/components/search-bar';
 import { TimelineList } from '@/components/timeline-list';
+import { TimelineOnboardingChecklist } from '@/components/timeline-onboarding-checklist';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -68,24 +69,26 @@ export default async function TimelinePage({ searchParams }: Props) {
   const sp = await searchParams;
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
-  const [linkedTgUsers, boundTgChats, nativeIntegrations, teamMcpServers] = await Promise.all([
-    db
-      .select({ total: count() })
-      .from(telegramUserTeams)
-      .where(eq(telegramUserTeams.teamId, active.teamId)),
-    db
-      .select({ total: count() })
-      .from(telegramChatBindings)
-      .where(eq(telegramChatBindings.teamId, active.teamId)),
-    db
-      .select({ total: count() })
-      .from(integrationsTable)
-      .where(eq(integrationsTable.teamId, active.teamId)),
-    db
-      .select({ total: count() })
-      .from(mcpServers)
-      .where(and(eq(mcpServers.teamId, active.teamId), isNull(mcpServers.userId))),
-  ]);
+  const [onboardingState, linkedTgUsers, boundTgChats, nativeIntegrations, teamMcpServers] =
+    await Promise.all([
+      scope.onboarding.getChecklistState(),
+      db
+        .select({ total: count() })
+        .from(telegramUserTeams)
+        .where(eq(telegramUserTeams.teamId, active.teamId)),
+      db
+        .select({ total: count() })
+        .from(telegramChatBindings)
+        .where(eq(telegramChatBindings.teamId, active.teamId)),
+      db
+        .select({ total: count() })
+        .from(integrationsTable)
+        .where(eq(integrationsTable.teamId, active.teamId)),
+      db
+        .select({ total: count() })
+        .from(mcpServers)
+        .where(and(eq(mcpServers.teamId, active.teamId), isNull(mcpServers.userId))),
+    ]);
   const telegramConnectionCount = (linkedTgUsers[0]?.total ?? 0) + (boundTgChats[0]?.total ?? 0);
   const integrationConnectionCount =
     (nativeIntegrations[0]?.total ?? 0) + (teamMcpServers[0]?.total ?? 0);
@@ -185,7 +188,10 @@ export default async function TimelinePage({ searchParams }: Props) {
         ]}
       />
 
+      {!onboardingState.dismissed ? <TimelineOnboardingChecklist state={onboardingState} /> : null}
+
       <section
+        id="capture"
         aria-label="Capture"
         className="rounded-sm border border-border bg-surface p-4 focus-within:border-border-strong"
       >

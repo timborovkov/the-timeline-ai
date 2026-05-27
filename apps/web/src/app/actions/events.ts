@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { safeMarkOnboardingStep } from '@/lib/onboarding';
 
 const log = childLogger('web:actions');
 
@@ -66,6 +67,7 @@ export async function createTextEventAction(
     contentText: parsed.data.text,
     visibility: parsed.data.visibility,
   });
+  await safeMarkOnboardingStep(scope, 'first_note');
 
   try {
     await queue.enqueueExtractJob({ rawEventId: event.id, teamId: event.teamId });
@@ -232,6 +234,7 @@ export async function createAudioEventAction(
     visibility: parsed.data.visibility,
     sourceMetadata,
   });
+  await safeMarkOnboardingStep(scope, 'first_note');
 
   try {
     await queue.enqueueTranscribeJob({

@@ -211,17 +211,17 @@ out of scope.
 
 ### Slice 13.1 — Timeline onboarding tutorial
 
-- [ ] Add a dismissible onboarding checklist at the top of `/app/timeline`,
+- [x] Add a dismissible onboarding checklist at the top of `/app/timeline`,
       since the timeline is the app's landing page.
-- [ ] Track team-level completion with per-user dismissal. Any teammate
+- [x] Track team-level completion with per-user dismissal. Any teammate
       completing a setup step marks it done for the team; each user can hide
       the checklist for themselves.
-- [ ] Treat onboarding as a tutorial, not a proof-of-ingest flow. Configuring
+- [x] Treat onboarding as a tutorial, not a proof-of-ingest flow. Configuring
       or opening the relevant surface is enough; do not require first
       successful external data arrival.
-- [ ] Checklist steps: capture first note, connect Telegram, set up email
+- [x] Checklist steps: capture first note, connect Telegram, set up email
       forwarding, upload first document, connect first integration.
-- [ ] Keep the checklist reopenable from a setup/help affordance in the app.
+- [x] Keep the checklist reopenable from a setup/help affordance in the app.
 
 ### Slice 13.2 — Visibility defaults and one-off edits
 

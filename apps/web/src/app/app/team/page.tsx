@@ -59,7 +59,7 @@ export default async function TeamSettingsPage() {
       ) : null}
 
       {team ? (
-        <Card>
+        <Card id="email-ingest">
           <CardHeader>
             <CardTitle>Email ingest</CardTitle>
           </CardHeader>
