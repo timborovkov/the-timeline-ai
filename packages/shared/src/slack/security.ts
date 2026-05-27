@@ -47,7 +47,9 @@ export function signSlackOAuthState(input: Omit<SlackOAuthState, 'nonce' | 'crea
 }
 
 export function verifySlackOAuthState(raw: string, maxAgeMs = 15 * 60 * 1000): SlackOAuthState {
-  const [body, sig] = raw.split('.');
+  const dot = raw.indexOf('.');
+  const body = dot === -1 ? '' : raw.slice(0, dot);
+  const sig = dot === -1 ? '' : raw.slice(dot + 1);
   if (!body || !sig) throw new Error('invalid_state');
   const expected = createHmac('sha256', stateSecret()).update(body).digest('base64url');
   const a = Buffer.from(expected);

@@ -789,7 +789,7 @@ async function createSlackDocumentAttachment(
 ): Promise<void> {
   const documentDeps = deps.documents;
   if (!documentDeps) return;
-  await deps.db.transaction(async (tx) => {
+  const created = await deps.db.transaction(async (tx) => {
     const docRows = await tx
       .insert(documents)
       .values({
@@ -852,9 +852,14 @@ async function createSlackDocumentAttachment(
       .update(documents)
       .set({ currentVersionId: version.id })
       .where(eq(documents.id, doc.id));
-    await documentDeps.upload({ key, body: input.bytes, contentType: input.contentType });
-    await documentDeps.enqueueExtract({ documentVersionId: version.id, teamId: input.teamId });
+    return { key, versionId: version.id };
   });
+  await documentDeps.upload({
+    key: created.key,
+    body: input.bytes,
+    contentType: input.contentType,
+  });
+  await documentDeps.enqueueExtract({ documentVersionId: created.versionId, teamId: input.teamId });
 }
 
 async function enqueueTextPipelines(
