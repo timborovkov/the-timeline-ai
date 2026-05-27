@@ -12,10 +12,10 @@ import { redirect } from 'next/navigation';
 
 import { CaptureForm } from '@/components/capture-form';
 import { IndexStrip } from '@/components/index-strip';
+import { OnboardingChecklist } from '@/components/onboarding-checklist';
 import { SearchBar } from '@/components/search-bar';
 import { TeamAccessPanel } from '@/components/team-access-panel';
-import { TimelineList } from '@/components/timeline-list';
-import { TimelineOnboardingChecklist } from '@/components/timeline-onboarding-checklist';
+import { TimelineFeed } from '@/components/timeline-feed';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -89,11 +89,13 @@ export default async function TimelinePage({ searchParams }: Props) {
   const toFilter = parseDate(sp.to);
   const toQueryFilter = parseEndOfDay(sp.to);
 
-  const events = await scope.timeline.listEvents({
+  const eventPage = await scope.timeline.listEventsPage({
     authorUserId: authorFilter,
     from: fromFilter,
     to: toQueryFilter,
+    limit: 30,
   });
+  const events = eventPage.items;
 
   // Format a Date back to the YYYY-MM-DD string the <input type="date">
   // expects. Both `parseDate` and `toISOString()` treat the value as UTC,
@@ -110,8 +112,6 @@ export default async function TimelinePage({ searchParams }: Props) {
           .from(users)
           .where(inArray(users.id, authorIds))
       : [];
-  const authorMap = new Map(authorRows.map((r) => [r.id, r] as const));
-
   // Sign GET URLs for any audio attachments. Phase 3 generates one per render;
   // when timeline pagination starts to matter (Phase 8) we'll cache these.
   // If S3 isn't configured in this environment, degrade gracefully — render
@@ -171,8 +171,6 @@ export default async function TimelinePage({ searchParams }: Props) {
         ]}
       />
 
-      {!onboardingState.dismissed ? <TimelineOnboardingChecklist state={onboardingState} /> : null}
-
       <section
         id="capture"
         aria-label="Capture"
@@ -180,6 +178,8 @@ export default async function TimelinePage({ searchParams }: Props) {
       >
         <CaptureForm />
       </section>
+
+      <OnboardingChecklist />
 
       <section aria-label="Team access" className="space-y-3">
         <TeamAccessPanel
@@ -265,10 +265,22 @@ export default async function TimelinePage({ searchParams }: Props) {
           </details>
         </div>
 
-        <TimelineList
-          events={events}
-          authorMap={authorMap}
-          audioUrlMap={audioUrlMap}
+        <TimelineFeed
+          initialPage={{
+            items: events.map((event) => ({
+              ...event,
+              occurredAt: event.occurredAt.toISOString(),
+              createdAt: event.createdAt.toISOString(),
+            })),
+            nextCursor: eventPage.nextCursor,
+            authors: Object.fromEntries(authorRows.map((row) => [row.id, row])),
+            audioUrls: Object.fromEntries(audioUrlMap.entries()),
+          }}
+          filters={{
+            author: authorFilter ?? null,
+            from: sp.from ?? null,
+            to: sp.to ?? null,
+          }}
           currentUserId={session.user.id}
           isAdmin={isAdmin}
         />

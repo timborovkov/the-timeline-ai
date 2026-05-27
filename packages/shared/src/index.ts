@@ -17,6 +17,8 @@ export * as objects from './objects/index.js';
 export * as rateLimit from './rate-limit/index.js';
 export * from './chunk.js';
 export * from './citation.js';
+export * from './cache.js';
+export * from './pagination.js';
 export * from './documents/index.js';
 export * from './meetings/transcript.js';
 export * as meetingBots from './meeting-bots/index.js';

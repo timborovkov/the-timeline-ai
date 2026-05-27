@@ -1,0 +1,70 @@
+import { cacheKey, cachedJson, deleteCacheKey, onboarding, withTeam } from '@timeline/shared';
+import { z } from 'zod';
+
+import { resolveActiveTeam } from '@/lib/active-team';
+import { auth } from '@/lib/auth';
+import { db } from '@/lib/db';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+const LABELS: Record<onboarding.OnboardingStep, string> = {
+  first_note: 'Capture one timeline event',
+  telegram: 'Link Telegram',
+  email_forwarding: 'Forward email into the timeline',
+  first_document: 'Upload a document',
+  first_integration: 'Connect an integration or MCP server',
+};
+
+const patchSchema = z.object({
+  action: z.enum(['dismiss', 'reopen', 'complete']),
+  key: z.enum(onboarding.ONBOARDING_STEPS).optional(),
+});
+
+export async function GET(): Promise<Response> {
+  const session = await auth();
+  if (!session?.user) return Response.json({ error: 'unauthenticated' }, { status: 401 });
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) return Response.json({ error: 'no_active_team' }, { status: 400 });
+  const scope = withTeam(db, active.teamId, session.user.id);
+  await scope.requireMembership();
+
+  const key = cacheKey(['onboarding', active.teamId, session.user.id]);
+  const state = await cachedJson(key, 30, async () => {
+    const checklist = await scope.onboarding.getChecklistState();
+    return {
+      dismissed: checklist.dismissed,
+      items: checklist.steps.map((step) => ({
+        key: step.step,
+        label: LABELS[step.step],
+        completed: step.completed,
+      })),
+    };
+  });
+
+  return Response.json(state);
+}
+
+export async function PATCH(req: Request): Promise<Response> {
+  const session = await auth();
+  if (!session?.user) return Response.json({ error: 'unauthenticated' }, { status: 401 });
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) return Response.json({ error: 'no_active_team' }, { status: 400 });
+  const scope = withTeam(db, active.teamId, session.user.id);
+  await scope.requireMembership();
+  const parsed = patchSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return Response.json({ error: 'invalid_input' }, { status: 400 });
+
+  if (parsed.data.action === 'dismiss') {
+    await scope.onboarding.dismissChecklist();
+  } else if (parsed.data.action === 'reopen') {
+    await scope.onboarding.reopenChecklist();
+  } else if (parsed.data.key) {
+    await scope.onboarding.markStepComplete(parsed.data.key);
+  } else {
+    return Response.json({ error: 'invalid_input' }, { status: 400 });
+  }
+
+  await deleteCacheKey(cacheKey(['onboarding', active.teamId, session.user.id]));
+  return GET();
+}

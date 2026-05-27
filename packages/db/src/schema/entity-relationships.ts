@@ -47,5 +47,17 @@ export const entityRelationships = pgTable(
     index('entity_relationships_team_idx').on(table.teamId),
     index('entity_relationships_from_idx').on(table.fromEntityId),
     index('entity_relationships_to_idx').on(table.toEntityId),
+    index('entity_relationships_team_from_created_idx').on(
+      table.teamId,
+      table.fromEntityId,
+      table.createdAt,
+      table.id,
+    ),
+    index('entity_relationships_team_to_created_idx').on(
+      table.teamId,
+      table.toEntityId,
+      table.createdAt,
+      table.id,
+    ),
   ],
 );

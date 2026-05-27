@@ -319,22 +319,22 @@ out of scope.
 
 ### Slice 13.6 — Pagination and caching
 
-- [ ] Add cursor pagination for the timeline; no unbounded timeline query should
+- [x] Add cursor pagination for the timeline; no unbounded timeline query should
       remain on the main feed.
-- [ ] Paginate object-page sections independently: events, facts, changes,
+- [x] Paginate object-page sections independently: events, facts, changes,
       tasks, and related records where needed.
-- [ ] Paginate document search results/chunks.
-- [ ] Introduce React Query selectively for interactive/paginated client-side
+- [x] Paginate document search results/chunks.
+- [x] Introduce React Query selectively for interactive/paginated client-side
       server state: infinite timeline pagination, object section pagination,
       document search, job dashboard polling/retry status, and onboarding
       checklist refreshes.
-- [ ] Keep simple RSC/server-action settings pages as-is; do not migrate the
+- [x] Keep simple RSC/server-action settings pages as-is; do not migrate the
       whole app to React Query.
-- [ ] Add short-lived Redis caches for hot team/user/visibility-aware reads
+- [x] Add short-lived Redis caches for hot team/user/visibility-aware reads
       where useful. Cache keys must include `teamId`, `userId`,
       visibility-relevant filters, cursor/page params, and app version; no
       cache may bypass per-user visibility checks.
-- [ ] Target correctness under large beta data first: roughly 50k+ raw events,
+- [x] Target correctness under large beta data first: roughly 50k+ raw events,
       10k+ facts, and 5k+ documents/chunks per team should remain usable.
 
 ### Slice 13.7 — Public help docs and support contact

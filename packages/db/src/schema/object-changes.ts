@@ -53,6 +53,12 @@ export const objectChanges = pgTable(
       table.entityId,
       table.changedAt,
     ),
+    index('object_changes_team_entity_changed_id_idx').on(
+      table.teamId,
+      table.entityId,
+      table.changedAt,
+      table.id,
+    ),
     index('object_changes_team_status_idx').on(table.teamId, table.status),
   ],
 );

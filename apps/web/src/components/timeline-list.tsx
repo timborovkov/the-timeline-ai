@@ -7,9 +7,13 @@ import { removeTelegramEventAction } from '@/app/actions/events';
 import { Button } from '@/components/ui/button';
 
 type RawEvent = InferSelectModel<typeof rawEvents>;
+type TimelineEvent = Omit<RawEvent, 'occurredAt' | 'createdAt'> & {
+  occurredAt: Date | string;
+  createdAt: Date | string;
+};
 
 interface Props {
-  events: RawEvent[];
+  events: TimelineEvent[];
   authorMap: Map<string, { id: string; name: string | null; email: string }>;
   /** Signed GET URLs keyed by event id. Missing entries render the player disabled. */
   audioUrlMap?: Map<string, string>;
@@ -20,7 +24,12 @@ interface Props {
 // Mono ISO-ish timestamp for the left column. We render local time so the
 // 8-char clock face stays consistent across rows; the inspector pane shows
 // the full UTC ISO string for forensic correctness.
-function formatTimestamp(d: Date): string {
+function eventDate(d: Date | string): Date {
+  return d instanceof Date ? d : new Date(d);
+}
+
+function formatTimestamp(input: Date | string): string {
+  const d = eventDate(input);
   const date = d.toLocaleDateString('en-CA'); // YYYY-MM-DD
   const time = d.toLocaleTimeString(undefined, {
     hour: '2-digit',
@@ -128,7 +137,7 @@ export function TimelineList({ events, authorMap, audioUrlMap, currentUserId, is
             className="grid scroll-mt-20 grid-cols-[18ch_1fr] gap-x-4 gap-y-2 border-b border-border py-3 transition-colors hover:bg-surface md:grid-cols-[18ch_1fr_10ch]"
           >
             <time
-              dateTime={event.occurredAt.toISOString()}
+              dateTime={eventDate(event.occurredAt).toISOString()}
               className="font-mono text-xs text-fg-dim"
             >
               {formatTimestamp(event.occurredAt)}

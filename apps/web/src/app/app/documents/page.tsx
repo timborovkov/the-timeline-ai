@@ -2,6 +2,7 @@ import { withTeam } from '@timeline/shared';
 import { redirect } from 'next/navigation';
 
 import { DocumentDrive } from '@/components/documents/document-drive';
+import { DocumentSearch } from '@/components/documents/document-search';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -29,9 +30,9 @@ export default async function DocumentsPage({ searchParams }: Props) {
   // to root rather than rendering a "Folder not found" page that leaks
   // the existence-or-not distinction.
   const folderId = currentFolder?.id ?? null;
-  const [folders, documents, ancestry] = await Promise.all([
+  const [folders, documentPage, ancestry] = await Promise.all([
     scope.documents.listFolders({ parentFolderId: folderId }),
-    scope.documents.listDocuments({ folderId }),
+    scope.documents.listDocumentsPage({ folderId, limit: 30 }),
     scope.documents.folderAncestry(folderId),
   ]);
   // Prepend the root crumb. Scope returns ancestors only — the root
@@ -43,6 +44,7 @@ export default async function DocumentsPage({ searchParams }: Props) {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
+      <DocumentSearch />
       <DocumentDrive
         currentFolderId={folderId}
         breadcrumbs={breadcrumbs}
@@ -52,13 +54,14 @@ export default async function DocumentsPage({ searchParams }: Props) {
           visibility: f.visibility,
           updatedAt: f.updatedAt.toISOString(),
         }))}
-        documents={documents.map((d) => ({
+        documents={documentPage.items.map((d) => ({
           id: d.id,
           name: d.name,
           visibility: d.visibility,
           updatedAt: d.updatedAt.toISOString(),
           ownerUserId: d.ownerUserId,
         }))}
+        documentsNextCursor={documentPage.nextCursor}
       />
     </div>
   );

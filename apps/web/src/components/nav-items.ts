@@ -6,6 +6,7 @@ import {
   FolderOpen,
   Inbox,
   KanbanSquare,
+  ListRestart,
   MessageSquare,
   Settings,
   Video,
@@ -24,9 +25,10 @@ interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
+  adminOnly?: boolean;
 }
 
-export const NAV_ITEMS: readonly NavItem[] = [
+const NAV_ITEMS: readonly NavItem[] = [
   { href: '/app/timeline', label: 'Timeline', icon: Clock },
   { href: '/app/chat', label: 'Chat', icon: MessageSquare },
   { href: '/app/objects', label: 'Objects', icon: Box },
@@ -36,8 +38,14 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: '/app/tasks', label: 'Tasks', icon: CheckSquare },
   { href: '/app/boards', label: 'Boards', icon: KanbanSquare },
   { href: '/app/inbox', label: 'Inbox', icon: Inbox },
+  { href: '/app/team/jobs', label: 'Jobs', icon: ListRestart, adminOnly: true },
   { href: '/app/team', label: 'Team', icon: Settings },
 ] as const;
+
+export function visibleNavItems(role: 'owner' | 'admin' | 'member'): readonly NavItem[] {
+  const canSeeAdminItems = role === 'owner' || role === 'admin';
+  return NAV_ITEMS.filter((item) => !item.adminOnly || canSeeAdminItems);
+}
 
 /**
  * `pathname.startsWith(`${href}/`)` would miss the exact-match case, and

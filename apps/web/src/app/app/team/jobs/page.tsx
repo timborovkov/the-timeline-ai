@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { IndexStrip } from '@/components/index-strip';
 import { JobRecoveryList } from '@/components/job-recovery/job-recovery-list';
+import { JobDashboard } from '@/components/jobs/job-dashboard';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -36,6 +37,12 @@ export default async function JobRecoveryPage() {
           { label: 'items', value: items.length },
         ]}
       />
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted">
+          Processing summary
+        </h2>
+        <JobDashboard />
+      </section>
       <JobRecoveryList items={items} />
     </div>
   );

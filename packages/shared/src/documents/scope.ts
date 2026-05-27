@@ -7,9 +7,10 @@ import {
   folders,
   rawEvents,
 } from '@timeline/db';
-import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
 import { embed as defaultEmbed, type EmbedResult } from '../llm/embed.js';
+import { decodeCursor, pageWindow } from '../pagination.js';
 import { getQdrantClient, type SearchHit, type SearchOpts } from '../qdrant/client.js';
 
 import { buildDocumentObjectKey } from './object-key.js';
@@ -89,6 +90,13 @@ export interface DocumentRow {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+}
+
+export interface DocumentListArgs {
+  folderId?: string | null;
+  includeDeleted?: boolean;
+  limit?: number;
+  cursor?: string | null;
 }
 
 export interface DocumentVersionRow {
@@ -172,6 +180,8 @@ export interface SearchDocumentChunksInput {
   documentId?: string;
   folderIds?: string[];
   limit?: number;
+  offset?: number;
+  maxOffset?: number;
 }
 
 export interface DocumentChunkSearchHit {
@@ -186,6 +196,11 @@ export interface DocumentChunkSearchHit {
   documentName: string;
   folderId: string | null;
   score: number;
+}
+
+export interface DocumentChunkSearchPage {
+  items: DocumentChunkSearchHit[];
+  nextOffset: number | null;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -353,6 +368,128 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     return row.id;
   }
 
+  async function listDocuments(args: DocumentListArgs = {}): Promise<DocumentRow[]> {
+    await ensureMember();
+    const conditions = [eq(documents.teamId, teamId), documentVisibility];
+    if (!args.includeDeleted) conditions.push(isNull(documents.deletedAt));
+    if (args.folderId === null || args.folderId === undefined) {
+      conditions.push(isNull(documents.folderId));
+    } else {
+      conditions.push(eq(documents.folderId, args.folderId));
+    }
+    const cursor = decodeCursor(args.cursor);
+    if (args.cursor && !cursor) throw new Error('Invalid cursor');
+    if (cursor) {
+      const cursorDate = new Date(cursor.at);
+      conditions.push(
+        or(
+          lt(documents.updatedAt, cursorDate),
+          and(eq(documents.updatedAt, cursorDate), lt(documents.id, cursor.id)),
+        ),
+      );
+    }
+    const rows = await db
+      .select()
+      .from(documents)
+      .where(and(...conditions))
+      .orderBy(desc(documents.updatedAt), desc(documents.id))
+      .limit(args.limit ?? 200);
+    return rows;
+  }
+
+  async function searchDocumentChunksPage(
+    input: SearchDocumentChunksInput,
+  ): Promise<DocumentChunkSearchPage> {
+    await ensureMember();
+    const embedFn = deps.embed ?? defaultEmbed;
+    const searchFn =
+      deps.qdrantSearch ??
+      (async (tId, uId, vector, opts) => {
+        const client = getQdrantClient();
+        return client.search(tId, uId, vector, opts);
+      });
+
+    const limit = input.limit ?? 12;
+    const offset = input.offset ?? 0;
+    const { vector } = await embedFn({ text: input.query });
+    const searchOpts: SearchOpts = {
+      limit: offset + limit + 1,
+      sourceKind: 'doc_chunk',
+    };
+    if (input.documentId) searchOpts.documentId = input.documentId;
+    if (input.folderIds) searchOpts.folderIds = input.folderIds;
+
+    const hits = await searchFn(teamId, userId, vector, searchOpts);
+    if (hits.length === 0) return { items: [], nextOffset: null };
+    const uncappedNextOffset = offset + limit;
+    const nextOffset =
+      hits.length > uncappedNextOffset &&
+      (input.maxOffset === undefined || uncappedNextOffset <= input.maxOffset)
+        ? uncappedNextOffset
+        : null;
+    const pageHits = hits.slice(offset, offset + limit);
+
+    const chunkIds = pageHits
+      .map((h) => h.payload.document_chunk_id)
+      .filter((id): id is string => typeof id === 'string');
+    if (chunkIds.length === 0) {
+      return { items: [], nextOffset };
+    }
+
+    const rows = await db
+      .select({
+        chunkId: documentChunks.id,
+        documentId: documentChunks.documentId,
+        documentVersionId: documentChunks.documentVersionId,
+        chunkIndex: documentChunks.chunkIndex,
+        pageNumber: documentChunks.pageNumber,
+        text: documentChunks.text,
+        summary: documentChunks.summary,
+        version: documentVersions.version,
+        documentName: documents.name,
+        folderId: documents.folderId,
+      })
+      .from(documentChunks)
+      .innerJoin(documents, eq(documents.id, documentChunks.documentId))
+      .innerJoin(documentVersions, eq(documentVersions.id, documentChunks.documentVersionId))
+      .where(
+        and(
+          inArray(documentChunks.id, chunkIds),
+          eq(documentChunks.teamId, teamId),
+          documentVisibility,
+          isNull(documents.deletedAt),
+        ),
+      );
+    const byId = new Map(rows.map((r) => [r.chunkId, r]));
+
+    const items: DocumentChunkSearchHit[] = [];
+    for (const hit of pageHits) {
+      if (hit.payload.team_id !== teamId) continue;
+      const cid = hit.payload.document_chunk_id;
+      if (!cid) continue;
+      const row = byId.get(cid);
+      if (!row) continue;
+      items.push({
+        documentId: row.documentId,
+        documentVersionId: row.documentVersionId,
+        documentChunkId: row.chunkId,
+        version: row.version,
+        chunkIndex: row.chunkIndex,
+        pageNumber: row.pageNumber,
+        text: row.text,
+        summary: row.summary,
+        documentName: row.documentName,
+        folderId: row.folderId,
+        score: hit.score,
+      });
+    }
+
+    return {
+      items,
+      nextOffset,
+    };
+  }
+
   async function assertFolderInTeam(folderId: string): Promise<FolderRow> {
     const folder = await getFolderRaw(folderId);
     if (!folder) throw new Error('Folder not found or not visible');
@@ -495,24 +632,19 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         .where(and(eq(folders.id, id), eq(folders.teamId, teamId)));
     },
 
-    async listDocuments(
-      args: { folderId?: string | null; includeDeleted?: boolean; limit?: number } = {},
-    ): Promise<DocumentRow[]> {
-      await ensureMember();
-      const conditions = [eq(documents.teamId, teamId), documentVisibility];
-      if (!args.includeDeleted) conditions.push(isNull(documents.deletedAt));
-      if (args.folderId === null || args.folderId === undefined) {
-        conditions.push(isNull(documents.folderId));
-      } else {
-        conditions.push(eq(documents.folderId, args.folderId));
-      }
-      const rows = await db
-        .select()
-        .from(documents)
-        .where(and(...conditions))
-        .orderBy(desc(documents.updatedAt))
-        .limit(args.limit ?? 200);
-      return rows;
+    listDocuments,
+
+    async listDocumentsPage(
+      args: {
+        folderId?: string | null;
+        includeDeleted?: boolean;
+        limit?: number;
+        cursor?: string | null;
+      } = {},
+    ): Promise<{ items: DocumentRow[]; nextCursor: string | null }> {
+      const limit = Math.min(Math.max(args.limit ?? 30, 1), 100);
+      const rows = await listDocuments({ ...args, limit: limit + 1 });
+      return pageWindow(rows, limit, (row) => ({ at: row.updatedAt.toISOString(), id: row.id }));
     },
 
     async getDocument(
@@ -927,80 +1059,10 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     async searchDocumentChunks(
       input: SearchDocumentChunksInput,
     ): Promise<DocumentChunkSearchHit[]> {
-      await ensureMember();
-      const embedFn = deps.embed ?? defaultEmbed;
-      const searchFn =
-        deps.qdrantSearch ??
-        (async (tId, uId, vector, opts) => {
-          const client = getQdrantClient();
-          return client.search(tId, uId, vector, opts);
-        });
-
-      const { vector } = await embedFn({ text: input.query });
-      const searchOpts: SearchOpts = {
-        limit: input.limit ?? 12,
-        sourceKind: 'doc_chunk',
-      };
-      if (input.documentId) searchOpts.documentId = input.documentId;
-      if (input.folderIds) searchOpts.folderIds = input.folderIds;
-
-      const hits = await searchFn(teamId, userId, vector, searchOpts);
-      if (hits.length === 0) return [];
-
-      const chunkIds = hits
-        .map((h) => h.payload.document_chunk_id)
-        .filter((id): id is string => typeof id === 'string');
-      if (chunkIds.length === 0) return [];
-
-      const rows = await db
-        .select({
-          chunkId: documentChunks.id,
-          documentId: documentChunks.documentId,
-          documentVersionId: documentChunks.documentVersionId,
-          chunkIndex: documentChunks.chunkIndex,
-          pageNumber: documentChunks.pageNumber,
-          text: documentChunks.text,
-          summary: documentChunks.summary,
-          version: documentVersions.version,
-          documentName: documents.name,
-          folderId: documents.folderId,
-        })
-        .from(documentChunks)
-        .innerJoin(documents, eq(documents.id, documentChunks.documentId))
-        .innerJoin(documentVersions, eq(documentVersions.id, documentChunks.documentVersionId))
-        .where(
-          and(
-            inArray(documentChunks.id, chunkIds),
-            eq(documentChunks.teamId, teamId),
-            documentVisibility,
-            isNull(documents.deletedAt),
-          ),
-        );
-      const byId = new Map(rows.map((r) => [r.chunkId, r]));
-
-      const out: DocumentChunkSearchHit[] = [];
-      for (const hit of hits) {
-        if (hit.payload.team_id !== teamId) continue;
-        const cid = hit.payload.document_chunk_id;
-        if (!cid) continue;
-        const row = byId.get(cid);
-        if (!row) continue;
-        out.push({
-          documentId: row.documentId,
-          documentVersionId: row.documentVersionId,
-          documentChunkId: row.chunkId,
-          version: row.version,
-          chunkIndex: row.chunkIndex,
-          pageNumber: row.pageNumber,
-          text: row.text,
-          summary: row.summary,
-          documentName: row.documentName,
-          folderId: row.folderId,
-          score: hit.score,
-        });
-      }
-      return out;
+      return (await searchDocumentChunksPage(input)).items;
     },
+
+    searchDocumentChunksPage,
 
     /**
      * Recent document-related raw_events for this team (visibility-filtered

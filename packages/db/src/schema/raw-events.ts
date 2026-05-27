@@ -57,6 +57,19 @@ export const rawEvents = pgTable(
   (table) => [
     index('raw_events_team_idx').on(table.teamId),
     index('raw_events_team_occurred_idx').on(table.teamId, table.occurredAt),
+    index('raw_events_team_occurred_id_idx').on(table.teamId, table.occurredAt, table.id),
+    index('raw_events_team_author_occurred_id_idx').on(
+      table.teamId,
+      table.authorUserId,
+      table.occurredAt,
+      table.id,
+    ),
+    index('raw_events_team_source_occurred_id_idx').on(
+      table.teamId,
+      table.source,
+      table.occurredAt,
+      table.id,
+    ),
     index('raw_events_author_idx').on(table.authorUserId),
     // Idempotency: Telegram delivers the same update_id on retry when we
     // 5xx, time out, or crash before responding. The partial unique index

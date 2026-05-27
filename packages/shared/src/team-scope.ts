@@ -24,6 +24,7 @@ import { createMcpScope } from './mcp/scope.js';
 import { createMeetingScope } from './meetings/scope.js';
 import { createObjectScope } from './objects/index.js';
 import { createOnboardingScope } from './onboarding/index.js';
+import { decodeCursor, pageWindow } from './pagination.js';
 import {
   getQdrantClient,
   type SearchHit,
@@ -69,6 +70,7 @@ export interface EventListFilters {
    */
   source?: string;
   limit?: number;
+  cursor?: string | null;
 }
 
 export interface CreateEventInput {
@@ -135,6 +137,11 @@ export interface SearchEventsInput {
    */
   sourceKind?: SourceKind | SourceKind[];
   limit?: number;
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  nextCursor: string | null;
 }
 
 export interface SearchEventResult {
@@ -435,6 +442,40 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     isTeamMember,
   };
 
+  async function listEvents(
+    filters: EventListFilters = {},
+  ): Promise<(typeof rawEvents.$inferSelect)[]> {
+    await ensureMember();
+    const conditions = [eq(rawEvents.teamId, teamId), visibilityFilter, activeRawEventFilter];
+    if (filters.authorUserId) {
+      conditions.push(eq(rawEvents.authorUserId, filters.authorUserId));
+    }
+    if (filters.from) conditions.push(gte(rawEvents.occurredAt, filters.from));
+    if (filters.to) conditions.push(lt(rawEvents.occurredAt, filters.to));
+    if (filters.source) {
+      conditions.push(
+        eq(rawEvents.source, filters.source as (typeof rawEvents.source.enumValues)[number]),
+      );
+    }
+    const cursor = decodeCursor(filters.cursor);
+    if (filters.cursor && !cursor) throw new Error('Invalid cursor');
+    if (cursor) {
+      const cursorDate = new Date(cursor.at);
+      conditions.push(
+        or(
+          lt(rawEvents.occurredAt, cursorDate),
+          and(eq(rawEvents.occurredAt, cursorDate), lt(rawEvents.id, cursor.id)),
+        ),
+      );
+    }
+    return db
+      .select()
+      .from(rawEvents)
+      .where(and(...conditions))
+      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+      .limit(filters.limit ?? 200);
+  }
+
   return {
     ...core,
     timeline: {
@@ -444,25 +485,17 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         return rows[0] ?? null;
       },
 
-      async listEvents(filters: EventListFilters = {}) {
-        await ensureMember();
-        const conditions = [eq(rawEvents.teamId, teamId), visibilityFilter, activeRawEventFilter];
-        if (filters.authorUserId) {
-          conditions.push(eq(rawEvents.authorUserId, filters.authorUserId));
-        }
-        if (filters.from) conditions.push(gte(rawEvents.occurredAt, filters.from));
-        if (filters.to) conditions.push(lt(rawEvents.occurredAt, filters.to));
-        if (filters.source) {
-          conditions.push(
-            eq(rawEvents.source, filters.source as (typeof rawEvents.source.enumValues)[number]),
-          );
-        }
-        return db
-          .select()
-          .from(rawEvents)
-          .where(and(...conditions))
-          .orderBy(desc(rawEvents.occurredAt))
-          .limit(filters.limit ?? 200);
+      listEvents,
+
+      async listEventsPage(
+        filters: EventListFilters = {},
+      ): Promise<PaginatedResult<typeof rawEvents.$inferSelect>> {
+        const limit = Math.min(Math.max(filters.limit ?? 30, 1), 100);
+        const rows = await listEvents({ ...filters, limit: limit + 1 });
+        return pageWindow(rows, limit, (row) => ({
+          at: row.occurredAt.toISOString(),
+          id: row.id,
+        }));
       },
 
       async getEvent(id: string) {
