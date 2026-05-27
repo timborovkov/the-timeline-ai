@@ -26,3 +26,5 @@ export * as mcp from './mcp/index.js';
 export * as mcpServer from './mcp-server/index.js';
 export * as calendarScope from './calendar/index.js';
 export * as embedding from './embedding/index.js';
+export * as teamExports from './team-exports/index.js';
+export * from './team-exports/index.js';

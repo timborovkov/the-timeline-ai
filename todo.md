@@ -264,22 +264,27 @@ out of scope.
 
 ### Slice 13.4 — Team export job
 
-- [ ] Build async team data exports as a background job with status (`queued`,
+- [x] Build async team data exports as a background job with status (`queued`,
       `running`, `ready`, `failed`, `expired`) instead of a synchronous request.
-- [ ] Owners/admins can export team-visible data and source-owned admin data,
+      (`team_exports`, BullMQ `team-export`, worker upload to `S3_BUCKET_EXPORTS`,
+      and `/app/team` status/download controls.)
+- [x] Owners/admins can export team-visible data and source-owned admin data,
       but cannot export other users' private/restricted content unless they are
-      already allowed to see it.
-- [ ] Generate a zip archive containing structured JSON/JSONL files such as
+      already allowed to see it. (Raw events, facts, folders, documents,
+      versions, meetings, calendar events, and file links are filtered through
+      the requesting admin's visibility.)
+- [x] Generate a zip archive containing structured JSON/JSONL files such as
       `manifest.json`, `raw_events.jsonl`, `facts.jsonl`, `objects.jsonl`,
       `tasks.jsonl`, `documents.jsonl`, `document_versions.jsonl`,
       `integrations.jsonl`, `audit_log.jsonl`, `files.jsonl`, and
-      `README.txt`.
-- [ ] Include signed file URLs in `files.jsonl`, not binary blobs in the zip.
+      `README.txt`. (Additional structured files include folders, object
+      notes/changes, meetings, meeting chunks, and calendar events.)
+- [x] Include signed file URLs in `files.jsonl`, not binary blobs in the zip.
       Signed URLs and the export archive expire after 24 hours.
-- [ ] Never export integration secrets/tokens in plaintext. Include an
+- [x] Never export integration secrets/tokens in plaintext. Include an
       omissions summary/count for private or restricted records excluded from
       the export.
-- [ ] Audit export creation and signed URL generation.
+- [x] Audit export creation and signed URL generation.
 
 ### Slice 13.5 — Team-scoped job dashboard
 

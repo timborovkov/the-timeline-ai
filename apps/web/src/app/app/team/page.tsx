@@ -1,11 +1,11 @@
-import { users } from '@timeline/db';
+import { teamExports, users } from '@timeline/db';
 import { composePostmarkHashAddress, withTeam } from '@timeline/shared';
-import { inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import { removeMemberAction } from '@/app/actions/teams';
 import { IndexStrip } from '@/components/index-strip';
-import { InviteMemberForm, RenameTeamForm } from '@/components/team-forms';
+import { InviteMemberForm, RenameTeamForm, TeamExportPanel } from '@/components/team-forms';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,6 +25,33 @@ export default async function TeamSettingsPage() {
   const team = await scope.timeline.team();
 
   const memberRows = await scope.timeline.listMembers();
+  if (isAdmin) {
+    await db
+      .update(teamExports)
+      .set({ status: 'expired' })
+      .where(
+        and(
+          eq(teamExports.teamId, active.teamId),
+          eq(teamExports.status, 'ready'),
+          lt(teamExports.expiresAt, new Date()),
+        ),
+      );
+  }
+  const exportRows = isAdmin
+    ? await db
+        .select({
+          id: teamExports.id,
+          status: teamExports.status,
+          createdAt: teamExports.createdAt,
+          completedAt: teamExports.completedAt,
+          expiresAt: teamExports.expiresAt,
+          error: teamExports.error,
+        })
+        .from(teamExports)
+        .where(eq(teamExports.teamId, active.teamId))
+        .orderBy(desc(teamExports.createdAt))
+        .limit(10)
+    : [];
   const userIds = memberRows.map((m) => m.userId);
   const userInfo =
     userIds.length > 0
@@ -54,6 +81,17 @@ export default async function TeamSettingsPage() {
           </CardHeader>
           <CardContent>
             <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {isAdmin ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Team export</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TeamExportPanel exports={exportRows} />
           </CardContent>
         </Card>
       ) : null}

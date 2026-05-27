@@ -19,3 +19,5 @@ export * from './integrations.js';
 export * from './mcp.js';
 export * from './mcp-outbound.js';
 export * from './calendar-events.js';
+export * from './audit-log.js';
+export * from './team-exports.js';
