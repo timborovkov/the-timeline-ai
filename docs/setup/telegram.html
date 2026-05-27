@@ -134,6 +134,14 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
           your user under the linked team.
         </li>
         <li>
+          Edit that Telegram message. The timeline should keep only the latest revision visible; the
+          older raw event stays tombstoned for audit/history.
+        </li>
+        <li>
+          Use the trash icon on the Telegram timeline row. Authors and team admins can remove it
+          from the active timeline; the raw event remains tombstoned rather than physically deleted.
+        </li>
+        <li>
           <code>/whereami</code> confirms attribution; <code>/team</code> lists linked teams;
           <code>/team 2</code> switches to the second; the next DM message lands on the new team.
         </li>
