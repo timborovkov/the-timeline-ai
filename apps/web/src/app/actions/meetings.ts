@@ -1,6 +1,6 @@
 'use server';
 
-import { childLogger, meetingBots, withTeam } from '@timeline/shared';
+import { childLogger, meetingBots, rateLimit, withTeam } from '@timeline/shared';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -68,7 +68,19 @@ export async function scheduleMeetingBotAction(
 
   const got = await withScopeOrError();
   if ('error' in got) return { ok: false, error: got.error };
-  const { scope, teamId } = got;
+  const { scope, teamId, userId } = got;
+  const rl = await rateLimit.checkRateLimit({
+    key: rateLimit.rateLimitKey('meeting_scheduling', 'user', userId),
+    ...rateLimit.RATE_LIMITS.meetingScheduling,
+  });
+  if (!rl.ok) {
+    return {
+      ok: false,
+      error: `Too many meeting scheduling attempts. Try again in ${Math.ceil(
+        rl.retryAfterMs / 1000,
+      )} seconds.`,
+    };
+  }
 
   // Consent gate. Defaults to required; admins can toggle the team
   // setting if they have legal cover.

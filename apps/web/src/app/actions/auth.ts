@@ -2,6 +2,7 @@
 
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
 import { hashPassword } from '@timeline/shared/passwords';
+import * as rateLimit from '@timeline/shared/rate-limit';
 import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
 import { and, eq, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
@@ -12,6 +13,8 @@ import { z } from 'zod';
 import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
 import { signIn } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { clientIpFromRequestHeaders } from '@/lib/request-ip';
+import { verifyTurnstileToken } from '@/lib/turnstile';
 
 const signUpSchema = z.object({
   name: z.string().min(1).max(80),
@@ -25,6 +28,7 @@ export interface SignUpState {
 }
 
 export async function signUpAction(_prev: SignUpState, formData: FormData): Promise<SignUpState> {
+  const clientIp = await clientIpFromRequestHeaders();
   const parsed = signUpSchema.safeParse({
     name: formData.get('name'),
     email: formData.get('email'),
@@ -35,6 +39,36 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
   }
   const { name, email, password, inviteToken } = parsed.data;
+
+  if (clientIp) {
+    const ipLimit = await rateLimit.checkRateLimit({
+      key: rateLimit.rateLimitKey('signup', 'ip', clientIp),
+      ...rateLimit.RATE_LIMITS.signup,
+    });
+    if (!ipLimit.ok) {
+      return {
+        error: `Too many signup attempts. Try again in ${Math.ceil(ipLimit.retryAfterMs / 1000)} seconds.`,
+      };
+    }
+  }
+
+  const turnstileOk = await verifyTurnstileToken({
+    token: formData.get('cf-turnstile-response'),
+    remoteIp: clientIp,
+  });
+  if (!turnstileOk) {
+    return { error: 'Verification failed. Refresh and try again.' };
+  }
+
+  const emailLimit = await rateLimit.checkRateLimit({
+    key: rateLimit.rateLimitKey('signup', 'email', email),
+    ...rateLimit.RATE_LIMITS.signup,
+  });
+  if (!emailLimit.ok) {
+    return {
+      error: `Too many signup attempts. Try again in ${Math.ceil(emailLimit.retryAfterMs / 1000)} seconds.`,
+    };
+  }
 
   const existing = await db.select().from(users).where(eq(users.email, email)).limit(1);
   if (existing.length > 0) {

@@ -55,6 +55,7 @@ const fakes = vi.hoisted(() => ({
   fakeEnqueueDocExtract: vi.fn(),
   fakeGetSignedPutUrl: vi.fn(),
   fakeHeadObject: vi.fn(),
+  fakeCheckRateLimit: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -66,13 +67,17 @@ vi.mock('@timeline/shared', async () => {
   const actual = await vi.importActual<typeof SharedModuleNS>('@timeline/shared');
   return {
     ...actual,
-    withTeam: () => fakes.fakeScope,
+    withTeam: () => ({ documents: fakes.fakeScope }),
     getDocumentsBucket: () => 'test-documents',
     getS3Client: () => ({}) as unknown,
     getS3PresignClient: () => ({}) as unknown,
     getSignedPutObjectUrl: fakes.fakeGetSignedPutUrl,
     getSignedGetObjectUrl: vi.fn().mockResolvedValue('https://signed-get/url'),
     headObject: fakes.fakeHeadObject,
+    rateLimit: {
+      ...actual.rateLimit,
+      checkRateLimit: fakes.fakeCheckRateLimit,
+    },
     queue: {
       ...actual.queue,
       enqueueDocumentExtractJob: fakes.fakeEnqueueDocExtract,
@@ -89,6 +94,7 @@ const {
   fakeEnqueueDocExtract,
   fakeGetSignedPutUrl,
   fakeHeadObject,
+  fakeCheckRateLimit,
 } = fakes;
 
 const DOC_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -100,6 +106,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   fakeAuth.mockResolvedValue({ user: { id: USER_ID } });
   fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
+  fakeCheckRateLimit.mockResolvedValue({ ok: true, remaining: 10 });
 });
 
 // ---------------------------------------------------------------------------

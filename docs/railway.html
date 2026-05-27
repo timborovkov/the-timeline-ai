@@ -160,7 +160,10 @@ TELEGRAM_BOT_TOKEN=&lt;botfather token&gt;
 TELEGRAM_WEBHOOK_SECRET=&lt;32-byte random&gt;
 POSTMARK_SERVER_TOKEN=&lt;postmark token&gt;
 POSTMARK_WEBHOOK_SECRET=&lt;postmark secret&gt;
+SUPPORT_EMAIL=support@thetimeline.app
 INBOUND_EMAIL_DOMAIN=in.thetimeline.app
+TURNSTILE_SITE_KEY=&lt;cloudflare turnstile site key&gt;
+TURNSTILE_SECRET_KEY=&lt;cloudflare turnstile secret key&gt;
 NODE_ENV=production
 LOG_LEVEL=info
 </code></pre>
@@ -175,6 +178,13 @@ LOG_LEVEL=info
         Generate Domain) and set <code>S3_PUBLIC_ENDPOINT</code> to that URL.
         <code>S3_ENDPOINT</code> stays on the private network — workers and server-side code keep
         using it.
+      </p>
+      <p>
+        <strong>About <code>TURNSTILE_*</code>:</strong> Turnstile is used only on anonymous abuse
+        surfaces: email/password registration and the public support/contact form. OAuth signup and
+        signed-in product flows rely on Redis-backed rate limits, team permissions, and existing
+        quota checks. In production, leave neither key blank; the server action rejects missing or
+        invalid Turnstile tokens.
       </p>
 
       <h2 id="staging-vs-production">Staging vs production</h2>

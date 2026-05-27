@@ -3,10 +3,22 @@
  * Tune here, not at call sites.
  */
 export const RATE_LIMITS = {
+  /** Email/password signup: 5/min per source IP and per submitted email. */
+  signup: { capacity: 5, refillPerSec: 5 / 60 },
+  /** Public support/contact form: 3/min per source IP and per submitted email. */
+  supportForm: { capacity: 3, refillPerSec: 3 / 60 },
   /** /api/search: 30/min per userId. */
   search: { capacity: 30, refillPerSec: 30 / 60 },
   /** /api/chat: 20/min per userId. Chat is expensive (OpenRouter spend). */
-  chat: { capacity: 20, refillPerSec: 20 / 60 },
+  aiChat: { capacity: 20, refillPerSec: 20 / 60 },
+  /** Meeting bot scheduling: 10/min per userId. Provider joins are expensive. */
+  meetingScheduling: { capacity: 10, refillPerSec: 10 / 60 },
+  /** Team data export requests: 3/hour per userId. Export workers are IO-heavy. */
+  exports: { capacity: 3, refillPerSec: 3 / 3600 },
+  /** Document presigned upload requests: 30/min per userId. */
+  documentUpload: { capacity: 30, refillPerSec: 30 / 60 },
+  /** Document finalize requests: 30/min per userId. Finalize enqueues OCR. */
+  documentFinalize: { capacity: 30, refillPerSec: 30 / 60 },
   /** Telegram webhook: 60/min per tg_user_id. */
   telegramWebhook: { capacity: 60, refillPerSec: 60 / 60 },
   /** Telegram /ask: 10/min per tg_user_id. Tighter than the webhook bucket
@@ -33,4 +45,6 @@ export const RATE_LIMITS = {
    *  dozens of push events per minute) but low enough to choke a
    *  replay/forgery storm. */
   integrationWebhook: { capacity: 300, refillPerSec: 300 / 60 },
+  /** Timeline-as-MCP-server endpoint: 600/min per source IP. */
+  mcpServer: { capacity: 600, refillPerSec: 600 / 60 },
 } as const;

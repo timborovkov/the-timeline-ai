@@ -20,9 +20,17 @@
       "import": "./dist/logger.js",
       "types": "./dist/logger.d.ts"
     },
+    "./env": {
+      "import": "./dist/env.js",
+      "types": "./dist/env.d.ts"
+    },
     "./passwords": {
       "import": "./dist/passwords.js",
       "types": "./dist/passwords.d.ts"
+    },
+    "./rate-limit": {
+      "import": "./dist/rate-limit/index.js",
+      "types": "./dist/rate-limit/index.d.ts"
     },
     "./slug": {
       "import": "./dist/slug.js",

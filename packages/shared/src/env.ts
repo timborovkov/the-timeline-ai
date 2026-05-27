@@ -110,6 +110,18 @@ const schema = z.object({
    * 403 so attackers don't see auth-failure feedback.
    */
   POSTMARK_INBOUND_IPS: z.string().optional(),
+  /**
+   * Public support/contact form destination. In production, support
+   * submissions are sent through Postmark to this address. Leave unset in
+   * local/dev environments where the public form should show a config error
+   * instead of silently dropping messages.
+   */
+  SUPPORT_EMAIL: z.preprocess((v) => (v === '' ? undefined : v), z.string().email().optional()),
+
+  // Cloudflare Turnstile (Phase 13 abuse controls). Only public/anonymous
+  // forms use it: email/password registration and public support/contact.
+  TURNSTILE_SITE_KEY: z.string().optional(),
+  TURNSTILE_SECRET_KEY: z.string().optional(),
 
   /**
    * Shared secret for protected cron / admin endpoints (e.g. job reconciler).

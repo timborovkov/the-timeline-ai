@@ -30,7 +30,17 @@
       </ol>
       <pre><code>POSTMARK_SERVER_TOKEN=...
 </code></pre>
-      <p>(Not used by the inbound webhook today — kept in env for the Phase 8 outbound work.)</p>
+      <p>
+        Inbound webhook handling does not need this token. The public support/contact form uses it
+        to send outbound support requests to <code>SUPPORT_EMAIL</code>.
+      </p>
+      <pre><code>SUPPORT_EMAIL=support@your-domain.example
+</code></pre>
+      <p>
+        In production, <code>SUPPORT_EMAIL</code> must be a confirmed Postmark sender signature.
+        Support mail is sent <code>From</code> and <code>To</code> that address, with
+        <code>Reply-To</code> set to the visitor's email.
+      </p>
 
       <h2 id="inbound-stream">2. Inbound stream</h2>
       <ol>

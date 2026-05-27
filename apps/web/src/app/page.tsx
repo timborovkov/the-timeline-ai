@@ -53,7 +53,7 @@ export const metadata: Metadata = {
   },
 };
 
-const CONTACT_MAILTO = 'mailto:tim@irmin.co?subject=The%20Timeline%20%E2%80%94%20talk%20to%20us';
+const CONTACT_HREF = '/help/contact';
 
 export default function LandingPage() {
   return (
@@ -284,7 +284,7 @@ function Hero() {
                 <Link href="/sign-up">Create your team →</Link>
               </Button>
               <Button asChild size="lg" variant="outline">
-                <a href={CONTACT_MAILTO}>Talk to us</a>
+                <a href={CONTACT_HREF}>Talk to us</a>
               </Button>
               <Link
                 href="/sign-in"
@@ -982,7 +982,7 @@ function FinalCTA() {
             <Link href="/sign-up">Create your team →</Link>
           </Button>
           <Button asChild size="lg" variant="outline">
-            <a href={CONTACT_MAILTO}>Talk to us</a>
+            <a href={CONTACT_HREF}>Talk to us</a>
           </Button>
         </div>
         <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
