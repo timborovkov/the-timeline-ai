@@ -28,6 +28,25 @@ import type { IntegrationEvent, IntegrationRow, ObjectMapping } from './types.js
 // `entities_team_type_canonical_name_unq` would collapse distinct
 // external objects sharing a name) and bulk-friendly.
 
+function resolveEventVisibility(args: {
+  requestedVisibility: 'team' | 'private' | 'specific_users';
+  integrationDefault: 'team' | 'private' | 'specific_users';
+  hasSpecificUsers: boolean;
+  hasVisibilityOwner: boolean;
+}): 'team' | 'private' | 'specific_users' {
+  if (args.requestedVisibility === 'specific_users') {
+    if (args.hasSpecificUsers) return 'specific_users';
+    if (args.integrationDefault === 'private' && args.hasVisibilityOwner) return 'private';
+    return 'team';
+  }
+
+  if (args.requestedVisibility === 'private' && !args.hasVisibilityOwner) {
+    return 'team';
+  }
+
+  return args.requestedVisibility;
+}
+
 export async function writeIntegrationEvents(deps: {
   db: Db;
   integration: IntegrationRow;
@@ -68,16 +87,12 @@ export async function writeIntegrationEvents(deps: {
           (visibility === 'specific_users' ? deps.integration.visibilityDefaultUserIds : null))
         : null;
     const hasSpecificUsers = (requestedUserIds?.length ?? 0) > 0;
-    const resolvedVisibility =
-      requestedVisibility === 'specific_users' && !hasSpecificUsers
-        ? visibility === 'private'
-          ? visibilityOwnerUserId
-            ? 'private'
-            : 'team'
-          : 'team'
-        : requestedVisibility === 'private' && !visibilityOwnerUserId
-          ? 'team'
-          : requestedVisibility;
+    const resolvedVisibility = resolveEventVisibility({
+      requestedVisibility,
+      integrationDefault: visibility,
+      hasSpecificUsers,
+      hasVisibilityOwner: Boolean(visibilityOwnerUserId),
+    });
 
     return {
       teamId,

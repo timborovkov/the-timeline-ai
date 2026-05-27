@@ -90,6 +90,41 @@ describe('writeIntegrationEvents visibility', () => {
     expect(row?.visibilityUserIds).toBeNull();
   });
 
+  it('falls back to team visibility for specific_users defaults without user ids', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-default-specific',
+        visibilityDefault: 'specific_users',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [eventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:test:default-specific',
+          provider: 'github',
+          externalObjectId: 'repo#default-specific',
+          eventType: 'test',
+          occurredAt: new Date('2026-05-27T09:00:00Z'),
+          contentText: 'specific default without ids',
+        },
+      ],
+    });
+    if (!eventId) throw new Error('event insert failed');
+
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(row?.visibility).toBe('team');
+    expect(row?.visibilityUserIds).toBeNull();
+  });
+
   it('uses event-level visibility user ids for specific_users overrides', async () => {
     const [integration] = await db
       .insert(integrations)

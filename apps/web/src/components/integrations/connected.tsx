@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { setIntegrationVisibilityDefaultAction } from '@/app/actions/visibility';
 import { Button } from '@/components/ui/button';
@@ -17,12 +17,17 @@ interface ConnectedRow {
   visibilityDefaultUserIds: string[] | null;
 }
 
+interface MemberOption {
+  id: string;
+  label: string;
+}
+
 export function ConnectedIntegrations({
   connected,
   members = [],
 }: {
   connected: ConnectedRow[];
-  members?: { id: string; label: string }[];
+  members?: MemberOption[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -68,35 +73,7 @@ export function ConnectedIntegrations({
                 : 'Never synced'}
               {c.lastError ? <span className="ml-2 text-destructive">· {c.lastError}</span> : null}
             </div>
-            <form
-              action={setIntegrationVisibilityDefaultAction}
-              className="mt-2 flex flex-wrap items-center gap-2 text-xs"
-            >
-              <input type="hidden" name="id" value={c.id} />
-              <select
-                name="visibility"
-                defaultValue={c.visibilityDefault}
-                className="h-7 rounded-sm border border-border bg-bg px-2"
-              >
-                <option value="team">Team</option>
-                <option value="private">Private</option>
-                <option value="specific_users">Specific users</option>
-              </select>
-              {members.map((m) => (
-                <label key={m.id} className="flex items-center gap-1 text-fg-muted">
-                  <input
-                    type="checkbox"
-                    name="visibilityUserIds"
-                    value={m.id}
-                    defaultChecked={c.visibilityDefaultUserIds?.includes(m.id) ?? false}
-                  />
-                  {m.label}
-                </label>
-              ))}
-              <button className="rounded-sm border border-border px-2 py-1" type="submit">
-                Save default
-              </button>
-            </form>
+            <IntegrationVisibilityForm integration={c} members={members} />
           </div>
           <Button
             size="sm"
@@ -123,5 +100,50 @@ export function ConnectedIntegrations({
         </li>
       ))}
     </ul>
+  );
+}
+
+function IntegrationVisibilityForm({
+  integration,
+  members,
+}: {
+  integration: ConnectedRow;
+  members: MemberOption[];
+}) {
+  const [state, action, pending] = useActionState(setIntegrationVisibilityDefaultAction, {});
+
+  return (
+    <form action={action} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <input type="hidden" name="id" value={integration.id} />
+      <select
+        name="visibility"
+        defaultValue={integration.visibilityDefault}
+        className="h-7 rounded-sm border border-border bg-bg px-2"
+      >
+        <option value="team">Team</option>
+        <option value="private">Private</option>
+        <option value="specific_users">Specific users</option>
+      </select>
+      {members.map((m) => (
+        <label key={m.id} className="flex items-center gap-1 text-fg-muted">
+          <input
+            type="checkbox"
+            name="visibilityUserIds"
+            value={m.id}
+            defaultChecked={integration.visibilityDefaultUserIds?.includes(m.id) ?? false}
+          />
+          {m.label}
+        </label>
+      ))}
+      <button
+        className="rounded-sm border border-border px-2 py-1 disabled:opacity-60"
+        type="submit"
+        disabled={pending}
+      >
+        {pending ? 'Saving' : 'Save default'}
+      </button>
+      {state.error ? <p className="basis-full text-xs text-destructive">{state.error}</p> : null}
+      {state.ok ? <p className="basis-full text-xs text-fg-muted">Saved</p> : null}
+    </form>
   );
 }

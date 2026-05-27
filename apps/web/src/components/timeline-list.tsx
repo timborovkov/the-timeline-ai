@@ -3,7 +3,9 @@ import { Trash2 } from 'lucide-react';
 
 import type { rawEvents } from '@timeline/db';
 
-import { setEventVisibilityAction } from '@/app/actions/visibility';
+import { removeTelegramEventAction } from '@/app/actions/events';
+import { EventVisibilityForm } from '@/components/event-visibility-form';
+import { Button } from '@/components/ui/button';
 
 type RawEvent = InferSelectModel<typeof rawEvents>;
 type TimelineEvent = Omit<RawEvent, 'occurredAt' | 'createdAt'> & {
@@ -259,40 +261,12 @@ export function TimelineList({ events, authorMap, audioUrlMap, currentUserId, me
                     <summary className="cursor-pointer font-mono uppercase tracking-[0.1em] text-fg-dim">
                       Visibility
                     </summary>
-                    <form
-                      action={setEventVisibilityAction}
-                      className="mt-2 flex flex-wrap items-center gap-2 rounded-sm border border-border p-2"
-                    >
-                      <input type="hidden" name="id" value={event.id} />
-                      <select
-                        name="visibility"
-                        defaultValue={event.visibility}
-                        className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
-                      >
-                        <option value="team">Team</option>
-                        <option value="private">Private</option>
-                        <option value="specific_users">Specific users</option>
-                      </select>
-                      <div className="flex flex-wrap gap-2">
-                        {members.map((m) => (
-                          <label key={m.id} className="flex items-center gap-1 text-fg-muted">
-                            <input
-                              type="checkbox"
-                              name="visibilityUserIds"
-                              value={m.id}
-                              defaultChecked={event.visibilityUserIds?.includes(m.id) ?? false}
-                            />
-                            {m.label}
-                          </label>
-                        ))}
-                      </div>
-                      <button
-                        type="submit"
-                        className="h-8 rounded-sm border border-border px-2 text-xs hover:bg-surface-2"
-                      >
-                        Save
-                      </button>
-                    </form>
+                    <EventVisibilityForm
+                      eventId={event.id}
+                      visibility={event.visibility}
+                      visibilityUserIds={event.visibilityUserIds}
+                      members={members}
+                    />
                   </details>
                 ) : null}
               </div>

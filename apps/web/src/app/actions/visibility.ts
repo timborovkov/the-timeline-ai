@@ -79,34 +79,42 @@ export async function setVisibilityDefaultAction(
   }
 }
 
-export async function setEventVisibilityAction(formData: FormData): Promise<void> {
+export async function setEventVisibilityAction(
+  _prev: VisibilityActionState,
+  formData: FormData,
+): Promise<VisibilityActionState> {
   const parsed = z
     .object({ id: z.string().regex(UUID_RE), visibility: visibilitySchema })
     .safeParse({
       id: formData.get('id'),
       visibility: formData.get('visibility'),
     });
-  if (!parsed.success) return;
+  if (!parsed.success) return { error: 'Invalid visibility' };
   const got = await scopeOrError();
-  if ('error' in got) return;
+  if ('error' in got) return { error: got.error };
   try {
     await got.scope.timeline.setEventVisibility(parsed.data.id, {
       visibility: parsed.data.visibility,
       visibilityUserIds: idsFromForm(formData, 'visibilityUserIds'),
     });
     revalidatePath('/app/timeline');
+    return { ok: true };
   } catch (err) {
     console.error('[visibility] failed to update event visibility', err);
+    return { error: err instanceof Error ? err.message : 'Failed to update event visibility' };
   }
 }
 
-export async function setIntegrationVisibilityDefaultAction(formData: FormData): Promise<void> {
+export async function setIntegrationVisibilityDefaultAction(
+  _prev: VisibilityActionState,
+  formData: FormData,
+): Promise<VisibilityActionState> {
   const parsed = z
     .object({ id: z.string().regex(UUID_RE), visibility: visibilitySchema })
     .safeParse({ id: formData.get('id'), visibility: formData.get('visibility') });
-  if (!parsed.success) return;
+  if (!parsed.success) return { error: 'Invalid integration visibility default' };
   const got = await scopeOrError();
-  if ('error' in got) return;
+  if ('error' in got) return { error: got.error };
   try {
     await got.scope.integrations.setIntegrationVisibilityDefault(
       parsed.data.id,
@@ -114,7 +122,11 @@ export async function setIntegrationVisibilityDefaultAction(formData: FormData):
       idsFromForm(formData, 'visibilityUserIds'),
     );
     revalidatePath('/app/team/integrations');
+    return { ok: true };
   } catch (err) {
     console.error('[visibility] failed to update integration default', err);
+    return {
+      error: err instanceof Error ? err.message : 'Failed to update integration visibility default',
+    };
   }
 }
