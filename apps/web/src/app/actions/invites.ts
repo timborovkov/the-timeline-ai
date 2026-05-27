@@ -86,7 +86,7 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
         .where(
           and(
             eq(teamInvites.teamId, invite.teamId),
-            eq(teamInvites.email, invite.email),
+            sql`lower(${teamInvites.email}) = ${invite.email.toLowerCase()}`,
             isNull(teamInvites.acceptedAt),
             isNull(teamInvites.revokedAt),
             sql`${teamInvites.id} <> ${invite.id}`,
@@ -174,7 +174,7 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
   if (!parsed.success) return;
   const userId = session.user.id;
 
-  let teamId: string | null = null;
+  let teamId: string;
   try {
     teamId = await db.transaction(async (tx) => {
       const currentUsers = await tx
@@ -237,7 +237,7 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
         .where(
           and(
             eq(teamInvites.teamId, invite.teamId),
-            eq(teamInvites.email, invite.email),
+            sql`lower(${teamInvites.email}) = ${invite.email.toLowerCase()}`,
             isNull(teamInvites.acceptedAt),
             isNull(teamInvites.revokedAt),
             sql`${teamInvites.id} <> ${invite.id}`,
