@@ -1,6 +1,6 @@
 # @timeline/web
 
-The Next.js 15 app — capture surfaces, timeline UI, entity pages, agent chat, auth, server actions, and the inbound webhook routes for Telegram and Postmark.
+The Next.js 15 app — public help docs, support/contact, capture surfaces, timeline UI, entity pages, agent chat, auth, server actions, and the inbound webhook routes for Telegram and Postmark.
 
 ## Why it exists
 

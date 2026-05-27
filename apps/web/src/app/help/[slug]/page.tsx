@@ -1,0 +1,110 @@
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+
+import type { Metadata } from 'next';
+
+import { HelpAppLink } from '@/components/help/app-link';
+import { auth } from '@/lib/auth';
+import { findHelpPage, HELP_PAGES } from '@/lib/help-content';
+
+interface HelpPageProps {
+  params: Promise<{ slug: string }>;
+}
+
+export function generateStaticParams() {
+  return HELP_PAGES.map((page) => ({ slug: page.slug }));
+}
+
+export async function generateMetadata({ params }: HelpPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const page = findHelpPage(slug);
+  if (!page) return {};
+  return {
+    title: page.title,
+    description: page.description,
+    alternates: { canonical: `/help/${page.slug}` },
+  };
+}
+
+export default async function HelpTopicPage({ params }: HelpPageProps) {
+  const { slug } = await params;
+  const page = findHelpPage(slug);
+  if (!page) notFound();
+
+  const session = await auth();
+  const isSignedIn = Boolean(session?.user);
+
+  return (
+    <article className="space-y-10">
+      <header className="max-w-3xl space-y-4">
+        <p className="font-mono text-xs uppercase tracking-[0.16em] text-fg-dim">Guide</p>
+        <div className="flex items-center gap-3">
+          <page.icon className="size-8 text-signal" />
+          <h1 className="text-4xl font-semibold tracking-normal text-fg sm:text-5xl">
+            {page.title}
+          </h1>
+        </div>
+        <p className="text-lg text-fg-muted">{page.description}</p>
+      </header>
+
+      <div className="space-y-8">
+        {page.sections.map((section) => (
+          <section key={section.title} className="border-t border-border pt-8">
+            <div className="grid gap-6 lg:grid-cols-[1fr_14rem]">
+              <div className="space-y-4">
+                <h2 className="text-2xl font-semibold text-fg">{section.title}</h2>
+                <p className="text-base text-fg-muted">{section.body}</p>
+                {section.items ? (
+                  <ul className="space-y-3">
+                    {section.items.map((item) => (
+                      <li key={item} className="flex gap-3 text-sm text-fg">
+                        <span className="mt-2 size-1.5 shrink-0 rounded-full bg-signal" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+              {section.appLink ? (
+                <div className="lg:pt-11">
+                  <HelpAppLink
+                    href={section.appLink.href}
+                    label={section.appLink.label}
+                    isSignedIn={isSignedIn}
+                  />
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      <section className="border-t border-border pt-8">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.12em] text-fg-dim">
+          Related
+        </h2>
+        <div className="flex flex-wrap gap-2">
+          {page.related.map((relatedSlug) => {
+            const related = findHelpPage(relatedSlug);
+            if (!related) return null;
+            return (
+              <Link
+                key={related.slug}
+                href={`/help/${related.slug}`}
+                className="rounded-sm border border-border px-3 py-2 text-sm text-fg-muted hover:border-signal/50 hover:text-fg"
+              >
+                {related.title}
+              </Link>
+            );
+          })}
+          <Link
+            href="/help/support"
+            className="rounded-sm border border-border px-3 py-2 text-sm text-fg-muted hover:border-signal/50 hover:text-fg"
+          >
+            Contact support
+          </Link>
+        </div>
+      </section>
+    </article>
+  );
+}
