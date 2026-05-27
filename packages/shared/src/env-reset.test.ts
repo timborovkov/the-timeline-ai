@@ -4,6 +4,7 @@ import {
   ListObjectsV2Command,
   type S3Client,
 } from '@aws-sdk/client-s3';
+import { postgresResetStatements } from '@timeline/db';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -11,7 +12,6 @@ import {
   configuredBuckets,
   deleteAllQdrantCollections,
   emptyBucket,
-  postgresResetStatements,
   versionedBuckets,
 } from './env-reset.js';
 
@@ -138,6 +138,7 @@ describe('env reset helpers', () => {
     const statements = postgresResetStatements();
     expect(statements.join('\n')).toContain('pg_terminate_backend');
     expect(statements).toContain('DROP SCHEMA IF EXISTS public CASCADE');
+    expect(statements).toContain('DROP SCHEMA IF EXISTS drizzle CASCADE');
     expect(statements).toContain('CREATE SCHEMA public');
     expect(statements.join('\n')).not.toMatch(/DROP DATABASE/i);
   });

@@ -123,19 +123,6 @@ export async function enableBucketVersioning(client: S3Client, bucket: string): 
   );
 }
 
-export function postgresResetStatements(): string[] {
-  return [
-    `SELECT pg_terminate_backend(pid)
-FROM pg_stat_activity
-WHERE datname = current_database()
-  AND pid <> pg_backend_pid()`,
-    'DROP SCHEMA IF EXISTS public CASCADE',
-    'CREATE SCHEMA public',
-    'GRANT ALL ON SCHEMA public TO public',
-    'GRANT ALL ON SCHEMA public TO CURRENT_USER',
-  ];
-}
-
 async function bucketExists(client: S3Client, bucket: string): Promise<boolean> {
   try {
     await client.send(new HeadBucketCommand({ Bucket: bucket }));
