@@ -12,7 +12,7 @@ import {
   rawEvents,
   type Db,
 } from '@timeline/db';
-import { and, desc, eq, isNotNull, isNull, lt, notExists, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, notExists, or, sql } from 'drizzle-orm';
 
 import * as queue from '../queue/index.js';
 
@@ -428,128 +428,208 @@ async function collectQueueCandidates(
   userId: string,
   q: Required<RecoveryQueues>,
 ): Promise<JobRecoveryItem[]> {
-  const out: JobRecoveryItem[] = [];
   const [embed, meetingsFailed, integrationsFailed] = await Promise.all([
     failedJobs(q.getEmbedQueue).catch(() => []),
     failedJobs(q.getMeetingFinalizeQueue).catch(() => []),
     failedJobs(q.getIntegrationSyncQueue).catch(() => []),
   ]);
 
-  for (const j of embed) {
-    const candidate = await embedJobToItem(
-      db,
-      teamId,
-      userId,
-      j.data,
-      j.failedReason ?? null,
-      j.finishedOn,
-    );
-    if (candidate) out.push(candidate);
-  }
-  for (const j of meetingsFailed) {
-    const data = objectMeta(j.data);
-    if (data.teamId !== teamId || typeof data.meetingId !== 'string') continue;
-    const visible = await visibleMeetingById(db, teamId, userId, data.meetingId);
-    if (!visible) continue;
-    out.push(
-      item('meeting_finalization', 'meeting', data.meetingId, visible, {
-        error: j.failedReason ?? null,
-        detectedAt: j.finishedOn ? new Date(j.finishedOn) : new Date(),
-      }),
-    );
-  }
-  for (const j of integrationsFailed) {
-    const data = objectMeta(j.data);
-    if (
-      data.teamId !== teamId ||
-      data.integrationId === '__tick__' ||
-      typeof data.integrationId !== 'string'
-    ) {
-      continue;
-    }
-    const rows = await db
-      .select({ displayName: integrations.displayName })
-      .from(integrations)
-      .where(and(eq(integrations.teamId, teamId), eq(integrations.id, data.integrationId)))
-      .limit(1);
-    const integration = rows[0];
-    if (!integration) continue;
-    out.push(
-      item('integration_sync', 'integration', data.integrationId, integration.displayName, {
-        error: j.failedReason ?? null,
-        detectedAt: j.finishedOn ? new Date(j.finishedOn) : new Date(),
-        syncKind: data.kind === 'backfill' ? 'backfill' : 'incremental',
-      }),
-    );
-  }
-  return out;
+  const [embedItems, meetingItems, integrationItems] = await Promise.all([
+    embedJobsToItems(db, teamId, userId, embed),
+    meetingJobsToItems(db, teamId, userId, meetingsFailed),
+    integrationJobsToItems(db, teamId, integrationsFailed),
+  ]);
+  return [...embedItems, ...meetingItems, ...integrationItems];
 }
 
-async function embedJobToItem(
+async function embedJobsToItems(
   db: Db,
   teamId: string,
   userId: string,
-  data: unknown,
-  error: string | null,
-  finishedOn?: number,
-): Promise<JobRecoveryItem | null> {
-  const meta = objectMeta(data);
-  if (meta.teamId !== teamId) return null;
-  const detectedAt = finishedOn ? new Date(finishedOn) : new Date();
-  if (
-    (meta.scope === undefined || meta.scope === 'raw_event') &&
-    typeof meta.rawEventId === 'string'
-  ) {
-    const label = await visibleRawEventLabelById(db, teamId, userId, meta.rawEventId, true);
-    if (!label) return null;
-    return item('embedding', 'raw_event', meta.rawEventId, label, { error, detectedAt });
+  jobs: FailedJob[],
+): Promise<JobRecoveryItem[]> {
+  const rawEventJobs: FailedJobSeed[] = [];
+  const factJobs: FailedJobSeed[] = [];
+  const objectJobs: (FailedJobSeed & { embedScope: 'object' | 'entity' })[] = [];
+  const documentChunkJobs: FailedJobSeed[] = [];
+  const calendarEventJobs: FailedJobSeed[] = [];
+
+  for (const job of jobs) {
+    const meta = objectMeta(job.data);
+    if (meta.teamId !== teamId) continue;
+    const seed = failedJobSeed(job);
+    if (
+      (meta.scope === undefined || meta.scope === 'raw_event') &&
+      typeof meta.rawEventId === 'string'
+    ) {
+      rawEventJobs.push({ ...seed, artifactId: meta.rawEventId });
+    } else if (meta.scope === 'fact' && typeof meta.factId === 'string') {
+      factJobs.push({ ...seed, artifactId: meta.factId });
+    } else if (
+      (meta.scope === 'object' || meta.scope === 'entity') &&
+      typeof (meta.objectId ?? meta.entityId) === 'string'
+    ) {
+      objectJobs.push({
+        ...seed,
+        artifactId: String(meta.objectId ?? meta.entityId),
+        embedScope: meta.scope,
+      });
+    } else if (meta.scope === 'doc_chunk' && typeof meta.documentChunkId === 'string') {
+      documentChunkJobs.push({ ...seed, artifactId: meta.documentChunkId });
+    } else if (meta.scope === 'calendar_event' && typeof meta.calendarEventId === 'string') {
+      calendarEventJobs.push({ ...seed, artifactId: meta.calendarEventId });
+    }
   }
-  if (meta.scope === 'fact' && typeof meta.factId === 'string') {
-    const rows = await db
-      .select({ statement: facts.statement, rawEventId: facts.rawEventId })
-      .from(facts)
-      .innerJoin(rawEvents, eq(rawEvents.id, facts.rawEventId))
-      .where(
-        and(
-          eq(facts.teamId, teamId),
-          eq(facts.id, meta.factId),
-          visibleRawEvent(userId),
-          eq(rawEvents.visibility, 'team'),
-        ),
-      )
-      .limit(1);
-    const row = rows[0];
-    if (!row) return null;
-    return item('embedding', 'fact', meta.factId, `Fact: ${row.statement}`, { error, detectedAt });
-  }
-  if (
-    (meta.scope === 'object' || meta.scope === 'entity') &&
-    typeof (meta.objectId ?? meta.entityId) === 'string'
-  ) {
-    const id = String(meta.objectId ?? meta.entityId);
-    const rows = await db
-      .select({ name: entities.canonicalName })
-      .from(entities)
-      .where(and(eq(entities.teamId, teamId), eq(entities.id, id), isNull(entities.mergedIntoId)))
-      .limit(1);
-    if (!rows[0]) return null;
-    return item('embedding', 'object', id, `Object: ${rows[0].name}`, {
-      embedScope: meta.scope,
-      error,
-      detectedAt,
-    });
-  }
-  if (meta.scope === 'doc_chunk' && typeof meta.documentChunkId === 'string') {
-    const label = await visibleDocumentChunkLabelById(db, teamId, meta.documentChunkId);
-    if (!label) return null;
-    return item('embedding', 'document_chunk', meta.documentChunkId, label, { error, detectedAt });
-  }
-  if (meta.scope === 'calendar_event' && typeof meta.calendarEventId === 'string') {
-    const label = await visibleCalendarLabelById(db, teamId, userId, meta.calendarEventId, true);
-    if (!label) return null;
-    return item('embedding', 'calendar_event', meta.calendarEventId, label, { error, detectedAt });
-  }
-  return null;
+
+  const [rawLabels, factLabels, objectLabels, documentChunkLabels, calendarLabels] =
+    await Promise.all([
+      visibleRawEventLabelsByIds(
+        db,
+        teamId,
+        userId,
+        rawEventJobs.map((job) => job.artifactId),
+        true,
+      ),
+      visibleFactLabelsByIds(
+        db,
+        teamId,
+        userId,
+        factJobs.map((job) => job.artifactId),
+      ),
+      visibleObjectLabelsByIds(
+        db,
+        teamId,
+        objectJobs.map((job) => job.artifactId),
+      ),
+      visibleDocumentChunkLabelsByIds(
+        db,
+        teamId,
+        documentChunkJobs.map((job) => job.artifactId),
+      ),
+      visibleCalendarLabelsByIds(
+        db,
+        teamId,
+        userId,
+        calendarEventJobs.map((job) => job.artifactId),
+        true,
+      ),
+    ]);
+
+  return [
+    ...rawEventJobs.flatMap((job) => itemFromLabel('raw_event', job, rawLabels)),
+    ...factJobs.flatMap((job) => itemFromLabel('fact', job, factLabels)),
+    ...objectJobs.flatMap((job) =>
+      itemFromLabel('object', job, objectLabels, { embedScope: job.embedScope }),
+    ),
+    ...documentChunkJobs.flatMap((job) =>
+      itemFromLabel('document_chunk', job, documentChunkLabels),
+    ),
+    ...calendarEventJobs.flatMap((job) => itemFromLabel('calendar_event', job, calendarLabels)),
+  ];
+}
+
+async function meetingJobsToItems(
+  db: Db,
+  teamId: string,
+  userId: string,
+  jobs: FailedJob[],
+): Promise<JobRecoveryItem[]> {
+  const seeds = jobs.flatMap((job): FailedJobSeed[] => {
+    const data = objectMeta(job.data);
+    if (data.teamId !== teamId || typeof data.meetingId !== 'string') return [];
+    return [{ ...failedJobSeed(job), artifactId: data.meetingId }];
+  });
+  const labels = await visibleMeetingLabelsByIds(
+    db,
+    teamId,
+    userId,
+    seeds.map((seed) => seed.artifactId),
+  );
+  return seeds.flatMap((seed) => {
+    const label = labels.get(seed.artifactId);
+    return label
+      ? [
+          item('meeting_finalization', 'meeting', seed.artifactId, label, {
+            error: seed.error,
+            detectedAt: seed.detectedAt,
+          }),
+        ]
+      : [];
+  });
+}
+
+async function integrationJobsToItems(
+  db: Db,
+  teamId: string,
+  jobs: FailedJob[],
+): Promise<JobRecoveryItem[]> {
+  const seeds = jobs.flatMap(
+    (job): (FailedJobSeed & { syncKind: 'backfill' | 'incremental' })[] => {
+      const data = objectMeta(job.data);
+      if (
+        data.teamId !== teamId ||
+        data.integrationId === '__tick__' ||
+        typeof data.integrationId !== 'string'
+      ) {
+        return [];
+      }
+      return [
+        {
+          ...failedJobSeed(job),
+          artifactId: data.integrationId,
+          syncKind: data.kind === 'backfill' ? 'backfill' : 'incremental',
+        },
+      ];
+    },
+  );
+  const labels = await integrationLabelsByIds(
+    db,
+    teamId,
+    seeds.map((seed) => seed.artifactId),
+  );
+  return seeds.flatMap((seed) => {
+    const label = labels.get(seed.artifactId);
+    return label
+      ? [
+          item('integration_sync', 'integration', seed.artifactId, label, {
+            error: seed.error,
+            detectedAt: seed.detectedAt,
+            syncKind: seed.syncKind,
+          }),
+        ]
+      : [];
+  });
+}
+
+interface FailedJobSeed {
+  artifactId: string;
+  error: string | null;
+  detectedAt: Date;
+}
+
+function failedJobSeed(job: FailedJob): Omit<FailedJobSeed, 'artifactId'> {
+  return {
+    error: job.failedReason ?? null,
+    detectedAt: job.finishedOn ? new Date(job.finishedOn) : new Date(),
+  };
+}
+
+function itemFromLabel(
+  artifactKind: JobRecoveryArtifactKind,
+  seed: FailedJobSeed,
+  labels: Map<string, string>,
+  opts: { embedScope?: 'object' | 'entity' } = {},
+): JobRecoveryItem[] {
+  const label = labels.get(seed.artifactId);
+  return label
+    ? [
+        item('embedding', artifactKind, seed.artifactId, label, {
+          error: seed.error,
+          detectedAt: seed.detectedAt,
+          ...(opts.embedScope ? { embedScope: opts.embedScope } : {}),
+        }),
+      ]
+    : [];
 }
 
 async function retryParsed(
@@ -933,6 +1013,34 @@ function activeRawEvent() {
   return sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`;
 }
 
+async function visibleRawEventLabelsByIds(
+  db: Db,
+  teamId: string,
+  userId: string,
+  ids: string[],
+  requireTeamVisibility: boolean,
+): Promise<Map<string, string>> {
+  const uniqueIds = uniqueStrings(ids);
+  if (uniqueIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      id: rawEvents.id,
+      source: rawEvents.source,
+      occurredAt: rawEvents.occurredAt,
+      visibility: rawEvents.visibility,
+    })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, teamId),
+        inArray(rawEvents.id, uniqueIds),
+        activeRawEvent(),
+        requireTeamVisibility ? eq(rawEvents.visibility, 'team') : visibleRawEvent(userId),
+      ),
+    );
+  return new Map(rows.map((row) => [row.id, rawEventLabel(row)]));
+}
+
 async function visibleRawEventLabelById(
   db: Db,
   teamId: string,
@@ -960,6 +1068,75 @@ async function visibleRawEventLabelById(
   return rows[0] ? rawEventLabel(rows[0]) : null;
 }
 
+async function visibleFactLabelsByIds(
+  db: Db,
+  teamId: string,
+  userId: string,
+  ids: string[],
+): Promise<Map<string, string>> {
+  const uniqueIds = uniqueStrings(ids);
+  if (uniqueIds.length === 0) return new Map();
+  const rows = await db
+    .select({ id: facts.id, statement: facts.statement })
+    .from(facts)
+    .innerJoin(rawEvents, eq(rawEvents.id, facts.rawEventId))
+    .where(
+      and(
+        eq(facts.teamId, teamId),
+        inArray(facts.id, uniqueIds),
+        visibleRawEvent(userId),
+        eq(rawEvents.visibility, 'team'),
+      ),
+    );
+  return new Map(rows.map((row) => [row.id, `Fact: ${row.statement}`]));
+}
+
+async function visibleObjectLabelsByIds(
+  db: Db,
+  teamId: string,
+  ids: string[],
+): Promise<Map<string, string>> {
+  const uniqueIds = uniqueStrings(ids);
+  if (uniqueIds.length === 0) return new Map();
+  const rows = await db
+    .select({ id: entities.id, name: entities.canonicalName })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, teamId),
+        inArray(entities.id, uniqueIds),
+        isNull(entities.mergedIntoId),
+      ),
+    );
+  return new Map(rows.map((row) => [row.id, `Object: ${row.name}`]));
+}
+
+async function visibleDocumentChunkLabelsByIds(
+  db: Db,
+  teamId: string,
+  ids: string[],
+): Promise<Map<string, string>> {
+  const uniqueIds = uniqueStrings(ids);
+  if (uniqueIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      id: documentChunks.id,
+      name: documents.name,
+      chunkIndex: documentChunks.chunkIndex,
+    })
+    .from(documentChunks)
+    .innerJoin(documents, eq(documents.id, documentChunks.documentId))
+    .where(
+      and(
+        eq(documentChunks.teamId, teamId),
+        inArray(documentChunks.id, uniqueIds),
+        eq(documents.visibility, 'team'),
+        isNull(documents.deletedAt),
+      ),
+    );
+  return new Map(rows.map((row) => [row.id, `${row.name} chunk ${String(row.chunkIndex + 1)}`]));
+}
+
 async function visibleDocumentChunkLabelById(
   db: Db,
   teamId: string,
@@ -982,6 +1159,23 @@ async function visibleDocumentChunkLabelById(
   return row ? `${row.name} chunk ${String(row.chunkIndex + 1)}` : null;
 }
 
+async function visibleMeetingLabelsByIds(
+  db: Db,
+  teamId: string,
+  userId: string,
+  ids: string[],
+): Promise<Map<string, string>> {
+  const uniqueIds = uniqueStrings(ids);
+  if (uniqueIds.length === 0) return new Map();
+  const rows = await db
+    .select({ id: meetings.id, title: meetings.title, platform: meetings.platform })
+    .from(meetings)
+    .where(
+      and(eq(meetings.teamId, teamId), inArray(meetings.id, uniqueIds), visibleMeeting(userId)),
+    );
+  return new Map(rows.map((row) => [row.id, row.title ?? `${row.platform} meeting`]));
+}
+
 async function visibleMeetingById(
   db: Db,
   teamId: string,
@@ -995,6 +1189,29 @@ async function visibleMeetingById(
     .limit(1);
   const row = rows[0];
   return row ? (row.title ?? `${row.platform} meeting`) : null;
+}
+
+async function visibleCalendarLabelsByIds(
+  db: Db,
+  teamId: string,
+  userId: string,
+  ids: string[],
+  requireTeamVisibility: boolean,
+): Promise<Map<string, string>> {
+  const uniqueIds = uniqueStrings(ids);
+  if (uniqueIds.length === 0) return new Map();
+  const rows = await db
+    .select({ id: calendarEvents.id, title: calendarEvents.title })
+    .from(calendarEvents)
+    .where(
+      and(
+        eq(calendarEvents.teamId, teamId),
+        inArray(calendarEvents.id, uniqueIds),
+        isNull(calendarEvents.deletedAt),
+        requireTeamVisibility ? eq(calendarEvents.visibility, 'team') : visibleCalendar(userId),
+      ),
+    );
+  return new Map(rows.map((row) => [row.id, row.title]));
 }
 
 async function visibleCalendarLabelById(
@@ -1017,6 +1234,20 @@ async function visibleCalendarLabelById(
     )
     .limit(1);
   return rows[0]?.title ?? null;
+}
+
+async function integrationLabelsByIds(
+  db: Db,
+  teamId: string,
+  ids: string[],
+): Promise<Map<string, string>> {
+  const uniqueIds = uniqueStrings(ids);
+  if (uniqueIds.length === 0) return new Map();
+  const rows = await db
+    .select({ id: integrations.id, displayName: integrations.displayName })
+    .from(integrations)
+    .where(and(eq(integrations.teamId, teamId), inArray(integrations.id, uniqueIds)));
+  return new Map(rows.map((row) => [row.id, row.displayName]));
 }
 
 async function failedJobs(getQueue: () => FailedQueueLike): Promise<FailedJob[]> {
@@ -1043,6 +1274,10 @@ function rawEventLabel(row: { source: string; occurredAt: Date }): string {
 
 function objectMeta(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function textValue(v: unknown): string | null {
