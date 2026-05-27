@@ -423,12 +423,11 @@ async function handleMessageEvent(
     channelId: event.channel,
     messageTs: ts,
   });
-  const target = inserted ?? (await findEventBySlackEventId(deps.db, slackEventId));
-  if (target) {
-    if (text.trim()) await enqueueTextPipelines(deps, target);
+  if (inserted) {
+    if (text.trim()) await enqueueTextPipelines(deps, inserted);
     await processSlackAttachments(deps, api, {
-      teamId: target.teamId,
-      parentRawEventId: target.id,
+      teamId: inserted.teamId,
+      parentRawEventId: inserted.id,
       parentAuthorUserId: authorUserId,
       visibility: route.visibility,
       files,
@@ -438,7 +437,7 @@ async function handleMessageEvent(
       sourceOwnerUserId: route.sourceOwnerUserId,
     });
   }
-  if (!isEdit && route.isDm && target) {
+  if (!isEdit && route.isDm && inserted) {
     await api
       .addReaction({ channel: event.channel, timestamp: ts, name: 'eyes' })
       .catch((err: unknown) => {
@@ -1029,23 +1028,6 @@ async function findOriginalSlackEventId(
 ): Promise<string | null> {
   const row = await findLatestSlackRevision(db, { teamId, workspaceId, channelId, messageTs });
   return row?.id ?? null;
-}
-
-async function findEventBySlackEventId(
-  db: Db,
-  eventId: string,
-): Promise<{ id: string; teamId: string } | null> {
-  const rows = await db
-    .select({ id: rawEvents.id, teamId: rawEvents.teamId })
-    .from(rawEvents)
-    .where(
-      and(
-        eq(rawEvents.source, 'slack'),
-        sql`${rawEvents.sourceMetadata} ->> 'slack_event_id' = ${eventId}`,
-      ),
-    )
-    .limit(1);
-  return rows[0] ?? null;
 }
 
 function slackTsToDate(ts: string): Date {
