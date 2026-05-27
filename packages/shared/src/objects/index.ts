@@ -330,7 +330,8 @@ export async function getObjectSectionPage(
           eq(entityRelationships.toEntityId, entityId),
           eq(entityRelationships.kind, 'child'),
         ),
-      );
+      )
+      .limit(200);
     const taskIds = relRows.map((r) => r.taskId);
     if (taskIds.length === 0) return { items: [], nextCursor: null };
     const cursorSql = cursorCondition(args.cursor, entities.updatedAt, entities.id);

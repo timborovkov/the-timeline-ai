@@ -1,10 +1,44 @@
 'use client';
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  type InfiniteData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
+
+interface TimelinePage {
+  items: TimelineEvent[];
+  nextCursor: string | null;
+  authors: Record<string, { id: string; name: string | null; email: string }>;
+  audioUrls: Record<string, string>;
+}
+
+interface DocumentListPage {
+  items: {
+    id: string;
+    name: string;
+    visibility: string;
+    updatedAt: string;
+    ownerUserId: string | null;
+  }[];
+  nextCursor: string | null;
+}
+
+function replaceFirstPage<TPage>(
+  previous: InfiniteData<TPage, string | number | null> | undefined,
+  initialPage: TPage,
+): InfiniteData<TPage, string | number | null> {
+  return {
+    pages: previous ? [initialPage, ...previous.pages.slice(1)] : [initialPage],
+    pageParams: previous ? [null, ...previous.pageParams.slice(1)] : [null],
+  };
+}
 
 export function useTimelineInfiniteQuery(
   filters: {
@@ -12,12 +46,7 @@ export function useTimelineInfiniteQuery(
     from?: string | null;
     to?: string | null;
   },
-  initialPage?: {
-    items: TimelineEvent[];
-    nextCursor: string | null;
-    authors: Record<string, { id: string; name: string | null; email: string }>;
-    audioUrls: Record<string, string>;
-  },
+  initialPage?: TimelinePage,
 ) {
   const queryClient = useQueryClient();
   const queryKey = useMemo(
@@ -26,10 +55,11 @@ export function useTimelineInfiniteQuery(
   );
   useEffect(() => {
     if (!initialPage) return;
-    queryClient.setQueryData(queryKey, {
-      pages: [initialPage],
-      pageParams: [null] as (string | null)[],
-    });
+    queryClient.setQueryData<InfiniteData<TimelinePage, string | null> | undefined>(
+      queryKey,
+      (previous) =>
+        replaceFirstPage(previous, initialPage) as InfiniteData<TimelinePage, string | null>,
+    );
   }, [initialPage, queryClient, queryKey]);
   return useInfiniteQuery({
     queryKey,
@@ -48,9 +78,6 @@ export function useTimelineInfiniteQuery(
       }>(await fetch(`/api/timeline?${params.toString()}`));
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    ...(initialPage
-      ? { initialData: { pages: [initialPage], pageParams: [null] as (string | null)[] } }
-      : {}),
   });
 }
 
@@ -86,27 +113,16 @@ export function useDocumentSearchQuery(query: string, filters: Record<string, st
   });
 }
 
-export function useDocumentListQuery(
-  folderId: string | null,
-  initialPage?: {
-    items: {
-      id: string;
-      name: string;
-      visibility: string;
-      updatedAt: string;
-      ownerUserId: string | null;
-    }[];
-    nextCursor: string | null;
-  },
-) {
+export function useDocumentListQuery(folderId: string | null, initialPage?: DocumentListPage) {
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => queryKeys.documentList(folderId), [folderId]);
   useEffect(() => {
     if (!initialPage) return;
-    queryClient.setQueryData(queryKey, {
-      pages: [initialPage],
-      pageParams: [null] as (string | null)[],
-    });
+    queryClient.setQueryData<InfiniteData<DocumentListPage, string | null> | undefined>(
+      queryKey,
+      (previous) =>
+        replaceFirstPage(previous, initialPage) as InfiniteData<DocumentListPage, string | null>,
+    );
   }, [initialPage, queryClient, queryKey]);
   return useInfiniteQuery({
     queryKey,
@@ -127,9 +143,6 @@ export function useDocumentListQuery(
       }>(await fetch(`/api/documents/list?${params.toString()}`));
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    ...(initialPage
-      ? { initialData: { pages: [initialPage], pageParams: [null] as (string | null)[] } }
-      : {}),
   });
 }
 
