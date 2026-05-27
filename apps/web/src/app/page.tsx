@@ -53,7 +53,7 @@ export const metadata: Metadata = {
   },
 };
 
-const CONTACT_HREF = '/help/contact';
+const CONTACT_HREF = '/help/support';
 
 export default function LandingPage() {
   return (

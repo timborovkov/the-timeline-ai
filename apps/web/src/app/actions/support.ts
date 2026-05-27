@@ -1,114 +1,211 @@
 'use server';
 
+import { supportRequests } from '@timeline/db';
 import { getEnv } from '@timeline/shared/env';
-import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
+import { eq } from 'drizzle-orm';
+import { headers } from 'next/headers';
 import { z } from 'zod';
 
-import { clientIpFromRequestHeaders } from '@/lib/request-ip';
+import { resolveActiveTeam } from '@/lib/active-team';
+import { auth } from '@/lib/auth';
+import { db } from '@/lib/db';
 import { verifyTurnstileToken } from '@/lib/turnstile';
 
-const log = childLogger('web:actions:support');
-
-const supportSchema = z.object({
-  name: z.string().trim().min(1).max(120),
-  email: z.string().email().toLowerCase(),
-  subject: z.string().trim().min(1).max(160),
-  message: z.string().trim().min(10).max(5000),
-});
-
-export interface SupportState {
+export interface SupportFormState {
   ok?: boolean;
   error?: string;
 }
 
-export async function submitSupportAction(
-  _prev: SupportState,
+const requestTypes = ['technical_support', 'sales', 'billing', 'security', 'other'] as const;
+
+const supportSchema = z.object({
+  requestType: z.enum(requestTypes),
+  name: z.string().trim().min(1).max(120),
+  email: z.string().trim().email().toLowerCase().max(240),
+  message: z.string().trim().min(20).max(5000),
+  currentPage: z.string().trim().url().max(2048).optional().or(z.literal('')),
+  company: z.string().trim().max(0),
+});
+
+export async function submitSupportRequestAction(
+  _prev: SupportFormState,
   formData: FormData,
-): Promise<SupportState> {
+): Promise<SupportFormState> {
   const parsed = supportSchema.safeParse({
+    requestType: formData.get('requestType'),
     name: formData.get('name'),
     email: formData.get('email'),
-    subject: formData.get('subject'),
     message: formData.get('message'),
+    currentPage: formData.get('currentPage') ?? undefined,
+    company: formData.get('company') ?? '',
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    return { error: parsed.error.issues[0]?.message ?? 'Check the form and try again.' };
   }
 
-  const clientIp = await clientIpFromRequestHeaders();
-  if (clientIp) {
-    const ipLimit = await rateLimit.checkRateLimit({
-      key: rateLimit.rateLimitKey('support', 'ip', clientIp),
-      ...rateLimit.RATE_LIMITS.supportForm,
-    });
-    if (!ipLimit.ok) {
-      return {
-        error: `Too many support requests. Try again in ${Math.ceil(
-          ipLimit.retryAfterMs / 1000,
-        )} seconds.`,
-      };
-    }
+  const h = await headers();
+  const ip = clientIpFromHeaders(h);
+  const ipKey = ip ?? 'unknown';
+  const ipLimited = await rateLimit.checkRateLimit({
+    key: rateLimit.rateLimitKey('support', 'ip', ipKey),
+    ...rateLimit.RATE_LIMITS.supportForm,
+  });
+  if (!ipLimited.ok) {
+    return {
+      error: `Too many requests. Try again in ${Math.ceil(ipLimited.retryAfterMs / 1000)}s.`,
+    };
   }
 
   const turnstileOk = await verifyTurnstileToken({
     token: formData.get('cf-turnstile-response'),
-    remoteIp: clientIp,
+    remoteIp: ip,
   });
   if (!turnstileOk) return { error: 'Verification failed. Refresh and try again.' };
 
-  const emailLimit = await rateLimit.checkRateLimit({
-    key: rateLimit.rateLimitKey('support', 'email', parsed.data.email),
+  const session = await auth();
+  const userId = session ? session.user.id : null;
+  const active = userId ? (await resolveActiveTeam(userId)).active : null;
+  const identity = userId ?? parsed.data.email;
+  const currentPage = parsed.data.currentPage === '' ? null : (parsed.data.currentPage ?? null);
+  const identityLimited = await rateLimit.checkRateLimit({
+    key: rateLimit.rateLimitKey('support', 'identity', identity),
     ...rateLimit.RATE_LIMITS.supportForm,
   });
-  if (!emailLimit.ok) {
+  if (!identityLimited.ok) {
     return {
-      error: `Too many support requests. Try again in ${Math.ceil(
-        emailLimit.retryAfterMs / 1000,
-      )} seconds.`,
+      error: `Too many requests. Try again in ${Math.ceil(identityLimited.retryAfterMs / 1000)}s.`,
     };
   }
 
   const env = getEnv();
-  if (!env.POSTMARK_SERVER_TOKEN || !env.SUPPORT_EMAIL) {
-    return { error: 'Support is not configured for this environment.' };
-  }
-
-  const body = [
-    `From: ${parsed.data.name} <${parsed.data.email}>`,
-    clientIp ? `IP: ${clientIp}` : null,
-    '',
-    parsed.data.message,
-  ]
-    .filter((line): line is string => line !== null)
-    .join('\n');
-
-  try {
-    const res = await fetch('https://api.postmarkapp.com/email', {
-      method: 'POST',
-      signal: AbortSignal.timeout(10_000),
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        'X-Postmark-Server-Token': env.POSTMARK_SERVER_TOKEN,
+  const row = await db
+    .insert(supportRequests)
+    .values({
+      requestType: parsed.data.requestType,
+      name: parsed.data.name,
+      email: parsed.data.email,
+      message: parsed.data.message,
+      currentPage,
+      userId,
+      teamId: active?.teamId ?? null,
+      context: {
+        userEmail: session ? session.user.email : null,
+        userName: session ? session.user.name : null,
+        teamName: active?.teamName ?? null,
+        teamSlug: active?.teamSlug ?? null,
+        teamRole: active?.role ?? null,
+        ip: ipKey,
+        userAgent: h.get('user-agent'),
+        referer: h.get('referer'),
       },
-      body: JSON.stringify({
-        From: env.SUPPORT_EMAIL,
-        To: env.SUPPORT_EMAIL,
-        ReplyTo: parsed.data.email,
-        Subject: `[Timeline support] ${parsed.data.subject}`,
-        TextBody: body,
-        MessageStream: 'outbound',
-      }),
-    });
-    if (!res.ok) {
-      log.error({ status: res.status }, 'postmark support send failed');
-      return { error: 'Could not send your message. Please try again.' };
-    }
-  } catch (err) {
-    log.error({ err }, 'support send failed');
-    return { error: 'Could not send your message. Please try again.' };
+    })
+    .returning({ id: supportRequests.id });
+
+  const requestId = row[0]?.id;
+  if (!requestId) return { error: 'Could not save support request. Please try again.' };
+
+  if (!env.SUPPORT_EMAIL || !env.POSTMARK_SERVER_TOKEN) {
+    await db
+      .update(supportRequests)
+      .set({ emailError: 'Support delivery is not configured.' })
+      .where(eq(supportRequests.id, requestId));
+    return {
+      error:
+        'We saved your request, but support email delivery is not configured. The team can inspect it in the database.',
+    };
   }
+
+  const sent = await sendPostmarkSupportEmail({
+    token: env.POSTMARK_SERVER_TOKEN,
+    supportEmail: env.SUPPORT_EMAIL,
+    requestId,
+    requestType: parsed.data.requestType,
+    name: parsed.data.name,
+    email: parsed.data.email,
+    message: parsed.data.message,
+    currentPage,
+    userId,
+    teamId: active?.teamId ?? null,
+    teamName: active?.teamName ?? null,
+  });
+
+  if (!sent.ok) {
+    await db
+      .update(supportRequests)
+      .set({ emailError: sent.error })
+      .where(eq(supportRequests.id, requestId));
+    return {
+      error:
+        'We saved your request, but email delivery failed. The team can still inspect it in the database.',
+    };
+  }
+
+  await db
+    .update(supportRequests)
+    .set({ emailSentAt: new Date(), emailError: null })
+    .where(eq(supportRequests.id, requestId));
 
   return { ok: true };
+}
+
+function clientIpFromHeaders(h: Headers): string | null {
+  const cf = h.get('cf-connecting-ip');
+  if (cf) return cf;
+  const forwarded = h.get('x-forwarded-for');
+  if (forwarded) return forwarded.split(',')[0]?.trim() ?? null;
+  return h.get('x-real-ip');
+}
+
+async function sendPostmarkSupportEmail(input: {
+  token: string;
+  supportEmail: string;
+  requestId: string;
+  requestType: (typeof requestTypes)[number];
+  name: string;
+  email: string;
+  message: string;
+  currentPage: string | null;
+  userId: string | null;
+  teamId: string | null;
+  teamName: string | null;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const textBody = [
+    `Support request ${input.requestId}`,
+    `Type: ${input.requestType}`,
+    `Name: ${input.name}`,
+    `Email: ${input.email}`,
+    `Current page: ${input.currentPage ?? 'n/a'}`,
+    `User ID: ${input.userId ?? 'anonymous'}`,
+    `Team ID: ${input.teamId ?? 'n/a'}`,
+    `Team: ${input.teamName ?? 'n/a'}`,
+    '',
+    input.message,
+  ].join('\n');
+
+  const res = await fetch('https://api.postmarkapp.com/email', {
+    method: 'POST',
+    signal: AbortSignal.timeout(10_000),
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Postmark-Server-Token': input.token,
+    },
+    body: JSON.stringify({
+      From: input.supportEmail,
+      To: input.supportEmail,
+      ReplyTo: input.email,
+      Subject: `[Timeline support] ${input.requestType} from ${input.name}`,
+      TextBody: textBody,
+      MessageStream: 'outbound',
+      Metadata: {
+        support_request_id: input.requestId,
+        request_type: input.requestType,
+      },
+    }),
+  });
+
+  if (res.ok) return { ok: true };
+  const body = await res.text().catch(() => '');
+  return { ok: false, error: `Postmark ${res.status}: ${body.slice(0, 500)}` };
 }

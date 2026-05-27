@@ -24,10 +24,10 @@ export default async function MeetingsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Meetings</h1>
+        <h1 className="text-2xl font-semibold">Meeting notetaker</h1>
         <p className="text-sm text-muted-foreground">
-          Paste a Google Meet, Microsoft Teams, or Zoom link to send the silent Timeline bot to
-          capture the transcript.
+          Paste a Google Meet, Microsoft Teams, or Zoom link to invite the silent Timeline notetaker
+          to capture the transcript.
         </p>
         <p className="text-xs text-muted-foreground">
           This month: {String(usedMinutes)} minutes

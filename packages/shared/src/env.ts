@@ -81,6 +81,13 @@ const schema = z.object({
   // Postmark (Phase 7)
   POSTMARK_SERVER_TOKEN: z.string().optional(),
   POSTMARK_WEBHOOK_SECRET: z.string().optional(),
+  /**
+   * Public support/contact form destination. In production, support
+   * submissions are sent through Postmark to this address. Leave unset in
+   * local/dev environments where the public form should show a config error
+   * instead of silently dropping messages.
+   */
+  SUPPORT_EMAIL: z.preprocess((v) => (v === '' ? undefined : v), z.string().email().optional()),
   INBOUND_EMAIL_DOMAIN: z.string().optional(),
   /**
    * Dev / no-own-domain fallback. When set to a Postmark-default inbound
@@ -110,14 +117,6 @@ const schema = z.object({
    * 403 so attackers don't see auth-failure feedback.
    */
   POSTMARK_INBOUND_IPS: z.string().optional(),
-  /**
-   * Public support/contact form destination. In production, support
-   * submissions are sent through Postmark to this address. Leave unset in
-   * local/dev environments where the public form should show a config error
-   * instead of silently dropping messages.
-   */
-  SUPPORT_EMAIL: z.preprocess((v) => (v === '' ? undefined : v), z.string().email().optional()),
-
   // Cloudflare Turnstile (Phase 13 abuse controls). Only public/anonymous
   // forms use it: email/password registration and public support/contact.
   TURNSTILE_SITE_KEY: z.string().optional(),

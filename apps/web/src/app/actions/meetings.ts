@@ -54,7 +54,7 @@ export async function scheduleMeetingBotAction(
   input: z.input<typeof scheduleSchema>,
 ): Promise<Result> {
   if (!meetingBots.isMeetingBotConfigured()) {
-    return { ok: false, error: 'Meeting bots are not configured for this environment.' };
+    return { ok: false, error: 'Meeting notetakers are not configured for this environment.' };
   }
   const transcriptWebhookUrl = meetingBots.resolveTranscriptWebhookUrl();
   const parsed = scheduleSchema.safeParse(input);
@@ -89,14 +89,14 @@ export async function scheduleMeetingBotAction(
     return {
       ok: false,
       error:
-        'You must confirm that meeting participants will be informed the bot is recording before scheduling.',
+        'You must confirm that meeting participants will be informed the notetaker is recording before scheduling.',
     };
   }
 
   // Per-team monthly minute cap. 0 means disabled; null means unlimited.
   const cap = settings.meetingMinutesCap;
   if (cap !== null && cap === 0 && !settings.meetingMinutesAdminOverride) {
-    return { ok: false, error: 'Meeting bots are disabled for this team.' };
+    return { ok: false, error: 'Meeting notetakers are disabled for this team.' };
   }
   if (cap !== null && cap > 0 && !settings.meetingMinutesAdminOverride) {
     const used = await scope.meetings.getCurrentMonthMinutes();
@@ -147,7 +147,7 @@ export async function scheduleMeetingBotAction(
     });
     return {
       ok: false,
-      error: err instanceof Error ? err.message : 'Failed to schedule meeting bot',
+      error: err instanceof Error ? err.message : 'Failed to invite notetaker',
     };
   }
 

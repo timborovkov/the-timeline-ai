@@ -7,7 +7,7 @@ to whom, and decided what. Then ask a tool-using agent about it: every
 claim it surfaces links back to the raw event it came from. No black-box
 summaries.
 
-Current state: through Phase 11. Web + Telegram + email + document drive +
+Current state: through Phase 13.7. Web + Telegram + email + document drive +
 meeting-bot capture (silent Recall.ai bot for Google Meet / Teams / Zoom),
 voice transcription, extracted facts + entities, semantic search, agent
 chat at `/app/chat`, workspace objects + boards + persisted chat sessions,
@@ -18,10 +18,12 @@ private busy-block redaction, and calendar-aware agent tools. Third-party
 integrations (Google Drive, Linear, GitHub native + custom MCP servers per
 team or per user) live at `/app/team/integrations` — plus an outbound MCP
 server at `/api/mcp/server` so external agents (Claude Desktop, Cursor,
-etc.) can query this Timeline. Public support/contact and email/password
-registration are protected by Turnstile in production; signed-in expensive
-surfaces use named Redis-backed rate-limit policies. Railway deployment,
-deploy-time migrations, and structured logging are in place.
+etc.) can query this Timeline. Public help docs live at `/help`, with a
+support/contact form that stores requests in Postgres, sends them through
+Postmark, and uses Turnstile in production. Email/password registration is
+also Turnstile-protected; signed-in expensive surfaces use named Redis-backed
+rate-limit policies. Railway deployment, deploy-time migrations, and structured
+logging are in place.
 
 ## Read first
 
@@ -56,7 +58,7 @@ dashboard quirks:
 - [`docs/setup/telegram.html`](./docs/setup/telegram.html) — Telegram bot (Phase 2+).
 - [`docs/setup/openrouter.html`](./docs/setup/openrouter.html) — OpenRouter API
   (Phase 3+).
-- [`docs/setup/postmark.html`](./docs/setup/postmark.html) — inbound email (Phase 7).
+- [`docs/setup/postmark.html`](./docs/setup/postmark.html) — inbound email and support/contact mail.
 - [`docs/setup/meeting-bots.html`](./docs/setup/meeting-bots.html) — Recall.ai meeting bots (Phase 10).
 - [`docs/setup/integrations.html`](./docs/setup/integrations.html) — third-party integrations (Drive/Linear/GitHub), custom MCP servers, and Timeline-as-MCP-server (Phase 11).
 - [`docs/setup/sentry.html`](./docs/setup/sentry.html) — error tracking.
