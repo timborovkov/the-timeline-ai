@@ -26,6 +26,12 @@ export const objectNotes = pgTable(
   },
   (table) => [
     index('object_notes_team_entity_idx').on(table.teamId, table.entityId),
+    index('object_notes_team_entity_created_id_idx').on(
+      table.teamId,
+      table.entityId,
+      table.createdAt,
+      table.id,
+    ),
     index('object_notes_author_idx').on(table.authorUserId),
   ],
 );

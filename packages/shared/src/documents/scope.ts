@@ -6,9 +6,10 @@ import {
   folders,
   rawEvents,
 } from '@timeline/db';
-import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
 import { embed as defaultEmbed, type EmbedResult } from '../llm/embed.js';
+import { decodeCursor, pageWindow } from '../pagination.js';
 import { getQdrantClient, type SearchHit, type SearchOpts } from '../qdrant/client.js';
 
 import { buildDocumentObjectKey } from './object-key.js';
@@ -171,6 +172,7 @@ export interface SearchDocumentChunksInput {
   documentId?: string;
   folderIds?: string[];
   limit?: number;
+  offset?: number;
 }
 
 export interface DocumentChunkSearchHit {
@@ -495,7 +497,12 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     },
 
     async listDocuments(
-      args: { folderId?: string | null; includeDeleted?: boolean; limit?: number } = {},
+      args: {
+        folderId?: string | null;
+        includeDeleted?: boolean;
+        limit?: number;
+        cursor?: string | null;
+      } = {},
     ): Promise<DocumentRow[]> {
       await ensureMember();
       const conditions = [eq(documents.teamId, teamId), documentVisibility];
@@ -505,13 +512,61 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       } else {
         conditions.push(eq(documents.folderId, args.folderId));
       }
+      const cursor = decodeCursor(args.cursor);
+      if (args.cursor && !cursor) throw new Error('Invalid cursor');
+      if (cursor) {
+        const cursorDate = new Date(cursor.at);
+        conditions.push(
+          or(
+            lt(documents.updatedAt, cursorDate),
+            and(eq(documents.updatedAt, cursorDate), lt(documents.id, cursor.id)),
+          ),
+        );
+      }
       const rows = await db
         .select()
         .from(documents)
         .where(and(...conditions))
-        .orderBy(desc(documents.updatedAt))
+        .orderBy(desc(documents.updatedAt), desc(documents.id))
         .limit(args.limit ?? 200);
       return rows;
+    },
+
+    async listDocumentsPage(
+      args: {
+        folderId?: string | null;
+        includeDeleted?: boolean;
+        limit?: number;
+        cursor?: string | null;
+      } = {},
+    ): Promise<{ items: DocumentRow[]; nextCursor: string | null }> {
+      const limit = Math.min(Math.max(args.limit ?? 30, 1), 100);
+      await ensureMember();
+      const conditions = [eq(documents.teamId, teamId), documentVisibility];
+      if (!args.includeDeleted) conditions.push(isNull(documents.deletedAt));
+      if (args.folderId === null || args.folderId === undefined) {
+        conditions.push(isNull(documents.folderId));
+      } else {
+        conditions.push(eq(documents.folderId, args.folderId));
+      }
+      const cursor = decodeCursor(args.cursor);
+      if (args.cursor && !cursor) throw new Error('Invalid cursor');
+      if (cursor) {
+        const cursorDate = new Date(cursor.at);
+        conditions.push(
+          or(
+            lt(documents.updatedAt, cursorDate),
+            and(eq(documents.updatedAt, cursorDate), lt(documents.id, cursor.id)),
+          ),
+        );
+      }
+      const rows = await db
+        .select()
+        .from(documents)
+        .where(and(...conditions))
+        .orderBy(desc(documents.updatedAt), desc(documents.id))
+        .limit(limit + 1);
+      return pageWindow(rows, limit, (row) => ({ at: row.updatedAt.toISOString(), id: row.id }));
     },
 
     async getDocument(id: string): Promise<DocumentRow | null> {
@@ -904,7 +959,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
       const { vector } = await embedFn({ text: input.query });
       const searchOpts: SearchOpts = {
-        limit: input.limit ?? 12,
+        limit: (input.offset ?? 0) + (input.limit ?? 12),
         sourceKind: 'doc_chunk',
       };
       if (input.documentId) searchOpts.documentId = input.documentId;
@@ -945,7 +1000,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       const byId = new Map(rows.map((r) => [r.chunkId, r]));
 
       const out: DocumentChunkSearchHit[] = [];
-      for (const hit of hits) {
+      for (const hit of hits.slice(input.offset ?? 0)) {
         if (hit.payload.team_id !== teamId) continue;
         const cid = hit.payload.document_chunk_id;
         if (!cid) continue;

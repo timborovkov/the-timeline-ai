@@ -14,6 +14,7 @@ import {
 } from '@/app/actions/documents';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useDocumentListQuery } from '@/lib/use-paginated-queries';
 
 interface FolderItem {
   id: string;
@@ -40,9 +41,16 @@ interface Props {
   breadcrumbs: Crumb[];
   folders: FolderItem[];
   documents: DocumentItem[];
+  documentsNextCursor: string | null;
 }
 
-export function DocumentDrive({ currentFolderId, breadcrumbs, folders, documents }: Props) {
+export function DocumentDrive({
+  currentFolderId,
+  breadcrumbs,
+  folders,
+  documents,
+  documentsNextCursor,
+}: Props) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
@@ -53,6 +61,11 @@ export function DocumentDrive({ currentFolderId, breadcrumbs, folders, documents
   // active uploads count toward "busy" and surface the most recent
   // filename in the button label.
   const [uploading, setUploading] = useState<readonly string[]>([]);
+  const documentQuery = useDocumentListQuery(currentFolderId, {
+    items: documents,
+    nextCursor: documentsNextCursor,
+  });
+  const visibleDocuments = documentQuery.data?.pages.flatMap((page) => page.items) ?? documents;
 
   async function handleUploadFile(file: File): Promise<void> {
     setUploading((prev) => [...prev, file.name]);
@@ -185,7 +198,7 @@ export function DocumentDrive({ currentFolderId, breadcrumbs, folders, documents
         onDrop={onDrop}
         className="rounded-sm border border-dashed border-border bg-card/30 p-6"
       >
-        {folders.length === 0 && documents.length === 0 ? (
+        {folders.length === 0 && visibleDocuments.length === 0 ? (
           <p className="text-center text-sm text-muted-foreground">
             Drag a file here or click Upload to get started.
           </p>
@@ -223,13 +236,13 @@ export function DocumentDrive({ currentFolderId, breadcrumbs, folders, documents
                 </ul>
               </section>
             )}
-            {documents.length > 0 && (
+            {visibleDocuments.length > 0 && (
               <section>
                 <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Documents
                 </h2>
                 <ul className="space-y-2">
-                  {documents.map((d) => (
+                  {visibleDocuments.map((d) => (
                     <li
                       key={d.id}
                       className="flex items-center justify-between rounded-sm border border-border bg-card p-3 hover:border-fg/20"
@@ -251,6 +264,22 @@ export function DocumentDrive({ currentFolderId, breadcrumbs, folders, documents
                     </li>
                   ))}
                 </ul>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  disabled={!documentQuery.hasNextPage || documentQuery.isFetchingNextPage}
+                  onClick={() => {
+                    void documentQuery.fetchNextPage();
+                  }}
+                >
+                  {documentQuery.isFetchingNextPage
+                    ? 'Loading...'
+                    : documentQuery.hasNextPage
+                      ? 'Load more'
+                      : 'End'}
+                </Button>
               </section>
             )}
           </div>

@@ -15,15 +15,18 @@ import {
   entities,
   entityRelationships,
   entityType,
+  factEntities,
+  facts as factsTable,
   notifications,
   objectChanges,
   objectNotes,
   objectViews,
   rawEvents,
 } from '@timeline/db';
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import { childLogger } from '../logger.js';
+import { decodeCursor, pageWindow } from '../pagination.js';
 import * as embedQueue from '../queue/queues.js';
 
 import type { TeamScopeCore } from '../team-scope.js';
@@ -235,6 +238,224 @@ export interface ObjectDetail extends ObjectRow {
   lastVisitedAt: Date | null;
 }
 
+export type ObjectSection = 'events' | 'facts' | 'changes' | 'tasks' | 'relationships';
+
+export interface ObjectSectionPage {
+  items: unknown[];
+  nextCursor: string | null;
+}
+
+function rawEventVisibility(scope: TeamScopeCore) {
+  return or(
+    eq(rawEvents.visibility, 'team'),
+    and(eq(rawEvents.visibility, 'private'), eq(rawEvents.authorUserId, scope.userId)),
+    and(
+      eq(rawEvents.visibility, 'specific_users'),
+      sql`${scope.userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
+    ),
+  );
+}
+
+function cursorCondition(
+  cursor: string | null | undefined,
+  atColumn: unknown,
+  idColumn: unknown,
+): ReturnType<typeof or> | undefined {
+  const decoded = decodeCursor(cursor);
+  if (cursor && !decoded) throw new Error('Invalid cursor');
+  if (!decoded) return undefined;
+  const cursorDate = new Date(decoded.at);
+  return or(
+    lt(atColumn as never, cursorDate),
+    and(eq(atColumn as never, cursorDate), lt(idColumn as never, decoded.id)),
+  );
+}
+
+export async function getObjectSectionPage(
+  db: Db,
+  scope: TeamScopeCore,
+  entityId: string,
+  section: ObjectSection,
+  args: { limit?: number; cursor?: string | null } = {},
+): Promise<ObjectSectionPage | null> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(entityId)) return null;
+  const exists = await db
+    .select({ id: entities.id })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.id, entityId),
+        eq(entities.teamId, scope.teamId),
+        isNull(entities.mergedIntoId),
+      ),
+    )
+    .limit(1);
+  if (!exists[0]) return null;
+
+  const limit = Math.min(Math.max(args.limit ?? 20, 1), 100);
+  if (section === 'changes') {
+    const cursorSql = cursorCondition(args.cursor, objectChanges.changedAt, objectChanges.id);
+    const rows = await db
+      .select({
+        id: objectChanges.id,
+        field: objectChanges.field,
+        actorKind: objectChanges.actorKind,
+        actorUserId: objectChanges.actorUserId,
+        previousValue: objectChanges.previousValue,
+        newValue: objectChanges.newValue,
+        status: objectChanges.status,
+        note: objectChanges.note,
+        changedAt: objectChanges.changedAt,
+      })
+      .from(objectChanges)
+      .where(
+        and(
+          eq(objectChanges.teamId, scope.teamId),
+          eq(objectChanges.entityId, entityId),
+          ...(cursorSql ? [cursorSql] : []),
+        ),
+      )
+      .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
+      .limit(limit + 1);
+    return pageWindow(rows, limit, (row) => ({ at: row.changedAt.toISOString(), id: row.id }));
+  }
+  if (section === 'tasks') {
+    const relRows = await db
+      .select({ taskId: entityRelationships.fromEntityId })
+      .from(entityRelationships)
+      .where(
+        and(
+          eq(entityRelationships.teamId, scope.teamId),
+          eq(entityRelationships.toEntityId, entityId),
+          eq(entityRelationships.kind, 'child'),
+        ),
+      );
+    const taskIds = relRows.map((r) => r.taskId);
+    if (taskIds.length === 0) return { items: [], nextCursor: null };
+    const cursorSql = cursorCondition(args.cursor, entities.updatedAt, entities.id);
+    const rows = await db
+      .select()
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          inArray(entities.id, taskIds),
+          eq(entities.type, 'task'),
+          isNull(entities.archivedAt),
+          isNull(entities.mergedIntoId),
+          ne(entities.status, 'done'),
+          ne(entities.status, 'cancelled'),
+          ...(cursorSql ? [cursorSql] : []),
+        ),
+      )
+      .orderBy(desc(entities.updatedAt), desc(entities.id))
+      .limit(limit + 1);
+    return pageWindow(rows.map(toObjectRow), limit, (row) => ({
+      at: row.updatedAt.toISOString(),
+      id: row.id,
+    }));
+  }
+  if (section === 'relationships') {
+    const cursorSql = cursorCondition(
+      args.cursor,
+      entityRelationships.createdAt,
+      entityRelationships.id,
+    );
+    const [outRows, inRows] = await Promise.all([
+      db
+        .select({
+          id: entityRelationships.id,
+          direction: sql<'out'>`'out'`,
+          kind: entityRelationships.kind,
+          otherId: entities.id,
+          otherName: entities.canonicalName,
+          otherType: entities.type,
+          createdAt: entityRelationships.createdAt,
+        })
+        .from(entityRelationships)
+        .innerJoin(entities, eq(entityRelationships.toEntityId, entities.id))
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            eq(entityRelationships.fromEntityId, entityId),
+            eq(entities.teamId, scope.teamId),
+            isNull(entities.mergedIntoId),
+            ...(cursorSql ? [cursorSql] : []),
+          ),
+        ),
+      db
+        .select({
+          id: entityRelationships.id,
+          direction: sql<'in'>`'in'`,
+          kind: entityRelationships.kind,
+          otherId: entities.id,
+          otherName: entities.canonicalName,
+          otherType: entities.type,
+          createdAt: entityRelationships.createdAt,
+        })
+        .from(entityRelationships)
+        .innerJoin(entities, eq(entityRelationships.fromEntityId, entities.id))
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            eq(entityRelationships.toEntityId, entityId),
+            eq(entities.teamId, scope.teamId),
+            isNull(entities.mergedIntoId),
+            ...(cursorSql ? [cursorSql] : []),
+          ),
+        ),
+    ]);
+    const rows = [...outRows, ...inRows].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id),
+    );
+    return pageWindow(rows, limit, (row) => ({ at: row.createdAt.toISOString(), id: row.id }));
+  }
+  if (section === 'facts') {
+    const cursorSql = cursorCondition(args.cursor, factsTable.extractedAt, factsTable.id);
+    const rows = await db
+      .select({
+        id: factsTable.id,
+        statement: factsTable.statement,
+        confidence: factsTable.confidence,
+        rawEventId: factsTable.rawEventId,
+        extractedAt: factsTable.extractedAt,
+      })
+      .from(factEntities)
+      .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
+      .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
+      .where(
+        and(
+          eq(factEntities.entityId, entityId),
+          eq(factsTable.teamId, scope.teamId),
+          eq(rawEvents.teamId, scope.teamId),
+          rawEventVisibility(scope),
+          ...(cursorSql ? [cursorSql] : []),
+        ),
+      )
+      .orderBy(desc(factsTable.extractedAt), desc(factsTable.id))
+      .limit(limit + 1);
+    return pageWindow(rows, limit, (row) => ({ at: row.extractedAt.toISOString(), id: row.id }));
+  }
+
+  const cursorSql = cursorCondition(args.cursor, rawEvents.occurredAt, rawEvents.id);
+  const rows = await db
+    .select()
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, scope.teamId),
+        rawEventVisibility(scope),
+        sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+        sql`${rawEvents.sourceMetadata} ->> 'entity_id' = ${entityId}`,
+        ...(cursorSql ? [cursorSql] : []),
+      ),
+    )
+    .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+    .limit(limit + 1);
+  return pageWindow(rows, limit, (row) => ({ at: row.occurredAt.toISOString(), id: row.id }));
+}
+
 export async function getObject(
   db: Db,
   scope: TeamScopeCore,
@@ -292,7 +513,8 @@ export async function getObject(
           isNull(objectNotes.deletedAt),
         ),
       )
-      .orderBy(desc(objectNotes.createdAt)),
+      .orderBy(desc(objectNotes.createdAt), desc(objectNotes.id))
+      .limit(20),
     db
       .select({
         id: entityRelationships.id,
@@ -315,7 +537,9 @@ export async function getObject(
           eq(entities.teamId, scope.teamId),
           isNull(entities.mergedIntoId),
         ),
-      ),
+      )
+      .orderBy(desc(entityRelationships.createdAt), desc(entityRelationships.id))
+      .limit(20),
     db
       .select({
         id: entityRelationships.id,
@@ -333,7 +557,9 @@ export async function getObject(
           eq(entities.teamId, scope.teamId),
           isNull(entities.mergedIntoId),
         ),
-      ),
+      )
+      .orderBy(desc(entityRelationships.createdAt), desc(entityRelationships.id))
+      .limit(20),
     db
       .select({
         id: objectChanges.id,
@@ -348,8 +574,8 @@ export async function getObject(
       })
       .from(objectChanges)
       .where(and(eq(objectChanges.teamId, scope.teamId), eq(objectChanges.entityId, entityRow.id)))
-      .orderBy(desc(objectChanges.changedAt))
-      .limit(50),
+      .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
+      .limit(20),
     // "Open tasks linked via parent relationship". We model task→parent as a
     // `child` edge from the task to the parent, OR a `parent` edge from the
     // parent to the task. For simplicity, surface tasks where the parent is
@@ -363,7 +589,8 @@ export async function getObject(
           eq(entityRelationships.toEntityId, entityRow.id),
           eq(entityRelationships.kind, 'child'),
         ),
-      ),
+      )
+      .limit(200),
     db
       .select({ lastVisitedAt: objectViews.lastVisitedAt })
       .from(objectViews)
@@ -395,7 +622,8 @@ export async function getObject(
                 ne(entities.status, 'cancelled'),
               ),
             )
-            .orderBy(desc(entities.updatedAt))
+            .orderBy(desc(entities.updatedAt), desc(entities.id))
+            .limit(20)
         ).map(toObjectRow)
       : [];
 
@@ -2172,6 +2400,11 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
   return {
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
     getObject: (idOrName: string) => getObject(db, scope, idOrName),
+    getObjectSectionPage: (
+      entityId: string,
+      section: ObjectSection,
+      args?: { limit?: number; cursor?: string | null },
+    ) => getObjectSectionPage(db, scope, entityId, section, args),
     createObject: (input: CreateObjectInput) => createObject(db, scope, input),
     updateObject: (entityId: string, patch: ObjectPatch, actor: UpdateActor) =>
       updateObject(db, scope, entityId, patch, actor),

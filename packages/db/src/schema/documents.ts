@@ -101,6 +101,12 @@ export const documents = pgTable(
   },
   (table) => [
     index('documents_team_folder_idx').on(table.teamId, table.folderId),
+    index('documents_team_folder_updated_id_idx').on(
+      table.teamId,
+      table.folderId,
+      table.updatedAt,
+      table.id,
+    ),
     index('documents_team_active_idx')
       .on(table.teamId)
       .where(sql`${table.deletedAt} IS NULL`),
@@ -185,5 +191,6 @@ export const documentChunks = pgTable(
     uniqueIndex('document_chunks_version_index_unq').on(table.documentVersionId, table.chunkIndex),
     index('document_chunks_team_idx').on(table.teamId),
     index('document_chunks_document_idx').on(table.documentId),
+    index('document_chunks_team_document_idx').on(table.teamId, table.documentId),
   ],
 );

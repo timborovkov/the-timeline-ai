@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import { AppShell } from '@/components/app-shell';
+import { QueryProvider } from '@/components/query-provider';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 
@@ -25,8 +26,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AppShell active={active} memberships={memberships} user={session.user}>
-      {children}
-    </AppShell>
+    <QueryProvider>
+      <AppShell active={active} memberships={memberships} user={session.user}>
+        {children}
+      </AppShell>
+    </QueryProvider>
   );
 }

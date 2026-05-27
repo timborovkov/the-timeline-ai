@@ -7,7 +7,7 @@ to whom, and decided what. Then ask a tool-using agent about it: every
 claim it surfaces links back to the raw event it came from. No black-box
 summaries.
 
-Current state: through Phase 11. Web + Telegram + email + document drive +
+Current state: through Phase 13 beta-hardening. Web + Telegram + email + document drive +
 meeting-bot capture (silent Recall.ai bot for Google Meet / Teams / Zoom),
 voice transcription, extracted facts + entities, semantic search, agent
 chat at `/app/chat`, workspace objects + boards + persisted chat sessions,
@@ -18,8 +18,11 @@ private busy-block redaction, and calendar-aware agent tools. Third-party
 integrations (Google Drive, Linear, GitHub native + custom MCP servers per
 team or per user) live at `/app/team/integrations` — plus an outbound MCP
 server at `/api/mcp/server` so external agents (Claude Desktop, Cursor,
-etc.) can query this Timeline. Railway deployment, deploy-time migrations,
-and structured logging are in place.
+etc.) can query this Timeline. The main timeline, object sections, document
+lists, and document search are paginated for large beta workspaces, with
+short-lived visibility-aware Redis caches and React Query only on interactive
+surfaces. Railway deployment, deploy-time migrations, and structured logging
+are in place.
 
 ## Read first
 
