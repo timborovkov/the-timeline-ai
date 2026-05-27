@@ -585,7 +585,10 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
         .where(
           and(
             eq(integrations.teamId, active.teamId),
-            sql`${memberUserId}::uuid = ANY(${integrations.visibilityDefaultUserIds})`,
+            or(
+              eq(integrations.connectedByUserId, memberUserId),
+              sql`${memberUserId}::uuid = ANY(${integrations.visibilityDefaultUserIds})`,
+            ),
           ),
         );
       for (const row of integrationRows) {
@@ -609,20 +612,6 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
           })
           .where(eq(integrations.id, row.id));
       }
-      await tx
-        .update(integrations)
-        .set({ visibilityDefault: 'team', visibilityDefaultUserIds: null, updatedAt: new Date() })
-        .where(
-          and(
-            eq(integrations.teamId, active.teamId),
-            eq(integrations.connectedByUserId, memberUserId),
-            or(
-              eq(integrations.visibilityDefault, 'private'),
-              eq(integrations.visibilityDefault, 'specific_users'),
-            ),
-          ),
-        );
-
       // Revoke Telegram routing for this user — two anchors, both needed:
       //
       //   1. Consumer-side: telegram_users.user_id points at this app

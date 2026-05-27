@@ -21,6 +21,7 @@ export function CreateCalendarEventForm({
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [visibility, setVisibility] = useState(defaultVisibility);
 
   async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -35,10 +36,11 @@ export function CreateCalendarEventForm({
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const location = fd.get('location') as string;
     const allDay = fd.get('allDay') === 'on';
-    const visibility = (fd.get('visibility') as string) || 'team';
-    const visibilityUserIds = fd
-      .getAll('visibilityUserIds')
-      .filter((v): v is string => typeof v === 'string');
+    const visibilityValue = (fd.get('visibility') as string) || 'team';
+    const visibilityUserIds =
+      visibilityValue === 'specific_users'
+        ? fd.getAll('visibilityUserIds').filter((v): v is string => typeof v === 'string')
+        : [];
 
     if (!title || !startAt || !endAt) {
       setError('Title, start, and end are required.');
@@ -54,7 +56,7 @@ export function CreateCalendarEventForm({
       timezone,
       allDay,
       location: location || undefined,
-      visibility: visibility as 'team' | 'private' | 'specific_users',
+      visibility: visibilityValue as 'team' | 'private' | 'specific_users',
       visibilityUserIds,
     });
 
@@ -114,7 +116,10 @@ export function CreateCalendarEventForm({
           <select
             id="visibility"
             name="visibility"
-            defaultValue={defaultVisibility}
+            value={visibility}
+            onChange={(e) => {
+              setVisibility(e.currentTarget.value as typeof visibility);
+            }}
             className="rounded border bg-background px-2 py-1 text-sm"
           >
             <option value="team">Team</option>
@@ -123,19 +128,21 @@ export function CreateCalendarEventForm({
           </select>
         </div>
       </div>
-      <div className="flex flex-wrap gap-3">
-        {members.map((m) => (
-          <label key={m.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              name="visibilityUserIds"
-              value={m.id}
-              defaultChecked={defaultVisibilityUserIds?.includes(m.id) ?? false}
-            />
-            {m.label}
-          </label>
-        ))}
-      </div>
+      {visibility === 'specific_users' ? (
+        <div className="flex flex-wrap gap-3">
+          {members.map((m) => (
+            <label key={m.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                name="visibilityUserIds"
+                value={m.id}
+                defaultChecked={defaultVisibilityUserIds?.includes(m.id) ?? false}
+              />
+              {m.label}
+            </label>
+          ))}
+        </div>
+      ) : null}
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 

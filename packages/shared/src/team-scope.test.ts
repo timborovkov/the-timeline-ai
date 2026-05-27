@@ -251,6 +251,28 @@ describe('withTeam namespaced port', () => {
     expect(row?.visibility).toBe('team');
   });
 
+  it('audits source-owned private event detail reads against the visibility owner', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await ownerScope.timeline.createEvent({
+      authorUserId: null,
+      visibilityOwnerUserId: USER_A,
+      source: 'email',
+      contentText: 'source-owned audit event',
+      visibility: 'private',
+    });
+
+    await expect(ownerScope.timeline.getEventWithFacts(event.id)).resolves.toMatchObject({
+      event: { id: event.id },
+    });
+
+    const rows = await db.select().from(auditLog).where(eq(auditLog.targetId, event.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'event.detail_read',
+      targetOwnerUserId: USER_A,
+    });
+  });
+
   it('rejects visibility edits for ownerless legacy events with a clear error', async () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
     const event = await scope.timeline.createEvent({

@@ -1098,7 +1098,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             targetType: 'raw_event',
             targetId: event.id,
             targetVisibility: event.visibility,
-            targetOwnerUserId: event.authorUserId,
+            targetOwnerUserId: event.visibilityOwnerUserId,
             targetVisibilityUserIds: event.visibilityUserIds,
             metadata: { source: event.source },
           });
