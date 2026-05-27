@@ -1,8 +1,9 @@
 'use client';
 
-import { LogOut, User } from 'lucide-react';
+import { LifeBuoy, LogOut, User } from 'lucide-react';
 
 import { signOutAction } from '@/app/actions/auth';
+import { reopenOnboardingChecklistAction } from '@/app/actions/onboarding';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -32,6 +33,15 @@ export function UserMenu({ user }: Props) {
             <span className="truncate text-xs text-muted-foreground">{user.email}</span>
           </div>
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <form action={reopenOnboardingChecklistAction}>
+          <DropdownMenuItem asChild>
+            <button type="submit" className="flex w-full items-center gap-2">
+              <LifeBuoy className="h-4 w-4" />
+              Setup checklist
+            </button>
+          </DropdownMenuItem>
+        </form>
         <DropdownMenuSeparator />
         <form action={signOutAction}>
           <DropdownMenuItem asChild>

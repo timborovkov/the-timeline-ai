@@ -51,7 +51,7 @@ tool. When in doubt, invoke the skill.
   `withTeam(db, teamId, userId)` in `packages/shared`. Use the returned
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
   `scope.objects`, `scope.calendar`, `scope.integrations`, `scope.mcp`,
-  `scope.jobRecovery`) rather than flat scope methods or manually passing
+  `scope.onboarding`, `scope.jobRecovery`) rather than flat scope methods or manually passing
   `db` into object helpers. Every Qdrant query filters on `team_id` via the
   wrapper. Do not bypass these — even in "internal" tools.
 - **Raw events are immutable.** Never `UPDATE` a `raw_events` row's content.
@@ -122,6 +122,8 @@ packages/
             JSON-RPC handler, bearer-key mint/verify for /api/mcp/server),
             calendar module (Phase 11 — event scope, raw-event audit rows,
             entity links, settings, and calendar embedding enqueue/delete),
+            onboarding module (Phase 13 — team-level tutorial completion +
+            per-user dismissal),
             job-recovery module (Phase 13 — team-scoped retry/dismiss for
             failed product jobs)
 docs/

@@ -196,7 +196,7 @@ async function collectCandidates(
   const staleCutoff = new Date(now.getTime() - STALE_MS);
   const [raw, docs, meetingRows, integrationRows, queueRows] = await Promise.all([
     collectRawEventCandidates(db, teamId, userId, staleCutoff),
-    collectDocumentCandidates(db, teamId, staleCutoff),
+    collectDocumentCandidates(db, teamId),
     collectMeetingCandidates(db, teamId, userId),
     collectIntegrationCandidates(db, teamId),
     collectQueueCandidates(db, teamId, userId, q),
@@ -314,11 +314,7 @@ async function collectRawEventCandidates(
   return items;
 }
 
-async function collectDocumentCandidates(
-  db: Db,
-  teamId: string,
-  staleCutoff: Date,
-): Promise<JobRecoveryItem[]> {
+async function collectDocumentCandidates(db: Db, teamId: string): Promise<JobRecoveryItem[]> {
   const pendingCutoff = new Date(Date.now() - DOCUMENT_PENDING_MS);
   const extractingCutoff = new Date(Date.now() - DOCUMENT_EXTRACTING_MS);
   const rows = await db
@@ -346,7 +342,6 @@ async function collectDocumentCandidates(
     )
     .orderBy(desc(documentVersions.createdAt))
     .limit(LIMIT);
-  void staleCutoff;
   return rows.map(({ version, document }) =>
     item(
       'document_processing',

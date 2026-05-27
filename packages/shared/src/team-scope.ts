@@ -21,6 +21,7 @@ import { embed as defaultEmbed, type EmbedResult } from './llm/embed.js';
 import { createMcpScope } from './mcp/scope.js';
 import { createMeetingScope } from './meetings/scope.js';
 import { createObjectScope } from './objects/index.js';
+import { createOnboardingScope } from './onboarding/index.js';
 import {
   getQdrantClient,
   type SearchHit,
@@ -401,6 +402,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     userId,
     ensureMember,
     requireTeamMember,
+  });
+
+  const onboardingScope = createOnboardingScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
   });
 
   const jobRecoveryScope = createJobRecoveryScope({
@@ -1108,6 +1116,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     objects: createObjectScope(db, core),
     integrations: integrationScope,
     mcp: mcpScope,
+    onboarding: onboardingScope,
     calendar: calendarScope,
     jobRecovery: jobRecoveryScope,
   };

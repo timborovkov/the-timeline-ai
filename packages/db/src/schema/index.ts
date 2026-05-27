@@ -20,4 +20,5 @@ export * from './mcp.js';
 export * from './mcp-outbound.js';
 export * from './calendar-events.js';
 export * from './job-recovery.js';
+export * from './onboarding.js';
 export * from './support.js';
