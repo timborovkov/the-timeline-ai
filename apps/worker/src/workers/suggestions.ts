@@ -16,6 +16,12 @@ const SUGGESTION_CODE_VERSION = '2026-05-a';
 const RECENT_CONTEXT_LIMIT = 5;
 const CALENDAR_CONTEXT_PAST_DAYS = 30;
 const CALENDAR_CONTEXT_FUTURE_DAYS = 180;
+const NEXT_WEEKDAY_PATTERN =
+  'monday|mon|tuesday|tue|wednesday|wed|thursday|thu|friday|fri|saturday|sat|sunday|sun';
+const COMMITMENT_TIME_PATTERN = new RegExp(
+  `\\b(?:i'll|i will)\\s+(.+)\\s+(tomorrow|next\\s+(?:${NEXT_WEEKDAY_PATTERN}))\\b`,
+  'i',
+);
 
 interface SuggestionWorkerDeps {
   db: Db;
@@ -65,14 +71,14 @@ function calendarContextRange(occurredAt: Date): { from: Date; to: Date } {
   return { from, to };
 }
 
-function fallbackBundles(args: {
+export function fallbackBundles(args: {
   text: string;
   timezone: string;
   occurredAt: Date;
   authorUserId: string | null;
 }): SuggestionBundleOutput[] {
   const text = args.text.trim();
-  const match = /\b(?:i'll|i will)\s+(.+?)\s+(tomorrow|next\s+\w+)\b/i.exec(text);
+  const match = COMMITMENT_TIME_PATTERN.exec(text);
   if (!match) return [];
   const action = firstSentence(match[1] ?? '')
     .replace(/\s+/g, ' ')
