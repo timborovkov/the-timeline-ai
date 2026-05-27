@@ -1,0 +1,294 @@
+import { randomBytes } from 'node:crypto';
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { PGlite } from '@electric-sql/pglite';
+import {
+  rawEvents,
+  slackConversationBindings,
+  slackUsers,
+  slackUserTeams,
+  slackWorkspaces,
+  slackWorkspaceTeams,
+} from '@timeline/db';
+import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { encryptJson, resetSecretsKeyCacheForTests } from '../crypto/secrets.js';
+import { resetEnvForTests } from '../env.js';
+
+import { handleSlackEnvelope, linkSlackUserFromOAuth } from './dispatcher.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
+
+const TEAM_A = '11111111-1111-1111-1111-111111111111';
+const TEAM_B = '22222222-2222-2222-2222-222222222222';
+const USER_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const USER_B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const WORKSPACE_ID = '33333333-3333-3333-3333-333333333333';
+const SLACK_USER_ROW_ID = '44444444-4444-4444-4444-444444444444';
+
+async function applyMigrations(pg: PGlite): Promise<void> {
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  for (const file of files) {
+    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
+    const statements = sql
+      .split('--> statement-breakpoint')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && s !== 'SELECT 1;');
+    for (const stmt of statements) await pg.exec(stmt);
+  }
+}
+
+async function seedTeams(pg: PGlite): Promise<void> {
+  await pg.exec(`
+    INSERT INTO teams (id, slug, name)
+    VALUES ('${TEAM_A}', 'team-a', 'Team A'), ('${TEAM_B}', 'team-b', 'Team B');
+    INSERT INTO users (id, email, name)
+    VALUES
+      ('${USER_A}', 'a@example.com', 'Alice'),
+      ('${USER_B}', 'b@example.com', 'Bob');
+    INSERT INTO team_members (team_id, user_id, role)
+    VALUES
+      ('${TEAM_A}', '${USER_A}', 'owner'),
+      ('${TEAM_B}', '${USER_B}', 'owner');
+  `);
+}
+
+async function seedWorkspace(db: ReturnType<typeof drizzle>, teamId = TEAM_A): Promise<void> {
+  const token = encryptJson({ accessToken: 'xoxb-test' });
+  await db.insert(slackWorkspaces).values({
+    id: WORKSPACE_ID,
+    slackTeamId: 'T_SLACK',
+    name: 'Acme Slack',
+    botUserId: 'U_BOT',
+    tokenCiphertext: token.ciphertext,
+    tokenIv: token.iv,
+    tokenTag: token.tag,
+    installedByUserId: teamId === TEAM_A ? USER_A : USER_B,
+  });
+  await db.insert(slackWorkspaceTeams).values({
+    workspaceId: WORKSPACE_ID,
+    teamId,
+    installedByUserId: teamId === TEAM_A ? USER_A : USER_B,
+    enabled: true,
+  });
+}
+
+function slackEnvelope(eventId: string, event: Record<string, unknown>): Record<string, unknown> {
+  return {
+    type: 'event_callback',
+    team_id: 'T_SLACK',
+    event_id: eventId,
+    event_time: 1_700_000_000,
+    event,
+  };
+}
+
+function installFetchMock(): ReturnType<typeof vi.fn> {
+  const fetchMock = vi.fn((url: string | URL | Request) => {
+    const href = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
+    if (href.includes('users.info')) {
+      return Promise.resolve(
+        Response.json({
+          ok: true,
+          user: {
+            id: 'U_SLACK',
+            name: 'alice',
+            real_name: 'Alice Slack',
+            profile: { display_name: 'Alice Slack', real_name: 'Alice Slack' },
+          },
+        }),
+      );
+    }
+    if (href.includes('reactions.add') || href.includes('chat.postMessage')) {
+      return Promise.resolve(Response.json({ ok: true }));
+    }
+    if (href.includes('files.example')) {
+      return Promise.resolve(
+        new Response(Buffer.from('%PDF-1.7'), {
+          headers: { 'content-type': 'application/pdf' },
+        }),
+      );
+    }
+    return Promise.resolve(Response.json({ ok: true }));
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
+describe('Slack dispatcher routing', () => {
+  let pg: PGlite;
+  let db: ReturnType<typeof drizzle>;
+
+  beforeEach(async () => {
+    process.env.AUTH_SECRET = 'a'.repeat(32);
+    process.env.DATABASE_URL = 'postgres://user:pass@localhost:5432/test';
+    process.env.SECRETS_ENCRYPTION_KEY = randomBytes(32).toString('base64');
+    resetEnvForTests();
+    resetSecretsKeyCacheForTests();
+    pg = new PGlite();
+    await applyMigrations(pg);
+    await seedTeams(pg);
+    db = drizzle(pg);
+    installFetchMock();
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await pg.close();
+  });
+
+  it('rejects user linking when the receiving team did not install that Slack workspace', async () => {
+    await seedWorkspace(db, TEAM_A);
+
+    await expect(
+      linkSlackUserFromOAuth({
+        db: db as never,
+        teamId: TEAM_B,
+        userId: USER_B,
+        oauth: { ok: true, team: { id: 'T_SLACK' }, authed_user: { id: 'U_SLACK' } },
+      }),
+    ).rejects.toThrow('slack_workspace_not_installed');
+  });
+
+  it('does not answer app mentions in unbound Slack channels', async () => {
+    const fetchMock = installFetchMock();
+    await seedWorkspace(db, TEAM_A);
+
+    await handleSlackEnvelope(
+      { db: db as never },
+      slackEnvelope('EvMention', {
+        type: 'app_mention',
+        channel: 'C_PUBLIC',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: '<@U_BOT> what happened?',
+        ts: '1700000000.000100',
+      }),
+    );
+
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('chat.postMessage'),
+      expect.anything(),
+    );
+  });
+
+  it('captures Slack file_share messages and enqueues document extraction', async () => {
+    await seedWorkspace(db, TEAM_A);
+    await db.insert(slackConversationBindings).values({
+      workspaceId: WORKSPACE_ID,
+      teamId: TEAM_A,
+      slackConversationId: 'C_DOCS',
+      conversationType: 'channel',
+      title: 'docs',
+      boundByUserId: USER_A,
+      enabled: true,
+    });
+    await db.insert(slackUsers).values({
+      id: SLACK_USER_ROW_ID,
+      workspaceId: WORKSPACE_ID,
+      slackUserId: 'U_SLACK',
+      realName: 'Alice Slack',
+    });
+    await db.insert(slackUserTeams).values({
+      slackUserId: SLACK_USER_ROW_ID,
+      teamId: TEAM_A,
+      userId: USER_A,
+      linkedByUserId: USER_A,
+      isActive: true,
+    });
+    const upload = vi.fn().mockResolvedValue(undefined);
+    const enqueueExtract = vi.fn().mockResolvedValue(undefined);
+
+    await handleSlackEnvelope(
+      {
+        db: db as never,
+        documents: { upload, enqueueExtract },
+      },
+      slackEnvelope('EvFile', {
+        type: 'message',
+        subtype: 'file_share',
+        channel: 'C_DOCS',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: '',
+        ts: '1700000001.000100',
+        files: [
+          {
+            id: 'F1',
+            name: 'plan.pdf',
+            mimetype: 'application/pdf',
+            size: 8,
+            url_private_download: 'https://files.example/plan.pdf',
+          },
+        ],
+      }),
+    );
+
+    expect(upload).toHaveBeenCalledOnce();
+    expect(enqueueExtract).toHaveBeenCalledOnce();
+  });
+
+  it('attributes bound channel messages to the sender linked in that Timeline team', async () => {
+    await seedWorkspace(db, TEAM_A);
+    await db.insert(slackWorkspaceTeams).values({
+      workspaceId: WORKSPACE_ID,
+      teamId: TEAM_B,
+      installedByUserId: USER_B,
+      enabled: true,
+    });
+    await db.insert(slackConversationBindings).values({
+      workspaceId: WORKSPACE_ID,
+      teamId: TEAM_B,
+      slackConversationId: 'C_TEAM_B',
+      conversationType: 'channel',
+      title: 'team-b',
+      boundByUserId: USER_B,
+      enabled: true,
+    });
+    await db.insert(slackUsers).values({
+      id: SLACK_USER_ROW_ID,
+      workspaceId: WORKSPACE_ID,
+      slackUserId: 'U_SLACK',
+      realName: 'Slack Sender',
+    });
+    await db.insert(slackUserTeams).values([
+      {
+        slackUserId: SLACK_USER_ROW_ID,
+        teamId: TEAM_A,
+        userId: USER_A,
+        linkedByUserId: USER_A,
+        isActive: true,
+      },
+      {
+        slackUserId: SLACK_USER_ROW_ID,
+        teamId: TEAM_B,
+        userId: USER_B,
+        linkedByUserId: USER_B,
+        isActive: false,
+      },
+    ]);
+
+    await handleSlackEnvelope(
+      { db: db as never },
+      slackEnvelope('EvChannel', {
+        type: 'message',
+        channel: 'C_TEAM_B',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: 'team b update',
+        ts: '1700000002.000100',
+      }),
+    );
+
+    const rows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'slack'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ teamId: TEAM_B, authorUserId: USER_B });
+  });
+});

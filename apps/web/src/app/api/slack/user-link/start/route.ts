@@ -11,6 +11,9 @@ export async function GET(): Promise<Response> {
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
   await withTeam(db, active.teamId, session.user.id).requireMembership();
+  if (!(await slack.hasSlackInstallForTeam({ db, teamId: active.teamId }))) {
+    redirect('/app/team/slack?error=slack_not_installed');
+  }
   const env = getEnv();
   if (!env.SLACK_CLIENT_ID) redirect('/app/team/slack?error=slack_unconfigured');
   const state = slack.signSlackOAuthState({

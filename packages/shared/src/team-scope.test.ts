@@ -149,6 +149,32 @@ describe('withTeam namespaced port', () => {
     ]);
   });
 
+  it('does not hydrate entity facts whose source event has been tombstoned', async () => {
+    const deletedId = '00000000-0000-0000-0000-000000000103';
+    const entityId = '00000000-0000-0000-0000-000000000104';
+    const factId = '00000000-0000-0000-0000-000000000105';
+    await insertTelegramEvent(pg, {
+      id: deletedId,
+      authorUserId: USER_A,
+      text: 'deleted source fact',
+      deleted: true,
+    });
+    await pg.exec(`
+      INSERT INTO entities (id, team_id, type, canonical_name)
+      VALUES ('${entityId}', '${TEAM_A}', 'person', 'Alice Deleted');
+      INSERT INTO facts (id, team_id, raw_event_id, statement, confidence, model_version)
+      VALUES ('${factId}', '${TEAM_A}', '${deletedId}', 'Alice Deleted knows the old plan', 0.9, 'test-model');
+      INSERT INTO fact_entities (fact_id, entity_id, role)
+      VALUES ('${factId}', '${entityId}', 'subject');
+    `);
+
+    const profile = await withTeam(db as never, TEAM_A, USER_A).timeline.getEntity(entityId);
+
+    expect(profile).not.toBeNull();
+    expect(profile?.facts).toEqual([]);
+    expect(profile?.events).toEqual([]);
+  });
+
   it('allows a Telegram author to tombstone their own message revisions', async () => {
     const originalId = '00000000-0000-0000-0000-000000000201';
     const editId = '00000000-0000-0000-0000-000000000202';
@@ -186,7 +212,7 @@ describe('withTeam namespaced port', () => {
 
     const memberScope = withTeam(db as never, TEAM_A, USER_B);
     await expect(memberScope.timeline.removeTelegramMessage(telegramId)).rejects.toThrow(
-      'Only the Telegram author or a team admin can remove this event',
+      'Only the message author or a team admin can remove this event',
     );
 
     const adminScope = withTeam(db as never, TEAM_A, USER_C);
@@ -198,7 +224,7 @@ describe('withTeam namespaced port', () => {
       contentText: 'not telegram',
     });
     await expect(adminScope.timeline.removeTelegramMessage(web.id)).rejects.toThrow(
-      'Only Telegram events can be removed this way',
+      'Only Telegram and Slack events can be removed this way',
     );
   });
 

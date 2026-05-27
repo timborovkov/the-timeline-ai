@@ -254,6 +254,8 @@ export async function linkSlackUserFromOAuth(input: {
   const slackUserId = input.oauth.authed_user.id;
   const workspace = await findWorkspaceBySlackTeamId(input.db, input.oauth.team.id);
   if (!workspace) throw new Error('slack_workspace_not_installed');
+  const install = await findWorkspaceInstallForTeam(input.db, input.teamId);
+  if (install?.id !== workspace.id) throw new Error('slack_workspace_not_installed');
   await input.db.transaction(async (tx) => {
     await upsertSlackUserLink(tx, {
       workspaceId: workspace.id,
@@ -272,6 +274,10 @@ export async function listSlackConversationsForTeam(input: {
   if (!install) return [];
   const api = new SlackApi(decryptWorkspaceToken(install).accessToken);
   return api.conversationsList();
+}
+
+export async function hasSlackInstallForTeam(input: { db: Db; teamId: string }): Promise<boolean> {
+  return Boolean(await findWorkspaceInstallForTeam(input.db, input.teamId));
 }
 
 export async function bindSlackConversation(input: {
@@ -321,12 +327,20 @@ async function handleAppMention(
   event: SlackAppMentionEvent,
 ): Promise<void> {
   if (event.user && event.user === workspace.botUserId) return;
-  const linked = event.user ? await findActiveSlackLink(deps.db, workspace.id, event.user) : null;
-  if (!linked) {
+  if (!event.user) return;
+  const route = await resolveSlackRoute(
+    deps.db,
+    workspace.id,
+    event.user,
+    event.channel,
+    event.channel_type,
+  );
+  if (!route) return;
+  if (!route.linkedUserId) {
     await api.postMessage({
       channel: event.channel,
       thread_ts: event.thread_ts ?? event.ts,
-      text: 'Link your Slack identity to Timeline before asking in Slack.',
+      text: 'Link your Slack identity to this Timeline team before asking in Slack.',
     });
     return;
   }
@@ -335,9 +349,9 @@ async function handleAppMention(
   const question = (event.text ?? '').replace(/<@[^>]+>/g, '').trim();
   const result = await askAgent({
     db: deps.db,
-    teamId: linked.teamId,
-    userId: linked.userId,
-    userName: linked.displayName ?? 'a teammate',
+    teamId: route.teamId,
+    userId: route.linkedUserId,
+    userName: route.linkedUserName ?? 'a teammate',
     question,
   });
   await api.postMessage({
@@ -363,7 +377,9 @@ async function handleMessageEvent(
     });
     return;
   }
-  if (event.subtype && event.subtype !== 'message_changed') return;
+  if (event.subtype && event.subtype !== 'message_changed' && event.subtype !== 'file_share') {
+    return;
+  }
 
   const message = event.subtype === 'message_changed' ? event.message : event;
   if (message?.bot_id) return;
@@ -425,11 +441,15 @@ async function handleMessageEvent(
     channelId: event.channel,
     messageTs: ts,
   });
+  const target =
+    inserted ?? (files.length > 0 ? await findEventBySlackEventId(deps.db, slackEventId) : null);
   if (inserted) {
     if (text.trim()) await enqueueTextPipelines(deps, inserted);
+  }
+  if (target) {
     await processSlackAttachments(deps, api, {
-      teamId: inserted.teamId,
-      parentRawEventId: inserted.id,
+      teamId: target.teamId,
+      parentRawEventId: target.id,
       parentAuthorUserId: authorUserId,
       visibility: route.visibility,
       files,
@@ -506,9 +526,10 @@ async function resolveSlackRoute(
   isDm: boolean;
   conversationType: string;
   conversationTitle: string | null;
+  linkedUserName: string | null;
 } | null> {
-  const linked = await findActiveSlackLink(db, workspaceId, slackUserId);
   if (channelType === 'im') {
+    const linked = await findActiveSlackLink(db, workspaceId, slackUserId);
     if (!linked) return null;
     return {
       teamId: linked.teamId,
@@ -518,6 +539,7 @@ async function resolveSlackRoute(
       isDm: true,
       conversationType: 'im',
       conversationTitle: null,
+      linkedUserName: linked.displayName,
     };
   }
   const bindings = await db
@@ -533,15 +555,16 @@ async function resolveSlackRoute(
     .limit(1);
   const binding = bindings[0];
   if (!binding) return null;
-  const linkedForTeam = linked?.teamId === binding.teamId ? linked.userId : null;
+  const linkedForTeam = await findSlackLinkForTeam(db, workspaceId, slackUserId, binding.teamId);
   return {
     teamId: binding.teamId,
     sourceOwnerUserId: binding.boundByUserId,
-    linkedUserId: linkedForTeam,
+    linkedUserId: linkedForTeam?.userId ?? null,
     visibility: binding.visibilityDefault,
     isDm: false,
     conversationType: binding.conversationType,
     conversationTitle: binding.title,
+    linkedUserName: linkedForTeam?.displayName ?? null,
   };
 }
 
@@ -564,6 +587,7 @@ async function processSlackAttachments(
   const skipped: Record<string, unknown>[] = [];
   for (const file of input.files) {
     const filename = file.name ?? file.title ?? file.id;
+    if (await slackAttachmentAlreadyProcessed(deps.db, input.parentRawEventId, file.id)) continue;
     const decision =
       processed >= CONVERSATIONAL_ATTACHMENT_LIMITS.maxProcessedPerMessage
         ? { kind: 'skip' as const, reason: 'too_many_attachments' }
@@ -586,9 +610,20 @@ async function processSlackAttachments(
     processed += 1;
     let bytes: Buffer;
     try {
-      bytes = await api.downloadFile(file);
+      bytes = await api.downloadFile(file, CONVERSATIONAL_ATTACHMENT_LIMITS.maxBytes);
+      if (bytes.length > CONVERSATIONAL_ATTACHMENT_LIMITS.maxBytes)
+        throw new Error('file_oversize');
     } catch (err) {
       log.error({ err, fileId: file.id }, 'slack attachment download failed');
+      skipped.push({
+        source: 'slack',
+        file_id: file.id,
+        filename,
+        mimetype: file.mimetype ?? null,
+        size: file.size ?? null,
+        reason:
+          err instanceof Error && err.message === 'file_oversize' ? 'oversize' : 'download_failed',
+      });
       continue;
     }
     const contentType =
@@ -652,6 +687,53 @@ async function processSlackAttachments(
       })
       .where(eq(rawEvents.id, input.parentRawEventId));
   }
+}
+
+async function slackAttachmentAlreadyProcessed(
+  db: Db,
+  parentRawEventId: string,
+  fileId: string,
+): Promise<boolean> {
+  const audioRows = await db
+    .select({ id: rawEvents.id })
+    .from(rawEvents)
+    .where(
+      and(
+        sql`${rawEvents.sourceMetadata} ->> 'slack_parent_raw_event_id' = ${parentRawEventId}`,
+        sql`${rawEvents.sourceMetadata} ->> 'slack_file_id' = ${fileId}`,
+      ),
+    )
+    .limit(1);
+  if (audioRows[0]) return true;
+
+  const docRows = await db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(
+      and(
+        sql`${documents.metadata} ->> 'parent_raw_event_id' = ${parentRawEventId}`,
+        sql`${documents.metadata} ->> 'slack_file_id' = ${fileId}`,
+      ),
+    )
+    .limit(1);
+  return Boolean(docRows[0]);
+}
+
+async function findEventBySlackEventId(
+  db: Db,
+  slackEventId: string,
+): Promise<{ id: string; teamId: string } | null> {
+  const rows = await db
+    .select({ id: rawEvents.id, teamId: rawEvents.teamId })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.source, 'slack'),
+        sql`${rawEvents.sourceMetadata} ->> 'slack_event_id' = ${slackEventId}`,
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 async function createSlackDocumentAttachment(
@@ -915,6 +997,38 @@ async function findActiveSlackLink(
         eq(slackUsers.workspaceId, workspaceId),
         eq(slackUsers.slackUserId, slackUserId),
         eq(slackUserTeams.isActive, true),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+async function findSlackLinkForTeam(
+  db: Db,
+  workspaceId: string,
+  slackUserId: string,
+  teamId: string,
+): Promise<{ userId: string; displayName: string | null } | null> {
+  const rows = await db
+    .select({
+      userId: slackUserTeams.userId,
+      displayName: slackUsers.realName,
+    })
+    .from(slackUsers)
+    .innerJoin(slackUserTeams, eq(slackUserTeams.slackUserId, slackUsers.id))
+    .innerJoin(
+      teamMembers,
+      and(
+        eq(teamMembers.teamId, slackUserTeams.teamId),
+        eq(teamMembers.userId, slackUserTeams.userId),
+        isNull(teamMembers.removedAt),
+      ),
+    )
+    .where(
+      and(
+        eq(slackUsers.workspaceId, workspaceId),
+        eq(slackUsers.slackUserId, slackUserId),
+        eq(slackUserTeams.teamId, teamId),
       ),
     )
     .limit(1);

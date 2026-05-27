@@ -12,7 +12,10 @@ import {
 import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { askAgent } from '../agent/ask.js';
-import { classifyConversationalAttachment } from '../conversational/attachments.js';
+import {
+  classifyConversationalAttachment,
+  CONVERSATIONAL_ATTACHMENT_LIMITS,
+} from '../conversational/attachments.js';
 import { buildDocumentObjectKey } from '../documents/object-key.js';
 import { childLogger } from '../logger.js';
 import { getRedisConnection } from '../queue/connection.js';
@@ -1619,7 +1622,11 @@ async function ingestAudio(
   let bytes: Buffer;
   try {
     fileInfo = await ctx.tg.getFile({ file_id: payload.file_id });
-    bytes = await ctx.tg.downloadFile(fileInfo.file_path);
+    bytes = await ctx.tg.downloadFile(
+      fileInfo.file_path,
+      CONVERSATIONAL_ATTACHMENT_LIMITS.maxBytes,
+    );
+    if (bytes.length > CONVERSATIONAL_ATTACHMENT_LIMITS.maxBytes) throw new Error('file_oversize');
   } catch (err) {
     log.error({ err }, 'audio fetch failed');
     return false;
@@ -1768,7 +1775,11 @@ async function ingestTelegramDocumentAttachment(
   let bytes: Buffer;
   try {
     fileInfo = await ctx.tg.getFile({ file_id: attachment.payload.file_id });
-    bytes = await ctx.tg.downloadFile(fileInfo.file_path);
+    bytes = await ctx.tg.downloadFile(
+      fileInfo.file_path,
+      CONVERSATIONAL_ATTACHMENT_LIMITS.maxBytes,
+    );
+    if (bytes.length > CONVERSATIONAL_ATTACHMENT_LIMITS.maxBytes) throw new Error('file_oversize');
   } catch (err) {
     log.error({ err }, 'telegram document fetch failed');
     return;

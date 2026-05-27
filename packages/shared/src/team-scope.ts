@@ -1013,6 +1013,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
                     inArray(rawEvents.id, eventIds),
                     eq(rawEvents.teamId, teamId),
                     visibilityFilter,
+                    activeRawEventFilter,
                   ),
                 )
                 .orderBy(desc(rawEvents.occurredAt))

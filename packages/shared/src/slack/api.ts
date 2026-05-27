@@ -28,6 +28,37 @@ interface SlackResponse {
   response_metadata?: { next_cursor?: string };
 }
 
+async function responseBufferWithLimit(res: Response, maxBytes?: number): Promise<Buffer> {
+  if (maxBytes !== undefined) {
+    const len = res.headers.get('content-length');
+    if (len) {
+      const n = Number.parseInt(len, 10);
+      if (Number.isFinite(n) && n > maxBytes) throw new Error('file_oversize');
+    }
+  }
+
+  if (res.body === null) {
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (maxBytes !== undefined && buf.length > maxBytes) throw new Error('file_oversize');
+    return buf;
+  }
+
+  const reader: ReadableStreamDefaultReader<Uint8Array> = res.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (maxBytes !== undefined && total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error('file_oversize');
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks, total);
+}
+
 export class SlackApi {
   constructor(private readonly token: string) {}
 
@@ -142,12 +173,12 @@ export class SlackApi {
     });
   }
 
-  async downloadFile(file: SlackFile): Promise<Buffer> {
+  async downloadFile(file: SlackFile, maxBytes?: number): Promise<Buffer> {
     const url = file.url_private_download ?? file.url_private;
     if (!url) throw new Error('Slack file has no private download URL');
     const res = await fetch(url, { headers: { authorization: `Bearer ${this.token}` } });
     if (!res.ok) throw new Error(`Slack file download failed: ${res.status}`);
-    return Buffer.from(await res.arrayBuffer());
+    return responseBufferWithLimit(res, maxBytes);
   }
 }
 
