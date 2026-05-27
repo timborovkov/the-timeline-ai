@@ -384,4 +384,57 @@ describe('handleUpdate telegram edit visibility', () => {
     );
     expect(other.rows[0]?.deleted).toBeNull();
   });
+
+  it('keeps the highest update_id visible when same-message edits arrive out of order', async () => {
+    await handleUpdate(
+      { db: db as never, tg: fakeTg },
+      {
+        update_id: 400,
+        message: {
+          message_id: 40,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: 'original',
+        },
+      },
+    );
+    await handleUpdate(
+      { db: db as never, tg: fakeTg },
+      {
+        update_id: 402,
+        edited_message: {
+          message_id: 40,
+          date: 1700000000,
+          edit_date: 1700000100,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: 'newer edit',
+        },
+      },
+    );
+    await handleUpdate(
+      { db: db as never, tg: fakeTg },
+      {
+        update_id: 401,
+        edited_message: {
+          message_id: 40,
+          date: 1700000000,
+          edit_date: 1700000100,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: 'older edit delivered late',
+        },
+      },
+    );
+
+    const active = await activeTelegramRows(pg);
+    expect(active).toMatchObject([{ content_text: 'newer edit' }]);
+
+    const all = await allTelegramRows(pg);
+    expect(all).toHaveLength(3);
+    expect(all.filter((row) => row.source_metadata.deleted !== true)).toMatchObject([
+      { content_text: 'newer edit' },
+    ]);
+  });
 });
