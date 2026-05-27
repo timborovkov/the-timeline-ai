@@ -468,14 +468,19 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         inherited: source !== 'team',
       };
     }
+    const inherited = row.source !== source;
+    const supportsSpecificUsers =
+      !inherited && SPECIFIC_USERS_DEFAULT_SOURCES.has(source) && row.source !== 'team';
+    const visibility =
+      row.visibility === 'specific_users' && !supportsSpecificUsers ? 'team' : row.visibility;
     return {
       source,
-      visibility: row.visibility,
-      visibilityUserIds: row.visibilityUserIds,
+      visibility,
+      visibilityUserIds: visibility === 'specific_users' ? row.visibilityUserIds : null,
       sourceOwnerUserId: row.sourceOwnerUserId,
       updatedByUserId: row.updatedByUserId,
       updatedAt: row.updatedAt,
-      inherited: row.source !== source,
+      inherited,
     };
   }
 

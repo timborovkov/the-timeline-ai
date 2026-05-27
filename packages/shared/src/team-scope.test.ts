@@ -133,6 +133,25 @@ describe('withTeam namespaced port', () => {
     });
   });
 
+  it('coerces invalid inherited specific-users defaults to team visibility', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    await db.insert(teamVisibilityDefaults).values({
+      teamId: TEAM_A,
+      source: 'team',
+      visibility: 'specific_users',
+      visibilityUserIds: [USER_A],
+      sourceOwnerUserId: USER_A,
+      updatedByUserId: USER_A,
+    });
+
+    await expect(scope.timeline.resolveVisibilityDefault('web')).resolves.toMatchObject({
+      visibility: 'team',
+      visibilityUserIds: null,
+      sourceOwnerUserId: USER_A,
+      inherited: true,
+    });
+  });
+
   it('rejects specific_users defaults on binary capture sources', async () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
     await expect(
