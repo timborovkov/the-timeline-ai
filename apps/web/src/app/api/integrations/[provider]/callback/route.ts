@@ -86,12 +86,15 @@ export async function GET(
   const redirectUri = `${url.origin}/api/integrations/${provider}/callback`;
   try {
     const result = await p.handleOAuthCallback({ code, redirectUri });
+    const visibilityDefault = await scope.timeline.resolveVisibilityDefault('integration');
     const created = await scope.integrations.createIntegration({
       provider: provider,
       displayName: result.displayName,
       externalAccountId: result.externalAccountId,
       scopes: result.scopes,
       tokens: result.tokens,
+      visibilityDefault: visibilityDefault.visibility,
+      visibilityDefaultUserIds: visibilityDefault.visibilityUserIds,
     });
     await scope.integrations.recordAudit(
       'connect',

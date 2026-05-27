@@ -1,9 +1,10 @@
 'use server';
 
 import {
-  auditLog,
+  integrations,
   teamInvites,
   teamMembers,
+  teamVisibilityDefaults,
   teams,
   telegramChatBindings,
   telegramUsers,
@@ -515,6 +516,28 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
         .update(teamMembers)
         .set({ removedAt: new Date(), removedByUserId: session.user.id })
         .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
+      await tx
+        .update(teamVisibilityDefaults)
+        .set({ sourceOwnerUserId: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(teamVisibilityDefaults.teamId, active.teamId),
+            eq(teamVisibilityDefaults.sourceOwnerUserId, memberUserId),
+          ),
+        );
+      await tx
+        .update(integrations)
+        .set({ visibilityDefault: 'team', visibilityDefaultUserIds: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(integrations.teamId, active.teamId),
+            eq(integrations.connectedByUserId, memberUserId),
+            or(
+              eq(integrations.visibilityDefault, 'private'),
+              eq(integrations.visibilityDefault, 'specific_users'),
+            ),
+          ),
+        );
 
       // Revoke Telegram routing for this user — two anchors, both needed:
       //

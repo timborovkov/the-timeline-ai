@@ -9,7 +9,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
-export function CreateCalendarEventForm() {
+export function CreateCalendarEventForm({
+  defaultVisibility = 'team',
+  defaultVisibilityUserIds = null,
+  members = [],
+}: {
+  defaultVisibility?: 'team' | 'private' | 'specific_users';
+  defaultVisibilityUserIds?: string[] | null;
+  members?: { id: string; label: string }[];
+}) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +36,9 @@ export function CreateCalendarEventForm() {
     const location = fd.get('location') as string;
     const allDay = fd.get('allDay') === 'on';
     const visibility = (fd.get('visibility') as string) || 'team';
+    const visibilityUserIds = fd
+      .getAll('visibilityUserIds')
+      .filter((v): v is string => typeof v === 'string');
 
     if (!title || !startAt || !endAt) {
       setError('Title, start, and end are required.');
@@ -44,6 +55,7 @@ export function CreateCalendarEventForm() {
       allDay,
       location: location || undefined,
       visibility: visibility as 'team' | 'private' | 'specific_users',
+      visibilityUserIds,
     });
 
     setPending(false);
@@ -102,13 +114,27 @@ export function CreateCalendarEventForm() {
           <select
             id="visibility"
             name="visibility"
-            defaultValue="team"
+            defaultValue={defaultVisibility}
             className="rounded border bg-background px-2 py-1 text-sm"
           >
             <option value="team">Team</option>
             <option value="private">Private</option>
+            <option value="specific_users">Specific users</option>
           </select>
         </div>
+      </div>
+      <div className="flex flex-wrap gap-3">
+        {members.map((m) => (
+          <label key={m.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              name="visibilityUserIds"
+              value={m.id}
+              defaultChecked={defaultVisibilityUserIds?.includes(m.id) ?? false}
+            />
+            {m.label}
+          </label>
+        ))}
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}

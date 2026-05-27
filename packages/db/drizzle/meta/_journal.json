@@ -139,49 +139,7 @@
       "idx": 19,
       "version": "7",
       "when": 1795651560000,
-      "tag": "0019_phase13_support_requests",
-      "breakpoints": true
-    },
-    {
-      "idx": 20,
-      "version": "7",
-      "when": 1795651560001,
-      "tag": "0020_full_invites_membership",
-      "breakpoints": true
-    },
-    {
-      "idx": 21,
-      "version": "7",
-      "when": 1795651620000,
-      "tag": "0021_phase13_onboarding",
-      "breakpoints": true
-    },
-    {
-      "idx": 22,
-      "version": "7",
-      "when": 1795651680000,
-      "tag": "0022_phase13_audit_log",
-      "breakpoints": true
-    },
-    {
-      "idx": 23,
-      "version": "7",
-      "when": 1795651740000,
-      "tag": "0023_phase13_team_exports",
-      "breakpoints": true
-    },
-    {
-      "idx": 24,
-      "version": "7",
-      "when": 1795651800000,
-      "tag": "0024_phase13_job_recovery",
-      "breakpoints": true
-    },
-    {
-      "idx": 25,
-      "version": "7",
-      "when": 1795651860000,
-      "tag": "0025_phase13_pagination_caching",
+      "tag": "0019_phase13_visibility_defaults",
       "breakpoints": true
     }
   ]

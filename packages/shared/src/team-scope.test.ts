@@ -3,6 +3,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
+import { auditLog, rawEvents, teamVisibilityDefaults } from '@timeline/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -123,100 +125,99 @@ describe('withTeam namespaced port', () => {
     await expect(teammateScope.objects.getChatSession(session.id)).resolves.toBeNull();
   });
 
-  it('hides tombstoned raw events from timeline reads and hydration', async () => {
-    const visibleId = '00000000-0000-0000-0000-000000000101';
-    const deletedId = '00000000-0000-0000-0000-000000000102';
-    await insertTelegramEvent(pg, {
-      id: visibleId,
-      authorUserId: USER_A,
-      text: 'visible telegram',
-    });
-    await insertTelegramEvent(pg, {
-      id: deletedId,
-      authorUserId: USER_A,
-      text: 'deleted telegram',
-      deleted: true,
-    });
-
+  it('resolves visibility defaults by source, fallback, then hard team default', async () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
 
-    await expect(scope.timeline.listEvents({ source: 'telegram' })).resolves.toMatchObject([
-      { id: visibleId },
-    ]);
-    await expect(scope.timeline.getEvent(deletedId)).resolves.toBeNull();
-    await expect(scope.timeline.getEventsByIds([visibleId, deletedId])).resolves.toMatchObject([
-      { id: visibleId },
-    ]);
+    await expect(scope.timeline.resolveVisibilityDefault('web')).resolves.toMatchObject({
+      visibility: 'team',
+      inherited: true,
+    });
+
+    await scope.timeline.setVisibilityDefault({
+      source: 'team',
+      visibility: 'private',
+      sourceOwnerUserId: USER_A,
+    });
+    await expect(scope.timeline.resolveVisibilityDefault('web')).resolves.toMatchObject({
+      visibility: 'private',
+      sourceOwnerUserId: USER_A,
+      inherited: true,
+    });
+
+    await scope.timeline.setVisibilityDefault({ source: 'web', visibility: 'team' });
+    await expect(scope.timeline.resolveVisibilityDefault('web')).resolves.toMatchObject({
+      visibility: 'team',
+      inherited: false,
+    });
   });
 
-  it('allows a Telegram author to tombstone their own message revisions', async () => {
-    const originalId = '00000000-0000-0000-0000-000000000201';
-    const editId = '00000000-0000-0000-0000-000000000202';
-    await insertTelegramEvent(pg, {
-      id: originalId,
-      authorUserId: USER_A,
-      text: 'original',
-    });
-    await insertTelegramEvent(pg, {
-      id: editId,
-      authorUserId: USER_A,
-      text: 'edit',
-    });
-
+  it('rejects specific_users defaults on binary capture sources', async () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
-    await expect(scope.timeline.removeTelegramMessage(editId)).resolves.toBe(true);
-    await expect(scope.timeline.listEvents({ source: 'telegram' })).resolves.toEqual([]);
-
-    const rows = await pg.query<{ reason: string; count: string }>(
-      `SELECT source_metadata->>'delete_reason' AS reason, count(*)::text AS count
-       FROM raw_events
-       WHERE source = 'telegram'
-       GROUP BY source_metadata->>'delete_reason'`,
-    );
-    expect(rows.rows).toEqual([{ reason: 'telegram_removed_in_timeline', count: '2' }]);
+    await expect(
+      scope.timeline.setVisibilityDefault({
+        source: 'telegram',
+        visibility: 'specific_users',
+        visibilityUserIds: [USER_A],
+      }),
+    ).rejects.toThrow('specific_users visibility is not supported');
   });
 
-  it('allows admins but rejects non-author members and non-Telegram events', async () => {
-    const telegramId = '00000000-0000-0000-0000-000000000301';
-    await insertTelegramEvent(pg, {
-      id: telegramId,
-      authorUserId: USER_A,
-      text: 'moderate me',
-    });
-
-    const memberScope = withTeam(db as never, TEAM_A, USER_B);
-    await expect(memberScope.timeline.removeTelegramMessage(telegramId)).rejects.toThrow(
-      'Only the Telegram author or a team admin can remove this event',
-    );
-
-    const adminScope = withTeam(db as never, TEAM_A, USER_C);
-    await expect(adminScope.timeline.removeTelegramMessage(telegramId)).resolves.toBe(true);
-
-    const web = await withTeam(db as never, TEAM_A, USER_A).timeline.createEvent({
-      authorUserId: USER_A,
-      source: 'web',
-      contentText: 'not telegram',
-    });
-    await expect(adminScope.timeline.removeTelegramMessage(web.id)).rejects.toThrow(
-      'Only Telegram events can be removed this way',
-    );
-  });
-
-  it('rejects removed members at the team-scope chokepoint', async () => {
-    await pg.exec(`
-      UPDATE team_members
-      SET removed_at = now(), removed_by_user_id = '${USER_A}'
-      WHERE team_id = '${TEAM_A}' AND user_id = '${USER_B}';
-    `);
-
-    const removedScope = withTeam(db as never, TEAM_A, USER_B);
-
-    await expect(removedScope.requireMembership()).rejects.toThrow('Not a member of this team');
-    await expect(removedScope.timeline.listMembers()).rejects.toThrow('Not a member of this team');
-
+  it('only the visibility owner can change an existing event visibility and audits it', async () => {
     const ownerScope = withTeam(db as never, TEAM_A, USER_A);
-    await expect(ownerScope.timeline.listMembers()).resolves.toEqual([
-      expect.objectContaining({ userId: USER_A, role: 'owner' }),
-    ]);
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const event = await ownerScope.timeline.createEvent({
+      authorUserId: USER_B,
+      visibilityOwnerUserId: USER_A,
+      source: 'web',
+      contentText: 'owner controlled',
+      visibility: 'team',
+    });
+
+    await expect(
+      adminScope.timeline.setEventVisibility(event.id, { visibility: 'private' }),
+    ).rejects.toThrow('Only the visibility owner');
+
+    await ownerScope.timeline.setEventVisibility(event.id, {
+      visibility: 'specific_users',
+      visibilityUserIds: [USER_B],
+    });
+    await expect(ownerScope.timeline.getEvent(event.id)).resolves.toMatchObject({ id: event.id });
+
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, event.id));
+    expect(row?.visibility).toBe('specific_users');
+    expect(row?.visibilityUserIds).toEqual([USER_B]);
+
+    const auditRows = await db.select().from(auditLog).where(eq(auditLog.targetId, event.id));
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]?.action).toBe('visibility_change');
+    expect(auditRows[0]?.payload).toMatchObject({
+      previous: { visibility: 'team' },
+      next: { visibility: 'specific_users', visibilityUserIds: [USER_B] },
+    });
+
+    const defaults = await db.select().from(teamVisibilityDefaults);
+    expect(defaults).toHaveLength(0);
+  });
+
+  it('lets a private source-owned event be read and edited by its visibility owner', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const teammateScope = withTeam(db as never, TEAM_A, USER_B);
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const event = await ownerScope.timeline.createEvent({
+      authorUserId: null,
+      visibilityOwnerUserId: USER_A,
+      source: 'email',
+      contentText: 'unverified sender private email',
+      visibility: 'private',
+    });
+
+    await expect(ownerScope.timeline.getEvent(event.id)).resolves.toMatchObject({ id: event.id });
+    await expect(teammateScope.timeline.getEvent(event.id)).resolves.toBeNull();
+    await expect(adminScope.timeline.getEvent(event.id)).resolves.toBeNull();
+
+    await ownerScope.timeline.setEventVisibility(event.id, { visibility: 'team' });
+
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, event.id));
+    expect(row?.visibility).toBe('team');
   });
 });

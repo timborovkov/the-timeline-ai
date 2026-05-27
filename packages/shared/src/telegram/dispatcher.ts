@@ -2,6 +2,7 @@ import {
   type Db,
   rawEvents,
   teamMembers,
+  teamVisibilityDefaults,
   telegramChatBindings,
   telegramLinkTokens,
   telegramUsers,
@@ -90,7 +91,7 @@ interface GroupContext extends DispatcherDeps {
   updateId: number;
   tgUser: TgUser | null;
   tgUserRow: { id: string; userId: string | null } | null;
-  binding: { teamId: string } | null;
+  binding: { teamId: string; boundByUserId: string | null } | null;
 }
 
 /**
@@ -201,6 +202,7 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
         message: ctx.message,
         updateId: ctx.updateId,
         authorUserId: ctx.tgUserRow.userId,
+        visibilityOwnerUserId: ctx.tgUserRow.userId,
         sourceUnverified: ctx.tgUserRow.userId === null,
       },
       audio,
@@ -812,6 +814,7 @@ async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Prom
   const inserted = await insertEvent(ctx.db, {
     fallbackTeamId: ctx.activeTeamId,
     authorUserId: ctx.tgUserRow.userId,
+    visibilityOwnerUserId: ctx.tgUserRow.userId,
     text,
     message: ctx.message,
     updateId: ctx.updateId,
@@ -939,6 +942,7 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
         message: ctx.message,
         updateId: ctx.updateId,
         authorUserId: ctx.tgUserRow?.userId ?? null,
+        visibilityOwnerUserId: ctx.binding.boundByUserId ?? ctx.tgUserRow?.userId ?? null,
         sourceUnverified: !ctx.tgUserRow?.userId,
       },
       audio,
@@ -952,6 +956,7 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
     const inserted = await insertEvent(ctx.db, {
       fallbackTeamId: ctx.binding?.teamId ?? null,
       authorUserId: ctx.tgUserRow?.userId ?? null,
+      visibilityOwnerUserId: ctx.binding?.boundByUserId ?? ctx.tgUserRow?.userId ?? null,
       text,
       message: ctx.message,
       updateId: ctx.updateId,
@@ -1266,11 +1271,12 @@ async function getChatBinding(
   db: Db,
   tgChatId: number,
   title: string | null,
-): Promise<{ teamId: string } | null> {
+): Promise<{ teamId: string; boundByUserId: string | null } | null> {
   const rows = await db
     .select({
       id: telegramChatBindings.id,
       teamId: telegramChatBindings.teamId,
+      boundByUserId: telegramChatBindings.boundByUserId,
       title: telegramChatBindings.title,
     })
     .from(telegramChatBindings)
@@ -1283,7 +1289,7 @@ async function getChatBinding(
   if (title && title !== row.title) {
     await db.update(telegramChatBindings).set({ title }).where(eq(telegramChatBindings.id, row.id));
   }
-  return { teamId: row.teamId };
+  return { teamId: row.teamId, boundByUserId: row.boundByUserId };
 }
 
 interface InsertEventInput {
@@ -1296,6 +1302,7 @@ interface InsertEventInput {
    */
   fallbackTeamId: string | null;
   authorUserId: string | null;
+  visibilityOwnerUserId?: string | null;
   text: string | null;
   message: TgMessage;
   updateId: number;
@@ -1383,87 +1390,37 @@ async function insertEvent(
   }
   if (sourceUnverified) metadata.source_unverified = true;
 
+  const defaults = await resolveTelegramVisibilityDefault(db, teamId);
+  const visibilityOwnerUserId =
+    input.visibilityOwnerUserId ?? authorUserId ?? defaults.sourceOwnerUserId ?? null;
+  const visibility =
+    defaults.visibility === 'private' && visibilityOwnerUserId === null
+      ? 'team'
+      : defaults.visibility;
+
   // Edits use edit_date for occurredAt so the timeline orders them by when
   // the user actually edited, not by when the original was sent.
   const occurredAtSec = input.isEdit
     ? (input.message.edit_date ?? input.message.date)
     : input.message.date;
 
-  const eventValues = {
-    teamId,
-    authorUserId,
-    source: 'telegram' as const,
-    contentText: input.text,
-    contentAudioUrl: input.audio?.key ?? null,
-    occurredAt: new Date(occurredAtSec * 1000),
-    sourceMetadata: metadata,
-  };
-
-  async function insertRawEvent(tx: DbOrTx): Promise<{ id: string; teamId: string } | null> {
-    // ON CONFLICT DO NOTHING against the partial unique index on
-    // (source_metadata->>'tg_update_id') WHERE source='telegram'. If Telegram
-    // retries an update because we didn't 200 in time (or the process crashed
-    // mid-handler), the second insert is a silent no-op instead of a duplicate
-    // row in the timeline.
-    const inserted = await tx
-      .insert(rawEvents)
-      .values(eventValues)
-      .onConflictDoNothing()
-      .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
-    return inserted[0] ?? null;
-  }
-
-  if (input.isEdit) {
-    return db.transaction(async (tx) => {
-      await lockTelegramMessageRevisions(tx, {
-        teamId,
-        chatId: input.message.chat.id,
-        messageId: input.message.message_id,
-      });
-      const inserted = await insertRawEvent(tx);
-      const row = inserted ?? (await findEventByUpdateId(tx, input.updateId));
-      if (row) {
-        const latest = await findLatestTelegramRevision(tx, {
-          teamId,
-          chatId: input.message.chat.id,
-          messageId: input.message.message_id,
-        });
-        if (latest) {
-          await tombstoneSupersededTelegramRevisions(tx, {
-            teamId,
-            chatId: input.message.chat.id,
-            messageId: input.message.message_id,
-            supersededByEventId: latest.id,
-          });
-        }
-        return inserted && latest?.id === inserted.id ? inserted : null;
-      }
-      return null;
-    });
-  }
-
-  return insertRawEvent(db);
-}
-
-async function tombstoneSupersededTelegramRevisions(
-  db: DbOrTx,
-  input: {
-    teamId: string;
-    chatId: number;
-    messageId: number;
-    supersededByEventId: string;
-  },
-): Promise<void> {
-  const patch = JSON.stringify({
-    deleted: true,
-    delete_reason: 'telegram_superseded_by_edit',
-    deleted_at: new Date().toISOString(),
-    superseded_by_event_id: input.supersededByEventId,
-  });
-  await db
-    .update(rawEvents)
-    .set({
-      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+  // ON CONFLICT DO NOTHING against the partial unique index on
+  // (source_metadata->>'tg_update_id') WHERE source='telegram'. If Telegram
+  // retries an update because we didn't 200 in time (or the process crashed
+  // mid-handler), the second insert is a silent no-op instead of a duplicate
+  // row in the timeline.
+  const inserted = await db
+    .insert(rawEvents)
+    .values({
+      teamId,
+      authorUserId,
+      source: 'telegram',
+      contentText: input.text,
+      contentAudioUrl: input.audio?.key ?? null,
+      occurredAt: new Date(occurredAtSec * 1000),
+      visibility,
+      visibilityOwnerUserId,
+      sourceMetadata: metadata,
     })
     .where(
       and(
@@ -1519,6 +1476,26 @@ async function findLatestTelegramRevision(
   return rows[0] ?? null;
 }
 
+async function resolveTelegramVisibilityDefault(
+  db: Db,
+  teamId: string,
+): Promise<{ visibility: 'private' | 'team'; sourceOwnerUserId: string | null }> {
+  const rows = await db
+    .select()
+    .from(teamVisibilityDefaults)
+    .where(
+      and(
+        eq(teamVisibilityDefaults.teamId, teamId),
+        sql`${teamVisibilityDefaults.source} IN ('telegram', 'team')`,
+      ),
+    );
+  const row = rows.find((r) => r.source === 'telegram') ?? rows.find((r) => r.source === 'team');
+  return {
+    visibility: row?.visibility === 'private' ? 'private' : 'team',
+    sourceOwnerUserId: row?.sourceOwnerUserId ?? null,
+  };
+}
+
 interface AudioIngestCtx {
   db: Db;
   tg: TelegramApi;
@@ -1526,6 +1503,7 @@ interface AudioIngestCtx {
   message: TgMessage;
   updateId: number;
   authorUserId: string | null;
+  visibilityOwnerUserId?: string | null;
   sourceUnverified: boolean;
 }
 
@@ -1598,7 +1576,7 @@ async function ingestAudio(
   // the audio metadata so the timeline / future extraction can surface it.
   if (ctx.message.caption) extra.tg_caption = ctx.message.caption;
 
-  const inserted = await insertEvent(ctx.db, {
+  const eventInput: InsertEventInput = {
     fallbackTeamId: teamId,
     authorUserId: ctx.authorUserId,
     text: null,
@@ -1607,7 +1585,11 @@ async function ingestAudio(
     sourceUnverified: ctx.sourceUnverified,
     isEdit: false,
     audio: { key, extra },
-  });
+  };
+  if (ctx.visibilityOwnerUserId !== undefined) {
+    eventInput.visibilityOwnerUserId = ctx.visibilityOwnerUserId;
+  }
+  const inserted = await insertEvent(ctx.db, eventInput);
 
   // Self-heal on retry: if `insertEvent` returned null, the row was inserted
   // on a prior webhook delivery but our enqueue may have failed (or the

@@ -107,6 +107,7 @@ const samplePayload: QdrantPayload = {
   entity_ids: [],
   occurred_at: '2026-05-20T00:00:00.000Z',
   author_user_id: 'user-1',
+  visibility_owner_user_id: 'user-1',
   source: 'web',
   visibility: 'team',
   visibility_user_ids: null,
@@ -185,7 +186,7 @@ describe('createQdrantClient', () => {
     // `min_should: 1` is not valid in Qdrant's API spec — verify it is
     // absent so a future version doesn't reject the filter.
     expect(body.filter.min_should).toBeUndefined();
-    expect(body.filter.should).toHaveLength(3);
+    expect(body.filter.should).toHaveLength(5);
     // Branch 2: private + own author
     expect(body.filter.should[1]).toMatchObject({
       must: [
@@ -193,11 +194,25 @@ describe('createQdrantClient', () => {
         { key: 'author_user_id', match: { value: 'user-1' } },
       ],
     });
-    // Branch 3: specific_users contains userId
+    // Branch 3: private + visibility owner
     expect(body.filter.should[2]).toMatchObject({
+      must: [
+        { key: 'visibility', match: { value: 'private' } },
+        { key: 'visibility_owner_user_id', match: { value: 'user-1' } },
+      ],
+    });
+    // Branch 4: specific_users contains userId
+    expect(body.filter.should[3]).toMatchObject({
       must: [
         { key: 'visibility', match: { value: 'specific_users' } },
         { key: 'visibility_user_ids', match: { any: ['user-1'] } },
+      ],
+    });
+    // Branch 5: specific_users + visibility owner
+    expect(body.filter.should[4]).toMatchObject({
+      must: [
+        { key: 'visibility', match: { value: 'specific_users' } },
+        { key: 'visibility_owner_user_id', match: { value: 'user-1' } },
       ],
     });
   });

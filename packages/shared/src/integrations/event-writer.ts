@@ -38,12 +38,9 @@ export async function writeIntegrationEvents(deps: {
   const visibility = deps.integration.visibilityDefault;
   const teamId = deps.integration.teamId;
   // Attribute integration rows to the user who connected the integration.
-  // The team visibility predicate treats `visibility='private'` as visible
-  // only when `authorUserId = viewer`; without an attributed author, private
-  // events would match no one and silently disappear from search / chat /
-  // outbound MCP reads. Falling back to null is fine for the (default)
-  // `team` case — the OR-branch covers it — but it's the wrong default
-  // for the configurable-private case.
+  // Private visibility matches either author_user_id or visibility_owner_user_id;
+  // using the connector owner for both preserves old private-row semantics and
+  // makes ownership obvious in the timeline UI.
   const authorUserId = deps.integration.connectedByUserId ?? null;
 
   // Dedupe by dedupKey within the batch. Postgres's
@@ -65,10 +62,15 @@ export async function writeIntegrationEvents(deps: {
   const values = uniqueEvents.map((evt) => ({
     teamId,
     authorUserId,
+    visibilityOwnerUserId: deps.integration.connectedByUserId ?? null,
     source: 'integration' as const,
     contentText: evt.contentText,
     occurredAt: evt.occurredAt,
     visibility: evt.visibility ?? visibility,
+    visibilityUserIds:
+      (evt.visibility ?? visibility) === 'specific_users'
+        ? deps.integration.visibilityDefaultUserIds
+        : null,
     sourceMetadata: {
       provider: evt.provider,
       integration_id: deps.integration.id,

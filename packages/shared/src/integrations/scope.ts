@@ -30,6 +30,7 @@ export interface CreateIntegrationInput {
   scopes?: string[];
   tokens?: Record<string, unknown>;
   visibilityDefault?: 'team' | 'private' | 'specific_users';
+  visibilityDefaultUserIds?: string[] | null;
 }
 
 export function createIntegrationScope(deps: {
@@ -37,8 +38,22 @@ export function createIntegrationScope(deps: {
   teamId: string;
   userId: string;
   ensureMember: (minRole?: 'member' | 'admin' | 'owner') => Promise<unknown>;
+  requireTeamMember?: (otherUserId: string) => Promise<void>;
 }) {
   const { db, teamId, userId, ensureMember } = deps;
+
+  async function validateVisibilityUserIds(
+    visibility: 'team' | 'private' | 'specific_users',
+    ids: string[] | null | undefined,
+  ): Promise<string[] | null> {
+    if (visibility !== 'specific_users') return null;
+    const clean = [...new Set(ids ?? [])];
+    if (clean.length === 0) throw new Error('specific_users visibility requires at least one user');
+    if (deps.requireTeamMember) {
+      for (const uid of clean) await deps.requireTeamMember(uid);
+    }
+    return clean;
+  }
 
   async function listIntegrations(): Promise<IntegrationRow[]> {
     await ensureMember();
@@ -72,11 +87,43 @@ export function createIntegrationScope(deps: {
   async function createIntegration(input: CreateIntegrationInput): Promise<IntegrationRow> {
     await ensureMember('admin');
     const encrypted = input.tokens ? encryptJson(input.tokens) : undefined;
-    return db.transaction(async (tx) => {
-      const rows = await tx
-        .insert(integrationsTable)
-        .values({
-          teamId,
+    const visibilityDefault = input.visibilityDefault ?? 'team';
+    const visibilityDefaultUserIds = await validateVisibilityUserIds(
+      visibilityDefault,
+      input.visibilityDefaultUserIds ?? null,
+    );
+    const rows = await db
+      .insert(integrationsTable)
+      .values({
+        teamId,
+        connectedByUserId: userId,
+        provider: input.provider,
+        displayName: input.displayName,
+        externalAccountId: input.externalAccountId ?? null,
+        scopes: input.scopes ?? [],
+        authSecretCiphertext: encrypted?.ciphertext ?? null,
+        authSecretIv: encrypted?.iv ?? null,
+        authSecretTag: encrypted?.tag ?? null,
+        visibilityDefault,
+        visibilityDefaultUserIds,
+      })
+      .onConflictDoUpdate({
+        target: [
+          integrationsTable.teamId,
+          integrationsTable.provider,
+          integrationsTable.externalAccountId,
+        ],
+        // Reconnect refreshes the tokens + display name + clears the
+        // last error, but does NOT silently re-enable an integration an
+        // admin explicitly disabled. The admin must flip `enabled` back
+        // on via the settings UI — otherwise an OAuth reconnect would
+        // resume a paused sync without anyone asking.
+        set: {
+          // Refresh the connector to whichever admin re-authenticated —
+          // otherwise downstream paths like the Drive document-harvest
+          // run withTeam under the original (possibly long-gone) user
+          // id, which can mis-attribute or fail on visibility checks
+          // if that user has since left the team.
           connectedByUserId: userId,
           provider: input.provider,
           displayName: input.displayName,
@@ -167,6 +214,26 @@ export function createIntegrationScope(deps: {
         metadata: { field: 'enabled', enabled },
       });
     });
+  }
+
+  async function setIntegrationVisibilityDefault(
+    id: string,
+    visibilityDefault: 'team' | 'private' | 'specific_users',
+    visibilityDefaultUserIds?: string[] | null,
+  ): Promise<void> {
+    await ensureMember('admin');
+    const normalizedUserIds = await validateVisibilityUserIds(
+      visibilityDefault,
+      visibilityDefaultUserIds,
+    );
+    await db
+      .update(integrationsTable)
+      .set({
+        visibilityDefault,
+        visibilityDefaultUserIds: normalizedUserIds,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)));
   }
 
   async function deleteIntegration(id: string): Promise<void> {
@@ -371,17 +438,22 @@ export function createIntegrationScope(deps: {
       )
       .limit(1);
     // Same visibility predicate the rest of withTeam applies on raw_events.
-    // Without it, a non-author team member could read history rows whose
-    // `visibility` is `private` (only the author should see) or
-    // `specific_users` (only the named ids should see) via the agent's
-    // get_integration_resource tool — bypassing the gate that
-    // getEventsByIds and searchEvents enforce.
+    // Without it, a non-author/non-owner team member could read history rows
+    // whose `visibility` is `private` or `specific_users` via the agent's
+    // get_integration_resource tool — bypassing the gate that getEventsByIds
+    // and searchEvents enforce.
     const integrationVisibility = or(
       eq(rawEvents.visibility, 'team'),
-      and(eq(rawEvents.visibility, 'private'), eq(rawEvents.authorUserId, userId)),
+      and(
+        eq(rawEvents.visibility, 'private'),
+        or(eq(rawEvents.authorUserId, userId), eq(rawEvents.visibilityOwnerUserId, userId)),
+      ),
       and(
         eq(rawEvents.visibility, 'specific_users'),
-        sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
+        or(
+          eq(rawEvents.visibilityOwnerUserId, userId),
+          sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
+        ),
       ),
     );
     const events = await db
@@ -414,6 +486,7 @@ export function createIntegrationScope(deps: {
     createIntegration,
     updateIntegrationTokens,
     setIntegrationEnabled,
+    setIntegrationVisibilityDefault,
     deleteIntegration,
     recordError,
     markSynced,

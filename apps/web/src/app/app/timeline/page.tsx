@@ -95,7 +95,8 @@ export default async function TimelinePage({ searchParams }: Props) {
     to: toQueryFilter,
     limit: 30,
   });
-  const events = eventPage.items;
+  const webDefault = await scope.timeline.resolveVisibilityDefault('web');
+  const quickCaptureVisibility = webDefault.visibility === 'private' ? 'private' : 'team';
 
   // Format a Date back to the YYYY-MM-DD string the <input type="date">
   // expects. Both `parseDate` and `toISOString()` treat the value as UTC,
@@ -149,6 +150,7 @@ export default async function TimelinePage({ searchParams }: Props) {
           .from(users)
           .where(inArray(users.id, memberIds))
       : [];
+  const memberUserMap = new Map(memberRows.map((m) => [m.id, m] as const));
 
   const hasSearch = Boolean(sp.q?.trim());
   const hasFilters = Boolean(authorFilter ?? fromFilter ?? toFilter) || hasSearch;
@@ -176,7 +178,7 @@ export default async function TimelinePage({ searchParams }: Props) {
         aria-label="Capture"
         className="rounded-sm border border-border bg-surface p-4 focus-within:border-border-strong"
       >
-        <CaptureForm />
+        <CaptureForm initialVisibility={quickCaptureVisibility} />
       </section>
 
       <OnboardingChecklist />
@@ -265,24 +267,15 @@ export default async function TimelinePage({ searchParams }: Props) {
           </details>
         </div>
 
-        <TimelineFeed
-          initialPage={{
-            items: events.map((event) => ({
-              ...event,
-              occurredAt: event.occurredAt.toISOString(),
-              createdAt: event.createdAt.toISOString(),
-            })),
-            nextCursor: eventPage.nextCursor,
-            authors: Object.fromEntries(authorRows.map((row) => [row.id, row])),
-            audioUrls: Object.fromEntries(audioUrlMap.entries()),
-          }}
-          filters={{
-            author: authorFilter ?? null,
-            from: sp.from ?? null,
-            to: sp.to ?? null,
-          }}
+        <TimelineList
+          events={events}
+          authorMap={authorMap}
+          audioUrlMap={audioUrlMap}
           currentUserId={session.user.id}
-          isAdmin={isAdmin}
+          members={members.map((m) => {
+            const u = memberUserMap.get(m.userId);
+            return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
+          })}
         />
       </section>
     </div>

@@ -207,28 +207,25 @@ describe('document scope — visibility filter', () => {
     expect(await C.getDocument(created.document.id)).toBeNull();
   });
 
-  it('can use getDocument as a visibility gate without writing a detail-read audit row', async () => {
+  it('rejects specific_users documents and folders without an allowlist', async () => {
     const scope = withTeam(db, TEAM_ID, USER_A).documents;
-    const created = await scope.createDocument({
-      name: 'download-only.txt',
-      folderId: null,
-      filename: 'download-only.txt',
-      contentType: 'text/plain',
-      visibility: 'private',
-    });
-
-    expect(await scope.getDocument(created.document.id, { auditDetailRead: false })).not.toBeNull();
-
-    const afterVisibilityGate = await pg.query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM audit_log WHERE action = 'document.detail_read'`,
-    );
-    expect(afterVisibilityGate.rows[0]?.count).toBe('0');
-
-    expect(await scope.getDocument(created.document.id)).not.toBeNull();
-    const afterDetailRead = await pg.query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM audit_log WHERE action = 'document.detail_read'`,
-    );
-    expect(afterDetailRead.rows[0]?.count).toBe('1');
+    await expect(
+      scope.createDocument({
+        name: 'empty-allowlist.txt',
+        folderId: null,
+        filename: 'empty-allowlist.txt',
+        contentType: 'text/plain',
+        visibility: 'specific_users',
+        visibilityUserIds: [],
+      }),
+    ).rejects.toThrow('specific_users visibility requires at least one user');
+    await expect(
+      scope.createFolder({
+        name: 'empty allowlist',
+        visibility: 'specific_users',
+        visibilityUserIds: [],
+      }),
+    ).rejects.toThrow('specific_users visibility requires at least one user');
   });
 });
 

@@ -8,11 +8,24 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-export function ScheduleMeetingBotForm() {
+export function ScheduleMeetingBotForm({
+  defaultVisibility = 'team',
+  defaultVisibilityUserIds = null,
+  members = [],
+}: {
+  defaultVisibility?: 'team' | 'private' | 'specific_users';
+  defaultVisibilityUserIds?: string[] | null;
+  members?: { id: string; label: string }[];
+}) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [visibility, setVisibility] = useState<'team' | 'private'>('team');
+  const [visibility, setVisibility] = useState<'team' | 'private' | 'specific_users'>(
+    defaultVisibility,
+  );
+  const [visibilityUserIds, setVisibilityUserIds] = useState<string[]>(
+    defaultVisibilityUserIds ?? [],
+  );
   const [consent, setConsent] = useState(false);
 
   async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
@@ -29,6 +42,7 @@ export function ScheduleMeetingBotForm() {
         meetingUrl,
         title: title || undefined,
         visibility,
+        visibilityUserIds,
         consentGiven: consent,
       });
       if (!res.ok) {
@@ -88,6 +102,34 @@ export function ScheduleMeetingBotForm() {
           >
             Private
           </Button>
+          <Button
+            type="button"
+            variant={visibility === 'specific_users' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => {
+              setVisibility('specific_users');
+            }}
+          >
+            Specific users
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {members.map((m) => (
+            <label key={m.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={visibilityUserIds.includes(m.id)}
+                onChange={(e) => {
+                  setVisibilityUserIds((prev) =>
+                    e.target.checked
+                      ? [...new Set([...prev, m.id])]
+                      : prev.filter((id) => id !== m.id),
+                  );
+                }}
+              />
+              {m.label}
+            </label>
+          ))}
         </div>
       </div>
       <label className="flex items-start gap-2 text-sm">

@@ -28,6 +28,7 @@ export interface MeetingScopeDeps {
   teamId: string;
   userId: string;
   ensureMember: (role?: 'member' | 'admin' | 'owner') => Promise<unknown>;
+  requireTeamMember?: (otherUserId: string) => Promise<void>;
 }
 
 export interface MeetingRow {
@@ -256,6 +257,15 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
   return {
     async createMeeting(input: CreateMeetingInput): Promise<MeetingRow> {
       await ensureMember();
+      const visibility = input.defaultVisibility ?? 'team';
+      const visibilityUserIds: string[] | null =
+        visibility === 'specific_users' ? [...new Set(input.visibilityUserIds ?? [])] : null;
+      if (visibilityUserIds?.length === 0) {
+        throw new Error('specific_users visibility requires at least one user');
+      }
+      if (visibilityUserIds && deps.requireTeamMember) {
+        for (const uid of visibilityUserIds) await deps.requireTeamMember(uid);
+      }
       const rows = await db
         .insert(meetings)
         .values({
@@ -266,8 +276,8 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
           meetingUrl: input.meetingUrl,
           title: input.title ?? null,
           status: 'pending',
-          defaultVisibility: input.defaultVisibility ?? 'team',
-          visibilityUserIds: input.visibilityUserIds ?? null,
+          defaultVisibility: visibility,
+          visibilityUserIds,
           metadata: input.metadata ?? {},
         })
         .returning();

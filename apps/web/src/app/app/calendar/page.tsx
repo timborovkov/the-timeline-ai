@@ -1,4 +1,6 @@
+import { users } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
+import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import { CreateCalendarEventForm } from '@/components/calendar/calendar-event-form';
@@ -31,7 +33,20 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   const from = new Date(Date.UTC(year, month, 1));
   const to = new Date(Date.UTC(year, month + 1, 1));
 
-  const events = await scope.calendar.listCalendarEvents({ from, to });
+  const [events, defaultRow, members] = await Promise.all([
+    scope.calendar.listCalendarEvents({ from, to }),
+    scope.timeline.resolveVisibilityDefault('calendar'),
+    scope.timeline.listMembers(),
+  ]);
+  const memberIds = members.map((m) => m.userId);
+  const memberUsers =
+    memberIds.length > 0
+      ? await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, memberIds))
+      : [];
+  const memberUserMap = new Map(memberUsers.map((u) => [u.id, u] as const));
 
   const serialized = events.map((e) => ({
     id: e.id,
@@ -54,7 +69,14 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         </p>
       </header>
 
-      <CreateCalendarEventForm />
+      <CreateCalendarEventForm
+        defaultVisibility={defaultRow.visibility}
+        defaultVisibilityUserIds={defaultRow.visibilityUserIds}
+        members={members.map((m) => {
+          const u = memberUserMap.get(m.userId);
+          return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
+        })}
+      />
       <CalendarView events={serialized} />
     </div>
   );

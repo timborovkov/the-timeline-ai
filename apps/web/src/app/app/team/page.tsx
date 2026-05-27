@@ -17,6 +17,7 @@ import { InviteMemberForm, RenameTeamForm, TeamExportPanel } from '@/components/
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { VisibilityDefaultSettings } from '@/components/visibility-default-settings';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -117,6 +118,11 @@ export default async function TeamSettingsPage() {
           .where(inArray(users.id, userIds))
       : [];
   const userMap = new Map(userInfo.map((u) => [u.id, u] as const));
+  const visibilityDefaults = isAdmin ? await scope.timeline.getVisibilityDefaults() : [];
+  const visibilityMembers = memberRows.map((m) => {
+    const u = userMap.get(m.userId);
+    return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
+  });
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -162,20 +168,13 @@ export default async function TeamSettingsPage() {
       {isAdmin ? (
         <Card>
           <CardHeader>
-            <CardTitle>Trust audit</CardTitle>
+            <CardTitle>Visibility defaults</CardTitle>
           </CardHeader>
-          <CardContent className="flex items-center justify-between gap-4">
-            <p className="text-sm text-muted-foreground">
-              Sensitive reads and security-relevant team actions.
-            </p>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/team/audit">Open audit</Link>
-            </Button>
+          <CardContent>
+            <VisibilityDefaultSettings defaults={visibilityDefaults} members={visibilityMembers} />
           </CardContent>
         </Card>
       ) : null}
-
-      <TeamAccessPanel team={team} />
 
       <Card>
         <CardHeader>

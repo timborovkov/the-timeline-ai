@@ -19,11 +19,15 @@ function baseMimeType(mt: string): string {
   return mt.split(';')[0]?.trim() ?? mt;
 }
 
-export function CaptureForm() {
+export function CaptureForm({
+  initialVisibility = 'team',
+}: {
+  initialVisibility?: 'team' | 'private';
+}) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [isPrivate, setIsPrivate] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(initialVisibility === 'private');
   const [clip, setClip] = useState<RecordedClip | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
