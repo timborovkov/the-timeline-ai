@@ -28,5 +28,6 @@ export * as mcpServer from './mcp-server/index.js';
 export * as calendarScope from './calendar/index.js';
 export * as embedding from './embedding/index.js';
 export * as jobRecovery from './job-recovery/index.js';
+export * from './team-exports/index.js';
 export * as audit from './audit/index.js';
 export * as onboarding from './onboarding/index.js';

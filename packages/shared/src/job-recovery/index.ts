@@ -869,9 +869,23 @@ function dedupe(items: JobRecoveryItem[]): JobRecoveryItem[] {
   for (const item of items) {
     const key = dismissalKey(item.kind, item.artifactKind, item.artifactId);
     const existing = byKey.get(key);
-    if (!existing || item.detectedAt > existing.detectedAt) byKey.set(key, item);
+    if (!existing || shouldReplaceDedupedItem(existing, item)) byKey.set(key, item);
   }
   return [...byKey.values()];
+}
+
+function shouldReplaceDedupedItem(existing: JobRecoveryItem, candidate: JobRecoveryItem): boolean {
+  const existingSyncKind = syncKindFromItem(existing);
+  const candidateSyncKind = syncKindFromItem(candidate);
+  if (candidateSyncKind && !existingSyncKind) return true;
+  if (existingSyncKind && !candidateSyncKind) return false;
+  return candidate.detectedAt > existing.detectedAt;
+}
+
+function syncKindFromItem(item: JobRecoveryItem): 'backfill' | 'incremental' | null {
+  if (item.kind !== 'integration_sync') return null;
+  const parsed = decodeRecoveryId(item.id);
+  return parsed.syncKind ?? null;
 }
 
 function dismissalKey(

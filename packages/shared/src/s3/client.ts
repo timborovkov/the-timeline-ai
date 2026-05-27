@@ -78,3 +78,9 @@ export function getDocumentsBucket(): string {
   if (!env.S3_BUCKET_DOCUMENTS) throw new Error('S3_BUCKET_DOCUMENTS is required');
   return env.S3_BUCKET_DOCUMENTS;
 }
+
+export function getExportsBucket(): string {
+  const env = getEnv();
+  if (!env.S3_BUCKET_EXPORTS) throw new Error('S3_BUCKET_EXPORTS is required');
+  return env.S3_BUCKET_EXPORTS;
+}

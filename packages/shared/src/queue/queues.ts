@@ -35,6 +35,9 @@ export const QUEUE_NAMES = {
   // last_error so the settings UI can surface degraded servers without
   // needing a chat turn to discover them.
   mcpHealth: 'mcp-health',
+  // Phase 13.4: owner/admin initiated team data export. The web app writes a
+  // team_exports row, then this worker builds the expiring archive out of band.
+  teamExport: 'team-export',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -581,5 +584,38 @@ export async function closeMcpHealthQueue(): Promise<void> {
   if (!_mcpHealthQueue) return;
   const q = _mcpHealthQueue;
   _mcpHealthQueue = undefined;
+  await q.close().catch(() => undefined);
+}
+
+export interface TeamExportJobData {
+  teamExportId: string;
+  teamId: string;
+  requestedByUserId: string;
+}
+
+let _teamExportQueue: Queue<TeamExportJobData> | undefined;
+
+export function getTeamExportQueue(): Queue<TeamExportJobData> {
+  if (_teamExportQueue) return _teamExportQueue;
+  _teamExportQueue = new Queue<TeamExportJobData>(QUEUE_NAMES.teamExport, {
+    connection: getRedisConnection(),
+    defaultJobOptions: {
+      attempts: 2,
+      backoff: { type: 'exponential', delay: 10_000 },
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  });
+  return _teamExportQueue;
+}
+
+export async function enqueueTeamExportJob(data: TeamExportJobData): Promise<void> {
+  await getTeamExportQueue().add('team-export', data, { jobId: data.teamExportId });
+}
+
+export async function closeTeamExportQueue(): Promise<void> {
+  if (!_teamExportQueue) return;
+  const q = _teamExportQueue;
+  _teamExportQueue = undefined;
   await q.close().catch(() => undefined);
 }

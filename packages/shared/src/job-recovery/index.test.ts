@@ -202,6 +202,52 @@ describe('job recovery scope', () => {
     expect(items[0]?.kind).toBe('integration_sync');
     expect(items[0]?.artifactId).toBe(INTEGRATION_ID);
   });
+
+  it('preserves failed integration backfill kind when DB and queue candidates overlap', async () => {
+    await pg.exec(`
+      INSERT INTO integrations (
+        id,
+        team_id,
+        provider,
+        display_name,
+        external_account_id,
+        last_error,
+        updated_at
+      )
+      VALUES (
+        '${INTEGRATION_ID}',
+        '${TEAM_ID}',
+        'github',
+        'GitHub',
+        'gh-1',
+        'state failed after job',
+        now()
+      );
+    `);
+    const enqueueIntegrationSyncJob = vi.fn().mockResolvedValue(undefined);
+    const scope = scopeFor(ADMIN_ID, 'admin', {
+      enqueueIntegrationSyncJob,
+      getIntegrationSyncQueue: () =>
+        fakeQueue([
+          {
+            data: { kind: 'backfill', integrationId: INTEGRATION_ID, teamId: TEAM_ID },
+            failedReason: 'backfill failed',
+            finishedOn: Date.now() - 60_000,
+          },
+        ]),
+    });
+    const [item] = await scope.listRecoverableJobs();
+    if (!item) throw new Error('expected recovery item');
+
+    await scope.retryRecoverableJob(item.id);
+
+    expect(item.kind).toBe('integration_sync');
+    expect(enqueueIntegrationSyncJob).toHaveBeenCalledWith({
+      kind: 'backfill',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+    });
+  });
 });
 
 function scopeFor(
