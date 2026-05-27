@@ -206,6 +206,30 @@ describe('document scope — visibility filter', () => {
     const C = withTeam(db, TEAM_ID, USER_C).documents;
     expect(await C.getDocument(created.document.id)).toBeNull();
   });
+
+  it('can use getDocument as a visibility gate without writing a detail-read audit row', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const created = await scope.createDocument({
+      name: 'download-only.txt',
+      folderId: null,
+      filename: 'download-only.txt',
+      contentType: 'text/plain',
+      visibility: 'private',
+    });
+
+    expect(await scope.getDocument(created.document.id, { auditDetailRead: false })).not.toBeNull();
+
+    const afterVisibilityGate = await pg.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM audit_log WHERE action = 'document.detail_read'`,
+    );
+    expect(afterVisibilityGate.rows[0]?.count).toBe('0');
+
+    expect(await scope.getDocument(created.document.id)).not.toBeNull();
+    const afterDetailRead = await pg.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM audit_log WHERE action = 'document.detail_read'`,
+    );
+    expect(afterDetailRead.rows[0]?.count).toBe('1');
+  });
 });
 
 describe('document scope — folder constraints', () => {

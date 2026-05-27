@@ -1,6 +1,7 @@
 'use server';
 
 import {
+  auditLog,
   teamInvites,
   teamMembers,
   teams,
@@ -110,7 +111,21 @@ export async function renameTeamAction(
   }
 
   try {
-    await db.update(teams).set({ name: parsed.data.name }).where(eq(teams.id, parsed.data.teamId));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(teams)
+        .set({ name: parsed.data.name })
+        .where(eq(teams.id, parsed.data.teamId));
+      await tx.insert(auditLog).values({
+        teamId: parsed.data.teamId,
+        actorUserId: session.user.id,
+        action: 'settings.change',
+        targetType: 'team',
+        targetId: parsed.data.teamId,
+        targetVisibility: 'team',
+        metadata: { setting: 'team.name' },
+      });
+    });
   } catch {
     return { error: 'Failed to rename team' };
   }
@@ -263,6 +278,19 @@ export async function inviteMemberAction(
             .returning({ id: teamInvites.id });
       const id = rows[0]?.id;
       if (!id) throw new Error('invite-write-failed');
+      await tx.insert(auditLog).values({
+        teamId: active.teamId,
+        actorUserId: session.user.id,
+        action: 'settings.change',
+        targetType: 'team',
+        targetId: active.teamId,
+        targetVisibility: 'team',
+        metadata: {
+          setting: existing ? 'team.invite_updated' : 'team.invite',
+          inviteId: id,
+          role: parsed.data.role,
+        },
+      });
       return {
         id,
         email: parsed.data.email,
@@ -372,6 +400,15 @@ export async function revokeInviteAction(formData: FormData): Promise<void> {
       .update(teamInvites)
       .set({ revokedAt: new Date(), revokedByUserId: session.user.id })
       .where(eq(teamInvites.id, inviteId));
+    await tx.insert(auditLog).values({
+      teamId: active.teamId,
+      actorUserId: session.user.id,
+      action: 'settings.change',
+      targetType: 'team',
+      targetId: active.teamId,
+      targetVisibility: 'team',
+      metadata: { setting: 'team.invite_revoked', inviteId, role: invite.role },
+    });
   });
   revalidatePath('/app/team');
 }
@@ -417,6 +454,20 @@ export async function changeMemberRoleAction(formData: FormData): Promise<void> 
         .update(teamMembers)
         .set({ role })
         .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
+      await tx.insert(auditLog).values({
+        teamId: active.teamId,
+        actorUserId: session.user.id,
+        action: 'settings.change',
+        targetType: 'team',
+        targetId: active.teamId,
+        targetVisibility: 'team',
+        metadata: {
+          setting: 'team.member_role',
+          memberUserId,
+          previousRole: target.role,
+          role,
+        },
+      });
     });
   } catch (e) {
     if (e instanceof Error && e.message === 'last_owner') return;
@@ -551,6 +602,15 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
           .set({ isActive: true })
           .where(eq(telegramUserTeams.id, oldest.id));
       }
+      await tx.insert(auditLog).values({
+        teamId: active.teamId,
+        actorUserId: session.user.id,
+        action: 'settings.change',
+        targetType: 'team',
+        targetId: active.teamId,
+        targetVisibility: 'team',
+        metadata: { setting: 'team.member_removed', memberUserId, role: targetRole },
+      });
     });
   } catch (e) {
     if (e instanceof Error && e.message === 'last_owner') return;

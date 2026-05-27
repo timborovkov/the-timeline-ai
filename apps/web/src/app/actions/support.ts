@@ -1,7 +1,8 @@
 'use server';
 
 import { supportRequests } from '@timeline/db';
-import { email, getEnv, rateLimit } from '@timeline/shared';
+import { getEnv } from '@timeline/shared/env';
+import * as rateLimit from '@timeline/shared/rate-limit';
 import { eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
 import { z } from 'zod';
@@ -9,6 +10,8 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { clientIpFromHeaders } from '@/lib/request-ip';
+import { verifyTurnstileToken } from '@/lib/turnstile';
 
 export interface SupportFormState {
   ok?: boolean;
@@ -24,7 +27,6 @@ const supportSchema = z.object({
   message: z.string().trim().min(20).max(5000),
   currentPage: z.string().trim().url().max(2048).optional().or(z.literal('')),
   company: z.string().trim().max(0),
-  turnstileToken: z.string().optional(),
 });
 
 export async function submitSupportRequestAction(
@@ -38,14 +40,30 @@ export async function submitSupportRequestAction(
     message: formData.get('message'),
     currentPage: formData.get('currentPage') ?? undefined,
     company: formData.get('company') ?? '',
-    turnstileToken: formData.get('cf-turnstile-response') ?? undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Check the form and try again.' };
   }
 
   const h = await headers();
-  const ip = email.clientIpFromHeaders(h) ?? 'unknown';
+  const ip = clientIpFromHeaders(h);
+  const ipKey = ip ?? 'unknown';
+  const ipLimited = await rateLimit.checkRateLimit({
+    key: rateLimit.rateLimitKey('support', 'ip', ipKey),
+    ...rateLimit.RATE_LIMITS.supportForm,
+  });
+  if (!ipLimited.ok) {
+    return {
+      error: `Too many requests. Try again in ${Math.ceil(ipLimited.retryAfterMs / 1000)}s.`,
+    };
+  }
+
+  const turnstileOk = await verifyTurnstileToken({
+    token: formData.get('cf-turnstile-response'),
+    remoteIp: ip,
+  });
+  if (!turnstileOk) return { error: 'Verification failed. Refresh and try again.' };
+
   const session = await auth();
   const userId = session ? session.user.id : null;
   const active = userId ? (await resolveActiveTeam(userId)).active : null;
@@ -53,30 +71,15 @@ export async function submitSupportRequestAction(
   const currentPage = parsed.data.currentPage === '' ? null : (parsed.data.currentPage ?? null);
   const identityLimited = await rateLimit.checkRateLimit({
     key: rateLimit.rateLimitKey('support', 'identity', identity),
-    ...rateLimit.RATE_LIMITS.supportContact,
+    ...rateLimit.RATE_LIMITS.supportForm,
   });
-  const ipLimited = await rateLimit.checkRateLimit({
-    key: rateLimit.rateLimitKey('support', 'ip', ip),
-    ...rateLimit.RATE_LIMITS.supportContact,
-  });
-  const limited = identityLimited.ok ? ipLimited : identityLimited;
-  if (!limited.ok) {
+  if (!identityLimited.ok) {
     return {
-      error: `Too many requests. Try again in ${Math.ceil(limited.retryAfterMs / 1000)}s.`,
+      error: `Too many requests. Try again in ${Math.ceil(identityLimited.retryAfterMs / 1000)}s.`,
     };
   }
 
   const env = getEnv();
-  const requiresTurnstile = env.NODE_ENV === 'production';
-  if (requiresTurnstile) {
-    const verified = await verifyTurnstile({
-      secret: env.TURNSTILE_SECRET_KEY,
-      token: parsed.data.turnstileToken,
-      ip,
-    });
-    if (!verified.ok) return { error: verified.error };
-  }
-
   const row = await db
     .insert(supportRequests)
     .values({
@@ -93,7 +96,7 @@ export async function submitSupportRequestAction(
         teamName: active?.teamName ?? null,
         teamSlug: active?.teamSlug ?? null,
         teamRole: active?.role ?? null,
-        ip,
+        ip: ipKey,
         userAgent: h.get('user-agent'),
         referer: h.get('referer'),
       },
@@ -147,33 +150,6 @@ export async function submitSupportRequestAction(
   return { ok: true };
 }
 
-async function verifyTurnstile({
-  secret,
-  token,
-  ip,
-}: {
-  secret?: string;
-  token?: string;
-  ip: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!secret) return { ok: false, error: 'Support form protection is not configured.' };
-  if (!token) return { ok: false, error: 'Complete the verification challenge.' };
-
-  const body = new FormData();
-  body.set('secret', secret);
-  body.set('response', token);
-  if (ip !== 'unknown') body.set('remoteip', ip);
-
-  const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-    method: 'POST',
-    body,
-  });
-  if (!res.ok) return { ok: false, error: 'Could not verify the challenge. Try again.' };
-  const json = (await res.json()) as { success?: boolean };
-  if (!json.success) return { ok: false, error: 'Verification failed. Try again.' };
-  return { ok: true };
-}
-
 async function sendPostmarkSupportEmail(input: {
   token: string;
   supportEmail: string;
@@ -202,6 +178,7 @@ async function sendPostmarkSupportEmail(input: {
 
   const res = await fetch('https://api.postmarkapp.com/email', {
     method: 'POST',
+    signal: AbortSignal.timeout(10_000),
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',

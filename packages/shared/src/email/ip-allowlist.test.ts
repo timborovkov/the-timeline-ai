@@ -28,6 +28,13 @@ describe('isIpAllowed', () => {
 });
 
 describe('clientIpFromHeaders', () => {
+  it('prefers cloudflare connecting ip', () => {
+    const h = new Headers({
+      'cf-connecting-ip': '9.9.9.9',
+      'x-forwarded-for': '1.2.3.4, 10.0.0.1',
+    });
+    expect(clientIpFromHeaders(h)).toBe('9.9.9.9');
+  });
   it('takes first hop from x-forwarded-for', () => {
     const h = new Headers({ 'x-forwarded-for': '1.2.3.4, 10.0.0.1' });
     expect(clientIpFromHeaders(h)).toBe('1.2.3.4');

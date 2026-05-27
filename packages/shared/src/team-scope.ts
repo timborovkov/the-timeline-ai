@@ -1,5 +1,6 @@
 import {
   type Db,
+  auditLog,
   entities,
   entityType,
   eventSource,
@@ -13,6 +14,7 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
+import { createAuditScope } from './audit/scope.js';
 import { createCalendarScope } from './calendar/scope.js';
 import { createDocumentScope } from './documents/scope.js';
 import { createIntegrationScope } from './integrations/scope.js';
@@ -403,6 +405,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     requireTeamMember,
   });
 
+  const auditScope = createAuditScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+
   const onboardingScope = createOnboardingScope({
     db,
     teamId,
@@ -765,6 +774,19 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           .limit(1);
         const event = eventRows[0];
         if (!event) return null;
+        if (event.visibility !== 'team') {
+          await db.insert(auditLog).values({
+            teamId,
+            actorUserId: userId,
+            action: 'event.detail_read',
+            targetType: 'raw_event',
+            targetId: event.id,
+            targetVisibility: event.visibility,
+            targetOwnerUserId: event.authorUserId,
+            targetVisibilityUserIds: event.visibilityUserIds,
+            metadata: { source: event.source },
+          });
+        }
 
         const factRows = await db
           .select({
@@ -1110,6 +1132,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     mcp: mcpScope,
     onboarding: onboardingScope,
     calendar: calendarScope,
+    audit: auditScope,
   };
 }
 
