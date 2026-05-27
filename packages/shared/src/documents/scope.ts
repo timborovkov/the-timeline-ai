@@ -196,6 +196,11 @@ export interface DocumentChunkSearchHit {
   score: number;
 }
 
+export interface DocumentChunkSearchPage {
+  items: DocumentChunkSearchHit[];
+  nextOffset: number | null;
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function createDocumentScope(deps: DocumentScopeDeps) {
@@ -388,6 +393,93 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       .orderBy(desc(documents.updatedAt), desc(documents.id))
       .limit(args.limit ?? 200);
     return rows;
+  }
+
+  async function searchDocumentChunksPage(
+    input: SearchDocumentChunksInput,
+  ): Promise<DocumentChunkSearchPage> {
+    await ensureMember();
+    const embedFn = deps.embed ?? defaultEmbed;
+    const searchFn =
+      deps.qdrantSearch ??
+      (async (tId, uId, vector, opts) => {
+        const client = getQdrantClient();
+        return client.search(tId, uId, vector, opts);
+      });
+
+    const limit = input.limit ?? 12;
+    const offset = input.offset ?? 0;
+    const { vector } = await embedFn({ text: input.query });
+    const searchOpts: SearchOpts = {
+      limit: offset + limit + 1,
+      sourceKind: 'doc_chunk',
+    };
+    if (input.documentId) searchOpts.documentId = input.documentId;
+    if (input.folderIds) searchOpts.folderIds = input.folderIds;
+
+    const hits = await searchFn(teamId, userId, vector, searchOpts);
+    if (hits.length === 0) return { items: [], nextOffset: null };
+    const pageHits = hits.slice(offset, offset + limit);
+
+    const chunkIds = pageHits
+      .map((h) => h.payload.document_chunk_id)
+      .filter((id): id is string => typeof id === 'string');
+    if (chunkIds.length === 0) {
+      return { items: [], nextOffset: hits.length > offset + limit ? offset + limit : null };
+    }
+
+    const rows = await db
+      .select({
+        chunkId: documentChunks.id,
+        documentId: documentChunks.documentId,
+        documentVersionId: documentChunks.documentVersionId,
+        chunkIndex: documentChunks.chunkIndex,
+        pageNumber: documentChunks.pageNumber,
+        text: documentChunks.text,
+        summary: documentChunks.summary,
+        version: documentVersions.version,
+        documentName: documents.name,
+        folderId: documents.folderId,
+      })
+      .from(documentChunks)
+      .innerJoin(documents, eq(documents.id, documentChunks.documentId))
+      .innerJoin(documentVersions, eq(documentVersions.id, documentChunks.documentVersionId))
+      .where(
+        and(
+          inArray(documentChunks.id, chunkIds),
+          eq(documentChunks.teamId, teamId),
+          documentVisibility,
+          isNull(documents.deletedAt),
+        ),
+      );
+    const byId = new Map(rows.map((r) => [r.chunkId, r]));
+
+    const items: DocumentChunkSearchHit[] = [];
+    for (const hit of pageHits) {
+      if (hit.payload.team_id !== teamId) continue;
+      const cid = hit.payload.document_chunk_id;
+      if (!cid) continue;
+      const row = byId.get(cid);
+      if (!row) continue;
+      items.push({
+        documentId: row.documentId,
+        documentVersionId: row.documentVersionId,
+        documentChunkId: row.chunkId,
+        version: row.version,
+        chunkIndex: row.chunkIndex,
+        pageNumber: row.pageNumber,
+        text: row.text,
+        summary: row.summary,
+        documentName: row.documentName,
+        folderId: row.folderId,
+        score: hit.score,
+      });
+    }
+
+    return {
+      items,
+      nextOffset: hits.length > offset + limit ? offset + limit : null,
+    };
   }
 
   async function assertFolderInTeam(folderId: string): Promise<FolderRow> {
@@ -926,81 +1018,10 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     async searchDocumentChunks(
       input: SearchDocumentChunksInput,
     ): Promise<DocumentChunkSearchHit[]> {
-      await ensureMember();
-      const embedFn = deps.embed ?? defaultEmbed;
-      const searchFn =
-        deps.qdrantSearch ??
-        (async (tId, uId, vector, opts) => {
-          const client = getQdrantClient();
-          return client.search(tId, uId, vector, opts);
-        });
-
-      const { vector } = await embedFn({ text: input.query });
-      const searchOpts: SearchOpts = {
-        limit: (input.offset ?? 0) + (input.limit ?? 12),
-        sourceKind: 'doc_chunk',
-      };
-      if (input.documentId) searchOpts.documentId = input.documentId;
-      if (input.folderIds) searchOpts.folderIds = input.folderIds;
-
-      const hits = await searchFn(teamId, userId, vector, searchOpts);
-      if (hits.length === 0) return [];
-      const pageHits = hits.slice(input.offset ?? 0);
-
-      const chunkIds = pageHits
-        .map((h) => h.payload.document_chunk_id)
-        .filter((id): id is string => typeof id === 'string');
-      if (chunkIds.length === 0) return [];
-
-      const rows = await db
-        .select({
-          chunkId: documentChunks.id,
-          documentId: documentChunks.documentId,
-          documentVersionId: documentChunks.documentVersionId,
-          chunkIndex: documentChunks.chunkIndex,
-          pageNumber: documentChunks.pageNumber,
-          text: documentChunks.text,
-          summary: documentChunks.summary,
-          version: documentVersions.version,
-          documentName: documents.name,
-          folderId: documents.folderId,
-        })
-        .from(documentChunks)
-        .innerJoin(documents, eq(documents.id, documentChunks.documentId))
-        .innerJoin(documentVersions, eq(documentVersions.id, documentChunks.documentVersionId))
-        .where(
-          and(
-            inArray(documentChunks.id, chunkIds),
-            eq(documentChunks.teamId, teamId),
-            documentVisibility,
-            isNull(documents.deletedAt),
-          ),
-        );
-      const byId = new Map(rows.map((r) => [r.chunkId, r]));
-
-      const out: DocumentChunkSearchHit[] = [];
-      for (const hit of pageHits) {
-        if (hit.payload.team_id !== teamId) continue;
-        const cid = hit.payload.document_chunk_id;
-        if (!cid) continue;
-        const row = byId.get(cid);
-        if (!row) continue;
-        out.push({
-          documentId: row.documentId,
-          documentVersionId: row.documentVersionId,
-          documentChunkId: row.chunkId,
-          version: row.version,
-          chunkIndex: row.chunkIndex,
-          pageNumber: row.pageNumber,
-          text: row.text,
-          summary: row.summary,
-          documentName: row.documentName,
-          folderId: row.folderId,
-          score: hit.score,
-        });
-      }
-      return out;
+      return (await searchDocumentChunksPage(input)).items;
     },
+
+    searchDocumentChunksPage,
 
     /**
      * Recent document-related raw_events for this team (visibility-filtered

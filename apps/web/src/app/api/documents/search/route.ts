@@ -60,16 +60,11 @@ export async function POST(req: Request): Promise<Response> {
     limit,
   ]);
   const page = await cachedJson(key, 30, async () => {
-    const hits = await scope.documents.searchDocumentChunks({
+    return scope.documents.searchDocumentChunksPage({
       ...parsed.data,
       offset,
-      limit: limit + 1,
+      limit,
     });
-    const items = hits.slice(0, limit);
-    return {
-      items,
-      nextOffset: hits.length > limit ? offset + limit : null,
-    };
   });
   return Response.json(page);
 }

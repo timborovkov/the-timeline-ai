@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { readJson } from '@/lib/paginated-api';
@@ -18,8 +19,20 @@ export function useTimelineInfiniteQuery(
     audioUrls: Record<string, string>;
   },
 ) {
+  const queryClient = useQueryClient();
+  const queryKey = useMemo(
+    () => queryKeys.timeline(filters),
+    [filters.author, filters.from, filters.to],
+  );
+  useEffect(() => {
+    if (!initialPage) return;
+    queryClient.setQueryData(queryKey, {
+      pages: [initialPage],
+      pageParams: [null] as (string | null)[],
+    });
+  }, [initialPage, queryClient, queryKey]);
   return useInfiniteQuery({
-    queryKey: queryKeys.timeline(filters),
+    queryKey,
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams();
@@ -86,8 +99,17 @@ export function useDocumentListQuery(
     nextCursor: string | null;
   },
 ) {
+  const queryClient = useQueryClient();
+  const queryKey = useMemo(() => queryKeys.documentList(folderId), [folderId]);
+  useEffect(() => {
+    if (!initialPage) return;
+    queryClient.setQueryData(queryKey, {
+      pages: [initialPage],
+      pageParams: [null] as (string | null)[],
+    });
+  }, [initialPage, queryClient, queryKey]);
   return useInfiniteQuery({
-    queryKey: queryKeys.documentList(folderId),
+    queryKey,
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams();
