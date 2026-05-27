@@ -39,10 +39,12 @@ export default async function IntegrationsPage({
 
   const params = await searchParams;
   const scope = withTeam(db, active.teamId, session.user.id);
-  const [connected, mcpServers] = await Promise.all([
+  const [role, connected, mcpServers] = await Promise.all([
+    scope.requireMembership(),
     scope.integrations.listIntegrations(),
     scope.mcp.listTeamServers(),
   ]);
+  const isAdmin = role === 'owner' || role === 'admin';
   const nativeCatalog = integrationsLib.listAvailableProviders();
   const mcpCatalog = integrationsLib.listCatalog().filter((c) => c.kind === 'mcp' && c.mcpUrl);
   const connectedUrls = new Set(mcpServers.map((s) => s.url));
@@ -74,7 +76,7 @@ export default async function IntegrationsPage({
         <ActionChip href="/app/team/mcp-share" label="Expose as MCP →" />
         <ActionChip href="/app/me/mcp-servers" label="Personal MCP →" />
         <ActionChip href="/app/team/integrations/audit" label="Audit log →" />
-        <ActionChip href="/app/team/jobs" label="Job recovery →" />
+        {isAdmin ? <ActionChip href="/app/team/jobs" label="Job recovery →" /> : null}
         <span className="ml-auto" />
         <AddCustomMcpServerLauncher ownership="team" />
       </div>
