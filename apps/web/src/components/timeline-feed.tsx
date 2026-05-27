@@ -13,9 +13,11 @@ interface Props {
     audioUrls: Record<string, string>;
   };
   filters: { author?: string | null; from?: string | null; to?: string | null };
+  currentUserId: string;
+  isAdmin: boolean;
 }
 
-export function TimelineFeed({ initialPage, filters }: Props) {
+export function TimelineFeed({ initialPage, filters, currentUserId, isAdmin }: Props) {
   const query = useTimelineInfiniteQuery(filters, initialPage);
   const pages = query.data?.pages ?? [initialPage];
   const events = pages.flatMap((page) => page.items);
@@ -38,7 +40,13 @@ export function TimelineFeed({ initialPage, filters }: Props) {
 
   return (
     <div className="space-y-3">
-      <TimelineList events={events} authorMap={authorMap} audioUrlMap={audioUrlMap} />
+      <TimelineList
+        events={events}
+        authorMap={authorMap}
+        audioUrlMap={audioUrlMap}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
+      />
       <div className="flex justify-center">
         <button
           type="button"

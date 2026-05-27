@@ -69,7 +69,8 @@ export default async function TimelinePage({ searchParams }: Props) {
 
   const sp = await searchParams;
   const scope = withTeam(db, active.teamId, session.user.id);
-  await scope.requireMembership();
+  const role = await scope.requireMembership();
+  const isAdmin = role === 'owner' || role === 'admin';
   const [team, linkedTgUsers, boundTgChats, nativeIntegrations, teamMcpServers] = await Promise.all(
     [
       scope.timeline.team(),
@@ -299,6 +300,8 @@ export default async function TimelinePage({ searchParams }: Props) {
             from: sp.from ?? null,
             to: sp.to ?? null,
           }}
+          currentUserId={session.user.id}
+          isAdmin={isAdmin}
         />
       </section>
     </div>

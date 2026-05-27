@@ -1,6 +1,6 @@
 import { teamMembers, teams } from '@timeline/db';
 import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 import { db } from './db';
 
@@ -23,7 +23,7 @@ export async function ensureSoloTeam(
   const existing = await db
     .select({ teamId: teamMembers.teamId })
     .from(teamMembers)
-    .where(eq(teamMembers.userId, userId))
+    .where(and(eq(teamMembers.userId, userId), isNull(teamMembers.removedAt)))
     .limit(1);
   if (existing.length > 0) return;
 

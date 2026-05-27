@@ -1,5 +1,4 @@
 import { cacheKey, cachedJson, withTeam } from '@timeline/shared';
-import { notFound } from 'next/navigation';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -23,7 +22,7 @@ export async function GET(req: Request, { params }: Props): Promise<Response> {
   if (!active) return Response.json({ error: 'no_active_team' }, { status: 400 });
 
   const { id } = await params;
-  if (!UUID_RE.test(id)) notFound();
+  if (!UUID_RE.test(id)) return Response.json({ error: 'not_found' }, { status: 404 });
   const url = new URL(req.url);
   const section = url.searchParams.get('section');
   if (!section || !SECTIONS.has(section)) {
@@ -44,7 +43,7 @@ export async function GET(req: Request, { params }: Props): Promise<Response> {
       nextCursor: result.nextCursor,
     };
   });
-  if (!page) notFound();
+  if (!page) return Response.json({ error: 'not_found' }, { status: 404 });
   return Response.json(page);
 }
 

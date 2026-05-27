@@ -1,4 +1,10 @@
-import { type InferSelectModel, type rawEvents } from '@timeline/db';
+import { type InferSelectModel } from '@timeline/db';
+import { Trash2 } from 'lucide-react';
+
+import type { rawEvents } from '@timeline/db';
+
+import { removeTelegramEventAction } from '@/app/actions/events';
+import { Button } from '@/components/ui/button';
 
 type RawEvent = InferSelectModel<typeof rawEvents>;
 type TimelineEvent = Omit<RawEvent, 'occurredAt' | 'createdAt'> & {
@@ -11,6 +17,8 @@ interface Props {
   authorMap: Map<string, { id: string; name: string | null; email: string }>;
   /** Signed GET URLs keyed by event id. Missing entries render the player disabled. */
   audioUrlMap?: Map<string, string>;
+  currentUserId: string;
+  isAdmin: boolean;
 }
 
 // Mono ISO-ish timestamp for the left column. We render local time so the
@@ -92,7 +100,7 @@ const SOURCE_LABEL: Record<string, string> = {
  *   2026-05-25 14:02   miriam · "ship tomorrow"               EMAIL
  *   2026-05-25 13:48   jay · voice 2m11s · "cut docs"         VOICE
  */
-export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
+export function TimelineList({ events, authorMap, audioUrlMap, currentUserId, isAdmin }: Props) {
   if (events.length === 0) {
     return (
       <div className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
@@ -107,6 +115,8 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
         const author = event.authorUserId ? authorMap.get(event.authorUserId) : null;
         const isEmail = event.source === 'email';
         const isMeeting = event.source === 'meeting';
+        const canRemoveTelegram =
+          event.source === 'telegram' && (isAdmin || event.authorUserId === currentUserId);
         const em = isEmail ? emailMeta(event.sourceMetadata) : null;
         const mm = isMeeting ? meetingMeta(event.sourceMetadata) : null;
         const meetingChunkCount =
@@ -246,12 +256,24 @@ export function TimelineList({ events, authorMap, audioUrlMap }: Props) {
                 ) : null}
               </div>
             </div>
-            <span
-              aria-hidden="true"
-              className="col-start-2 -mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim md:col-start-3 md:mt-0 md:text-right"
-            >
-              {sourceLabel}
-            </span>
+            <div className="col-start-2 -mt-1 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim md:col-start-3 md:mt-0 md:justify-end md:text-right">
+              <span aria-hidden="true">{sourceLabel}</span>
+              {canRemoveTelegram ? (
+                <form action={removeTelegramEventAction}>
+                  <input type="hidden" name="id" value={event.id} />
+                  <Button
+                    type="submit"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-fg-dim hover:text-danger"
+                    title="Remove from timeline"
+                  >
+                    <Trash2 aria-hidden="true" className="size-3.5" />
+                    <span className="sr-only">Remove from timeline</span>
+                  </Button>
+                </form>
+              ) : null}
+            </div>
             <span className="sr-only">Source: {sourceLabel}</span>
           </li>
         );

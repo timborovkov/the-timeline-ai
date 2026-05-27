@@ -39,7 +39,7 @@ vi.mock('@timeline/shared', async () => {
     childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
     withTeam: (...args: unknown[]) => {
       fakes.fakeWithTeam(...args);
-      return { updateMeetingStatus: fakes.fakeUpdateStatus };
+      return { meetings: { updateMeetingStatus: fakes.fakeUpdateStatus } };
     },
     meetingsScope: {
       ...actual.meetingsScope,
