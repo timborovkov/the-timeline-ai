@@ -238,12 +238,21 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .limit(1);
     const row = rows[0];
     if (!row) return null;
+    const bundles = await hydrateBundles([row]);
+    return bundles[0] ?? null;
+  }
+
+  async function hydrateBundles(
+    rows: (typeof agentSuggestions.$inferSelect)[],
+  ): Promise<SuggestionBundle[]> {
+    if (rows.length === 0) return [];
+    const ids = rows.map((row) => row.id);
     const [items, evidence] = await Promise.all([
       db
         .select()
         .from(agentSuggestionItems)
-        .where(eq(agentSuggestionItems.suggestionId, row.id))
-        .orderBy(asc(agentSuggestionItems.createdAt)),
+        .where(inArray(agentSuggestionItems.suggestionId, ids))
+        .orderBy(asc(agentSuggestionItems.suggestionId), asc(agentSuggestionItems.createdAt)),
       db
         .select({
           id: agentSuggestionEvidence.id,
@@ -258,10 +267,24 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         })
         .from(agentSuggestionEvidence)
         .leftJoin(rawEvents, eq(rawEvents.id, agentSuggestionEvidence.rawEventId))
-        .where(eq(agentSuggestionEvidence.suggestionId, row.id))
-        .orderBy(asc(agentSuggestionEvidence.createdAt)),
+        .where(inArray(agentSuggestionEvidence.suggestionId, ids))
+        .orderBy(asc(agentSuggestionEvidence.suggestionId), asc(agentSuggestionEvidence.createdAt)),
     ]);
-    return toBundle(row, items, evidence);
+    const itemsBySuggestion = new Map<string, (typeof agentSuggestionItems.$inferSelect)[]>();
+    for (const item of items) {
+      const existing = itemsBySuggestion.get(item.suggestionId) ?? [];
+      existing.push(item);
+      itemsBySuggestion.set(item.suggestionId, existing);
+    }
+    const evidenceBySuggestion = new Map<string, typeof evidence>();
+    for (const ev of evidence) {
+      const existing = evidenceBySuggestion.get(ev.suggestionId) ?? [];
+      existing.push(ev);
+      evidenceBySuggestion.set(ev.suggestionId, existing);
+    }
+    return rows.map((row) =>
+      toBundle(row, itemsBySuggestion.get(row.id) ?? [], evidenceBySuggestion.get(row.id) ?? []),
+    );
   }
 
   async function refreshBundleStatus(suggestionId: string, resolvedByUserId?: string) {
@@ -495,8 +518,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .where(and(...conditions))
       .orderBy(desc(agentSuggestions.createdAt))
       .limit(Math.min(Math.max(opts.limit ?? 100, 1), 200));
-    const bundles = await Promise.all(rows.map((bundleRow) => loadBundle(bundleRow.id)));
-    return bundles.filter((b): b is SuggestionBundle => b !== null);
+    return hydrateBundles(rows);
   }
 
   return {

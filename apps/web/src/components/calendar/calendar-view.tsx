@@ -141,12 +141,12 @@ function eventTouchesDate(
   timezone: string,
 ): boolean {
   const displayTimezone = event.allDay ? assertValidTimezone(event.timezone) : timezone;
-  const start = Temporal.Instant.from(event.startAt)
-    .toZonedDateTimeISO(displayTimezone)
-    .toPlainDate();
-  const rawEnd = Temporal.Instant.from(event.endAt)
-    .toZonedDateTimeISO(displayTimezone)
-    .toPlainDate();
+  const startInstant = Temporal.Instant.from(event.startAt);
+  const endInstant = Temporal.Instant.from(event.endAt);
+  if (Temporal.Instant.compare(endInstant, startInstant) <= 0) return false;
+  const start = startInstant.toZonedDateTimeISO(displayTimezone).toPlainDate();
+  const effectiveEndInstant = event.allDay ? endInstant : endInstant.subtract({ nanoseconds: 1 });
+  const rawEnd = effectiveEndInstant.toZonedDateTimeISO(displayTimezone).toPlainDate();
   const end = event.allDay ? rawEnd.subtract({ days: 1 }) : rawEnd;
   return Temporal.PlainDate.compare(start, date) <= 0 && Temporal.PlainDate.compare(end, date) >= 0;
 }
@@ -255,12 +255,22 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
       setError('Title is required.');
       return;
     }
-    const times = draft.allDay
-      ? dateSpan(draft.startDate, draft.endDate, draft.timezone)
-      : {
-          start: localDateTime(draft.startDateTime, draft.timezone),
-          end: localDateTime(draft.endDateTime, draft.timezone),
-        };
+    let times: { start: string; end: string };
+    try {
+      times = draft.allDay
+        ? dateSpan(draft.startDate, draft.endDate, draft.timezone)
+        : {
+            start: localDateTime(draft.startDateTime, draft.timezone),
+            end: localDateTime(draft.endDateTime, draft.timezone),
+          };
+    } catch {
+      setError(
+        draft.allDay
+          ? 'Enter valid start and exclusive end dates.'
+          : 'Enter valid start and end times.',
+      );
+      return;
+    }
     if (
       Temporal.Instant.compare(
         Temporal.Instant.from(times.end),
