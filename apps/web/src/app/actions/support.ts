@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { clientIpFromHeaders } from '@/lib/request-ip';
 import { verifyTurnstileToken } from '@/lib/turnstile';
 
 export interface SupportFormState {
@@ -147,14 +148,6 @@ export async function submitSupportRequestAction(
     .where(eq(supportRequests.id, requestId));
 
   return { ok: true };
-}
-
-function clientIpFromHeaders(h: Headers): string | null {
-  const cf = h.get('cf-connecting-ip');
-  if (cf) return cf;
-  const forwarded = h.get('x-forwarded-for');
-  if (forwarded) return forwarded.split(',')[0]?.trim() ?? null;
-  return h.get('x-real-ip');
 }
 
 async function sendPostmarkSupportEmail(input: {
