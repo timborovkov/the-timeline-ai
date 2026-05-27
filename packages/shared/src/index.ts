@@ -14,6 +14,7 @@ export * as llm from './llm/index.js';
 export * as extract from './extract/index.js';
 export * as qdrant from './qdrant/index.js';
 export * as agent from './agent/index.js';
+export * as conversational from './conversational/index.js';
 export * as objects from './objects/index.js';
 export * as rateLimit from './rate-limit/index.js';
 export * from './chunk.js';

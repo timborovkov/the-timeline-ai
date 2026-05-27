@@ -20,7 +20,8 @@ const DOCUMENT_MIME = new Set([
 
 const IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 
-const AUDIO_EXT = new Set(['ogg', 'oga', 'mp3', 'm4a', 'mp4', 'wav', 'webm', 'flac', 'aac']);
+const AUDIO_EXT = new Set(['ogg', 'oga', 'mp3', 'm4a', 'wav', 'flac', 'aac']);
+const AMBIGUOUS_MEDIA_EXT = new Set(['mp4', 'webm']);
 const DOCUMENT_EXT = new Set([
   'txt',
   'md',
@@ -70,7 +71,11 @@ export function classifyConversationalAttachment(input: AttachmentCandidate): At
   if (contentType.startsWith('video/')) {
     return { kind: 'skip', reason: 'unsupported_type' };
   }
-  if (contentType.startsWith('audio/') || AUDIO_EXT.has(ext)) return { kind: 'audio' };
+  if (contentType.startsWith('audio/')) return { kind: 'audio' };
+  if (!contentType && AMBIGUOUS_MEDIA_EXT.has(ext)) {
+    return { kind: 'skip', reason: 'unsupported_type' };
+  }
+  if (AUDIO_EXT.has(ext)) return { kind: 'audio' };
   if (BLOCKED_EXT.has(ext)) {
     return { kind: 'skip', reason: 'unsupported_type' };
   }

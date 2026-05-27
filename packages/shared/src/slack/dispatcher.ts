@@ -13,17 +13,17 @@ import {
 import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { askAgent } from '../agent/ask.js';
+import {
+  classifyConversationalAttachment,
+  CONVERSATIONAL_ATTACHMENT_LIMITS,
+  extensionOf,
+} from '../conversational/attachments.js';
 import { encryptJson, decryptJson, type EncryptedSecret } from '../crypto/secrets.js';
 import { buildDocumentObjectKey } from '../documents/object-key.js';
 import { childLogger } from '../logger.js';
 import { getRedisConnection } from '../queue/connection.js';
 
 import { SlackApi, type SlackConversation, type SlackOAuthAccessResponse } from './api.js';
-import {
-  classifyConversationalAttachment,
-  CONVERSATIONAL_ATTACHMENT_LIMITS,
-  extensionOf,
-} from './attachments.js';
 import {
   slackEnvelopeSchema,
   type SlackAppMentionEvent,

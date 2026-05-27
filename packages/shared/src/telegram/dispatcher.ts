@@ -12,11 +12,11 @@ import {
 import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { askAgent } from '../agent/ask.js';
+import { classifyConversationalAttachment } from '../conversational/attachments.js';
 import { buildDocumentObjectKey } from '../documents/object-key.js';
 import { childLogger } from '../logger.js';
 import { getRedisConnection } from '../queue/connection.js';
 import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '../rate-limit/index.js';
-import { classifyConversationalAttachment } from '../slack/attachments.js';
 
 import { type TelegramApi } from './api.js';
 import {

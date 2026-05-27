@@ -53,6 +53,14 @@ describe('classifyConversationalAttachment', () => {
       kind: 'skip',
       reason: 'unsupported_type',
     });
+    expect(classifyConversationalAttachment({ filename: 'meeting.mp4' })).toEqual({
+      kind: 'skip',
+      reason: 'unsupported_type',
+    });
+    expect(classifyConversationalAttachment({ filename: 'screen-share.webm' })).toEqual({
+      kind: 'skip',
+      reason: 'unsupported_type',
+    });
     expect(classifyConversationalAttachment({ filename: 'archive.zip' })).toEqual({
       kind: 'skip',
       reason: 'unsupported_type',
