@@ -20,7 +20,7 @@ import {
   slugify,
   withTeam,
 } from '@timeline/shared';
-import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -541,6 +541,72 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
             eq(teamVisibilityDefaults.sourceOwnerUserId, memberUserId),
           ),
         );
+      const defaultRows = await tx
+        .select({
+          source: teamVisibilityDefaults.source,
+          visibility: teamVisibilityDefaults.visibility,
+          visibilityUserIds: teamVisibilityDefaults.visibilityUserIds,
+        })
+        .from(teamVisibilityDefaults)
+        .where(
+          and(
+            eq(teamVisibilityDefaults.teamId, active.teamId),
+            sql`${memberUserId}::uuid = ANY(${teamVisibilityDefaults.visibilityUserIds})`,
+          ),
+        );
+      for (const row of defaultRows) {
+        const nextUserIds = (row.visibilityUserIds ?? []).filter((id) => id !== memberUserId);
+        const nextVisibility =
+          row.visibility === 'specific_users' && nextUserIds.length === 0 ? 'team' : row.visibility;
+        await tx
+          .update(teamVisibilityDefaults)
+          .set({
+            visibility: nextVisibility,
+            visibilityUserIds: nextUserIds.length > 0 ? nextUserIds : null,
+            updatedByUserId: session.user.id,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(teamVisibilityDefaults.teamId, active.teamId),
+              eq(teamVisibilityDefaults.source, row.source),
+            ),
+          );
+      }
+      const integrationRows = await tx
+        .select({
+          id: integrations.id,
+          visibilityDefault: integrations.visibilityDefault,
+          visibilityDefaultUserIds: integrations.visibilityDefaultUserIds,
+        })
+        .from(integrations)
+        .where(
+          and(
+            eq(integrations.teamId, active.teamId),
+            or(
+              isNull(integrations.connectedByUserId),
+              ne(integrations.connectedByUserId, memberUserId),
+            ),
+            sql`${memberUserId}::uuid = ANY(${integrations.visibilityDefaultUserIds})`,
+          ),
+        );
+      for (const row of integrationRows) {
+        const nextUserIds = (row.visibilityDefaultUserIds ?? []).filter(
+          (id) => id !== memberUserId,
+        );
+        const nextVisibility =
+          row.visibilityDefault === 'specific_users' && nextUserIds.length === 0
+            ? 'team'
+            : row.visibilityDefault;
+        await tx
+          .update(integrations)
+          .set({
+            visibilityDefault: nextVisibility,
+            visibilityDefaultUserIds: nextUserIds.length > 0 ? nextUserIds : null,
+            updatedAt: new Date(),
+          })
+          .where(eq(integrations.id, row.id));
+      }
       await tx
         .update(integrations)
         .set({ visibilityDefault: 'team', visibilityDefaultUserIds: null, updatedAt: new Date() })

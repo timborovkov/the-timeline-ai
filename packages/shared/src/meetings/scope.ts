@@ -8,6 +8,8 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
+import { validateVisibilityUserIds } from '../visibility.js';
+
 import { formatMeetingTranscript } from './transcript.js';
 
 // Phase 10 — meeting scope. Mirrors the documents scope pattern: a factory
@@ -258,14 +260,11 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
     async createMeeting(input: CreateMeetingInput): Promise<MeetingRow> {
       await ensureMember();
       const visibility = input.defaultVisibility ?? 'team';
-      const visibilityUserIds: string[] | null =
-        visibility === 'specific_users' ? [...new Set(input.visibilityUserIds ?? [])] : null;
-      if (visibilityUserIds?.length === 0) {
-        throw new Error('specific_users visibility requires at least one user');
-      }
-      if (visibilityUserIds && deps.requireTeamMember) {
-        for (const uid of visibilityUserIds) await deps.requireTeamMember(uid);
-      }
+      const visibilityUserIds = await validateVisibilityUserIds(
+        visibility,
+        input.visibilityUserIds ?? null,
+        deps.requireTeamMember,
+      );
       const rows = await db
         .insert(meetings)
         .values({
