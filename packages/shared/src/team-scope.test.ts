@@ -162,6 +162,20 @@ describe('withTeam namespaced port', () => {
     ).rejects.toThrow('specific_users visibility is not supported');
   });
 
+  it('rejects specific_users email events with an email-specific error', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    await expect(
+      scope.timeline.createEmailEvent({
+        authorUserId: USER_A,
+        visibility: 'specific_users',
+        visibilityUserIds: [USER_A],
+        messageId: 'specific-users-email@example.com',
+        contentText: 'specific-users email',
+        occurredAt: new Date('2026-05-27T09:00:00Z'),
+      } as never),
+    ).rejects.toThrow('specific_users visibility is not supported for email events');
+  });
+
   it('materializes all visibility defaults from one settings fetch', async () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
     await scope.timeline.setVisibilityDefault({

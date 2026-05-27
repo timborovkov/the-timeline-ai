@@ -62,6 +62,7 @@ export type CreatableEventSource = Exclude<EventSource, 'document'>;
 const _visibilityDefaultSourceValues = visibilityDefaultSource.enumValues;
 export type VisibilityDefaultSource = (typeof _visibilityDefaultSourceValues)[number];
 export type EventVisibility = 'private' | 'team' | 'specific_users';
+export type EmailEventVisibility = Exclude<EventVisibility, 'specific_users'>;
 
 const ROLE_RANK: Record<TeamRole, number> = { member: 0, admin: 1, owner: 2 };
 const SPECIFIC_USERS_DEFAULT_SOURCES = new Set<VisibilityDefaultSource>([
@@ -103,7 +104,7 @@ export interface CreateEventInput {
 
 export interface CreateEmailEventInput {
   authorUserId: string | null;
-  visibility?: EventVisibility;
+  visibility?: EmailEventVisibility;
   visibilityUserIds?: string[] | null;
   visibilityOwnerUserId?: string | null;
   /** RFC 5322 Message-ID, normalized (no angle brackets). Drives the
@@ -917,13 +918,10 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
        */
       async createEmailEvent(input: CreateEmailEventInput): Promise<CreateEmailEventResult | null> {
         await ensureMember();
-        const visibilityUserIds = await validateVisibilityPatch(
-          {
-            visibility: input.visibility ?? 'team',
-            visibilityUserIds: input.visibilityUserIds ?? null,
-          },
-          { defaultSource: 'email' },
-        );
+        const visibility = (input.visibility ?? 'team') as EventVisibility;
+        if (visibility === 'specific_users') {
+          throw new Error('specific_users visibility is not supported for email events');
+        }
         return db.transaction(async (tx) => {
           // Probe parent: in-reply-to first, then any reference we know about.
           let parentRootId: string | null = null;
@@ -1018,8 +1016,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
               source: 'email',
               contentText: input.contentText,
               occurredAt: input.occurredAt,
-              visibility: input.visibility ?? 'team',
-              visibilityUserIds,
+              visibility,
+              visibilityUserIds: null,
               visibilityOwnerUserId: input.visibilityOwnerUserId ?? input.authorUserId,
               sourceMetadata: composedMetadata,
             })

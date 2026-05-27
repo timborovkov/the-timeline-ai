@@ -518,7 +518,23 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
         .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
       await tx
         .update(teamVisibilityDefaults)
-        .set({ sourceOwnerUserId: null, updatedAt: new Date() })
+        .set({
+          sourceOwnerUserId: null,
+          visibility: 'team',
+          visibilityUserIds: null,
+          updatedByUserId: session.user.id,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(teamVisibilityDefaults.teamId, active.teamId),
+            eq(teamVisibilityDefaults.sourceOwnerUserId, memberUserId),
+            eq(teamVisibilityDefaults.visibility, 'private'),
+          ),
+        );
+      await tx
+        .update(teamVisibilityDefaults)
+        .set({ sourceOwnerUserId: null, updatedByUserId: session.user.id, updatedAt: new Date() })
         .where(
           and(
             eq(teamVisibilityDefaults.teamId, active.teamId),
