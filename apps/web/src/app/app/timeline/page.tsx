@@ -1,17 +1,11 @@
-import {
-  integrations as integrationsTable,
-  mcpServers,
-  telegramChatBindings,
-  telegramUserTeams,
-  users,
-} from '@timeline/db';
+import { users } from '@timeline/db';
 import {
   getAudioBucket,
   getS3PresignClient,
   getSignedGetObjectUrl,
   withTeam,
 } from '@timeline/shared';
-import { and, count, eq, inArray, isNull } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 import { Video } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -69,31 +63,18 @@ export default async function TimelinePage({ searchParams }: Props) {
 
   const sp = await searchParams;
   const scope = withTeam(db, active.teamId, session.user.id);
-  await scope.requireMembership();
-  const [onboardingState, team, linkedTgUsers, boundTgChats, nativeIntegrations, teamMcpServers] =
-    await Promise.all([
-      scope.onboarding.getChecklistState(),
-      scope.timeline.team(),
-      db
-        .select({ total: count() })
-        .from(telegramUserTeams)
-        .where(eq(telegramUserTeams.teamId, active.teamId)),
-      db
-        .select({ total: count() })
-        .from(telegramChatBindings)
-        .where(eq(telegramChatBindings.teamId, active.teamId)),
-      db
-        .select({ total: count() })
-        .from(integrationsTable)
-        .where(eq(integrationsTable.teamId, active.teamId)),
-      db
-        .select({ total: count() })
-        .from(mcpServers)
-        .where(and(eq(mcpServers.teamId, active.teamId), isNull(mcpServers.userId))),
-    ]);
-  const telegramConnectionCount = (linkedTgUsers[0]?.total ?? 0) + (boundTgChats[0]?.total ?? 0);
+  const role = await scope.requireMembership();
+  const isAdmin = role === 'owner' || role === 'admin';
+  const [onboardingState, team] = await Promise.all([
+    scope.onboarding.getChecklistState(),
+    scope.timeline.team(),
+  ]);
+  const telegramConnectionCount =
+    onboardingState.connectionCounts.telegramUserTeams +
+    onboardingState.connectionCounts.telegramChatBindings;
   const integrationConnectionCount =
-    (nativeIntegrations[0]?.total ?? 0) + (teamMcpServers[0]?.total ?? 0);
+    onboardingState.connectionCounts.nativeIntegrations +
+    onboardingState.connectionCounts.teamMcpServers;
 
   // Parse once so the indicator chip, the open-state of <details>, the form
   // inputs, and the actual query all agree on what's filtered. Raw
@@ -284,7 +265,13 @@ export default async function TimelinePage({ searchParams }: Props) {
           </details>
         </div>
 
-        <TimelineList events={events} authorMap={authorMap} audioUrlMap={audioUrlMap} />
+        <TimelineList
+          events={events}
+          authorMap={authorMap}
+          audioUrlMap={audioUrlMap}
+          currentUserId={session.user.id}
+          isAdmin={isAdmin}
+        />
       </section>
     </div>
   );

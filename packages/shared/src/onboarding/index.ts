@@ -34,6 +34,13 @@ export interface OnboardingStepState {
 export interface OnboardingChecklistState {
   dismissed: boolean;
   steps: OnboardingStepState[];
+  connectionCounts: {
+    telegramLinkTokens: number;
+    telegramChatBindings: number;
+    telegramUserTeams: number;
+    nativeIntegrations: number;
+    teamMcpServers: number;
+  };
 }
 
 interface OnboardingScopeDeps {
@@ -117,22 +124,32 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
       ]);
 
       const explicit = new Map(completions.map((row) => [row.step, row] as const));
+      const connectionCounts = {
+        telegramLinkTokens: firstCount(telegramLinks),
+        telegramChatBindings: firstCount(telegramBindings),
+        telegramUserTeams: firstCount(telegramUsers),
+        nativeIntegrations: firstCount(nativeIntegrations),
+        teamMcpServers: firstCount(teamMcpServers),
+      };
       const inferred = new Set<OnboardingStep>();
       if (firstCount(webEvents) > 0) inferred.add('first_note');
       if (
-        firstCount(telegramLinks) + firstCount(telegramBindings) + firstCount(telegramUsers) >
+        connectionCounts.telegramLinkTokens +
+          connectionCounts.telegramChatBindings +
+          connectionCounts.telegramUserTeams >
         0
       ) {
         inferred.add('telegram');
       }
       if (firstCount(emailEvents) > 0) inferred.add('email_forwarding');
       if (firstCount(uploadedDocuments) > 0) inferred.add('first_document');
-      if (firstCount(nativeIntegrations) + firstCount(teamMcpServers) > 0) {
+      if (connectionCounts.nativeIntegrations + connectionCounts.teamMcpServers > 0) {
         inferred.add('first_integration');
       }
 
       return {
         dismissed: dismissals.length > 0,
+        connectionCounts,
         steps: ONBOARDING_STEPS.map((step) => {
           const row = explicit.get(step);
           return {
