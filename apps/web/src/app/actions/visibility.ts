@@ -94,10 +94,11 @@ export async function setEventVisibilityAction(
   const got = await scopeOrError();
   if ('error' in got) return { error: got.error };
   try {
-    await got.scope.timeline.setEventVisibility(parsed.data.id, {
+    const updated = await got.scope.timeline.setEventVisibility(parsed.data.id, {
       visibility: parsed.data.visibility,
       visibilityUserIds: idsFromForm(formData, 'visibilityUserIds'),
     });
+    if (!updated) return { error: 'Event not found or not visible' };
     revalidatePath('/app/timeline');
     return { ok: true };
   } catch (err) {

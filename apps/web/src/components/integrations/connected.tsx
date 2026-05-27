@@ -111,9 +111,12 @@ function IntegrationVisibilityForm({
   members: MemberOption[];
 }) {
   const [state, action, pending] = useActionState(setIntegrationVisibilityDefaultAction, {});
+  const formKey = `${integration.id}:${integration.visibilityDefault}:${(
+    integration.visibilityDefaultUserIds ?? []
+  ).join(',')}`;
 
   return (
-    <form action={action} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+    <form key={formKey} action={action} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
       <input type="hidden" name="id" value={integration.id} />
       <select
         name="visibility"

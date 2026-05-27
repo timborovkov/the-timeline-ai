@@ -21,9 +21,11 @@ export function EventVisibilityForm({
   members: MemberOption[];
 }) {
   const [state, action, pending] = useActionState(setEventVisibilityAction, {});
+  const formKey = `${eventId}:${visibility}:${(visibilityUserIds ?? []).join(',')}`;
 
   return (
     <form
+      key={formKey}
       action={action}
       className="mt-2 flex flex-wrap items-center gap-2 rounded-sm border border-border p-2"
     >

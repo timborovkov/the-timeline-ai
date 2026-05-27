@@ -52,9 +52,10 @@ export function VisibilityDefaultSettings({
   return (
     <div className="space-y-3">
       {defaults.map((row) => {
+        const userKey = (row.visibilityUserIds ?? []).join(',');
         return (
           <VisibilityDefaultForm
-            key={`${row.source}:${row.sourceOwnerUserId ?? 'none'}`}
+            key={`${row.source}:${row.sourceOwnerUserId ?? 'none'}:${row.visibility}:${userKey}`}
             row={row}
             members={members}
           />
