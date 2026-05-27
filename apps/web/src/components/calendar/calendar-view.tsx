@@ -130,10 +130,8 @@ function titleFor(mode: CalendarViewMode, anchor: Temporal.PlainDate): string {
   return anchor.toLocaleString('en-US', { month: 'long', year: 'numeric' });
 }
 
-function formatTime(event: CalendarEvent): string {
-  const start = Temporal.Instant.from(event.startAt).toZonedDateTimeISO(
-    assertValidTimezone(event.timezone),
-  );
+function formatTime(event: CalendarEvent, timezone: string): string {
+  const start = Temporal.Instant.from(event.startAt).toZonedDateTimeISO(timezone);
   return start.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit' });
 }
 
@@ -415,6 +413,7 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
                   anchor={anchor}
                   mode={safeMode}
                   events={eventsByDay.get(day.toString()) ?? []}
+                  timezone={timezone}
                   today={currentToday}
                   onCreate={openCreate}
                   onEdit={openEdit}
@@ -430,6 +429,7 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
             anchor={anchor}
             mode="day"
             events={eventsByDay.get(anchor.toString()) ?? []}
+            timezone={timezone}
             today={currentToday}
             onCreate={openCreate}
             onEdit={openEdit}
@@ -587,6 +587,7 @@ function DayCell({
   anchor,
   mode,
   events,
+  timezone,
   today,
   onCreate,
   onEdit,
@@ -595,6 +596,7 @@ function DayCell({
   anchor: Temporal.PlainDate;
   mode: CalendarViewMode;
   events: CalendarEvent[];
+  timezone: string;
   today: Temporal.PlainDate;
   onCreate: (day: Temporal.PlainDate) => void;
   onEdit: (event: CalendarEvent) => void;
@@ -635,7 +637,7 @@ function DayCell({
           >
             <span className="inline-flex items-center gap-1">
               {event.allDay ? null : <Clock className="h-3 w-3" />}
-              {event.allDay ? event.title : `${formatTime(event)} ${event.title}`}
+              {event.allDay ? event.title : `${formatTime(event, timezone)} ${event.title}`}
               {!event.redacted ? <Pencil className="h-3 w-3 opacity-50" /> : null}
             </span>
           </button>
