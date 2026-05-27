@@ -28,6 +28,7 @@ export const slackMessageEventSchema = z
     message: z
       .object({
         user: z.string().optional(),
+        bot_id: z.string().optional(),
         text: z.string().optional(),
         ts: z.string().optional(),
         thread_ts: z.string().optional(),

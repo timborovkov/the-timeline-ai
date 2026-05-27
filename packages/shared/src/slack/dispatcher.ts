@@ -366,6 +366,7 @@ async function handleMessageEvent(
   if (event.subtype && event.subtype !== 'message_changed') return;
 
   const message = event.subtype === 'message_changed' ? event.message : event;
+  if (message?.bot_id) return;
   const senderId = message?.user ?? event.user;
   if (!senderId || senderId === workspace.botUserId) return;
   const isEdit = event.subtype === 'message_changed';
@@ -384,7 +385,7 @@ async function handleMessageEvent(
   if (!route) return;
   const sender = await upsertSlackUserProfile(deps.db, api, workspace.id, senderId);
   const senderDisplayName = sender?.realName ?? sender?.name ?? senderId;
-  const authorUserId = route.linkedUserId ?? route.sourceOwnerUserId;
+  const authorUserId = route.linkedUserId;
   const metadata: Record<string, unknown> = {
     slack_event_id: slackEventId,
     slack_workspace_id: workspace.id,
