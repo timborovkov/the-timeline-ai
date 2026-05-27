@@ -51,6 +51,7 @@ export async function PATCH(req: Request): Promise<Response> {
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) return Response.json({ error: 'no_active_team' }, { status: 400 });
   const scope = withTeam(db, active.teamId, session.user.id);
+  await scope.requireMembership();
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: 'invalid_input' }, { status: 400 });
 
