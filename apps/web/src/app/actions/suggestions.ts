@@ -5,6 +5,15 @@ import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
 
+function revalidateSuggestionSurfaces() {
+  revalidatePath('/app/approvals');
+  revalidatePath('/app/timeline');
+  revalidatePath('/app/objects', 'layout');
+  revalidatePath('/app/calendar');
+  revalidatePath('/app/tasks');
+  revalidatePath('/app/inbox');
+}
+
 export async function acceptSuggestionItemAction(input: unknown): Promise<ActionState> {
   const parsed = z.object({ itemId: uuidSchema }).safeParse(input);
   if (!parsed.success) return { error: 'Invalid suggestion item id' };
@@ -13,14 +22,10 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Action
   try {
     const ok = await r.scope.suggestions.acceptSuggestionItem(parsed.data.itemId);
     if (!ok) return { error: 'Suggestion item no longer pending' };
-    revalidatePath('/app/approvals');
-    revalidatePath('/app/timeline');
-    revalidatePath('/app/objects', 'layout');
-    revalidatePath('/app/calendar');
-    revalidatePath('/app/tasks');
-    revalidatePath('/app/inbox');
+    revalidateSuggestionSurfaces();
     return { ok: true };
   } catch (err) {
+    revalidateSuggestionSurfaces();
     return { error: err instanceof Error ? err.message : 'Failed to accept suggestion' };
   }
 }
@@ -49,14 +54,10 @@ export async function acceptAllSuggestionAction(input: unknown): Promise<ActionS
   if (!r.ok) return { error: r.error };
   try {
     const result = await r.scope.suggestions.acceptAll(parsed.data.suggestionId);
-    revalidatePath('/app/approvals');
-    revalidatePath('/app/timeline');
-    revalidatePath('/app/objects', 'layout');
-    revalidatePath('/app/calendar');
-    revalidatePath('/app/tasks');
-    revalidatePath('/app/inbox');
+    revalidateSuggestionSurfaces();
     return result.failed > 0 ? { error: `${result.failed} item(s) failed to apply` } : { ok: true };
   } catch (err) {
+    revalidateSuggestionSurfaces();
     return { error: err instanceof Error ? err.message : 'Failed to accept suggestion' };
   }
 }
