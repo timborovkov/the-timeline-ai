@@ -454,6 +454,72 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
        */
       getEventsByIds: getEventsByIdsImpl,
 
+      async removeTelegramMessage(id: string): Promise<boolean> {
+        const role = await ensureMember();
+        return db.transaction(async (tx) => {
+          const rows = await tx
+            .select({
+              id: rawEvents.id,
+              source: rawEvents.source,
+              authorUserId: rawEvents.authorUserId,
+              sourceMetadata: rawEvents.sourceMetadata,
+            })
+            .from(rawEvents)
+            .where(
+              and(
+                eq(rawEvents.id, id),
+                eq(rawEvents.teamId, teamId),
+                visibilityFilter,
+                activeRawEventFilter,
+              ),
+            )
+            .limit(1);
+          const row = rows[0];
+          if (!row) return false;
+          if (row.source !== 'telegram') {
+            throw new Error('Only Telegram events can be removed this way');
+          }
+          const isAdmin = role === 'owner' || role === 'admin';
+          if (!isAdmin && row.authorUserId !== userId) {
+            throw new Error('Only the Telegram author or a team admin can remove this event');
+          }
+
+          const meta = (row.sourceMetadata ?? {}) as Record<string, unknown>;
+          const chatId = meta.tg_chat_id;
+          const messageId = meta.tg_message_id;
+          if (
+            (typeof chatId !== 'number' && typeof chatId !== 'string') ||
+            (typeof messageId !== 'number' && typeof messageId !== 'string')
+          ) {
+            throw new Error('Telegram event is missing message metadata');
+          }
+
+          const patch = JSON.stringify({
+            deleted: true,
+            delete_reason: 'telegram_removed_in_timeline',
+            deleted_at: new Date().toISOString(),
+            deleted_by_user_id: userId,
+            deleted_from_event_id: row.id,
+          });
+          const removed = await tx
+            .update(rawEvents)
+            .set({
+              sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+            })
+            .where(
+              and(
+                eq(rawEvents.teamId, teamId),
+                eq(rawEvents.source, 'telegram'),
+                sql`${rawEvents.sourceMetadata} ->> 'tg_chat_id' = ${String(chatId)}`,
+                sql`${rawEvents.sourceMetadata} ->> 'tg_message_id' = ${String(messageId)}`,
+                activeRawEventFilter,
+              ),
+            )
+            .returning({ id: rawEvents.id });
+          return removed.length > 0;
+        });
+      },
+
       async createEvent(input: CreateEventInput) {
         await ensureMember();
         const rows = await db
