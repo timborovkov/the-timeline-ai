@@ -1,6 +1,7 @@
 import { integrations as integrationsLib, withTeam } from '@timeline/shared';
 import { redirect } from 'next/navigation';
 
+import { ActionChip } from '@/components/action-chip';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { IndexStrip } from '@/components/index-strip';
 import { IntegrationsCatalog } from '@/components/integrations/catalog';
@@ -38,10 +39,12 @@ export default async function IntegrationsPage({
 
   const params = await searchParams;
   const scope = withTeam(db, active.teamId, session.user.id);
-  const [connected, mcpServers] = await Promise.all([
+  const [role, connected, mcpServers] = await Promise.all([
+    scope.requireMembership(),
     scope.integrations.listIntegrations(),
     scope.mcp.listTeamServers(),
   ]);
+  const isAdmin = role === 'owner' || role === 'admin';
   const nativeCatalog = integrationsLib.listAvailableProviders();
   const mcpCatalog = integrationsLib.listCatalog().filter((c) => c.kind === 'mcp' && c.mcpUrl);
   const connectedUrls = new Set(mcpServers.map((s) => s.url));
@@ -73,6 +76,7 @@ export default async function IntegrationsPage({
         <ActionChip href="/app/team/mcp-share" label="Expose as MCP →" />
         <ActionChip href="/app/me/mcp-servers" label="Personal MCP →" />
         <ActionChip href="/app/team/integrations/audit" label="Audit log →" />
+        {isAdmin ? <ActionChip href="/app/team/jobs" label="Job recovery →" /> : null}
         <span className="ml-auto" />
         <AddCustomMcpServerLauncher ownership="team" />
       </div>
@@ -168,16 +172,5 @@ export default async function IntegrationsPage({
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
     <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">{children}</h2>
-  );
-}
-
-function ActionChip({ href, label }: { href: string; label: string }) {
-  return (
-    <a
-      href={href}
-      className="inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted hover:border-signal hover:text-signal"
-    >
-      {label}
-    </a>
   );
 }

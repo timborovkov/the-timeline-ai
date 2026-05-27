@@ -65,7 +65,7 @@ export function DocumentDrive({
     items: documents,
     nextCursor: documentsNextCursor,
   });
-  const visibleDocuments = documentQuery.data?.pages.flatMap((page) => page.items) ?? documents;
+  const visibleDocuments = documentQuery.data.pages.flatMap((page) => page.items);
 
   async function handleUploadFile(file: File): Promise<void> {
     setUploading((prev) => [...prev, file.name]);

@@ -7,7 +7,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
@@ -40,21 +40,32 @@ function replaceFirstPage<TPage>(
   };
 }
 
+function initialInfiniteData<TPage, TParam extends string | number | null>(
+  initialPage: TPage,
+  initialPageParam: TParam,
+): InfiniteData<TPage, TParam> {
+  return { pages: [initialPage], pageParams: [initialPageParam] };
+}
+
 export function useTimelineInfiniteQuery(
   filters: {
     author?: string | null;
     from?: string | null;
     to?: string | null;
   },
-  initialPage?: TimelinePage,
+  initialPage: TimelinePage,
 ) {
   const queryClient = useQueryClient();
+  const mounted = useRef(false);
   const queryKey = useMemo(
     () => queryKeys.timeline(filters),
     [filters.author, filters.from, filters.to],
   );
   useEffect(() => {
-    if (!initialPage) return;
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
     queryClient.setQueryData<InfiniteData<TimelinePage, string | null> | undefined>(
       queryKey,
       (previous) =>
@@ -78,6 +89,7 @@ export function useTimelineInfiniteQuery(
       }>(await fetch(`/api/timeline?${params.toString()}`));
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
+    initialData: initialInfiniteData(initialPage, null as string | null),
   });
 }
 
@@ -113,11 +125,15 @@ export function useDocumentSearchQuery(query: string, filters: Record<string, st
   });
 }
 
-export function useDocumentListQuery(folderId: string | null, initialPage?: DocumentListPage) {
+export function useDocumentListQuery(folderId: string | null, initialPage: DocumentListPage) {
   const queryClient = useQueryClient();
+  const mounted = useRef(false);
   const queryKey = useMemo(() => queryKeys.documentList(folderId), [folderId]);
   useEffect(() => {
-    if (!initialPage) return;
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
     queryClient.setQueryData<InfiniteData<DocumentListPage, string | null> | undefined>(
       queryKey,
       (previous) =>
@@ -143,6 +159,7 @@ export function useDocumentListQuery(folderId: string | null, initialPage?: Docu
       }>(await fetch(`/api/documents/list?${params.toString()}`));
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
+    initialData: initialInfiniteData(initialPage, null as string | null),
   });
 }
 

@@ -19,7 +19,7 @@ interface Props {
 
 export function TimelineFeed({ initialPage, filters, currentUserId, isAdmin }: Props) {
   const query = useTimelineInfiniteQuery(filters, initialPage);
-  const pages = query.data?.pages ?? [initialPage];
+  const pages = query.data.pages;
   const events = pages.flatMap((page) => page.items);
   const authorMap = useMemo(
     () =>

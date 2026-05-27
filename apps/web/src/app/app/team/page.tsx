@@ -10,6 +10,7 @@ import {
   resendInviteAction,
   revokeInviteAction,
 } from '@/app/actions/teams';
+import { ActionChip } from '@/components/action-chip';
 import { IndexStrip } from '@/components/index-strip';
 import { TeamAccessPanel } from '@/components/team-access-panel';
 import { InviteMemberForm, RenameTeamForm, TeamExportPanel } from '@/components/team-forms';
@@ -128,6 +129,13 @@ export default async function TeamSettingsPage() {
           { label: 'members', value: memberRows.length },
         ]}
       />
+
+      {isAdmin ? (
+        <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
+          <ActionChip href="/app/team/jobs" label="Job recovery →" />
+          <ActionChip href="/app/team/integrations/audit" label="Integration audit →" />
+        </div>
+      ) : null}
 
       {isAdmin ? (
         <Card>
