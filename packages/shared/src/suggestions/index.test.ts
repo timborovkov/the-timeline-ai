@@ -96,6 +96,35 @@ describe('suggestion scope', () => {
     expect(bundle.items).toHaveLength(1);
   });
 
+  it('does not duplicate notifications when a suggestion bundle is merged', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const input = {
+      source: 'chat' as const,
+      title: 'Create task',
+      dedupeKey: 'notification-dedupe',
+      items: [
+        {
+          operation: 'create' as const,
+          targetKind: 'task' as const,
+          title: 'Update pricing page',
+          dedupeKey: 'notification-dedupe:item',
+          proposedPayload: { canonicalName: 'Update pricing page' },
+        },
+      ],
+    };
+
+    await scope.suggestions.createOrMergeSuggestionBundle(input);
+    await scope.suggestions.createOrMergeSuggestionBundle({
+      ...input,
+      title: 'Create task from newer evidence',
+    });
+
+    const result = await pg.query<{ count: string }>(
+      `SELECT count(*)::text FROM notifications WHERE team_id = '${TEAM_ID}' AND agent_suggestion_id IS NOT NULL`,
+    );
+    expect(result.rows[0]?.count).toBe('2');
+  });
+
   it('claims accept once before applying canonical changes', async () => {
     const creator = withTeam(db as never, TEAM_ID, USER_ID);
     const reviewer = withTeam(db as never, TEAM_ID, REVIEWER_ID);

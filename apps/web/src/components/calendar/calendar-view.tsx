@@ -254,7 +254,9 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
         Temporal.Instant.from(times.start),
       ) <= 0
     ) {
-      setError('End must be after start.');
+      setError(
+        draft.allDay ? 'Exclusive end date must be after start date.' : 'End must be after start.',
+      );
       return;
     }
     startTransition(async () => {
@@ -475,7 +477,7 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="calendar-end-date">End date</Label>
+                  <Label htmlFor="calendar-end-date">End date (exclusive)</Label>
                   <Input
                     id="calendar-end-date"
                     type="date"

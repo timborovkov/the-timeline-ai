@@ -76,4 +76,5 @@ CREATE INDEX "agent_suggestion_items_team_target_idx" ON "agent_suggestion_items
 CREATE UNIQUE INDEX "agent_suggestion_evidence_suggestion_event_unq" ON "agent_suggestion_evidence" USING btree ("suggestion_id","raw_event_id");--> statement-breakpoint
 CREATE INDEX "agent_suggestion_evidence_team_event_idx" ON "agent_suggestion_evidence" USING btree ("team_id","raw_event_id");--> statement-breakpoint
 CREATE INDEX "agent_suggestion_evidence_quote_idx" ON "agent_suggestion_evidence" USING gin (to_tsvector('simple', "quote"));--> statement-breakpoint
-CREATE INDEX "notifications_team_suggestion_idx" ON "notifications" USING btree ("team_id","agent_suggestion_id");
+CREATE INDEX "notifications_team_suggestion_idx" ON "notifications" USING btree ("team_id","agent_suggestion_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "notifications_suggestion_recipient_unq" ON "notifications" USING btree ("team_id","user_id","agent_suggestion_id") WHERE "agent_suggestion_id" IS NOT NULL;

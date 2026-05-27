@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  index,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { agentSuggestionItems, agentSuggestions } from './agent-suggestions.js';
 import { entities } from './entities.js';
@@ -64,5 +73,8 @@ export const notifications = pgTable(
     ),
     index('notifications_team_entity_idx').on(table.teamId, table.entityId),
     index('notifications_team_suggestion_idx').on(table.teamId, table.agentSuggestionId),
+    uniqueIndex('notifications_suggestion_recipient_unq')
+      .on(table.teamId, table.userId, table.agentSuggestionId)
+      .where(sql`${table.agentSuggestionId} IS NOT NULL`),
   ],
 );
