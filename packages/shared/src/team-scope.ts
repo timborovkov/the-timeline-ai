@@ -675,7 +675,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             and(
               eq(rawEvents.id, id),
               eq(rawEvents.teamId, teamId),
-              visibilityFilter,
+              or(visibilityFilter, eq(rawEvents.visibilityOwnerUserId, userId)),
               activeRawEventFilter,
             ),
           )

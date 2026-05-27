@@ -320,7 +320,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     //   team_id == teamId AND (
     //     visibility == 'team'
     //     OR (visibility == 'private' AND (author_user_id == userId OR visibility_owner_user_id == userId))
-    //     OR (visibility == 'specific_users' AND (visibility_owner_user_id == userId OR userId ∈ visibility_user_ids))
+    //     OR (visibility == 'specific_users' AND userId ∈ visibility_user_ids)
     //   )
     // Qdrant doesn't support array-contains-by-payload on its `should` filters
     // natively in the same boolean shape as Postgres; we use `must` for the
@@ -357,12 +357,6 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
             { key: 'visibility', match: { value: 'specific_users' } },
             // Qdrant array payloads with `match.any` test set-membership.
             { key: 'visibility_user_ids', match: { any: [userId] } },
-          ],
-        },
-        {
-          must: [
-            { key: 'visibility', match: { value: 'specific_users' } },
-            { key: 'visibility_owner_user_id', match: { value: userId } },
           ],
         },
       ],

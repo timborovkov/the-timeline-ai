@@ -186,7 +186,7 @@ describe('createQdrantClient', () => {
     // `min_should: 1` is not valid in Qdrant's API spec — verify it is
     // absent so a future version doesn't reject the filter.
     expect(body.filter.min_should).toBeUndefined();
-    expect(body.filter.should).toHaveLength(5);
+    expect(body.filter.should).toHaveLength(4);
     // Branch 2: private + own author
     expect(body.filter.should[1]).toMatchObject({
       must: [
@@ -206,13 +206,6 @@ describe('createQdrantClient', () => {
       must: [
         { key: 'visibility', match: { value: 'specific_users' } },
         { key: 'visibility_user_ids', match: { any: ['user-1'] } },
-      ],
-    });
-    // Branch 5: specific_users + visibility owner
-    expect(body.filter.should[4]).toMatchObject({
-      must: [
-        { key: 'visibility', match: { value: 'specific_users' } },
-        { key: 'visibility_owner_user_id', match: { value: 'user-1' } },
       ],
     });
   });

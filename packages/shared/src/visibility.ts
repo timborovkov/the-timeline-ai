@@ -34,10 +34,7 @@ export function rawEventVisibleToUser(userId: string) {
     ),
     and(
       eq(rawEvents.visibility, 'specific_users'),
-      or(
-        eq(rawEvents.visibilityOwnerUserId, userId),
-        sql`COALESCE(${userId}::uuid = ANY(${rawEvents.visibilityUserIds}), false)`,
-      ),
+      sql`COALESCE(${userId}::uuid = ANY(${rawEvents.visibilityUserIds}), false)`,
     ),
   );
 }

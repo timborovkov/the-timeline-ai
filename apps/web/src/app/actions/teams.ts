@@ -21,7 +21,7 @@ import {
   slugify,
   withTeam,
 } from '@timeline/shared';
-import { and, asc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -577,6 +577,7 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
       const integrationRows = await tx
         .select({
           id: integrations.id,
+          connectedByUserId: integrations.connectedByUserId,
           visibilityDefault: integrations.visibilityDefault,
           visibilityDefaultUserIds: integrations.visibilityDefaultUserIds,
         })
@@ -584,19 +585,19 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
         .where(
           and(
             eq(integrations.teamId, active.teamId),
-            or(
-              isNull(integrations.connectedByUserId),
-              ne(integrations.connectedByUserId, memberUserId),
-            ),
             sql`${memberUserId}::uuid = ANY(${integrations.visibilityDefaultUserIds})`,
           ),
         );
       for (const row of integrationRows) {
-        const nextUserIds = (row.visibilityDefaultUserIds ?? []).filter(
-          (id) => id !== memberUserId,
-        );
-        const nextVisibility =
-          row.visibilityDefault === 'specific_users' && nextUserIds.length === 0
+        const ownedByRemovedMember = row.connectedByUserId === memberUserId;
+        const nextUserIds = ownedByRemovedMember
+          ? []
+          : (row.visibilityDefaultUserIds ?? []).filter((id) => id !== memberUserId);
+        const nextVisibility = ownedByRemovedMember
+          ? row.visibilityDefault === 'private' || row.visibilityDefault === 'specific_users'
+            ? 'team'
+            : row.visibilityDefault
+          : row.visibilityDefault === 'specific_users' && nextUserIds.length === 0
             ? 'team'
             : row.visibilityDefault;
         await tx

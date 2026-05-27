@@ -203,7 +203,12 @@ describe('withTeam namespaced port', () => {
       visibility: 'specific_users',
       visibilityUserIds: [USER_B],
     });
-    await expect(ownerScope.timeline.getEvent(event.id)).resolves.toMatchObject({ id: event.id });
+    await expect(ownerScope.timeline.getEvent(event.id)).resolves.toBeNull();
+    await expect(
+      withTeam(db as never, TEAM_A, USER_B).timeline.getEvent(event.id),
+    ).resolves.toMatchObject({
+      id: event.id,
+    });
 
     const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, event.id));
     expect(row?.visibility).toBe('specific_users');
@@ -219,6 +224,9 @@ describe('withTeam namespaced port', () => {
 
     const defaults = await db.select().from(teamVisibilityDefaults);
     expect(defaults).toHaveLength(0);
+
+    await ownerScope.timeline.setEventVisibility(event.id, { visibility: 'team' });
+    await expect(ownerScope.timeline.getEvent(event.id)).resolves.toMatchObject({ id: event.id });
   });
 
   it('lets a private source-owned event be read and edited by its visibility owner', async () => {

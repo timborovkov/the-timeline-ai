@@ -60,8 +60,7 @@ export function canSeeAuditTarget(
   },
 ): boolean {
   if (!target.targetVisibility || target.targetVisibility === 'team') return true;
-  if (target.targetOwnerUserId === viewerUserId) return true;
-  if (target.targetVisibility === 'private') return false;
+  if (target.targetVisibility === 'private') return target.targetOwnerUserId === viewerUserId;
   return (target.targetVisibilityUserIds ?? []).includes(viewerUserId);
 }
 
