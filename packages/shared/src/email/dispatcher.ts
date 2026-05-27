@@ -1,5 +1,5 @@
 import { type Db, rawEvents, teamMembers, teams, users } from '@timeline/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { childLogger } from '../logger.js';
 import { withTeam } from '../team-scope.js';
@@ -380,7 +380,13 @@ async function ingestForTeam(
       .select({ id: users.id })
       .from(users)
       .innerJoin(teamMembers, eq(teamMembers.userId, users.id))
-      .where(and(eq(teamMembers.teamId, team.id), sql`lower(${users.email}) = ${fromAddr.email}`))
+      .where(
+        and(
+          eq(teamMembers.teamId, team.id),
+          isNull(teamMembers.removedAt),
+          sql`lower(${users.email}) = ${fromAddr.email}`,
+        ),
+      )
       .limit(1);
     const u = memberRows[0];
     if (u) {
@@ -411,7 +417,7 @@ async function ingestForTeam(
   const memberRow = await deps.db
     .select({ userId: teamMembers.userId })
     .from(teamMembers)
-    .where(eq(teamMembers.teamId, team.id))
+    .where(and(eq(teamMembers.teamId, team.id), isNull(teamMembers.removedAt)))
     .limit(1);
   const callerUserId = memberRow[0]?.userId;
   if (!callerUserId) {

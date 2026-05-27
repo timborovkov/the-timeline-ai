@@ -3,7 +3,7 @@
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
 import { hashPassword } from '@timeline/shared/passwords';
 import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { AuthError } from 'next-auth';
@@ -66,10 +66,17 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         const invites = await tx
           .select()
           .from(teamInvites)
-          .where(and(eq(teamInvites.token, inviteToken), isNull(teamInvites.acceptedAt)))
-          .limit(1);
+          .where(
+            and(
+              eq(teamInvites.token, inviteToken),
+              isNull(teamInvites.acceptedAt),
+              isNull(teamInvites.revokedAt),
+            ),
+          )
+          .limit(1)
+          .for('update');
         const invite = invites[0];
-        if (!invite || invite.expiresAt < new Date()) {
+        if (!invite || invite.expiresAt < new Date() || invite.role === 'owner') {
           throw new Error(INVITE_INVALID);
         }
         if (invite.email.toLowerCase() !== email) {
@@ -82,8 +89,20 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         });
         await tx
           .update(teamInvites)
-          .set({ acceptedAt: new Date() })
+          .set({ acceptedAt: new Date(), acceptedByUserId: userId })
           .where(eq(teamInvites.id, invite.id));
+        await tx
+          .update(teamInvites)
+          .set({ revokedAt: new Date(), revokedByUserId: userId })
+          .where(
+            and(
+              eq(teamInvites.teamId, invite.teamId),
+              eq(teamInvites.email, invite.email),
+              isNull(teamInvites.acceptedAt),
+              isNull(teamInvites.revokedAt),
+              sql`${teamInvites.id} <> ${invite.id}`,
+            ),
+          );
         return invite.teamId;
       }
 

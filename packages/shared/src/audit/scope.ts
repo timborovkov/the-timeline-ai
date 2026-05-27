@@ -58,7 +58,8 @@ export function canSeeAuditTarget(
   },
 ): boolean {
   if (!target.targetVisibility || target.targetVisibility === 'team') return true;
-  if (target.targetVisibility === 'private') return target.targetOwnerUserId === viewerUserId;
+  if (target.targetOwnerUserId === viewerUserId) return true;
+  if (target.targetVisibility === 'private') return false;
   return (target.targetVisibilityUserIds ?? []).includes(viewerUserId);
 }
 
@@ -157,6 +158,7 @@ export function createAuditScope(deps: {
             or(
               eq(rawEvents.visibility, 'team'),
               and(eq(rawEvents.visibility, 'private'), eq(rawEvents.authorUserId, userId)),
+              eq(rawEvents.authorUserId, userId),
               and(
                 eq(rawEvents.visibility, 'specific_users'),
                 sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
@@ -183,6 +185,7 @@ export function createAuditScope(deps: {
             or(
               eq(documents.visibility, 'team'),
               and(eq(documents.visibility, 'private'), eq(documents.ownerUserId, userId)),
+              eq(documents.ownerUserId, userId),
               and(
                 eq(documents.visibility, 'specific_users'),
                 sql`${userId}::uuid = ANY(${documents.visibilityUserIds})`,

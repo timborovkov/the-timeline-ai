@@ -2,7 +2,7 @@
 
 import { teamInvites, teamMembers } from '@timeline/db';
 import { childLogger } from '@timeline/shared';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
@@ -36,10 +36,17 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
       const invites = await tx
         .select()
         .from(teamInvites)
-        .where(and(eq(teamInvites.token, token), isNull(teamInvites.acceptedAt)))
-        .limit(1);
+        .where(
+          and(
+            eq(teamInvites.token, token),
+            isNull(teamInvites.acceptedAt),
+            isNull(teamInvites.revokedAt),
+          ),
+        )
+        .limit(1)
+        .for('update');
       const invite = invites[0];
-      if (!invite || invite.expiresAt < new Date()) {
+      if (!invite || invite.expiresAt < new Date() || invite.role === 'owner') {
         throw new Error('invalid');
       }
       if (!sessionEmail || sessionEmail !== invite.email.toLowerCase()) {
@@ -47,36 +54,50 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
       }
 
       const existing = await tx
-        .select({ role: teamMembers.role })
+        .select({ role: teamMembers.role, removedAt: teamMembers.removedAt })
         .from(teamMembers)
         .where(and(eq(teamMembers.teamId, invite.teamId), eq(teamMembers.userId, userId)))
-        .limit(1);
-      if (existing.length === 0) {
-        await tx.insert(teamMembers).values({
+        .limit(1)
+        .for('update');
+      const membership = existing[0];
+      if (membership && !membership.removedAt) {
+        throw new Error('already-member');
+      }
+      await tx
+        .insert(teamMembers)
+        .values({
           teamId: invite.teamId,
           userId,
           role: invite.role,
+        })
+        .onConflictDoUpdate({
+          target: [teamMembers.teamId, teamMembers.userId],
+          set: { role: invite.role, removedAt: null, removedByUserId: null },
         });
-      } else if (existing[0]?.role !== invite.role && existing[0]?.role !== 'owner') {
-        // Re-accepting an invite is a legitimate way to change a member's
-        // role (e.g. promote member → admin). Never demote an owner via this
-        // path — owners must be removed/added explicitly.
-        await tx
-          .update(teamMembers)
-          .set({ role: invite.role })
-          .where(and(eq(teamMembers.teamId, invite.teamId), eq(teamMembers.userId, userId)));
-      }
       await tx
         .update(teamInvites)
-        .set({ acceptedAt: new Date() })
+        .set({ acceptedAt: new Date(), acceptedByUserId: userId })
         .where(eq(teamInvites.id, invite.id));
+      await tx
+        .update(teamInvites)
+        .set({ revokedAt: new Date(), revokedByUserId: userId })
+        .where(
+          and(
+            eq(teamInvites.teamId, invite.teamId),
+            eq(teamInvites.email, invite.email),
+            isNull(teamInvites.acceptedAt),
+            isNull(teamInvites.revokedAt),
+            sql`${teamInvites.id} <> ${invite.id}`,
+          ),
+        );
       return invite.teamId;
     });
   } catch (e) {
     // Only known sentinel reasons get surfaced in the URL; anything else
     // collapses to 'failed' so we never emit an unbounded error string.
     const raw = e instanceof Error ? e.message : '';
-    const reason = raw === 'invalid' || raw === 'wrong-account' ? raw : 'failed';
+    const reason =
+      raw === 'invalid' || raw === 'wrong-account' || raw === 'already-member' ? raw : 'failed';
 
     // Fallback: an OAuth user who arrived via /sign-up?invite=<token> skipped
     // the default solo-team creation in createUser. If invite acceptance then

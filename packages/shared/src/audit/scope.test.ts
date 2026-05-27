@@ -39,6 +39,16 @@ describe('canSeeAuditTarget', () => {
       }),
     ).toBe(false);
   });
+
+  it('allows target owners even when a restricted target omits them from the allowlist', () => {
+    expect(
+      canSeeAuditTarget('owner', {
+        targetVisibility: 'specific_users',
+        targetOwnerUserId: 'owner',
+        targetVisibilityUserIds: ['viewer'],
+      }),
+    ).toBe(true);
+  });
 });
 
 describe('auditTargetPresentation', () => {

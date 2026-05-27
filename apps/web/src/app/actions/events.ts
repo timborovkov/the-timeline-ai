@@ -274,3 +274,25 @@ export async function createAudioEventAction(
   revalidatePath('/app/timeline');
   return { ok: true };
 }
+
+const removeTelegramEventSchema = z.object({
+  id: z.string().uuid(),
+});
+
+export async function removeTelegramEventAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (!session?.user) return;
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) return;
+
+  const parsed = removeTelegramEventSchema.safeParse({ id: formData.get('id') });
+  if (!parsed.success) return;
+
+  const scope = withTeam(db, active.teamId, session.user.id);
+  try {
+    await scope.timeline.removeTelegramMessage(parsed.data.id);
+  } catch (err) {
+    log.warn({ err, rawEventId: parsed.data.id }, 'remove_telegram_event_failed');
+  }
+  revalidatePath('/app/timeline');
+}

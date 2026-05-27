@@ -1,5 +1,6 @@
 import { auditLog, mcpOutboundKeys } from '@timeline/db';
 import { mcpServer, withTeam } from '@timeline/shared';
+import { childLogger } from '@timeline/shared/logger';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -14,6 +15,8 @@ export const dynamic = 'force-dynamic';
 const createSchema = z.object({
   name: z.string().min(1).max(80),
 });
+
+const log = childLogger('web:mcp-keys');
 
 export async function GET(): Promise<Response> {
   const session = await auth();
@@ -92,7 +95,11 @@ export async function POST(req: Request): Promise<Response> {
       });
       return created;
     })
-    .catch(() => {
+    .catch((err: unknown) => {
+      log.error(
+        { err, teamId: active.teamId, actorUserId: session.user.id },
+        'Failed to create outbound MCP key',
+      );
       return null;
     });
   if (!row) return NextResponse.json({ error: 'create_failed' }, { status: 500 });
