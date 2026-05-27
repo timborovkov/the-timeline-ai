@@ -1,7 +1,8 @@
 'use server';
 
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
-import { buildInboundEmail, hashPassword, randomSlugSuffix, slugify } from '@timeline/shared';
+import { hashPassword } from '@timeline/shared/passwords';
+import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
 import { and, eq, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -189,7 +190,7 @@ export async function signInAction(_prev: SignInState, formData: FormData): Prom
     await signIn('credentials', {
       email: parsed.data.email,
       password: parsed.data.password,
-      redirect: false,
+      redirectTo: safeCallbackUrl(parsed.data.callbackUrl),
     });
   } catch (e) {
     // Only swallow real auth failures. Re-throw framework errors (Next's
@@ -199,7 +200,7 @@ export async function signInAction(_prev: SignInState, formData: FormData): Prom
     }
     throw e;
   }
-  redirect(safeCallbackUrl(parsed.data.callbackUrl));
+  return { error: 'Invalid email or password.' };
 }
 
 export async function signOutAction(): Promise<void> {

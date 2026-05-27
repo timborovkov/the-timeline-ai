@@ -5,7 +5,6 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
-import { db } from '@/lib/db';
 
 // Derived from the Postgres enum so adding a new object type doesn't
 // require synchronizing this schema with the drizzle enum by hand.
@@ -44,7 +43,7 @@ export async function createObjectAction(input: unknown): Promise<ActionState> {
   if (!r.ok) return { error: r.error };
 
   try {
-    const obj = await objects.createObject(db, r.scope, {
+    const obj = await r.scope.objects.createObject({
       type: parsed.data.type,
       canonicalName: parsed.data.canonicalName,
       status: parsed.data.status,
@@ -84,9 +83,7 @@ export async function updateObjectAction(input: unknown): Promise<ActionState> {
 
   const { id, dueAt, ...rest } = parsed.data;
   try {
-    await objects.updateObject(
-      db,
-      r.scope,
+    await r.scope.objects.updateObject(
       id,
       {
         ...rest,
@@ -115,7 +112,7 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
   try {
-    await objects.archiveObject(db, r.scope, parsed.data.id, { kind: 'user', userId: r.userId });
+    await r.scope.objects.archiveObject(parsed.data.id, { kind: 'user', userId: r.userId });
     revalidatePath('/app/objects');
     revalidatePath(`/app/objects/${parsed.data.id}`);
     // Archived objects must drop out of any board/kanban view that was
@@ -140,7 +137,7 @@ export async function addRelationshipAction(input: unknown): Promise<ActionState
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
   try {
-    await objects.addRelationship(db, r.scope, {
+    await r.scope.objects.addRelationship({
       ...parsed.data,
       actorUserId: r.userId,
     });
@@ -160,7 +157,7 @@ export async function removeRelationshipAction(input: unknown): Promise<ActionSt
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
   try {
-    await objects.removeRelationship(db, r.scope, parsed.data.id, {
+    await r.scope.objects.removeRelationship(parsed.data.id, {
       kind: 'user',
       userId: r.userId,
     });
@@ -190,7 +187,7 @@ export async function createNoteAction(input: unknown): Promise<ActionState> {
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
   try {
-    const note = await objects.createNote(db, r.scope, {
+    const note = await r.scope.objects.createNote({
       ...parsed.data,
       authorUserId: r.userId,
     });
@@ -213,7 +210,7 @@ export async function updateNoteAction(input: unknown): Promise<ActionState> {
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
   try {
-    const ok = await objects.updateNote(db, r.scope, {
+    const ok = await r.scope.objects.updateNote({
       noteId: parsed.data.noteId,
       body: parsed.data.body,
       actorUserId: r.userId,
@@ -231,7 +228,7 @@ export async function deleteNoteAction(input: unknown): Promise<ActionState> {
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
   try {
-    const ok = await objects.deleteNote(db, r.scope, {
+    const ok = await r.scope.objects.deleteNote({
       noteId: parsed.data.noteId,
       actorUserId: r.userId,
     });
@@ -257,7 +254,7 @@ export async function markNotificationReadAction(id: string): Promise<ActionStat
     // triggered the click. Wrap in try/catch so a DB failure surfaces
     // as { error } instead of throwing into the client and stranding
     // the optimistic read state.
-    await objects.markNotificationRead(db, r.scope, parsed.data);
+    await r.scope.objects.markNotificationRead(parsed.data);
     revalidatePath('/app/inbox');
     return { ok: true };
   } catch (err) {
@@ -269,7 +266,7 @@ export async function markAllNotificationsReadAction(): Promise<ActionState> {
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
   try {
-    await objects.markAllNotificationsRead(db, r.scope);
+    await r.scope.objects.markAllNotificationsRead();
     revalidatePath('/app/inbox');
     return { ok: true };
   } catch (err) {
@@ -290,7 +287,7 @@ export async function acceptObjectChangeAction(input: unknown): Promise<ActionSt
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
   try {
-    const ok = await objects.acceptObjectChange(db, r.scope, parsed.data.changeId, {
+    const ok = await r.scope.objects.acceptObjectChange(parsed.data.changeId, {
       kind: 'user',
       userId: r.userId,
     });
@@ -313,7 +310,7 @@ export async function rejectObjectChangeAction(input: unknown): Promise<ActionSt
   const r = await resolveScope();
   if (!r.ok) return { error: r.error };
   try {
-    const ok = await objects.rejectObjectChange(db, r.scope, parsed.data.changeId);
+    const ok = await r.scope.objects.rejectObjectChange(parsed.data.changeId);
     revalidatePath(`/app/objects/${parsed.data.entityId}`);
     revalidatePath('/app/inbox');
     return ok ? { ok: true } : { error: 'Suggestion no longer pending' };

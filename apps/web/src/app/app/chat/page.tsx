@@ -1,5 +1,5 @@
 import { entities, type Db } from '@timeline/db';
-import { objects, withTeam } from '@timeline/shared';
+import { type objects, withTeam } from '@timeline/shared';
 import { type UIMessage } from 'ai';
 import { and, eq, inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
@@ -111,11 +111,11 @@ export default async function ChatPage({
 
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
-  const team = await scope.team();
+  const team = await scope.timeline.team();
   const params = await searchParams;
   const requestedSessionId = params.session ?? null;
 
-  const sessions = await objects.listChatSessions(db, scope, { limit: 50 });
+  const sessions = await scope.objects.listChatSessions({ limit: 50 });
   const pinnedIds = sessions.map((s) => s.pinnedEntityId).filter((v): v is string => v !== null);
   const pinnedNames = await loadPinnedEntity(db, active.teamId, pinnedIds);
 
@@ -130,7 +130,7 @@ export default async function ChatPage({
   let pinnedEntityId: string | null = null;
   let pinnedEntityName: string | null = null;
   if (requestedSessionId) {
-    const loaded = await objects.getChatSession(db, scope, requestedSessionId);
+    const loaded = await scope.objects.getChatSession(requestedSessionId);
     if (loaded) {
       activeSessionId = requestedSessionId;
       initialMessages = hydrate(loaded);

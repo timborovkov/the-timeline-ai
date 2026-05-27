@@ -222,14 +222,14 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
       execute: async (raw) =>
         safe('search_timeline', async () => {
           const input = searchTimelineInput.parse(raw);
-          const args: Parameters<typeof scope.searchEvents>[0] = { query: input.query };
+          const args: Parameters<typeof scope.timeline.searchEvents>[0] = { query: input.query };
           if (input.from) args.from = new Date(input.from);
           if (input.to) args.to = new Date(input.to);
           if (input.source) args.source = input.source;
           if (input.entityIds) args.entityIds = input.entityIds;
           if (input.sourceKind) args.sourceKind = input.sourceKind;
           if (input.limit) args.limit = input.limit;
-          const results = await scope.searchEvents(args);
+          const results = await scope.timeline.searchEvents(args);
           // Fence the snippet so a malicious search hit cannot smuggle a
           // prompt-injection past the Rule 8 framing.
           const fenced = results.map((r) => ({
@@ -251,7 +251,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           // Cap the payload for agent calls so a chatty entity doesn't blow
           // the LLM context. 20 facts + 10 co-occurring is enough to anchor
           // an answer; the agent can call search_timeline for breadth.
-          const profile = await scope.getEntity(idOrName, {
+          const profile = await scope.timeline.getEntity(idOrName, {
             factLimit: 20,
             coOccurringLimit: 10,
           });
@@ -286,13 +286,13 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
       execute: async (raw) =>
         safe('list_events', async () => {
           const input = listEventsInput.parse(raw);
-          const filters: Parameters<typeof scope.listEvents>[0] = {};
+          const filters: Parameters<typeof scope.timeline.listEvents>[0] = {};
           if (input.from) filters.from = new Date(input.from);
           if (input.to) filters.to = new Date(input.to);
           if (input.authorUserId) filters.authorUserId = input.authorUserId;
           if (input.limit) filters.limit = input.limit;
           if (input.source) filters.source = input.source;
-          const filtered = await scope.listEvents(filters);
+          const filtered = await scope.timeline.listEvents(filters);
           return {
             count: filtered.length,
             events: filtered.map((e) => ({
@@ -316,7 +316,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
       inputSchema: z.object({ idOrName: z.string().trim().min(1).max(200) }),
       execute: async ({ idOrName }) =>
         safe('get_object', async () => {
-          const result = await objects.getObject(getDb(), scope, idOrName);
+          const result = await scope.objects.getObject(idOrName);
           if (!result) return { found: false };
           return {
             found: true,
@@ -377,7 +377,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           if (input.stage) filter.stage = input.stage;
           if (input.ownerUserId) filter.ownerUserId = input.ownerUserId;
           if (input.archived !== undefined) filter.archived = input.archived;
-          const rows = await objects.listObjects(getDb(), scope, filter);
+          const rows = await scope.objects.listObjects(filter);
           return {
             count: rows.length,
             objects: rows.map((r) => ({
@@ -424,7 +424,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             status: input.status ?? ['suggested', 'open', 'todo', 'doing', 'blocked'],
           };
           if (input.ownerUserId) filter.ownerUserId = input.ownerUserId;
-          const rows = await objects.listObjects(getDb(), scope, filter);
+          const rows = await scope.objects.listObjects(filter);
           return {
             count: rows.length,
             tasks: rows.map((r) => ({
@@ -461,7 +461,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           if (input.entityId) filter.entityId = input.entityId;
           if (input.status) filter.status = input.status;
           if (input.since) filter.since = new Date(input.since);
-          const rows = await objects.listObjectChanges(getDb(), scope, filter);
+          const rows = await scope.objects.listObjectChanges(filter);
           return {
             count: rows.length,
             changes: rows.map((c) => ({
@@ -500,7 +500,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             parentObjectId?: string;
             sourceEventId?: string;
           };
-          const created = await objects.createObject(getDb(), scope, {
+          const created = await scope.objects.createObject({
             type: 'task',
             canonicalName: input.title,
             dueAt: input.dueAt ? new Date(input.dueAt) : null,
@@ -537,7 +537,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             newValue: unknown;
             note?: string;
           };
-          const proposed = await objects.proposeObjectChange(getDb(), scope, {
+          const proposed = await scope.objects.proposeObjectChange({
             entityId: input.entityId,
             field: input.field,
             newValue: input.newValue,
@@ -558,7 +558,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
       execute: async (raw) =>
         safe('get_event', async () => {
           const { id } = getEventInput.parse(raw);
-          const result = await scope.getEventWithFacts(id);
+          const result = await scope.timeline.getEventWithFacts(id);
           if (!result) return { found: false };
           return {
             found: true,
@@ -592,13 +592,13 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
       execute: async (raw) =>
         safe('search_documents', async () => {
           const input = searchDocumentsInput.parse(raw);
-          const args: Parameters<typeof scope.searchDocumentChunks>[0] = {
+          const args: Parameters<typeof scope.documents.searchDocumentChunks>[0] = {
             query: input.query,
           };
           if (input.documentId) args.documentId = input.documentId;
           if (input.folderIds) args.folderIds = input.folderIds;
           if (input.limit) args.limit = input.limit;
-          const hits = await scope.searchDocumentChunks(args);
+          const hits = await scope.documents.searchDocumentChunks(args);
           // Fence the chunk text so a prompt-injection embedded in an
           // uploaded document cannot escape into the agent's instructions.
           // Use the chunk id as the fence event_id attribute so the marker
@@ -630,10 +630,10 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
       execute: async (raw) =>
         safe('get_document', async () => {
           const { id } = getDocumentInput.parse(raw);
-          const document = await scope.getDocument(id);
+          const document = await scope.documents.getDocument(id);
           if (!document) return { found: false };
-          const versions = await scope.listDocumentVersions(document.id);
-          const folderPath = await scope.folderPath(document.folderId);
+          const versions = await scope.documents.listDocumentVersions(document.id);
+          const folderPath = await scope.documents.folderPath(document.folderId);
           return {
             found: true,
             document_id: document.id,
@@ -665,7 +665,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
       execute: async (raw) =>
         safe('get_document_chunk', async () => {
           const { id } = getDocumentChunkInput.parse(raw);
-          const chunk = await scope.getDocumentChunk(id);
+          const chunk = await scope.documents.getDocumentChunk(id);
           if (!chunk) return { found: false };
           return {
             found: true,
@@ -751,14 +751,14 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             source: 'integration',
           };
           if (parsed.limit) opts.limit = parsed.limit;
-          const hits = await scope.searchEvents(opts);
+          const hits = await scope.timeline.searchEvents(opts);
           let filtered = hits.filter((h) => h.source === 'integration');
           // Apply the optional provider filter. `provider` lives in
           // raw_events.source_metadata, which `searchEvents` doesn't return,
           // so hydrate via getEventsByIds (which already enforces team_id +
           // visibility) and drop hits whose provider doesn't match.
           if (parsed.provider && filtered.length > 0) {
-            const rows = await scope.getEventsByIds(filtered.map((r) => r.eventId));
+            const rows = await scope.timeline.getEventsByIds(filtered.map((r) => r.eventId));
             const providerById = new Map<string, string | undefined>();
             for (const row of rows) {
               const md = row.sourceMetadata as Record<string, unknown> | null;
@@ -858,10 +858,10 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
       execute: async (raw) =>
         safe('list_recent_document_changes', async () => {
           const input = listDocumentChangesInput.parse(raw);
-          const args: Parameters<typeof scope.listRecentDocumentChanges>[0] = {};
+          const args: Parameters<typeof scope.documents.listRecentDocumentChanges>[0] = {};
           if (input.since) args.since = new Date(input.since);
           if (input.limit) args.limit = input.limit;
-          const changes = await scope.listRecentDocumentChanges(args);
+          const changes = await scope.documents.listRecentDocumentChanges(args);
           return {
             count: changes.length,
             changes: changes.map((c) => ({

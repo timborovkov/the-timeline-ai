@@ -125,14 +125,14 @@ async function createFinalisedDocument(
   },
 ): Promise<{ documentId: string; versionId: string }> {
   const scope = withTeam(db, TEAM_ID, USER_A);
-  const created = await scope.createDocument({
+  const created = await scope.documents.createDocument({
     name: opts.name,
     folderId: null,
     filename: opts.filename ?? opts.name,
     contentType: opts.contentType,
     visibility: opts.visibility ?? 'team',
   });
-  const finalised = await scope.finalizeDocumentVersion({
+  const finalised = await scope.documents.finalizeDocumentVersion({
     versionId: created.version.id,
     byteSize: 1024,
     contentType: opts.contentType,
@@ -219,7 +219,7 @@ describe('processDocumentExtractJob — short-circuits', () => {
       name: 'gone.txt',
       contentType: 'text/plain',
     });
-    await withTeam(h.db, TEAM_ID, USER_A).softDeleteDocument(documentId);
+    await withTeam(h.db, TEAM_ID, USER_A).documents.softDeleteDocument(documentId);
     const result = await processDocumentExtractJob(
       { db: h.db },
       { documentVersionId: versionId, teamId: TEAM_ID },
@@ -545,13 +545,13 @@ describe('processDocumentExtractJob — content-type routing', () => {
     // Pass empty contentType — the router should still accept .md via
     // the filename extension fallback.
     const scope = withTeam(h.db, TEAM_ID, USER_A);
-    const created = await scope.createDocument({
+    const created = await scope.documents.createDocument({
       name: 'README.md',
       folderId: null,
       filename: 'README.md',
       contentType: 'application/octet-stream',
     });
-    const finalised = await scope.finalizeDocumentVersion({
+    const finalised = await scope.documents.finalizeDocumentVersion({
       versionId: created.version.id,
       byteSize: 25,
       contentType: 'application/octet-stream',

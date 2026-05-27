@@ -48,9 +48,12 @@ tool. When in doubt, invoke the skill.
 ## Project-specific guardrails
 
 - **Team isolation is sacred.** Every Postgres query goes through
-  `withTeam(db, teamId, userId)` in `packages/shared`. Every Qdrant query
-  filters on `team_id` via the wrapper. Do not bypass these — even in
-  "internal" tools.
+  `withTeam(db, teamId, userId)` in `packages/shared`. Use the returned
+  named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
+  `scope.objects`, `scope.calendar`, `scope.integrations`, `scope.mcp`)
+  rather than flat scope methods or manually passing `db` into object helpers.
+  Every Qdrant query filters on `team_id` via the wrapper. Do not bypass
+  these — even in "internal" tools.
 - **Raw events are immutable.** Never `UPDATE` a `raw_events` row's content.
   Derived facts can be re-extracted; the source is the source.
 - **Design system lives in [design.md](design.md).** If a screen disagrees with
@@ -105,8 +108,9 @@ apps/
             mcp-health)
 packages/
   db/       Drizzle schema + migrations
-  shared/   Cross-package code: withTeam scope, llm wrapper, Qdrant wrapper,
-            S3 wrapper, Telegram dispatcher, queue names, objects module,
+  shared/   Cross-package code: withTeam workspace port, llm wrapper, Qdrant
+            wrapper, S3 wrapper, Telegram dispatcher, queue names, shared
+            embedding source planner, objects module,
             documents module (Phase 9 — folders/documents/versions/chunks
             scope, RustFS object-key builder, text chunker), meeting-bots
             module (Phase 10 — Recall.ai provider, Svix verifier) +

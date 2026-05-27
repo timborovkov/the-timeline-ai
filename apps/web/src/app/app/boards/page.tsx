@@ -1,4 +1,4 @@
-import { objects, withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -15,7 +15,7 @@ export default async function BoardsIndexPage() {
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const boards = await objects.listBoardViews(db, scope);
+  const boards = await scope.objects.listBoardViews();
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">

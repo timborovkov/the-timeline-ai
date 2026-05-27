@@ -76,13 +76,13 @@ export async function POST(req: Request): Promise<Response> {
 
   let results: SearchEventResult[];
   try {
-    const input: Parameters<typeof scope.searchEvents>[0] = { query: parsed.data.query };
+    const input: Parameters<typeof scope.timeline.searchEvents>[0] = { query: parsed.data.query };
     if (parsed.data.from) input.from = new Date(parsed.data.from);
     if (parsed.data.to) input.to = new Date(parsed.data.to);
     if (parsed.data.source) input.source = parsed.data.source;
     if (parsed.data.entityIds) input.entityIds = parsed.data.entityIds;
     if (parsed.data.limit) input.limit = parsed.data.limit;
-    results = await scope.searchEvents(input);
+    results = await scope.timeline.searchEvents(input);
   } catch (err) {
     log.error({ err }, 'searchEvents failed');
     // 502 = transient (embed or qdrant); distinct from 503 above so the

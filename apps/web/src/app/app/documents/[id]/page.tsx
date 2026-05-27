@@ -26,12 +26,12 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
 
-  const document = await scope.getDocument(id);
+  const document = await scope.documents.getDocument(id);
   if (!document) notFound();
 
   const [versions, folderPath] = await Promise.all([
-    scope.listDocumentVersions(document.id),
-    scope.folderPath(document.folderId),
+    scope.documents.listDocumentVersions(document.id),
+    scope.documents.folderPath(document.folderId),
   ]);
   const requestedVersion = sp.version ? Number.parseInt(sp.version, 10) : null;
 

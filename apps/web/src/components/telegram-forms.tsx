@@ -1,6 +1,7 @@
 'use client';
 
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 
 import {
   generateGroupLinkTokenAction,
@@ -81,7 +82,7 @@ function TgUsernameField({ id }: { id: string }) {
 }
 
 export function GeneratePersonalTokenForm({ botUsername }: { botUsername: string | null }) {
-  const [state, action] = useFormState<GenerateLinkTokenState, FormData>(
+  const [state, action] = useActionState<GenerateLinkTokenState, FormData>(
     generatePersonalLinkTokenAction,
     {},
   );
@@ -95,7 +96,7 @@ export function GeneratePersonalTokenForm({ botUsername }: { botUsername: string
 }
 
 export function GenerateGroupTokenForm({ botUsername }: { botUsername: string | null }) {
-  const [state, action] = useFormState<GenerateLinkTokenState, FormData>(
+  const [state, action] = useActionState<GenerateLinkTokenState, FormData>(
     generateGroupLinkTokenAction,
     {},
   );

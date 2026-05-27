@@ -164,14 +164,14 @@ export async function POST(req: Request): Promise<Response> {
       const currentRank = rank[meeting.status] ?? 0;
       const nextRank = rank[cappedStatus] ?? 0;
       if (nextRank >= currentRank) {
-        const patch: Parameters<typeof scope.updateMeetingStatus>[2] = {
+        const patch: Parameters<typeof scope.meetings.updateMeetingStatus>[2] = {
           metadata: { last_status: code, last_status_at: createdAt ?? new Date().toISOString() },
         };
         if (cappedStatus === 'active')
           patch.startedAt = createdAt ? new Date(createdAt) : new Date();
         if (cappedStatus === 'processing')
           patch.endedAt = createdAt ? new Date(createdAt) : new Date();
-        await scope.updateMeetingStatus(meeting.id, cappedStatus, patch);
+        await scope.meetings.updateMeetingStatus(meeting.id, cappedStatus, patch);
       } else {
         log.info(
           { botId, currentStatus: meeting.status, attempted: cappedStatus },
@@ -182,7 +182,7 @@ export async function POST(req: Request): Promise<Response> {
       // Only update if we haven't already moved to processing (idempotent
       // re-delivery).
       if (meeting.status !== 'processing') {
-        await scope.updateMeetingStatus(meeting.id, 'processing', {
+        await scope.meetings.updateMeetingStatus(meeting.id, 'processing', {
           endedAt: createdAt ? new Date(createdAt) : new Date(),
           metadata: { call_ended_at: createdAt ?? new Date().toISOString() },
         });
@@ -191,7 +191,7 @@ export async function POST(req: Request): Promise<Response> {
       // `failed` is terminal — overrides any in-flight state including
       // `processing`. The terminal guard above only blocks transitions OUT
       // of failed/completed; transitioning INTO failed is always allowed.
-      await scope.updateMeetingStatus(meeting.id, 'failed', {
+      await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
         metadata: { failure_at: new Date().toISOString(), failure_code: code ?? 'unknown' },
       });
     }

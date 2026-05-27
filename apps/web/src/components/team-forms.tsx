@@ -1,6 +1,7 @@
 'use client';
 
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 
 import {
   createTeamAction,
@@ -24,7 +25,7 @@ function Submit({ label }: { label: string }) {
 }
 
 export function CreateTeamForm({ id = 'new-team-name' }: { id?: string }) {
-  const [state, action] = useFormState<CreateTeamState, FormData>(createTeamAction, {});
+  const [state, action] = useActionState<CreateTeamState, FormData>(createTeamAction, {});
   return (
     <form action={action} className="flex flex-col gap-3 sm:flex-row sm:items-end">
       <div className="flex-1 space-y-2">
@@ -40,7 +41,7 @@ export function CreateTeamForm({ id = 'new-team-name' }: { id?: string }) {
 }
 
 export function RenameTeamForm({ currentName, teamId }: { currentName: string; teamId: string }) {
-  const [state, action] = useFormState<RenameTeamState, FormData>(renameTeamAction, {});
+  const [state, action] = useActionState<RenameTeamState, FormData>(renameTeamAction, {});
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="teamId" value={teamId} />
@@ -58,7 +59,7 @@ export function RenameTeamForm({ currentName, teamId }: { currentName: string; t
 }
 
 export function InviteMemberForm() {
-  const [state, action] = useFormState<InviteState, FormData>(inviteMemberAction, {});
+  const [state, action] = useActionState<InviteState, FormData>(inviteMemberAction, {});
   return (
     <form action={action} className="space-y-3">
       <div className="flex items-end gap-3">

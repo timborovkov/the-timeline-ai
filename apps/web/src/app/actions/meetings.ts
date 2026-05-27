@@ -72,7 +72,7 @@ export async function scheduleMeetingBotAction(
 
   // Consent gate. Defaults to required; admins can toggle the team
   // setting if they have legal cover.
-  const settings = await scope.getMeetingSettings();
+  const settings = await scope.meetings.getMeetingSettings();
   if (settings.requireHostConsent && !parsed.data.consentGiven) {
     return {
       ok: false,
@@ -87,7 +87,7 @@ export async function scheduleMeetingBotAction(
     return { ok: false, error: 'Meeting bots are disabled for this team.' };
   }
   if (cap !== null && cap > 0 && !settings.meetingMinutesAdminOverride) {
-    const used = await scope.getCurrentMonthMinutes();
+    const used = await scope.meetings.getCurrentMonthMinutes();
     if (used >= cap) {
       return {
         ok: false,
@@ -98,7 +98,7 @@ export async function scheduleMeetingBotAction(
 
   // 1. Create meeting row in `pending` status so we have an id to round
   //    through provider metadata.
-  const meeting = await scope.createMeeting({
+  const meeting = await scope.meetings.createMeeting({
     platform,
     meetingUrl: parsed.data.meetingUrl,
     title: parsed.data.title ?? null,
@@ -121,13 +121,13 @@ export async function scheduleMeetingBotAction(
       platform,
       transcriptWebhookUrl,
     });
-    await scope.updateMeetingStatus(meeting.id, 'joining', {
+    await scope.meetings.updateMeetingStatus(meeting.id, 'joining', {
       providerBotId: join.botId,
       metadata: { provider_join_result: join.raw ?? {} },
     });
   } catch (err) {
     log.error({ err, meetingId: meeting.id }, 'recall_join_failed');
-    await scope.updateMeetingStatus(meeting.id, 'failed', {
+    await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
       metadata: {
         join_failed_at: new Date().toISOString(),
         join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
@@ -149,7 +149,7 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
   if ('error' in got) return { ok: false, error: got.error };
   const { scope } = got;
 
-  const meeting = await scope.getMeeting(meetingId);
+  const meeting = await scope.meetings.getMeeting(meetingId);
   if (!meeting) return { ok: false, error: 'Meeting not found' };
 
   // Only meetings that have not yet finished can be cancelled. `processing`
@@ -174,7 +174,7 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
       log.warn({ err, meetingId }, 'recall_leave_failed');
     }
   }
-  await scope.updateMeetingStatus(meetingId, 'failed', {
+  await scope.meetings.updateMeetingStatus(meetingId, 'failed', {
     metadata: { cancelled_at: new Date().toISOString() },
   });
   revalidatePath('/app/meetings');

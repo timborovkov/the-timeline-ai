@@ -1,6 +1,7 @@
 import { DrizzleAdapter } from '@auth/drizzle-adapter';
 import { accounts, authenticators, getDb, sessions, users, verificationTokens } from '@timeline/db';
-import { childLogger, verifyPassword } from '@timeline/shared';
+import { childLogger } from '@timeline/shared/logger';
+import { verifyPassword } from '@timeline/shared/passwords';
 import { eq } from 'drizzle-orm';
 import NextAuth, { type NextAuthConfig } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';

@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Local development</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-22</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-27</span></div>
       <p class="tldr">
         Bring up the full Timeline stack on your machine with Docker Compose for infra and
         <code>pnpm dev</code> for app + worker hot reload.
@@ -125,6 +125,7 @@ pnpm db:migrate
 
       <h2 id="useful-commands">Useful commands</h2>
       <pre><code>pnpm dev                              # next + worker, watch mode
+pnpm validate                         # format, typecheck, lint, knip
 pnpm lint &amp;&amp; pnpm typecheck           # CI-equivalent checks
 pnpm knip                             # dead code / unused deps
 pnpm format                           # prettier write

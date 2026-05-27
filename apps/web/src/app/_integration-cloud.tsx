@@ -1,4 +1,4 @@
-import { integrations as integrationsLib } from '@timeline/shared';
+import * as integrationsLib from '@timeline/shared/integrations/registry';
 import Link from 'next/link';
 
 import { cn } from '@/lib/utils';

@@ -40,3 +40,4 @@ pnpm-debug.log*
 # ---- Misc ----
 coverage/
 .nyc_output/
+.gstack/

@@ -60,7 +60,7 @@ export async function createTextEventAction(
 
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
-  const event = await scope.createEvent({
+  const event = await scope.timeline.createEvent({
     authorUserId: session.user.id,
     source: 'web',
     contentText: parsed.data.text,
@@ -224,7 +224,7 @@ export async function createAudioEventAction(
   if (typeof parsed.data.durationSec === 'number') {
     sourceMetadata.audio_duration_sec = parsed.data.durationSec;
   }
-  const event = await scope.createEvent({
+  const event = await scope.timeline.createEvent({
     authorUserId: session.user.id,
     source: 'web',
     contentText: null,

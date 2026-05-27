@@ -8,6 +8,26 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./integrations": {
+      "import": "./dist/integrations/index.js",
+      "types": "./dist/integrations/index.d.ts"
+    },
+    "./integrations/registry": {
+      "import": "./dist/integrations/registry.js",
+      "types": "./dist/integrations/registry.d.ts"
+    },
+    "./logger": {
+      "import": "./dist/logger.js",
+      "types": "./dist/logger.d.ts"
+    },
+    "./passwords": {
+      "import": "./dist/passwords.js",
+      "types": "./dist/passwords.d.ts"
+    },
+    "./slug": {
+      "import": "./dist/slug.js",
+      "types": "./dist/slug.d.ts"
+    },
     "./citation": {
       "import": "./dist/citation.js",
       "types": "./dist/citation.d.ts"

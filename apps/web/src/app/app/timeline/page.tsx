@@ -103,7 +103,7 @@ export default async function TimelinePage({ searchParams }: Props) {
   const toFilter = parseDate(sp.to);
   const toQueryFilter = parseEndOfDay(sp.to);
 
-  const events = await scope.listEvents({
+  const events = await scope.timeline.listEvents({
     authorUserId: authorFilter,
     from: fromFilter,
     to: toQueryFilter,
@@ -154,7 +154,7 @@ export default async function TimelinePage({ searchParams }: Props) {
     }
   }
 
-  const members = await scope.listMembers();
+  const members = await scope.timeline.listMembers();
   const memberIds = members.map((m) => m.userId);
   const memberRows =
     memberIds.length > 0

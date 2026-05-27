@@ -71,7 +71,7 @@ export default async function BoardDetailPage({ params }: { params: Promise<{ id
 
   const scope = withTeam(db, active.teamId, session.user.id);
   const { id } = await params;
-  const board = await objects.getBoardView(db, scope, id);
+  const board = await scope.objects.getBoardView(id);
   if (!board) notFound();
 
   const sanitizedFilter = sanitizeBoardFilter(board.filter);
@@ -80,7 +80,7 @@ export default async function BoardDetailPage({ params }: { params: Promise<{ id
   // surface on kanban/table/list views with no way to dismiss them from
   // the board UI.
   sanitizedFilter.archived ??= false;
-  const rows = await objects.listObjects(db, scope, sanitizedFilter);
+  const rows = await scope.objects.listObjects(sanitizedFilter);
 
   const groupBy: GroupKey = isGroupKey(board.groupBy) ? board.groupBy : 'status';
   // KanbanBoard's groupBy is narrower (no 'type'). Collapse 'type' to

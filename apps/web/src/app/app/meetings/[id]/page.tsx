@@ -31,9 +31,9 @@ export default async function MeetingDetailPage({ params }: Props) {
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
 
-  const meeting = await scope.getMeeting(id);
+  const meeting = await scope.meetings.getMeeting(id);
   if (!meeting) notFound();
-  const chunks = await scope.listChunks(id);
+  const chunks = await scope.meetings.listChunks(id);
 
   const summary = typeof meeting.metadata.summary === 'string' ? meeting.metadata.summary : null;
   const cancellable = ['pending', 'joining', 'active'].includes(meeting.status);

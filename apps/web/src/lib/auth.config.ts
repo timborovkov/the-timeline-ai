@@ -1,5 +1,10 @@
 import type { NextAuthConfig } from 'next-auth';
 
+const localAuthSecret =
+  process.env.NODE_ENV === 'development'
+    ? 'timeline-local-development-auth-secret-do-not-use-in-production'
+    : undefined;
+
 /* eslint-disable @typescript-eslint/no-unnecessary-condition */
 /**
  * Edge-safe auth config: providers + callbacks that do NOT need Node-only
@@ -9,6 +14,7 @@ import type { NextAuthConfig } from 'next-auth';
  */
 export const authConfig: NextAuthConfig = {
   trustHost: true,
+  secret: process.env.AUTH_SECRET ?? localAuthSecret,
   pages: { signIn: '/sign-in' },
   session: { strategy: 'jwt' },
   providers: [],

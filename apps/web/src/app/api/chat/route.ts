@@ -120,7 +120,7 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  const team = await scope.team();
+  const team = await scope.timeline.team();
   const teamName = team?.name ?? active.teamName;
   const userName = session.user.name ?? session.user.email ?? 'a teammate';
 
@@ -138,13 +138,13 @@ export async function POST(req: Request): Promise<Response> {
     // Cheap existence check — we only need to confirm team ownership here,
     // not load every prior message. `getChatSession` would pull the full
     // `chat_messages` list on every turn.
-    const exists = await objects.chatSessionExists(db, scope, sessionId);
+    const exists = await scope.objects.chatSessionExists(sessionId);
     if (!exists) {
       return Response.json({ ok: false, error: 'session_not_found' }, { status: 404 });
     }
   } else if (parsed.data.startNewSession) {
     try {
-      const created = await objects.createChatSession(db, scope, {
+      const created = await scope.objects.createChatSession({
         pinnedEntityId: parsed.data.pinnedEntityId ?? null,
       });
       sessionId = created.id;
