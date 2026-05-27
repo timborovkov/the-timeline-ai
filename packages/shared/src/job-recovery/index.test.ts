@@ -75,6 +75,12 @@ describe('job recovery scope', () => {
 
     await expect(scope.listRecoverableJobs()).rejects.toThrow('Requires admin role');
     await expect(scope.dismissRecoverableJob('bad')).rejects.toThrow('Requires admin role');
+    await expect(
+      scope.dismissFailedRecoverableJobs({
+        items: [{ id: 'bad', detectedAt: new Date('2026-05-27T10:00:00.000Z') }],
+        expectedCount: 1,
+      }),
+    ).rejects.toThrow('Requires admin role');
     await expect(scope.retryRecoverableJob('bad')).rejects.toThrow('Requires admin role');
   });
 
@@ -88,6 +94,174 @@ describe('job recovery scope', () => {
 
     const adminTwo = scopeFor(ADMIN_2_ID, 'admin');
     await expect(adminTwo.listRecoverableJobs()).resolves.toEqual([]);
+  });
+
+  it('does not let an old dismissal hide a newer failure for the same artifact', async () => {
+    await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
+      sourceMetadata:
+        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+    });
+    const scope = scopeFor(ADMIN_ID, 'admin');
+    const [item] = await scope.listRecoverableJobs();
+    if (!item) throw new Error('expected recovery item');
+
+    await scope.dismissRecoverableJob(item.id, 'old failure');
+    await pg.exec(`
+      UPDATE raw_events
+      SET source_metadata = '{
+        "extraction_failed_at":"2099-05-27T10:00:00.000Z",
+        "extraction_error":"model failed again",
+        "embedded_at":"2099-05-27T10:00:00.000Z"
+      }'::jsonb
+      WHERE id = '${FAILED_EXTRACTION_RAW_ID}';
+    `);
+
+    const nextItems = await scope.listRecoverableJobs();
+    expect(nextItems).toHaveLength(1);
+    expect(nextItems[0]).toMatchObject({
+      artifactId: FAILED_EXTRACTION_RAW_ID,
+      error: 'model failed again',
+      kind: 'extraction',
+      status: 'failed',
+    });
+  });
+
+  it('rejects bulk dismiss when the same artifact failed again after the user snapshot', async () => {
+    await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
+      sourceMetadata:
+        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+    });
+    const scope = scopeFor(ADMIN_ID, 'admin');
+    const [staleItem] = await scope.listRecoverableJobs();
+    if (!staleItem) throw new Error('expected recovery item');
+    await pg.exec(`
+      UPDATE raw_events
+      SET source_metadata = '{
+        "extraction_failed_at":"2099-05-27T10:00:00.000Z",
+        "extraction_error":"model failed again",
+        "embedded_at":"2099-05-27T10:00:00.000Z"
+      }'::jsonb
+      WHERE id = '${FAILED_EXTRACTION_RAW_ID}';
+    `);
+
+    await expect(
+      scope.dismissFailedRecoverableJobs({
+        items: [{ id: staleItem.id, detectedAt: staleItem.detectedAt }],
+        expectedCount: 1,
+      }),
+    ).rejects.toThrow('stale_recovery_set');
+  });
+
+  it('bulk dismisses a visible re-failure that already has an older dismissal row', async () => {
+    await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
+      sourceMetadata:
+        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+    });
+    const scope = scopeFor(ADMIN_ID, 'admin');
+    const [oldItem] = await scope.listRecoverableJobs();
+    if (!oldItem) throw new Error('expected recovery item');
+    await scope.dismissRecoverableJob(oldItem.id, 'old failure');
+    await pg.exec(`
+      UPDATE job_recovery_dismissals
+      SET created_at = '2026-05-27T10:00:01.000Z'
+      WHERE team_id = '${TEAM_ID}'
+        AND job_kind = 'extraction'
+        AND artifact_kind = 'raw_event'
+        AND artifact_id = '${FAILED_EXTRACTION_RAW_ID}';
+      UPDATE raw_events
+      SET source_metadata = '{
+        "extraction_failed_at":"2026-05-27T10:00:02.000Z",
+        "extraction_error":"model failed again",
+        "embedded_at":"2026-05-27T10:00:02.000Z"
+      }'::jsonb
+      WHERE id = '${FAILED_EXTRACTION_RAW_ID}';
+    `);
+    const [newItem] = await scope.listRecoverableJobs();
+    if (!newItem) throw new Error('expected visible re-failure');
+
+    const result = await scope.dismissFailedRecoverableJobs({
+      items: [{ id: newItem.id, detectedAt: newItem.detectedAt }],
+      expectedCount: 1,
+    });
+
+    expect(result).toEqual({ dismissed: 1 });
+    await expect(scope.listRecoverableJobs()).resolves.toEqual([]);
+  });
+
+  it('bulk dismisses failed jobs without hiding stuck jobs', async () => {
+    await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
+    await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
+      sourceMetadata:
+        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+    });
+    await seedTextRawEvent(pg, ZERO_FACT_RAW_ID, {
+      sourceMetadata: '{"embedded_at":"2026-05-27T10:00:00.000Z"}',
+    });
+    const scope = scopeFor(ADMIN_ID, 'admin');
+
+    const before = await scope.listRecoverableJobs();
+    const failed = before.filter((item) => item.status === 'failed');
+
+    const result = await scope.dismissFailedRecoverableJobs({
+      items: failed.map((item) => ({ id: item.id, detectedAt: item.detectedAt })),
+      expectedCount: failed.length,
+    });
+
+    expect(result).toEqual({ dismissed: 2 });
+    const remaining = await scope.listRecoverableJobs();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]).toMatchObject({
+      artifactId: ZERO_FACT_RAW_ID,
+      kind: 'extraction',
+      status: 'stuck',
+    });
+  });
+
+  it('bulk dismisses failed jobs by kind', async () => {
+    await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
+    await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
+      sourceMetadata:
+        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+    });
+    const scope = scopeFor(ADMIN_ID, 'admin');
+
+    const before = await scope.listRecoverableJobs();
+    const failedExtractions = before.filter(
+      (item) => item.kind === 'extraction' && item.status === 'failed',
+    );
+
+    const result = await scope.dismissFailedRecoverableJobs({
+      kind: 'extraction',
+      items: failedExtractions.map((item) => ({ id: item.id, detectedAt: item.detectedAt })),
+      expectedCount: failedExtractions.length,
+    });
+
+    expect(result).toEqual({ dismissed: 1 });
+    const remaining = await scope.listRecoverableJobs();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.kind).toBe('transcription');
+  });
+
+  it('rejects stale bulk dismiss snapshots', async () => {
+    await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
+    await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
+      sourceMetadata:
+        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+    });
+    const scope = scopeFor(ADMIN_ID, 'admin');
+    const failed = (await scope.listRecoverableJobs()).filter((item) => item.status === 'failed');
+
+    await expect(
+      scope.dismissFailedRecoverableJobs({
+        items: [
+          {
+            id: failed[0]?.id ?? 'missing',
+            detectedAt: failed[0]?.detectedAt ?? new Date('2026-05-27T10:00:00.000Z'),
+          },
+        ],
+        expectedCount: 1,
+      }),
+    ).rejects.toThrow('stale_recovery_set');
   });
 
   it('retry clears dismissal and failure markers before enqueueing', async () => {

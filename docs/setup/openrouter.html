@@ -47,7 +47,9 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       <h2 id="model-pins">2. Model pins</h2>
       <p>
         The embedding model is pinned. Changing it invalidates the entire vector index — re-embed
-        before changing.
+        before changing. Any non-default <code>EMBEDDING_MODEL</code> must set
+        <code>EMBEDDING_DIMENSIONS</code> explicitly so workers fail fast instead of writing
+        wrong-sized vectors.
       </p>
       <pre><code>EMBEDDING_MODEL=perplexity/pplx-embed-v1-4b
 EMBEDDING_DIMENSIONS=2560

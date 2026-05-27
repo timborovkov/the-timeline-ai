@@ -311,8 +311,9 @@ out of scope.
       chunk/calendar event embedding, document version extraction, meeting
       finalization, and integration sync.
 - [x] Provide an ignore/dismiss path for irrecoverable failures. Dismissals are
-      team-wide in `job_recovery_dismissals`; retry clears the dismissal before
-      re-enqueueing.
+      team-wide in `job_recovery_dismissals`; admins can dismiss a single job
+      or all failed jobs in the current view, and retry clears the dismissal
+      before re-enqueueing.
 - [x] Do not expose repeatable scheduler ticks, external webhook delivery
       failures, MCP health pings, or low-level jobs with no user-understandable
       target.
