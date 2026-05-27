@@ -178,6 +178,23 @@ describe('documents actions — schema validation gates the scope', () => {
     expect(r.ok).toBe(false);
     expect(fakeScope.createFolder).not.toHaveBeenCalled();
   });
+
+  it('createFolderAction forwards specific_users visibility user ids', async () => {
+    fakeScope.createFolder.mockResolvedValue({ id: 'folder' });
+    const r = await createFolderAction({
+      name: 'Restricted folder',
+      visibility: 'specific_users',
+      visibilityUserIds: [USER_ID],
+    });
+
+    expect(r.ok).toBe(true);
+    expect(fakeScope.createFolder).toHaveBeenCalledWith({
+      name: 'Restricted folder',
+      parentFolderId: null,
+      visibility: 'specific_users',
+      visibilityUserIds: [USER_ID],
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
