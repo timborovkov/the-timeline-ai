@@ -318,7 +318,7 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
         targetType: 'team',
         targetId: active.teamId,
         targetVisibility: 'team',
-        metadata: { setting: 'team.member_removed' },
+        metadata: { setting: 'team.member_removed', memberUserId, role: targetRole },
       });
     });
   } catch (e) {
