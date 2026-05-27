@@ -1,7 +1,7 @@
 'use server';
 
 import { supportRequests } from '@timeline/db';
-import { getEnv, rateLimit } from '@timeline/shared';
+import { email, getEnv, rateLimit } from '@timeline/shared';
 import { eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
 import { z } from 'zod';
@@ -45,7 +45,7 @@ export async function submitSupportRequestAction(
   }
 
   const h = await headers();
-  const ip = getClientIp(h);
+  const ip = email.clientIpFromHeaders(h) ?? 'unknown';
   const session = await auth();
   const userId = session ? session.user.id : null;
   const active = userId ? (await resolveActiveTeam(userId)).active : null;
@@ -145,17 +145,6 @@ export async function submitSupportRequestAction(
     .where(eq(supportRequests.id, requestId));
 
   return { ok: true };
-}
-
-function getClientIp(h: Headers): string {
-  const cf = h.get('cf-connecting-ip');
-  if (cf) return cf;
-  const forwarded = h.get('x-forwarded-for');
-  if (forwarded) {
-    const first = forwarded.split(',')[0]?.trim();
-    return first ?? 'unknown';
-  }
-  return 'unknown';
 }
 
 async function verifyTurnstile({

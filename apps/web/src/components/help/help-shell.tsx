@@ -1,4 +1,7 @@
+'use client';
+
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 import type { ReactNode } from 'react';
 
@@ -11,10 +14,11 @@ import { cn } from '@/lib/utils';
 interface HelpShellProps {
   children: ReactNode;
   isSignedIn: boolean;
-  currentPath?: string;
 }
 
-export function HelpShell({ children, isSignedIn, currentPath }: HelpShellProps) {
+export function HelpShell({ children, isSignedIn }: HelpShellProps) {
+  const currentPath = usePathname();
+
   return (
     <div className="min-h-screen bg-bg text-fg">
       <header className="sticky top-0 z-50 border-b border-border bg-bg/90 backdrop-blur">
