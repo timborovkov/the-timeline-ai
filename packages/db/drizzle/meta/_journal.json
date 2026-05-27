@@ -169,6 +169,13 @@
       "when": 1795651740000,
       "tag": "0023_phase13_team_exports",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795651800000,
+      "tag": "0024_phase13_job_recovery",
+      "breakpoints": true
     }
   ]
 }

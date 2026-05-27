@@ -51,10 +51,9 @@ tool. When in doubt, invoke the skill.
   `withTeam(db, teamId, userId)` in `packages/shared`. Use the returned
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
   `scope.objects`, `scope.calendar`, `scope.integrations`, `scope.mcp`,
-  `scope.onboarding`) rather than flat scope methods or manually passing
+  `scope.onboarding`, `scope.jobRecovery`) rather than flat scope methods or manually passing
   `db` into object helpers. Every Qdrant query filters on `team_id` via the
-  wrapper. Do not bypass
-  these — even in "internal" tools.
+  wrapper. Do not bypass these — even in "internal" tools.
 - **Raw events are immutable.** Never `UPDATE` a `raw_events` row's content.
   Derived facts can be re-extracted; the source is the source.
 - **Design system lives in [design.md](design.md).** If a screen disagrees with
@@ -124,7 +123,9 @@ packages/
             calendar module (Phase 11 — event scope, raw-event audit rows,
             entity links, settings, and calendar embedding enqueue/delete),
             onboarding module (Phase 13 — team-level tutorial completion +
-            per-user dismissal)
+            per-user dismissal),
+            job-recovery module (Phase 13 — team-scoped retry/dismiss for
+            failed product jobs)
 docs/
   setup/    External service walkthroughs (Telegram, OpenRouter, Postmark,
             Recall.ai meeting bots, Sentry, Railway, local dev,

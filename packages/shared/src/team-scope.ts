@@ -18,6 +18,7 @@ import { createAuditScope } from './audit/scope.js';
 import { createCalendarScope } from './calendar/scope.js';
 import { createDocumentScope } from './documents/scope.js';
 import { createIntegrationScope } from './integrations/scope.js';
+import { createJobRecoveryScope } from './job-recovery/index.js';
 import { embed as defaultEmbed, type EmbedResult } from './llm/embed.js';
 import { createMcpScope } from './mcp/scope.js';
 import { createMeetingScope } from './meetings/scope.js';
@@ -413,6 +414,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   });
 
   const onboardingScope = createOnboardingScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+
+  const jobRecoveryScope = createJobRecoveryScope({
     db,
     teamId,
     userId,
@@ -1132,6 +1140,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     mcp: mcpScope,
     onboarding: onboardingScope,
     calendar: calendarScope,
+    jobRecovery: jobRecoveryScope,
     audit: auditScope,
   };
 }
