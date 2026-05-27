@@ -657,7 +657,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (input.items.length === 0) throw new Error('Suggestion requires at least one item');
       const visibility = input.visibility ?? 'team';
       const visibilityOwnerUserId =
-        input.visibilityOwnerUserId ?? (visibility === 'team' ? null : userId);
+        input.visibilityOwnerUserId === undefined
+          ? visibility === 'team'
+            ? null
+            : userId
+          : input.visibilityOwnerUserId;
       if (visibilityOwnerUserId) await deps.requireTeamMember(visibilityOwnerUserId);
       for (const uid of input.visibilityUserIds ?? []) await deps.requireTeamMember(uid);
       const metadata = input.metadata ?? {};

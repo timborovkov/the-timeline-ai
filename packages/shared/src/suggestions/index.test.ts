@@ -113,6 +113,31 @@ describe('suggestion scope', () => {
     expect(bundle.items).toHaveLength(1);
   });
 
+  it('preserves explicit null owner for specific-user suggestions', async () => {
+    const scope = withTeam(db as never, TEAM_ID, REVIEWER_ID);
+
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Specific-user suggestion',
+      dedupeKey: 'specific-users-null-owner',
+      visibility: 'specific_users',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: [REVIEWER_ID],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Restricted task',
+          dedupeKey: 'specific-users-null-owner:item',
+          proposedPayload: { canonicalName: 'Restricted task' },
+        },
+      ],
+    });
+
+    expect(bundle.visibilityOwnerUserId).toBeNull();
+    expect(bundle.visibilityUserIds).toEqual([REVIEWER_ID]);
+  });
+
   it('does not duplicate notifications when a suggestion bundle is merged', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const input = {
