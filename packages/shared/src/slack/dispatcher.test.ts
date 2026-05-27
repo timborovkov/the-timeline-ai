@@ -535,4 +535,64 @@ describe('Slack dispatcher routing', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ teamId: TEAM_B, authorUserId: USER_B });
   });
+
+  it('keeps cached Slack profile data when users.info fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL | Request) => {
+        const href = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
+        if (href.includes('users.info')) {
+          return Promise.resolve(Response.json({ ok: false, error: 'ratelimited' }));
+        }
+        return Promise.resolve(Response.json({ ok: true }));
+      }),
+    );
+    await seedBoundSlackUser(db, 'C_PROFILE');
+    await db
+      .update(slackUsers)
+      .set({
+        name: 'cached-name',
+        realName: 'Cached Real',
+        email: 'cached@example.com',
+        avatarUrl: 'https://cdn.example/avatar.png',
+        metadata: { cached: true },
+      })
+      .where(eq(slackUsers.id, SLACK_USER_ROW_ID));
+
+    await handleSlackEnvelope(
+      { db: db as never },
+      slackEnvelope('EvProfileCache', {
+        type: 'message',
+        channel: 'C_PROFILE',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: 'cached profile survives',
+        ts: '1700000004.000100',
+      }),
+    );
+
+    const users = await db
+      .select({
+        name: slackUsers.name,
+        realName: slackUsers.realName,
+        email: slackUsers.email,
+        avatarUrl: slackUsers.avatarUrl,
+        metadata: slackUsers.metadata,
+      })
+      .from(slackUsers)
+      .where(eq(slackUsers.id, SLACK_USER_ROW_ID));
+    expect(users[0]).toMatchObject({
+      name: 'cached-name',
+      realName: 'Cached Real',
+      email: 'cached@example.com',
+      avatarUrl: 'https://cdn.example/avatar.png',
+      metadata: { cached: true },
+    });
+
+    const rows = await db
+      .select({ metadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.source, 'slack'));
+    expect(rows[0]?.metadata).toMatchObject({ slack_sender_name: 'Cached Real' });
+  });
 });

@@ -976,11 +976,25 @@ async function upsertSlackUserProfile(
   workspaceId: string,
   slackUserId: string,
 ): Promise<{ name: string | null; realName: string | null } | null> {
-  let profile;
+  let profile: Awaited<ReturnType<SlackApi['usersInfo']>>;
   try {
     profile = await api.usersInfo(slackUserId);
   } catch {
-    profile = null;
+    const existing = await db
+      .select({ name: slackUsers.name, realName: slackUsers.realName })
+      .from(slackUsers)
+      .where(and(eq(slackUsers.workspaceId, workspaceId), eq(slackUsers.slackUserId, slackUserId)))
+      .limit(1);
+    if (existing[0]) return existing[0];
+    const rows = await db
+      .insert(slackUsers)
+      .values({ workspaceId, slackUserId })
+      .onConflictDoUpdate({
+        target: [slackUsers.workspaceId, slackUsers.slackUserId],
+        set: { updatedAt: new Date() },
+      })
+      .returning({ name: slackUsers.name, realName: slackUsers.realName });
+    return rows[0] ?? null;
   }
   const name = profile?.profile?.display_name ?? profile?.name ?? null;
   const realName = profile?.profile?.real_name ?? profile?.real_name ?? null;
