@@ -51,9 +51,7 @@ const BLOCKED_EXT = new Set([
   'dmg',
   'pkg',
   'app',
-  'mp4',
   'mov',
-  'webm',
 ]);
 
 export type AttachmentDecision =
@@ -80,10 +78,13 @@ export function classifyConversationalAttachment(input: AttachmentCandidate): At
   }
   const contentType = input.contentType?.split(';')[0]?.trim().toLowerCase() ?? '';
   const ext = extensionOf(input.filename);
-  if (BLOCKED_EXT.has(ext) || contentType.startsWith('video/')) {
+  if (contentType.startsWith('video/')) {
     return { kind: 'skip', reason: 'unsupported_type' };
   }
   if (contentType.startsWith('audio/') || AUDIO_EXT.has(ext)) return { kind: 'audio' };
+  if (BLOCKED_EXT.has(ext)) {
+    return { kind: 'skip', reason: 'unsupported_type' };
+  }
   if (
     contentType.startsWith('text/') ||
     DOCUMENT_MIME.has(contentType) ||

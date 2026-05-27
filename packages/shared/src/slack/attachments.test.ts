@@ -11,6 +11,12 @@ describe('classifyConversationalAttachment', () => {
       classifyConversationalAttachment({ filename: 'voice.ogg', contentType: 'audio/ogg' }),
     ).toEqual({ kind: 'audio' });
     expect(
+      classifyConversationalAttachment({ filename: 'voice.mp4', contentType: 'audio/mp4' }),
+    ).toEqual({ kind: 'audio' });
+    expect(
+      classifyConversationalAttachment({ filename: 'voice.webm', contentType: 'audio/webm' }),
+    ).toEqual({ kind: 'audio' });
+    expect(
       classifyConversationalAttachment({
         filename: 'contract.pdf',
         contentType: 'application/pdf',
@@ -31,6 +37,18 @@ describe('classifyConversationalAttachment', () => {
     ).toEqual({ kind: 'skip', reason: 'oversize' });
     expect(
       classifyConversationalAttachment({ filename: 'clip.mov', contentType: 'video/quicktime' }),
+    ).toEqual({
+      kind: 'skip',
+      reason: 'unsupported_type',
+    });
+    expect(
+      classifyConversationalAttachment({ filename: 'clip.mp4', contentType: 'video/mp4' }),
+    ).toEqual({
+      kind: 'skip',
+      reason: 'unsupported_type',
+    });
+    expect(
+      classifyConversationalAttachment({ filename: 'clip.webm', contentType: 'video/webm' }),
     ).toEqual({
       kind: 'skip',
       reason: 'unsupported_type',
