@@ -360,18 +360,39 @@ async function handleAppMention(
   const claimed = await claimSlackAsk(slackEventId);
   if (!claimed) return;
   const question = (event.text ?? '').replace(/<@[^>]+>/g, '').trim();
-  const result = await askAgent({
-    db: deps.db,
-    teamId: route.teamId,
-    userId: route.linkedUserId,
-    userName: route.linkedUserName ?? 'a teammate',
-    question,
-  });
-  await api.postMessage({
-    channel: event.channel,
-    thread_ts: event.thread_ts ?? event.ts,
-    text: result.ok ? result.answer : 'Timeline could not answer that right now.',
-  });
+  if (!question) {
+    await api.postMessage({
+      channel: event.channel,
+      thread_ts: event.thread_ts ?? event.ts,
+      text: 'Ask a question after mentioning Timeline, for example: @Timeline what changed with Acme this week?',
+    });
+    return;
+  }
+  try {
+    const result = await askAgent({
+      db: deps.db,
+      teamId: route.teamId,
+      userId: route.linkedUserId,
+      userName: route.linkedUserName ?? 'a teammate',
+      question,
+    });
+    await api.postMessage({
+      channel: event.channel,
+      thread_ts: event.thread_ts ?? event.ts,
+      text: result.ok ? result.answer : 'Timeline could not answer that right now.',
+    });
+  } catch (err) {
+    log.error({ err }, 'slack app mention answer failed');
+    await api
+      .postMessage({
+        channel: event.channel,
+        thread_ts: event.thread_ts ?? event.ts,
+        text: 'Timeline could not answer that right now.',
+      })
+      .catch((postErr: unknown) => {
+        log.error({ err: postErr }, 'slack app mention failure response failed');
+      });
+  }
 }
 
 async function handleMessageEvent(

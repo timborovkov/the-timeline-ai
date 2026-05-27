@@ -101,7 +101,7 @@ function slackEnvelope(eventId: string, event: Record<string, unknown>): Record<
 }
 
 function installFetchMock(): ReturnType<typeof vi.fn> {
-  const fetchMock = vi.fn((url: string | URL | Request) => {
+  const fetchMock = vi.fn((url: string | URL | Request, _init?: RequestInit) => {
     const href = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
     if (href.includes('users.info')) {
       return Promise.resolve(
@@ -132,6 +132,45 @@ function installFetchMock(): ReturnType<typeof vi.fn> {
   return fetchMock;
 }
 
+async function seedBoundSlackUser(
+  db: ReturnType<typeof drizzle>,
+  channelId = 'C_DOCS',
+): Promise<void> {
+  await seedWorkspace(db, TEAM_A);
+  await db.insert(slackConversationBindings).values({
+    workspaceId: WORKSPACE_ID,
+    teamId: TEAM_A,
+    slackConversationId: channelId,
+    conversationType: 'channel',
+    title: 'docs',
+    boundByUserId: USER_A,
+    enabled: true,
+  });
+  await db.insert(slackUsers).values({
+    id: SLACK_USER_ROW_ID,
+    workspaceId: WORKSPACE_ID,
+    slackUserId: 'U_SLACK',
+    realName: 'Alice Slack',
+  });
+  await db.insert(slackUserTeams).values({
+    slackUserId: SLACK_USER_ROW_ID,
+    teamId: TEAM_A,
+    userId: USER_A,
+    linkedByUserId: USER_A,
+    isActive: true,
+  });
+}
+
+function fetchBodyContaining(fetchMock: ReturnType<typeof vi.fn>, needle: string): string | null {
+  for (const [, init] of fetchMock.mock.calls as [unknown, RequestInit | undefined][]) {
+    const body = init?.body;
+    const text =
+      typeof body === 'string' ? body : body instanceof URLSearchParams ? body.toString() : null;
+    if (text?.includes(needle)) return text;
+  }
+  return null;
+}
+
 describe('Slack dispatcher routing', () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
@@ -142,6 +181,7 @@ describe('Slack dispatcher routing', () => {
     process.env.SECRETS_ENCRYPTION_KEY = randomBytes(32).toString('base64');
     resetEnvForTests();
     resetSecretsKeyCacheForTests();
+    askAgentMock.mockReset();
     askAgentMock.mockResolvedValue({ ok: true, answer: 'answer' });
     pg = new PGlite();
     await applyMigrations(pg);
@@ -188,6 +228,50 @@ describe('Slack dispatcher routing', () => {
       expect.stringContaining('chat.postMessage'),
       expect.anything(),
     );
+  });
+
+  it('does not call the agent for a bare app mention', async () => {
+    const fetchMock = installFetchMock();
+    await seedBoundSlackUser(db, 'C_MENTIONS');
+
+    await handleSlackEnvelope(
+      { db: db as never },
+      slackEnvelope('EvMentionBare', {
+        type: 'app_mention',
+        channel: 'C_MENTIONS',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: '<@U_BOT>',
+        ts: '1700000000.000200',
+      }),
+    );
+
+    expect(askAgentMock).not.toHaveBeenCalled();
+    expect(
+      fetchBodyContaining(fetchMock, 'Ask+a+question+after+mentioning+Timeline'),
+    ).not.toBeNull();
+  });
+
+  it('posts an app mention failure follow-up when the agent throws', async () => {
+    const fetchMock = installFetchMock();
+    askAgentMock.mockRejectedValueOnce(new Error('model offline'));
+    await seedBoundSlackUser(db, 'C_MENTIONS');
+
+    await handleSlackEnvelope(
+      { db: db as never },
+      slackEnvelope('EvMentionFailure', {
+        type: 'app_mention',
+        channel: 'C_MENTIONS',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: '<@U_BOT> what changed?',
+        ts: '1700000000.000300',
+      }),
+    );
+
+    expect(
+      fetchBodyContaining(fetchMock, 'Timeline+could+not+answer+that+right+now.'),
+    ).not.toBeNull();
   });
 
   it('captures Slack file_share messages and enqueues document extraction', async () => {
