@@ -515,10 +515,13 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       return rows;
     },
 
-    async getDocument(id: string): Promise<DocumentRow | null> {
+    async getDocument(
+      id: string,
+      options: { auditDetailRead?: boolean } = {},
+    ): Promise<DocumentRow | null> {
       await ensureMember();
       const document = await getDocumentRaw(id);
-      if (document && document.visibility !== 'team') {
+      if (document && document.visibility !== 'team' && options.auditDetailRead !== false) {
         await db.insert(auditLog).values({
           teamId,
           actorUserId: userId,

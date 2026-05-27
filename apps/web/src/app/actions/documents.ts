@@ -285,7 +285,9 @@ export async function getDocumentDownloadUrlAction(input: {
   const version = await got.scope.documents.getDocumentVersion(input.versionId);
   if (!version) return { ok: false, error: 'Version not found' };
   // Re-check the parent document's visibility.
-  const document = await got.scope.documents.getDocument(version.documentId);
+  const document = await got.scope.documents.getDocument(version.documentId, {
+    auditDetailRead: false,
+  });
   if (!document) return { ok: false, error: 'Document not found' };
   const url = await getSignedGetObjectUrl(
     getS3PresignClient(),
