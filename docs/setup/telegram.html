@@ -10,11 +10,11 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Telegram bot setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-22</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-27</span></div>
       <blockquote>
         <p>
-          Bot integration ships in <strong>Phase 2</strong> (text only). Voice memos land in Phase
-          3.
+          Telegram is a first-party conversational Capture Surface. Text, voice/audio, and supported
+          document/image attachments feed the same extraction and embedding pipeline as Slack.
         </p>
       </blockquote>
       <p class="tldr">
@@ -148,9 +148,9 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
         <li>
           <code>/ask &lt;question&gt;</code> queries the team's timeline through the same agent
           pipeline as <code>/app/chat</code>. Plain (non-command) messages are still captured as
-          notes and acknowledged with a <code>👀</code> reaction so it's obvious they landed.
-          Rate-limited per Telegram user (10/min) because each <code>/ask</code> runs the agent
-          against OpenRouter.
+          notes. DM captures are acknowledged with a <code>👀</code> reaction so it's obvious they
+          landed; group captures stay quiet to avoid channel noise. Rate-limited per Telegram user
+          (10/min) because each <code>/ask</code> runs the agent against OpenRouter.
         </li>
       </ol>
       <p>
@@ -161,7 +161,14 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
       <p>
         Messages from Telegram users who have not linked yet are recorded with
         <code>source_metadata.source_unverified = true</code> and a null
-        <code>author_user_id</code>.
+        <code>author_user_id</code>. Sender and chat context are still recorded in metadata and
+        rendered into extraction/embedding text.
+      </p>
+      <p>
+        Attachments use the shared conversational guardrails: up to 25 MiB, at most five processed
+        files per message, audio/voice files routed to transcription, and supported text/image/PDF/
+        DOCX/CSV/JSON/XML/YAML/Markdown/HTML/log files routed to document extraction. Archives,
+        executables, video, oversize files, and unknown binary files are skipped.
       </p>
 
       <h2 id="schema">Schema reference</h2>

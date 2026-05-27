@@ -73,6 +73,10 @@ export default async function TimelinePage({ searchParams }: Props) {
   const telegramConnectionCount =
     onboardingState.connectionCounts.telegramUserTeams +
     onboardingState.connectionCounts.telegramChatBindings;
+  const slackConnectionCount =
+    onboardingState.connectionCounts.slackWorkspaceTeams +
+    onboardingState.connectionCounts.slackConversationBindings +
+    onboardingState.connectionCounts.slackUserTeams;
   const integrationConnectionCount =
     onboardingState.connectionCounts.nativeIntegrations +
     onboardingState.connectionCounts.teamMcpServers;
@@ -199,6 +203,7 @@ export default async function TimelinePage({ searchParams }: Props) {
         <TeamAccessPanel
           team={team}
           telegramConnectionCount={telegramConnectionCount}
+          slackConnectionCount={slackConnectionCount}
           integrationConnectionCount={integrationConnectionCount}
         />
         <div className="flex justify-end">

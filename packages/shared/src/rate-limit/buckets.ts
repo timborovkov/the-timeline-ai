@@ -22,6 +22,12 @@ export const RATE_LIMITS = {
   /** Telegram /ask: 10/min per tg_user_id. Tighter than the webhook bucket
    *  because each /ask invokes the agent (OpenRouter spend). */
   telegramAsk: { capacity: 10, refillPerSec: 10 / 60 },
+  /** Slack Events API: 300/min per source IP before signature verification. */
+  slackWebhookIp: { capacity: 300, refillPerSec: 300 / 60 },
+  /** Slack Events API: 120/min per Slack user/team after signature verification. */
+  slackWebhookActor: { capacity: 120, refillPerSec: 120 / 60 },
+  /** Slack /ask slash command: 10/min per Slack user because it invokes the agent. */
+  slackAsk: { capacity: 10, refillPerSec: 10 / 60 },
   /** Postmark inbound: 120/min per From address. */
   emailInbound: { capacity: 120, refillPerSec: 120 / 60 },
   /** 401 lockout for Postmark inbound: 30/min per source IP. */

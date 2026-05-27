@@ -3,7 +3,7 @@ import { Trash2 } from 'lucide-react';
 
 import type { rawEvents } from '@timeline/db';
 
-import { removeTelegramEventAction } from '@/app/actions/events';
+import { removeConversationalEventAction } from '@/app/actions/events';
 import { Button } from '@/components/ui/button';
 
 type RawEvent = InferSelectModel<typeof rawEvents>;
@@ -87,6 +87,7 @@ function meetingMeta(meta: unknown): MeetingMeta | null {
 const SOURCE_LABEL: Record<string, string> = {
   email: 'EMAIL',
   telegram: 'TG',
+  slack: 'SLACK',
   voice: 'VOICE',
   text: 'TEXT',
   system: 'SYS',
@@ -115,8 +116,9 @@ export function TimelineList({ events, authorMap, audioUrlMap, currentUserId, is
         const author = event.authorUserId ? authorMap.get(event.authorUserId) : null;
         const isEmail = event.source === 'email';
         const isMeeting = event.source === 'meeting';
-        const canRemoveTelegram =
-          event.source === 'telegram' && (isAdmin || event.authorUserId === currentUserId);
+        const canRemoveConversational =
+          (event.source === 'telegram' || event.source === 'slack') &&
+          (isAdmin || event.authorUserId === currentUserId);
         const em = isEmail ? emailMeta(event.sourceMetadata) : null;
         const mm = isMeeting ? meetingMeta(event.sourceMetadata) : null;
         const meetingChunkCount =
@@ -258,8 +260,8 @@ export function TimelineList({ events, authorMap, audioUrlMap, currentUserId, is
             </div>
             <div className="col-start-2 -mt-1 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim md:col-start-3 md:mt-0 md:justify-end md:text-right">
               <span aria-hidden="true">{sourceLabel}</span>
-              {canRemoveTelegram ? (
-                <form action={removeTelegramEventAction}>
+              {canRemoveConversational ? (
+                <form action={removeConversationalEventAction}>
                   <input type="hidden" name="id" value={event.id} />
                   <Button
                     type="submit"

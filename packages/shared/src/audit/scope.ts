@@ -25,7 +25,10 @@ export type AuditAction =
   | 'integration.settings_change'
   | 'mcp.connect'
   | 'mcp.disconnect'
-  | 'mcp.settings_change';
+  | 'mcp.settings_change'
+  | 'slack.connect'
+  | 'slack.disconnect'
+  | 'slack.settings_change';
 
 export interface AuditRecordInput {
   action: AuditAction;

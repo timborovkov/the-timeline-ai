@@ -20,6 +20,8 @@ import { getEnv } from '../env.js';
 import { type PointScope, type QdrantPayload, type SourceKind } from '../qdrant/client.js';
 import { type EmbedJobData } from '../queue/queues.js';
 
+import { renderRawEventForAi } from './raw-event-renderer.js';
+
 interface RawEventRow {
   id: string;
   teamId: string;
@@ -34,7 +36,8 @@ interface RawEventRow {
     | 'document'
     | 'meeting'
     | 'integration'
-    | 'calendar';
+    | 'calendar'
+    | 'slack';
   visibility: 'private' | 'team' | 'specific_users';
   visibilityUserIds: string[] | null;
   sourceMetadata: unknown;
@@ -254,7 +257,11 @@ async function buildEventOrFactPlan(
     };
   }
 
-  const eventText = row.contentText?.trim();
+  const eventText = renderRawEventForAi({
+    source: row.source,
+    contentText: row.contentText,
+    sourceMetadata: row.sourceMetadata,
+  });
   if (!eventText) {
     throw new UnrecoverableError(`raw event ${rawEventId} has no content_text; nothing to embed`);
   }

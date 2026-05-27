@@ -282,7 +282,7 @@ const removeTelegramEventSchema = z.object({
   id: z.string().uuid(),
 });
 
-export async function removeTelegramEventAction(formData: FormData): Promise<void> {
+export async function removeConversationalEventAction(formData: FormData): Promise<void> {
   const session = await auth();
   if (!session?.user) return;
   const { active } = await resolveActiveTeam(session.user.id);
@@ -293,9 +293,13 @@ export async function removeTelegramEventAction(formData: FormData): Promise<voi
 
   const scope = withTeam(db, active.teamId, session.user.id);
   try {
-    await scope.timeline.removeTelegramMessage(parsed.data.id);
+    await scope.timeline.removeConversationalMessage(parsed.data.id);
   } catch (err) {
-    log.warn({ err, rawEventId: parsed.data.id }, 'remove_telegram_event_failed');
+    log.warn({ err, rawEventId: parsed.data.id }, 'remove_conversational_event_failed');
   }
   revalidatePath('/app/timeline');
+}
+
+export async function removeTelegramEventAction(formData: FormData): Promise<void> {
+  await removeConversationalEventAction(formData);
 }

@@ -117,9 +117,15 @@
         <li><strong>Web/PWA</strong>: typed notes, uploaded audio, drag-and-drop documents.</li>
         <li>
           <strong>Telegram bot</strong>: voice memos, text, forwarded messages. Personal DMs and
-          team group chats both supported. Plain messages land as timeline notes (acknowledged with
-          a <code>👀</code> reaction so capture is visible); <code>/ask &lt;question&gt;</code>
+          team group chats both supported. Plain messages land as timeline notes (DM captures are
+          acknowledged with a <code>👀</code> reaction so capture is visible without adding group
+          noise); <code>/ask &lt;question&gt;</code>
           runs the same agent as the web chat and replies in-thread.
+        </li>
+        <li>
+          <strong>Slack bot</strong>: OAuth install, OAuth user linking, DMs, bound channels/private
+          channels, <code>/ask</code> private answers, and <code>@Timeline</code> threaded answers.
+          Sender context is preserved even when the sender is not linked to a Timeline user.
         </li>
         <li>
           <strong>Email ingest</strong>: forward, CC, or BCC to a per-team address. Postmark handles
@@ -136,9 +142,9 @@
           else.
         </li>
         <li>
-          <strong>Third-party integrations</strong>: Linear, GitHub, Google Drive, Slack, and
-          CRM-style tools sync activity and changes into the same event stream. Teams can also
-          connect arbitrary <strong>custom MCP servers</strong> — their own internal tools or any
+          <strong>Third-party integrations</strong>: Linear, GitHub, Google Drive, and CRM-style
+          tools sync activity and changes into the same event stream. Teams can also connect
+          arbitrary <strong>custom MCP servers</strong> — their own internal tools or any
           third-party MCP — to extend the agent's reach without us shipping a bespoke connector per
           provider.
         </li>
@@ -442,9 +448,8 @@
           versions files; it does not replace Google Docs-style live editing.
         </li>
         <li>
-          <strong>System integrations</strong> (Linear, GitHub, Google Drive, Slack, HubSpot/CRM
-          tools). Later, likely through MCPs first where they fit, then native APIs/webhooks for
-          scale.
+          <strong>System integrations</strong> (Linear, GitHub, Google Drive, HubSpot/CRM tools).
+          Later, likely through MCPs first where they fit, then native APIs/webhooks for scale.
         </li>
         <li><strong>Real-time collaboration</strong> on entity pages. Later.</li>
         <li><strong>Mobile native apps.</strong> PWA covers this for v1.</li>
@@ -470,9 +475,9 @@
           incidents, documents, and team-defined object types.
         </li>
         <li>
-          <strong>System integrations</strong>: pull events from Linear, GitHub, Google Drive,
-          Slack, HubSpot/CRM tools. Same pipeline, more sources. MCPs are a useful adapter layer for
-          early integrations; native sync/webhooks can replace them for high-volume paths. Teams can
+          <strong>System integrations</strong>: pull events from Linear, GitHub, Google Drive, and
+          HubSpot/CRM tools. Same pipeline, more sources. MCPs are a useful adapter layer for early
+          integrations; native sync/webhooks can replace them for high-volume paths. Teams can
           additionally connect arbitrary custom MCP servers to extend the agent's reach.
         </li>
         <li>

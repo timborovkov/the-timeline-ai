@@ -267,9 +267,13 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
       </p>
 
       <h2 id="webhooks">Webhooks</h2>
-      <p>Telegram and Postmark webhooks point at the <code>web</code> service public URL:</p>
+      <p>
+        Telegram, Slack, and Postmark webhooks point at the <code>web</code> service public URL:
+      </p>
       <ul>
         <li>Telegram: <code>https://app.thetimeline.app/api/telegram/webhook</code></li>
+        <li>Slack Events API: <code>https://app.thetimeline.app/api/slack/events</code></li>
+        <li>Slack slash commands: <code>https://app.thetimeline.app/api/slack/commands</code></li>
         <li>Postmark: <code>https://app.thetimeline.app/api/email/inbound</code></li>
       </ul>
       <p>

@@ -16,7 +16,7 @@ const searchSchema = z.object({
   query: z.string().trim().min(1).max(500),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
-  source: z.enum(['web', 'telegram', 'email', 'system']).optional(),
+  source: z.enum(['web', 'telegram', 'slack', 'email', 'system']).optional(),
   entityIds: z.array(z.string().regex(UUID_RE)).max(20).optional(),
   limit: z.number().int().min(1).max(50).optional(),
 });

@@ -11,7 +11,7 @@ interface SearchResult {
   factIds: string[];
   score: number;
   occurredAt: string;
-  source: 'web' | 'telegram' | 'email' | 'system';
+  source: 'web' | 'telegram' | 'slack' | 'email' | 'system';
   authorUserId: string | null;
   entityIds: string[];
   snippet: string;

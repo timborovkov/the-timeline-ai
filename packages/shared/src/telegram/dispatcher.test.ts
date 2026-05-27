@@ -333,6 +333,52 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(all[0]?.content_text).toBe('one delivery');
   });
 
+  it('acks DM captures but not group captures', async () => {
+    const reactions: unknown[] = [];
+    const tg: TelegramApi = {
+      ...fakeTg,
+      setMessageReaction: (input) => {
+        reactions.push(input);
+        return Promise.resolve();
+      },
+    };
+
+    await handleUpdate(
+      { db: db as never, tg },
+      {
+        update_id: 210,
+        message: {
+          message_id: 21,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: 'dm capture',
+        },
+      },
+    );
+    expect(reactions).toHaveLength(1);
+
+    await pg.exec(`
+      INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, bound_by_user_id, title)
+      VALUES (-100, '${TEAM_ID}', '${USER_A}', 'Sales');
+    `);
+    await handleUpdate(
+      { db: db as never, tg },
+      {
+        update_id: 211,
+        message: {
+          message_id: 22,
+          date: 1700000001,
+          chat: { id: -100, type: 'supergroup', title: 'Sales' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: 'group capture',
+        },
+      },
+    );
+
+    expect(reactions).toHaveLength(1);
+  });
+
   it('does not tombstone another team with matching Telegram chat and message ids', async () => {
     await pg.query(
       `INSERT INTO raw_events (team_id, source, content_text, occurred_at, source_metadata)

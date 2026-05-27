@@ -2,6 +2,8 @@
 
 import {
   auditLog,
+  slackConversationBindings,
+  slackUserTeams,
   teamInvites,
   teamMembers,
   teams,
@@ -601,6 +603,57 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
           .update(telegramUserTeams)
           .set({ isActive: true })
           .where(eq(telegramUserTeams.id, oldest.id));
+      }
+
+      const affectedSlackRows = await tx
+        .select({ slackUserId: slackUserTeams.slackUserId })
+        .from(slackUserTeams)
+        .where(
+          and(
+            eq(slackUserTeams.teamId, active.teamId),
+            eq(slackUserTeams.isActive, true),
+            or(
+              eq(slackUserTeams.userId, memberUserId),
+              eq(slackUserTeams.linkedByUserId, memberUserId),
+            ),
+          ),
+        );
+      const affectedSlackIds = Array.from(new Set(affectedSlackRows.map((r) => r.slackUserId)));
+
+      await tx
+        .delete(slackUserTeams)
+        .where(
+          and(
+            eq(slackUserTeams.teamId, active.teamId),
+            or(
+              eq(slackUserTeams.userId, memberUserId),
+              eq(slackUserTeams.linkedByUserId, memberUserId),
+            ),
+          ),
+        );
+      await tx
+        .update(slackConversationBindings)
+        .set({ enabled: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(slackConversationBindings.teamId, active.teamId),
+            eq(slackConversationBindings.boundByUserId, memberUserId),
+          ),
+        );
+
+      for (const slackUserId of affectedSlackIds) {
+        const remaining = await tx
+          .select({ id: slackUserTeams.id, isActive: slackUserTeams.isActive })
+          .from(slackUserTeams)
+          .where(eq(slackUserTeams.slackUserId, slackUserId))
+          .orderBy(asc(slackUserTeams.createdAt), asc(slackUserTeams.id));
+        const oldest = remaining[0];
+        if (!oldest) continue;
+        if (remaining.some((r) => r.isActive)) continue;
+        await tx
+          .update(slackUserTeams)
+          .set({ isActive: true })
+          .where(eq(slackUserTeams.id, oldest.id));
       }
       await tx.insert(auditLog).values({
         teamId: active.teamId,

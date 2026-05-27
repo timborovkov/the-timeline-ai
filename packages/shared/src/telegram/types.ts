@@ -26,6 +26,22 @@ export const tgAudioPayloadSchema = z.object({
   file_size: z.number().int().optional(),
 });
 
+export const tgDocumentPayloadSchema = z.object({
+  file_id: z.string(),
+  file_unique_id: z.string().optional(),
+  file_name: z.string().optional(),
+  mime_type: z.string().optional(),
+  file_size: z.number().int().optional(),
+});
+
+export const tgPhotoSizeSchema = z.object({
+  file_id: z.string(),
+  file_unique_id: z.string().optional(),
+  width: z.number().int(),
+  height: z.number().int(),
+  file_size: z.number().int().optional(),
+});
+
 export const tgMessageSchema = z.object({
   message_id: z.number().int(),
   from: tgUserSchema.optional(),
@@ -50,6 +66,8 @@ export const tgMessageSchema = z.object({
   // ingest path; we keep them as separate fields so callers can see which.
   voice: tgAudioPayloadSchema.optional(),
   audio: tgAudioPayloadSchema.optional(),
+  document: tgDocumentPayloadSchema.optional(),
+  photo: z.array(tgPhotoSizeSchema).optional(),
 });
 
 export const tgCallbackQuerySchema = z.object({
@@ -67,6 +85,8 @@ export const tgUpdateSchema = z.object({
 });
 
 export type TgAudioPayload = z.infer<typeof tgAudioPayloadSchema>;
+export type TgDocumentPayload = z.infer<typeof tgDocumentPayloadSchema>;
+export type TgPhotoSize = z.infer<typeof tgPhotoSizeSchema>;
 export type TgUser = z.infer<typeof tgUserSchema>;
 export type TgChat = z.infer<typeof tgChatSchema>;
 export type TgMessage = z.infer<typeof tgMessageSchema>;

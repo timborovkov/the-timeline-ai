@@ -84,6 +84,11 @@ const schema = z
     TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
     TELEGRAM_BOT_USERNAME: z.string().optional(),
 
+    // Slack first-party conversational capture.
+    SLACK_CLIENT_ID: z.string().optional(),
+    SLACK_CLIENT_SECRET: z.string().optional(),
+    SLACK_SIGNING_SECRET: z.string().optional(),
+
     // Postmark (Phase 7)
     POSTMARK_SERVER_TOKEN: z.string().optional(),
     TRANSACTIONAL_EMAIL_FROM: z.string().optional(),

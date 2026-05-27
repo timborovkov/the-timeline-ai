@@ -1,5 +1,5 @@
 import { type Db, facts as factsTable, factEntities, rawEvents } from '@timeline/db';
-import { childLogger, extract, getEnv, llm, queue } from '@timeline/shared';
+import { childLogger, embedding, extract, getEnv, llm, queue } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
 
@@ -16,6 +16,7 @@ interface RawEventRow {
   teamId: string;
   contentText: string | null;
   occurredAt: Date;
+  source: string;
   visibility: 'private' | 'team' | 'specific_users';
   sourceMetadata: unknown;
 }
@@ -77,6 +78,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           teamId: rawEvents.teamId,
           contentText: rawEvents.contentText,
           occurredAt: rawEvents.occurredAt,
+          source: rawEvents.source,
           visibility: rawEvents.visibility,
           sourceMetadata: rawEvents.sourceMetadata,
         })
@@ -92,7 +94,11 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           `raw event ${rawEventId} team mismatch (job=${teamId}, row=${row.teamId})`,
         );
       }
-      const text = row.contentText?.trim();
+      const text = embedding.renderRawEventForAi({
+        source: row.source,
+        contentText: row.contentText,
+        sourceMetadata: row.sourceMetadata,
+      });
       if (!text) {
         throw new UnrecoverableError(
           `raw event ${rawEventId} has no content_text; nothing to extract`,
@@ -145,6 +151,8 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
         .select({
           contentText: rawEvents.contentText,
           occurredAt: rawEvents.occurredAt,
+          source: rawEvents.source,
+          sourceMetadata: rawEvents.sourceMetadata,
         })
         .from(rawEvents)
         .where(
@@ -155,13 +163,25 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           ),
         )
         .orderBy(desc(rawEvents.occurredAt))
-        .limit(RECENT_CONTEXT_LIMIT)) as { contentText: string | null; occurredAt: Date }[];
+        .limit(RECENT_CONTEXT_LIMIT)) as {
+        contentText: string | null;
+        occurredAt: Date;
+        source: string;
+        sourceMetadata: unknown;
+      }[];
 
       const prompt = extract.buildExtractionPrompt({
         current: { occurredAt: row.occurredAt.toISOString(), text },
         recent: recentRows
-          .filter((r): r is { contentText: string; occurredAt: Date } => Boolean(r.contentText))
-          .map((r) => ({ occurredAt: r.occurredAt.toISOString(), text: r.contentText })),
+          .map((r) => ({
+            occurredAt: r.occurredAt.toISOString(),
+            text: embedding.renderRawEventForAi({
+              source: r.source,
+              contentText: r.contentText,
+              sourceMetadata: r.sourceMetadata,
+            }),
+          }))
+          .filter((r): r is { occurredAt: string; text: string } => Boolean(r.text)),
       });
 
       const result = await llm.chatStructured({

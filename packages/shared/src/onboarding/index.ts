@@ -4,6 +4,9 @@ import {
   integrations,
   mcpServers,
   rawEvents,
+  slackConversationBindings,
+  slackUserTeams,
+  slackWorkspaceTeams,
   teamOnboardingCompletions,
   telegramChatBindings,
   telegramLinkTokens,
@@ -17,6 +20,7 @@ import type { TeamRole } from '../team-scope.js';
 export const ONBOARDING_STEPS = [
   'first_note',
   'telegram',
+  'slack',
   'email_forwarding',
   'first_document',
   'first_integration',
@@ -38,6 +42,9 @@ export interface OnboardingChecklistState {
     telegramLinkTokens: number;
     telegramChatBindings: number;
     telegramUserTeams: number;
+    slackWorkspaceTeams: number;
+    slackConversationBindings: number;
+    slackUserTeams: number;
     nativeIntegrations: number;
     teamMcpServers: number;
   };
@@ -74,6 +81,9 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
         telegramLinks,
         telegramBindings,
         telegramUsers,
+        slackInstalls,
+        slackBindings,
+        slackUsers,
         uploadedDocuments,
         nativeIntegrations,
         teamMcpServers,
@@ -114,6 +124,22 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
           .where(eq(telegramUserTeams.teamId, teamId)),
         db
           .select({ total: count() })
+          .from(slackWorkspaceTeams)
+          .where(
+            and(eq(slackWorkspaceTeams.teamId, teamId), eq(slackWorkspaceTeams.enabled, true)),
+          ),
+        db
+          .select({ total: count() })
+          .from(slackConversationBindings)
+          .where(
+            and(
+              eq(slackConversationBindings.teamId, teamId),
+              eq(slackConversationBindings.enabled, true),
+            ),
+          ),
+        db.select({ total: count() }).from(slackUserTeams).where(eq(slackUserTeams.teamId, teamId)),
+        db
+          .select({ total: count() })
           .from(documents)
           .where(and(eq(documents.teamId, teamId), isNull(documents.deletedAt))),
         db.select({ total: count() }).from(integrations).where(eq(integrations.teamId, teamId)),
@@ -128,6 +154,9 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
         telegramLinkTokens: firstCount(telegramLinks),
         telegramChatBindings: firstCount(telegramBindings),
         telegramUserTeams: firstCount(telegramUsers),
+        slackWorkspaceTeams: firstCount(slackInstalls),
+        slackConversationBindings: firstCount(slackBindings),
+        slackUserTeams: firstCount(slackUsers),
         nativeIntegrations: firstCount(nativeIntegrations),
         teamMcpServers: firstCount(teamMcpServers),
       };
@@ -140,6 +169,14 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
         0
       ) {
         inferred.add('telegram');
+      }
+      if (
+        connectionCounts.slackWorkspaceTeams +
+          connectionCounts.slackConversationBindings +
+          connectionCounts.slackUserTeams >
+        0
+      ) {
+        inferred.add('slack');
       }
       if (firstCount(emailEvents) > 0) inferred.add('email_forwarding');
       if (firstCount(uploadedDocuments) > 0) inferred.add('first_document');
