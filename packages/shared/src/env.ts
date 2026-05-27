@@ -81,6 +81,7 @@ const schema = z.object({
   // Postmark (Phase 7)
   POSTMARK_SERVER_TOKEN: z.string().optional(),
   POSTMARK_WEBHOOK_SECRET: z.string().optional(),
+  SUPPORT_EMAIL: z.preprocess((v) => (v === '' ? undefined : v), z.string().email().optional()),
   INBOUND_EMAIL_DOMAIN: z.string().optional(),
   /**
    * Dev / no-own-domain fallback. When set to a Postmark-default inbound
@@ -110,6 +111,11 @@ const schema = z.object({
    * 403 so attackers don't see auth-failure feedback.
    */
   POSTMARK_INBOUND_IPS: z.string().optional(),
+
+  // Phase 13 — public abuse protection. Turnstile is required for public
+  // support/contact in production and can stay unset in local development.
+  TURNSTILE_SITE_KEY: z.string().optional(),
+  TURNSTILE_SECRET_KEY: z.string().optional(),
 
   /**
    * Shared secret for protected cron / admin endpoints (e.g. job reconciler).
