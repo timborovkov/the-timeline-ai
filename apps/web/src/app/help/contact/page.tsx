@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { SupportForm } from '@/components/support-form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
+export const dynamic = 'force-dynamic';
+
 export default function ContactPage() {
   const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY ?? undefined;
   return (

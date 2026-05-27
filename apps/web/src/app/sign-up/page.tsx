@@ -6,6 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Separator } from '@/components/ui/separator';
 import { hasGitHubAuth } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 interface Props {
   searchParams: Promise<{ invite?: string }>;
 }
