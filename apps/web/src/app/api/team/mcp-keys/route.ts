@@ -1,5 +1,6 @@
-import { mcpOutboundKeys } from '@timeline/db';
+import { auditLog, mcpOutboundKeys } from '@timeline/db';
 import { mcpServer, withTeam } from '@timeline/shared';
+import { childLogger } from '@timeline/shared/logger';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -14,6 +15,8 @@ export const dynamic = 'force-dynamic';
 const createSchema = z.object({
   name: z.string().min(1).max(80),
 });
+
+const log = childLogger('web:mcp-keys');
 
 export async function GET(): Promise<Response> {
   const session = await auth();
@@ -64,17 +67,41 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
   const minted = mcpServer.mintKey();
-  const rows = await db
-    .insert(mcpOutboundKeys)
-    .values({
-      teamId: active.teamId,
-      createdByUserId: session.user.id,
-      name: parsed.data.name,
-      keyHash: minted.hash,
-      keyPrefix: minted.prefix,
+  const row = await db
+    .transaction(async (tx) => {
+      const rows = await tx
+        .insert(mcpOutboundKeys)
+        .values({
+          teamId: active.teamId,
+          createdByUserId: session.user.id,
+          name: parsed.data.name,
+          keyHash: minted.hash,
+          keyPrefix: minted.prefix,
+        })
+        .returning();
+      const created = rows[0];
+      if (!created) throw new Error('create_failed');
+      await tx.insert(auditLog).values({
+        teamId: active.teamId,
+        actorUserId: session.user.id,
+        action: 'mcp.connect',
+        targetType: 'mcp_outbound_key',
+        targetId: created.id,
+        targetVisibility: 'team',
+        metadata: {
+          surface: 'timeline_as_mcp_server',
+          scope_count: Array.isArray(created.scopes) ? created.scopes.length : 0,
+        },
+      });
+      return created;
     })
-    .returning();
-  const row = rows[0];
+    .catch((err: unknown) => {
+      log.error(
+        { err, teamId: active.teamId, actorUserId: session.user.id },
+        'Failed to create outbound MCP key',
+      );
+      return null;
+    });
   if (!row) return NextResponse.json({ error: 'create_failed' }, { status: 500 });
   // One-time plaintext — the only response that ever contains it.
   return NextResponse.json({

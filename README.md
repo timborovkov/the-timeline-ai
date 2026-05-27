@@ -23,9 +23,11 @@ lists, and document search are paginated for large beta workspaces, with
 short-lived visibility-aware Redis caches and React Query only on interactive
 surfaces. `/app/timeline` includes a dismissible team onboarding tutorial for
 the core capture surfaces. Public help docs live at `/help`, with a
-support/contact form that stores requests in Postgres and sends them through
-Postmark. Railway deployment, deploy-time migrations, and structured logging
-are in place.
+support/contact form that stores requests in Postgres, sends them through
+Postmark, and uses Turnstile in production. Email/password registration is
+also Turnstile-protected; signed-in expensive surfaces use named Redis-backed
+rate-limit policies. Railway deployment, deploy-time migrations, and
+structured logging are in place.
 
 ## Read first
 

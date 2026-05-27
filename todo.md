@@ -202,6 +202,9 @@ using the new `SECRETS_ENCRYPTION_KEY` env var. Per-team helpers in
 - [x] OAuth refresh-on-expiry — `loadOauthAccessToken` ([`packages/shared/src/mcp/client.ts`](packages/shared/src/mcp/client.ts)) checks `expiresAt` (60s skew) and refreshes via `oauthRefreshToken` with persisted discovery + client info, re-encrypts, and surfaces `last_error` on failure. Per-(team, server) pending map dedups concurrent refreshes.
 - [x] Inline reconnect UX — `McpNeedsReauthError` ([`packages/shared/src/mcp/client.ts`](packages/shared/src/mcp/client.ts)) propagates through `buildMcpTools` as `{ ok: false, error: 'needs_reauth' }`. Chat `ToolStep` ([`apps/web/src/components/chat/tool-step.tsx`](apps/web/src/components/chat/tool-step.tsx)) renders a "Reconnect <server>" CTA inline; non-admins see an "ask a team admin" hint instead.
 - [x] **Timeline-as-MCP-server (outbound).** External agents (Claude Desktop, Cursor, etc.) can connect this Timeline as an MCP server. Endpoint [`/api/mcp/server`](apps/web/src/app/api/mcp/server/route.ts) speaks JSON-RPC 2.0 over streamable HTTP (`tools/list`, `tools/call`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get`); bearer auth via `tla_*` keys stored as SHA-256 hashes (migration `0016_phase11_mcp_outbound.sql`). Tools exposed: `timeline.search_events`, `get_event`, `list_events`, `get_entity`, `search_documents`. Outbound bearer keys never see `private` / `specific_users` events. Admins mint/revoke keys at [`/app/team/mcp-share`](apps/web/src/app/app/team/mcp-share/page.tsx). Wildcard CORS (Authorization-header auth so credentials-less). Setup walkthrough: [`docs/setup/integrations.html`](docs/setup/integrations.html).
+- [ ] **Slack conversational capture, equivalent to Telegram:** Slack app/bot install as a first-party capture surface; OAuth-only Slack user links; team + conversation bindings; DM and channel message ingest; edit handling with superseded-revision tombstones; source-deletion tombstones when Slack reports deletion; sender/context metadata that feeds extraction + embeddings; DM-only capture acknowledgement; `/ask <question>` private answers plus `@Timeline` shared threaded answers. Reuse the Telegram mental model and the same `withTeam` scope + `agent.askAgent` path; Slack should be a conversational bot surface, not only a passive integration feed.
+- [ ] **Conversational attachment processing:** Slack and Telegram attachments share explicit guardrails (25 MiB, max 5 processed attachments per message, allowlisted file types only). Audio/voice attachments become transcribed raw events; supported text/image/PDF/DOCX files become document-drive versions linked to the source message and processed through OCR/chunk embeddings. Skip archives, executables, video, unknown binary, and oversize files with visible metadata/status.
+- [ ] **Telegram conversational parity follow-ups:** make Telegram capture acknowledgements DM-only (no group reaction noise); route Telegram sender/chat metadata through the same source-aware extraction + embedding renderer planned for Slack; use the shared source-deletion tombstone semantics for any Telegram deletion signal the platform reports.
 
 ## Phase 13 — Polish And Hardening
 
@@ -247,20 +250,27 @@ out of scope.
 
 ### Slice 13.3 — Generic trust audit log
 
-- [ ] Add a generic append-only `audit_log` table for sensitive reads/actions
+- [x] Add a generic append-only `audit_log` table for sensitive reads/actions
       going forward. Leave `integration_audit_log` as provider sync history.
-- [ ] Audit sensitive/security-relevant actions only: visibility changes,
+- [x] Audit sensitive/security-relevant actions only: visibility changes,
       private/restricted event detail reads, private/restricted document
       view/download/signed URL generation, team export creation, job
       retries/dismissals, settings changes, and integration/MCP
-      connect/disconnect.
-- [ ] Do not audit every timeline page load, team-visible row impression, or
+      connect/disconnect. Current product surfaces write trust-audit rows for
+      private/restricted event and document detail reads, document signed URL
+      generation, document visibility changes, team settings changes,
+      integration connect/disconnect/settings updates, custom MCP
+      connect/disconnect/settings updates, and Timeline-as-MCP key
+      mint/revoke. Future team export and job-dashboard slices should reuse
+      the existing `team.export_create`, `job.retry`, and `job.dismiss`
+      audit actions when those product paths land.
+- [x] Do not audit every timeline page load, team-visible row impression, or
       ordinary search result preview.
-- [ ] Make audit log visible to team owners/admins only, while preserving
+- [x] Make audit log visible to team owners/admins only, while preserving
       visibility boundaries. If the viewer cannot see a private/restricted
       target, show redacted target labels and ids, not titles, filenames, body
       text, or snippets.
-- [ ] Retain audit rows indefinitely with no user-facing delete. Audit metadata
+- [x] Retain audit rows indefinitely with no user-facing delete. Audit metadata
       must stay coarse and avoid raw sensitive content.
 
 ### Slice 13.4 — Team export job
@@ -340,18 +350,18 @@ out of scope.
 
 ### Slice 13.8 — Standardized abuse-control rate limits
 
-- [ ] Extend the typed rate-limit constants in
+- [x] Extend the typed rate-limit constants in
       `packages/shared/src/rate-limit/buckets.ts` so each public/expensive
       surface has an explicit named policy: signup, support form, AI chat,
       meeting scheduling, exports, document upload/finalize, and existing
       webhook buckets.
-- [ ] Use Cloudflare Turnstile only on public or anonymous abuse surfaces:
+- [x] Use Cloudflare Turnstile only on public or anonymous abuse surfaces:
       public support/contact and email/password registration. OAuth sign-up,
       signed-in chat, meetings, documents, integrations, and internal app forms
       rely on rate limits and existing quota/permission checks.
-- [ ] Add `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, and `SUPPORT_EMAIL` env
+- [x] Add `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, and `SUPPORT_EMAIL` env
       wiring and document the production behavior.
-- [ ] Keep usage tracking, billing dashboards, and model-spend caps out of Phase
+- [x] Keep usage tracking, billing dashboards, and model-spend caps out of Phase
       13.
 
 ## Phase 14 — Backup And Operations

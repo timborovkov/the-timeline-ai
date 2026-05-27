@@ -111,7 +111,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const rl = await rateLimit.checkRateLimit({
     key: rateLimit.rateLimitKey('chat', 'user', session.user.id),
-    ...rateLimit.RATE_LIMITS.chat,
+    ...rateLimit.RATE_LIMITS.aiChat,
   });
   if (!rl.ok) {
     return Response.json(
