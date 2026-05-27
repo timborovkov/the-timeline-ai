@@ -66,6 +66,7 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
         telegramLinks,
         telegramBindings,
         telegramUsers,
+        emailEvents,
         uploadedDocuments,
         nativeIntegrations,
         teamMcpServers,
@@ -88,6 +89,10 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
           .select({ total: count() })
           .from(rawEvents)
           .where(and(eq(rawEvents.teamId, teamId), eq(rawEvents.source, 'web'))),
+        db
+          .select({ total: count() })
+          .from(rawEvents)
+          .where(and(eq(rawEvents.teamId, teamId), eq(rawEvents.source, 'email'))),
         db
           .select({ total: count() })
           .from(telegramLinkTokens)
@@ -120,6 +125,7 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
       ) {
         inferred.add('telegram');
       }
+      if (firstCount(emailEvents) > 0) inferred.add('email_forwarding');
       if (firstCount(uploadedDocuments) > 0) inferred.add('first_document');
       if (firstCount(nativeIntegrations) + firstCount(teamMcpServers) > 0) {
         inferred.add('first_integration');
