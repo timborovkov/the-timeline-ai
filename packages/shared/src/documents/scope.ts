@@ -91,6 +91,13 @@ export interface DocumentRow {
   deletedAt: Date | null;
 }
 
+export interface DocumentListArgs {
+  folderId?: string | null;
+  includeDeleted?: boolean;
+  limit?: number;
+  cursor?: string | null;
+}
+
 export interface DocumentVersionRow {
   id: string;
   teamId: string;
@@ -354,6 +361,35 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     return row.id;
   }
 
+  async function listDocuments(args: DocumentListArgs = {}): Promise<DocumentRow[]> {
+    await ensureMember();
+    const conditions = [eq(documents.teamId, teamId), documentVisibility];
+    if (!args.includeDeleted) conditions.push(isNull(documents.deletedAt));
+    if (args.folderId === null || args.folderId === undefined) {
+      conditions.push(isNull(documents.folderId));
+    } else {
+      conditions.push(eq(documents.folderId, args.folderId));
+    }
+    const cursor = decodeCursor(args.cursor);
+    if (args.cursor && !cursor) throw new Error('Invalid cursor');
+    if (cursor) {
+      const cursorDate = new Date(cursor.at);
+      conditions.push(
+        or(
+          lt(documents.updatedAt, cursorDate),
+          and(eq(documents.updatedAt, cursorDate), lt(documents.id, cursor.id)),
+        ),
+      );
+    }
+    const rows = await db
+      .select()
+      .from(documents)
+      .where(and(...conditions))
+      .orderBy(desc(documents.updatedAt), desc(documents.id))
+      .limit(args.limit ?? 200);
+    return rows;
+  }
+
   async function assertFolderInTeam(folderId: string): Promise<FolderRow> {
     const folder = await getFolderRaw(folderId);
     if (!folder) throw new Error('Folder not found or not visible');
@@ -496,41 +532,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         .where(and(eq(folders.id, id), eq(folders.teamId, teamId)));
     },
 
-    async listDocuments(
-      args: {
-        folderId?: string | null;
-        includeDeleted?: boolean;
-        limit?: number;
-        cursor?: string | null;
-      } = {},
-    ): Promise<DocumentRow[]> {
-      await ensureMember();
-      const conditions = [eq(documents.teamId, teamId), documentVisibility];
-      if (!args.includeDeleted) conditions.push(isNull(documents.deletedAt));
-      if (args.folderId === null || args.folderId === undefined) {
-        conditions.push(isNull(documents.folderId));
-      } else {
-        conditions.push(eq(documents.folderId, args.folderId));
-      }
-      const cursor = decodeCursor(args.cursor);
-      if (args.cursor && !cursor) throw new Error('Invalid cursor');
-      if (cursor) {
-        const cursorDate = new Date(cursor.at);
-        conditions.push(
-          or(
-            lt(documents.updatedAt, cursorDate),
-            and(eq(documents.updatedAt, cursorDate), lt(documents.id, cursor.id)),
-          ),
-        );
-      }
-      const rows = await db
-        .select()
-        .from(documents)
-        .where(and(...conditions))
-        .orderBy(desc(documents.updatedAt), desc(documents.id))
-        .limit(args.limit ?? 200);
-      return rows;
-    },
+    listDocuments,
 
     async listDocumentsPage(
       args: {
@@ -541,31 +543,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       } = {},
     ): Promise<{ items: DocumentRow[]; nextCursor: string | null }> {
       const limit = Math.min(Math.max(args.limit ?? 30, 1), 100);
-      await ensureMember();
-      const conditions = [eq(documents.teamId, teamId), documentVisibility];
-      if (!args.includeDeleted) conditions.push(isNull(documents.deletedAt));
-      if (args.folderId === null || args.folderId === undefined) {
-        conditions.push(isNull(documents.folderId));
-      } else {
-        conditions.push(eq(documents.folderId, args.folderId));
-      }
-      const cursor = decodeCursor(args.cursor);
-      if (args.cursor && !cursor) throw new Error('Invalid cursor');
-      if (cursor) {
-        const cursorDate = new Date(cursor.at);
-        conditions.push(
-          or(
-            lt(documents.updatedAt, cursorDate),
-            and(eq(documents.updatedAt, cursorDate), lt(documents.id, cursor.id)),
-          ),
-        );
-      }
-      const rows = await db
-        .select()
-        .from(documents)
-        .where(and(...conditions))
-        .orderBy(desc(documents.updatedAt), desc(documents.id))
-        .limit(limit + 1);
+      const rows = await listDocuments({ ...args, limit: limit + 1 });
       return pageWindow(rows, limit, (row) => ({ at: row.updatedAt.toISOString(), id: row.id }));
     },
 

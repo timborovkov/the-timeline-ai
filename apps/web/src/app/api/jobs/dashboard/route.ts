@@ -1,6 +1,12 @@
-import { documentVersions, integrations, meetings, rawEvents } from '@timeline/db';
+import {
+  documentVersions,
+  facts as factsTable,
+  integrations,
+  meetings,
+  rawEvents,
+} from '@timeline/db';
 import { cacheKey, cachedJson, queue, withTeam } from '@timeline/shared';
-import { and, count, eq, isNotNull, lt, sql } from 'drizzle-orm';
+import { and, count, eq, isNotNull, lt, notExists, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -63,6 +69,13 @@ export async function GET(): Promise<Response> {
             eq(rawEvents.teamId, active.teamId),
             isNotNull(rawEvents.contentText),
             lt(rawEvents.createdAt, staleCutoff),
+            sql`NOT (COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ? 'extracted_at')`,
+            notExists(
+              db
+                .select({ one: sql`1` })
+                .from(factsTable)
+                .where(eq(factsTable.rawEventId, rawEvents.id)),
+            ),
           ),
         ),
       db
