@@ -32,7 +32,7 @@ Open PRs not counted here yet:
 - [x] Add per-user rate limits for `/api/search`, `/api/chat`, and capture/webhook endpoints. Redis token bucket in `packages/shared/src/rate-limit/`.
 - [x] Add Postmark IP allowlist and rate-limit 401s on `/api/email/inbound`. `POSTMARK_INBOUND_IPS` + per-IP 401 lockout via the shared token bucket.
 - [x] Add owner-safety rules: a team must always have at least one active owner, or ownership must be transferred explicitly. Helper `assertNotLastOwner` in `packages/shared/src/team-roles.ts`; `changeMemberRoleAction` handles owner/admin/member role changes with last-owner checks.
-- [x] Fully implement team invites: Postmark outbound invite emails, copy-link fallback, resend/revoke, pending invite management, one open invite per team/email, active-member rejection, and removed-member reactivation on accept.
+- [x] Fully implement team invites: Postmark outbound invite emails, copy-link fallback, recipient accept/decline from the team switcher, resend/revoke, pending invite management, one open invite per team/email, active-member rejection, and removed-member reactivation on accept.
 - [x] Decide whether OAuth signup should honor invite tokens. Today the GitHub button passes the token via a signed `pending_invite` cookie; `createUser` skips the default solo team when one is pending.
 - [x] Add web-path reconciler for orphaned transcribe/extract/embed jobs, including email attachment/audio child recovery where safe. `apps/web/src/lib/reconcile-jobs.ts` + `/api/cron/reconcile` gated on `CRON_SECRET`.
 - [x] Review prompt-injection boundaries for all source content the agent can read back, especially email bodies. Tool outputs now fence `content_text`/`snippet` in `<external_content>`; Rule 8 names the tag and `AGENT_PROMPT_VERSION` bumped to `agent-v3-2026-05`.
@@ -311,8 +311,9 @@ out of scope.
       chunk/calendar event embedding, document version extraction, meeting
       finalization, and integration sync.
 - [x] Provide an ignore/dismiss path for irrecoverable failures. Dismissals are
-      team-wide in `job_recovery_dismissals`; retry clears the dismissal before
-      re-enqueueing.
+      team-wide in `job_recovery_dismissals`; admins can dismiss a single job
+      or all failed jobs in the current view, and retry clears the dismissal
+      before re-enqueueing.
 - [x] Do not expose repeatable scheduler ticks, external webhook delivery
       failures, MCP health pings, or low-level jobs with no user-understandable
       target.

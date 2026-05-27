@@ -131,7 +131,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
           .where(
             and(
               eq(teamInvites.teamId, invite.teamId),
-              eq(teamInvites.email, invite.email),
+              sql`lower(${teamInvites.email}) = ${invite.email.toLowerCase()}`,
               isNull(teamInvites.acceptedAt),
               isNull(teamInvites.revokedAt),
               sql`${teamInvites.id} <> ${invite.id}`,

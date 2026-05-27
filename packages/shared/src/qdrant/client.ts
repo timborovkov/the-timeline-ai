@@ -293,7 +293,9 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
   async function upsertVector(id: string, vector: number[], payload: QdrantPayload): Promise<void> {
     if (vector.length !== vectorSize) {
       throw new Error(
-        `Qdrant vector length ${String(vector.length)} != collection size ${String(vectorSize)} (model drift?)`,
+        `Qdrant vector length ${String(vector.length)} != configured collection size ${String(
+          vectorSize,
+        )}. Check EMBEDDING_MODEL/EMBEDDING_DIMENSIONS and run the documented re-embed/QDRANT_COLLECTION migration before retrying jobs.`,
       );
     }
     await ensureCollection();

@@ -32,6 +32,8 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
     () => (filter === 'all' ? items : items.filter((item) => item.kind === filter)),
     [filter, items],
   );
+  const failedItems = filtered.filter((item) => item.status === 'failed');
+  const failedCount = failedItems.length;
 
   async function call(action: 'retry' | 'dismiss', id: string) {
     setBusy(`${action}:${id}`);
@@ -50,29 +52,76 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
     }
   }
 
+  async function dismissFailed() {
+    if (failedCount === 0) return;
+    const scopeLabel = filter === 'all' ? 'all failed jobs' : `failed ${filter.replace(/_/g, ' ')}`;
+    const ok = window.confirm(`Dismiss ${String(failedCount)} ${scopeLabel}?`);
+    if (!ok) return;
+    setBusy('dismiss-failed');
+    try {
+      const res = await fetch('/api/team/job-recovery/dismiss-failed', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...(filter === 'all' ? {} : { kind: filter }),
+          items: failedItems.map((item) => ({
+            id: item.id,
+            detectedAt: new Date(item.detectedAt).toISOString(),
+          })),
+          expectedCount: failedCount,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        alert(`Dismiss failed jobs failed: ${text}`);
+        return;
+      }
+      router.refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <section className="space-y-3">
-      <div className="flex flex-wrap gap-2 border-y border-border py-2">
-        {FILTERS.map((f) => {
-          const active = filter === f.kind;
-          return (
-            <button
-              key={f.kind}
-              type="button"
-              onClick={() => {
-                setFilter(f.kind);
-              }}
-              className={cn(
-                'rounded-sm border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors',
-                active
-                  ? 'border-signal bg-signal/10 text-signal'
-                  : 'border-border bg-surface text-fg-muted hover:border-border-strong hover:text-fg',
-              )}
-            >
-              {f.label}
-            </button>
-          );
-        })}
+      <div className="flex flex-col gap-2 border-y border-border py-2 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap gap-2">
+          {FILTERS.map((f) => {
+            const active = filter === f.kind;
+            return (
+              <button
+                key={f.kind}
+                type="button"
+                onClick={() => {
+                  setFilter(f.kind);
+                }}
+                className={cn(
+                  'rounded-sm border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors',
+                  active
+                    ? 'border-signal bg-signal/10 text-signal'
+                    : 'border-border bg-surface text-fg-muted hover:border-border-strong hover:text-fg',
+                )}
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={busy !== null || failedCount === 0}
+          onClick={() => {
+            void dismissFailed();
+          }}
+          className="self-start md:self-auto"
+        >
+          <X aria-hidden="true" className="mr-1 size-3.5" />
+          {busy === 'dismiss-failed'
+            ? 'Dismissing failed'
+            : `Dismiss failed${failedCount > 0 ? ` (${String(failedCount)})` : ''}`}
+        </Button>
       </div>
 
       <ul className="divide-y divide-border rounded-sm border border-border bg-surface">

@@ -6,7 +6,6 @@ import {
   FolderOpen,
   Inbox,
   KanbanSquare,
-  ListRestart,
   MessageSquare,
   Settings,
   Video,
@@ -38,7 +37,6 @@ const NAV_ITEMS: readonly NavItem[] = [
   { href: '/app/tasks', label: 'Tasks', icon: CheckSquare },
   { href: '/app/boards', label: 'Boards', icon: KanbanSquare },
   { href: '/app/inbox', label: 'Inbox', icon: Inbox },
-  { href: '/app/team/jobs', label: 'Jobs', icon: ListRestart, adminOnly: true },
   { href: '/app/team', label: 'Team', icon: Settings },
 ] as const;
 
