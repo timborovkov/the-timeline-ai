@@ -55,6 +55,7 @@ RUN addgroup --system --gid 1001 nodejs \
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/start.mjs ./apps/web/start.mjs
 
 # Self-contained @timeline/db with its own node_modules (postgres, drizzle-orm,
 # drizzle/*.sql, meta/_journal.json). Sits alongside the Next standalone tree
@@ -64,4 +65,4 @@ COPY --from=db-deployer --chown=nextjs:nodejs /prod/db ./packages/db
 USER nextjs
 EXPOSE 3000
 
-CMD ["node", "apps/web/server.js"]
+CMD ["node", "apps/web/start.mjs"]

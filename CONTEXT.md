@@ -142,6 +142,12 @@ extraction, embedding, document processing, meeting finalization, and
 integration sync.
 _Avoid_: Operator dashboard, BullMQ dashboard, queue admin
 
+**Environment Reset**:
+A development-only operational action that destroys all data and derived state
+in a non-production Timeline environment so it can be rebuilt from migrations
+and seed data.
+_Avoid_: Team reset, clear everything, backup restore
+
 **Integration Audit Log**:
 The operational history of an integration, such as connection, sync, replay,
 and provider errors. It is not the general trust audit log.

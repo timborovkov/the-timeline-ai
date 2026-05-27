@@ -53,7 +53,7 @@
             <td><code>web</code></td>
             <td>App</td>
             <td><code>apps/web/Dockerfile</code></td>
-            <td><code>node apps/web/server.js</code></td>
+            <td><code>node apps/web/start.mjs</code></td>
           </tr>
           <tr>
             <td><code>worker-transcribe</code></td>
@@ -238,12 +238,14 @@ LOG_LEVEL=info
 mc mb timeline-prod/timeline-audio
 mc mb timeline-prod/timeline-attachments
 mc mb timeline-prod/timeline-exports
+mc mb timeline-prod/timeline-documents
 mc version enable timeline-prod/timeline-audio
 mc version enable timeline-prod/timeline-attachments
+mc version enable timeline-prod/timeline-documents
 </code></pre>
       <p>
-        Versioning on audio and attachments is non-negotiable. Source-of-truth data; never overwrite
-        blindly.
+        Versioning on audio, attachments, and documents is non-negotiable. Source-of-truth data;
+        never overwrite blindly.
       </p>
 
       <h2 id="backups">Backups</h2>
@@ -298,16 +300,20 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
         <li>Push to <code>main</code> (production) or <code>staging</code> branch.</li>
         <li>Railway builds each service in parallel using its Dockerfile.</li>
         <li>
-          Migrations: run as a release-phase pre-deploy command on the <code>web</code> service.
-          Already wired in <code>apps/web/railway.json</code>:
+          Migrations: run as a release-phase pre-deploy command on the <code>web</code> service and
+          again from the web start wrapper under a Postgres advisory lock. The pre-deploy command is
+          already wired in <code>apps/web/railway.json</code>:
           <pre><code>"preDeployCommand": ["node packages/db/dist/migrate.js"]
 </code></pre>
           The script (<code>packages/db/src/migrate.ts</code>) is built by turbo as a dep of the web
           build, and the entire <code>@timeline/db</code> package — including its
           <code>drizzle/*.sql</code> files and a self-contained <code>node_modules</code> with
           <code>postgres</code> + <code>drizzle-orm</code> — is copied into the runner image by the
-          <code>db-deployer</code> stage in <code>apps/web/Dockerfile</code>. The command applies
-          any new SQL files against <code>DATABASE_URL</code> and exits. Failure blocks the deploy.
+          <code>db-deployer</code> stage in <code>apps/web/Dockerfile</code>. The same migrate
+          entrypoint is called by <code>apps/web/start.mjs</code> before
+          <code>apps/web/server.js</code>. It applies any new SQL files against
+          <code>DATABASE_URL</code> and exits; failure blocks deploy or startup. Startup migrations
+          make dev resets converge on the next web boot even when no deploy is in progress.
           <p>
             Worker services (<code>worker-transcribe</code>, <code>worker-extract</code>,
             <code>worker-embed</code>) deploy in parallel with <code>web</code> and don't run

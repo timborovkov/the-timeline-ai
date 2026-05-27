@@ -24,8 +24,8 @@ support/contact form that stores requests in Postgres, sends them through
 Postmark, and uses Turnstile in production. Email/password registration is
 also Turnstile-protected; signed-in expensive surfaces use named Redis-backed
 rate-limit policies. Owners/admins can recover team-scoped failed or stuck
-product jobs at `/app/team/jobs`. Railway deployment, deploy-time migrations,
-and structured logging are in place.
+product jobs at `/app/team/jobs`. Railway deployment, deploy/startup
+migrations, and structured logging are in place.
 
 ## Read first
 

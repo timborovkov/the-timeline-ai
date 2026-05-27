@@ -1,9 +1,8 @@
 /* eslint-disable no-console -- operational startup logging, matches packages/db/src/migrate.ts */
 /**
  * Next.js runs this once per server process at startup, before the first
- * request is handled. Used here to fire-and-forget the Telegram webhook
- * registration so it happens after the HTTP listener is up but doesn't
- * block readiness.
+ * request is handled. We fire-and-forget the Telegram webhook registration so
+ * it happens after the HTTP listener is up but doesn't block readiness.
  *
  * Skipped outside production: local `next dev` shouldn't be calling
  * setWebhook (AUTH_URL would be http://localhost anyway, which Telegram
@@ -94,6 +93,7 @@ async function registerWebhook(input: {
 
 export function register(): void {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
+
   if (process.env.NODE_ENV !== 'production') return;
 
   const token = process.env.TELEGRAM_BOT_TOKEN;
