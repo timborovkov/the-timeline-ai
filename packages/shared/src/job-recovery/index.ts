@@ -53,6 +53,13 @@ export interface JobRecoveryItem {
   detectedAt: Date;
 }
 
+export interface DismissFailedRecoverableJobsInput {
+  kind?: JobRecoveryKind;
+  items: { id: string; detectedAt: Date }[];
+  expectedCount: number;
+  reason?: string;
+}
+
 interface JobRecoveryScopeDeps {
   db: Db;
   teamId: string;
@@ -130,20 +137,27 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
         jobKind: jobRecoveryDismissals.jobKind,
         artifactKind: jobRecoveryDismissals.artifactKind,
         artifactId: jobRecoveryDismissals.artifactId,
+        createdAt: jobRecoveryDismissals.createdAt,
       })
       .from(jobRecoveryDismissals)
       .where(eq(jobRecoveryDismissals.teamId, deps.teamId));
-    const dismissed = new Set(
-      dismissals.map((d) =>
+    const dismissedAt = new Map(
+      dismissals.map((d) => [
         dismissalKey(
           d.jobKind as JobRecoveryKind,
           d.artifactKind as JobRecoveryArtifactKind,
           d.artifactId,
         ),
-      ),
+        d.createdAt,
+      ]),
     );
     return dedupe(candidates)
-      .filter((item) => !dismissed.has(dismissalKey(item.kind, item.artifactKind, item.artifactId)))
+      .filter((item) => {
+        const dismissalCreatedAt = dismissedAt.get(
+          dismissalKey(item.kind, item.artifactKind, item.artifactId),
+        );
+        return !dismissalCreatedAt || dismissalCreatedAt < item.detectedAt;
+      })
       .sort((a, b) => b.detectedAt.getTime() - a.detectedAt.getTime());
   }
 
@@ -151,29 +165,55 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
     await requireAdmin();
     const parsed = decodeRecoveryId(id);
     await assertArtifactVisible(deps.db, deps.teamId, deps.userId, parsed);
-    await deps.db
-      .insert(jobRecoveryDismissals)
-      .values({
-        teamId: deps.teamId,
-        jobKind: parsed.kind,
-        artifactKind: parsed.artifactKind,
-        artifactId: parsed.artifactId,
-        dismissedByUserId: deps.userId,
-        reason: reason?.trim() ? reason.trim().slice(0, 500) : null,
-      })
-      .onConflictDoUpdate({
-        target: [
-          jobRecoveryDismissals.teamId,
-          jobRecoveryDismissals.jobKind,
-          jobRecoveryDismissals.artifactKind,
-          jobRecoveryDismissals.artifactId,
-        ],
-        set: {
-          dismissedByUserId: deps.userId,
-          reason: reason?.trim() ? reason.trim().slice(0, 500) : null,
-          createdAt: new Date(),
-        },
-      });
+    await insertDismissals(deps.db, deps.teamId, deps.userId, [parsed], reason);
+  }
+
+  async function dismissFailedRecoverableJobs(
+    input: DismissFailedRecoverableJobsInput,
+  ): Promise<{ dismissed: number }> {
+    await requireAdmin();
+    const requestedIds = uniqueStrings(input.items.map((item) => item.id));
+    if (requestedIds.length === 0 || requestedIds.length !== input.items.length) {
+      throw new Error('invalid_recovery_ids');
+    }
+    if (input.items.some((item) => Number.isNaN(item.detectedAt.getTime()))) {
+      throw new Error('invalid_recovery_ids');
+    }
+    const candidates = await listRecoverableJobs();
+    const failed = candidates.filter(
+      (candidate) =>
+        candidate.status === 'failed' && (!input.kind || candidate.kind === input.kind),
+    );
+    if (failed.length !== input.expectedCount || requestedIds.length !== input.expectedCount) {
+      throw new Error('stale_recovery_set');
+    }
+    const failedById = new Map(failed.map((candidate) => [candidate.id, candidate]));
+    const selected = input.items.map((requested) => {
+      const candidate = failedById.get(requested.id);
+      if (candidate?.detectedAt.getTime() !== requested.detectedAt.getTime()) return undefined;
+      return candidate;
+    });
+    if (selected.some((candidate) => !candidate)) {
+      throw new Error('stale_recovery_set');
+    }
+    const selectedFailed = selected as JobRecoveryItem[];
+    const idsMatchCurrentSet =
+      selectedFailed.length === failed.length &&
+      selectedFailed.every((candidate) => failedById.has(candidate.id));
+    if (!idsMatchCurrentSet) {
+      throw new Error('stale_recovery_set');
+    }
+    if (failed.length === 0) return { dismissed: 0 };
+    const unique = selectedFailed.map((candidate) => ({
+      kind: candidate.kind,
+      artifactKind: candidate.artifactKind,
+      artifactId: candidate.artifactId,
+      detectedAt: candidate.detectedAt,
+    }));
+    await insertDismissals(deps.db, deps.teamId, deps.userId, unique, input.reason, {
+      preserveNewerDismissals: true,
+    });
+    return { dismissed: unique.length };
   }
 
   async function retryRecoverableJob(id: string): Promise<void> {
@@ -184,7 +224,77 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
     await retryParsed(deps.db, deps.teamId, parsed, q);
   }
 
-  return { listRecoverableJobs, dismissRecoverableJob, retryRecoverableJob };
+  return {
+    listRecoverableJobs,
+    dismissRecoverableJob,
+    dismissFailedRecoverableJobs,
+    retryRecoverableJob,
+  };
+}
+
+async function insertDismissals(
+  db: Db,
+  teamId: string,
+  userId: string,
+  jobs: (RecoveryIdentity & { detectedAt?: Date })[],
+  reason?: string,
+  opts: { preserveNewerDismissals?: boolean } = {},
+): Promise<void> {
+  const normalizedReason = reason?.trim() ? reason.trim().slice(0, 500) : null;
+  const createdAt = new Date();
+  if (opts.preserveNewerDismissals) {
+    for (const job of jobs) {
+      await upsertDismissals(
+        db,
+        teamId,
+        userId,
+        [job],
+        normalizedReason,
+        createdAt,
+        job.detectedAt,
+      );
+    }
+    return;
+  }
+  await upsertDismissals(db, teamId, userId, jobs, normalizedReason, createdAt);
+}
+
+async function upsertDismissals(
+  db: Db,
+  teamId: string,
+  userId: string,
+  jobs: RecoveryIdentity[],
+  reason: string | null,
+  createdAt: Date,
+  updateOnlyIfCreatedBefore?: Date,
+): Promise<void> {
+  const insert = db.insert(jobRecoveryDismissals).values(
+    jobs.map((job) => ({
+      teamId,
+      jobKind: job.kind,
+      artifactKind: job.artifactKind,
+      artifactId: job.artifactId,
+      dismissedByUserId: userId,
+      reason,
+      createdAt,
+    })),
+  );
+  await insert.onConflictDoUpdate({
+    target: [
+      jobRecoveryDismissals.teamId,
+      jobRecoveryDismissals.jobKind,
+      jobRecoveryDismissals.artifactKind,
+      jobRecoveryDismissals.artifactId,
+    ],
+    set: {
+      dismissedByUserId: userId,
+      reason,
+      createdAt,
+    },
+    ...(updateOnlyIfCreatedBefore
+      ? { where: lt(jobRecoveryDismissals.createdAt, updateOnlyIfCreatedBefore) }
+      : {}),
+  });
 }
 
 async function collectCandidates(

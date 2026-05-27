@@ -1,8 +1,9 @@
 'use server';
 
-import { teamInvites, teamMembers } from '@timeline/db';
+import { teamInvites, teamMembers, users } from '@timeline/db';
 import { childLogger } from '@timeline/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
@@ -15,6 +16,7 @@ import { ensureSoloTeam } from '@/lib/default-team';
 const log = childLogger('web:actions:invites');
 
 const acceptSchema = z.object({ token: z.string().min(1).max(256) });
+const recipientInviteSchema = z.object({ inviteId: z.string().uuid() });
 
 export async function acceptInviteAction(formData: FormData): Promise<void> {
   const session = await auth();
@@ -84,7 +86,7 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
         .where(
           and(
             eq(teamInvites.teamId, invite.teamId),
-            eq(teamInvites.email, invite.email),
+            sql`lower(${teamInvites.email}) = ${invite.email.toLowerCase()}`,
             isNull(teamInvites.acceptedAt),
             isNull(teamInvites.revokedAt),
             sql`${teamInvites.id} <> ${invite.id}`,
@@ -125,6 +127,128 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
   // Drop the OAuth pending-invite breadcrumb now that we've consumed it.
   const { clearPendingInvite } = await import('@/lib/pending-invite');
   await clearPendingInvite();
+
+  const cookieStore = await cookies();
+  cookieStore.set(ACTIVE_TEAM_COOKIE, teamId, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 365,
+  });
+  redirect('/app/timeline');
+}
+
+export async function declineInviteAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (!session?.user) return;
+  const parsed = recipientInviteSchema.safeParse({ inviteId: formData.get('inviteId') });
+  if (!parsed.success) return;
+  const currentUsers = await db
+    .select({ email: users.email, emailVerified: users.emailVerified })
+    .from(users)
+    .where(eq(users.id, session.user.id))
+    .limit(1);
+  const currentUser = currentUsers[0];
+  if (!currentUser?.emailVerified) return;
+  const verifiedEmail = currentUser.email.toLowerCase();
+
+  await db
+    .update(teamInvites)
+    .set({ revokedAt: new Date(), revokedByUserId: session.user.id })
+    .where(
+      and(
+        eq(teamInvites.id, parsed.data.inviteId),
+        sql`lower(${teamInvites.email}) = ${verifiedEmail}`,
+        isNull(teamInvites.acceptedAt),
+        isNull(teamInvites.revokedAt),
+      ),
+    );
+
+  revalidatePath('/app', 'layout');
+}
+
+export async function acceptRecipientInviteAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (!session?.user) return;
+  const parsed = recipientInviteSchema.safeParse({ inviteId: formData.get('inviteId') });
+  if (!parsed.success) return;
+  const userId = session.user.id;
+
+  let teamId: string;
+  try {
+    teamId = await db.transaction(async (tx) => {
+      const currentUsers = await tx
+        .select({ email: users.email, emailVerified: users.emailVerified })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      const currentUser = currentUsers[0];
+      if (!currentUser?.emailVerified) throw new Error('wrong-account');
+
+      const invites = await tx
+        .select()
+        .from(teamInvites)
+        .where(
+          and(
+            eq(teamInvites.id, parsed.data.inviteId),
+            isNull(teamInvites.acceptedAt),
+            isNull(teamInvites.revokedAt),
+          ),
+        )
+        .limit(1)
+        .for('update');
+      const invite = invites[0];
+      if (!invite || invite.expiresAt < new Date() || invite.role === 'owner') {
+        throw new Error('invalid');
+      }
+      if (invite.email.toLowerCase() !== currentUser.email.toLowerCase()) {
+        throw new Error('wrong-account');
+      }
+
+      const existing = await tx
+        .select({ role: teamMembers.role, removedAt: teamMembers.removedAt })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, invite.teamId), eq(teamMembers.userId, userId)))
+        .limit(1)
+        .for('update');
+      const membership = existing[0];
+      if (membership && !membership.removedAt) {
+        throw new Error('already-member');
+      }
+
+      await tx
+        .insert(teamMembers)
+        .values({
+          teamId: invite.teamId,
+          userId,
+          role: invite.role,
+        })
+        .onConflictDoUpdate({
+          target: [teamMembers.teamId, teamMembers.userId],
+          set: { role: invite.role, removedAt: null, removedByUserId: null },
+        });
+      await tx
+        .update(teamInvites)
+        .set({ acceptedAt: new Date(), acceptedByUserId: userId })
+        .where(eq(teamInvites.id, invite.id));
+      await tx
+        .update(teamInvites)
+        .set({ revokedAt: new Date(), revokedByUserId: userId })
+        .where(
+          and(
+            eq(teamInvites.teamId, invite.teamId),
+            sql`lower(${teamInvites.email}) = ${invite.email.toLowerCase()}`,
+            isNull(teamInvites.acceptedAt),
+            isNull(teamInvites.revokedAt),
+            sql`${teamInvites.id} <> ${invite.id}`,
+          ),
+        );
+      return invite.teamId;
+    });
+  } catch {
+    revalidatePath('/app', 'layout');
+    return;
+  }
 
   const cookieStore = await cookies();
   cookieStore.set(ACTIVE_TEAM_COOKIE, teamId, {

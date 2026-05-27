@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Postmark email setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-22</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-27</span></div>
       <p class="tldr">Postmark powers inbound timeline capture and outbound team invite emails.</p>
 
       <p>
@@ -48,6 +48,8 @@ SUPPORT_EMAIL=support@example.com
         Team settings sends invite emails after the invite row is committed. If Postmark is
         unavailable or these outbound env vars are missing, the invite is still created, the UI
         shows the send failure, and admins can copy the fallback invite URL or resend later.
+        Signed-in recipients with a verified account email also see unexpired invites in the team
+        switcher modal, where they can accept or decline without finding the email.
       </p>
 
       <h2 id="inbound-stream">3. Inbound stream</h2>
