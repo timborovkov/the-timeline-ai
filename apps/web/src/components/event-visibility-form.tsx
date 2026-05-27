@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { setEventVisibilityAction } from '@/app/actions/visibility';
 
@@ -22,6 +22,7 @@ export function EventVisibilityForm({
 }) {
   const [state, action, pending] = useActionState(setEventVisibilityAction, {});
   const formKey = `${eventId}:${visibility}:${(visibilityUserIds ?? []).join(',')}`;
+  const [selectedVisibility, setSelectedVisibility] = useState(visibility);
 
   return (
     <form
@@ -32,26 +33,31 @@ export function EventVisibilityForm({
       <input type="hidden" name="id" value={eventId} />
       <select
         name="visibility"
-        defaultValue={visibility}
+        value={selectedVisibility}
+        onChange={(e) => {
+          setSelectedVisibility(e.currentTarget.value);
+        }}
         className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
       >
         <option value="team">Team</option>
         <option value="private">Private</option>
         <option value="specific_users">Specific users</option>
       </select>
-      <div className="flex flex-wrap gap-2">
-        {members.map((m) => (
-          <label key={m.id} className="flex items-center gap-1 text-fg-muted">
-            <input
-              type="checkbox"
-              name="visibilityUserIds"
-              value={m.id}
-              defaultChecked={visibilityUserIds?.includes(m.id) ?? false}
-            />
-            {m.label}
-          </label>
-        ))}
-      </div>
+      {selectedVisibility === 'specific_users' ? (
+        <div className="flex flex-wrap gap-2">
+          {members.map((m) => (
+            <label key={m.id} className="flex items-center gap-1 text-fg-muted">
+              <input
+                type="checkbox"
+                name="visibilityUserIds"
+                value={m.id}
+                defaultChecked={visibilityUserIds?.includes(m.id) ?? false}
+              />
+              {m.label}
+            </label>
+          ))}
+        </div>
+      ) : null}
       <button
         type="submit"
         disabled={pending}

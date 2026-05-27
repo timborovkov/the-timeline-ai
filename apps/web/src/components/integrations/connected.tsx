@@ -114,30 +114,36 @@ function IntegrationVisibilityForm({
   const formKey = `${integration.id}:${integration.visibilityDefault}:${(
     integration.visibilityDefaultUserIds ?? []
   ).join(',')}`;
+  const [selectedVisibility, setSelectedVisibility] = useState(integration.visibilityDefault);
 
   return (
     <form key={formKey} action={action} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
       <input type="hidden" name="id" value={integration.id} />
       <select
         name="visibility"
-        defaultValue={integration.visibilityDefault}
+        value={selectedVisibility}
+        onChange={(e) => {
+          setSelectedVisibility(e.currentTarget.value as ConnectedRow['visibilityDefault']);
+        }}
         className="h-7 rounded-sm border border-border bg-bg px-2"
       >
         <option value="team">Team</option>
         <option value="private">Private</option>
         <option value="specific_users">Specific users</option>
       </select>
-      {members.map((m) => (
-        <label key={m.id} className="flex items-center gap-1 text-fg-muted">
-          <input
-            type="checkbox"
-            name="visibilityUserIds"
-            value={m.id}
-            defaultChecked={integration.visibilityDefaultUserIds?.includes(m.id) ?? false}
-          />
-          {m.label}
-        </label>
-      ))}
+      {selectedVisibility === 'specific_users'
+        ? members.map((m) => (
+            <label key={m.id} className="flex items-center gap-1 text-fg-muted">
+              <input
+                type="checkbox"
+                name="visibilityUserIds"
+                value={m.id}
+                defaultChecked={integration.visibilityDefaultUserIds?.includes(m.id) ?? false}
+              />
+              {m.label}
+            </label>
+          ))
+        : null}
       <button
         className="rounded-sm border border-border px-2 py-1 disabled:opacity-60"
         type="submit"

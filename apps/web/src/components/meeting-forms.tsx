@@ -42,7 +42,7 @@ export function ScheduleMeetingBotForm({
         meetingUrl,
         title: title || undefined,
         visibility,
-        visibilityUserIds,
+        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
         consentGiven: consent,
       });
       if (!res.ok) {
@@ -113,24 +113,26 @@ export function ScheduleMeetingBotForm({
             Specific users
           </Button>
         </div>
-        <div className="flex flex-wrap gap-3">
-          {members.map((m) => (
-            <label key={m.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={visibilityUserIds.includes(m.id)}
-                onChange={(e) => {
-                  setVisibilityUserIds((prev) =>
-                    e.target.checked
-                      ? [...new Set([...prev, m.id])]
-                      : prev.filter((id) => id !== m.id),
-                  );
-                }}
-              />
-              {m.label}
-            </label>
-          ))}
-        </div>
+        {visibility === 'specific_users' ? (
+          <div className="flex flex-wrap gap-3">
+            {members.map((m) => (
+              <label key={m.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={visibilityUserIds.includes(m.id)}
+                  onChange={(e) => {
+                    setVisibilityUserIds((prev) =>
+                      e.target.checked
+                        ? [...new Set([...prev, m.id])]
+                        : prev.filter((id) => id !== m.id),
+                    );
+                  }}
+                />
+                {m.label}
+              </label>
+            ))}
+          </div>
+        ) : null}
       </div>
       <label className="flex items-start gap-2 text-sm">
         <input

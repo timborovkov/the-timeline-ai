@@ -88,7 +88,7 @@ export function DocumentDrive({
         filename: file.name,
         contentType: file.type || 'application/octet-stream',
         visibility,
-        visibilityUserIds,
+        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
       });
       if (!req.ok || !req.url || !req.versionId) {
         toast.error(req.error ?? 'Upload failed');
@@ -142,7 +142,7 @@ export function DocumentDrive({
         name: name.trim(),
         parentFolderId: currentFolderId,
         visibility,
-        visibilityUserIds,
+        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
       });
       if (!res.ok) toast.error(res.error ?? 'Failed to create folder');
       else router.refresh();
@@ -219,22 +219,24 @@ export function DocumentDrive({
           <option value="private">Private</option>
           <option value="specific_users">Specific users</option>
         </select>
-        {members.map((m) => (
-          <label key={m.id} className="flex items-center gap-1 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={visibilityUserIds.includes(m.id)}
-              onChange={(e) => {
-                setVisibilityUserIds((prev) =>
-                  e.target.checked
-                    ? [...new Set([...prev, m.id])]
-                    : prev.filter((id) => id !== m.id),
-                );
-              }}
-            />
-            {m.label}
-          </label>
-        ))}
+        {visibility === 'specific_users'
+          ? members.map((m) => (
+              <label key={m.id} className="flex items-center gap-1 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={visibilityUserIds.includes(m.id)}
+                  onChange={(e) => {
+                    setVisibilityUserIds((prev) =>
+                      e.target.checked
+                        ? [...new Set([...prev, m.id])]
+                        : prev.filter((id) => id !== m.id),
+                    );
+                  }}
+                />
+                {m.label}
+              </label>
+            ))
+          : null}
       </div>
 
       <div
