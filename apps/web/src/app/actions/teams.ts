@@ -380,13 +380,11 @@ export async function changeMemberRoleAction(formData: FormData): Promise<void> 
   if (role !== 'owner' && role !== 'admin' && role !== 'member') return;
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  let callerRole: 'owner' | 'admin' | 'member';
   try {
-    callerRole = await scope.requireMembership('owner');
+    await scope.requireMembership('owner');
   } catch {
     return;
   }
-  if (callerRole !== 'owner') return;
 
   try {
     await db.transaction(async (tx) => {
