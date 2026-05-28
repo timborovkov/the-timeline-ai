@@ -8,6 +8,7 @@ import { postgresResetStatements } from '@timeline/db';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  assertDestructiveDevWipeAllowed,
   assertResetNodeEnv,
   configuredBuckets,
   deleteAllQdrantCollections,
@@ -22,6 +23,39 @@ describe('env reset helpers', () => {
     expect(() => assertResetNodeEnv(undefined)).toThrow(/NODE_ENV/);
     expect(() => assertResetNodeEnv('production')).toThrow(/NODE_ENV/);
     expect(() => assertResetNodeEnv('')).toThrow(/NODE_ENV/);
+  });
+
+  it('requires an explicit destructive wipe opt-in on Railway', () => {
+    const railwayEnv = {
+      RAILWAY_ENVIRONMENT_NAME: 'staging',
+      RAILWAY_SERVICE_NAME: '@timeline/app',
+    };
+    const optedInRailwayEnv = {
+      RAILWAY_ENVIRONMENT_NAME: 'production',
+      RAILWAY_SERVICE_NAME: '@timeline/app',
+      ALLOW_DESTRUCTIVE_DEV_WIPE: 'wipe-dev',
+    };
+    const wrongTokenRailwayEnv = {
+      RAILWAY_ENVIRONMENT_NAME: 'staging',
+      RAILWAY_SERVICE_NAME: '@timeline/app',
+      ALLOW_DESTRUCTIVE_DEV_WIPE: 'true',
+    };
+
+    expect(() => {
+      assertDestructiveDevWipeAllowed(railwayEnv);
+    }).toThrow(/ALLOW_DESTRUCTIVE_DEV_WIPE=wipe-dev/);
+
+    expect(() => {
+      assertDestructiveDevWipeAllowed(wrongTokenRailwayEnv);
+    }).toThrow(/ALLOW_DESTRUCTIVE_DEV_WIPE=wipe-dev/);
+
+    expect(() => {
+      assertDestructiveDevWipeAllowed(optedInRailwayEnv);
+    }).not.toThrow();
+
+    expect(() => {
+      assertDestructiveDevWipeAllowed({});
+    }).not.toThrow();
   });
 
   it('deduplicates configured buckets and excludes empty values', () => {

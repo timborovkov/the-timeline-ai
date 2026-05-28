@@ -5,8 +5,10 @@
     "buildCommand": "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @timeline/db build && pnpm --filter @timeline/shared build && pnpm --filter @timeline/web build"
   },
   "deploy": {
-    "preDeployCommand": ["node packages/db/dist/migrate.js"],
-    "startCommand": "node apps/web/start.mjs",
+    "preDeployCommand": [
+      "sh -lc 'test -f scripts/env-reset.ts && test -f packages/db/drizzle/meta/_journal.json && pnpm exec tsx --version && node packages/db/dist/migrate.js'"
+    ],
+    "startCommand": "pnpm --filter @timeline/web start",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",

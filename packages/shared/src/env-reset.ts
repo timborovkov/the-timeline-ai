@@ -11,10 +11,30 @@ import {
 import IORedis from 'ioredis';
 
 type ResetNodeEnv = 'development' | 'test';
+const ALLOW_DESTRUCTIVE_DEV_WIPE = 'ALLOW_DESTRUCTIVE_DEV_WIPE';
+const DESTRUCTIVE_DEV_WIPE_TOKEN = 'wipe-dev';
 
 export function assertResetNodeEnv(value: string | undefined): ResetNodeEnv {
   if (value === 'development' || value === 'test') return value;
   throw new Error('dev:wipe requires NODE_ENV to be explicitly set to development or test');
+}
+
+export function assertDestructiveDevWipeAllowed(env: NodeJS.ProcessEnv): void {
+  if (!isRailwayRuntime(env)) return;
+  if (env[ALLOW_DESTRUCTIVE_DEV_WIPE] === DESTRUCTIVE_DEV_WIPE_TOKEN) return;
+
+  const railwayEnvironment = env.RAILWAY_ENVIRONMENT_NAME ?? env.RAILWAY_ENVIRONMENT ?? '<unknown>';
+  const railwayService = env.RAILWAY_SERVICE_NAME ?? '<unknown>';
+  throw new Error(
+    `dev:wipe is blocked in Railway unless ${ALLOW_DESTRUCTIVE_DEV_WIPE}=${DESTRUCTIVE_DEV_WIPE_TOKEN}. ` +
+      `Current Railway environment=${railwayEnvironment}, service=${railwayService}`,
+  );
+}
+
+function isRailwayRuntime(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(
+    env.RAILWAY_ENVIRONMENT_NAME ?? env.RAILWAY_ENVIRONMENT ?? env.RAILWAY_SERVICE_NAME,
+  );
 }
 
 interface ResetEnv {

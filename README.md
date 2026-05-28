@@ -69,12 +69,21 @@ railway link
 # Select the workspace, project, environment, and web app service (web / @timeline/app).
 railway ssh
 
-NODE_ENV=development pnpm dev:wipe
+pnpm dev:wipe
+```
+
+Set `NODE_ENV=development` and `ALLOW_DESTRUCTIVE_DEV_WIPE=wipe-dev` as Railway
+variables on the non-production app service before running the command. If those
+variables are not already present in the SSH shell, the full explicit form is:
+
+```bash
+NODE_ENV=development ALLOW_DESTRUCTIVE_DEV_WIPE=wipe-dev pnpm dev:wipe
 ```
 
 `railway run` is not the same thing: it runs locally with Railway variables
 injected. For this workflow, SSH into the app container and run the wipe command
-there.
+there. Railway wipes require `ALLOW_DESTRUCTIVE_DEV_WIPE=wipe-dev` so a linked
+production shell cannot be wiped by setting `NODE_ENV` alone.
 
 ## External service setup
 
