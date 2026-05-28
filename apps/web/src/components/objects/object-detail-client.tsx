@@ -39,6 +39,7 @@ type ObjectDetail = objects.ObjectDetail;
 type LocalSuggestion = ComponentProps<typeof ApprovalsClient>['suggestions'][number];
 type EditableField = 'status' | 'stage' | 'priority' | 'dueAt';
 type SaveState = 'idle' | 'saving' | 'saved';
+type DraftField = 'stage' | 'dueAt';
 
 interface Props {
   detail: ObjectDetail;
@@ -79,6 +80,8 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localDetailRef = useRef(detail);
   const savingCountRef = useRef(0);
+  const focusedDraftsRef = useRef<Record<DraftField, boolean>>({ stage: false, dueAt: false });
+  const savingDraftsRef = useRef<Record<DraftField, number>>({ stage: 0, dueAt: 0 });
 
   function updateLocalDetail(updater: (current: ObjectDetail) => ObjectDetail): void {
     const next = updater(localDetailRef.current);
@@ -86,11 +89,26 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
     setLocalDetail(next);
   }
 
+  function isDraftField(field: EditableField): field is DraftField {
+    return field === 'stage' || field === 'dueAt';
+  }
+
+  function draftIsProtected(field: DraftField): boolean {
+    return focusedDraftsRef.current[field] || savingDraftsRef.current[field] > 0;
+  }
+
   useEffect(() => {
-    localDetailRef.current = detail;
-    setLocalDetail(detail);
-    setStageDraft(detail.stage ?? '');
-    setDueDraft(detail.dueAt ? toLocalInput(detail.dueAt) : '');
+    setLocalDetail((current) => {
+      const next = {
+        ...detail,
+        stage: draftIsProtected('stage') ? current.stage : detail.stage,
+        dueAt: draftIsProtected('dueAt') ? current.dueAt : detail.dueAt,
+      };
+      localDetailRef.current = next;
+      return next;
+    });
+    if (!draftIsProtected('stage')) setStageDraft(detail.stage ?? '');
+    if (!draftIsProtected('dueAt')) setDueDraft(detail.dueAt ? toLocalInput(detail.dueAt) : '');
   }, [detail]);
 
   useEffect(() => {
@@ -104,6 +122,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
     if (sameEditableValue(previousValue, value)) return;
     setError(null);
     updateLocalDetail((current) => ({ ...current, [field]: value }));
+    if (isDraftField(field)) savingDraftsRef.current[field] += 1;
     if (savedTimer.current) clearTimeout(savedTimer.current);
     setSaveState('saving');
     savingCountRef.current += 1;
@@ -137,6 +156,9 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
             setSaveState('idle');
           }, 1600);
         }
+      }
+      if (isDraftField(field)) {
+        savingDraftsRef.current[field] = Math.max(0, savingDraftsRef.current[field] - 1);
       }
     });
   }
@@ -249,10 +271,14 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
         <Field label="Stage">
           <input
             value={stageDraft}
+            onFocus={() => {
+              focusedDraftsRef.current.stage = true;
+            }}
             onChange={(e) => {
               setStageDraft(e.target.value);
             }}
             onBlur={(e) => {
+              focusedDraftsRef.current.stage = false;
               const v = e.target.value.trim();
               setStageDraft(v);
               patch('stage', v === '' ? null : v);
@@ -280,10 +306,14 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
           <input
             type="datetime-local"
             value={dueDraft}
+            onFocus={() => {
+              focusedDraftsRef.current.dueAt = true;
+            }}
             onChange={(e) => {
               setDueDraft(e.target.value);
             }}
             onBlur={(e) => {
+              focusedDraftsRef.current.dueAt = false;
               const v = e.target.value;
               patch('dueAt', v === '' ? null : new Date(v));
             }}

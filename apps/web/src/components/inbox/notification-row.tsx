@@ -56,7 +56,7 @@ export function NotificationRow({
       individuallyReadRef.current = true;
       setRead(true);
     }
-  }, [initiallyRead, read]);
+  }, [initiallyRead]);
 
   useEffect(() => {
     function onAllRead(event: Event): void {
@@ -76,7 +76,7 @@ export function NotificationRow({
     return () => {
       window.removeEventListener('timeline:notifications-read-all', onAllRead);
     };
-  }, [initiallyRead]);
+  }, [initiallyRead, read]);
 
   function markRead(): void {
     if (read) return;

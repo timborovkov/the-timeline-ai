@@ -234,6 +234,7 @@ export function CalendarView({
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [pending, startTransition] = useTransition();
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dialogContextRef = useRef(0);
 
   useEffect(() => {
     setLocalEvents(events);
@@ -269,6 +270,7 @@ export function CalendarView({
   }
 
   function openCreate(day = anchor) {
+    dialogContextRef.current += 1;
     setEditing(null);
     setDraft(blankDraft(day, timezone, defaultVisibility, defaultVisibilityUserIds));
     setError(null);
@@ -278,6 +280,7 @@ export function CalendarView({
 
   function openEdit(event: CalendarEvent) {
     if (event.redacted) return;
+    dialogContextRef.current += 1;
     setEditing(event);
     setDraft(draftFromEvent(event, timezone));
     setError(null);
@@ -320,6 +323,7 @@ export function CalendarView({
       return;
     }
     startTransition(async () => {
+      const saveDialogContext = dialogContextRef.current;
       const input = {
         title,
         description: draft.description.trim() || undefined,
@@ -374,8 +378,10 @@ export function CalendarView({
         );
         setSaveState('idle');
         setSurfaceError(result.error ?? 'Failed to save event.');
-        setOpen(true);
-        setError(result.error ?? 'Failed to save event.');
+        if (dialogContextRef.current === saveDialogContext) {
+          setOpen(true);
+          setError(result.error ?? 'Failed to save event.');
+        }
         return;
       }
       const savedId = result.id;
