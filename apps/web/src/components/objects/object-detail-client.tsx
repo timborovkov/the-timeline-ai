@@ -80,6 +80,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localDetailRef = useRef(detail);
   const savingCountRef = useRef(0);
+  const batchHadFailureRef = useRef(false);
   const focusedDraftsRef = useRef<Record<DraftField, boolean>>({ stage: false, dueAt: false });
   const savingDraftsRef = useRef<Record<DraftField, number>>({ stage: 0, dueAt: 0 });
 
@@ -125,6 +126,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
     if (isDraftField(field)) savingDraftsRef.current[field] += 1;
     if (savedTimer.current) clearTimeout(savedTimer.current);
     setSaveState('saving');
+    if (savingCountRef.current === 0) batchHadFailureRef.current = false;
     savingCountRef.current += 1;
     setSavingCount(savingCountRef.current);
     startTransition(async () => {
@@ -132,6 +134,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
       const result = await updateObjectAction({ id: detail.id, [field]: actionValue });
       const failed = 'error' in result && result.error;
       if (failed) {
+        batchHadFailureRef.current = true;
         setError(result.error ?? 'Update failed');
         if (sameEditableValue(localDetailRef.current[field], value)) {
           updateLocalDetail((current) => ({ ...current, [field]: previousValue }));
@@ -148,7 +151,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
       savingCountRef.current = Math.max(0, savingCountRef.current - 1);
       setSavingCount(savingCountRef.current);
       if (savingCountRef.current === 0) {
-        if (failed) {
+        if (batchHadFailureRef.current) {
           setSaveState('idle');
         } else {
           setSaveState('saved');
