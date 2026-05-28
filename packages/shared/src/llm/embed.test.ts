@@ -1,12 +1,11 @@
 import { MockEmbeddingModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetEnvForTests } from '../env.js';
-
-import { embed } from './embed.js';
-import { TIMELINE_MODELS } from './models.js';
-
 import type { EmbeddingModel } from 'ai';
+
+import { resetEnvForTests } from '#src/env.js';
+import { embed } from '#src/llm/embed.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 
 const ENV_BACKUP = { ...process.env };
 

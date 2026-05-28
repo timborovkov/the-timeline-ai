@@ -1,16 +1,16 @@
 import { MockLanguageModelV3 } from 'ai/test';
 import { describe, expect, it } from 'vitest';
 
-import { compressMessagesForContext } from './memory.js';
+import type { LanguageModel, ModelMessage } from 'ai';
+
+import { compressMessagesForContext } from '#src/llm/memory.js';
 import {
   DEFAULT_CHAT_MEMORY,
   estimateTextTokens,
   inputTokenBudgetFor,
   TIMELINE_MODELS,
   truncateTextToTokenBudget,
-} from './models.js';
-
-import type { LanguageModel, ModelMessage } from 'ai';
+} from '#src/llm/models.js';
 
 function promptText(value: unknown): string {
   if (typeof value === 'string') return value;

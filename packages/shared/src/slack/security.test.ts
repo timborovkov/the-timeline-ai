@@ -2,9 +2,12 @@ import { createHmac } from 'node:crypto';
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { resetEnvForTests } from '../env.js';
-
-import { signSlackOAuthState, verifySlackOAuthState, verifySlackSignature } from './security.js';
+import { resetEnvForTests } from '#src/env.js';
+import {
+  signSlackOAuthState,
+  verifySlackOAuthState,
+  verifySlackSignature,
+} from '#src/slack/security.js';
 
 beforeEach(() => {
   process.env.AUTH_SECRET = 'a'.repeat(32);

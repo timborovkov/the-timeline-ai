@@ -15,7 +15,7 @@ import {
 } from '@timeline/db';
 import { and, count, eq, isNull } from 'drizzle-orm';
 
-import type { TeamRole } from '../team-scope.js';
+import type { TeamRole } from '#src/team-scope.js';
 
 export const ONBOARDING_STEPS = [
   'first_note',

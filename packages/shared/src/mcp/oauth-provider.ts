@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-import { validateMcpUrl } from './auth.js';
+import { validateMcpUrl } from '#src/mcp/auth.js';
 
 // Phase 11 — MCP OAuth client (per the MCP authorization spec).
 //

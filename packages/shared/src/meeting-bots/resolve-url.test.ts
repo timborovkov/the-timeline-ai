@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetEnvForTests } from '../env.js';
-
-import { resolveTranscriptWebhookUrl } from './index.js';
+import { resetEnvForTests } from '#src/env.js';
+import { resolveTranscriptWebhookUrl } from '#src/meeting-bots/index.js';
 
 const ENV_BACKUP = { ...process.env };
 

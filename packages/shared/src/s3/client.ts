@@ -1,6 +1,6 @@
 import { S3Client } from '@aws-sdk/client-s3';
 
-import { getEnv } from '../env.js';
+import { getEnv } from '#src/env.js';
 
 let _client: S3Client | undefined;
 let _presignClient: S3Client | undefined;

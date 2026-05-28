@@ -1,12 +1,11 @@
 import { MockLanguageModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetEnvForTests } from '../env.js';
-
-import { TIMELINE_MODELS } from './models.js';
-import { extractTextFromMedia, resolveVisionModelId } from './vision.js';
-
 import type { LanguageModel } from 'ai';
+
+import { resetEnvForTests } from '#src/env.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { extractTextFromMedia, resolveVisionModelId } from '#src/llm/vision.js';
 
 // The v3 model layer in `ai` doesn't re-export its call-options type from
 // the package root. We only need the prompt + maxOutputTokens fields for

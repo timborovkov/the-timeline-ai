@@ -12,24 +12,23 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
-import { askAgent } from '../agent/ask.js';
+import { askAgent } from '#src/agent/ask.js';
 import {
   classifyConversationalAttachment,
   CONVERSATIONAL_ATTACHMENT_LIMITS,
   extensionOf,
-} from '../conversational/attachments.js';
-import { encryptJson, decryptJson, type EncryptedSecret } from '../crypto/secrets.js';
-import { buildDocumentObjectKey } from '../documents/object-key.js';
-import { childLogger } from '../logger.js';
-import { getRedisConnection } from '../queue/connection.js';
-
-import { SlackApi, type SlackConversation, type SlackOAuthAccessResponse } from './api.js';
+} from '#src/conversational/attachments.js';
+import { encryptJson, decryptJson, type EncryptedSecret } from '#src/crypto/secrets.js';
+import { buildDocumentObjectKey } from '#src/documents/object-key.js';
+import { childLogger } from '#src/logger.js';
+import { getRedisConnection } from '#src/queue/connection.js';
+import { SlackApi, type SlackConversation, type SlackOAuthAccessResponse } from '#src/slack/api.js';
 import {
   slackEnvelopeSchema,
   type SlackAppMentionEvent,
   type SlackFile,
   type SlackMessageEvent,
-} from './types.js';
+} from '#src/slack/types.js';
 
 const log = childLogger('slack');
 

@@ -14,15 +14,20 @@ import {
 import { and, asc, count, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { localDateFromInstant, localDateSpanToUtcRange } from '../time/index.js';
-
 import type {
   CalendarScope,
   CreateCalendarEventInput,
   UpdateCalendarEventInput,
-} from '../calendar/index.js';
-import type { CreateObjectInput, ObjectPatch, ObjectScope, ObjectType } from '../objects/index.js';
-import type { TeamRole } from '../team-scope.js';
+} from '#src/calendar/index.js';
+import type {
+  CreateObjectInput,
+  ObjectPatch,
+  ObjectScope,
+  ObjectType,
+} from '#src/objects/index.js';
+import type { TeamRole } from '#src/team-scope.js';
+
+import { localDateFromInstant, localDateSpanToUtcRange } from '#src/time/index.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
 type SuggestionStatus = 'pending' | 'partially_resolved' | 'accepted' | 'rejected';

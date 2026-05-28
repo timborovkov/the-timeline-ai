@@ -1,15 +1,14 @@
 import { type Db, mcpOauthTokens, mcpServers } from '@timeline/db';
 import { and, eq, isNull, or } from 'drizzle-orm';
 
-import { decryptJson, encryptJson } from '../crypto/secrets.js';
-import { childLogger } from '../logger.js';
+import type { McpServerRow } from '#src/mcp/auth.js';
+import type { discoverOAuth } from '#src/mcp/oauth-provider.js';
 
-import { buildAuth } from './auth.js';
-import { refreshToken as oauthRefreshToken } from './oauth-provider.js';
-import { namespaceToolName } from './tool-namespace.js';
-
-import type { McpServerRow } from './auth.js';
-import type { discoverOAuth } from './oauth-provider.js';
+import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
+import { childLogger } from '#src/logger.js';
+import { buildAuth } from '#src/mcp/auth.js';
+import { refreshToken as oauthRefreshToken } from '#src/mcp/oauth-provider.js';
+import { namespaceToolName } from '#src/mcp/tool-namespace.js';
 
 // Phase 11 — Minimal MCP-over-HTTP client. The full
 // @modelcontextprotocol/sdk supports stdio, SSE, and WebSocket transports;

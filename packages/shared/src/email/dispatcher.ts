@@ -1,9 +1,6 @@
 import { type Db, rawEvents, teamMembers, teams, users } from '@timeline/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
-import { childLogger } from '../logger.js';
-import { withTeam } from '../team-scope.js';
-
 import {
   chooseContentText,
   getHeader,
@@ -17,12 +14,14 @@ import {
   toParsed,
   toParsedList,
   type ParsedAddress,
-} from './parser.js';
+} from '#src/email/parser.js';
 import {
   postmarkInboundSchema,
   type PostmarkAttachment,
   type PostmarkInbound,
-} from './postmark-schema.js';
+} from '#src/email/postmark-schema.js';
+import { childLogger } from '#src/logger.js';
+import { withTeam } from '#src/team-scope.js';
 
 const log = childLogger('email');
 

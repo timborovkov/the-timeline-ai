@@ -6,7 +6,7 @@ import {
   localDateSpanToUtcRange,
   resolveTimePhrase,
   workspaceTimeContext,
-} from './index.js';
+} from '#src/time/index.js';
 
 const REF = new Date('2026-05-27T10:00:00.000Z');
 

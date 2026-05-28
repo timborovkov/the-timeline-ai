@@ -12,9 +12,9 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { eventVisibility } from './raw-events.js';
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { eventVisibility } from '#src/schema/raw-events.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 // Phase 11 — Third-party integrations.
 //

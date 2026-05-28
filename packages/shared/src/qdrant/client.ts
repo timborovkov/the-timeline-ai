@@ -1,7 +1,6 @@
-import { getEnv } from '../env.js';
-import { TIMELINE_MODELS } from '../llm/models.js';
-
-import { buildPointId, type PointScope } from './point-id.js';
+import { getEnv } from '#src/env.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { buildPointId, type PointScope } from '#src/qdrant/point-id.js';
 
 /**
  * Payload schema stored alongside every vector. Every field is used by the

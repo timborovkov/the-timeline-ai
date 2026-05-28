@@ -9,7 +9,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { type DocumentExtractIO, processDocumentExtractJob } from './documentExtract.js';
+import { type DocumentExtractIO, processDocumentExtractJob } from '#src/workers/documentExtract.js';
 
 /**
  * Real-DB integration tests for the documentExtract worker handler.

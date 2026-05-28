@@ -1,13 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetEnvForTests } from '../env.js';
-
+import { resetEnvForTests } from '#src/env.js';
 import {
   createQdrantClient,
   getQdrantClient,
   resetQdrantClientCacheForTests,
   type QdrantPayload,
-} from './client.js';
+} from '#src/qdrant/client.js';
 
 const ENV_BACKUP = { ...process.env };
 

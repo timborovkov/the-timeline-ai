@@ -2,7 +2,7 @@ import { teamMembers, teams } from '@timeline/db';
 import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
 import { and, eq, isNull } from 'drizzle-orm';
 
-import { db } from './db';
+import { db } from '@/lib/db';
 
 /**
  * Idempotently create a solo team for a user who has no memberships. No-op

@@ -8,9 +8,8 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
-import { validateVisibilityUserIds } from '../visibility.js';
-
-import { formatMeetingTranscript } from './transcript.js';
+import { formatMeetingTranscript } from '#src/meetings/transcript.js';
+import { validateVisibilityUserIds } from '#src/visibility.js';
 
 // Phase 10 — meeting scope. Mirrors the documents scope pattern: a factory
 // returning per-(team,user) helpers that write every state transition

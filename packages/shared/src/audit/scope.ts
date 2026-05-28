@@ -9,7 +9,7 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
-import { rawEventVisibleToUser } from '../visibility.js';
+import { rawEventVisibleToUser } from '#src/visibility.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
 

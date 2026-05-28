@@ -2,17 +2,17 @@ import { getDb } from '@timeline/db';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
-import { childLogger } from '../logger.js';
-import { getMcpManager } from '../mcp/client.js';
-import * as objects from '../objects/index.js';
-import { suggestionDedupeKey } from '../suggestions/index.js';
-import { type TeamScope } from '../team-scope.js';
+import { childLogger } from '#src/logger.js';
+import { getMcpManager } from '#src/mcp/client.js';
+import * as objects from '#src/objects/index.js';
+import { suggestionDedupeKey } from '#src/suggestions/index.js';
+import { type TeamScope } from '#src/team-scope.js';
 import {
   localDateFromInstant,
   localDateSpanToUtcRange,
   resolveTimePhrase,
   workspaceTimeContext,
-} from '../time/index.js';
+} from '#src/time/index.js';
 
 const log = childLogger('agent:tools');
 

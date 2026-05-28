@@ -23,7 +23,7 @@ import {
 import { and, asc, count, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import JSZip from 'jszip';
 
-import { rawEventHiddenFromUser, rawEventVisibleToUser } from '../visibility.js';
+import { rawEventHiddenFromUser, rawEventVisibleToUser } from '#src/visibility.js';
 
 const EXPORT_TTL_SEC = 24 * 60 * 60;
 

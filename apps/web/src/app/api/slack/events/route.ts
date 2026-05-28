@@ -1,7 +1,6 @@
 import { childLogger, email, getEnv, rateLimit, slack } from '@timeline/shared';
 
-import { slackIngestDeps } from '../_shared';
-
+import { slackIngestDeps } from '@/app/api/slack/_shared';
 import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';

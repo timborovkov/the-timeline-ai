@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as SharedModuleNS from '@timeline/shared';
+
 import {
   createFolderAction,
   finalizeDocumentVersionAction,
   renameDocumentAction,
   requestDocumentUploadAction,
-} from './documents.js';
-
-import type * as SharedModuleNS from '@timeline/shared';
+} from '@/app/actions/documents';
 
 /**
  * Server-action tests for `documents.ts`. Mocks the auth chokepoint

@@ -1,9 +1,8 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { embed as aiEmbed, type EmbeddingModel } from 'ai';
 
-import { getEnv } from '../env.js';
-
-import { TIMELINE_MODELS } from './models.js';
+import { getEnv } from '#src/env.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 
 export interface EmbedInput {
   text: string;

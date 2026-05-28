@@ -6,9 +6,8 @@ import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { withTeam } from '../team-scope.js';
-
-import { suggestionDedupeKey } from './index.js';
+import { suggestionDedupeKey } from '#src/suggestions/index.js';
+import { withTeam } from '#src/team-scope.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');

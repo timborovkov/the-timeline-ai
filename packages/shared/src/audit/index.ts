@@ -1,1 +1,1 @@
-export * from './scope.js';
+export * from '#src/audit/scope.js';

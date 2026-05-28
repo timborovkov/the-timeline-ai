@@ -1,7 +1,7 @@
 import { boolean, index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 // Saved object board configurations. `filter` is a structured JSON predicate
 // (type, status[], stage[], owner, assignee, due range, metadata key

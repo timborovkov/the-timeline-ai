@@ -8,7 +8,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { buildTeamExportArchive } from './index.js';
+import { buildTeamExportArchive } from '#src/team-exports/index.js';
 
 type AnyDb = Db;
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { SlackApi } from './api.js';
+import { SlackApi } from '#src/slack/api.js';
 
 describe('SlackApi file downloads', () => {
   afterEach(() => {

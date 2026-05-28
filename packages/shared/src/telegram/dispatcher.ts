@@ -12,18 +12,17 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
-import { askAgent } from '../agent/ask.js';
+import { askAgent } from '#src/agent/ask.js';
 import {
   classifyConversationalAttachment,
   CONVERSATIONAL_ATTACHMENT_LIMITS,
   extensionOf,
-} from '../conversational/attachments.js';
-import { buildDocumentObjectKey } from '../documents/object-key.js';
-import { childLogger } from '../logger.js';
-import { getRedisConnection } from '../queue/connection.js';
-import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '../rate-limit/index.js';
-
-import { type TelegramApi } from './api.js';
+} from '#src/conversational/attachments.js';
+import { buildDocumentObjectKey } from '#src/documents/object-key.js';
+import { childLogger } from '#src/logger.js';
+import { getRedisConnection } from '#src/queue/connection.js';
+import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '#src/rate-limit/index.js';
+import { type TelegramApi } from '#src/telegram/api.js';
 import {
   tgUpdateSchema,
   type TgAudioPayload,
@@ -32,7 +31,7 @@ import {
   type TgPhotoSize,
   type TgUpdate,
   type TgUser,
-} from './types.js';
+} from '#src/telegram/types.js';
 
 const log = childLogger('telegram');
 

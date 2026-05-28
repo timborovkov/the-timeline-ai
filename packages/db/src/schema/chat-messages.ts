@@ -1,8 +1,8 @@
 import { index, jsonb, pgEnum, pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-import { chatSessions } from './chat-sessions.js';
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { chatSessions } from '#src/schema/chat-sessions.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 // One row per role-transition in a chat session. `content` is structured
 // JSON (text + tool-call payloads + citation ids) so the UI can re-render

@@ -1,17 +1,17 @@
 import { closeDb, getDb, waitForMigrations } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
 
-import { startDocumentExtractWorker } from './workers/documentExtract.js';
-import { startEmbedWorker } from './workers/embed.js';
-import { startExtractWorker } from './workers/extract.js';
-import { startIntegrationSyncWorker } from './workers/integrationSync.js';
-import { startJanitorWorker } from './workers/janitor.js';
-import { startMcpHealthWorker } from './workers/mcpHealth.js';
-import { startMeetingFinalizeWorker } from './workers/meetingFinalize.js';
-import { startOverdueWorker } from './workers/overdue.js';
-import { startSuggestionWorker } from './workers/suggestions.js';
-import { startTeamExportWorker } from './workers/teamExport.js';
-import { startTranscribeWorker } from './workers/transcribe.js';
+import { startDocumentExtractWorker } from '#src/workers/documentExtract.js';
+import { startEmbedWorker } from '#src/workers/embed.js';
+import { startExtractWorker } from '#src/workers/extract.js';
+import { startIntegrationSyncWorker } from '#src/workers/integrationSync.js';
+import { startJanitorWorker } from '#src/workers/janitor.js';
+import { startMcpHealthWorker } from '#src/workers/mcpHealth.js';
+import { startMeetingFinalizeWorker } from '#src/workers/meetingFinalize.js';
+import { startOverdueWorker } from '#src/workers/overdue.js';
+import { startSuggestionWorker } from '#src/workers/suggestions.js';
+import { startTeamExportWorker } from '#src/workers/teamExport.js';
+import { startTranscribeWorker } from '#src/workers/transcribe.js';
 
 const log = childLogger('worker');
 

@@ -8,9 +8,9 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { writeIntegrationEvents } from './event-writer.js';
+import { writeIntegrationEvents } from '#src/integrations/event-writer.js';
 
-vi.mock('../queue/queues.js', () => ({
+vi.mock('#src/queue/queues.js', () => ({
   enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
 }));

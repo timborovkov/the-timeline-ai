@@ -2,8 +2,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { migrateDatabase } from '../packages/db/src/migrate.ts';
-import { resetPostgresSchema } from '../packages/db/src/reset.ts';
+import { migrateDatabase } from '@timeline/db/migrate';
+import { resetPostgresSchema } from '@timeline/db/reset';
 import {
   assertDestructiveDevWipeAllowed,
   assertResetNodeEnv,
@@ -14,8 +14,8 @@ import {
   ensureBucket,
   flushRedisAll,
   versionedBuckets,
-} from '../packages/shared/src/env-reset.ts';
-import { getS3Client } from '../packages/shared/src/s3/client.ts';
+} from '@timeline/shared/env-reset';
+import { getS3Client } from '@timeline/shared/s3/client';
 
 loadDotEnv(resolve(process.cwd(), '.env'));
 

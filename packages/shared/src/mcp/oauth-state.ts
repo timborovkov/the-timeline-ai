@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-import { getEnv } from '../env.js';
+import { getEnv } from '#src/env.js';
 
 // Phase 11 — Minimal stateful JWT-equivalent for the MCP OAuth dance.
 // Carries (teamId, mcpServerId, userId, issuedAt) and is HS256-MACed

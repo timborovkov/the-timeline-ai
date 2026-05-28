@@ -1,8 +1,8 @@
 import { index, pgEnum, pgTable, primaryKey, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-import { eventVisibility } from './raw-events.js';
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { eventVisibility } from '#src/schema/raw-events.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 export const visibilityDefaultSource = pgEnum('visibility_default_source', [
   'team',

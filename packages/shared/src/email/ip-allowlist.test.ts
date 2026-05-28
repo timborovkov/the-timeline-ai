@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { clientIpFromHeaders, isIpAllowed, parseCidrList } from './ip-allowlist.js';
+import { clientIpFromHeaders, isIpAllowed, parseCidrList } from '#src/email/ip-allowlist.js';
 
 describe('parseCidrList', () => {
   it('parses bare ip and /N', () => {

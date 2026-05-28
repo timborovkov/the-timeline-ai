@@ -1,2 +1,2 @@
-export * from './client.js';
-export * from './point-id.js';
+export * from '#src/qdrant/client.js';
+export * from '#src/qdrant/point-id.js';

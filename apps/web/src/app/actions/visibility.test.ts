@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { setEventVisibilityAction } from './visibility.js';
-
 import type * as SharedModuleNS from '@timeline/shared';
+
+import { setEventVisibilityAction } from '@/app/actions/visibility';
 
 const fakes = vi.hoisted(() => ({
   fakeAuth: vi.fn(),

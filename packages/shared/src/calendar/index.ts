@@ -1,1 +1,1 @@
-export * from './scope.js';
+export * from '#src/calendar/scope.js';

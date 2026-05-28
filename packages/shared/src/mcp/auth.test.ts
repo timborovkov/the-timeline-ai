@@ -2,10 +2,9 @@ import { randomBytes } from 'node:crypto';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { encryptJson, resetSecretsKeyCacheForTests } from '../crypto/secrets.js';
-import { resetEnvForTests } from '../env.js';
-
-import { buildAuth, validateMcpUrl, type McpServerRow } from './auth.js';
+import { encryptJson, resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
+import { resetEnvForTests } from '#src/env.js';
+import { buildAuth, validateMcpUrl, type McpServerRow } from '#src/mcp/auth.js';
 
 function row(overrides: Partial<McpServerRow> = {}): McpServerRow {
   return {

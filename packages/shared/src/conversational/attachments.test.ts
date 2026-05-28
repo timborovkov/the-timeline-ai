@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyConversationalAttachment,
   CONVERSATIONAL_ATTACHMENT_LIMITS,
-} from './attachments.js';
+} from '#src/conversational/attachments.js';
 
 describe('classifyConversationalAttachment', () => {
   it('routes audio and supported documents', () => {

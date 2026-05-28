@@ -1,8 +1,8 @@
 import { pgTable, primaryKey, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-import { entities } from './entities.js';
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { entities } from '#src/schema/entities.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 // Per-user, per-object last-visit timestamp. Drives the "changes since your
 // last visit" banner on object pages and the unread badge on the objects

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { fallbackBundles } from './suggestions.js';
+import { fallbackBundles } from '#src/workers/suggestions.js';
 
 const REFERENCE_DATE = new Date('2026-05-27T10:00:00.000Z');
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { checkRateLimit, rateLimitKey } from './token-bucket.js';
-
 import type { Redis } from 'ioredis';
+
+import { checkRateLimit, rateLimitKey } from '#src/rate-limit/token-bucket.js';
 
 interface BucketState {
   tokens: number;

@@ -1,10 +1,9 @@
 import { type Db, auditLog, mcpOauthTokens, mcpServers } from '@timeline/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 
-import { decryptJson, encryptJson } from '../crypto/secrets.js';
-
-import { validateMcpUrl, type McpAuthConfig } from './auth.js';
-import { getMcpManager } from './client.js';
+import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
+import { validateMcpUrl, type McpAuthConfig } from '#src/mcp/auth.js';
+import { getMcpManager } from '#src/mcp/client.js';
 
 // Phase 11 — Team-scoped CRUD for custom MCP servers. Mirrors the rest
 // of the codebase's `withTeam` style: every method first checks

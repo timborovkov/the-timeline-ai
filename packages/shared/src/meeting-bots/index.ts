@@ -1,14 +1,13 @@
 // Phase 10 — Meeting bots. One factory; provider tag drives backend choice.
 
-import { getEnv } from '../env.js';
+import type { MeetingBotProvider } from '#src/meeting-bots/types.js';
 
-import { createRecallProvider } from './recall.js';
+import { getEnv } from '#src/env.js';
+import { createRecallProvider } from '#src/meeting-bots/recall.js';
 
-import type { MeetingBotProvider } from './types.js';
-
-export * from './types.js';
-export { createRecallProvider, recallMapStatus } from './recall.js';
-export { verifySvixSignature, type SvixVerifyResult } from './svix.js';
+export * from '#src/meeting-bots/types.js';
+export { createRecallProvider, recallMapStatus } from '#src/meeting-bots/recall.js';
+export { verifySvixSignature, type SvixVerifyResult } from '#src/meeting-bots/svix.js';
 
 let _cached: MeetingBotProvider | undefined;
 

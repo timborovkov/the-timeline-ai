@@ -9,12 +9,11 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
-import { embed as defaultEmbed, type EmbedResult } from '../llm/embed.js';
-import { decodeCursor, pageWindow } from '../pagination.js';
-import { getQdrantClient, type SearchHit, type SearchOpts } from '../qdrant/client.js';
-import { rawEventVisibleToUser, validateVisibilityUserIds } from '../visibility.js';
-
-import { buildDocumentObjectKey } from './object-key.js';
+import { buildDocumentObjectKey } from '#src/documents/object-key.js';
+import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
+import { decodeCursor, pageWindow } from '#src/pagination.js';
+import { getQdrantClient, type SearchHit, type SearchOpts } from '#src/qdrant/client.js';
+import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
 // drizzle's transaction callback gives a PgTransaction that has the same
 // fluent methods we use here (`insert`, `select`, `update`) but is not

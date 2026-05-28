@@ -6,11 +6,11 @@ import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { handleUpdate, parseCommand } from './dispatcher.js';
-import { verifyWebhookSecret } from './secret.js';
-import { tgUpdateSchema } from './types.js';
+import type { TelegramApi } from '#src/telegram/api.js';
 
-import type { TelegramApi } from './api.js';
+import { handleUpdate, parseCommand } from '#src/telegram/dispatcher.js';
+import { verifyWebhookSecret } from '#src/telegram/secret.js';
+import { tgUpdateSchema } from '#src/telegram/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');

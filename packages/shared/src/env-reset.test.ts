@@ -14,7 +14,7 @@ import {
   deleteAllQdrantCollections,
   emptyBucket,
   versionedBuckets,
-} from './env-reset.js';
+} from '#src/env-reset.js';
 
 describe('env reset helpers', () => {
   it('requires NODE_ENV to be explicitly development or test', () => {
