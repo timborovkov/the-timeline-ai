@@ -3,6 +3,7 @@ export type ModelCapability =
   | 'structured'
   | 'tools'
   | 'vision'
+  | 'file'
   | 'embedding'
   | 'transcription';
 
@@ -19,29 +20,30 @@ export const TIMELINE_MODELS = {
     id: 'openai/gpt-4o-mini',
     provider: 'openrouter',
     contextWindowTokens: 128_000,
-    capabilities: ['chat', 'structured'],
+    capabilities: ['chat', 'structured', 'tools', 'vision', 'file'],
   },
   agent: {
     id: 'openai/gpt-4o-mini',
     provider: 'openrouter',
     contextWindowTokens: 128_000,
-    capabilities: ['chat', 'tools'],
+    capabilities: ['chat', 'structured', 'tools', 'vision', 'file'],
   },
   summarization: {
     id: 'openai/gpt-4o-mini',
     provider: 'openrouter',
     contextWindowTokens: 128_000,
-    capabilities: ['chat'],
+    capabilities: ['chat', 'structured', 'tools', 'vision', 'file'],
   },
   vision: {
     id: 'openai/gpt-4o-mini',
     provider: 'openrouter',
     contextWindowTokens: 128_000,
-    capabilities: ['chat', 'vision'],
+    capabilities: ['chat', 'structured', 'tools', 'vision', 'file'],
   },
   embedding: {
     id: 'openai/text-embedding-3-small',
     provider: 'openrouter',
+    contextWindowTokens: 8_192,
     embeddingDimensions: 1536,
     capabilities: ['embedding'],
   },
