@@ -19,10 +19,10 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizz
 import { createAuditScope } from './audit/scope.js';
 import { createCalendarScope } from './calendar/scope.js';
 import { createDocumentScope } from './documents/scope.js';
-import { getEnv } from './env.js';
 import { createIntegrationScope } from './integrations/scope.js';
 import { createJobRecoveryScope } from './job-recovery/index.js';
 import { embed as defaultEmbed, type EmbedResult } from './llm/embed.js';
+import { TIMELINE_MODELS } from './llm/models.js';
 import { createMcpScope } from './mcp/scope.js';
 import { createMeetingScope } from './meetings/scope.js';
 import { createObjectScope } from './objects/index.js';
@@ -492,7 +492,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         .select({ id: factsTable.id })
         .from(factsTable)
         .where(and(eq(factsTable.teamId, teamId), eq(factsTable.rawEventId, rawEventId)));
-      const activeModel = getEnv().EMBEDDING_MODEL ?? 'openai/text-embedding-3-small';
+      const activeModel = TIMELINE_MODELS.embedding.id;
       const models = [...new Set([activeModel, 'openai/text-embedding-3-small'])];
       const pointIds = models.flatMap((model) => [
         buildPointId('event', rawEventId, model),
