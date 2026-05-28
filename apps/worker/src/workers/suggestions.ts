@@ -59,8 +59,14 @@ function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }
 
-function firstSentence(s: string): string {
-  return s.split(/[.!?\n]/)[0]?.trim() ?? s.trim();
+function commitmentActionBeforeTimePhrase(s: string): string {
+  const fragment =
+    s
+      .split(/[.!?\n]/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .at(-1) ?? s.trim();
+  return fragment.replace(/^(?:and|then|also)\s+/i, '').trim();
 }
 
 function calendarContextRange(occurredAt: Date): { from: Date; to: Date } {
@@ -80,7 +86,7 @@ export function fallbackBundles(args: {
   const text = args.text.trim();
   const match = COMMITMENT_TIME_PATTERN.exec(text);
   if (!match) return [];
-  const action = firstSentence(match[1] ?? '')
+  const action = commitmentActionBeforeTimePhrase(match[1] ?? '')
     .replace(/\s+/g, ' ')
     .trim();
   const phrase = match[2] ?? 'tomorrow';

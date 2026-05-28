@@ -39,4 +39,19 @@ describe('fallbackBundles', () => {
       endDate: '2026-06-03',
     });
   });
+
+  it('uses the sentence nearest the time phrase as the commitment title', () => {
+    const [bundle] = fallbackBundles({
+      text: "I'll update the pricing. And schedule the follow-up tomorrow",
+      timezone: 'UTC',
+      occurredAt: REFERENCE_DATE,
+      authorUserId: null,
+    });
+
+    expect(bundle?.items[0]?.title).toBe('Schedule the follow-up');
+    expect(bundle?.items[0]?.proposedPayload).toMatchObject({
+      canonicalName: 'Schedule the follow-up',
+      metadata: { extracted_from_commitment: true, time_phrase: 'tomorrow' },
+    });
+  });
 });
