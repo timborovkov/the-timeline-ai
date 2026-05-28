@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import { auditLog, rawEvents, teamVisibilityDefaults } from '@timeline/db';
+import { auditLog, integrations, rawEvents, teamVisibilityDefaults } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -316,5 +316,32 @@ describe('withTeam namespaced port', () => {
         'team',
       ),
     ).rejects.toThrow('Integration not found');
+  });
+
+  it('preserves per-integration visibility defaults when reconnecting', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const first = await scope.integrations.createIntegration({
+      provider: 'github',
+      displayName: 'GitHub',
+      externalAccountId: 'installation-1',
+      visibilityDefault: 'specific_users',
+      visibilityDefaultUserIds: [USER_B],
+    });
+
+    const second = await scope.integrations.createIntegration({
+      provider: 'github',
+      displayName: 'GitHub reconnected',
+      externalAccountId: 'installation-1',
+      visibilityDefault: 'team',
+      visibilityDefaultUserIds: null,
+    });
+
+    expect(second.id).toBe(first.id);
+    const [row] = await db.select().from(integrations).where(eq(integrations.id, first.id));
+    expect(row).toMatchObject({
+      displayName: 'GitHub reconnected',
+      visibilityDefault: 'specific_users',
+      visibilityDefaultUserIds: [USER_B],
+    });
   });
 });

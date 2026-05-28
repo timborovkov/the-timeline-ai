@@ -103,6 +103,7 @@ export function createIntegrationScope(deps: {
             integrationsTable.provider,
             integrationsTable.externalAccountId,
           ],
+          targetWhere: sql`${integrationsTable.externalAccountId} IS NOT NULL`,
           // Reconnect refreshes the tokens + display name + clears the
           // last error, but does NOT silently re-enable an integration an
           // admin explicitly disabled. The admin must flip `enabled` back
@@ -120,8 +121,6 @@ export function createIntegrationScope(deps: {
             authSecretCiphertext: encrypted?.ciphertext ?? null,
             authSecretIv: encrypted?.iv ?? null,
             authSecretTag: encrypted?.tag ?? null,
-            visibilityDefault,
-            visibilityDefaultUserIds,
             lastError: null,
             updatedAt: new Date(),
           },
