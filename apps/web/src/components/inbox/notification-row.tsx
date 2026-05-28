@@ -44,6 +44,7 @@ export function NotificationRow({
   // clears the unread dot — the server action runs async without
   // blocking the navigation.
   const [read, setRead] = useState(initiallyRead);
+  const readRef = useRef(initiallyRead);
   const latestInitiallyReadRef = useRef(initiallyRead);
   const individuallyReadRef = useRef(initiallyRead);
   const bulkReadRef = useRef(false);
@@ -56,6 +57,7 @@ export function NotificationRow({
     latestInitiallyReadRef.current = initiallyRead;
     if (initiallyRead) {
       individuallyReadRef.current = true;
+      readRef.current = true;
       setRead(true);
     }
   }, [initiallyRead]);
@@ -64,25 +66,27 @@ export function NotificationRow({
     function onAllRead(event: Event): void {
       if (!(event instanceof CustomEvent) || typeof event.detail !== 'boolean') return;
       if (event.detail) {
-        bulkReadRef.current = bulkReadRef.current || !read;
+        bulkReadRef.current = bulkReadRef.current || !readRef.current;
+        readRef.current = true;
         setRead(true);
         return;
       }
-      setRead((current) => {
-        if (!bulkReadRef.current) return current;
-        bulkReadRef.current = false;
-        return individuallyReadRef.current || initiallyRead;
-      });
+      if (!bulkReadRef.current) return;
+      bulkReadRef.current = false;
+      const next = individuallyReadRef.current || latestInitiallyReadRef.current;
+      readRef.current = next;
+      setRead(next);
     }
     window.addEventListener('timeline:notifications-read-all', onAllRead);
     return () => {
       window.removeEventListener('timeline:notifications-read-all', onAllRead);
     };
-  }, [initiallyRead, read]);
+  }, []);
 
   function markRead(): void {
     if (read) return;
     individuallyReadRef.current = true;
+    readRef.current = true;
     setRead(true);
     const onUnreadFilter = search.get('unread') === '1';
     startTransition(async () => {
@@ -94,6 +98,7 @@ export function NotificationRow({
         // the server still has it as unread, and on ?unread=1 it'd
         // linger with read styling but never drop out.
         individuallyReadRef.current = latestInitiallyReadRef.current;
+        readRef.current = latestInitiallyReadRef.current;
         setRead(latestInitiallyReadRef.current);
         return;
       }
