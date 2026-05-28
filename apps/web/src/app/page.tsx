@@ -28,6 +28,7 @@ export const metadata: Metadata = {
     'cited AI answers',
     'meeting transcript search',
     'Telegram bot CRM',
+    'Slack bot ingest',
     'team timeline',
     'organizational memory',
   ],
@@ -107,6 +108,7 @@ function StructuredData() {
         featureList: [
           'Voice-, chat-, and email-first capture',
           'Telegram bot ingest with /ask agent',
+          'Slack bot ingest with /ask and @Timeline agent answers',
           'Email ingest via Postmark',
           'Document drive with version history',
           'Meeting transcripts from Google Meet, Microsoft Teams, and Zoom (Recall.ai)',
@@ -135,7 +137,7 @@ function StructuredData() {
 const FAQ_ITEMS = [
   {
     q: 'What is The Timeline?',
-    a: 'The Timeline is a multi-tenant team memory and object management system. Team members capture work as it happens — voice notes, forwarded emails, Telegram messages, meeting transcripts, document uploads — and the agent compiles a searchable, queryable history of who did what, talked to whom, decided what, and what changed. Every answer the agent returns is cited back to the raw event it came from.',
+    a: 'The Timeline is a multi-tenant team memory and object management system. Team members capture work as it happens — voice notes, forwarded emails, Telegram and Slack messages, meeting transcripts, document uploads — and the agent compiles a searchable, queryable history of who did what, talked to whom, decided what, and what changed. Every answer the agent returns is cited back to the raw event it came from.',
   },
   {
     q: 'Who is The Timeline for?',
@@ -147,7 +149,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How is capture done?',
-    a: 'Five surfaces feed one pipeline. (1) Web and PWA: typed notes, audio uploads, drag-drop documents. (2) Telegram bot: voice memos and text in DMs or team groups; /ask runs the same agent as web chat. (3) Email: forward, CC, or BCC to your team address, parsed by Postmark. (4) Document drive: team folders with version history. (5) Meeting bots (Google Meet, Microsoft Teams, Zoom via Recall.ai) — transcripts and action items land in the same pipeline as voice memos.',
+    a: 'Six surfaces feed one pipeline. (1) Web and PWA: typed notes, audio uploads, drag-drop documents. (2) Telegram bot: voice memos and text in DMs or team groups; /ask runs the same agent as web chat. (3) Slack bot: DMs, bound channels, file attachments, /ask, and @Timeline threaded answers. (4) Email: forward, CC, or BCC to your team address, parsed by Postmark. (5) Document drive: team folders with version history. (6) Meeting bots (Google Meet, Microsoft Teams, Zoom via Recall.ai) — transcripts and action items land in the same pipeline as voice memos.',
   },
   {
     q: 'What models power the agent?',
@@ -398,7 +400,7 @@ function Solution() {
         <Pillar
           n="01"
           title="Capture is voice-first."
-          body="Three taps in Telegram. No forms, no schemas, no &ldquo;which project does this belong to.&rdquo; Voice memo, text, forwarded email — all the same pipeline."
+          body="Three taps in Telegram, or a Slack DM while the thread is still warm. No forms, no schemas, no &ldquo;which project does this belong to.&rdquo;"
         />
         <Pillar
           n="02"
@@ -749,7 +751,7 @@ function HowItWorks() {
     {
       n: '01',
       title: 'Land',
-      body: 'Voice memo, email, Telegram, upload, or meeting bot. Immutable raw event, team-scoped.',
+      body: 'Voice memo, Slack, Telegram, email, upload, or meeting bot. Immutable raw event, team-scoped.',
     },
     {
       n: '02',
@@ -764,7 +766,7 @@ function HowItWorks() {
     {
       n: '04',
       title: 'Ask',
-      body: 'Agent answers in the web app or in Telegram via /ask. Citations on every claim.',
+      body: 'Agent answers in the web app, Telegram via /ask, or Slack via /ask and @Timeline. Citations on every claim.',
     },
   ];
   return (
@@ -796,6 +798,10 @@ function Surfaces() {
         <SurfaceTile
           label="TELEGRAM BOT"
           body="Voice memos and text in DMs or team groups. /ask runs the same agent as web chat."
+        />
+        <SurfaceTile
+          label="SLACK BOT"
+          body="DMs and bound channels become timeline events. /ask is private; @Timeline replies in-thread."
         />
         <SurfaceTile label="EMAIL" body="Forward, CC, or BCC to your team address." />
         <SurfaceTile
@@ -871,9 +877,9 @@ function Receipts() {
             Ask. See the receipts.
           </h2>
           <p className="mt-6 max-w-prose text-base leading-[1.65] text-fg-muted">
-            Every fact resolves to a raw event — voice memo, email, Telegram message, document
-            version — with author, timestamp, and source. Click the chip; the inspector shows
-            exactly what was said.
+            Every fact resolves to a raw event — voice memo, Slack or Telegram message, email,
+            document version — with author, timestamp, and source. Click the chip; the inspector
+            shows exactly what was said.
           </p>
           <blockquote className="mt-8 max-w-prose border-l-2 border-signal pl-5 text-lg italic leading-snug text-fg">
             Re-run the extraction with a better model tomorrow — the raw event never changes, the
