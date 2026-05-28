@@ -8,7 +8,7 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
-import { getEnv } from '../env.js';
+import { TIMELINE_MODELS } from '../llm/models.js';
 import { getQdrantClient, buildPointId } from '../qdrant/client.js';
 import { enqueueCalendarEventEmbedJob } from '../queue/queues.js';
 import { validateVisibilityUserIds } from '../visibility.js';
@@ -249,7 +249,7 @@ async function assertEntitiesBelongToTeam(
 async function deleteCalendarEventPoints(eventId: string): Promise<void> {
   try {
     const client = getQdrantClient();
-    const activeModel = getEnv().EMBEDDING_MODEL ?? 'openai/text-embedding-3-small';
+    const activeModel = TIMELINE_MODELS.embedding.id;
     const models = uniqueIds([activeModel, 'openai/text-embedding-3-small']);
     const pointIds = models.map((m) => buildPointId('calendar_event', eventId, m));
     await client.deletePoints(pointIds);

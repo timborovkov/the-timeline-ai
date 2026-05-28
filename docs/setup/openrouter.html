@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>OpenRouter setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-22</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-28</span></div>
       <blockquote>
         <p>Used from <strong>Phase 3</strong> (transcription) and onwards.</p>
       </blockquote>
@@ -46,29 +46,23 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 
       <h2 id="model-pins">2. Model pins</h2>
       <p>
-        The embedding model is pinned. Changing it invalidates the entire vector index — re-embed
-        before changing. Any non-default <code>EMBEDDING_MODEL</code> must set
-        <code>EMBEDDING_DIMENSIONS</code> explicitly so workers fail fast instead of writing
-        wrong-sized vectors.
+        Model selection is code-owned in <code>packages/shared/src/llm/models.ts</code>. Keep
+        extraction, agent, summarization, vision, embedding, and transcription model ids there
+        together with their context windows, capabilities, and embedding dimensions. Chat-style
+        roles prefer OSS models from Qwen and DeepSeek; the environment only supplies the OpenRouter
+        key/base URL.
       </p>
-      <pre><code>EMBEDDING_MODEL=openai/text-embedding-3-small
-EMBEDDING_DIMENSIONS=1536
-TRANSCRIPTION_MODEL=openai/whisper-large-v3
-CHAT_MODEL_DEFAULT=qwen/qwen3.7-max
-# Phase 4: cheap model used by the extract worker. Falls back to
-# CHAT_MODEL_DEFAULT when unset.
-EXTRACTION_MODEL=deepseek/deepseek-v4-flash
-# Phase 6: model used by /api/chat. Lets us point chat at a stronger
-# model than extraction without changing extraction behavior. Falls back
-# to CHAT_MODEL_DEFAULT when unset.
-AGENT_MODEL=qwen/qwen3.7-max
-</code></pre>
+      <p>
+        The embedding model remains special: changing it or its dimensions invalidates the current
+        vector index. Update the catalog and follow the re-embed procedure before switching traffic
+        to the new collection.
+      </p>
 
       <h2 id="smoke-test">3. Quick smoke test</h2>
       <pre><code>curl https://openrouter.ai/api/v1/chat/completions \
   -H "Authorization: Bearer $OPENROUTER_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}'
+  -d '{"model":"qwen/qwen3.7-max","messages":[{"role":"user","content":"ping"}]}'
 </code></pre>
 
       <h2 id="phase-3">Phase 3 verification (transcription)</h2>
@@ -78,8 +72,8 @@ AGENT_MODEL=qwen/qwen3.7-max
         <li>
           The row appears immediately with an audio player and a "Transcribing…" placeholder. The
           BullMQ <code>transcribe</code> worker pulls the bytes from RustFS, POSTs to
-          <code>${OPENROUTER_BASE_URL}/audio/transcriptions</code> with the pinned
-          <code>TRANSCRIPTION_MODEL</code>, and writes the result back onto
+          <code>${OPENROUTER_BASE_URL}/audio/transcriptions</code> with the pinned transcription
+          model from <code>TIMELINE_MODELS</code>, and writes the result back onto
           <code>content_text</code>.
         </li>
         <li>Refresh — the transcript appears.</li>
@@ -146,12 +140,12 @@ AGENT_MODEL=qwen/qwen3.7-max
         Re-extraction procedure (when changing the extraction prompt or model)
       </h3>
       <p>
-        The <code>model_version</code> written on each fact combines
-        <code>EXTRACTION_MODEL</code> with an internal code-revision tag. When either changes,
-        replay raw events:
+        The <code>model_version</code> written on each fact combines the extraction model id from
+        <code>TIMELINE_MODELS</code> with an internal code-revision tag. When either changes, replay
+        raw events:
       </p>
       <ol>
-        <li>Update <code>EXTRACTION_MODEL</code> in env if needed.</li>
+        <li>Update <code>packages/shared/src/llm/models.ts</code> if the model changes.</li>
         <li>
           Run for one team:
           <pre><code>pnpm --filter @timeline/worker reextract -- --team=&lt;teamId&gt;
@@ -177,8 +171,9 @@ AGENT_MODEL=qwen/qwen3.7-max
       <ol>
         <li>
           Create the default Qdrant collection before the first embed worker write. The collection
-          vector size must match <code>EMBEDDING_DIMENSIONS=1536</code>; Qdrant rejects vectors from
-          a different-sized model.
+          vector size must match the embedding model dimensions in
+          <code>TIMELINE_MODELS.embedding.embeddingDimensions</code>; Qdrant rejects vectors from a
+          different-sized model.
           <pre><code>curl -s -X PUT "$QDRANT_URL/collections/events" \
   -H "content-type: application/json" \
   -H "api-key: $QDRANT_API_KEY" \
@@ -225,9 +220,11 @@ AGENT_MODEL=qwen/qwen3.7-max
         error instead of looping the agent against a broken backend.
       </p>
       <p>
-        Optional env knob: <code>AGENT_MODEL</code> lets you point chat at a stronger model than
-        extraction without changing extraction behavior. Resolution chain:
-        <code>AGENT_MODEL ?? CHAT_MODEL_DEFAULT ?? openai/gpt-4o-mini</code>.
+        Chat context is compressed before model calls when the estimated prompt reaches 80% of the
+        agent model context window. Background LLM jobs use the same catalog-backed budget policy to
+        trim extraction, suggestion, and meeting-finalize prompts before calling OpenRouter. The
+        thresholds live beside the model catalog in <code>DEFAULT_CHAT_MEMORY</code> and
+        <code>DEFAULT_LLM_CONTEXT</code>.
       </p>
       <p>
         After Phase 5 verification works end-to-end (events embedded, search bar returns hits), open
@@ -271,8 +268,7 @@ AGENT_MODEL=qwen/qwen3.7-max
       </p>
 
       <h2 id="reembed">
-        Re-embed procedure (when changing <code>EMBEDDING_MODEL</code> or
-        <code>EMBEDDING_DIMENSIONS</code>)
+        Re-embed procedure (when changing the catalog embedding model or dimensions)
       </h2>
       <p>
         The embedding model is pinned. Changing it invalidates every vector in the existing
@@ -282,18 +278,16 @@ AGENT_MODEL=qwen/qwen3.7-max
       </p>
       <ol>
         <li>
-          <strong>Update env</strong> in <code>.env</code> (and staging/production):
-          <pre><code>EMBEDDING_MODEL=openai/text-embedding-3-large
-EMBEDDING_DIMENSIONS=3072
-</code></pre>
-          Leave <code>QDRANT_COLLECTION=events</code> unchanged — the worker keeps writing to the
-          current collection until step 5.
+          <strong>Update the model catalog</strong> in
+          <code>packages/shared/src/llm/models.ts</code>. Leave
+          <code>QDRANT_COLLECTION=events</code> unchanged — the worker keeps writing to the current
+          collection until step 5.
         </li>
         <li>
           <strong>Create the new collection</strong> with the new vector size. This step is
           <strong>mandatory</strong> — the embed worker uses <code>requireExisting=true</code> when
           a <code>targetCollection</code> is on the job, so a stale worker process started before
-          the env change cannot silently auto-create the new collection at the OLD dimension and
+          the catalog change cannot silently auto-create the new collection at the old dimension and
           corrupt the cutover. The worker errors loudly if the collection is missing.
           <pre><code>curl -s -X PUT "$QDRANT_URL/collections/events_v2" \
   -H "content-type: application/json" \

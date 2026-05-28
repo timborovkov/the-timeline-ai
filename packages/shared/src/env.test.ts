@@ -20,27 +20,28 @@ afterEach(() => {
 });
 
 describe('getEnv', () => {
-  it('allows the default embedding model without explicit dimensions', () => {
-    setBaseEnv({ EMBEDDING_MODEL: undefined, EMBEDDING_DIMENSIONS: undefined });
-
-    expect(getEnv().EMBEDDING_DIMENSIONS).toBeUndefined();
-  });
-
-  it('requires explicit dimensions for non-default embedding models', () => {
+  it('does not require model selection env vars', () => {
     setBaseEnv({
-      EMBEDDING_MODEL: 'openai/text-embedding-3-large',
+      EMBEDDING_MODEL: undefined,
       EMBEDDING_DIMENSIONS: undefined,
+      TRANSCRIPTION_MODEL: undefined,
+      CHAT_MODEL_DEFAULT: undefined,
+      EXTRACTION_MODEL: undefined,
+      AGENT_MODEL: undefined,
+      VISION_MODEL: undefined,
     });
 
-    expect(() => getEnv()).toThrow(/EMBEDDING_DIMENSIONS is required/);
+    expect(getEnv().OPENROUTER_API_KEY).toBeUndefined();
   });
 
-  it('accepts non-default embedding models when dimensions are explicit', () => {
+  it('ignores legacy model env vars because model config is code-owned', () => {
     setBaseEnv({
       EMBEDDING_MODEL: 'openai/text-embedding-3-large',
       EMBEDDING_DIMENSIONS: '3072',
+      AGENT_MODEL: 'anthropic/not-used',
     });
 
-    expect(getEnv().EMBEDDING_DIMENSIONS).toBe(3072);
+    expect('EMBEDDING_MODEL' in getEnv()).toBe(false);
+    expect('AGENT_MODEL' in getEnv()).toBe(false);
   });
 });

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { resetEnvForTests } from '../env.js';
 
 import { chatStructured, resolveAgentModelId, streamChat } from './chat.js';
+import { TIMELINE_MODELS } from './models.js';
 
 import type { LanguageModel } from 'ai';
 
@@ -32,7 +33,6 @@ beforeEach(() => {
     DATABASE_URL: 'postgres://x:y@localhost:5432/x',
     OPENROUTER_API_KEY: 'sk-test-key',
     OPENROUTER_BASE_URL: 'https://example.test/v1',
-    EXTRACTION_MODEL: 'openai/test-model',
   };
   resetEnvForTests();
 });
@@ -52,28 +52,15 @@ describe('chatStructured', () => {
       { model: makeMockModel('{"name":"Apple","type":"company"}') },
     );
     expect(result.object).toEqual({ name: 'Apple', type: 'company' });
-    expect(result.model).toBe('openai/test-model');
+    expect(result.model).toBe(TIMELINE_MODELS.extraction.id);
   });
 
-  it('prefers EXTRACTION_MODEL over CHAT_MODEL_DEFAULT', async () => {
-    process.env.CHAT_MODEL_DEFAULT = 'anthropic/should-not-pick';
-    resetEnvForTests();
+  it('uses the predefined extraction model catalog entry', async () => {
     const result = await chatStructured(
       { schema: z.object({ k: z.number() }), prompt: 'p' },
       { model: makeMockModel('{"k":1}') },
     );
-    expect(result.model).toBe('openai/test-model');
-  });
-
-  it('falls back to CHAT_MODEL_DEFAULT when EXTRACTION_MODEL is unset', async () => {
-    delete process.env.EXTRACTION_MODEL;
-    process.env.CHAT_MODEL_DEFAULT = 'anthropic/fallback';
-    resetEnvForTests();
-    const result = await chatStructured(
-      { schema: z.object({ k: z.number() }), prompt: 'p' },
-      { model: makeMockModel('{"k":1}') },
-    );
-    expect(result.model).toBe('anthropic/fallback');
+    expect(result.model).toBe(TIMELINE_MODELS.extraction.id);
   });
 
   it('throws when OPENROUTER_API_KEY is missing AND no model is injected', async () => {
@@ -86,20 +73,8 @@ describe('chatStructured', () => {
 });
 
 describe('resolveAgentModelId', () => {
-  it('prefers AGENT_MODEL over CHAT_MODEL_DEFAULT', () => {
-    process.env.AGENT_MODEL = 'openai/gpt-4o';
-    process.env.CHAT_MODEL_DEFAULT = 'openai/gpt-4o-mini';
-    resetEnvForTests();
-    expect(resolveAgentModelId()).toBe('openai/gpt-4o');
-  });
-  it('falls back to CHAT_MODEL_DEFAULT then the static default', () => {
-    delete process.env.AGENT_MODEL;
-    process.env.CHAT_MODEL_DEFAULT = 'anthropic/fallback';
-    resetEnvForTests();
-    expect(resolveAgentModelId()).toBe('anthropic/fallback');
-    delete process.env.CHAT_MODEL_DEFAULT;
-    resetEnvForTests();
-    expect(resolveAgentModelId()).toBe('openai/gpt-4o-mini');
+  it('uses the predefined agent model catalog entry', () => {
+    expect(resolveAgentModelId()).toBe(TIMELINE_MODELS.agent.id);
   });
 });
 

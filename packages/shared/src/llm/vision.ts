@@ -3,16 +3,17 @@ import { generateText, type FilePart, type ImagePart, type LanguageModel } from 
 
 import { getEnv } from '../env.js';
 
+import { TIMELINE_MODELS } from './models.js';
+
 /**
  * Vision-based text extraction. One inference layer for OCR/transcription of
  * non-text documents: images, PDFs, and any future media type a vision model
  * accepts natively.
  *
  * Routes through the same OpenRouter provider as `llm.chat` so model
- * selection, billing, and rate limits stay unified. The model id resolves to
- * `VISION_MODEL` env if set, else `CHAT_MODEL_DEFAULT`, else a vision-capable
- * default. Pinned because the extraction quality + token cost depend
- * sharply on the model; cutovers should be deliberate and re-runnable via
+ * selection, billing, and rate limits stay unified. The model id is pinned in
+ * `TIMELINE_MODELS` because extraction quality + token cost depend sharply on
+ * the model; cutovers should be deliberate and re-runnable via
  * `redocument-extract --force`.
  *
  * Cost notes:
@@ -48,14 +49,7 @@ export interface VisionDeps {
 }
 
 function resolveVisionModelId(): string {
-  const env = getEnv();
-  return (
-    env.VISION_MODEL ??
-    env.CHAT_MODEL_DEFAULT ??
-    // OpenAI gpt-4o-mini handles vision and is the cheapest default that
-    // works for both images and PDFs through OpenRouter.
-    'openai/gpt-4o-mini'
-  );
+  return TIMELINE_MODELS.vision.id;
 }
 
 function buildDefaultModel(modelId: string): LanguageModel {

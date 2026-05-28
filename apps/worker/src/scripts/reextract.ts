@@ -15,7 +15,7 @@
  * extraction time (in the worker), not here.
  */
 import { closeDb, getDb, rawEvents } from '@timeline/db';
-import { getEnv, queue } from '@timeline/shared';
+import { llm, queue } from '@timeline/shared';
 import { and, asc, eq, gt, isNotNull, or, type SQL, sql } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -46,8 +46,7 @@ function parseArgs(): { teamId: string; limit: number; dryRun: boolean } {
 
 async function main(): Promise<void> {
   const { teamId, limit, dryRun } = parseArgs();
-  const env = getEnv();
-  const modelId = env.EXTRACTION_MODEL ?? env.CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini';
+  const modelId = llm.TIMELINE_MODELS.extraction.id;
   const modelVersion = `${modelId}@${EXTRACTION_CODE_VERSION}`;
   console.log(
     `[reextract] team=${teamId} modelVersion=${modelVersion} limit=${

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { resetEnvForTests } from '../env.js';
 
+import { TIMELINE_MODELS } from './models.js';
 import { extractTextFromMedia, resolveVisionModelId } from './vision.js';
 
 import type { LanguageModel } from 'ai';
@@ -166,10 +167,7 @@ describe('extractTextFromMedia', () => {
     expect(text).toMatch(/no commentary|no preamble|transcribe faithfully/i);
   });
 
-  it('resolveVisionModelId honors VISION_MODEL env override', () => {
-    expect(resolveVisionModelId()).toBe('openai/gpt-4o-mini');
-    process.env = { ...process.env, VISION_MODEL: 'anthropic/claude-3-5-sonnet' };
-    resetEnvForTests();
-    expect(resolveVisionModelId()).toBe('anthropic/claude-3-5-sonnet');
+  it('resolveVisionModelId uses the predefined vision model catalog entry', () => {
+    expect(resolveVisionModelId()).toBe(TIMELINE_MODELS.vision.id);
   });
 });

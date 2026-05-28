@@ -61,7 +61,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           `extract: OPENROUTER_API_KEY not configured; cannot run extraction`,
         );
       }
-      const modelId = env.EXTRACTION_MODEL ?? env.CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini';
+      const modelId = llm.TIMELINE_MODELS.extraction.id;
       const modelVersion = makeModelVersion(modelId);
 
       // Cross-process idempotency. Two extract workers (or two retries on
@@ -117,9 +117,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
         const skipPatch = JSON.stringify({
           extraction_skipped_at: new Date().toISOString(),
           extraction_skipped_reason: `visibility=${row.visibility}`,
-          extraction_model_version: makeModelVersion(
-            env.EXTRACTION_MODEL ?? env.CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini',
-          ),
+          extraction_model_version: makeModelVersion(modelId),
         });
         await deps.db
           .update(rawEvents)
@@ -170,19 +168,22 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
         sourceMetadata: unknown;
       }[];
 
-      const prompt = extract.buildExtractionPrompt({
-        current: { occurredAt: row.occurredAt.toISOString(), text },
-        recent: recentRows
-          .map((r) => ({
-            occurredAt: r.occurredAt.toISOString(),
-            text: embedding.renderRawEventForAi({
-              source: r.source,
-              contentText: r.contentText,
-              sourceMetadata: r.sourceMetadata,
-            }),
-          }))
-          .filter((r): r is { occurredAt: string; text: string } => Boolean(r.text)),
-      });
+      const prompt = llm.truncateTextToTokenBudget(
+        extract.buildExtractionPrompt({
+          current: { occurredAt: row.occurredAt.toISOString(), text },
+          recent: recentRows
+            .map((r) => ({
+              occurredAt: r.occurredAt.toISOString(),
+              text: embedding.renderRawEventForAi({
+                source: r.source,
+                contentText: r.contentText,
+                sourceMetadata: r.sourceMetadata,
+              }),
+            }))
+            .filter((r): r is { occurredAt: string; text: string } => Boolean(r.text)),
+        }),
+        llm.inputTokenBudgetFor(llm.TIMELINE_MODELS.extraction),
+      );
 
       const result = await llm.chatStructured({
         schema: extract.extractionResultSchema,

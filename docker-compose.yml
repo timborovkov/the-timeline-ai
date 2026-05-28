@@ -133,8 +133,6 @@ services:
       AUTH_SECRET: ${AUTH_SECRET}
       AUTH_URL: http://localhost:3000
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openai/text-embedding-3-small}
-      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET}
       POSTMARK_WEBHOOK_SECRET: ${POSTMARK_WEBHOOK_SECRET}
@@ -166,8 +164,6 @@ services:
       S3_SECRET_ACCESS_KEY: timeline_dev_secret
       S3_FORCE_PATH_STYLE: 'true'
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openai/text-embedding-3-small}
-      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
     depends_on:
       postgres:
         condition: service_healthy

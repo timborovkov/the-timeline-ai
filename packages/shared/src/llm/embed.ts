@@ -1,7 +1,9 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { embed as aiEmbed, type EmbeddingModel } from 'ai';
 
-import { DEFAULT_EMBEDDING_MODEL, getEnv } from '../env.js';
+import { getEnv } from '../env.js';
+
+import { TIMELINE_MODELS } from './models.js';
 
 export interface EmbedInput {
   text: string;
@@ -18,8 +20,7 @@ export interface EmbedDeps {
 }
 
 function resolveModelId(): string {
-  const env = getEnv();
-  return env.EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODEL;
+  return TIMELINE_MODELS.embedding.id;
 }
 
 function buildDefaultModel(modelId: string): EmbeddingModel {
@@ -37,7 +38,7 @@ function buildDefaultModel(modelId: string): EmbeddingModel {
 }
 
 /**
- * Embed a single piece of text. Pinned to `EMBEDDING_MODEL`; the model id
+ * Embed a single piece of text. Pinned in `TIMELINE_MODELS`; the model id
  * is returned so callers can stamp it onto the Qdrant payload (load-bearing
  * for the re-embed procedure — points written with old + new models coexist
  * during cutover).

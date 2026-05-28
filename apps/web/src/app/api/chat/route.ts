@@ -44,7 +44,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const chatRequestSchema = z.object({
   // Accept the structurally-validated UI messages from @ai-sdk/react useChat.
   // We re-validate before forwarding to the model.
-  messages: z.array(z.unknown()).max(50),
+  messages: z.array(z.unknown()).max(llm.DEFAULT_CHAT_MEMORY.maxRequestMessages),
   // Phase 8: optional persistence target. UUID-shape pre-checked here; the
   // scope helper re-verifies the session belongs to the team before write.
   sessionId: z.string().regex(UUID_RE).optional(),
@@ -198,6 +198,28 @@ export async function POST(req: Request): Promise<Response> {
   }
   const uiMessages = validation.data;
   const messages = await convertToModelMessages(uiMessages);
+  const modelId = llm.resolveAgentModelId();
+  const memory = await llm.compressMessagesForContext({
+    system,
+    messages,
+    model: () => llm.buildOpenRouterLanguageModel(llm.TIMELINE_MODELS.summarization.id),
+    modelId,
+    contextWindowTokens: llm.TIMELINE_MODELS.agent.contextWindowTokens,
+  });
+  if (memory.compressed) {
+    log.info(
+      {
+        teamId: active.teamId,
+        userId: session.user.id,
+        sessionId: sessionId ?? null,
+        estimatedTokens: memory.estimatedTokens,
+        triggerTokens: memory.triggerTokens,
+        keptMessages: memory.keptMessages,
+        summarizedMessages: memory.summarizedMessages,
+      },
+      'chat history compressed',
+    );
+  }
 
   // The "latest user turn" is the trailing user message in the array. We
   // persist only the delta (this user turn + the new assistant turn),
@@ -207,8 +229,9 @@ export async function POST(req: Request): Promise<Response> {
 
   const result = llm.streamChat({
     system,
-    messages,
+    messages: memory.messages,
     tools,
+    model: modelId,
     maxSteps: 5,
     // Propagate client disconnects to OpenRouter so we stop paying for
     // tokens nobody will see. Without this, a user navigating away mid-

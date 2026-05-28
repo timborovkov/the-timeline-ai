@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resetEnvForTests } from '../env.js';
 
 import { embed } from './embed.js';
+import { TIMELINE_MODELS } from './models.js';
 
 import type { EmbeddingModel } from 'ai';
 
@@ -27,8 +28,6 @@ beforeEach(() => {
     DATABASE_URL: 'postgres://x:y@localhost:5432/x',
     OPENROUTER_API_KEY: 'sk-test',
     OPENROUTER_BASE_URL: 'https://example.test/v1',
-    EMBEDDING_MODEL: 'openai/test-embed',
-    EMBEDDING_DIMENSIONS: '4',
   };
   resetEnvForTests();
 });
@@ -42,14 +41,12 @@ describe('llm.embed', () => {
   it('returns the vector and the pinned model id', async () => {
     const result = await embed({ text: 'hello' }, { model: makeMockModel([[0.1, 0.2, 0.3, 0.4]]) });
     expect(result.vector).toEqual([0.1, 0.2, 0.3, 0.4]);
-    expect(result.model).toBe('openai/test-embed');
+    expect(result.model).toBe(TIMELINE_MODELS.embedding.id);
   });
 
-  it('falls back to text-embedding-3-small when EMBEDDING_MODEL is unset', async () => {
-    delete process.env.EMBEDDING_MODEL;
-    resetEnvForTests();
+  it('uses the predefined embedding model catalog entry', async () => {
     const result = await embed({ text: 'hello' }, { model: makeMockModel([[1, 2, 3, 4]]) });
-    expect(result.model).toBe('openai/text-embedding-3-small');
+    expect(result.model).toBe(TIMELINE_MODELS.embedding.id);
   });
 
   it('throws when OPENROUTER_API_KEY is missing AND no model is injected', async () => {

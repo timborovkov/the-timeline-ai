@@ -12,11 +12,13 @@ import { type z, type ZodTypeAny } from 'zod';
 
 import { getEnv } from '../env.js';
 
+import { TIMELINE_MODELS } from './models.js';
+
 export interface ChatStructuredInput<TSchema extends ZodTypeAny> {
   schema: TSchema;
   prompt: string;
   system?: string;
-  /** Override the configured extraction/chat model for this call. */
+  /** Override the configured extraction model for this call. */
   model?: string;
 }
 
@@ -32,16 +34,14 @@ export interface ChatStructuredResult<TSchema extends ZodTypeAny> {
 }
 
 function resolveDefaultModelId(): string {
-  const env = getEnv();
-  return env.EXTRACTION_MODEL ?? env.CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini';
+  return TIMELINE_MODELS.extraction.id;
 }
 
 function resolveAgentModelId(): string {
-  const env = getEnv();
-  return env.AGENT_MODEL ?? env.CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini';
+  return TIMELINE_MODELS.agent.id;
 }
 
-function buildDefaultModel(modelId: string): LanguageModel {
+export function buildOpenRouterLanguageModel(modelId: string): LanguageModel {
   const env = getEnv();
   if (!env.OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY is required for llm.chat');
@@ -69,7 +69,7 @@ export async function chatStructured<TSchema extends ZodTypeAny>(
   deps: ChatDeps = {},
 ): Promise<ChatStructuredResult<TSchema>> {
   const modelId = input.model ?? resolveDefaultModelId();
-  const model = deps.model ?? buildDefaultModel(modelId);
+  const model = deps.model ?? buildOpenRouterLanguageModel(modelId);
   // generateObject is the right primitive for structured-output extraction;
   // the "use generateText with output" deprecation guidance applies to chat
   // surfaces where streaming matters. Revisit once ai v6 stabilises.
@@ -119,7 +119,7 @@ export function streamChat<TTools extends ToolSet>(
   deps: ChatDeps = {},
 ): StreamTextResult<TTools, never> {
   const modelId = input.model ?? resolveAgentModelId();
-  const model = deps.model ?? buildDefaultModel(modelId);
+  const model = deps.model ?? buildOpenRouterLanguageModel(modelId);
   const args: Parameters<typeof streamText>[0] = {
     model,
     system: input.system,

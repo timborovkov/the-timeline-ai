@@ -2,8 +2,8 @@
  * Re-embed document chunks script (Phase 9).
  *
  * Walks document_chunks for one team and enqueues per-chunk embed jobs.
- * Use after changing the embedding model (`EMBEDDING_MODEL` env or its
- * dimensions) — point ids are deterministic over (chunkId, model), so a
+ * Use after changing the embedding model catalog entry or its dimensions —
+ * point ids are deterministic over (chunkId, model), so a
  * new model writes a new point alongside the old one. With
  * --target-collection, the new points land in a fresh collection that
  * the operator created at the new vector dimensions (mirrors the reembed

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { resetEnvForTests } from '../env.js';
 
+import { TIMELINE_MODELS } from './models.js';
 import { transcribeAudio } from './transcribe.js';
 
 import type { TranscriptionModel } from 'ai';
@@ -25,7 +26,7 @@ function makeMockModel(text: string): TranscriptionModel {
         warnings: [],
         response: {
           timestamp: new Date(),
-          modelId: 'openai/whisper-1',
+          modelId: TIMELINE_MODELS.transcription.id,
           headers: {},
         },
       }),
@@ -39,7 +40,6 @@ beforeEach(() => {
     DATABASE_URL: 'postgres://x:y@localhost:5432/x',
     OPENROUTER_API_KEY: 'sk-test-key',
     OPENROUTER_BASE_URL: 'https://example.test/v1',
-    TRANSCRIPTION_MODEL: 'openai/whisper-1',
   };
   resetEnvForTests();
 });
@@ -55,17 +55,16 @@ describe('transcribeAudio', () => {
       { audio: Buffer.from('fake-audio-bytes') },
       { model: makeMockModel('hello world') },
     );
-    expect(result).toEqual({ text: 'hello world', model: 'openai/whisper-1' });
+    expect(result).toEqual({ text: 'hello world', model: TIMELINE_MODELS.transcription.id });
   });
 
-  it('falls back to openai/whisper-1 when TRANSCRIPTION_MODEL is unset', async () => {
-    delete process.env.TRANSCRIPTION_MODEL;
-    resetEnvForTests();
+  it('uses the predefined transcription model catalog entry', async () => {
     const result = await transcribeAudio(
       { audio: Buffer.from('x') },
       { model: makeMockModel('ok') },
     );
-    expect(result.model).toBe('openai/whisper-1');
+    expect(result.model).toBe(TIMELINE_MODELS.transcription.id);
+    expect(TIMELINE_MODELS.transcription.id).toBe('openai/whisper-large-v3');
   });
 
   it('throws when OPENROUTER_API_KEY is missing AND no model is injected', async () => {

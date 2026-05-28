@@ -3,6 +3,8 @@ import { experimental_transcribe as aiTranscribe, type TranscriptionModel } from
 
 import { getEnv } from '../env.js';
 
+import { TIMELINE_MODELS } from './models.js';
+
 export interface TranscribeInput {
   /** Raw audio bytes. The SDK builds the multipart upload internally and
    *  Whisper auto-detects the format, so filename/mimeType hints from the
@@ -28,11 +30,10 @@ export interface TranscribeDeps {
 }
 
 function resolveModelId(): string {
-  const env = getEnv();
-  // OpenRouter route-style id ("openai/whisper-1") is accepted by
-  // `createOpenAI({ baseURL: openrouter })` because OpenRouter forwards
-  // the multipart body untouched and uses its own model routing.
-  return env.TRANSCRIPTION_MODEL ?? 'openai/whisper-1';
+  // OpenRouter route-style ids are accepted by `createOpenAI({ baseURL:
+  // openrouter })` because OpenRouter forwards the multipart body untouched
+  // and uses its own model routing.
+  return TIMELINE_MODELS.transcription.id;
 }
 
 function buildDefaultModel(modelId: string): TranscriptionModel {
@@ -53,7 +54,7 @@ function buildDefaultModel(modelId: string): TranscriptionModel {
 
 /**
  * Transcribe audio via OpenRouter's OpenAI-compatible
- * `/audio/transcriptions` endpoint. Pinned to `TRANSCRIPTION_MODEL` (env);
+ * `/audio/transcriptions` endpoint. Pinned in `TIMELINE_MODELS`;
  * the result includes the model name so callers can persist it for future
  * re-transcription audits.
  *
