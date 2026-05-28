@@ -18,7 +18,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 
 import {
   createCalendarEventAction,
@@ -233,10 +233,17 @@ export function CalendarView({
   const [surfaceError, setSurfaceError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [pending, startTransition] = useTransition();
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setLocalEvents(events);
   }, [events]);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+    };
+  }, []);
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
@@ -344,6 +351,7 @@ export function CalendarView({
         visibilityUserIds: draft.visibility === 'specific_users' ? draft.visibilityUserIds : null,
       };
       setSurfaceError(null);
+      if (savedTimer.current) clearTimeout(savedTimer.current);
       setSaveState('saving');
       setOpen(false);
       setLocalEvents((current) =>
@@ -358,7 +366,9 @@ export function CalendarView({
         setLocalEvents((current) =>
           editing
             ? current.map((event) =>
-                event === optimisticEvent && originalEvent ? originalEvent : event,
+                (event === optimisticEvent || event.id === optimisticId) && originalEvent
+                  ? originalEvent
+                  : event,
               )
             : current.filter((event) => event !== optimisticEvent && event.id !== optimisticId),
         );
@@ -376,7 +386,7 @@ export function CalendarView({
       }
       setSaveState('saved');
       router.refresh();
-      window.setTimeout(() => {
+      savedTimer.current = setTimeout(() => {
         setSaveState('idle');
       }, 1600);
     });
