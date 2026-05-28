@@ -2,14 +2,29 @@ import { MockLanguageModelV3 } from 'ai/test';
 import { describe, expect, it } from 'vitest';
 
 import { compressMessagesForContext } from './memory.js';
-import { estimateTextTokens, inputTokenBudgetFor, truncateTextToTokenBudget } from './models.js';
+import {
+  DEFAULT_CHAT_MEMORY,
+  estimateTextTokens,
+  inputTokenBudgetFor,
+  TIMELINE_MODELS,
+  truncateTextToTokenBudget,
+} from './models.js';
 
 import type { LanguageModel, ModelMessage } from 'ai';
+
+function promptText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return value.map(promptText).join('\n');
+  if ('text' in value && typeof value.text === 'string') return value.text;
+  if ('content' in value) return promptText(value.content);
+  return JSON.stringify(value);
+}
 
 function makeSummaryModel(text: string, onPrompt?: (prompt: string) => void): LanguageModel {
   return new MockLanguageModelV3({
     doGenerate: ((opts: { prompt?: unknown }) => {
-      onPrompt?.(JSON.stringify(opts.prompt));
+      onPrompt?.(promptText(opts.prompt));
       return Promise.resolve({
         finishReason: 'stop',
         usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
@@ -147,6 +162,30 @@ describe('compressMessagesForContext', () => {
 
     expect(prompt).toContain('search_timeline');
     expect(prompt).toContain('Ada launches on June 3');
+  });
+
+  it('truncates the summarization transcript to the summarization model input budget', async () => {
+    let prompt = '';
+    const messages: ModelMessage[] = [
+      { role: 'user', content: 'very old context '.repeat(70_000) },
+      { role: 'assistant', content: 'older answer' },
+      { role: 'user', content: 'latest question' },
+    ];
+
+    await compressMessagesForContext({
+      system: 'system',
+      messages,
+      model: makeSummaryModel('Oversized history was summarized.', (value) => {
+        prompt = value;
+      }),
+      modelId: 'test/chat',
+    });
+
+    const summaryInputBudget = inputTokenBudgetFor(TIMELINE_MODELS.summarization, {
+      reservedOutputTokens: DEFAULT_CHAT_MEMORY.summaryMaxOutputTokens,
+    });
+    expect(estimateTextTokens(prompt)).toBeLessThanOrEqual(summaryInputBudget);
+    expect(prompt).toContain('…');
   });
 
   it('keeps assistant tool calls and tool results together', async () => {
