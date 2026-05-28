@@ -481,7 +481,7 @@ async function handleMessageEvent(
   if (inserted) {
     if (text.trim()) await enqueueTextPipelines(deps, inserted);
   }
-  if (!isEdit && target) {
+  if (target) {
     await processSlackAttachments(deps, api, {
       teamId: target.teamId,
       parentRawEventId: target.id,
@@ -622,7 +622,17 @@ async function processSlackAttachments(
   const skipped: Record<string, unknown>[] = [];
   for (const file of input.files) {
     const filename = file.name ?? file.title ?? file.id;
-    if (await slackAttachmentAlreadyProcessed(deps.db, input.parentRawEventId, file.id)) continue;
+    if (
+      await slackAttachmentAlreadyProcessed(deps.db, {
+        parentRawEventId: input.parentRawEventId,
+        workspaceId: input.workspace.id,
+        channelId: input.channelId,
+        messageTs: input.messageTs,
+        fileId: file.id,
+      })
+    ) {
+      continue;
+    }
     const decision =
       processed >= CONVERSATIONAL_ATTACHMENT_LIMITS.maxProcessedPerMessage
         ? { kind: 'skip' as const, reason: 'too_many_attachments' }
@@ -726,16 +736,23 @@ async function processSlackAttachments(
 
 async function slackAttachmentAlreadyProcessed(
   db: Db,
-  parentRawEventId: string,
-  fileId: string,
+  input: {
+    parentRawEventId: string;
+    workspaceId: string;
+    channelId: string;
+    messageTs: string;
+    fileId: string;
+  },
 ): Promise<boolean> {
   const audioRows = await db
     .select({ id: rawEvents.id })
     .from(rawEvents)
     .where(
       and(
-        sql`${rawEvents.sourceMetadata} ->> 'slack_parent_raw_event_id' = ${parentRawEventId}`,
-        sql`${rawEvents.sourceMetadata} ->> 'slack_file_id' = ${fileId}`,
+        sql`${rawEvents.sourceMetadata} ->> 'slack_workspace_id' = ${input.workspaceId}`,
+        sql`${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${input.channelId}`,
+        sql`${rawEvents.sourceMetadata} ->> 'slack_message_ts' = ${input.messageTs}`,
+        sql`${rawEvents.sourceMetadata} ->> 'slack_file_id' = ${input.fileId}`,
       ),
     )
     .limit(1);
@@ -746,8 +763,10 @@ async function slackAttachmentAlreadyProcessed(
     .from(documents)
     .where(
       and(
-        sql`${documents.metadata} ->> 'parent_raw_event_id' = ${parentRawEventId}`,
-        sql`${documents.metadata} ->> 'slack_file_id' = ${fileId}`,
+        sql`${documents.metadata} ->> 'slack_workspace_id' = ${input.workspaceId}`,
+        sql`${documents.metadata} ->> 'slack_channel_id' = ${input.channelId}`,
+        sql`${documents.metadata} ->> 'slack_message_ts' = ${input.messageTs}`,
+        sql`${documents.metadata} ->> 'slack_file_id' = ${input.fileId}`,
       ),
     )
     .limit(1);
@@ -801,6 +820,9 @@ async function createSlackDocumentAttachment(
         metadata: {
           source: 'slack',
           slack_file_id: input.file.id,
+          slack_workspace_id: input.workspace.id,
+          slack_channel_id: input.channelId,
+          slack_message_ts: input.messageTs,
           parent_raw_event_id: input.parentRawEventId,
         },
       })
@@ -827,6 +849,9 @@ async function createSlackDocumentAttachment(
           document_version: 1,
           source: 'slack',
           slack_file_id: input.file.id,
+          slack_workspace_id: input.workspace.id,
+          slack_channel_id: input.channelId,
+          slack_message_ts: input.messageTs,
           parent_raw_event_id: input.parentRawEventId,
         },
       })
@@ -976,10 +1001,7 @@ async function upsertSlackUserProfile(
   workspaceId: string,
   slackUserId: string,
 ): Promise<{ name: string | null; realName: string | null } | null> {
-  let profile: Awaited<ReturnType<SlackApi['usersInfo']>>;
-  try {
-    profile = await api.usersInfo(slackUserId);
-  } catch {
+  async function preserveExistingProfile() {
     const existing = await db
       .select({ name: slackUsers.name, realName: slackUsers.realName })
       .from(slackUsers)
@@ -996,8 +1018,19 @@ async function upsertSlackUserProfile(
       .returning({ name: slackUsers.name, realName: slackUsers.realName });
     return rows[0] ?? null;
   }
-  const name = profile?.profile?.display_name ?? profile?.name ?? null;
-  const realName = profile?.profile?.real_name ?? profile?.real_name ?? null;
+
+  let profile: Awaited<ReturnType<SlackApi['usersInfo']>>;
+  try {
+    profile = await api.usersInfo(slackUserId);
+  } catch {
+    return preserveExistingProfile();
+  }
+  if (!profile) return preserveExistingProfile();
+
+  const name = profile.profile?.display_name ?? profile.name ?? null;
+  const realName = profile.profile?.real_name ?? profile.real_name ?? null;
+  const email = profile.profile?.email ?? null;
+  const avatarUrl = profile.profile?.image_72 ?? null;
   const rows = await db
     .insert(slackUsers)
     .values({
@@ -1005,18 +1038,18 @@ async function upsertSlackUserProfile(
       slackUserId,
       name,
       realName,
-      email: profile?.profile?.email ?? null,
-      avatarUrl: profile?.profile?.image_72 ?? null,
-      metadata: profile ?? {},
+      email,
+      avatarUrl,
+      metadata: profile,
     })
     .onConflictDoUpdate({
       target: [slackUsers.workspaceId, slackUsers.slackUserId],
       set: {
         name,
         realName,
-        email: profile?.profile?.email ?? null,
-        avatarUrl: profile?.profile?.image_72 ?? null,
-        metadata: profile ?? {},
+        email,
+        avatarUrl,
+        metadata: profile,
         updatedAt: new Date(),
       },
     })

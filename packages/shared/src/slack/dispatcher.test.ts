@@ -295,6 +295,37 @@ describe('Slack dispatcher routing', () => {
     ).not.toBeNull();
   });
 
+  it('preserves cached Slack profile fields when users.info returns no user', async () => {
+    const fetchMock = vi.fn((url: string | URL | Request) => {
+      const href = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
+      if (href.includes('users.info')) return Promise.resolve(Response.json({ ok: true }));
+      if (href.includes('reactions.add') || href.includes('chat.postMessage')) {
+        return Promise.resolve(Response.json({ ok: true }));
+      }
+      return Promise.resolve(Response.json({ ok: true }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    await seedBoundSlackUser(db, 'C_DOCS');
+
+    await handleSlackEnvelope(
+      { db: db as never },
+      slackEnvelope('EvNullProfile', {
+        type: 'message',
+        channel: 'C_DOCS',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: 'hello',
+        ts: '1700000000.000300',
+      }),
+    );
+
+    const rows = await db
+      .select({ name: slackUsers.name, realName: slackUsers.realName })
+      .from(slackUsers)
+      .where(eq(slackUsers.id, SLACK_USER_ROW_ID));
+    expect(rows[0]).toMatchObject({ name: null, realName: 'Alice Slack' });
+  });
+
   it('captures Slack file_share messages and enqueues document extraction', async () => {
     await seedWorkspace(db, TEAM_A);
     await db.insert(slackConversationBindings).values({
@@ -436,6 +467,66 @@ describe('Slack dispatcher routing', () => {
     expect(editRows.rows[0]?.source_metadata).toMatchObject({
       slack_event_ts: '1700000010.000100',
     });
+  });
+
+  it('processes files newly added by a Slack message edit', async () => {
+    await seedBoundSlackUser(db);
+    const upload = vi.fn().mockResolvedValue(undefined);
+    const enqueueExtract = vi.fn().mockResolvedValue(undefined);
+    const originalFile = {
+      id: 'F_ORIGINAL',
+      name: 'original-plan.pdf',
+      mimetype: 'application/pdf',
+      size: 8,
+      url_private_download: 'https://files.example/original-plan.pdf',
+    };
+    const addedFile = {
+      id: 'F_ADDED',
+      name: 'added-plan.pdf',
+      mimetype: 'application/pdf',
+      size: 8,
+      url_private_download: 'https://files.example/added-plan.pdf',
+    };
+
+    await handleSlackEnvelope(
+      { db: db as never, documents: { upload, enqueueExtract } },
+      slackEnvelope('EvOriginalFiles', {
+        type: 'message',
+        subtype: 'file_share',
+        channel: 'C_DOCS',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: 'original',
+        ts: '1700000004.000100',
+        files: [originalFile],
+      }),
+    );
+    await handleSlackEnvelope(
+      { db: db as never, documents: { upload, enqueueExtract } },
+      slackEnvelope('EvEditedAddedFile', {
+        type: 'message',
+        subtype: 'message_changed',
+        channel: 'C_DOCS',
+        channel_type: 'channel',
+        ts: '1700000011.000100',
+        message: {
+          user: 'U_SLACK',
+          text: 'edited',
+          ts: '1700000004.000100',
+          files: [originalFile, addedFile],
+        },
+        previous_message: {
+          user: 'U_SLACK',
+          text: 'original',
+          ts: '1700000004.000100',
+        },
+      }),
+    );
+
+    const docs = await pg.query<{ count: string }>('SELECT count(*)::text AS count FROM documents');
+    expect(docs.rows[0]?.count).toBe('2');
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(enqueueExtract).toHaveBeenCalledTimes(2);
   });
 
   it('posts a slash command failure follow-up when the agent throws', async () => {
