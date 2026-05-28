@@ -115,7 +115,7 @@ services:
     profiles: ['app']
     build:
       context: .
-      dockerfile: apps/web/Dockerfile
+      dockerfile: docker/web.Dockerfile
     restart: unless-stopped
     ports:
       - '3000:3000'
@@ -150,7 +150,7 @@ services:
     profiles: ['app']
     build:
       context: .
-      dockerfile: apps/worker/Dockerfile
+      dockerfile: docker/worker.Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: production

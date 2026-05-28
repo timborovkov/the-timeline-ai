@@ -89,7 +89,10 @@
       </table>
       <p>
         Railway provisions Postgres and Redis as managed plugins (one click). Qdrant and RustFS are
-        deployed as custom services using their official Docker images.
+        deployed as custom services using their official Docker images. Portable app Dockerfiles
+        live under <code>docker/</code> for local/container-platform builds; keep the repo root free
+        of an app <code>Dockerfile</code> so Railpack follows the service
+        <code>railway.json</code> files.
       </p>
 
       <h2 id="initial-setup">Initial setup</h2>

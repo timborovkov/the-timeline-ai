@@ -77,7 +77,8 @@
         Add <code>web</code> and <code>worker</code> services pointing at this repo. Each uses the
         matching <code>railway.json</code> (<code>apps/web/railway.json</code>,
         <code>apps/worker/railway.json</code>). Both app services use Railpack build commands that
-        install the pnpm workspace and build the packages they run.
+        install the pnpm workspace and build the packages they run. Portable app Dockerfiles live in
+        <code>docker/</code>; do not add a root <code>Dockerfile</code> for these services.
       </p>
 
       <h2 id="shared-variables">5. Shared variables</h2>
