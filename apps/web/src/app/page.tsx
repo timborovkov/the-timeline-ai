@@ -277,9 +277,9 @@ function Hero() {
               updates itself.
             </h1>
             <p className="mt-8 max-w-prose text-lg leading-relaxed text-fg-muted">
-              Voice-note the call. Forward the email. Drop a Meet, Teams, or Zoom link. The agent
-              extracts who, what, and when — reconciled against everything your team has ever said.
-              Ask anything; every answer cites its source.
+              Voice-note the call in Telegram. Capture the Slack thread. Forward the email. Drop a
+              Meet, Teams, or Zoom link. The agent extracts who, what, and when — reconciled against
+              everything your team has ever said. Ask anything; every answer cites its source.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
               <Button asChild size="lg">
