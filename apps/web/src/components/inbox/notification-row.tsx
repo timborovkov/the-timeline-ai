@@ -84,7 +84,12 @@ export function NotificationRow({
   }, []);
 
   function markRead(): void {
-    if (read) return;
+    if (
+      read &&
+      (individuallyReadRef.current || latestInitiallyReadRef.current || !bulkReadRef.current)
+    ) {
+      return;
+    }
     individuallyReadRef.current = true;
     readRef.current = true;
     setRead(true);
@@ -98,8 +103,9 @@ export function NotificationRow({
         // the server still has it as unread, and on ?unread=1 it'd
         // linger with read styling but never drop out.
         individuallyReadRef.current = latestInitiallyReadRef.current;
-        readRef.current = latestInitiallyReadRef.current;
-        setRead(latestInitiallyReadRef.current);
+        const next = latestInitiallyReadRef.current || bulkReadRef.current;
+        readRef.current = next;
+        setRead(next);
         return;
       }
       // On the unread-only view, the server filter excludes read rows —
