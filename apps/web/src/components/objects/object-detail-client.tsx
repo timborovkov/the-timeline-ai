@@ -41,6 +41,8 @@ type EditableField = 'status' | 'stage' | 'priority' | 'dueAt';
 type SaveState = 'idle' | 'saving' | 'saved';
 type DraftField = 'stage' | 'dueAt';
 
+const EDITABLE_FIELDS: EditableField[] = ['status', 'stage', 'priority', 'dueAt'];
+
 interface Props {
   detail: ObjectDetail;
   userId: string;
@@ -83,6 +85,12 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   const batchHadFailureRef = useRef(false);
   const focusedDraftsRef = useRef<Record<DraftField, boolean>>({ stage: false, dueAt: false });
   const savingDraftsRef = useRef<Record<DraftField, number>>({ stage: 0, dueAt: 0 });
+  const savingFieldsRef = useRef<Record<EditableField, number>>({
+    status: 0,
+    stage: 0,
+    priority: 0,
+    dueAt: 0,
+  });
 
   function updateLocalDetail(updater: (current: ObjectDetail) => ObjectDetail): void {
     const next = updater(localDetailRef.current);
@@ -98,13 +106,18 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
     return focusedDraftsRef.current[field] || savingDraftsRef.current[field] > 0;
   }
 
+  function fieldIsProtected(field: EditableField): boolean {
+    return savingFieldsRef.current[field] > 0 || (isDraftField(field) && draftIsProtected(field));
+  }
+
   useEffect(() => {
     setLocalDetail((current) => {
-      const next = {
-        ...detail,
-        stage: draftIsProtected('stage') ? current.stage : detail.stage,
-        dueAt: draftIsProtected('dueAt') ? current.dueAt : detail.dueAt,
-      };
+      const next = { ...detail };
+      for (const field of EDITABLE_FIELDS) {
+        if (fieldIsProtected(field)) {
+          next[field] = current[field] as never;
+        }
+      }
       localDetailRef.current = next;
       return next;
     });
@@ -123,6 +136,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
     if (sameEditableValue(previousValue, value)) return;
     setError(null);
     updateLocalDetail((current) => ({ ...current, [field]: value }));
+    savingFieldsRef.current[field] += 1;
     if (isDraftField(field)) savingDraftsRef.current[field] += 1;
     if (savedTimer.current) clearTimeout(savedTimer.current);
     setSaveState('saving');
@@ -163,6 +177,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
       if (isDraftField(field)) {
         savingDraftsRef.current[field] = Math.max(0, savingDraftsRef.current[field] - 1);
       }
+      savingFieldsRef.current[field] = Math.max(0, savingFieldsRef.current[field] - 1);
     });
   }
 
