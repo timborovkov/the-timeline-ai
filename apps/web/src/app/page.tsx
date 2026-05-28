@@ -439,36 +439,15 @@ function IndictmentCell({ label, body }: { label: string; body: string }) {
 function Solution() {
   return (
     <Section id="solution">
-      <IndexStrip>SOLUTION · THREE MOVES</IndexStrip>
-      <div className="mt-10 grid gap-10 sm:grid-cols-3 sm:gap-12">
-        <Pillar
-          n="01"
-          title="Capture is voice-first."
-          body="Three taps in Telegram, or a Slack DM while the thread is still warm. No forms, no schemas, no &ldquo;which project does this belong to.&rdquo;"
-        />
-        <Pillar
-          n="02"
-          title="Objects and tasks, derived from what you said."
-          body="The agent reads raw events and resolves them into objects — people, companies, deals, projects, documents — plus the tasks that fall out."
-        />
-        <Pillar
-          n="03"
-          title="Every answer is cited."
-          body="No black-box summaries. Click any claim, see the raw event it came from with author, timestamp, and source."
-        />
-      </div>
+      <IndexStrip>CONCEPTS · HOW IT FITS TOGETHER</IndexStrip>
+      <ConceptDiagram />
 
-      <div className="mt-20">
-        <IndexStrip>CONCEPTS · HOW IT FITS TOGETHER</IndexStrip>
-        <ConceptDiagram />
-
-        <div className="mt-10 max-w-3xl border-l-2 border-signal pl-5">
-          <Mono className="text-signal">THE PAYOFF</Mono>
-          <p className="mt-4 text-lg leading-snug text-fg">
-            The output looks like a CRM, a project tracker, and a doc index — current, queryable,
-            cited. You just never had to update it.
-          </p>
-        </div>
+      <div className="mt-10 max-w-3xl border-l-2 border-signal pl-5">
+        <Mono className="text-signal">THE PAYOFF</Mono>
+        <p className="mt-4 text-lg leading-snug text-fg">
+          The output looks like a CRM, a project tracker, and a doc index — current, queryable,
+          cited. You just never had to update it.
+        </p>
       </div>
     </Section>
   );
@@ -693,16 +672,6 @@ const CDG_STYLES = `
     100%      { opacity: 0.4; }
   }
 `;
-
-function Pillar({ n, title, body }: { n: string; title: string; body: string }) {
-  return (
-    <div>
-      <div className="font-mono text-xs uppercase tracking-[0.18em] text-fg-dim">{n}</div>
-      <h3 className="mt-3 text-xl font-semibold leading-snug tracking-tight">{title}</h3>
-      <p className="mt-3 text-base leading-[1.6] text-fg-muted">{body}</p>
-    </div>
-  );
-}
 
 function Surfaces() {
   return (
