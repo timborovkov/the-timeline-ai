@@ -57,6 +57,34 @@ pnpm dev
 
 Open <http://localhost:3000>.
 
+## Wipe a Railway environment
+
+The destructive dev wipe runs inside the deployed web/app service so Railway
+private service URLs resolve normally. Use it only for a non-production
+environment unless you intentionally want to wipe the linked resources.
+
+```bash
+railway login
+railway link
+# Select the workspace, project, environment, and web app service (web / @timeline/app).
+railway ssh
+
+pnpm dev:wipe
+```
+
+Set `NODE_ENV=development` and `ALLOW_DESTRUCTIVE_DEV_WIPE=wipe-dev` as Railway
+variables on the non-production app service before running the command. If those
+variables are not already present in the SSH shell, the full explicit form is:
+
+```bash
+NODE_ENV=development ALLOW_DESTRUCTIVE_DEV_WIPE=wipe-dev pnpm dev:wipe
+```
+
+`railway run` is not the same thing: it runs locally with Railway variables
+injected. For this workflow, SSH into the app container and run the wipe command
+there. Railway wipes require `ALLOW_DESTRUCTIVE_DEV_WIPE=wipe-dev` so a linked
+production shell cannot be wiped by setting `NODE_ENV` alone.
+
 ## External service setup
 
 These live behind their own walkthroughs because every account has its own

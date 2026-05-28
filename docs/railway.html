@@ -44,7 +44,7 @@
           <tr>
             <th>Service</th>
             <th>Type</th>
-            <th>Dockerfile</th>
+            <th>Build config</th>
             <th>Start command</th>
           </tr>
         </thead>
@@ -52,26 +52,14 @@
           <tr>
             <td><code>web</code></td>
             <td>App</td>
-            <td><code>apps/web/Dockerfile</code></td>
-            <td><code>node apps/web/start.mjs</code></td>
+            <td><code>apps/web/railway.json</code> (Railpack)</td>
+            <td><code>pnpm --filter @timeline/web start</code></td>
           </tr>
           <tr>
-            <td><code>worker-transcribe</code></td>
+            <td><code>worker</code></td>
             <td>App</td>
-            <td><code>apps/worker/Dockerfile</code></td>
-            <td><code>node apps/worker/dist/workers/transcribe.js</code></td>
-          </tr>
-          <tr>
-            <td><code>worker-extract</code></td>
-            <td>App</td>
-            <td><code>apps/worker/Dockerfile</code></td>
-            <td><code>node apps/worker/dist/workers/extract.js</code></td>
-          </tr>
-          <tr>
-            <td><code>worker-embed</code></td>
-            <td>App</td>
-            <td><code>apps/worker/Dockerfile</code></td>
-            <td><code>node apps/worker/dist/workers/embed.js</code></td>
+            <td><code>apps/worker/railway.json</code> (Railpack)</td>
+            <td><code>pnpm --filter @timeline/worker start</code></td>
           </tr>
           <tr>
             <td><code>postgres</code></td>
@@ -125,8 +113,8 @@
           <code>apps/web/railway.json</code>.
         </li>
         <li>
-          Add <code>worker-*</code> services from this repo, all pointing at
-          <code>apps/worker/railway.json</code> but with overridden start commands per worker type.
+          Add the <code>worker</code> service from this repo, pointing at
+          <code>apps/worker/railway.json</code>.
         </li>
       </ol>
 
@@ -302,30 +290,34 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
       <h2 id="deploy-flow">Deploy flow</h2>
       <ol>
         <li>Push to <code>main</code> (production) or <code>staging</code> branch.</li>
-        <li>Railway builds each service in parallel using its Dockerfile.</li>
+        <li>
+          Railway builds each app service with Railpack using the service's
+          <code>railway.json</code> build command. The build installs the full pnpm workspace, so
+          operational scripts are available in <code>railway ssh</code>. The web pre-deploy command
+          checks for <code>pnpm</code>, <code>tsx</code>, the wipe script, and the Drizzle migration
+          journal before applying migrations.
+        </li>
         <li>
           Migrations: run as a release-phase pre-deploy command on the <code>web</code> service and
           again from the web start wrapper under a Postgres advisory lock. The pre-deploy command is
           already wired in <code>apps/web/railway.json</code>:
-          <pre><code>"preDeployCommand": ["node packages/db/dist/migrate.js"]
+          <pre><code>"preDeployCommand": [
+  "sh -lc 'test -f scripts/env-reset.ts &amp;&amp; test -f packages/db/drizzle/meta/_journal.json &amp;&amp; pnpm exec tsx --version &amp;&amp; node packages/db/dist/migrate.js'"
+]
 </code></pre>
-          The script (<code>packages/db/src/migrate.ts</code>) is built by turbo as a dep of the web
-          build, and the entire <code>@timeline/db</code> package — including its
-          <code>drizzle/*.sql</code> files and a self-contained <code>node_modules</code> with
-          <code>postgres</code> + <code>drizzle-orm</code> — is copied into the runner image by the
-          <code>db-deployer</code> stage in <code>apps/web/Dockerfile</code>. The same migrate
-          entrypoint is called by <code>apps/web/start.mjs</code> before
-          <code>apps/web/server.js</code>. It applies any new SQL files against
-          <code>DATABASE_URL</code> and exits; failure blocks deploy or startup. Startup migrations
-          make dev resets converge on the next web boot even when no deploy is in progress.
+          The script (<code>packages/db/src/migrate.ts</code>) is built before deploy, and the
+          Railpack runtime keeps the workspace files and installed dependencies available to the
+          release command. The same migrate entrypoint is called by
+          <code>apps/web/start.mjs</code> before <code>apps/web/server.js</code>. It applies any new
+          SQL files against <code>DATABASE_URL</code> and exits; failure blocks deploy or startup.
+          Startup migrations make dev resets converge on the next web boot even when no deploy is in
+          progress.
           <p>
-            Worker services (<code>worker-transcribe</code>, <code>worker-extract</code>,
-            <code>worker-embed</code>) deploy in parallel with <code>web</code> and don't run
-            migrations themselves. They call <code>waitForMigrations()</code> from
-            <code>@timeline/db</code> at startup, which polls
-            <code>drizzle.__drizzle_migrations</code> until the row count matches the journal
-            bundled with the worker image. Default timeout 5 minutes. This avoids crash-looping on
-            every deploy that ships schema changes.
+            The worker service deploys in parallel with <code>web</code> and doesn't run migrations
+            itself. It calls <code>waitForMigrations()</code> from <code>@timeline/db</code> at
+            startup, which polls <code>drizzle.__drizzle_migrations</code> until the row count
+            matches the journal bundled with the worker image. Default timeout 5 minutes. This
+            avoids crash-looping on every deploy that ships schema changes.
           </p>
           <p>
             <strong>SSL note.</strong> Inside a Railway project, <code>DATABASE_URL</code> resolves

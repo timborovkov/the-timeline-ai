@@ -418,11 +418,9 @@
           webhook receivers.
         </li>
         <li>
-          <strong><code>worker-transcribe</code></strong
-          >, <strong><code>worker-extract</code></strong
-          >, <strong><code>worker-embed</code></strong> — separate Railway services, same Docker
-          image, different start commands. Lets each scale independently and prevents one slow
-          worker type from starving another.
+          <strong><code>worker</code></strong> — BullMQ workers for transcription, extraction,
+          embeddings, meetings, integrations, maintenance, and exports. Runs from
+          <code>apps/worker/railway.json</code>.
         </li>
         <li><strong>Postgres</strong> — Railway managed plugin.</li>
         <li><strong>Redis</strong> — Railway managed plugin.</li>
@@ -534,9 +532,9 @@
           re-embed procedure from v1; never silent migration.
         </li>
         <li>
-          <strong>Railway lock-in.</strong> Build files (Dockerfiles, compose) are portable;
-          Railway-specific config is in <code>railway.json</code> files and service env vars.
-          Migration cost to bare cloud is moderate but not zero.
+          <strong>Railway lock-in.</strong> App services use Railpack via <code>railway.json</code>;
+          local Compose and Dockerfiles remain available for portable builds. Migration cost to bare
+          cloud is moderate but not zero.
         </li>
       </ul>
 

@@ -14,7 +14,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "validate": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm knip",
-    "env:reset": "tsx scripts/env-reset.ts",
+    "dev:wipe": "tsx scripts/env-reset.ts",
     "db:migrate": "pnpm --filter @timeline/db migrate",
     "db:generate": "pnpm --filter @timeline/db generate",
     "db:studio": "pnpm --filter @timeline/db studio"

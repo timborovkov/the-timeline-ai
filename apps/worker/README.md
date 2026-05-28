@@ -1,10 +1,10 @@
 # @timeline/worker
 
-BullMQ workers for the async processing pipeline: transcribe, extract, embed, document-extract, meeting-finalize, overdue-scan. One Node entry point per queue, all sharing the same image and codebase.
+BullMQ workers for the async processing pipeline: transcribe, extract, embed, document-extract, meeting-finalize, overdue-scan, integrations, maintenance, and exports. One Node entry point starts the queue workers from the same codebase.
 
 ## Why it exists
 
-Long-running, retry-prone work (audio transcription, LLM extraction, vector embedding) belongs off the request path. Each worker type scales independently on Railway so a slow extract backlog can't starve transcription.
+Long-running, retry-prone work (audio transcription, LLM extraction, vector embedding) belongs off the request path. Railway runs the worker service separately from web so backlogs do not block requests.
 
 ## How to use
 
@@ -19,13 +19,11 @@ pnpm --filter @timeline/worker redocument-extract -- --team=<teamId> [--status=f
 pnpm --filter @timeline/worker redocument-embed   -- --team=<teamId> [--target-collection=docs_v2]
 ```
 
-Production start commands are per-worker (see [docs/railway.html](../../docs/railway.html)):
+Production starts the combined worker entry point (see [docs/railway.html](../../docs/railway.html)):
 
-- `node dist/workers/transcribe.js`
-- `node dist/workers/extract.js`
-- `node dist/workers/embed.js`
-- `node dist/workers/documentExtract.js`
-- `node dist/workers/meetingFinalize.js`
+```bash
+pnpm --filter @timeline/worker start
+```
 
 ## Where it fits
 

@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { migrateDatabase } from '../packages/db/src/migrate.ts';
 import { resetPostgresSchema } from '../packages/db/src/reset.ts';
 import {
+  assertDestructiveDevWipeAllowed,
   assertResetNodeEnv,
   configuredBuckets,
   deleteAllQdrantCollections,
@@ -20,6 +21,7 @@ loadDotEnv(resolve(process.cwd(), '.env'));
 
 async function main(): Promise<void> {
   const nodeEnv = assertResetNodeEnv(process.env.NODE_ENV);
+  assertDestructiveDevWipeAllowed(process.env);
   console.log(`[env-reset] NODE_ENV=${nodeEnv}`);
   console.log('[env-reset] destructive dev reset starting; running services may fail transiently');
 

@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Railway deployment setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-22</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-28</span></div>
       <p class="tldr">
         Project + environment provisioning for staging and production. For the full service
         architecture see <a href="../railway.html">docs/railway.html</a>.
@@ -74,19 +74,10 @@
 
       <h2 id="app-services">4. App services</h2>
       <p>
-        Add <code>web</code> and <code>worker-*</code> services pointing at this repo. Each uses the
+        Add <code>web</code> and <code>worker</code> services pointing at this repo. Each uses the
         matching <code>railway.json</code> (<code>apps/web/railway.json</code>,
-        <code>apps/worker/railway.json</code>).
-      </p>
-      <p>For workers, override the start command per worker type in service settings:</p>
-      <ul>
-        <li><code>worker-transcribe</code> → <code>node dist/workers/transcribe.js</code></li>
-        <li><code>worker-extract</code> → <code>node dist/workers/extract.js</code></li>
-        <li><code>worker-embed</code> → <code>node dist/workers/embed.js</code></li>
-      </ul>
-      <p>
-        These worker entry points land in Phase 3+. For Phase 1, only the <code>web</code> service
-        is deployed.
+        <code>apps/worker/railway.json</code>). Both app services use Railpack build commands that
+        install the pnpm workspace and build the packages they run.
       </p>
 
       <h2 id="shared-variables">5. Shared variables</h2>
@@ -137,18 +128,6 @@ SET source_metadata = source_metadata
   - 'reconcile_giveup_transcribe'
   - 'reconcile_attempts_transcribe'
 WHERE id = '&lt;uuid&gt;';
-</code></pre>
-
-      <h2 id="environment-reset">8. Development environment reset</h2>
-      <p>
-        Non-production Railway environments can be wiped with the dev-only environment reset
-        command. It requires <code>NODE_ENV=development</code> or <code>NODE_ENV=test</code> to be
-        explicitly present, then flushes Redis, removes all Qdrant collections, empties configured
-        RustFS buckets, rebuilds Postgres, and runs migrations. Running services may fail
-        transiently during the reset; restart or redeploy them afterward if they keep stale
-        connections.
-      </p>
-      <pre><code>NODE_ENV=development pnpm env:reset
 </code></pre>
     </main>
   </body>
