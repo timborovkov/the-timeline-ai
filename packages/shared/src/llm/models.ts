@@ -1,0 +1,95 @@
+export type ModelCapability =
+  | 'chat'
+  | 'structured'
+  | 'tools'
+  | 'vision'
+  | 'embedding'
+  | 'transcription';
+
+export interface TimelineModelConfig {
+  id: string;
+  provider: 'openrouter';
+  contextWindowTokens?: number;
+  embeddingDimensions?: number;
+  capabilities: readonly ModelCapability[];
+}
+
+export const TIMELINE_MODELS = {
+  chat: {
+    id: 'openai/gpt-4o-mini',
+    provider: 'openrouter',
+    contextWindowTokens: 128_000,
+    capabilities: ['chat', 'structured', 'tools', 'vision'],
+  },
+  extraction: {
+    id: 'openai/gpt-4o-mini',
+    provider: 'openrouter',
+    contextWindowTokens: 128_000,
+    capabilities: ['chat', 'structured'],
+  },
+  agent: {
+    id: 'openai/gpt-4o-mini',
+    provider: 'openrouter',
+    contextWindowTokens: 128_000,
+    capabilities: ['chat', 'tools'],
+  },
+  summarization: {
+    id: 'openai/gpt-4o-mini',
+    provider: 'openrouter',
+    contextWindowTokens: 128_000,
+    capabilities: ['chat'],
+  },
+  vision: {
+    id: 'openai/gpt-4o-mini',
+    provider: 'openrouter',
+    contextWindowTokens: 128_000,
+    capabilities: ['chat', 'vision'],
+  },
+  embedding: {
+    id: 'openai/text-embedding-3-small',
+    provider: 'openrouter',
+    embeddingDimensions: 1536,
+    capabilities: ['embedding'],
+  },
+  transcription: {
+    id: 'openai/whisper-1',
+    provider: 'openrouter',
+    capabilities: ['transcription'],
+  },
+} as const satisfies Record<string, TimelineModelConfig>;
+
+export const DEFAULT_CHAT_MEMORY = {
+  triggerFraction: 0.8,
+  keepFraction: 0.3,
+  maxRequestMessages: 500,
+  summaryMaxOutputTokens: 1200,
+} as const;
+
+export const DEFAULT_LLM_CONTEXT = {
+  maxInputFraction: 0.8,
+  reservedOutputTokens: 4_000,
+} as const;
+
+export function estimateTextTokens(text: string): number {
+  return Math.max(1, Math.ceil(text.length / 4));
+}
+
+export function inputTokenBudgetFor(
+  model: Pick<TimelineModelConfig, 'contextWindowTokens'>,
+  opts: {
+    fraction?: number;
+    reservedOutputTokens?: number;
+  } = {},
+): number {
+  const contextWindow = model.contextWindowTokens ?? 128_000;
+  const fraction = opts.fraction ?? DEFAULT_LLM_CONTEXT.maxInputFraction;
+  const reservedOutputTokens =
+    opts.reservedOutputTokens ?? DEFAULT_LLM_CONTEXT.reservedOutputTokens;
+  return Math.max(1, Math.floor(contextWindow * fraction) - reservedOutputTokens);
+}
+
+export function truncateTextToTokenBudget(text: string, maxTokens: number): string {
+  if (estimateTextTokens(text) <= maxTokens) return text;
+  const maxChars = Math.max(1, maxTokens * 4);
+  return `${text.slice(0, Math.max(1, maxChars - 1))}…`;
+}

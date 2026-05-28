@@ -1,4 +1,5 @@
 import { getEnv } from '../env.js';
+import { TIMELINE_MODELS } from '../llm/models.js';
 
 import { buildPointId, type PointScope } from './point-id.js';
 
@@ -183,14 +184,14 @@ export interface DeletePointsOpts {
 export interface QdrantClientOptions {
   /** Override `QDRANT_COLLECTION`. Used by the re-embed script. */
   collection?: string;
-  /** Override `EMBEDDING_DIMENSIONS`. Used by tests. */
+  /** Override the catalog embedding dimensions. Used by tests. */
   vectorSize?: number;
   /** Inject a fetch implementation for tests. */
   fetcher?: typeof fetch;
   /**
    * Require the collection to already exist; do not auto-create on 404.
    * Used by the re-embed script when writing into a migration collection,
-   * so that a stale worker process (started before EMBEDDING_DIMENSIONS
+   * so that a stale worker process (started before embedding dimensions
    * changed) cannot silently create the new collection at the old size and
    * corrupt the cutover. The operator must follow the documented step-2
    * explicit create.
@@ -224,7 +225,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
   }
   const baseUrl = env.QDRANT_URL.replace(/\/$/, '');
   const collection = opts.collection ?? env.QDRANT_COLLECTION;
-  const vectorSize = opts.vectorSize ?? env.EMBEDDING_DIMENSIONS ?? 1536;
+  const vectorSize = opts.vectorSize ?? TIMELINE_MODELS.embedding.embeddingDimensions;
   const fetcher = opts.fetcher ?? fetch;
   const requireExisting = opts.requireExisting ?? false;
   const headers = buildHeaders(env.QDRANT_API_KEY);
@@ -266,7 +267,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       // path. The operator pre-creates the new collection at the new vector
       // size (documented step 2). Without this guard, a worker process
       // started before the env change would auto-create the new collection
-      // at the OLD EMBEDDING_DIMENSIONS, silently corrupting the cutover.
+      // at the old embedding dimensions, silently corrupting the cutover.
       if (requireExisting) {
         throw new Error(
           `Qdrant collection '${collection}' does not exist and requireExisting=true. Create it explicitly per the re-embed procedure.`,
@@ -297,7 +298,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       throw new Error(
         `Qdrant vector length ${String(vector.length)} != configured collection size ${String(
           vectorSize,
-        )}. Check EMBEDDING_MODEL/EMBEDDING_DIMENSIONS and run the documented re-embed/QDRANT_COLLECTION migration before retrying jobs.`,
+        )}. Check TIMELINE_MODELS.embedding and run the documented re-embed/QDRANT_COLLECTION migration before retrying jobs.`,
       );
     }
     await ensureCollection();

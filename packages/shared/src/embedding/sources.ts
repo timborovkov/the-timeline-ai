@@ -16,7 +16,7 @@ import {
 import { UnrecoverableError } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 
-import { getEnv } from '../env.js';
+import { TIMELINE_MODELS } from '../llm/models.js';
 import { type PointScope, type QdrantPayload, type SourceKind } from '../qdrant/client.js';
 import { type EmbedJobData } from '../queue/queues.js';
 
@@ -169,8 +169,6 @@ async function buildEventOrFactPlan(
   }
   const rawEventId = data.rawEventId;
   const teamId = data.teamId;
-  const env = getEnv();
-
   const rows = (await db
     .select({
       id: rawEvents.id,
@@ -199,7 +197,7 @@ async function buildEventOrFactPlan(
     const skipPatch = JSON.stringify({
       embedding_skipped_at: new Date().toISOString(),
       embedding_skipped_reason: `visibility=${row.visibility}`,
-      embedding_model: env.EMBEDDING_MODEL ?? 'openai/text-embedding-3-small',
+      embedding_model: TIMELINE_MODELS.embedding.id,
     });
     await db
       .update(rawEvents)

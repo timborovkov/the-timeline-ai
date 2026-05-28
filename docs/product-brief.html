@@ -11,7 +11,7 @@
     <main id="main">
       <h1>The Timeline — Product Brief</h1>
       <div class="meta">
-        <span class="kind">Product brief</span><span>Last updated 2026-05-22</span>
+        <span class="kind">Product brief</span><span>Last updated 2026-05-28</span>
       </div>
       <p class="tldr">
         Multi-tenant team memory: voice-, chat-, and email-first capture, agentically compiled into
@@ -378,7 +378,8 @@
       <ul>
         <li>
           <strong>Chat / summarization / extraction</strong>: OpenRouter via Vercel AI SDK. Model
-          flexibility, streaming UI, tool calls.
+          ids, context windows, capabilities, and chat-memory thresholds are code-owned in the
+          shared model catalog so runtime env cannot silently drift between services.
         </li>
         <li>
           <strong>Embeddings</strong>: OpenRouter via OpenAI SDK.
@@ -386,8 +387,8 @@
           index — done only via documented re-embed procedure.
         </li>
         <li>
-          <strong>Transcription</strong>: OpenRouter via OpenAI SDK. Per-request model choice fine;
-          output is text, doesn't affect index integrity.
+          <strong>Transcription</strong>: OpenRouter via OpenAI SDK. The model id is pinned in the
+          same catalog; output is text and remains auditable on the raw event.
         </li>
         <li>
           <strong>Fallback</strong>: direct provider access only for limitations OpenRouter hasn't

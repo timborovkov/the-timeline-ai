@@ -84,7 +84,6 @@ beforeEach(() => {
     QDRANT_URL: 'http://qdrant.test:6333',
     QDRANT_API_KEY: 'test-key',
     QDRANT_COLLECTION: 'events_test',
-    EMBEDDING_DIMENSIONS: '4',
   };
   resetEnvForTests();
 });
@@ -128,7 +127,7 @@ const samplePayload: QdrantPayload = {
 describe('createQdrantClient', () => {
   it('bootstraps the collection on first use (idempotent: skips create if exists)', async () => {
     const { fetcher, calls } = makeFetcher({ collectionExists: false });
-    const client = createQdrantClient({ fetcher });
+    const client = createQdrantClient({ fetcher, vectorSize: 4 });
     await client.upsertVector('id-1', [0.1, 0.2, 0.3, 0.4], samplePayload);
     const creates = calls.filter(
       (c) => c.method === 'PUT' && c.url.endsWith('/collections/events_test'),
@@ -145,7 +144,7 @@ describe('createQdrantClient', () => {
 
   it('skips collection creation when HEAD returns 200', async () => {
     const { fetcher, calls } = makeFetcher({ collectionExists: true });
-    const client = createQdrantClient({ fetcher });
+    const client = createQdrantClient({ fetcher, vectorSize: 4 });
     await client.upsertVector('id-1', [0.1, 0.2, 0.3, 0.4], samplePayload);
     const creates = calls.filter(
       (c) => c.method === 'PUT' && c.url.endsWith('/collections/events_test'),
@@ -155,7 +154,7 @@ describe('createQdrantClient', () => {
 
   it('rejects vectors that disagree with the collection dimension', async () => {
     const { fetcher } = makeFetcher({ collectionExists: true });
-    const client = createQdrantClient({ fetcher });
+    const client = createQdrantClient({ fetcher, vectorSize: 4 });
     await expect(client.upsertVector('id-1', [0.1, 0.2, 0.3], samplePayload)).rejects.toThrow(
       /vector length/,
     );

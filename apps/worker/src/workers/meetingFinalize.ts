@@ -142,12 +142,17 @@ async function summarizeTranscript(
 
   const transcriptText = formatMeetingTranscript(chunks);
   const chat = io.chatStructured ?? llm.chatStructured;
+  const modelId = io.modelId ?? llm.TIMELINE_MODELS.extraction.id;
+  const transcriptPrompt = llm.truncateTextToTokenBudget(
+    `Meeting${meeting.title ? ` "${meeting.title}"` : ''} transcript:\n\n${transcriptText}`,
+    llm.inputTokenBudgetFor(llm.TIMELINE_MODELS.extraction, { reservedOutputTokens: 3_000 }),
+  );
   const result = await chat({
     schema: finalizeSchema,
-    ...(io.modelId ? { model: io.modelId } : {}),
+    model: modelId,
     system:
       'You are summarising a meeting transcript. Produce a concise summary (3-5 sentences) and an array of concrete action items mentioned during the meeting. If no action items are present, return an empty array. Do NOT invent owners — only set "owner" when the transcript clearly attributes the task to a named person.',
-    prompt: `Meeting${meeting.title ? ` "${meeting.title}"` : ''} transcript:\n\n${transcriptText.slice(0, 60000)}`,
+    prompt: transcriptPrompt,
   });
 
   return {

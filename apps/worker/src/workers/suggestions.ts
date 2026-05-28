@@ -184,7 +184,7 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
       if (!env.OPENROUTER_API_KEY) {
         throw new UnrecoverableError('suggestions: OPENROUTER_API_KEY not configured');
       }
-      const modelId = env.EXTRACTION_MODEL ?? env.CHAT_MODEL_DEFAULT ?? 'openai/gpt-4o-mini';
+      const modelId = llm.TIMELINE_MODELS.extraction.id;
       const modelVersion = makeModelVersion(modelId);
 
       const rows = await deps.db
@@ -305,28 +305,31 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
         limit: 40,
       });
 
-      const prompt = buildPrompt({
-        text,
-        occurredAt: row.occurredAt,
-        workspaceTime,
-        facts: factRows.map((f) => f.statement),
-        members: memberRows,
-        objects: entityRows.map((e) => ({
-          id: e.id,
-          type: e.type,
-          name: e.name,
-          status: e.status,
-        })),
-        calendar: calendarRows
-          .filter((ev) => ev.visibility === 'team')
-          .map((ev) => ({
-            id: ev.id,
-            title: ev.title,
-            startAt: ev.startAt.toISOString(),
-            allDay: ev.allDay,
+      const prompt = llm.truncateTextToTokenBudget(
+        buildPrompt({
+          text,
+          occurredAt: row.occurredAt,
+          workspaceTime,
+          facts: factRows.map((f) => f.statement),
+          members: memberRows,
+          objects: entityRows.map((e) => ({
+            id: e.id,
+            type: e.type,
+            name: e.name,
+            status: e.status,
           })),
-        recent: recentRows,
-      });
+          calendar: calendarRows
+            .filter((ev) => ev.visibility === 'team')
+            .map((ev) => ({
+              id: ev.id,
+              title: ev.title,
+              startAt: ev.startAt.toISOString(),
+              allDay: ev.allDay,
+            })),
+          recent: recentRows,
+        }),
+        llm.inputTokenBudgetFor(llm.TIMELINE_MODELS.extraction),
+      );
 
       const result = await llm.chatStructured({
         schema: suggestionExtractionSchema,
