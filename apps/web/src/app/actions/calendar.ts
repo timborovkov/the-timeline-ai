@@ -36,6 +36,7 @@ const createSchema = z.object({
   allDay: z.boolean().default(false),
   location: z.string().trim().max(500).optional(),
   visibility: z.enum(['team', 'private', 'specific_users']).default('team'),
+  visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
   reminderMinutes: z.number().int().min(0).max(1440).optional(),
   linkedEntityIds: z.array(z.string().regex(UUID_RE)).max(20).optional(),
 });
@@ -63,6 +64,7 @@ export async function createCalendarEventAction(
       allDay: parsed.data.allDay,
       location: parsed.data.location ?? null,
       visibility: parsed.data.visibility,
+      visibilityUserIds: parsed.data.visibilityUserIds ?? null,
       reminderMinutes: parsed.data.reminderMinutes ?? null,
       linkedEntityIds: parsed.data.linkedEntityIds,
     });
@@ -84,6 +86,7 @@ const updateSchema = z.object({
   allDay: z.boolean().optional(),
   location: z.string().trim().max(500).optional(),
   visibility: z.enum(['team', 'private', 'specific_users']).optional(),
+  visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
   reminderMinutes: z.number().int().min(0).max(1440).optional(),
 });
 
@@ -106,6 +109,8 @@ export async function updateCalendarEventAction(
     if (parsed.data.allDay !== undefined) patch.allDay = parsed.data.allDay;
     if (parsed.data.location !== undefined) patch.location = parsed.data.location;
     if (parsed.data.visibility !== undefined) patch.visibility = parsed.data.visibility;
+    if (parsed.data.visibilityUserIds !== undefined)
+      patch.visibilityUserIds = parsed.data.visibilityUserIds;
     if (parsed.data.reminderMinutes !== undefined)
       patch.reminderMinutes = parsed.data.reminderMinutes;
 

@@ -1,4 +1,6 @@
+import { users } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
+import { inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -16,9 +18,22 @@ export default async function MeetingsPage() {
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
 
-  const list = await scope.meetings.listMeetings({ limit: 50 });
-  const usedMinutes = await scope.meetings.getCurrentMonthMinutes();
-  const settings = await scope.meetings.getMeetingSettings();
+  const [list, usedMinutes, settings, defaultRow, members] = await Promise.all([
+    scope.meetings.listMeetings({ limit: 50 }),
+    scope.meetings.getCurrentMonthMinutes(),
+    scope.meetings.getMeetingSettings(),
+    scope.timeline.resolveVisibilityDefault('meeting'),
+    scope.timeline.listMembers(),
+  ]);
+  const memberIds = members.map((m) => m.userId);
+  const memberUsers =
+    memberIds.length > 0
+      ? await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, memberIds))
+      : [];
+  const memberUserMap = new Map(memberUsers.map((u) => [u.id, u] as const));
   const cap = settings.meetingMinutesCap;
 
   return (
@@ -35,7 +50,14 @@ export default async function MeetingsPage() {
         </p>
       </header>
 
-      <ScheduleMeetingBotForm />
+      <ScheduleMeetingBotForm
+        defaultVisibility={defaultRow.visibility}
+        defaultVisibilityUserIds={defaultRow.visibilityUserIds}
+        members={members.map((m) => {
+          const u = memberUserMap.get(m.userId);
+          return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
+        })}
+      />
 
       <section className="space-y-2">
         <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">

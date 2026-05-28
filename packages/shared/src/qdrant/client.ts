@@ -66,6 +66,7 @@ export interface QdrantPayload {
   entity_ids: string[];
   occurred_at: string;
   author_user_id: string | null;
+  visibility_owner_user_id: string | null;
   source:
     | 'web'
     | 'telegram'
@@ -320,7 +321,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     // Mirrors the visibility predicate from `withTeam` in team-scope.ts:
     //   team_id == teamId AND (
     //     visibility == 'team'
-    //     OR (visibility == 'private' AND author_user_id == userId)
+    //     OR (visibility == 'private' AND (author_user_id == userId OR visibility_owner_user_id == userId))
     //     OR (visibility == 'specific_users' AND userId ∈ visibility_user_ids)
     //   )
     // Qdrant doesn't support array-contains-by-payload on its `should` filters
@@ -345,6 +346,12 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
           must: [
             { key: 'visibility', match: { value: 'private' } },
             { key: 'author_user_id', match: { value: userId } },
+          ],
+        },
+        {
+          must: [
+            { key: 'visibility', match: { value: 'private' } },
+            { key: 'visibility_owner_user_id', match: { value: userId } },
           ],
         },
         {

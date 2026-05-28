@@ -235,30 +235,32 @@ out of scope.
 
 ### Slice 13.2 — Visibility defaults and one-off edits
 
-- [ ] Add source-specific visibility defaults with a team-wide fallback.
+- [x] Add source-specific visibility defaults with a team-wide fallback.
       Defaults apply only to future captures/imports.
-- [ ] Sources needing explicit defaults: web text/audio capture, Telegram,
+- [x] Sources needing explicit defaults: web text/audio capture, Telegram,
       email, documents, meetings, integrations, and later external calendars.
-- [ ] Keep quick capture surfaces binary (`private` / `team`) for speed;
+- [x] Keep quick capture surfaces binary (`private` / `team`) for speed;
       support `specific_users` where member-picking already fits the workflow:
       documents, calendar events, meetings, integration defaults, and event
       detail/edit surfaces.
-- [ ] Add an explicit `visibility_owner_user_id` concept for source-owned
+- [x] Add an explicit `visibility_owner_user_id` concept for source-owned
       events instead of overloading attribution. Defaults: web capture =
       capturer, Telegram DM = linked user, Telegram group = group linker/source
       owner, email = verified team sender else source owner, documents =
       owner/uploader, meetings = scheduler, integrations = connector owner.
-- [ ] Only the visibility owner can change an existing event's visibility.
+- [x] Only the visibility owner can change an existing event's visibility.
       Admin/owner status does not grant access to private events and does not
       allow rewriting someone else's event visibility.
-- [ ] Expanding or narrowing existing visibility is a one-off edit, not a bulk
+- [x] Expanding or narrowing existing visibility is a one-off edit, not a bulk
       retroactive default change. Audit every visibility change.
 
 ### Slice 13.3 — Generic trust audit log
 
 - [x] Add a generic append-only `audit_log` table for sensitive reads/actions
       going forward. Leave `integration_audit_log` as provider sync history.
-- [x] Audit sensitive/security-relevant actions only: visibility changes,
+      (Table shipped in Slice 13.2 for visibility changes; this slice expands
+      coverage.)
+- [ ] Audit sensitive/security-relevant actions only: visibility changes,
       private/restricted event detail reads, private/restricted document
       view/download/signed URL generation, team export creation, job
       retries/dismissals, settings changes, and integration/MCP

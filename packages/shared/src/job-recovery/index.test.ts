@@ -37,6 +37,7 @@ const MEMBER_ID = '44444444-4444-4444-4444-444444444444';
 const OTHER_USER_ID = '55555555-5555-5555-5555-555555555555';
 const RAW_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const PRIVATE_RAW_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const SOURCE_OWNED_RAW_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbc';
 const OTHER_TEAM_RAW_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const INTEGRATION_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const OBJECT_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
@@ -57,14 +58,14 @@ describe('job recovery scope', () => {
   it('shows only active-team visible candidates to admins', async () => {
     await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
     await seedRawEventFailure(pg, PRIVATE_RAW_ID, TEAM_ID, OTHER_USER_ID, 'private');
+    await seedRawEventFailure(pg, SOURCE_OWNED_RAW_ID, TEAM_ID, OTHER_USER_ID, 'private', ADMIN_ID);
     await seedRawEventFailure(pg, OTHER_TEAM_RAW_ID, OTHER_TEAM_ID, OTHER_USER_ID, 'team');
 
     const scope = scopeFor(ADMIN_ID, 'admin');
     const items = await scope.listRecoverableJobs();
 
-    expect(items).toHaveLength(1);
-    expect(items[0]?.kind).toBe('transcription');
-    expect(items[0]?.artifactId).toBe(RAW_ID);
+    expect(items.map((item) => item.artifactId).sort()).toEqual([RAW_ID, SOURCE_OWNED_RAW_ID]);
+    expect(items.every((item) => item.kind === 'transcription')).toBe(true);
     expect(items[0]?.label).toContain('Transcription');
     expect(items[0]?.label).not.toContain('transcribe');
   });
@@ -517,12 +518,14 @@ async function seedRawEventFailure(
   teamId: string,
   authorUserId: string,
   visibility: 'private' | 'team',
+  visibilityOwnerUserId = authorUserId,
 ): Promise<void> {
   await pg.exec(`
     INSERT INTO raw_events (
       id,
       team_id,
       author_user_id,
+      visibility_owner_user_id,
       source,
       content_audio_url,
       occurred_at,
@@ -534,6 +537,7 @@ async function seedRawEventFailure(
       '${id}',
       '${teamId}',
       '${authorUserId}',
+      '${visibilityOwnerUserId}',
       'web',
       'audio/raw.ogg',
       now() - interval '1 hour',

@@ -101,6 +101,7 @@ const requestUploadSchema = z.object({
   filename: z.string().trim().min(1).max(400),
   contentType: z.string().trim().min(1).max(200),
   visibility: z.enum(['team', 'private', 'specific_users']).default('team'),
+  visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
 });
 
 interface RequestUploadResult {
@@ -164,6 +165,7 @@ export async function requestDocumentUploadAction(
         filename: parsed.data.filename,
         contentType: parsed.data.contentType,
         visibility: parsed.data.visibility,
+        visibilityUserIds: parsed.data.visibilityUserIds ?? null,
       });
       documentId = created.document.id;
       versionId = created.version.id;

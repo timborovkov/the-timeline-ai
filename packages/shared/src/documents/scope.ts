@@ -12,6 +12,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-o
 import { embed as defaultEmbed, type EmbedResult } from '../llm/embed.js';
 import { decodeCursor, pageWindow } from '../pagination.js';
 import { getQdrantClient, type SearchHit, type SearchOpts } from '../qdrant/client.js';
+import { rawEventVisibleToUser, validateVisibilityUserIds } from '../visibility.js';
 
 import { buildDocumentObjectKey } from './object-key.js';
 
@@ -228,6 +229,17 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     ),
   );
 
+  async function normalizeDocumentVisibilityUserIds(input: {
+    visibility: Visibility;
+    visibilityUserIds?: string[] | null;
+  }): Promise<string[] | null> {
+    return validateVisibilityUserIds(
+      input.visibility,
+      input.visibilityUserIds ?? null,
+      requireTeamMember,
+    );
+  }
+
   function pathSegment(row: { name: string }): string {
     return row.name.replace(/\//g, '_');
   }
@@ -360,6 +372,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         occurredAt: new Date(),
         visibility: args.visibility,
         visibilityUserIds: args.visibilityUserIds,
+        visibilityOwnerUserId: userId,
         sourceMetadata: meta,
       })
       .returning({ id: rawEvents.id });
@@ -559,9 +572,11 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     async createFolder(input: CreateFolderInput): Promise<FolderRow> {
       await ensureMember();
       if (input.parentFolderId) await assertFolderInTeam(input.parentFolderId);
-      if (input.visibilityUserIds && input.visibilityUserIds.length > 0) {
-        for (const uid of input.visibilityUserIds) await requireTeamMember(uid);
-      }
+      const visibility = input.visibility ?? 'team';
+      const visibilityUserIds = await normalizeDocumentVisibilityUserIds({
+        visibility,
+        visibilityUserIds: input.visibilityUserIds ?? null,
+      });
       const rows = await db
         .insert(folders)
         .values({
@@ -569,8 +584,8 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           parentFolderId: input.parentFolderId ?? null,
           name: input.name.trim(),
           ownerUserId: userId,
-          visibility: input.visibility ?? 'team',
-          visibilityUserIds: input.visibilityUserIds ?? null,
+          visibility,
+          visibilityUserIds,
         })
         .returning();
       const row = rows[0];
@@ -679,9 +694,11 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     async createDocument(input: CreateDocumentInput): Promise<CreateDocumentResult> {
       await ensureMember();
       if (input.folderId) await assertFolderInTeam(input.folderId);
-      if (input.visibilityUserIds && input.visibilityUserIds.length > 0) {
-        for (const uid of input.visibilityUserIds) await requireTeamMember(uid);
-      }
+      const visibility = input.visibility ?? 'team';
+      const visibilityUserIds = await normalizeDocumentVisibilityUserIds({
+        visibility,
+        visibilityUserIds: input.visibilityUserIds ?? null,
+      });
       return db.transaction(async (tx) => {
         const docRows = await tx
           .insert(documents)
@@ -690,8 +707,8 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
             folderId: input.folderId ?? null,
             name: input.name.trim(),
             ownerUserId: userId,
-            visibility: input.visibility ?? 'team',
-            visibilityUserIds: input.visibilityUserIds ?? null,
+            visibility,
+            visibilityUserIds,
             metadata: input.metadata ?? {},
           })
           .returning();
@@ -969,15 +986,13 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       await ensureMember();
       const existing = await getDocumentRaw(input.id);
       if (!existing) throw new Error('Document not found');
-      if (input.visibilityUserIds && input.visibilityUserIds.length > 0) {
-        for (const uid of input.visibilityUserIds) await requireTeamMember(uid);
-      }
+      const visibilityUserIds = await normalizeDocumentVisibilityUserIds(input);
       return db.transaction(async (tx) => {
         const rows = await tx
           .update(documents)
           .set({
             visibility: input.visibility,
-            visibilityUserIds: input.visibilityUserIds ?? null,
+            visibilityUserIds,
             updatedAt: new Date(),
           })
           .where(and(eq(documents.id, existing.id), eq(documents.teamId, teamId)))
@@ -1090,14 +1105,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       const conditions = [
         eq(rawEvents.teamId, teamId),
         eq(rawEvents.source, 'document'),
-        or(
-          eq(rawEvents.visibility, 'team'),
-          and(eq(rawEvents.visibility, 'private'), eq(rawEvents.authorUserId, userId)),
-          and(
-            eq(rawEvents.visibility, 'specific_users'),
-            sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
-          ),
-        ),
+        rawEventVisibleToUser(userId),
       ];
       if (args.since) conditions.push(gte(rawEvents.occurredAt, args.since));
       const rows = await db

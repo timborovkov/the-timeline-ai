@@ -1,4 +1,6 @@
+import { users } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
+import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
@@ -40,7 +42,20 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   const to = new Date(anchorDate);
   to.setUTCDate(to.getUTCDate() + rangeDays);
 
-  const events = await scope.calendar.listCalendarEvents({ from, to });
+  const [events, defaultRow, members] = await Promise.all([
+    scope.calendar.listCalendarEvents({ from, to }),
+    scope.timeline.resolveVisibilityDefault('calendar'),
+    scope.timeline.listMembers(),
+  ]);
+  const memberIds = members.map((m) => m.userId);
+  const memberUsers =
+    memberIds.length > 0
+      ? await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, memberIds))
+      : [];
+  const memberUserMap = new Map(memberUsers.map((u) => [u.id, u] as const));
 
   const serialized = events.map((e) => ({
     id: e.id,
@@ -53,6 +68,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     location: e.location,
     redacted: e.redacted,
     visibility: e.visibility,
+    visibilityUserIds: e.visibilityUserIds,
   }));
   const calendarSuggestions = pendingSuggestions
     .map((bundle) => ({
@@ -78,7 +94,16 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         </section>
       ) : null}
 
-      <CalendarView events={serialized} timezone={settings.defaultTimezone} />
+      <CalendarView
+        events={serialized}
+        timezone={settings.defaultTimezone}
+        defaultVisibility={defaultRow.visibility}
+        defaultVisibilityUserIds={defaultRow.visibilityUserIds}
+        members={members.map((m) => {
+          const u = memberUserMap.get(m.userId);
+          return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
+        })}
+      />
     </div>
   );
 }

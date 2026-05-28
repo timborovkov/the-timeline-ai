@@ -425,6 +425,17 @@ async function ingestForTeam(
     return false;
   }
   const scope = withTeam(deps.db, team.id, callerUserId);
+  const emailDefault = await scope.timeline.resolveVisibilityDefault('email');
+  const visibilityOwnerUserId = authorUserId ?? emailDefault.sourceOwnerUserId ?? null;
+  let resolvedEmailVisibility: 'private' | 'team' = 'team';
+  if (emailDefault.visibility === 'private' && visibilityOwnerUserId !== null) {
+    resolvedEmailVisibility = 'private';
+  } else if (emailDefault.visibility === 'specific_users') {
+    log.warn(
+      { teamId: team.id, source: emailDefault.source },
+      'email visibility default must be binary; falling back to team',
+    );
+  }
 
   const contentText = chooseContentText(payload);
   const occurredAt = parseDateHeader(payload.Date) ?? new Date();
@@ -542,6 +553,8 @@ async function ingestForTeam(
     references,
     contentText,
     occurredAt,
+    visibility: resolvedEmailVisibility,
+    visibilityOwnerUserId,
     sourceMetadata: baseMetadata,
   });
   if (!createResult) {
@@ -603,6 +616,8 @@ async function ingestForTeam(
         source: 'email',
         contentAudioUrl: key,
         occurredAt,
+        visibility: resolvedEmailVisibility,
+        visibilityOwnerUserId,
         sourceMetadata: {
           parent_event_id: parentEventId,
           email_message_id: messageId,

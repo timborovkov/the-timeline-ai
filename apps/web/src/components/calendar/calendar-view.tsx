@@ -51,11 +51,15 @@ interface CalendarEvent {
   location: string | null;
   redacted: boolean;
   visibility: string;
+  visibilityUserIds: string[] | null;
 }
 
 interface CalendarViewProps {
   events: CalendarEvent[];
   timezone: string;
+  defaultVisibility?: 'team' | 'private' | 'specific_users';
+  defaultVisibilityUserIds?: string[] | null;
+  members?: { id: string; label: string }[];
 }
 
 interface Draft {
@@ -63,6 +67,7 @@ interface Draft {
   description: string;
   location: string;
   visibility: 'team' | 'private' | 'specific_users';
+  visibilityUserIds: string[];
   allDay: boolean;
   timezone: string;
   startDate: string;
@@ -151,13 +156,19 @@ function eventTouchesDate(
   return Temporal.PlainDate.compare(start, date) <= 0 && Temporal.PlainDate.compare(end, date) >= 0;
 }
 
-function blankDraft(anchor: Temporal.PlainDate, timezone: string): Draft {
+function blankDraft(
+  anchor: Temporal.PlainDate,
+  timezone: string,
+  visibility: Draft['visibility'] = 'team',
+  visibilityUserIds: string[] | null = null,
+): Draft {
   const next = anchor.add({ days: 1 });
   return {
     title: '',
     description: '',
     location: '',
-    visibility: 'team',
+    visibility,
+    visibilityUserIds: visibility === 'specific_users' ? (visibilityUserIds ?? []) : [],
     allDay: true,
     timezone: assertValidTimezone(timezone),
     startDate: isoDate(anchor),
@@ -179,6 +190,7 @@ function draftFromEvent(event: CalendarEvent, timezone: string): Draft {
       event.visibility === 'private' || event.visibility === 'specific_users'
         ? event.visibility
         : 'team',
+    visibilityUserIds: event.visibility === 'specific_users' ? (event.visibilityUserIds ?? []) : [],
     allDay: event.allDay,
     timezone: displayTimezone,
     startDate: start.toPlainDate().toString(),
@@ -188,7 +200,13 @@ function draftFromEvent(event: CalendarEvent, timezone: string): Draft {
   };
 }
 
-export function CalendarView({ events, timezone }: CalendarViewProps) {
+export function CalendarView({
+  events,
+  timezone,
+  defaultVisibility = 'team',
+  defaultVisibilityUserIds = null,
+  members = [],
+}: CalendarViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mode = (searchParams.get('view') as CalendarViewMode | null) ?? 'month';
@@ -205,7 +223,9 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
   }, [anchorKey, safeMode]);
   const currentToday = today(timezone);
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
-  const [draft, setDraft] = useState<Draft>(() => blankDraft(anchor, timezone));
+  const [draft, setDraft] = useState<Draft>(() =>
+    blankDraft(anchor, timezone, defaultVisibility, defaultVisibilityUserIds),
+  );
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -235,7 +255,7 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
 
   function openCreate(day = anchor) {
     setEditing(null);
-    setDraft(blankDraft(day, timezone));
+    setDraft(blankDraft(day, timezone, defaultVisibility, defaultVisibilityUserIds));
     setError(null);
     setOpen(true);
   }
@@ -292,6 +312,9 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
         allDay: draft.allDay,
         location: draft.location.trim() || undefined,
         visibility: draft.visibility,
+        ...(draft.visibility === 'specific_users'
+          ? { visibilityUserIds: draft.visibilityUserIds }
+          : {}),
       };
       const result = editing
         ? await updateCalendarEventAction({ id: editing.id, ...input })
@@ -480,12 +503,34 @@ export function CalendarView({ events, timezone }: CalendarViewProps) {
                 >
                   <option value="team">Team</option>
                   <option value="private">Private</option>
-                  {draft.visibility === 'specific_users' ? (
-                    <option value="specific_users">Specific users</option>
-                  ) : null}
+                  <option value="specific_users">Specific users</option>
                 </select>
               </div>
             </div>
+            {draft.visibility === 'specific_users' ? (
+              <div className="flex flex-wrap gap-3">
+                {members.map((m) => (
+                  <label
+                    key={m.id}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={draft.visibilityUserIds.includes(m.id)}
+                      onChange={(e) => {
+                        setDraft((d) => ({
+                          ...d,
+                          visibilityUserIds: e.target.checked
+                            ? Array.from(new Set([...d.visibilityUserIds, m.id]))
+                            : d.visibilityUserIds.filter((id) => id !== m.id),
+                        }));
+                      }}
+                    />
+                    {m.label}
+                  </label>
+                ))}
+              </div>
+            ) : null}
             {draft.allDay ? (
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">

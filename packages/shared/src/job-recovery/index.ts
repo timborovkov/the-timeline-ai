@@ -15,6 +15,7 @@ import {
 import { and, desc, eq, inArray, isNotNull, isNull, lt, notExists, or, sql } from 'drizzle-orm';
 
 import * as queue from '../queue/index.js';
+import { rawEventVisibleToUser } from '../visibility.js';
 
 import type { JobType } from 'bullmq';
 
@@ -1091,14 +1092,7 @@ function dismissalKey(
 }
 
 function visibleRawEvent(userId: string) {
-  return or(
-    eq(rawEvents.visibility, 'team'),
-    and(eq(rawEvents.visibility, 'private'), eq(rawEvents.authorUserId, userId)),
-    and(
-      eq(rawEvents.visibility, 'specific_users'),
-      sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
-    ),
-  );
+  return rawEventVisibleToUser(userId);
 }
 
 function visibleMeeting(userId: string) {

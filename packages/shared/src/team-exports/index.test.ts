@@ -20,6 +20,8 @@ const OWNER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const OTHER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const TEAM_EVENT_ID = '22222222-2222-2222-2222-222222222222';
 const PRIVATE_EVENT_ID = '33333333-3333-3333-3333-333333333333';
+const SOURCE_OWNED_EVENT_ID = '33333333-3333-3333-3333-333333333334';
+const OWNERLESS_PRIVATE_EVENT_ID = '33333333-3333-3333-3333-333333333335';
 const DOC_ID = '44444444-4444-4444-4444-444444444444';
 const PRIVATE_DOC_ID = '55555555-5555-5555-5555-555555555555';
 const FOLDER_ID = '77777777-7777-7777-7777-777777777777';
@@ -56,18 +58,26 @@ async function seed(pg: PGlite): Promise<void> {
       ('${TEAM_ID}', '${OTHER_ID}', 'member');
 
     INSERT INTO raw_events (
-      id, team_id, author_user_id, source, content_text, content_audio_url,
-      visibility, source_metadata
+      id, team_id, author_user_id, visibility_owner_user_id, source, content_text,
+      content_audio_url, visibility, source_metadata
     ) VALUES
       (
-        '${TEAM_EVENT_ID}', '${TEAM_ID}', '${OWNER_ID}', 'email', 'visible event',
+        '${TEAM_EVENT_ID}', '${TEAM_ID}', '${OWNER_ID}', '${OWNER_ID}', 'email', 'visible event',
         'audio/team.ogg', 'team',
         '{"attachments":[{"kind":"metadata_kind","filename":"deck.pdf","bucket":"attachments","key":"email/deck.pdf","size_bytes":10,"content_type":"application/pdf"}]}'::jsonb
       ),
       (
-        '${PRIVATE_EVENT_ID}', '${TEAM_ID}', '${OTHER_ID}', 'web', 'hidden event',
+        '${PRIVATE_EVENT_ID}', '${TEAM_ID}', '${OTHER_ID}', '${OTHER_ID}', 'web', 'hidden event',
         'audio/private.ogg', 'private',
         '{"attachments":[{"filename":"hidden.pdf","bucket":"attachments","key":"email/hidden.pdf","size_bytes":20,"content_type":"application/pdf"}]}'::jsonb
+      ),
+      (
+        '${SOURCE_OWNED_EVENT_ID}', '${TEAM_ID}', '${OTHER_ID}', '${OWNER_ID}', 'integration',
+        'source-owned event', null, 'private', '{}'::jsonb
+      ),
+      (
+        '${OWNERLESS_PRIVATE_EVENT_ID}', '${TEAM_ID}', null, null, 'email',
+        'ownerless private event', null, 'private', '{}'::jsonb
       );
 
     INSERT INTO facts (team_id, raw_event_id, statement, confidence, model_version) VALUES
@@ -189,8 +199,7 @@ describe('team export archive', () => {
 
     const zip = await JSZip.loadAsync(result.archive);
     const rawEvents = parseJsonl(await zipText(zip, 'raw_events.jsonl'));
-    expect(rawEvents).toHaveLength(1);
-    expect(rawEvents[0]?.id).toBe(TEAM_EVENT_ID);
+    expect(rawEvents.map((row) => row.id)).toEqual([TEAM_EVENT_ID, SOURCE_OWNED_EVENT_ID]);
 
     const facts = parseJsonl(await zipText(zip, 'facts.jsonl'));
     expect(facts.map((row) => row.statement)).toEqual(['visible fact']);
@@ -228,7 +237,7 @@ describe('team export archive', () => {
     const manifest = JSON.parse(await zipText(zip, 'manifest.json')) as {
       omissions: Record<string, number>;
     };
-    expect(manifest.omissions.raw_events).toBe(1);
+    expect(manifest.omissions.raw_events).toBe(2);
     expect(manifest.omissions.facts).toBe(1);
     expect(manifest.omissions.folders).toBe(1);
     expect(manifest.omissions.documents).toBe(1);

@@ -292,6 +292,7 @@ export async function processMeetingFinalizeJob(
             occurredAt: meeting.startedAt ?? meeting.createdAt,
             visibility: meeting.defaultVisibility,
             visibilityUserIds: meeting.visibilityUserIds,
+            visibilityOwnerUserId: meeting.createdByUserId,
             sourceMetadata,
           })
           .onConflictDoNothing()

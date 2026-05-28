@@ -63,6 +63,7 @@ export async function createTextEventAction(
   await scope.requireMembership();
   const event = await scope.timeline.createEvent({
     authorUserId: session.user.id,
+    visibilityOwnerUserId: session.user.id,
     source: 'web',
     contentText: parsed.data.text,
     visibility: parsed.data.visibility,
@@ -228,6 +229,7 @@ export async function createAudioEventAction(
   }
   const event = await scope.timeline.createEvent({
     authorUserId: session.user.id,
+    visibilityOwnerUserId: session.user.id,
     source: 'web',
     contentText: null,
     contentAudioUrl: parsed.data.key,

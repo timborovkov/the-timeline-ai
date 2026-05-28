@@ -7,3 +7,9 @@ audience, because shared capture surfaces can separate attribution from control:
 a group chat, forwarded email, meeting, or integration may not map cleanly to a
 single author. This preserves trust in per-item privacy while still letting
 admins configure future defaults and team-owned surfaces.
+
+Source-specific visibility defaults only affect future captures/imports. They
+do not rewrite existing raw events, documents, meetings, calendar events, or
+integration events. Expanding or narrowing an existing event's audience is a
+one-off edit by that event's visibility owner, and every such edit is recorded
+in the append-only trust audit log.

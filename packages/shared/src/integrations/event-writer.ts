@@ -28,6 +28,25 @@ import type { IntegrationEvent, IntegrationRow, ObjectMapping } from './types.js
 // `entities_team_type_canonical_name_unq` would collapse distinct
 // external objects sharing a name) and bulk-friendly.
 
+function resolveEventVisibility(args: {
+  requestedVisibility: 'team' | 'private' | 'specific_users';
+  integrationDefault: 'team' | 'private' | 'specific_users';
+  hasSpecificUsers: boolean;
+  hasVisibilityOwner: boolean;
+}): 'team' | 'private' | 'specific_users' {
+  if (args.requestedVisibility === 'specific_users') {
+    if (args.hasSpecificUsers) return 'specific_users';
+    if (args.integrationDefault === 'private' && args.hasVisibilityOwner) return 'private';
+    return 'team';
+  }
+
+  if (args.requestedVisibility === 'private' && !args.hasVisibilityOwner) {
+    return 'team';
+  }
+
+  return args.requestedVisibility;
+}
+
 export async function writeIntegrationEvents(deps: {
   db: Db;
   integration: IntegrationRow;
@@ -38,12 +57,9 @@ export async function writeIntegrationEvents(deps: {
   const visibility = deps.integration.visibilityDefault;
   const teamId = deps.integration.teamId;
   // Attribute integration rows to the user who connected the integration.
-  // The team visibility predicate treats `visibility='private'` as visible
-  // only when `authorUserId = viewer`; without an attributed author, private
-  // events would match no one and silently disappear from search / chat /
-  // outbound MCP reads. Falling back to null is fine for the (default)
-  // `team` case — the OR-branch covers it — but it's the wrong default
-  // for the configurable-private case.
+  // Private visibility matches either author_user_id or visibility_owner_user_id;
+  // using the connector owner for both preserves old private-row semantics and
+  // makes ownership obvious in the timeline UI.
   const authorUserId = deps.integration.connectedByUserId ?? null;
 
   // Dedupe by dedupKey within the batch. Postgres's
@@ -62,26 +78,45 @@ export async function writeIntegrationEvents(deps: {
     return true;
   });
 
-  const values = uniqueEvents.map((evt) => ({
-    teamId,
-    authorUserId,
-    source: 'integration' as const,
-    contentText: evt.contentText,
-    occurredAt: evt.occurredAt,
-    visibility: evt.visibility ?? visibility,
-    sourceMetadata: {
-      provider: evt.provider,
-      integration_id: deps.integration.id,
-      external_object_id: evt.externalObjectId,
-      external_event_id: evt.externalEventId ?? null,
-      event_type: evt.eventType,
-      actor: evt.actor ?? null,
-      dedup_key: evt.dedupKey,
-      sync_at: new Date().toISOString(),
-      source_kind: 'integration_event',
-      ...(evt.extra ?? {}),
-    },
-  }));
+  const values = uniqueEvents.map((evt) => {
+    const visibilityOwnerUserId = deps.integration.connectedByUserId ?? null;
+    const requestedVisibility = evt.visibility ?? visibility;
+    const requestedUserIds =
+      requestedVisibility === 'specific_users'
+        ? (evt.visibilityUserIds ??
+          (visibility === 'specific_users' ? deps.integration.visibilityDefaultUserIds : null))
+        : null;
+    const hasSpecificUsers = (requestedUserIds?.length ?? 0) > 0;
+    const resolvedVisibility = resolveEventVisibility({
+      requestedVisibility,
+      integrationDefault: visibility,
+      hasSpecificUsers,
+      hasVisibilityOwner: Boolean(visibilityOwnerUserId),
+    });
+
+    return {
+      teamId,
+      authorUserId,
+      visibilityOwnerUserId,
+      source: 'integration' as const,
+      contentText: evt.contentText,
+      occurredAt: evt.occurredAt,
+      visibility: resolvedVisibility,
+      visibilityUserIds: resolvedVisibility === 'specific_users' ? requestedUserIds : null,
+      sourceMetadata: {
+        provider: evt.provider,
+        integration_id: deps.integration.id,
+        external_object_id: evt.externalObjectId,
+        external_event_id: evt.externalEventId ?? null,
+        event_type: evt.eventType,
+        actor: evt.actor ?? null,
+        dedup_key: evt.dedupKey,
+        sync_at: new Date().toISOString(),
+        source_kind: 'integration_event',
+        ...(evt.extra ?? {}),
+      },
+    };
+  });
 
   const inserted = await deps.db
     .insert(rawEvents)

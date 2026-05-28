@@ -64,6 +64,7 @@ export const integrations = pgTable(
     authSecretIv: bytea('auth_secret_iv'),
     authSecretTag: bytea('auth_secret_tag'),
     visibilityDefault: eventVisibility('visibility_default').notNull().default('team'),
+    visibilityDefaultUserIds: uuid('visibility_default_user_ids').array(),
     enabled: boolean('enabled').notNull().default(true),
     lastError: text('last_error'),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
