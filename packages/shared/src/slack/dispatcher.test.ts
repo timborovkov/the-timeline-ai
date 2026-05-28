@@ -26,9 +26,11 @@ vi.mock('../agent/ask.js', () => ({
 }));
 
 import {
+  bindSlackConversation,
   handleSlackEnvelope,
   handleSlackSlashCommand,
   linkSlackUserFromOAuth,
+  unbindSlackConversation,
 } from './dispatcher.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -208,6 +210,38 @@ describe('Slack dispatcher routing', () => {
     ).rejects.toThrow('slack_workspace_not_installed');
   });
 
+  it('re-enables an existing disabled Slack conversation binding on rebind', async () => {
+    await seedWorkspace(db, TEAM_A);
+
+    await bindSlackConversation({
+      db: db as never,
+      teamId: TEAM_A,
+      userId: USER_A,
+      conversationId: 'C_REBIND',
+    });
+    const first = await db
+      .select({ id: slackConversationBindings.id })
+      .from(slackConversationBindings)
+      .where(eq(slackConversationBindings.slackConversationId, 'C_REBIND'));
+    expect(first).toHaveLength(1);
+    const firstBinding = first[0];
+    if (!firstBinding) throw new Error('expected slack binding');
+
+    await unbindSlackConversation({ db: db as never, teamId: TEAM_A, bindingId: firstBinding.id });
+    await bindSlackConversation({
+      db: db as never,
+      teamId: TEAM_A,
+      userId: USER_A,
+      conversationId: 'C_REBIND',
+    });
+
+    const rows = await db
+      .select({ id: slackConversationBindings.id, enabled: slackConversationBindings.enabled })
+      .from(slackConversationBindings)
+      .where(eq(slackConversationBindings.slackConversationId, 'C_REBIND'));
+    expect(rows).toEqual([{ id: firstBinding.id, enabled: true }]);
+  });
+
   it('does not answer app mentions in unbound Slack channels', async () => {
     const fetchMock = installFetchMock();
     await seedWorkspace(db, TEAM_A);
@@ -249,6 +283,44 @@ describe('Slack dispatcher routing', () => {
     );
 
     expect(result).toEqual({ ok: false });
+  });
+
+  it('tombstones Slack source deletes before bot message filtering', async () => {
+    await seedWorkspace(db, TEAM_A);
+    await db.insert(rawEvents).values({
+      teamId: TEAM_A,
+      authorUserId: USER_A,
+      source: 'slack',
+      contentText: 'captured before bot metadata was known',
+      sourceMetadata: {
+        slack_workspace_id: WORKSPACE_ID,
+        slack_channel_id: 'C_DOCS',
+        slack_message_ts: '1700000000.000400',
+      },
+    });
+
+    await handleSlackEnvelope(
+      { db: db as never },
+      slackEnvelope('EvBotDelete', {
+        type: 'message',
+        subtype: 'message_deleted',
+        channel: 'C_DOCS',
+        channel_type: 'channel',
+        user: 'U_BOT',
+        bot_id: 'B_BOT',
+        ts: '1700000001.000400',
+        deleted_ts: '1700000000.000400',
+      }),
+    );
+
+    const rows = await db
+      .select({ metadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.source, 'slack'));
+    expect(rows[0]?.metadata).toMatchObject({
+      deleted: true,
+      delete_reason: 'slack_deleted_at_source',
+    });
   });
 
   it('does not call the agent for a bare app mention', async () => {

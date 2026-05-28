@@ -303,16 +303,41 @@ export async function bindSlackConversation(input: {
   if (!install) throw new Error('slack_workspace_not_installed');
   const api = new SlackApi(decryptWorkspaceToken(install).accessToken);
   const info = await api.conversationsInfo(input.conversationId);
+  const values = {
+    conversationType: conversationType(info),
+    title: info?.name ?? input.conversationId,
+    boundByUserId: input.userId,
+    visibilityDefault: 'team' as const,
+    enabled: true,
+    metadata: { is_member: info?.is_member ?? null },
+    updatedAt: new Date(),
+  };
+  const disabledRows = await input.db
+    .select({ id: slackConversationBindings.id })
+    .from(slackConversationBindings)
+    .where(
+      and(
+        eq(slackConversationBindings.workspaceId, install.id),
+        eq(slackConversationBindings.teamId, input.teamId),
+        eq(slackConversationBindings.slackConversationId, input.conversationId),
+        eq(slackConversationBindings.enabled, false),
+      ),
+    )
+    .orderBy(desc(slackConversationBindings.updatedAt), desc(slackConversationBindings.createdAt))
+    .limit(1);
+  const disabled = disabledRows[0];
+  if (disabled) {
+    await input.db
+      .update(slackConversationBindings)
+      .set(values)
+      .where(eq(slackConversationBindings.id, disabled.id));
+    return;
+  }
   await input.db.insert(slackConversationBindings).values({
     workspaceId: install.id,
     teamId: input.teamId,
     slackConversationId: input.conversationId,
-    conversationType: conversationType(info),
-    title: info?.name ?? input.conversationId,
-    boundByUserId: input.userId,
-    visibilityDefault: 'team',
-    enabled: true,
-    metadata: { is_member: info?.is_member ?? null },
+    ...values,
   });
 }
 
@@ -402,7 +427,6 @@ async function handleMessageEvent(
   slackEventId: string,
   event: SlackMessageEvent,
 ): Promise<void> {
-  if (event.bot_id || event.user === workspace.botUserId) return;
   if (event.subtype === 'message_deleted') {
     await tombstoneSlackSourceDeletes(deps.db, {
       workspaceId: workspace.id,
@@ -411,6 +435,7 @@ async function handleMessageEvent(
     });
     return;
   }
+  if (event.bot_id || event.user === workspace.botUserId) return;
   if (event.subtype && event.subtype !== 'message_changed' && event.subtype !== 'file_share') {
     return;
   }
