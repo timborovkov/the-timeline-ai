@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { handleUpdate, parseCommand } from './dispatcher.js';
 import { verifyWebhookSecret } from './secret.js';
@@ -331,6 +331,166 @@ describe('handleUpdate telegram edit visibility', () => {
     const all = await allTelegramRows(pg);
     expect(all).toHaveLength(1);
     expect(all[0]?.content_text).toBe('one delivery');
+  });
+
+  it('does not enqueue text workers for file-only document messages', async () => {
+    const enqueueExtract = vi.fn();
+    const enqueueEmbed = vi.fn();
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: fakeTg,
+        extract: { enqueueExtract },
+        embed: { enqueueEmbed },
+      },
+      {
+        update_id: 205,
+        message: {
+          message_id: 25,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          document: {
+            file_id: 'doc-file',
+            file_name: 'contract.pdf',
+            mime_type: 'application/pdf',
+            file_size: 1024,
+          },
+        },
+      },
+    );
+
+    expect(enqueueExtract).not.toHaveBeenCalled();
+    expect(enqueueEmbed).not.toHaveBeenCalled();
+  });
+
+  it('acks DM captures but not group captures', async () => {
+    const reactions: unknown[] = [];
+    const tg: TelegramApi = {
+      ...fakeTg,
+      setMessageReaction: (input) => {
+        reactions.push(input);
+        return Promise.resolve();
+      },
+    };
+
+    await handleUpdate(
+      { db: db as never, tg },
+      {
+        update_id: 210,
+        message: {
+          message_id: 21,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: 'dm capture',
+        },
+      },
+    );
+    expect(reactions).toHaveLength(1);
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: {
+          ...tg,
+          getFile: () => Promise.resolve({ file_id: 'voice-file', file_path: 'voice.ogg' }),
+          downloadFile: () => Promise.resolve(Buffer.from('voice')),
+        },
+        audio: {
+          upload: () => Promise.resolve(),
+          enqueueTranscribe: () => Promise.resolve(),
+          buildAudioKey: ({ teamId, chatId, messageId, fileId, extension }) =>
+            `teams/${teamId}/telegram/${chatId}/${messageId}-${fileId}.${extension}`,
+        },
+      },
+      {
+        update_id: 212,
+        message: {
+          message_id: 23,
+          date: 1700000002,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          voice: { file_id: 'voice-file', duration: 4, mime_type: 'audio/ogg', file_size: 128 },
+        },
+      },
+    );
+    expect(reactions).toHaveLength(2);
+
+    await pg.exec(`
+      INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, bound_by_user_id, title)
+      VALUES (-100, '${TEAM_ID}', '${USER_A}', 'Sales');
+    `);
+    await handleUpdate(
+      { db: db as never, tg },
+      {
+        update_id: 211,
+        message: {
+          message_id: 22,
+          date: 1700000001,
+          chat: { id: -100, type: 'supergroup', title: 'Sales' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: 'group capture',
+        },
+      },
+    );
+
+    expect(reactions).toHaveLength(2);
+  });
+
+  it('transcribes audio files sent through the Telegram document picker', async () => {
+    const upload = vi.fn().mockResolvedValue(undefined);
+    const enqueueTranscribe = vi.fn().mockResolvedValue(undefined);
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: {
+          ...fakeTg,
+          getFile: () => Promise.resolve({ file_id: 'song-file', file_path: 'song.mp3' }),
+          downloadFile: () => Promise.resolve(Buffer.from('audio-bytes')),
+        },
+        audio: {
+          upload,
+          enqueueTranscribe,
+          buildAudioKey: ({ teamId, chatId, messageId, fileId, extension }) =>
+            `teams/${teamId}/telegram/${chatId}/${messageId}-${fileId}.${extension}`,
+        },
+      },
+      {
+        update_id: 213,
+        message: {
+          message_id: 24,
+          date: 1700000003,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          document: {
+            file_id: 'song-file',
+            file_name: 'song.mp3',
+            mime_type: 'audio/mpeg',
+            file_size: 128,
+          },
+        },
+      },
+    );
+
+    expect(upload).toHaveBeenCalledOnce();
+    expect(enqueueTranscribe).toHaveBeenCalledOnce();
+    const rows = await pg.query<{
+      content_audio_url: string | null;
+      metadata: Record<string, unknown>;
+    }>(
+      `SELECT content_audio_url, source_metadata AS metadata
+       FROM raw_events
+       WHERE content_audio_url IS NOT NULL`,
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]?.content_audio_url).toContain('song-file.mp3');
+    expect(rows.rows[0]?.metadata).toMatchObject({
+      tg_attachment_kind: 'audio',
+      tg_file_id: 'song-file',
+    });
   });
 
   it('does not tombstone another team with matching Telegram chat and message ids', async () => {

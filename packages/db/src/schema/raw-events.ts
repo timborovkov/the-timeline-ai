@@ -33,6 +33,10 @@ export const eventSource = pgEnum('event_source', [
   // source_metadata.action='scheduled' (at creation) and 'event' (at
   // start_at). Calendar-specific metadata in source_metadata.calendar_event_id.
   'calendar',
+  // Phase 12 — first-party conversational capture from Slack. Slack-specific
+  // routing, sender, conversation, thread, edit/delete, and attachment
+  // provenance lives in source_metadata.
+  'slack',
 ]);
 
 export const eventVisibility = pgEnum('event_visibility', ['private', 'team', 'specific_users']);
@@ -113,5 +117,8 @@ export const rawEvents = pgTable(
     uniqueIndex('raw_events_integration_dedup_unq')
       .on(table.teamId, sql`((${table.sourceMetadata} ->> 'dedup_key'))`)
       .where(sql`${table.sourceMetadata} ? 'dedup_key'`),
+    uniqueIndex('raw_events_slack_event_id_unq')
+      .on(sql`((${table.sourceMetadata} ->> 'slack_event_id'))`)
+      .where(sql`${table.sourceMetadata} ? 'slack_event_id'`),
   ],
 );

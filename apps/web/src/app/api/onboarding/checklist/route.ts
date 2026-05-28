@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic';
 const LABELS: Record<onboarding.OnboardingStep, string> = {
   first_note: 'Capture one timeline event',
   telegram: 'Link Telegram',
+  slack: 'Install or link Slack',
   email_forwarding: 'Forward email into the timeline',
   first_document: 'Upload a document',
   first_integration: 'Connect an integration or MCP server',

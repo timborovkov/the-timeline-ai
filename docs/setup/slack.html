@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Slack conversational capture setup</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <main id="main">
+      <h1>Slack conversational capture setup</h1>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-27</span></div>
+      <p class="tldr">
+        Slack is a first-party Capture Surface like Telegram: install the app with OAuth, link Slack
+        users with OAuth, bind channels from Timeline, and let DMs route through the user's active
+        external team.
+      </p>
+
+      <nav class="toc" aria-label="On this page">
+        <strong>On this page</strong>
+        <ul>
+          <li><a href="#app">1. Create the Slack app</a></li>
+          <li><a href="#urls">2. Configure URLs</a></li>
+          <li><a href="#scopes">3. Add scopes and events</a></li>
+          <li><a href="#install">4. Install and bind conversations</a></li>
+          <li><a href="#model">Mental model</a></li>
+        </ul>
+      </nav>
+
+      <h2 id="app">1. Create the Slack app</h2>
+      <ol>
+        <li>Create an app at <a href="https://api.slack.com/apps">api.slack.com/apps</a>.</li>
+        <li>Copy the app's client id, client secret, and signing secret.</li>
+      </ol>
+      <pre><code>SLACK_CLIENT_ID=
+SLACK_CLIENT_SECRET=
+SLACK_SIGNING_SECRET=
+</code></pre>
+      <p>
+        Slack bot tokens are stored encrypted at rest with
+        <code>SECRETS_ENCRYPTION_KEY</code>. Generate that key before installing Slack.
+      </p>
+
+      <h2 id="urls">2. Configure URLs</h2>
+      <ul>
+        <li>
+          OAuth redirect URLs:
+          <code>&lt;AUTH_URL&gt;/api/slack/install/callback</code> and
+          <code>&lt;AUTH_URL&gt;/api/slack/user-link/callback</code>.
+        </li>
+        <li>Events Request URL: <code>&lt;AUTH_URL&gt;/api/slack/events</code>.</li>
+        <li>Slash command Request URL: <code>&lt;AUTH_URL&gt;/api/slack/commands</code>.</li>
+      </ul>
+      <p>
+        The events and slash-command endpoints verify Slack's
+        <code>X-Slack-Signature</code> and reject timestamps older than five minutes.
+      </p>
+
+      <h2 id="scopes">3. Add scopes and events</h2>
+      <p>Bot scopes used by Timeline:</p>
+      <pre><code>app_mentions:read
+channels:history channels:read
+chat:write commands files:read
+groups:history groups:read
+im:history im:read
+reactions:write users:read users:read.email
+</code></pre>
+      <p>User scope used for identity linking:</p>
+      <pre><code>identity.basic
+</code></pre>
+      <p>Subscribe to bot events:</p>
+      <pre><code>message.channels
+message.groups
+message.im
+app_mention
+</code></pre>
+
+      <h2 id="install">4. Install and bind conversations</h2>
+      <ol>
+        <li>Open <strong>Team → Slack</strong> in Timeline.</li>
+        <li>Team owner/admin installs or reconnects the Slack app.</li>
+        <li>Each member clicks <strong>Connect identity</strong> to link their Slack user.</li>
+        <li>Owner/admin chooses channels/private channels from the picker and binds them.</li>
+      </ol>
+      <p>
+        The bot must be present in a private channel before Slack will deliver history/events for
+        it. DMs need no channel binding; they route through the linked Slack user's active team.
+      </p>
+
+      <h2 id="model">Mental model</h2>
+      <ul>
+        <li>
+          <strong>Sender</strong> is always recorded in metadata and rendered into extraction and
+          embeddings, whether or not that Slack user is linked to a Timeline user.
+        </li>
+        <li>
+          <strong>Source owner</strong> for a bound channel is the Timeline user who created the
+          binding. Unlinked sender messages use that owner for source ownership and default
+          visibility ownership, but they are not attributed as authored by the binding owner.
+        </li>
+        <li>
+          Linked Slack senders are authors for their own messages when they are members of the
+          receiving Timeline team.
+        </li>
+        <li>
+          Slack DMs get a best-effort <code>:eyes:</code> reaction after capture. Channels never get
+          acknowledgement reactions.
+        </li>
+        <li>
+          Source edits create replacement raw rows and tombstone older visible revisions. Source
+          deletes tombstone active Timeline rows while preserving immutable raw rows.
+        </li>
+        <li>
+          Audio/voice files are transcribed. Supported text, image, PDF, DOCX, CSV/JSON/XML/YAML,
+          Markdown, HTML, and log files become document versions and feed document extraction and
+          embeddings. Archives, executables, video, oversize files, and unknown binary files are
+          skipped. Ambiguous <code>.mp4</code>/<code>.webm</code> files require an
+          <code>audio/*</code> content type to enter transcription.
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

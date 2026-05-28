@@ -82,8 +82,8 @@ export interface EventListFilters {
   /**
    * Narrow to a specific `event_source` value. Pushes the predicate into
    * SQL so `limit` bounds the matching rows (not the pre-filter window).
-   * Mirrors the pg enum: 'web' | 'telegram' | 'email' | 'system' |
-   * 'document' | 'meeting' | 'integration'.
+   * Mirrors the pg enum: 'web' | 'telegram' | 'slack' | 'email' |
+   * 'system' | 'document' | 'meeting' | 'integration'.
    */
   source?: string;
   limit?: number;
@@ -144,7 +144,8 @@ export interface SearchEventsInput {
     | 'integration'
     | 'document'
     | 'meeting'
-    | 'calendar';
+    | 'calendar'
+    | 'slack';
   entityIds?: string[];
   /**
    * Narrow vector search to a subset of Qdrant source kinds. Phase 8 adds
@@ -802,7 +803,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
        */
       getEventsByIds: getEventsByIdsImpl,
 
-      async removeTelegramMessage(id: string): Promise<boolean> {
+      async removeConversationalMessage(id: string): Promise<boolean> {
         const role = await ensureMember();
         return db.transaction(async (tx) => {
           const rows = await tx
@@ -824,48 +825,73 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             .limit(1);
           const row = rows[0];
           if (!row) return false;
-          if (row.source !== 'telegram') {
-            throw new Error('Only Telegram events can be removed this way');
+          if (row.source !== 'telegram' && row.source !== 'slack') {
+            throw new Error('Only Telegram and Slack events can be removed this way');
           }
           const isAdmin = role === 'owner' || role === 'admin';
           if (!isAdmin && row.authorUserId !== userId) {
-            throw new Error('Only the Telegram author or a team admin can remove this event');
+            throw new Error('Only the message author or a team admin can remove this event');
           }
 
           const meta = (row.sourceMetadata ?? {}) as Record<string, unknown>;
+          const isTelegram = row.source === 'telegram';
           const chatId = meta.tg_chat_id;
           const messageId = meta.tg_message_id;
-          if (
-            (typeof chatId !== 'number' && typeof chatId !== 'string') ||
-            (typeof messageId !== 'number' && typeof messageId !== 'string')
+          const workspaceId = meta.slack_workspace_id;
+          const channelId = meta.slack_channel_id;
+          const slackTs = meta.slack_message_ts;
+          if (isTelegram) {
+            if (
+              (typeof chatId !== 'number' && typeof chatId !== 'string') ||
+              (typeof messageId !== 'number' && typeof messageId !== 'string')
+            ) {
+              throw new Error('Telegram event is missing message metadata');
+            }
+          } else if (
+            typeof workspaceId !== 'string' ||
+            typeof channelId !== 'string' ||
+            typeof slackTs !== 'string'
           ) {
-            throw new Error('Telegram event is missing message metadata');
+            throw new Error('Slack event is missing message metadata');
           }
 
           const patch = JSON.stringify({
             deleted: true,
-            delete_reason: 'telegram_removed_in_timeline',
+            delete_reason: isTelegram
+              ? 'telegram_removed_in_timeline'
+              : 'slack_removed_in_timeline',
             deleted_at: new Date().toISOString(),
             deleted_by_user_id: userId,
             deleted_from_event_id: row.id,
           });
+          const baseConditions = [
+            eq(rawEvents.teamId, teamId),
+            eq(rawEvents.source, row.source),
+            activeRawEventFilter,
+          ];
+          const sourceConditions = isTelegram
+            ? [
+                sql`${rawEvents.sourceMetadata} ->> 'tg_chat_id' = ${String(chatId)}`,
+                sql`${rawEvents.sourceMetadata} ->> 'tg_message_id' = ${String(messageId)}`,
+              ]
+            : [
+                sql`${rawEvents.sourceMetadata} ->> 'slack_workspace_id' = ${workspaceId}`,
+                sql`${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${channelId}`,
+                sql`${rawEvents.sourceMetadata} ->> 'slack_message_ts' = ${slackTs}`,
+              ];
           const removed = await tx
             .update(rawEvents)
             .set({
               sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
             })
-            .where(
-              and(
-                eq(rawEvents.teamId, teamId),
-                eq(rawEvents.source, 'telegram'),
-                sql`${rawEvents.sourceMetadata} ->> 'tg_chat_id' = ${String(chatId)}`,
-                sql`${rawEvents.sourceMetadata} ->> 'tg_message_id' = ${String(messageId)}`,
-                activeRawEventFilter,
-              ),
-            )
+            .where(and(...baseConditions, ...sourceConditions))
             .returning({ id: rawEvents.id });
           return removed.length > 0;
         });
+      },
+
+      async removeTelegramMessage(id: string): Promise<boolean> {
+        return this.removeConversationalMessage(id);
       },
 
       async createEvent(input: CreateEventInput) {
@@ -1268,6 +1294,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
                     inArray(rawEvents.id, eventIds),
                     eq(rawEvents.teamId, teamId),
                     visibilityFilter,
+                    activeRawEventFilter,
                   ),
                 )
                 .orderBy(desc(rawEvents.occurredAt))

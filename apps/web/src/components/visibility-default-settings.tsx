@@ -9,6 +9,7 @@ type Source =
   | 'team'
   | 'web'
   | 'telegram'
+  | 'slack'
   | 'email'
   | 'document'
   | 'meeting'
@@ -33,6 +34,7 @@ const SOURCE_LABEL: Record<Source, string> = {
   team: 'Team fallback',
   web: 'Web capture',
   telegram: 'Telegram',
+  slack: 'Slack',
   email: 'Email',
   document: 'Documents',
   meeting: 'Meetings',

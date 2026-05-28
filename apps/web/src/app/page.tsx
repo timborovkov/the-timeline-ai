@@ -1,6 +1,6 @@
+import { CalendarDays, Mail, MessageCircle, Send, Video } from 'lucide-react';
 import Link from 'next/link';
 
-import { AssociationLine } from './_concept-association-line';
 import { IntegrationCloud } from './_integration-cloud';
 
 import type { Metadata } from 'next';
@@ -28,6 +28,7 @@ export const metadata: Metadata = {
     'cited AI answers',
     'meeting transcript search',
     'Telegram bot CRM',
+    'Slack bot ingest',
     'team timeline',
     'organizational memory',
   ],
@@ -55,6 +56,16 @@ export const metadata: Metadata = {
 
 const CONTACT_HREF = '/help/support';
 
+const NATIVE_INGEST = [
+  { label: 'Telegram', icon: Send },
+  { label: 'Slack', icon: MessageCircle },
+  { label: 'Google Meet', icon: Video },
+  { label: 'Zoom', icon: Video },
+  { label: 'Microsoft Teams', icon: Video },
+  { label: 'Email', icon: Mail },
+  { label: 'Calendar', icon: CalendarDays },
+] as const;
+
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-bg text-fg">
@@ -64,7 +75,6 @@ export default function LandingPage() {
         <Hero />
         <Problem />
         <Solution />
-        <HowItWorks />
         <Surfaces />
         <Integrations />
         <Receipts />
@@ -107,7 +117,9 @@ function StructuredData() {
         featureList: [
           'Voice-, chat-, and email-first capture',
           'Telegram bot ingest with /ask agent',
+          'Slack bot ingest with /ask and @Timeline agent answers',
           'Email ingest via Postmark',
+          'Calendar events in the same operational timeline',
           'Document drive with version history',
           'Meeting transcripts from Google Meet, Microsoft Teams, and Zoom (Recall.ai)',
           'Agent answers with auditable citations',
@@ -135,7 +147,7 @@ function StructuredData() {
 const FAQ_ITEMS = [
   {
     q: 'What is The Timeline?',
-    a: 'The Timeline is a multi-tenant team memory and object management system. Team members capture work as it happens — voice notes, forwarded emails, Telegram messages, meeting transcripts, document uploads — and the agent compiles a searchable, queryable history of who did what, talked to whom, decided what, and what changed. Every answer the agent returns is cited back to the raw event it came from.',
+    a: 'The Timeline is a multi-tenant team memory and object management system. Team members capture work as it happens — voice notes, forwarded emails, Telegram and Slack messages, meeting transcripts, document uploads — and the agent compiles a searchable, queryable history of who did what, talked to whom, decided what, and what changed. Every answer the agent returns is cited back to the raw event it came from.',
   },
   {
     q: 'Who is The Timeline for?',
@@ -147,7 +159,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How is capture done?',
-    a: 'Five surfaces feed one pipeline. (1) Web and PWA: typed notes, audio uploads, drag-drop documents. (2) Telegram bot: voice memos and text in DMs or team groups; /ask runs the same agent as web chat. (3) Email: forward, CC, or BCC to your team address, parsed by Postmark. (4) Document drive: team folders with version history. (5) Meeting bots (Google Meet, Microsoft Teams, Zoom via Recall.ai) — transcripts and action items land in the same pipeline as voice memos.',
+    a: 'Native surfaces feed one pipeline. Telegram and Slack capture chat, voice, files, /ask, and @Timeline context. Google Meet, Zoom, and Microsoft Teams land through meeting bots. Email, calendar events, web notes, drive uploads, MCP servers, and third-party integrations all become cited timeline events.',
   },
   {
     q: 'What models power the agent?',
@@ -240,10 +252,22 @@ function TopNav() {
             Product
           </Link>
           <Link
-            href="#how-it-works"
+            href="#surfaces"
             className="hidden px-3 py-2 text-fg-muted transition-colors hover:text-fg sm:inline"
           >
-            How it works
+            Surfaces
+          </Link>
+          <Link
+            href="/help"
+            className="hidden px-3 py-2 text-fg-muted transition-colors hover:text-fg sm:inline"
+          >
+            Docs
+          </Link>
+          <Link
+            href={CONTACT_HREF}
+            className="hidden px-3 py-2 text-fg-muted transition-colors hover:text-fg md:inline"
+          >
+            Contact
           </Link>
           <Link href="/sign-in" className="px-3 py-2 text-fg-muted transition-colors hover:text-fg">
             Sign in
@@ -275,9 +299,9 @@ function Hero() {
               updates itself.
             </h1>
             <p className="mt-8 max-w-prose text-lg leading-relaxed text-fg-muted">
-              Voice-note the call. Forward the email. Drop a Meet, Teams, or Zoom link. The agent
-              extracts who, what, and when — reconciled against everything your team has ever said.
-              Ask anything; every answer cites its source.
+              Voice-note the call in Telegram. Capture the Slack thread. Forward the email. Drop a
+              Meet, Teams, or Zoom link. The agent extracts who, what, and when — reconciled against
+              everything your team has ever said. Ask anything; every answer cites its source.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
               <Button asChild size="lg">
@@ -299,8 +323,30 @@ function Hero() {
           </div>
           <HeroMock />
         </div>
+        <NativeIngestStrip />
       </div>
     </section>
+  );
+}
+
+function NativeIngestStrip() {
+  return (
+    <div className="mt-14 border-y border-border py-3">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
+          Native ingest
+        </span>
+        {NATIVE_INGEST.map(({ label, icon: Icon }) => (
+          <span
+            key={label}
+            className="inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted"
+          >
+            <Icon className="size-3.5 text-fg-dim" aria-hidden="true" />
+            {label}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -393,36 +439,15 @@ function IndictmentCell({ label, body }: { label: string; body: string }) {
 function Solution() {
   return (
     <Section id="solution">
-      <IndexStrip>SOLUTION · THREE MOVES</IndexStrip>
-      <div className="mt-10 grid gap-10 sm:grid-cols-3 sm:gap-12">
-        <Pillar
-          n="01"
-          title="Capture is voice-first."
-          body="Three taps in Telegram. No forms, no schemas, no &ldquo;which project does this belong to.&rdquo; Voice memo, text, forwarded email — all the same pipeline."
-        />
-        <Pillar
-          n="02"
-          title="Objects and tasks, derived from what you said."
-          body="The agent reads raw events and resolves them into objects — people, companies, deals, projects, documents — plus the tasks that fall out."
-        />
-        <Pillar
-          n="03"
-          title="Every answer is cited."
-          body="No black-box summaries. Click any claim, see the raw event it came from with author, timestamp, and source."
-        />
-      </div>
+      <IndexStrip>CONCEPTS · HOW IT FITS TOGETHER</IndexStrip>
+      <ConceptDiagram />
 
-      <div className="mt-20">
-        <IndexStrip>CONCEPTS · HOW IT FITS TOGETHER</IndexStrip>
-        <ConceptDiagram />
-
-        <div className="mt-10 max-w-3xl border-l-2 border-signal pl-5">
-          <Mono className="text-signal">THE PAYOFF</Mono>
-          <p className="mt-4 text-lg leading-snug text-fg">
-            The output looks like a CRM, a project tracker, and a doc index — current, queryable,
-            cited. You just never had to update it.
-          </p>
-        </div>
+      <div className="mt-10 max-w-3xl border-l-2 border-signal pl-5">
+        <Mono className="text-signal">THE PAYOFF</Mono>
+        <p className="mt-4 text-lg leading-snug text-fg">
+          The output looks like a CRM, a project tracker, and a doc index — current, queryable,
+          cited. You just never had to update it.
+        </p>
       </div>
     </Section>
   );
@@ -430,19 +455,47 @@ function Solution() {
 
 const INPUTS = [
   'TELEGRAM',
-  'GOOGLE MEET',
+  'SLACK',
+  'GOOGLE MEET / ZOOM / TEAMS',
   'EMAIL',
-  'WEB / PWA',
-  'DRIVE UPLOAD',
-  'MCP / CRM',
-  'ZOOM / TEAMS',
+  'CALENDAR',
+  'WEB APP',
+  'TEAM DOCUMENT DRIVE',
+  'MCP SERVERS',
+  '3RD PARTY INTEGRATIONS',
 ] as const;
 
-const WORKSPACE_OBJECTS = [
-  { chip: 'obj:apple-q2', name: 'Apple', type: 'DEAL' },
-  { chip: 'obj:john-ternus', name: 'John Ternus', type: 'PERSON' },
-  { chip: 'task:revise-deck', name: 'Revise deck by Fri', type: 'TASK' },
-  { chip: 'obj:office-rules', name: 'Office Rules', type: 'DOCUMENT' },
+const WORKSPACE_OUTPUTS = [
+  {
+    label: 'TIMELINE',
+    detail: 'Events · decisions · who did what · when',
+    icon: '▤',
+    delay: 3.0,
+  },
+  {
+    label: 'AI CHAT',
+    detail: 'Free-form Q&A for the team · cited answers',
+    icon: '⌬',
+    delay: 3.45,
+  },
+  {
+    label: 'CALENDAR EVENTS',
+    detail: 'When the team agreed to do something',
+    icon: '◷',
+    delay: 3.9,
+  },
+  {
+    label: 'OBJECTS / PEOPLE',
+    detail: 'CRM-style people, companies, deals, documents',
+    icon: '◆',
+    delay: 4.35,
+  },
+  {
+    label: 'TASKS',
+    detail: 'What we agreed to do · owner · due date',
+    icon: '☑',
+    delay: 4.8,
+  },
 ] as const;
 
 function ConceptDiagram() {
@@ -497,109 +550,24 @@ function ConceptDiagram() {
         <div className="relative z-[1] bg-bg p-6 sm:p-7">
           <Mono>WORKSPACE</Mono>
 
-          {/* TIMELINE */}
-          <LitRow delay={3.0} className="mt-5">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-                ▤ TIMELINE
-              </span>
-              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-                2,847 EVENTS · CITED
-              </span>
-            </div>
-          </LitRow>
-
-          {/* OBJECTS group */}
-          <div className="mt-4">
-            <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              ◆ OBJECTS
-            </div>
-            <div data-cdg-objects="" className="relative mt-2 space-y-1.5 pl-3">
-              {WORKSPACE_OBJECTS.map((o, i) => (
-                <LitRow
-                  key={o.chip}
-                  id={`cdg-row-${o.chip.replace(/[^a-zA-Z0-9]/g, '-')}`}
-                  delay={3.5 + i * 0.45}
-                  dense
-                >
-                  <div className="flex items-center gap-2 text-sm">
-                    <CitationChipStatic id={o.chip} />
-                    <span className="text-fg">{o.name}</span>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
-                      · {o.type}
-                    </span>
-                  </div>
-                </LitRow>
-              ))}
-              {/* Association line: measured at runtime between the two row IDs;
-                  resilient to LitRow padding changes. */}
-              <AssociationLine
-                fromId="cdg-row-obj-apple-q2"
-                toId="cdg-row-obj-john-ternus"
-                containerSelector="[data-cdg-objects]"
-                label="↳ related"
-              />
-            </div>
+          <div className="mt-5 space-y-2">
+            {WORKSPACE_OUTPUTS.map((output) => (
+              <LitRow key={output.label} delay={output.delay} dense>
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+                    {output.icon} {output.label}
+                  </span>
+                  <span className="min-w-0 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim sm:text-right">
+                    {output.detail}
+                  </span>
+                </div>
+              </LitRow>
+            ))}
           </div>
-
-          {/* AGENT Q&A */}
-          <LitRow delay={5.8} className="mt-4">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-                ⌬ AGENT Q&A
-              </span>
-              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-                /ASK · CITED ANSWERS
-              </span>
-            </div>
-          </LitRow>
         </div>
 
         {/* Sweep line — sits behind content, crosses the full top row */}
         <span className="cdg-sweep" />
-      </div>
-
-      {/* Drop connectors — animate "everything settles into the drive".
-          Mobile: single grouped line. Desktop: three columns. */}
-      <div className="relative h-6 bg-bg sm:hidden">
-        <span
-          className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
-          style={{ animationDelay: '5.6s' }}
-        />
-      </div>
-      <div className="relative hidden h-6 gap-px bg-border sm:grid sm:grid-cols-3">
-        <div className="relative bg-bg">
-          <span
-            className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
-            style={{ animationDelay: '5.5s' }}
-          />
-        </div>
-        <div className="relative bg-bg">
-          <span
-            className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
-            style={{ animationDelay: '5.7s' }}
-          />
-        </div>
-        <div className="relative bg-bg">
-          <span
-            className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
-            style={{ animationDelay: '5.9s' }}
-          />
-        </div>
-      </div>
-
-      {/* DRIVE foundation strip */}
-      <div className="border-t border-border bg-surface px-6 py-5 sm:px-7">
-        <div className="flex flex-wrap items-baseline justify-between gap-4">
-          <Mono className="text-fg">▣ TEAM DOCUMENT DRIVE</Mono>
-          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
-            FOUNDATION · TEAM-SCOPED
-          </span>
-        </div>
-        <p className="mt-2 text-sm leading-[1.6] text-fg-muted">
-          Immutable raw events · versioned blobs · vectors · the storage layer everything else rests
-          on.
-        </p>
       </div>
 
       <style>{CDG_STYLES}</style>
@@ -636,9 +604,6 @@ const CDG_STYLES = `
 
   /* Default (and reduced-motion) state: everything reads as "settled / lit". */
   .cdg-lit { opacity: 1; }
-  .cdg-assoc { opacity: 1; }
-  .cdg-assoc-label { opacity: 1; }
-  .cdg-drop { opacity: 0.55; }
   .cdg-sweep { display: none; }
   .cdg-pulse { opacity: 0.35; }
   .cdg-dot { opacity: 1; }
@@ -666,18 +631,6 @@ const CDG_STYLES = `
       opacity: 0;
       animation: cdg-lit 10s infinite ease-out;
     }
-    .cdg-assoc {
-      opacity: 0;
-      animation: cdg-assoc 10s infinite ease-out;
-    }
-    .cdg-assoc-label {
-      opacity: 0;
-      animation: cdg-assoc 10s infinite ease-out;
-    }
-    .cdg-drop {
-      opacity: 0;
-      animation: cdg-drop 10s infinite ease-out;
-    }
     .cdg-pulse {
       opacity: 0;
       animation: cdg-pulse 10s infinite ease-out;
@@ -704,20 +657,6 @@ const CDG_STYLES = `
     98%, 100% { opacity: 0; }
   }
 
-  @keyframes cdg-assoc {
-    0%, 52%   { opacity: 0; }
-    58%       { opacity: 1; }
-    92%       { opacity: 1; }
-    98%, 100% { opacity: 0; }
-  }
-
-  @keyframes cdg-drop {
-    0%, 52%   { opacity: 0; }
-    62%       { opacity: 0.55; }
-    92%       { opacity: 0.55; }
-    98%, 100% { opacity: 0; }
-  }
-
   @keyframes cdg-pulse {
     0%, 4%    { opacity: 0; transform: scale(0.4); }
     8%        { opacity: 1; transform: scale(1); }
@@ -734,82 +673,42 @@ const CDG_STYLES = `
   }
 `;
 
-function Pillar({ n, title, body }: { n: string; title: string; body: string }) {
-  return (
-    <div>
-      <div className="font-mono text-xs uppercase tracking-[0.18em] text-fg-dim">{n}</div>
-      <h3 className="mt-3 text-xl font-semibold leading-snug tracking-tight">{title}</h3>
-      <p className="mt-3 text-base leading-[1.6] text-fg-muted">{body}</p>
-    </div>
-  );
-}
-
-function HowItWorks() {
-  const steps = [
-    {
-      n: '01',
-      title: 'Land',
-      body: 'Voice memo, email, Telegram, upload, or meeting bot. Immutable raw event, team-scoped.',
-    },
-    {
-      n: '02',
-      title: 'Extract',
-      body: 'Audio → text. Text → objects, facts, relationships, tasks. Every fact links to its source event.',
-    },
-    {
-      n: '03',
-      title: 'Index',
-      body: 'Vectors in Qdrant, structured facts in Postgres, originals in object storage. Always team-scoped.',
-    },
-    {
-      n: '04',
-      title: 'Ask',
-      body: 'Agent answers in the web app or in Telegram via /ask. Citations on every claim.',
-    },
-  ];
-  return (
-    <Section id="how-it-works">
-      <IndexStrip>PIPELINE · INGEST → INDEX → ANSWER</IndexStrip>
-      <ol className="mt-10 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
-        {steps.map((s) => (
-          <li key={s.n} className="bg-bg p-6 sm:p-8">
-            <div className="font-mono text-xs uppercase tracking-[0.18em] text-signal">
-              {s.n} · {s.title.toUpperCase()}
-            </div>
-            <p className="mt-4 text-base leading-[1.55] text-fg-muted">{s.body}</p>
-          </li>
-        ))}
-      </ol>
-    </Section>
-  );
-}
-
 function Surfaces() {
   return (
     <Section id="surfaces">
-      <IndexStrip>SURFACES · ONE PIPELINE, MANY MOUTHS</IndexStrip>
-      <div className="mt-10 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
+      <IndexStrip>SURFACES · NATIVE INGEST + EXTENSIBILITY</IndexStrip>
+      <div className="mt-10 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
         <SurfaceTile
-          label="WEB & PWA"
-          body="Typed notes, audio uploads, drag-drop documents. Same shortcuts everywhere."
+          label="TELEGRAM"
+          body="Voice memos, text, and attachments in DMs or team groups. /ask runs the same cited agent."
         />
         <SurfaceTile
-          label="TELEGRAM BOT"
-          body="Voice memos and text in DMs or team groups. /ask runs the same agent as web chat."
-        />
-        <SurfaceTile label="EMAIL" body="Forward, CC, or BCC to your team address." />
-        <SurfaceTile
-          label="DOCUMENT DRIVE"
-          body="Team folders with version history. Uploads and edits become timeline events."
+          label="SLACK"
+          body="DMs, bound channels, files, /ask, and @Timeline replies. Thread context becomes searchable memory."
         />
         <SurfaceTile
-          label="MEETING BOTS"
-          body="Paste a Meet, Teams, or Zoom link. A silent Recall.ai bot joins, transcribes, and files decisions and tasks."
+          label="MEET / ZOOM / TEAMS"
+          body="Meeting bots transcribe calls and file decisions, tasks, and cited summaries."
         />
         <SurfaceTile
-          label="CUSTOM MCP"
-          coming
-          body="Connect internal tools or any third-party MCP server. No bespoke connectors."
+          label="EMAIL"
+          body="Forward, CC, or BCC to your team address. Parsed mail lands beside chat and meetings."
+        />
+        <SurfaceTile
+          label="CALENDAR"
+          body="Scheduled work, all-day events, and time-aware context appear in the same timeline."
+        />
+        <SurfaceTile
+          label="WEB APP"
+          body="Typed notes, audio uploads, drag-drop files, approvals, and cited agent chat."
+        />
+        <SurfaceTile
+          label="DRIVE UPLOAD"
+          body="Team folders with version history. Uploads and edits become searchable document events."
+        />
+        <SurfaceTile
+          label="MCP + INTEGRATIONS"
+          body="Connect MCP servers and third-party systems like CRMs, ERPs, issue trackers, and docs."
         />
       </div>
     </Section>
@@ -871,9 +770,9 @@ function Receipts() {
             Ask. See the receipts.
           </h2>
           <p className="mt-6 max-w-prose text-base leading-[1.65] text-fg-muted">
-            Every fact resolves to a raw event — voice memo, email, Telegram message, document
-            version — with author, timestamp, and source. Click the chip; the inspector shows
-            exactly what was said.
+            Every fact resolves to a raw event — voice memo, Slack or Telegram message, email,
+            document version — with author, timestamp, and source. Click the chip; the inspector
+            shows exactly what was said.
           </p>
           <blockquote className="mt-8 max-w-prose border-l-2 border-signal pl-5 text-lg italic leading-snug text-fg">
             Re-run the extraction with a better model tomorrow — the raw event never changes, the
@@ -1005,11 +904,17 @@ function Footer() {
           <Link href="#solution" className="hover:text-fg">
             Product
           </Link>
-          <Link href="#how-it-works" className="hover:text-fg">
-            How it works
+          <Link href="#surfaces" className="hover:text-fg">
+            Surfaces
           </Link>
           <Link href="#faq" className="hover:text-fg">
             FAQ
+          </Link>
+          <Link href="/help" className="hover:text-fg">
+            Docs
+          </Link>
+          <Link href={CONTACT_HREF} className="hover:text-fg">
+            Contact
           </Link>
           <Link href="/sign-in" className="hover:text-fg">
             Sign in

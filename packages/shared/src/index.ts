@@ -5,6 +5,7 @@ export * from './slug.js';
 export * from './team-scope.js';
 export * from './team-roles.js';
 export * as telegram from './telegram/index.js';
+export * as slack from './slack/index.js';
 export * as email from './email/index.js';
 export { sendTeamInviteEmail } from './email/outbound.js';
 export * from './s3/index.js';

@@ -123,12 +123,13 @@ packages/
             calendar module (Phase 11 — event scope, raw-event audit rows,
             entity links, settings, and calendar embedding enqueue/delete),
             onboarding module (Phase 13 — team-level tutorial completion +
-            per-user dismissal),
-            job-recovery module (Phase 13 — team-scoped retry/dismiss for
-            failed product jobs)
+            per-user dismissal), job-recovery module (Phase 13 — team-scoped
+            retry/dismiss for failed product jobs), slack module (Phase 12 —
+            OAuth install/user link, signed events/commands, conversation
+            bindings, capture)
 docs/
   setup/    External service walkthroughs (Telegram, OpenRouter, Postmark,
-            Recall.ai meeting bots, Sentry, Railway, local dev,
+            Slack, Recall.ai meeting bots, Sentry, Railway, local dev,
             third-party integrations + Timeline-as-MCP-server)
 ```
 

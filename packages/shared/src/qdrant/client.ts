@@ -75,7 +75,8 @@ export interface QdrantPayload {
     | 'document'
     | 'meeting'
     | 'integration'
-    | 'calendar';
+    | 'calendar'
+    | 'slack';
   visibility: 'team' | 'private' | 'specific_users';
   /**
    * Users explicitly granted visibility when `visibility === 'specific_users'`.

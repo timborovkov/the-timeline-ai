@@ -1,4 +1,6 @@
 import {
+  documentVersions,
+  documents,
   type Db,
   rawEvents,
   teamMembers,
@@ -11,6 +13,12 @@ import {
 import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { askAgent } from '../agent/ask.js';
+import {
+  classifyConversationalAttachment,
+  CONVERSATIONAL_ATTACHMENT_LIMITS,
+  extensionOf,
+} from '../conversational/attachments.js';
+import { buildDocumentObjectKey } from '../documents/object-key.js';
 import { childLogger } from '../logger.js';
 import { getRedisConnection } from '../queue/connection.js';
 import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '../rate-limit/index.js';
@@ -19,7 +27,9 @@ import { type TelegramApi } from './api.js';
 import {
   tgUpdateSchema,
   type TgAudioPayload,
+  type TgDocumentPayload,
   type TgMessage,
+  type TgPhotoSize,
   type TgUpdate,
   type TgUser,
 } from './types.js';
@@ -70,10 +80,16 @@ export interface EmbedEnqueueDeps {
   enqueueEmbed(input: { rawEventId: string; teamId: string }): Promise<void>;
 }
 
+export interface DocumentAttachmentDeps {
+  upload(input: { key: string; body: Buffer; contentType: string }): Promise<void>;
+  enqueueExtract(input: { documentVersionId: string; teamId: string }): Promise<void>;
+}
+
 interface DispatcherDeps {
   db: Db;
   tg: TelegramApi;
   audio?: AudioIngestDeps;
+  documents?: DocumentAttachmentDeps;
   extract?: ExtractEnqueueDeps;
   embed?: EmbedEnqueueDeps;
 }
@@ -194,7 +210,7 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
       });
       return;
     }
-    await ingestAudio(
+    const insertedAudio = await ingestAudio(
       {
         db: ctx.db,
         tg: ctx.tg,
@@ -209,6 +225,38 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
       ctx.message.voice ? 'voice' : 'audio',
       ctx.activeTeamId,
     );
+    if (insertedAudio) await ackReaction(ctx.tg, ctx.message.chat.id, ctx.message.message_id);
+    return;
+  }
+
+  const fileAttachment = pickTelegramDocumentAttachment(ctx.message);
+  if (fileAttachment && !isEdit) {
+    if (!ctx.activeTeamId) {
+      await ctx.tg.sendMessage({
+        chat_id: ctx.message.chat.id,
+        text: 'No active team. Run /link <token> first. Your file was not recorded.',
+      });
+      return;
+    }
+    const inserted = await insertEvent(ctx.db, {
+      fallbackTeamId: ctx.activeTeamId,
+      authorUserId: ctx.tgUserRow.userId,
+      text: text || null,
+      message: ctx.message,
+      updateId: ctx.updateId,
+      sourceUnverified: ctx.tgUserRow.userId === null,
+      isEdit: false,
+    });
+    if (text.trim()) {
+      await maybeEnqueueExtract(ctx, inserted);
+      await maybeEnqueueEmbed(ctx, inserted);
+    }
+    await ingestTelegramDocumentAttachment(
+      ctx,
+      fileAttachment,
+      inserted ? { ...inserted, authorUserId: ctx.tgUserRow.userId } : null,
+    );
+    if (inserted) await ackReaction(ctx.tg, ctx.message.chat.id, ctx.message.message_id);
     return;
   }
 
@@ -952,6 +1000,29 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
     return;
   }
 
+  const fileAttachment = pickTelegramDocumentAttachment(ctx.message);
+  if (fileAttachment && !isEdit && ctx.binding) {
+    const inserted = await insertEvent(ctx.db, {
+      fallbackTeamId: ctx.binding.teamId,
+      authorUserId: ctx.tgUserRow?.userId ?? null,
+      text: text || null,
+      message: ctx.message,
+      updateId: ctx.updateId,
+      sourceUnverified: !ctx.tgUserRow?.userId,
+      isEdit: false,
+    });
+    if (text.trim()) {
+      await maybeEnqueueExtract(ctx, inserted);
+      await maybeEnqueueEmbed(ctx, inserted);
+    }
+    await ingestTelegramDocumentAttachment(
+      ctx,
+      fileAttachment,
+      inserted ? { ...inserted, authorUserId: ctx.tgUserRow?.userId ?? null } : null,
+    );
+    return;
+  }
+
   if (text) {
     const inserted = await insertEvent(ctx.db, {
       fallbackTeamId: ctx.binding?.teamId ?? null,
@@ -965,9 +1036,6 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
     });
     await maybeEnqueueExtract(ctx, inserted);
     await maybeEnqueueEmbed(ctx, inserted);
-    if (inserted && !isEdit) {
-      await ackReaction(ctx.tg, ctx.message.chat.id, ctx.message.message_id);
-    }
   }
 }
 
@@ -1325,6 +1393,7 @@ async function insertEvent(
     tg_message_id: input.message.message_id,
     tg_update_id: input.updateId,
   };
+  if (input.message.chat.title) metadata.tg_chat_title = input.message.chat.title;
   if (input.message.from) {
     metadata.tg_user_id = input.message.from.id;
     if (input.message.from.username) metadata.tg_username = input.message.from.username;
@@ -1614,22 +1683,26 @@ async function ingestAudio(
   payload: TgAudioPayload,
   kind: 'voice' | 'audio',
   teamId: string,
-): Promise<void> {
+): Promise<boolean> {
   if (!ctx.audio) {
     // No audio ingest deps wired (e.g. local dev without RustFS env). Phase 2
     // behavior for unsupported media: silently drop, log so it's visible.
     log.warn('audio message dropped — audio ingest not configured');
-    return;
+    return false;
   }
 
   let fileInfo;
   let bytes: Buffer;
   try {
     fileInfo = await ctx.tg.getFile({ file_id: payload.file_id });
-    bytes = await ctx.tg.downloadFile(fileInfo.file_path);
+    bytes = await ctx.tg.downloadFile(
+      fileInfo.file_path,
+      CONVERSATIONAL_ATTACHMENT_LIMITS.maxBytes,
+    );
+    if (bytes.length > CONVERSATIONAL_ATTACHMENT_LIMITS.maxBytes) throw new Error('file_oversize');
   } catch (err) {
     log.error({ err }, 'audio fetch failed');
-    return;
+    return false;
   }
 
   const mimeType = payload.mime_type ?? (kind === 'voice' ? 'audio/ogg' : 'audio/mpeg');
@@ -1646,7 +1719,7 @@ async function ingestAudio(
     await ctx.audio.upload({ key, body: bytes, contentType: mimeType });
   } catch (err) {
     log.error({ err }, 'audio upload failed');
-    return;
+    return false;
   }
 
   const extra: Record<string, unknown> = {
@@ -1683,7 +1756,7 @@ async function ingestAudio(
   // try the enqueue again. BullMQ dedups on jobId=rawEventId, so this is
   // a no-op when the original enqueue already succeeded.
   const target = inserted ?? (await findEventByUpdateId(ctx.db, ctx.updateId));
-  if (!target) return;
+  if (!target) return false;
 
   try {
     await ctx.audio.enqueueTranscribe({
@@ -1714,6 +1787,284 @@ async function ingestAudio(
         log.error({ err: markErr }, 'failed to mark row failure');
       });
   }
+  return Boolean(inserted);
+}
+
+type TelegramDocumentAttachment =
+  | { kind: 'document'; payload: TgDocumentPayload; filename: string; contentType: string | null }
+  | { kind: 'photo'; payload: TgPhotoSize; filename: string; contentType: string };
+
+function pickTelegramDocumentAttachment(message: TgMessage): TelegramDocumentAttachment | null {
+  if (message.document) {
+    return {
+      kind: 'document',
+      payload: message.document,
+      filename: message.document.file_name ?? `${message.document.file_id}.bin`,
+      contentType: message.document.mime_type ?? null,
+    };
+  }
+  const photo = message.photo?.slice().sort((a, b) => (b.file_size ?? 0) - (a.file_size ?? 0))[0];
+  if (photo) {
+    return {
+      kind: 'photo',
+      payload: photo,
+      filename: `${photo.file_id}.jpg`,
+      contentType: 'image/jpeg',
+    };
+  }
+  return null;
+}
+
+async function ingestTelegramDocumentAttachment(
+  ctx: {
+    db: Db;
+    tg: TelegramApi;
+    audio?: AudioIngestDeps;
+    documents?: DocumentAttachmentDeps;
+    message: TgMessage;
+  },
+  attachment: TelegramDocumentAttachment,
+  parent: { id: string; teamId: string; authorUserId: string | null } | null,
+): Promise<void> {
+  if (!parent) return;
+  const sizeBytes = attachment.payload.file_size ?? null;
+  const decision = classifyConversationalAttachment({
+    filename: attachment.filename,
+    contentType: attachment.contentType,
+    sizeBytes,
+  });
+  if (decision.kind === 'audio') {
+    await ingestTelegramDocumentAudioAttachment(ctx, attachment, parent);
+    return;
+  }
+  if (!ctx.documents) return;
+  const documentDeps = ctx.documents;
+  if (decision.kind !== 'document') {
+    const patch = JSON.stringify({
+      attachment_skips: [
+        {
+          source: 'telegram',
+          file_id: attachment.payload.file_id,
+          filename: attachment.filename,
+          reason: decision.reason,
+        },
+      ],
+    });
+    await ctx.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, parent.id));
+    return;
+  }
+
+  let fileInfo;
+  let bytes: Buffer;
+  try {
+    fileInfo = await ctx.tg.getFile({ file_id: attachment.payload.file_id });
+    bytes = await ctx.tg.downloadFile(
+      fileInfo.file_path,
+      CONVERSATIONAL_ATTACHMENT_LIMITS.maxBytes,
+    );
+    if (bytes.length > CONVERSATIONAL_ATTACHMENT_LIMITS.maxBytes) throw new Error('file_oversize');
+  } catch (err) {
+    log.error({ err }, 'telegram document fetch failed');
+    return;
+  }
+
+  const contentType = attachment.contentType ?? 'application/octet-stream';
+  await ctx.db.transaction(async (tx) => {
+    const docRows = await tx
+      .insert(documents)
+      .values({
+        teamId: parent.teamId,
+        name: attachment.filename,
+        ownerUserId: parent.authorUserId,
+        visibility: 'team',
+        metadata: {
+          source: 'telegram',
+          tg_file_id: attachment.payload.file_id,
+          parent_raw_event_id: parent.id,
+        },
+      })
+      .returning({ id: documents.id });
+    const doc = docRows[0];
+    if (!doc) throw new Error('telegram_document_insert_failed');
+    const key = buildDocumentObjectKey({
+      teamId: parent.teamId,
+      documentId: doc.id,
+      version: 1,
+      filename: attachment.filename,
+    });
+    const eventRows = await tx
+      .insert(rawEvents)
+      .values({
+        teamId: parent.teamId,
+        authorUserId: parent.authorUserId,
+        source: 'document',
+        contentText: `Uploaded ${attachment.filename}`,
+        visibility: 'team',
+        sourceMetadata: {
+          action: 'upload',
+          document_id: doc.id,
+          document_version: 1,
+          source: 'telegram',
+          tg_file_id: attachment.payload.file_id,
+          parent_raw_event_id: parent.id,
+        },
+      })
+      .returning({ id: rawEvents.id });
+    const event = eventRows[0];
+    if (!event) throw new Error('telegram_document_event_insert_failed');
+    const versionRows = await tx
+      .insert(documentVersions)
+      .values({
+        teamId: parent.teamId,
+        documentId: doc.id,
+        version: 1,
+        objectKey: key,
+        byteSize: bytes.length,
+        contentType,
+        uploadedByUserId: parent.authorUserId,
+        sourceEventId: event.id,
+        processingStatus: 'pending',
+      })
+      .returning({ id: documentVersions.id });
+    const version = versionRows[0];
+    if (!version) throw new Error('telegram_document_version_insert_failed');
+    await tx
+      .update(documents)
+      .set({ currentVersionId: version.id })
+      .where(eq(documents.id, doc.id));
+    await documentDeps.upload({ key, body: bytes, contentType });
+    await documentDeps.enqueueExtract({ documentVersionId: version.id, teamId: parent.teamId });
+  });
+}
+
+async function ingestTelegramDocumentAudioAttachment(
+  ctx: { db: Db; tg: TelegramApi; audio?: AudioIngestDeps; message: TgMessage },
+  attachment: TelegramDocumentAttachment,
+  parent: { id: string; teamId: string; authorUserId: string | null },
+): Promise<void> {
+  if (!ctx.audio) {
+    await recordTelegramAttachmentSkip(ctx.db, parent.id, {
+      source: 'telegram',
+      file_id: attachment.payload.file_id,
+      filename: attachment.filename,
+      reason: 'audio_ingest_not_configured',
+    });
+    return;
+  }
+
+  let fileInfo;
+  let bytes: Buffer;
+  try {
+    fileInfo = await ctx.tg.getFile({ file_id: attachment.payload.file_id });
+    bytes = await ctx.tg.downloadFile(
+      fileInfo.file_path,
+      CONVERSATIONAL_ATTACHMENT_LIMITS.maxBytes,
+    );
+    if (bytes.length > CONVERSATIONAL_ATTACHMENT_LIMITS.maxBytes) throw new Error('file_oversize');
+  } catch (err) {
+    log.error({ err }, 'telegram document audio fetch failed');
+    await recordTelegramAttachmentSkip(ctx.db, parent.id, {
+      source: 'telegram',
+      file_id: attachment.payload.file_id,
+      filename: attachment.filename,
+      reason:
+        err instanceof Error && err.message === 'file_oversize' ? 'oversize' : 'download_failed',
+    });
+    return;
+  }
+
+  const contentType = attachment.contentType ?? 'application/octet-stream';
+  const extension = extensionOf(attachment.filename) || extForMime(contentType, 'bin');
+  const key = ctx.audio.buildAudioKey({
+    teamId: parent.teamId,
+    chatId: ctx.message.chat.id,
+    messageId: ctx.message.message_id,
+    fileId: attachment.payload.file_id,
+    extension,
+  });
+
+  try {
+    await ctx.audio.upload({ key, body: bytes, contentType });
+  } catch (err) {
+    log.error({ err }, 'telegram document audio upload failed');
+    await recordTelegramAttachmentSkip(ctx.db, parent.id, {
+      source: 'telegram',
+      file_id: attachment.payload.file_id,
+      filename: attachment.filename,
+      reason: 'upload_failed',
+    });
+    return;
+  }
+
+  const rows = await ctx.db
+    .insert(rawEvents)
+    .values({
+      teamId: parent.teamId,
+      authorUserId: parent.authorUserId,
+      source: 'telegram',
+      contentText: null,
+      contentAudioUrl: key,
+      visibility: 'team',
+      sourceMetadata: telegramAttachmentMetadata(ctx.message, {
+        tg_attachment_kind: 'audio',
+        tg_file_id: attachment.payload.file_id,
+        tg_file_name: attachment.filename,
+        tg_parent_raw_event_id: parent.id,
+        audio_mime_type: contentType,
+        audio_file_size: attachment.payload.file_size ?? null,
+      }),
+    })
+    .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
+  const row = rows[0];
+  if (!row) return;
+
+  try {
+    await ctx.audio.enqueueTranscribe({
+      rawEventId: row.id,
+      teamId: row.teamId,
+      audioKey: key,
+    });
+  } catch (err) {
+    log.error({ err }, 'telegram document audio transcribe enqueue failed');
+  }
+}
+
+function telegramAttachmentMetadata(
+  message: TgMessage,
+  extra: Record<string, unknown>,
+): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {
+    tg_chat_id: message.chat.id,
+    tg_chat_type: message.chat.type,
+    tg_message_id: message.message_id,
+    ...extra,
+  };
+  if (message.chat.title) metadata.tg_chat_title = message.chat.title;
+  if (message.from) {
+    metadata.tg_user_id = message.from.id;
+    if (message.from.username) metadata.tg_username = message.from.username;
+  }
+  if (message.caption) metadata.tg_caption = message.caption;
+  return metadata;
+}
+
+async function recordTelegramAttachmentSkip(
+  db: Db,
+  parentRawEventId: string,
+  skip: Record<string, unknown>,
+): Promise<void> {
+  const patch = JSON.stringify({ attachment_skips: [skip] });
+  await db
+    .update(rawEvents)
+    .set({
+      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+    })
+    .where(eq(rawEvents.id, parentRawEventId));
 }
 
 async function findEventByUpdateId(

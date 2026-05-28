@@ -15,6 +15,7 @@ const sourceSchema = z.enum([
   'team',
   'web',
   'telegram',
+  'slack',
   'email',
   'document',
   'meeting',

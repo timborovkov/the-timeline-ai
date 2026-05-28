@@ -1,6 +1,7 @@
 import {
   childLogger,
   getAudioBucket,
+  getDocumentsBucket,
   getEnv,
   getS3Client,
   putObject,
@@ -88,6 +89,30 @@ export async function POST(req: Request): Promise<Response> {
       }
     : undefined;
 
+  const documentsReady = Boolean(
+    env.S3_ENDPOINT &&
+    env.S3_REGION &&
+    env.S3_ACCESS_KEY_ID &&
+    env.S3_SECRET_ACCESS_KEY &&
+    env.S3_BUCKET_DOCUMENTS &&
+    env.REDIS_URL,
+  );
+  const documentDeps: telegram.DocumentAttachmentDeps | undefined = documentsReady
+    ? {
+        async upload(input) {
+          await putObject(getS3Client(), {
+            bucket: getDocumentsBucket(),
+            key: input.key,
+            body: input.body,
+            contentType: input.contentType,
+          });
+        },
+        async enqueueExtract(input) {
+          await queue.enqueueDocumentExtractJob(input);
+        },
+      }
+    : undefined;
+
   // Extract enqueue is gated on REDIS_URL only — no S3 needed for the text
   // path. When Redis is unreachable, text events still land; facts are
   // missing until reextract.
@@ -113,6 +138,7 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const deps: Parameters<typeof telegram.handleUpdate>[0] = { db, tg: api };
     if (audioDeps) deps.audio = audioDeps;
+    if (documentDeps) deps.documents = documentDeps;
     if (extractDeps) deps.extract = extractDeps;
     if (embedDeps) deps.embed = embedDeps;
     await telegram.handleUpdate(deps, payload);

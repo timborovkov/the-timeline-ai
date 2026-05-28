@@ -16,6 +16,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { renderRawEventForAi } from './raw-event-renderer.js';
 import { buildEmbeddingPlan } from './sources.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -105,6 +106,81 @@ describe('embedding source plans', () => {
 
     expect(plan?.sourceKind).toBe('integration_event');
     expect(plan?.payloadOverrides).toMatchObject({ source: 'integration', event_id: rawEventId });
+  });
+
+  it('renders Telegram sender context into raw event embedding text', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000003';
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'telegram',
+      contentText: 'Acme asked for the SOC2 report by Friday',
+      occurredAt: new Date('2026-05-26T10:00:00Z'),
+      visibility: 'team',
+      sourceMetadata: {
+        tg_chat_type: 'supergroup',
+        tg_chat_title: 'sales',
+        tg_username: 'alice',
+      },
+    });
+
+    const plan = await buildEmbeddingPlan(
+      db as never,
+      { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+      'event',
+    );
+
+    expect(plan?.text).toContain(
+      'Source context: Telegram | supergroup | sender @alice | chat sales',
+    );
+    expect(plan?.text).toContain('Message:\nAcme asked for the SOC2 report by Friday');
+  });
+
+  it('renders Slack sender, conversation, thread, and attachments into raw event embedding text', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000004';
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'slack',
+      contentText: 'Can someone review the contract?',
+      occurredAt: new Date('2026-05-26T10:00:00Z'),
+      visibility: 'team',
+      sourceMetadata: {
+        slack_channel_type: 'channel',
+        slack_channel_name: 'legal',
+        slack_sender_name: 'Alice Example',
+        slack_message_ts: '1716717600.000100',
+        slack_thread_ts: '1716717600.000200',
+        attachments: [{ name: 'contract.pdf' }],
+      },
+    });
+
+    const plan = await buildEmbeddingPlan(
+      db as never,
+      { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+      'event',
+    );
+
+    expect(plan?.text).toContain(
+      'Source context: Slack | channel | sender Alice Example | conversation legal',
+    );
+    expect(plan?.text).toContain('attachments contract.pdf');
+    expect(plan?.text).toContain('Message:\nCan someone review the contract?');
+  });
+
+  it('caps long metadata snippets at the requested maximum length', () => {
+    const sender = 'A'.repeat(130);
+    const rendered = renderRawEventForAi({
+      source: 'slack',
+      contentText: 'hello',
+      sourceMetadata: { slack_sender_name: sender },
+    });
+
+    const renderedSender = rendered?.match(/sender ([A.]+)/)?.[1];
+    expect(renderedSender).toBe(`${'A'.repeat(117)}...`);
+    expect(renderedSender).toHaveLength(120);
   });
 
   it('skips document chunks unless the parent document is team-visible', async () => {

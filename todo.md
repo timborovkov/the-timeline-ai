@@ -19,7 +19,7 @@ Open PRs not counted here yet:
 
 - [x] **Foundations and deployment:** pnpm/Turborepo monorepo, TypeScript project refs, lint/format/knip/build CI, Dockerfiles, local Docker Compose stack, `.env.example`, Railway service configs, Railway project/environments/services, deploy-time migrations, `/api/health`.
 - [x] **Teams and basic capture:** auth, teams, rename, members, email-backed invites with resend/revoke, soft member removal, direct role management, team switcher with team creation, `raw_events`, team-scoped query helpers, row visibility filtering, text capture, timeline list.
-- [x] **Telegram ingest:** link tokens, personal/group bindings, `/start`, `/link`, `/team`, `/whereami`, `/unlink`, `/help`, text ingest, edit handling that keeps only the latest revision visible while preserving immutable audit rows, author/admin timeline removal, unverified Telegram attribution, `👀` reaction ack on every ingested message, and `/ask <question>` for in-chat agent answers (DM + group, rate-limited 10/min per Telegram user, reuses the same `withTeam` scope + agent tools as `/api/chat` via `agent.askAgent`).
+- [x] **Telegram ingest:** link tokens, personal/group bindings, `/start`, `/link`, `/team`, `/whereami`, `/unlink`, `/help`, text ingest, edit handling that keeps only the latest revision visible while preserving immutable audit rows, author/admin timeline removal, unverified Telegram attribution, DM-only `👀` reaction ack, and `/ask <question>` for in-chat agent answers (DM + group, rate-limited 10/min per Telegram user, reuses the same `withTeam` scope + agent tools as `/api/chat` via `agent.askAgent`).
 - [x] **Voice and workers:** BullMQ queues, transcribe/extract/embed worker entry points, RustFS/S3 wrapper, Telegram audio ingest, web audio recording, transcription worker, timeline audio playback.
 - [x] **Extraction and entities:** `entities`, `facts`, `fact_entities`, structured LLM extraction, entity resolution, merge UI, entity profile pages, re-extraction script.
 - [x] **Embeddings and search:** Qdrant wrapper, event/fact embeddings, team/visibility-scoped vector queries, semantic search API/UI, re-embed script.
@@ -208,9 +208,9 @@ using the new `SECRETS_ENCRYPTION_KEY` env var. Per-team helpers in
 - [x] OAuth refresh-on-expiry — `loadOauthAccessToken` ([`packages/shared/src/mcp/client.ts`](packages/shared/src/mcp/client.ts)) checks `expiresAt` (60s skew) and refreshes via `oauthRefreshToken` with persisted discovery + client info, re-encrypts, and surfaces `last_error` on failure. Per-(team, server) pending map dedups concurrent refreshes.
 - [x] Inline reconnect UX — `McpNeedsReauthError` ([`packages/shared/src/mcp/client.ts`](packages/shared/src/mcp/client.ts)) propagates through `buildMcpTools` as `{ ok: false, error: 'needs_reauth' }`. Chat `ToolStep` ([`apps/web/src/components/chat/tool-step.tsx`](apps/web/src/components/chat/tool-step.tsx)) renders a "Reconnect <server>" CTA inline; non-admins see an "ask a team admin" hint instead.
 - [x] **Timeline-as-MCP-server (outbound).** External agents (Claude Desktop, Cursor, etc.) can connect this Timeline as an MCP server. Endpoint [`/api/mcp/server`](apps/web/src/app/api/mcp/server/route.ts) speaks JSON-RPC 2.0 over streamable HTTP (`tools/list`, `tools/call`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get`); bearer auth via `tla_*` keys stored as SHA-256 hashes (migration `0016_phase11_mcp_outbound.sql`). Tools exposed: `timeline.search_events`, `get_event`, `list_events`, `get_entity`, `search_documents`. Outbound bearer keys never see `private` / `specific_users` events. Admins mint/revoke keys at [`/app/team/mcp-share`](apps/web/src/app/app/team/mcp-share/page.tsx). Wildcard CORS (Authorization-header auth so credentials-less). Setup walkthrough: [`docs/setup/integrations.html`](docs/setup/integrations.html).
-- [ ] **Slack conversational capture, equivalent to Telegram:** Slack app/bot install as a first-party capture surface; OAuth-only Slack user links; team + conversation bindings; DM and channel message ingest; edit handling with superseded-revision tombstones; source-deletion tombstones when Slack reports deletion; sender/context metadata that feeds extraction + embeddings; DM-only capture acknowledgement; `/ask <question>` private answers plus `@Timeline` shared threaded answers. Reuse the Telegram mental model and the same `withTeam` scope + `agent.askAgent` path; Slack should be a conversational bot surface, not only a passive integration feed.
-- [ ] **Conversational attachment processing:** Slack and Telegram attachments share explicit guardrails (25 MiB, max 5 processed attachments per message, allowlisted file types only). Audio/voice attachments become transcribed raw events; supported text/image/PDF/DOCX files become document-drive versions linked to the source message and processed through OCR/chunk embeddings. Skip archives, executables, video, unknown binary, and oversize files with visible metadata/status.
-- [ ] **Telegram conversational parity follow-ups:** make Telegram capture acknowledgements DM-only (no group reaction noise); route Telegram sender/chat metadata through the same source-aware extraction + embedding renderer planned for Slack; use the shared source-deletion tombstone semantics for any Telegram deletion signal the platform reports.
+- [x] **Slack conversational capture, equivalent to Telegram:** Slack app/bot install as a first-party capture surface; OAuth-only Slack user links; team + conversation bindings; DM and channel message ingest; edit handling with superseded-revision tombstones; source-deletion tombstones when Slack reports deletion; sender/context metadata that feeds extraction + embeddings; DM-only capture acknowledgement; `/ask <question>` private answers plus `@Timeline` shared threaded answers. Reuses the Telegram mental model and the same `withTeam` scope + `agent.askAgent` path; Slack is a conversational bot surface, not only a passive integration feed.
+- [x] **Conversational attachment processing:** Slack and Telegram attachments share explicit guardrails (25 MiB, max 5 processed attachments per message, allowlisted file types only). Audio/voice attachments become transcribed raw events; supported text/image/PDF/DOCX files become document-drive versions linked to the source message and processed through OCR/chunk embeddings. Archives, executables, video, unknown binary, and oversize files are skipped with metadata/status.
+- [x] **Telegram conversational parity follow-ups:** Telegram capture acknowledgements are DM-only (no group reaction noise); Telegram sender/chat metadata routes through the same source-aware extraction + embedding renderer as Slack; source-deletion tombstone semantics are shared for any platform deletion signal we receive.
 
 ## Phase 13 — Polish And Hardening
 
@@ -229,8 +229,8 @@ out of scope.
 - [x] Treat onboarding as a tutorial, not a proof-of-ingest flow. Configuring
       or opening the relevant surface is enough; do not require first
       successful external data arrival.
-- [x] Checklist steps: capture first note, connect Telegram, set up email
-      forwarding, upload first document, connect first integration.
+- [x] Checklist steps: capture first note, connect Telegram, connect Slack, set
+      up email forwarding, upload first document, connect first integration.
 - [x] Keep the checklist reopenable from a setup/help affordance in the app.
 
 ### Slice 13.2 — Visibility defaults and one-off edits
@@ -238,7 +238,8 @@ out of scope.
 - [x] Add source-specific visibility defaults with a team-wide fallback.
       Defaults apply only to future captures/imports.
 - [x] Sources needing explicit defaults: web text/audio capture, Telegram,
-      email, documents, meetings, integrations, and later external calendars.
+      Slack, email, documents, meetings, integrations, and later external
+      calendars.
 - [x] Keep quick capture surfaces binary (`private` / `team`) for speed;
       support `specific_users` where member-picking already fits the workflow:
       documents, calendar events, meetings, integration defaults, and event

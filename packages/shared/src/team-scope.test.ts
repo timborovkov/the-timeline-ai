@@ -51,6 +51,24 @@ async function seed(pg: PGlite): Promise<void> {
   `);
 }
 
+async function insertTelegramEvent(
+  pg: PGlite,
+  input: { id: string; authorUserId: string | null; text: string; deleted?: boolean },
+): Promise<void> {
+  const metadata = {
+    tg_chat_id: 42,
+    tg_chat_type: 'private',
+    tg_message_id: 10,
+    tg_update_id: Number(input.id.slice(-6)),
+    ...(input.deleted ? { deleted: true } : {}),
+  };
+  await pg.query(
+    `INSERT INTO raw_events (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, source_metadata)
+     VALUES ($1, $2, $3, $3, 'telegram', $4, now(), $5::jsonb)`,
+    [input.id, TEAM_A, input.authorUserId, input.text, JSON.stringify(metadata)],
+  );
+}
+
 describe('withTeam namespaced port', () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
@@ -200,6 +218,111 @@ describe('withTeam namespaced port', () => {
           inherited: false,
         }),
       ]),
+    );
+  });
+
+  it('hides tombstoned raw events from timeline reads and hydration', async () => {
+    const visibleId = '00000000-0000-0000-0000-000000000101';
+    const deletedId = '00000000-0000-0000-0000-000000000102';
+    await insertTelegramEvent(pg, {
+      id: visibleId,
+      authorUserId: USER_A,
+      text: 'visible telegram',
+    });
+    await insertTelegramEvent(pg, {
+      id: deletedId,
+      authorUserId: USER_A,
+      text: 'deleted telegram',
+      deleted: true,
+    });
+
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+
+    await expect(scope.timeline.listEvents({ source: 'telegram' })).resolves.toMatchObject([
+      { id: visibleId },
+    ]);
+    await expect(scope.timeline.getEvent(deletedId)).resolves.toBeNull();
+    await expect(scope.timeline.getEventsByIds([visibleId, deletedId])).resolves.toMatchObject([
+      { id: visibleId },
+    ]);
+  });
+
+  it('does not hydrate entity facts whose source event has been tombstoned', async () => {
+    const deletedId = '00000000-0000-0000-0000-000000000103';
+    const entityId = '00000000-0000-0000-0000-000000000104';
+    const factId = '00000000-0000-0000-0000-000000000105';
+    await insertTelegramEvent(pg, {
+      id: deletedId,
+      authorUserId: USER_A,
+      text: 'deleted source fact',
+      deleted: true,
+    });
+    await pg.exec(`
+      INSERT INTO entities (id, team_id, type, canonical_name)
+      VALUES ('${entityId}', '${TEAM_A}', 'person', 'Alice Deleted');
+      INSERT INTO facts (id, team_id, raw_event_id, statement, confidence, model_version)
+      VALUES ('${factId}', '${TEAM_A}', '${deletedId}', 'Alice Deleted knows the old plan', 0.9, 'test-model');
+      INSERT INTO fact_entities (fact_id, entity_id, role)
+      VALUES ('${factId}', '${entityId}', 'subject');
+    `);
+
+    const profile = await withTeam(db as never, TEAM_A, USER_A).timeline.getEntity(entityId);
+
+    expect(profile).not.toBeNull();
+    expect(profile?.facts).toEqual([]);
+    expect(profile?.events).toEqual([]);
+  });
+
+  it('allows a Telegram author to tombstone their own message revisions', async () => {
+    const originalId = '00000000-0000-0000-0000-000000000201';
+    const editId = '00000000-0000-0000-0000-000000000202';
+    await insertTelegramEvent(pg, {
+      id: originalId,
+      authorUserId: USER_A,
+      text: 'original',
+    });
+    await insertTelegramEvent(pg, {
+      id: editId,
+      authorUserId: USER_A,
+      text: 'edit',
+    });
+
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    await expect(scope.timeline.removeTelegramMessage(editId)).resolves.toBe(true);
+    await expect(scope.timeline.listEvents({ source: 'telegram' })).resolves.toEqual([]);
+
+    const rows = await pg.query<{ reason: string; count: string }>(
+      `SELECT source_metadata->>'delete_reason' AS reason, count(*)::text AS count
+       FROM raw_events
+       WHERE source = 'telegram'
+       GROUP BY source_metadata->>'delete_reason'`,
+    );
+    expect(rows.rows).toEqual([{ reason: 'telegram_removed_in_timeline', count: '2' }]);
+  });
+
+  it('allows admins but rejects non-author members and non-Telegram events', async () => {
+    const telegramId = '00000000-0000-0000-0000-000000000301';
+    await insertTelegramEvent(pg, {
+      id: telegramId,
+      authorUserId: USER_A,
+      text: 'moderate me',
+    });
+
+    const memberScope = withTeam(db as never, TEAM_A, USER_B);
+    await expect(memberScope.timeline.removeTelegramMessage(telegramId)).rejects.toThrow(
+      'Only the message author or a team admin can remove this event',
+    );
+
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    await expect(adminScope.timeline.removeTelegramMessage(telegramId)).resolves.toBe(true);
+
+    const web = await withTeam(db as never, TEAM_A, USER_A).timeline.createEvent({
+      authorUserId: USER_A,
+      source: 'web',
+      contentText: 'not telegram',
+    });
+    await expect(adminScope.timeline.removeTelegramMessage(web.id)).rejects.toThrow(
+      'Only Telegram and Slack events can be removed this way',
     );
   });
 

@@ -1,5 +1,5 @@
 import { composePostmarkHashAddress } from '@timeline/shared/slug';
-import { Cable, Mail, Send } from 'lucide-react';
+import { Cable, Mail, MessageSquare, Send } from 'lucide-react';
 import Link from 'next/link';
 import { type ReactNode } from 'react';
 
@@ -12,12 +12,14 @@ interface TeamAccessPanelProps {
     inboundEmail: string | null;
   } | null;
   telegramConnectionCount?: number;
+  slackConnectionCount?: number;
   integrationConnectionCount?: number;
 }
 
 export function TeamAccessPanel({
   team,
   telegramConnectionCount,
+  slackConnectionCount,
   integrationConnectionCount,
 }: TeamAccessPanelProps) {
   const ingestEmail = getDisplayIngestEmail(team);
@@ -58,6 +60,12 @@ export function TeamAccessPanel({
             icon={<Send className="size-3.5" aria-hidden="true" />}
             label="Telegram"
             meta={formatCount(telegramConnectionCount, 'linked')}
+          />
+          <AccessLink
+            href="/app/team/slack"
+            icon={<MessageSquare className="size-3.5" aria-hidden="true" />}
+            label="Slack"
+            meta={formatCount(slackConnectionCount, 'linked')}
           />
           <AccessLink
             href="/app/team/integrations"

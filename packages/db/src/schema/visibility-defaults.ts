@@ -8,6 +8,7 @@ export const visibilityDefaultSource = pgEnum('visibility_default_source', [
   'team',
   'web',
   'telegram',
+  'slack',
   'email',
   'document',
   'meeting',

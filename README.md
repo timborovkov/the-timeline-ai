@@ -1,13 +1,13 @@
 # The Timeline
 
 A multi-tenant team memory system. Capture work as it happens — voice notes,
-text dumps, forwarded emails, Telegram messages, meeting transcripts — and
+text dumps, forwarded emails, Telegram and Slack messages, meeting transcripts — and
 the system compiles a searchable, queryable history of who did what, talked
 to whom, and decided what. Then ask a tool-using agent about it: every
 claim it surfaces links back to the raw event it came from. No black-box
 summaries.
 
-Current state: through Phase 13.7. Web + Telegram + email + document drive +
+Current state: through Phase 13.7. Web + Telegram + Slack + email + document drive +
 meeting-bot capture (silent Recall.ai bot for Google Meet / Teams / Zoom),
 voice transcription, extracted facts + entities, semantic search, agent
 chat at `/app/chat`, workspace objects + boards + persisted chat sessions,
@@ -63,6 +63,7 @@ These live behind their own walkthroughs because every account has its own
 dashboard quirks:
 
 - [`docs/setup/telegram.html`](./docs/setup/telegram.html) — Telegram bot (Phase 2+).
+- [`docs/setup/slack.html`](./docs/setup/slack.html) — Slack conversational capture.
 - [`docs/setup/openrouter.html`](./docs/setup/openrouter.html) — OpenRouter API
   (Phase 3+).
 - [`docs/setup/postmark.html`](./docs/setup/postmark.html) — inbound email, outbound team invites, and support/contact mail.

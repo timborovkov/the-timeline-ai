@@ -32,7 +32,7 @@ export interface TelegramApi {
   /** Resolve a Telegram file_id to its CDN path. */
   getFile(input: { file_id: string }): Promise<TelegramFileInfo>;
   /** Download the bytes of a file resolved via {@link getFile}. */
-  downloadFile(filePath: string): Promise<Buffer>;
+  downloadFile(filePath: string, maxBytes?: number): Promise<Buffer>;
   /**
    * React to a message with a single emoji. Best-effort: callers should swallow
    * errors so a failed reaction never breaks the surrounding flow (ingest, ack).
@@ -107,13 +107,39 @@ export class HttpTelegramApi implements TelegramApi {
     await this.call('sendChatAction', input);
   }
 
-  async downloadFile(filePath: string): Promise<Buffer> {
+  async downloadFile(filePath: string, maxBytes?: number): Promise<Buffer> {
     const res = await fetch(`https://api.telegram.org/file/bot${this.token}/${filePath}`);
     if (!res.ok) {
       throw new Error(`Telegram file download failed: ${res.status}`);
     }
-    const buf = await res.arrayBuffer();
-    return Buffer.from(buf);
+    if (maxBytes !== undefined) {
+      const len = res.headers.get('content-length');
+      if (len) {
+        const n = Number.parseInt(len, 10);
+        if (Number.isFinite(n) && n > maxBytes) throw new Error('file_oversize');
+      }
+    }
+
+    if (res.body === null) {
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (maxBytes !== undefined && buf.length > maxBytes) throw new Error('file_oversize');
+      return buf;
+    }
+
+    const reader: ReadableStreamDefaultReader<Uint8Array> = res.body.getReader();
+    const chunks: Buffer[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (maxBytes !== undefined && total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error('file_oversize');
+      }
+      chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks, total);
   }
 }
 
@@ -143,7 +169,7 @@ export class NoopTelegramApi implements TelegramApi {
   sendChatAction(): Promise<void> {
     return Promise.resolve();
   }
-  downloadFile(): Promise<Buffer> {
+  downloadFile(_filePath?: string, _maxBytes?: number): Promise<Buffer> {
     return Promise.reject(new Error('TELEGRAM_BOT_TOKEN unset — cannot download files'));
   }
 }

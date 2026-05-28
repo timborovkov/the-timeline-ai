@@ -6,6 +6,7 @@ import { users } from './users.js';
 export const onboardingStep = pgEnum('onboarding_step', [
   'first_note',
   'telegram',
+  'slack',
   'email_forwarding',
   'first_document',
   'first_integration',
