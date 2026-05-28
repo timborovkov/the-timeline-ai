@@ -173,6 +173,8 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters }
     inFlightRef.current = true;
     setPending(true);
     setError(null);
+    let optimisticTextId: string | null = null;
+    let textCommitted = false;
     try {
       // Text + voice in the same Post become two separate events on the
       // timeline. We deliberately do NOT pack typed text into the audio
@@ -185,12 +187,12 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters }
       // the audio. Otherwise the user clicks Post again and we'd duplicate
       // the (already-committed) text event on the timeline.
       if (text.length > 0) {
-        const optimisticId = addOptimisticTextEvent(text);
+        optimisticTextId = addOptimisticTextEvent(text);
         const result = await submitTextOnly(text);
         if (!result.ok) {
-          if (optimisticId) removeOptimisticTextEvent(optimisticId);
           throw new Error(result.error ?? 'Post failed');
         }
+        textCommitted = true;
         if (textareaRef.current) textareaRef.current.value = '';
       }
       const hadClip = clip !== null;
@@ -213,6 +215,7 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters }
       // Keep visibility pill sticky — it's a preference, not per-post.
       router.refresh();
     } catch (err) {
+      if (!textCommitted && optimisticTextId) removeOptimisticTextEvent(optimisticTextId);
       setError(err instanceof Error ? err.message : 'Post failed');
     } finally {
       inFlightRef.current = false;

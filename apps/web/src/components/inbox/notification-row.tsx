@@ -56,16 +56,14 @@ export function NotificationRow({
       individuallyReadRef.current = true;
       setRead(true);
     }
-  }, [initiallyRead]);
+  }, [initiallyRead, read]);
 
   useEffect(() => {
     function onAllRead(event: Event): void {
       if (!(event instanceof CustomEvent) || typeof event.detail !== 'boolean') return;
       if (event.detail) {
-        setRead((current) => {
-          bulkReadRef.current = bulkReadRef.current || !current;
-          return true;
-        });
+        bulkReadRef.current = bulkReadRef.current || !read;
+        setRead(true);
         return;
       }
       setRead((current) => {
