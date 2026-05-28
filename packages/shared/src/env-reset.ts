@@ -32,8 +32,8 @@ export function assertDestructiveDevWipeAllowed(env: NodeJS.ProcessEnv): void {
 }
 
 function isRailwayRuntime(env: NodeJS.ProcessEnv): boolean {
-  return Boolean(
-    env.RAILWAY_ENVIRONMENT_NAME ?? env.RAILWAY_ENVIRONMENT ?? env.RAILWAY_SERVICE_NAME,
+  return [env.RAILWAY_ENVIRONMENT_NAME, env.RAILWAY_ENVIRONMENT, env.RAILWAY_SERVICE_NAME].some(
+    (value) => typeof value === 'string' && value.length > 0,
   );
 }
 

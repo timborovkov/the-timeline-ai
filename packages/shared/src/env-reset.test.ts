@@ -40,6 +40,10 @@ describe('env reset helpers', () => {
       RAILWAY_SERVICE_NAME: '@timeline/app',
       ALLOW_DESTRUCTIVE_DEV_WIPE: 'true',
     };
+    const blankEnvironmentNameRailwayEnv = {
+      RAILWAY_ENVIRONMENT_NAME: '',
+      RAILWAY_SERVICE_NAME: '@timeline/app',
+    };
 
     expect(() => {
       assertDestructiveDevWipeAllowed(railwayEnv);
@@ -47,6 +51,10 @@ describe('env reset helpers', () => {
 
     expect(() => {
       assertDestructiveDevWipeAllowed(wrongTokenRailwayEnv);
+    }).toThrow(/ALLOW_DESTRUCTIVE_DEV_WIPE=wipe-dev/);
+
+    expect(() => {
+      assertDestructiveDevWipeAllowed(blankEnvironmentNameRailwayEnv);
     }).toThrow(/ALLOW_DESTRUCTIVE_DEV_WIPE=wipe-dev/);
 
     expect(() => {
