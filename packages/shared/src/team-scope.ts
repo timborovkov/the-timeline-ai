@@ -31,6 +31,7 @@ import {
   type SearchOpts,
   type SourceKind,
 } from './qdrant/client.js';
+import { createSuggestionScope } from './suggestions/index.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.
@@ -475,6 +476,17 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
       .limit(filters.limit ?? 200);
   }
+
+  const objectScope = createObjectScope(db, core);
+  const suggestionScope = createSuggestionScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+    requireTeamMember,
+    objects: objectScope,
+    calendar: calendarScope,
+  });
 
   return {
     ...core,
@@ -1168,7 +1180,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     },
     documents: documentScope,
     meetings: meetingScope,
-    objects: createObjectScope(db, core),
+    objects: objectScope,
+    suggestions: suggestionScope,
     integrations: integrationScope,
     mcp: mcpScope,
     onboarding: onboardingScope,

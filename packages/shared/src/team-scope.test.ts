@@ -217,6 +217,7 @@ describe('withTeam namespaced port', () => {
     const ownerScope = withTeam(db as never, TEAM_A, USER_A);
     await expect(ownerScope.timeline.listMembers()).resolves.toEqual([
       expect.objectContaining({ userId: USER_A, role: 'owner' }),
+      expect.objectContaining({ userId: USER_C, role: 'admin' }),
     ]);
   });
 });
