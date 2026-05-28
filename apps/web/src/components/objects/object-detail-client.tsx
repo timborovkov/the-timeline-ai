@@ -2,7 +2,14 @@
 
 import { type objects } from '@timeline/shared';
 import { useRouter } from 'next/navigation';
-import { type ComponentProps, type ReactNode, useState, useTransition } from 'react';
+import {
+  type ComponentProps,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 
 import {
   acceptObjectChangeAction,
@@ -30,6 +37,8 @@ const RELATIONSHIP_KINDS = [
 
 type ObjectDetail = objects.ObjectDetail;
 type LocalSuggestion = ComponentProps<typeof ApprovalsClient>['suggestions'][number];
+type EditableField = 'status' | 'stage' | 'priority' | 'dueAt';
+type SaveState = 'idle' | 'saving' | 'saved';
 
 interface Props {
   detail: ObjectDetail;
@@ -56,19 +65,71 @@ function statusOptions(type: string): string[] {
 export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [localDetail, setLocalDetail] = useState(detail);
+  const [stageDraft, setStageDraft] = useState(detail.stage ?? '');
+  const [dueDraft, setDueDraft] = useState(detail.dueAt ? toLocalInput(detail.dueAt) : '');
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [savingCount, setSavingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [noteBody, setNoteBody] = useState('');
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingBody, setEditingBody] = useState('');
   const [linkId, setLinkId] = useState('');
   const [linkKind, setLinkKind] = useState<(typeof RELATIONSHIP_KINDS)[number]>('related');
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function patch(field: string, value: unknown): void {
+  useEffect(() => {
+    setLocalDetail(detail);
+    setStageDraft(detail.stage ?? '');
+    setDueDraft(detail.dueAt ? toLocalInput(detail.dueAt) : '');
+  }, [detail]);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+    };
+  }, []);
+
+  function patch(field: EditableField, value: string | number | Date | null): void {
+    const previousValue = localDetail[field];
+    if (sameEditableValue(previousValue, value)) return;
     setError(null);
+    setLocalDetail((current) => ({ ...current, [field]: value }));
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    setSaveState('saving');
+    setSavingCount((count) => count + 1);
     startTransition(async () => {
-      const result = await updateObjectAction({ id: detail.id, [field]: value });
-      if ('error' in result && result.error) setError(result.error);
-      else router.refresh();
+      const actionValue = value instanceof Date ? value.toISOString() : value;
+      const result = await updateObjectAction({ id: detail.id, [field]: actionValue });
+      const failed = 'error' in result && result.error;
+      if (failed) {
+        setError(result.error ?? 'Update failed');
+        setLocalDetail((current) =>
+          sameEditableValue(current[field], value)
+            ? { ...current, [field]: previousValue }
+            : current,
+        );
+        if (field === 'stage') setStageDraft(previousValue === null ? '' : String(previousValue));
+        if (field === 'dueAt') {
+          setDueDraft(previousValue instanceof Date ? toLocalInput(previousValue) : '');
+        }
+      } else {
+        router.refresh();
+      }
+      setSavingCount((count) => {
+        const next = Math.max(0, count - 1);
+        if (next === 0) {
+          if (failed) {
+            setSaveState('idle');
+          } else {
+            setSaveState('saved');
+            savedTimer.current = setTimeout(() => {
+              setSaveState('idle');
+            }, 1600);
+          }
+        }
+        return next;
+      });
     });
   }
 
@@ -138,6 +199,17 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
             {error}
           </div>
         )}
+        {saveState !== 'idle' && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
+          >
+            {saveState === 'saving'
+              ? `Saving${savingCount > 1 ? ` ${savingCount} changes` : ''}...`
+              : 'Saved'}
+          </div>
+        )}
       </header>
 
       {suggestions.length > 0 ? (
@@ -150,29 +222,31 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
       <section className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         <Field label="Status">
           <select
-            value={detail.status}
-            disabled={pending}
+            value={localDetail.status}
             onChange={(e) => {
               patch('status', e.target.value);
             }}
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           >
-            {statusOptions(detail.type).map((s) => (
+            {statusOptions(localDetail.type).map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>
             ))}
-            {!statusOptions(detail.type).includes(detail.status) && (
-              <option value={detail.status}>{detail.status}</option>
+            {!statusOptions(localDetail.type).includes(localDetail.status) && (
+              <option value={localDetail.status}>{localDetail.status}</option>
             )}
           </select>
         </Field>
         <Field label="Stage">
           <input
-            defaultValue={detail.stage ?? ''}
-            disabled={pending}
+            value={stageDraft}
+            onChange={(e) => {
+              setStageDraft(e.target.value);
+            }}
             onBlur={(e) => {
               const v = e.target.value.trim();
+              setStageDraft(v);
               patch('stage', v === '' ? null : v);
             }}
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
@@ -181,8 +255,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
         </Field>
         <Field label="Priority">
           <select
-            value={detail.priority ?? ''}
-            disabled={pending}
+            value={localDetail.priority ?? ''}
             onChange={(e) => {
               patch('priority', e.target.value === '' ? null : Number(e.target.value));
             }}
@@ -198,11 +271,13 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
         <Field label="Due date">
           <input
             type="datetime-local"
-            defaultValue={detail.dueAt ? toLocalInput(detail.dueAt) : ''}
-            disabled={pending}
+            value={dueDraft}
+            onChange={(e) => {
+              setDueDraft(e.target.value);
+            }}
             onBlur={(e) => {
               const v = e.target.value;
-              patch('dueAt', v === '' ? null : new Date(v).toISOString());
+              patch('dueAt', v === '' ? null : new Date(v));
             }}
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           />
@@ -571,6 +646,13 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       {children}
     </label>
   );
+}
+
+function sameEditableValue(a: unknown, b: unknown): boolean {
+  if (a instanceof Date || b instanceof Date) {
+    return a instanceof Date && b instanceof Date && a.getTime() === b.getTime();
+  }
+  return Object.is(a, b);
 }
 
 function toLocalInput(d: Date): string {

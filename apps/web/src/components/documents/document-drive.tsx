@@ -1,5 +1,6 @@
 'use client';
 
+import { type InfiniteData, useQueryClient } from '@tanstack/react-query';
 import { Folder as FolderIcon, FolderPlus, Upload } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -14,6 +15,7 @@ import {
 } from '@/app/actions/documents';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { queryKeys } from '@/lib/query-keys';
 import { useDocumentListQuery } from '@/lib/use-paginated-queries';
 
 interface FolderItem {
@@ -29,6 +31,12 @@ interface DocumentItem {
   visibility: string;
   updatedAt: string;
   ownerUserId: string | null;
+  optimistic?: boolean;
+}
+
+interface DocumentListPage {
+  items: DocumentItem[];
+  nextCursor: string | null;
 }
 
 interface Crumb {
@@ -58,6 +66,7 @@ export function DocumentDrive({
   members,
 }: Props) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
   // Set of in-flight upload filenames. Multi-file drop fires
@@ -79,8 +88,40 @@ export function DocumentDrive({
   });
   const visibleDocuments = documentQuery.data.pages.flatMap((page) => page.items);
 
+  function addOptimisticDocument(document: DocumentItem): void {
+    queryClient.setQueryData<InfiniteData<DocumentListPage, string | null> | undefined>(
+      queryKeys.documentList(currentFolderId),
+      (previous) => {
+        if (!previous?.pages[0]) return previous;
+        const first = previous.pages[0];
+        if (first.items.some((item) => item.id === document.id)) return previous;
+        return {
+          ...previous,
+          pages: [{ ...first, items: [document, ...first.items] }, ...previous.pages.slice(1)],
+        };
+      },
+    );
+  }
+
+  function removeOptimisticDocument(documentId: string): void {
+    queryClient.setQueryData<InfiniteData<DocumentListPage, string | null> | undefined>(
+      queryKeys.documentList(currentFolderId),
+      (previous) => {
+        if (!previous) return previous;
+        return {
+          ...previous,
+          pages: previous.pages.map((page) => ({
+            ...page,
+            items: page.items.filter((item) => item.id !== documentId || !item.optimistic),
+          })),
+        };
+      },
+    );
+  }
+
   async function handleUploadFile(file: File): Promise<void> {
     setUploading((prev) => [...prev, file.name]);
+    let optimisticDocumentId: string | null = null;
     try {
       const req = await requestDocumentUploadAction({
         folderId: currentFolderId,
@@ -94,7 +135,19 @@ export function DocumentDrive({
         toast.error(req.error ?? 'Upload failed');
         return;
       }
+      if (req.documentId) {
+        optimisticDocumentId = req.documentId;
+        addOptimisticDocument({
+          id: req.documentId,
+          name: file.name,
+          visibility: 'team',
+          updatedAt: new Date().toISOString(),
+          ownerUserId: null,
+          optimistic: true,
+        });
+      }
       if (req.maxBytes && file.size > req.maxBytes) {
+        if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
         toast.error(`File exceeds ${String(Math.round(req.maxBytes / 1024 / 1024))} MiB limit`);
         return;
       }
@@ -104,17 +157,20 @@ export function DocumentDrive({
         headers: { 'Content-Type': file.type || 'application/octet-stream' },
       });
       if (!put.ok) {
+        if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
         toast.error(`Upload failed (${String(put.status)})`);
         return;
       }
       const fin = await finalizeDocumentVersionAction({ versionId: req.versionId });
       if (!fin.ok) {
+        if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
         toast.error(fin.error ?? 'Finalize failed');
         return;
       }
       toast.success(`Uploaded ${file.name}`);
       router.refresh();
     } catch (err) {
+      if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
       toast.error(err instanceof Error ? err.message : 'Upload error');
     } finally {
       // Remove ONLY this file's entry — leave any sibling uploads
@@ -300,6 +356,11 @@ export function DocumentDrive({
                         className="flex items-center gap-3 text-sm"
                       >
                         <span className="font-medium">{d.name}</span>
+                        {d.optimistic ? (
+                          <Badge variant="outline" className="text-[10px]">
+                            uploading
+                          </Badge>
+                        ) : null}
                         {d.visibility !== 'team' && (
                           <Badge variant="outline" className="text-[10px]">
                             {d.visibility}

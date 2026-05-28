@@ -53,6 +53,17 @@ export function NotificationRow({
     if (initiallyRead) setRead(true);
   }, [initiallyRead]);
 
+  useEffect(() => {
+    function onAllRead(event: Event): void {
+      if (!(event instanceof CustomEvent) || typeof event.detail !== 'boolean') return;
+      setRead(event.detail ? true : initiallyRead);
+    }
+    window.addEventListener('timeline:notifications-read-all', onAllRead);
+    return () => {
+      window.removeEventListener('timeline:notifications-read-all', onAllRead);
+    };
+  }, [initiallyRead]);
+
   function markRead(): void {
     if (read) return;
     setRead(true);

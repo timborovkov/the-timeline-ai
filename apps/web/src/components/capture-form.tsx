@@ -1,5 +1,6 @@
 'use client';
 
+import { type InfiniteData, useQueryClient } from '@tanstack/react-query';
 import { Lock, Send, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useRef, useState } from 'react';
@@ -13,18 +14,52 @@ import {
 import { AudioRecorder, type RecordedClip } from '@/components/audio-recorder';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { queryKeys } from '@/lib/query-keys';
+import { type TimelineEvent } from '@/lib/use-paginated-queries';
 import { cn } from '@/lib/utils';
 
 function baseMimeType(mt: string): string {
   return mt.split(';')[0]?.trim() ?? mt;
 }
 
-export function CaptureForm({
-  initialVisibility = 'team',
-}: {
+interface TimelinePageData {
+  items: TimelineEvent[];
+  nextCursor: string | null;
+  authors: Record<string, { id: string; name: string | null; email: string }>;
+  audioUrls: Record<string, string>;
+}
+
+interface Props {
   initialVisibility?: 'team' | 'private';
-}) {
+  currentUser: { id: string; name: string | null; email: string };
+  filters: { author?: string | null; from?: string | null; to?: string | null };
+}
+
+function normalizeFilters(filters: Props['filters']): Required<Props['filters']> {
+  return {
+    author: filters.author ?? null,
+    from: filters.from ?? null,
+    to: filters.to ?? null,
+  };
+}
+
+function filterAllowsEvent(
+  filters: Props['filters'],
+  event: Pick<TimelineEvent, 'authorUserId' | 'occurredAt'>,
+): boolean {
+  if (filters.author && filters.author !== event.authorUserId) return false;
+  const occurredAt = new Date(event.occurredAt).getTime();
+  if (filters.from && occurredAt < new Date(filters.from).getTime()) return false;
+  if (filters.to && occurredAt >= new Date(filters.to).getTime() + 24 * 60 * 60 * 1000) {
+    return false;
+  }
+  return true;
+}
+
+export function CaptureForm({ initialVisibility = 'team', currentUser, filters }: Props) {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const timelineFilters = normalizeFilters(filters);
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isPrivate, setIsPrivate] = useState(initialVisibility === 'private');
@@ -45,6 +80,62 @@ export function CaptureForm({
     fd.set('text', text);
     fd.set('visibility', isPrivate ? 'private' : 'team');
     return createTextEventAction({}, fd);
+  }
+
+  function addOptimisticTextEvent(text: string): string | null {
+    const now = new Date().toISOString();
+    const event: TimelineEvent = {
+      id: `optimistic-${crypto.randomUUID()}`,
+      teamId: 'optimistic',
+      authorUserId: currentUser.id,
+      source: 'web',
+      contentText: text,
+      contentAudioUrl: null,
+      occurredAt: now,
+      createdAt: now,
+      visibility: isPrivate ? 'private' : 'team',
+      visibilityUserIds: null,
+      sourceMetadata: { optimistic: true },
+    };
+    if (!filterAllowsEvent(timelineFilters, event)) return null;
+    queryClient.setQueriesData<InfiniteData<TimelinePageData, string | null>>(
+      { queryKey: queryKeys.timeline(timelineFilters), exact: true },
+      (previous) => {
+        if (!previous?.pages[0]) return previous;
+        const first = previous.pages[0];
+        return {
+          ...previous,
+          pages: [
+            {
+              ...first,
+              items: [event, ...first.items],
+              authors: {
+                ...first.authors,
+                [currentUser.id]: currentUser,
+              },
+            },
+            ...previous.pages.slice(1),
+          ],
+        };
+      },
+    );
+    return event.id;
+  }
+
+  function removeOptimisticTextEvent(id: string): void {
+    queryClient.setQueriesData<InfiniteData<TimelinePageData, string | null>>(
+      { queryKey: queryKeys.timeline(timelineFilters), exact: true },
+      (previous) => {
+        if (!previous) return previous;
+        return {
+          ...previous,
+          pages: previous.pages.map((page) => ({
+            ...page,
+            items: page.items.filter((event) => event.id !== id),
+          })),
+        };
+      },
+    );
   }
 
   async function submitAudio(): Promise<void> {
@@ -93,8 +184,10 @@ export function CaptureForm({
       // the audio. Otherwise the user clicks Post again and we'd duplicate
       // the (already-committed) text event on the timeline.
       if (text.length > 0) {
+        const optimisticId = addOptimisticTextEvent(text);
         const result = await submitTextOnly(text);
         if (!result.ok) {
+          if (optimisticId) removeOptimisticTextEvent(optimisticId);
           throw new Error(result.error ?? 'Post failed');
         }
         if (textareaRef.current) textareaRef.current.value = '';

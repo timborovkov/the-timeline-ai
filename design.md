@@ -300,6 +300,13 @@ visible change.
   assignee, due indicator. Due-this-week = `text-signal`; overdue =
   `text-danger`.
 - Drag uses `@dnd-kit/core` with optimistic `updateObjectAction` calls.
+- Board moves should feel complete immediately. Show a quiet board-level
+  saving state while moves are in flight, then a brief saved confirmation once
+  server state catches up. Avoid per-move success toasts on kanban surfaces;
+  reserve prominent messaging for failures that need rollback or user action.
+- If a move fails, rollback only the failed card and attach the error to that
+  card or its column area long enough to be understood. Avoid whole-board
+  refresh errors that make it unclear which move failed.
 
 ## Iconography
 
@@ -508,6 +515,21 @@ key/value pairs.
   real `<button>`. `role="alert"` on the wrapper for hard errors.
 - Streaming chat caret has `aria-live="polite"` on the container; the
   caret itself is `aria-hidden`.
+
+### Optimistic updates
+
+- Lightweight, reversible product edits should update the local surface
+  immediately, then reconcile with server state: kanban moves, object
+  status/stage/priority/due edits, text capture, calendar create/edit,
+  document upload placeholders, onboarding checklist actions, and inbox
+  read-state changes.
+- Compound, destructive, security-sensitive, or external-provider actions
+  wait for server confirmation: invites, meeting bot scheduling/cancel,
+  archive/delete, relationship changes, exports, OAuth/integration setup,
+  and approval accept/reject.
+- Success feedback should be quiet and local (`Saving...` then `Saved`).
+  Use prominent alerts only for failures, and rollback the smallest affected
+  thing so the user can tell what changed.
 
 ### Motion
 

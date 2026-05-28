@@ -18,7 +18,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 
 import {
   createCalendarEventAction,
@@ -39,6 +39,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
 type CalendarViewMode = 'month' | 'week' | 'day';
+type SaveState = 'idle' | 'saving' | 'saved';
 
 interface CalendarEvent {
   id: string;
@@ -222,24 +223,31 @@ export function CalendarView({
         : [stableAnchor];
   }, [anchorKey, safeMode]);
   const currentToday = today(timezone);
+  const [localEvents, setLocalEvents] = useState(events);
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
   const [draft, setDraft] = useState<Draft>(() =>
     blankDraft(anchor, timezone, defaultVisibility, defaultVisibilityUserIds),
   );
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [surfaceError, setSurfaceError] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
   const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setLocalEvents(events);
+  }, [events]);
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
     for (const day of visibleDays) {
-      const matches = events
+      const matches = localEvents
         .filter((event) => eventTouchesDate(event, day, timezone))
         .sort((a, b) => a.startAt.localeCompare(b.startAt));
       map.set(day.toString(), matches);
     }
     return map;
-  }, [events, timezone, visibleDays]);
+  }, [localEvents, timezone, visibleDays]);
 
   function push(nextMode: CalendarViewMode, nextDate: Temporal.PlainDate) {
     router.push(`/app/calendar?view=${nextMode}&date=${nextDate.toString()}`);
@@ -257,6 +265,7 @@ export function CalendarView({
     setEditing(null);
     setDraft(blankDraft(day, timezone, defaultVisibility, defaultVisibilityUserIds));
     setError(null);
+    setSurfaceError(null);
     setOpen(true);
   }
 
@@ -265,6 +274,7 @@ export function CalendarView({
     setEditing(event);
     setDraft(draftFromEvent(event, timezone));
     setError(null);
+    setSurfaceError(null);
     setOpen(true);
   }
 
@@ -316,15 +326,50 @@ export function CalendarView({
           ? { visibilityUserIds: draft.visibilityUserIds }
           : {}),
       };
+      const optimisticId = editing?.id ?? `optimistic-${crypto.randomUUID()}`;
+      const previousEvents = localEvents;
+      const optimisticEvent: CalendarEvent = {
+        id: optimisticId,
+        title,
+        description: draft.description.trim() || null,
+        startAt: times.start,
+        endAt: times.end,
+        timezone: draft.timezone,
+        allDay: draft.allDay,
+        location: draft.location.trim() || null,
+        redacted: false,
+        visibility: draft.visibility,
+      };
+      setSurfaceError(null);
+      setSaveState('saving');
+      setOpen(false);
+      setLocalEvents((current) =>
+        editing
+          ? current.map((event) => (event.id === editing.id ? optimisticEvent : event))
+          : [optimisticEvent, ...current],
+      );
       const result = editing
         ? await updateCalendarEventAction({ id: editing.id, ...input })
         : await createCalendarEventAction(input);
       if (!result.ok) {
+        setLocalEvents(previousEvents);
+        setSaveState('idle');
+        setSurfaceError(result.error ?? 'Failed to save event.');
+        setOpen(true);
         setError(result.error ?? 'Failed to save event.');
         return;
       }
-      setOpen(false);
+      const savedId = result.id;
+      if (!editing && typeof savedId === 'string') {
+        setLocalEvents((current) =>
+          current.map((event) => (event.id === optimisticId ? { ...event, id: savedId } : event)),
+        );
+      }
+      setSaveState('saved');
       router.refresh();
+      window.setTimeout(() => {
+        setSaveState('idle');
+      }, 1600);
     });
   }
 
@@ -406,6 +451,17 @@ export function CalendarView({
           </Button>
         </div>
       </div>
+      {saveState !== 'idle' || surfaceError ? (
+        <div
+          role={surfaceError ? 'alert' : 'status'}
+          aria-live="polite"
+          className={`font-mono text-[11px] uppercase tracking-[0.12em] ${
+            surfaceError ? 'text-danger' : 'text-fg-dim'
+          }`}
+        >
+          {surfaceError ?? (saveState === 'saving' ? 'Saving...' : 'Saved')}
+        </div>
+      ) : null}
 
       {safeMode !== 'day' ? (
         <div className={`grid ${gridCols} gap-px rounded-lg border bg-border`}>
@@ -669,6 +725,7 @@ function DayCell({
           <button
             key={event.id}
             type="button"
+            disabled={event.id.startsWith('optimistic-')}
             onClick={() => {
               onEdit(event);
             }}
@@ -678,7 +735,7 @@ function DayCell({
                 : event.allDay
                   ? 'bg-signal/15 text-signal hover:bg-signal/25'
                   : 'bg-primary/10 text-foreground hover:bg-primary/15'
-            }`}
+            } disabled:opacity-70`}
           >
             <span className="inline-flex items-center gap-1">
               {event.allDay ? null : <Clock className="h-3 w-3" />}
