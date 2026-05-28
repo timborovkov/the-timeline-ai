@@ -76,7 +76,6 @@ export default function LandingPage() {
         <Hero />
         <Problem />
         <Solution />
-        <HowItWorks />
         <Surfaces />
         <Integrations />
         <Receipts />
@@ -254,10 +253,10 @@ function TopNav() {
             Product
           </Link>
           <Link
-            href="#how-it-works"
+            href="#surfaces"
             className="hidden px-3 py-2 text-fg-muted transition-colors hover:text-fg sm:inline"
           >
-            How it works
+            Surfaces
           </Link>
           <Link
             href="/help"
@@ -794,46 +793,6 @@ function Pillar({ n, title, body }: { n: string; title: string; body: string }) 
   );
 }
 
-function HowItWorks() {
-  const steps = [
-    {
-      n: '01',
-      title: 'Land',
-      body: 'Voice memo, Slack, Telegram, email, calendar event, upload, or meeting bot. Immutable raw event, team-scoped.',
-    },
-    {
-      n: '02',
-      title: 'Extract',
-      body: 'Audio → text. Text → objects, facts, relationships, tasks. Every fact links to its source event.',
-    },
-    {
-      n: '03',
-      title: 'Index',
-      body: 'Vectors in Qdrant, structured facts in Postgres, originals in object storage. Always team-scoped.',
-    },
-    {
-      n: '04',
-      title: 'Ask',
-      body: 'Agent answers in the web app, Telegram via /ask, or Slack via /ask and @Timeline. Citations on every claim.',
-    },
-  ];
-  return (
-    <Section id="how-it-works">
-      <IndexStrip>PIPELINE · INGEST → INDEX → ANSWER</IndexStrip>
-      <ol className="mt-10 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
-        {steps.map((s) => (
-          <li key={s.n} className="bg-bg p-6 sm:p-8">
-            <div className="font-mono text-xs uppercase tracking-[0.18em] text-signal">
-              {s.n} · {s.title.toUpperCase()}
-            </div>
-            <p className="mt-4 text-base leading-[1.55] text-fg-muted">{s.body}</p>
-          </li>
-        ))}
-      </ol>
-    </Section>
-  );
-}
-
 function Surfaces() {
   return (
     <Section id="surfaces">
@@ -1065,8 +1024,8 @@ function Footer() {
           <Link href="#solution" className="hover:text-fg">
             Product
           </Link>
-          <Link href="#how-it-works" className="hover:text-fg">
-            How it works
+          <Link href="#surfaces" className="hover:text-fg">
+            Surfaces
           </Link>
           <Link href="#faq" className="hover:text-fg">
             FAQ
