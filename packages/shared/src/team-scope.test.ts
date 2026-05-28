@@ -345,6 +345,33 @@ describe('withTeam namespaced port', () => {
     });
   });
 
+  it('does not validate discarded reconnect visibility defaults', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const first = await scope.integrations.createIntegration({
+      provider: 'github',
+      displayName: 'GitHub',
+      externalAccountId: 'installation-stale-default',
+      visibilityDefault: 'specific_users',
+      visibilityDefaultUserIds: [USER_B],
+    });
+
+    const second = await scope.integrations.createIntegration({
+      provider: 'github',
+      displayName: 'GitHub reconnected',
+      externalAccountId: 'installation-stale-default',
+      visibilityDefault: 'specific_users',
+      visibilityDefaultUserIds: ['99999999-9999-9999-9999-999999999999'],
+    });
+
+    expect(second.id).toBe(first.id);
+    const [row] = await db.select().from(integrations).where(eq(integrations.id, first.id));
+    expect(row).toMatchObject({
+      displayName: 'GitHub reconnected',
+      visibilityDefault: 'specific_users',
+      visibilityDefaultUserIds: [USER_B],
+    });
+  });
+
   it('lists active members for the current team', async () => {
     const ownerScope = withTeam(db as never, TEAM_A, USER_A);
     await expect(ownerScope.timeline.listMembers()).resolves.toEqual(

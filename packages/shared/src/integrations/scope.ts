@@ -75,12 +75,35 @@ export function createIntegrationScope(deps: {
   async function createIntegration(input: CreateIntegrationInput): Promise<IntegrationRow> {
     await ensureMember('admin');
     const encrypted = input.tokens ? encryptJson(input.tokens) : undefined;
-    const visibilityDefault = input.visibilityDefault ?? 'team';
-    const visibilityDefaultUserIds = await validateVisibilityUserIds(
-      visibilityDefault,
-      input.visibilityDefaultUserIds ?? null,
-      deps.requireTeamMember,
-    );
+    const externalAccountId = input.externalAccountId ?? null;
+    const existingVisibility =
+      externalAccountId !== null
+        ? (
+            await db
+              .select({
+                visibilityDefault: integrationsTable.visibilityDefault,
+                visibilityDefaultUserIds: integrationsTable.visibilityDefaultUserIds,
+              })
+              .from(integrationsTable)
+              .where(
+                and(
+                  eq(integrationsTable.teamId, teamId),
+                  eq(integrationsTable.provider, input.provider),
+                  eq(integrationsTable.externalAccountId, externalAccountId),
+                ),
+              )
+              .limit(1)
+          )[0]
+        : null;
+    const visibilityDefault =
+      existingVisibility?.visibilityDefault ?? input.visibilityDefault ?? 'team';
+    const visibilityDefaultUserIds =
+      existingVisibility?.visibilityDefaultUserIds ??
+      (await validateVisibilityUserIds(
+        visibilityDefault,
+        input.visibilityDefaultUserIds ?? null,
+        deps.requireTeamMember,
+      ));
     return db.transaction(async (tx) => {
       const rows = await tx
         .insert(integrationsTable)
@@ -89,7 +112,7 @@ export function createIntegrationScope(deps: {
           connectedByUserId: userId,
           provider: input.provider,
           displayName: input.displayName,
-          externalAccountId: input.externalAccountId ?? null,
+          externalAccountId,
           scopes: input.scopes ?? [],
           authSecretCiphertext: encrypted?.ciphertext ?? null,
           authSecretIv: encrypted?.iv ?? null,
