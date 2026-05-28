@@ -54,7 +54,7 @@ export async function POST(req: Request): Promise<Response> {
 
   if (isSlackUrlVerification(payload)) {
     try {
-      const result = await slack.handleSlackEnvelope({ db, ...slackIngestDeps() }, payload);
+      const result = await slack.handleSlackEnvelope({ db }, payload);
       if (result.challenge) {
         return Response.json({ challenge: result.challenge }, { status: 200 });
       }
@@ -64,9 +64,12 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, reason: 'invalid_challenge' }, { status: 200 });
   }
 
-  void slack.handleSlackEnvelope({ db, ...slackIngestDeps() }, payload).catch((err: unknown) => {
-    log.error({ err }, 'slack event handler failed');
-  });
+  const deps = { db, ...slackIngestDeps() };
+  void Promise.resolve()
+    .then(() => slack.handleSlackEnvelope(deps, payload))
+    .catch((err: unknown) => {
+      log.error({ err }, 'slack event handler failed');
+    });
   return Response.json({ ok: true }, { status: 200 });
 }
 
