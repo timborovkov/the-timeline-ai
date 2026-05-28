@@ -230,6 +230,36 @@ describe('calendar scope', () => {
     expect(row?.visibilityUserIds).toBeNull();
   });
 
+  it('allows non-creator team event edits when an empty visibility user list is a no-op', async () => {
+    await db.insert(calendarEvents).values({
+      id: CALENDAR_EVENT_ID,
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      title: 'Team review',
+      startAt: new Date('2026-05-27T09:00:00Z'),
+      endAt: new Date('2026-05-27T10:00:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      metadata: {},
+    });
+
+    const teammateScope = withTeam(db as never, TEAM_ID, USER_B_ID);
+    await expect(
+      teammateScope.calendar.updateCalendarEvent(CALENDAR_EVENT_ID, {
+        reminderMinutes: 30,
+        visibility: 'team',
+        visibilityUserIds: [],
+      }),
+    ).resolves.toMatchObject({ reminderMinutes: 30 });
+
+    const [row] = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.id, CALENDAR_EVENT_ID));
+    expect(row?.visibility).toBe('team');
+    expect(row?.visibilityUserIds).toBeNull();
+  });
+
   it('unlinkEntity requires write access to the calendar event', async () => {
     await db.insert(entities).values({
       id: ENTITY_ID,

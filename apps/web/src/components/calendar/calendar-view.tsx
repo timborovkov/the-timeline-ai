@@ -312,7 +312,9 @@ export function CalendarView({
         allDay: draft.allDay,
         location: draft.location.trim() || undefined,
         visibility: draft.visibility,
-        visibilityUserIds: draft.visibility === 'specific_users' ? draft.visibilityUserIds : [],
+        ...(draft.visibility === 'specific_users'
+          ? { visibilityUserIds: draft.visibilityUserIds }
+          : {}),
       };
       const result = editing
         ? await updateCalendarEventAction({ id: editing.id, ...input })

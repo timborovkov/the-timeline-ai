@@ -217,9 +217,10 @@ function sameDate(a: Date | null | undefined, b: Date | null | undefined): boole
 }
 
 function sameStringArray(a: string[] | null | undefined, b: string[] | null | undefined): boolean {
-  if (!a || !b) return a === b;
-  if (a.length !== b.length) return false;
-  return a.every((value, index) => value === b[index]);
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
 }
 
 function sameJson(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
