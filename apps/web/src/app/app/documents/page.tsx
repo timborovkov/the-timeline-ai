@@ -1,4 +1,6 @@
+import { users } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
+import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import { DocumentDrive } from '@/components/documents/document-drive';
@@ -30,11 +32,22 @@ export default async function DocumentsPage({ searchParams }: Props) {
   // to root rather than rendering a "Folder not found" page that leaks
   // the existence-or-not distinction.
   const folderId = currentFolder?.id ?? null;
-  const [folders, documentPage, ancestry] = await Promise.all([
+  const [folders, documentPage, ancestry, defaults, members] = await Promise.all([
     scope.documents.listFolders({ parentFolderId: folderId }),
     scope.documents.listDocumentsPage({ folderId, limit: 30 }),
     scope.documents.folderAncestry(folderId),
+    scope.timeline.resolveVisibilityDefault('document'),
+    scope.timeline.listMembers(),
   ]);
+  const memberIds = members.map((m) => m.userId);
+  const memberUsers =
+    memberIds.length > 0
+      ? await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, memberIds))
+      : [];
+  const memberUserMap = new Map(memberUsers.map((u) => [u.id, u] as const));
   // Prepend the root crumb. Scope returns ancestors only — the root
   // label is a UI concern, not data.
   const breadcrumbs: { id: string | null; name: string }[] = [
@@ -48,6 +61,12 @@ export default async function DocumentsPage({ searchParams }: Props) {
       <DocumentDrive
         currentFolderId={folderId}
         breadcrumbs={breadcrumbs}
+        defaultVisibility={defaults.visibility}
+        defaultVisibilityUserIds={defaults.visibilityUserIds}
+        members={members.map((m) => {
+          const u = memberUserMap.get(m.userId);
+          return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
+        })}
         folders={folders.map((f) => ({
           id: f.id,
           name: f.name,

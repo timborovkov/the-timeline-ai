@@ -1,4 +1,6 @@
+import { users } from '@timeline/db';
 import { integrations as integrationsLib, withTeam } from '@timeline/shared';
+import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import { ActionChip } from '@/components/action-chip';
@@ -39,12 +41,22 @@ export default async function IntegrationsPage({
 
   const params = await searchParams;
   const scope = withTeam(db, active.teamId, session.user.id);
-  const [role, connected, mcpServers] = await Promise.all([
+  const [role, connected, mcpServers, members] = await Promise.all([
     scope.requireMembership(),
     scope.integrations.listIntegrations(),
     scope.mcp.listTeamServers(),
+    scope.timeline.listMembers(),
   ]);
   const isAdmin = role === 'owner' || role === 'admin';
+  const memberIds = members.map((m) => m.userId);
+  const memberUsers =
+    memberIds.length > 0
+      ? await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, memberIds))
+      : [];
+  const memberUserMap = new Map(memberUsers.map((u) => [u.id, u] as const));
   const nativeCatalog = integrationsLib.listAvailableProviders();
   const mcpCatalog = integrationsLib.listCatalog().filter((c) => c.kind === 'mcp' && c.mcpUrl);
   const connectedUrls = new Set(mcpServers.map((s) => s.url));
@@ -104,7 +116,13 @@ export default async function IntegrationsPage({
                 enabled: c.enabled,
                 lastSyncedAt: c.lastSyncedAt ? c.lastSyncedAt.toISOString() : null,
                 lastError: c.lastError,
+                visibilityDefault: c.visibilityDefault,
+                visibilityDefaultUserIds: c.visibilityDefaultUserIds,
               }))}
+              members={members.map((m) => {
+                const u = memberUserMap.get(m.userId);
+                return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
+              })}
             />
           ) : null}
           {mcpServers.length > 0 ? (

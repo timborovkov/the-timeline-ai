@@ -11,6 +11,7 @@ import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { getEnv } from '../env.js';
 import { getQdrantClient, buildPointId } from '../qdrant/client.js';
 import { enqueueCalendarEventEmbedJob } from '../queue/queues.js';
+import { validateVisibilityUserIds } from '../visibility.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
 type CalendarEventSource = 'internal' | 'google' | 'caldav';
@@ -128,6 +129,7 @@ async function insertCalendarRawEvents(
       occurredAt: new Date(),
       visibility: args.visibility,
       visibilityUserIds: args.visibilityUserIds,
+      visibilityOwnerUserId: args.userId,
       sourceMetadata: { ...baseMetadata, action: 'scheduled' },
     })
     .onConflictDoNothing()
@@ -159,6 +161,7 @@ async function insertCalendarRawEvents(
       occurredAt: args.startAt,
       visibility: args.visibility,
       visibilityUserIds: args.visibilityUserIds,
+      visibilityOwnerUserId: args.userId,
       sourceMetadata: { ...baseMetadata, action: 'event' },
     })
     .onConflictDoNothing()
@@ -214,9 +217,10 @@ function sameDate(a: Date | null | undefined, b: Date | null | undefined): boole
 }
 
 function sameStringArray(a: string[] | null | undefined, b: string[] | null | undefined): boolean {
-  if (!a || !b) return a === b;
-  if (a.length !== b.length) return false;
-  return a.every((value, index) => value === b[index]);
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
 }
 
 function sameJson(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
@@ -257,7 +261,7 @@ async function deleteCalendarEventPoints(eventId: string): Promise<void> {
 }
 
 export function createCalendarScope(deps: CalendarScopeDeps) {
-  const { db, teamId, userId, ensureMember } = deps;
+  const { db, teamId, userId, ensureMember, requireTeamMember } = deps;
 
   // Read visibility: returns ALL private events (any user) so the
   // application layer can redact them to "Busy" blocks. Without this,
@@ -303,7 +307,11 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
 
       const created = await db.transaction(async (tx) => {
         const vis = input.visibility ?? 'team';
-        const visUserIds = input.visibilityUserIds ?? null;
+        const visUserIds = await validateVisibilityUserIds(
+          vis,
+          input.visibilityUserIds ?? null,
+          requireTeamMember,
+        );
         const linkedEntityIds = input.linkedEntityIds
           ? await assertEntitiesBelongToTeam(tx, { teamId, entityIds: input.linkedEntityIds })
           : [];
@@ -492,6 +500,21 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           throw new Error('End time must be after start time');
         }
 
+        const hasVisibilityChange =
+          changedFields.has('visibility') || changedFields.has('visibilityUserIds');
+        if (hasVisibilityChange && row.createdByUserId !== userId) {
+          throw new Error('Only the visibility owner can change this event');
+        }
+
+        const newVis = patch.visibility ?? row.visibility;
+        const newVisUserIds = hasVisibilityChange
+          ? await validateVisibilityUserIds(
+              newVis,
+              patch.visibilityUserIds ?? row.visibilityUserIds,
+              requireTeamMember,
+            )
+          : row.visibilityUserIds;
+
         const setClause: Record<string, unknown> = { updatedAt: new Date() };
         if (patch.title !== undefined) setClause.title = patch.title;
         if (patch.description !== undefined) setClause.description = patch.description;
@@ -501,8 +524,9 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         if (patch.allDay !== undefined) setClause.allDay = patch.allDay;
         if (patch.location !== undefined) setClause.location = patch.location;
         if (patch.visibility !== undefined) setClause.visibility = patch.visibility;
-        if (patch.visibilityUserIds !== undefined)
-          setClause.visibilityUserIds = patch.visibilityUserIds;
+        if (hasVisibilityChange) {
+          setClause.visibilityUserIds = newVisUserIds;
+        }
         if (patch.reminderMinutes !== undefined) setClause.reminderMinutes = patch.reminderMinutes;
         if (patch.metadata !== undefined) {
           setClause.metadata = patch.metadata;
@@ -516,8 +540,6 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
 
         if (!updated) return null;
 
-        const newVis = patch.visibility ?? row.visibility;
-        const newVisUserIds = patch.visibilityUserIds ?? row.visibilityUserIds;
         const newTitle = patch.title ?? row.title;
         const timelineFields: (keyof UpdateCalendarEventInput)[] = [
           'title',
@@ -541,8 +563,6 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           'visibility',
           'visibilityUserIds',
         ].some((field) => changedFields.has(field as keyof UpdateCalendarEventInput));
-        const hasVisibilityChange =
-          changedFields.has('visibility') || changedFields.has('visibilityUserIds');
 
         // Sync linked raw_events: title, time, AND visibility must stay
         // in lockstep with the calendar event. Without the visibility
@@ -604,6 +624,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
             occurredAt: new Date(),
             visibility: newVis,
             visibilityUserIds: newVisUserIds,
+            visibilityOwnerUserId: row.createdByUserId,
             sourceMetadata: {
               calendar_event_id: id,
               action: 'updated',
@@ -678,6 +699,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           occurredAt: new Date(),
           visibility: row.visibility,
           visibilityUserIds: row.visibilityUserIds,
+          visibilityOwnerUserId: row.createdByUserId,
           sourceMetadata: {
             calendar_event_id: id,
             action: 'cancelled',

@@ -2,10 +2,12 @@
 
 import {
   auditLog,
+  integrations,
   slackConversationBindings,
   slackUserTeams,
   teamInvites,
   teamMembers,
+  teamVisibilityDefaults,
   teams,
   telegramChatBindings,
   telegramUsers,
@@ -517,7 +519,101 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
         .update(teamMembers)
         .set({ removedAt: new Date(), removedByUserId: session.user.id })
         .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
-
+      await tx
+        .update(teamVisibilityDefaults)
+        .set({
+          sourceOwnerUserId: null,
+          visibility: 'team',
+          visibilityUserIds: null,
+          updatedByUserId: session.user.id,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(teamVisibilityDefaults.teamId, active.teamId),
+            eq(teamVisibilityDefaults.sourceOwnerUserId, memberUserId),
+            eq(teamVisibilityDefaults.visibility, 'private'),
+          ),
+        );
+      await tx
+        .update(teamVisibilityDefaults)
+        .set({ sourceOwnerUserId: null, updatedByUserId: session.user.id, updatedAt: new Date() })
+        .where(
+          and(
+            eq(teamVisibilityDefaults.teamId, active.teamId),
+            eq(teamVisibilityDefaults.sourceOwnerUserId, memberUserId),
+          ),
+        );
+      const defaultRows = await tx
+        .select({
+          source: teamVisibilityDefaults.source,
+          visibility: teamVisibilityDefaults.visibility,
+          visibilityUserIds: teamVisibilityDefaults.visibilityUserIds,
+        })
+        .from(teamVisibilityDefaults)
+        .where(
+          and(
+            eq(teamVisibilityDefaults.teamId, active.teamId),
+            sql`${memberUserId}::uuid = ANY(${teamVisibilityDefaults.visibilityUserIds})`,
+          ),
+        );
+      for (const row of defaultRows) {
+        const nextUserIds = (row.visibilityUserIds ?? []).filter((id) => id !== memberUserId);
+        const nextVisibility =
+          row.visibility === 'specific_users' && nextUserIds.length === 0 ? 'team' : row.visibility;
+        await tx
+          .update(teamVisibilityDefaults)
+          .set({
+            visibility: nextVisibility,
+            visibilityUserIds: nextUserIds.length > 0 ? nextUserIds : null,
+            updatedByUserId: session.user.id,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(teamVisibilityDefaults.teamId, active.teamId),
+              eq(teamVisibilityDefaults.source, row.source),
+            ),
+          );
+      }
+      const integrationRows = await tx
+        .select({
+          id: integrations.id,
+          connectedByUserId: integrations.connectedByUserId,
+          visibilityDefault: integrations.visibilityDefault,
+          visibilityDefaultUserIds: integrations.visibilityDefaultUserIds,
+        })
+        .from(integrations)
+        .where(
+          and(
+            eq(integrations.teamId, active.teamId),
+            or(
+              eq(integrations.connectedByUserId, memberUserId),
+              sql`${memberUserId}::uuid = ANY(${integrations.visibilityDefaultUserIds})`,
+            ),
+          ),
+        );
+      for (const row of integrationRows) {
+        const ownedByRemovedMember = row.connectedByUserId === memberUserId;
+        const nextUserIds = ownedByRemovedMember
+          ? []
+          : (row.visibilityDefaultUserIds ?? []).filter((id) => id !== memberUserId);
+        const nextVisibility = ownedByRemovedMember
+          ? row.visibilityDefault === 'private' || row.visibilityDefault === 'specific_users'
+            ? 'team'
+            : row.visibilityDefault
+          : row.visibilityDefault === 'specific_users' && nextUserIds.length === 0
+            ? 'team'
+            : row.visibilityDefault;
+        await tx
+          .update(integrations)
+          .set({
+            visibilityDefault: nextVisibility,
+            visibilityDefaultUserIds: nextUserIds.length > 0 ? nextUserIds : null,
+            updatedAt: new Date(),
+          })
+          .where(eq(integrations.id, row.id));
+      }
       // Revoke Telegram routing for this user — two anchors, both needed:
       //
       //   1. Consumer-side: telegram_users.user_id points at this app

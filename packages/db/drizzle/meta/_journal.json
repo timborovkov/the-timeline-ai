@@ -195,7 +195,14 @@
       "idx": 27,
       "version": "7",
       "when": 1795651980000,
-      "tag": "0027_phase12_slack_capture",
+      "tag": "0027_phase13_visibility_defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1795652040000,
+      "tag": "0028_phase12_slack_capture",
       "breakpoints": true
     }
   ]

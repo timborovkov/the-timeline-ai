@@ -6,6 +6,7 @@
 
 ALTER TYPE "public"."event_source" ADD VALUE IF NOT EXISTS 'slack';--> statement-breakpoint
 ALTER TYPE "public"."onboarding_step" ADD VALUE IF NOT EXISTS 'slack';--> statement-breakpoint
+ALTER TYPE "public"."visibility_default_source" ADD VALUE IF NOT EXISTS 'slack';--> statement-breakpoint
 
 CREATE TABLE "slack_workspaces" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,

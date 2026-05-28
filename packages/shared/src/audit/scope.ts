@@ -9,6 +9,8 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
+import { rawEventVisibleToUser } from '../visibility.js';
+
 type Visibility = 'private' | 'team' | 'specific_users';
 
 export type AuditAction =
@@ -61,8 +63,7 @@ export function canSeeAuditTarget(
   },
 ): boolean {
   if (!target.targetVisibility || target.targetVisibility === 'team') return true;
-  if (target.targetOwnerUserId === viewerUserId) return true;
-  if (target.targetVisibility === 'private') return false;
+  if (target.targetVisibility === 'private') return target.targetOwnerUserId === viewerUserId;
   return (target.targetVisibilityUserIds ?? []).includes(viewerUserId);
 }
 
@@ -170,15 +171,7 @@ export function createAuditScope(deps: {
           and(
             eq(rawEvents.teamId, teamId),
             inArray(rawEvents.id, eventIds),
-            or(
-              eq(rawEvents.visibility, 'team'),
-              and(eq(rawEvents.visibility, 'private'), eq(rawEvents.authorUserId, userId)),
-              eq(rawEvents.authorUserId, userId),
-              and(
-                eq(rawEvents.visibility, 'specific_users'),
-                sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
-              ),
-            ),
+            rawEventVisibleToUser(userId),
           ),
         );
       for (const event of visibleEvents) {

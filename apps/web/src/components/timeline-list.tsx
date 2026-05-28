@@ -4,6 +4,7 @@ import { Trash2 } from 'lucide-react';
 import type { rawEvents } from '@timeline/db';
 
 import { removeConversationalEventAction } from '@/app/actions/events';
+import { EventVisibilityForm } from '@/components/event-visibility-form';
 import { Button } from '@/components/ui/button';
 
 type RawEvent = InferSelectModel<typeof rawEvents>;
@@ -19,6 +20,7 @@ interface Props {
   audioUrlMap?: Map<string, string>;
   currentUserId: string;
   isAdmin: boolean;
+  members?: { id: string; label: string }[];
 }
 
 // Mono ISO-ish timestamp for the left column. We render local time so the
@@ -101,7 +103,14 @@ const SOURCE_LABEL: Record<string, string> = {
  *   2026-05-25 14:02   miriam · "ship tomorrow"               EMAIL
  *   2026-05-25 13:48   jay · voice 2m11s · "cut docs"         VOICE
  */
-export function TimelineList({ events, authorMap, audioUrlMap, currentUserId, isAdmin }: Props) {
+export function TimelineList({
+  events,
+  authorMap,
+  audioUrlMap,
+  currentUserId,
+  isAdmin,
+  members = [],
+}: Props) {
   if (events.length === 0) {
     return (
       <div className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
@@ -132,6 +141,7 @@ export function TimelineList({ events, authorMap, audioUrlMap, currentUserId, is
               ? mm.speakers.join(', ')
               : 'system';
         const sourceLabel = SOURCE_LABEL[event.source] ?? event.source.toUpperCase();
+        const canEditVisibility = event.visibilityOwnerUserId === currentUserId;
         return (
           <li
             key={event.id}
@@ -255,6 +265,19 @@ export function TimelineList({ events, authorMap, audioUrlMap, currentUserId, is
                       </li>
                     ))}
                   </ul>
+                ) : null}
+                {canEditVisibility ? (
+                  <details className="pt-1 text-xs">
+                    <summary className="cursor-pointer font-mono uppercase tracking-[0.1em] text-fg-dim">
+                      Visibility
+                    </summary>
+                    <EventVisibilityForm
+                      eventId={event.id}
+                      visibility={event.visibility}
+                      visibilityUserIds={event.visibilityUserIds}
+                      members={members}
+                    />
+                  </details>
                 ) : null}
               </div>
             </div>

@@ -42,6 +42,9 @@ interface Props {
   folders: FolderItem[];
   documents: DocumentItem[];
   documentsNextCursor: string | null;
+  defaultVisibility: 'team' | 'private' | 'specific_users';
+  defaultVisibilityUserIds: string[] | null;
+  members: { id: string; label: string }[];
 }
 
 export function DocumentDrive({
@@ -50,6 +53,9 @@ export function DocumentDrive({
   folders,
   documents,
   documentsNextCursor,
+  defaultVisibility,
+  defaultVisibilityUserIds,
+  members,
 }: Props) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -61,6 +67,12 @@ export function DocumentDrive({
   // active uploads count toward "busy" and surface the most recent
   // filename in the button label.
   const [uploading, setUploading] = useState<readonly string[]>([]);
+  const [visibility, setVisibility] = useState<'team' | 'private' | 'specific_users'>(
+    defaultVisibility,
+  );
+  const [visibilityUserIds, setVisibilityUserIds] = useState<string[]>(
+    defaultVisibilityUserIds ?? [],
+  );
   const documentQuery = useDocumentListQuery(currentFolderId, {
     items: documents,
     nextCursor: documentsNextCursor,
@@ -75,7 +87,8 @@ export function DocumentDrive({
         name: file.name,
         filename: file.name,
         contentType: file.type || 'application/octet-stream',
-        visibility: 'team',
+        visibility,
+        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
       });
       if (!req.ok || !req.url || !req.versionId) {
         toast.error(req.error ?? 'Upload failed');
@@ -128,7 +141,8 @@ export function DocumentDrive({
       const res = await createFolderAction({
         name: name.trim(),
         parentFolderId: currentFolderId,
-        visibility: 'team',
+        visibility,
+        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
       });
       if (!res.ok) toast.error(res.error ?? 'Failed to create folder');
       else router.refresh();
@@ -190,6 +204,40 @@ export function DocumentDrive({
           <input ref={fileInputRef} type="file" className="hidden" onChange={onFileChange} />
         </div>
       </header>
+      <div className="flex flex-wrap items-center gap-3 rounded-sm border border-border p-3 text-sm">
+        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          New item visibility
+        </span>
+        <select
+          value={visibility}
+          onChange={(e) => {
+            setVisibility(e.target.value as 'team' | 'private' | 'specific_users');
+          }}
+          className="h-8 rounded-sm border border-border bg-bg px-2 text-sm"
+        >
+          <option value="team">Team</option>
+          <option value="private">Private</option>
+          <option value="specific_users">Specific users</option>
+        </select>
+        {visibility === 'specific_users'
+          ? members.map((m) => (
+              <label key={m.id} className="flex items-center gap-1 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={visibilityUserIds.includes(m.id)}
+                  onChange={(e) => {
+                    setVisibilityUserIds((prev) =>
+                      e.target.checked
+                        ? [...new Set([...prev, m.id])]
+                        : prev.filter((id) => id !== m.id),
+                    );
+                  }}
+                />
+                {m.label}
+              </label>
+            ))
+          : null}
+      </div>
 
       <div
         onDragOver={(e) => {

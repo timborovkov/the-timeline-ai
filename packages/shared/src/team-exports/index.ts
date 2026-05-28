@@ -23,6 +23,8 @@ import {
 import { and, asc, count, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import JSZip from 'jszip';
 
+import { rawEventHiddenFromUser, rawEventVisibleToUser } from '../visibility.js';
+
 const EXPORT_TTL_SEC = 24 * 60 * 60;
 
 export interface ExportBuckets {
@@ -83,14 +85,7 @@ function visibleRawEventFilter(teamId: string, userId: string) {
   return and(
     eq(rawEvents.teamId, teamId),
     sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-    or(
-      eq(rawEvents.visibility, 'team'),
-      and(eq(rawEvents.visibility, 'private'), eq(rawEvents.authorUserId, userId)),
-      and(
-        eq(rawEvents.visibility, 'specific_users'),
-        sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
-      ),
-    ),
+    rawEventVisibleToUser(userId),
   );
 }
 
@@ -98,16 +93,7 @@ function hiddenRawEventFilter(teamId: string, userId: string) {
   return and(
     eq(rawEvents.teamId, teamId),
     sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-    or(
-      and(
-        eq(rawEvents.visibility, 'private'),
-        sql`${rawEvents.authorUserId} IS DISTINCT FROM ${userId}::uuid`,
-      ),
-      and(
-        eq(rawEvents.visibility, 'specific_users'),
-        sql`NOT (${userId}::uuid = ANY(COALESCE(${rawEvents.visibilityUserIds}, ARRAY[]::uuid[])))`,
-      ),
-    ),
+    rawEventHiddenFromUser(userId),
   );
 }
 

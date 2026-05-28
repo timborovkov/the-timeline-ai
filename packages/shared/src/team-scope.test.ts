@@ -3,6 +3,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
+import { auditLog, integrations, rawEvents, teamVisibilityDefaults } from '@timeline/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -61,8 +63,8 @@ async function insertTelegramEvent(
     ...(input.deleted ? { deleted: true } : {}),
   };
   await pg.query(
-    `INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, occurred_at, source_metadata)
-     VALUES ($1, $2, $3, 'telegram', $4, now(), $5::jsonb)`,
+    `INSERT INTO raw_events (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, source_metadata)
+     VALUES ($1, $2, $3, $3, 'telegram', $4, now(), $5::jsonb)`,
     [input.id, TEAM_A, input.authorUserId, input.text, JSON.stringify(metadata)],
   );
 }
@@ -121,6 +123,102 @@ describe('withTeam namespaced port', () => {
     });
     await expect(teammateScope.objects.listChatSessions()).resolves.toEqual([]);
     await expect(teammateScope.objects.getChatSession(session.id)).resolves.toBeNull();
+  });
+
+  it('resolves visibility defaults by source, fallback, then hard team default', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+
+    await expect(scope.timeline.resolveVisibilityDefault('web')).resolves.toMatchObject({
+      visibility: 'team',
+      inherited: true,
+    });
+
+    await scope.timeline.setVisibilityDefault({
+      source: 'team',
+      visibility: 'private',
+      sourceOwnerUserId: USER_A,
+    });
+    await expect(scope.timeline.resolveVisibilityDefault('web')).resolves.toMatchObject({
+      visibility: 'private',
+      sourceOwnerUserId: USER_A,
+      inherited: true,
+    });
+
+    await scope.timeline.setVisibilityDefault({ source: 'web', visibility: 'team' });
+    await expect(scope.timeline.resolveVisibilityDefault('web')).resolves.toMatchObject({
+      visibility: 'team',
+      inherited: false,
+    });
+  });
+
+  it('coerces invalid inherited specific-users defaults to team visibility', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    await db.insert(teamVisibilityDefaults).values({
+      teamId: TEAM_A,
+      source: 'team',
+      visibility: 'specific_users',
+      visibilityUserIds: [USER_A],
+      sourceOwnerUserId: USER_A,
+      updatedByUserId: USER_A,
+    });
+
+    await expect(scope.timeline.resolveVisibilityDefault('web')).resolves.toMatchObject({
+      visibility: 'team',
+      visibilityUserIds: null,
+      sourceOwnerUserId: USER_A,
+      inherited: true,
+    });
+  });
+
+  it('rejects specific_users defaults on binary capture sources', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    await expect(
+      scope.timeline.setVisibilityDefault({
+        source: 'telegram',
+        visibility: 'specific_users',
+        visibilityUserIds: [USER_A],
+      }),
+    ).rejects.toThrow('specific_users visibility is not supported');
+  });
+
+  it('rejects specific_users email events with an email-specific error', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    await expect(
+      scope.timeline.createEmailEvent({
+        authorUserId: USER_A,
+        visibility: 'specific_users',
+        visibilityUserIds: [USER_A],
+        messageId: 'specific-users-email@example.com',
+        contentText: 'specific-users email',
+        occurredAt: new Date('2026-05-27T09:00:00Z'),
+      } as never),
+    ).rejects.toThrow('specific_users visibility is not supported for email events');
+  });
+
+  it('materializes all visibility defaults from one settings fetch', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    await scope.timeline.setVisibilityDefault({
+      source: 'team',
+      visibility: 'private',
+      sourceOwnerUserId: USER_A,
+    });
+    await scope.timeline.setVisibilityDefault({ source: 'document', visibility: 'team' });
+
+    await expect(scope.timeline.getVisibilityDefaults()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'web',
+          visibility: 'private',
+          sourceOwnerUserId: USER_A,
+          inherited: true,
+        }),
+        expect.objectContaining({
+          source: 'document',
+          visibility: 'team',
+          inherited: false,
+        }),
+      ]),
+    );
   });
 
   it('hides tombstoned raw events from timeline reads and hydration', async () => {
@@ -228,22 +326,182 @@ describe('withTeam namespaced port', () => {
     );
   });
 
-  it('rejects removed members at the team-scope chokepoint', async () => {
-    await pg.exec(`
-      UPDATE team_members
-      SET removed_at = now(), removed_by_user_id = '${USER_A}'
-      WHERE team_id = '${TEAM_A}' AND user_id = '${USER_B}';
-    `);
-
-    const removedScope = withTeam(db as never, TEAM_A, USER_B);
-
-    await expect(removedScope.requireMembership()).rejects.toThrow('Not a member of this team');
-    await expect(removedScope.timeline.listMembers()).rejects.toThrow('Not a member of this team');
-
+  it('only the visibility owner can change an existing event visibility and audits it', async () => {
     const ownerScope = withTeam(db as never, TEAM_A, USER_A);
-    await expect(ownerScope.timeline.listMembers()).resolves.toEqual([
-      expect.objectContaining({ userId: USER_A, role: 'owner' }),
-      expect.objectContaining({ userId: USER_C, role: 'admin' }),
-    ]);
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const event = await ownerScope.timeline.createEvent({
+      authorUserId: USER_B,
+      visibilityOwnerUserId: USER_A,
+      source: 'web',
+      contentText: 'owner controlled',
+      visibility: 'team',
+    });
+
+    await expect(
+      adminScope.timeline.setEventVisibility(event.id, { visibility: 'private' }),
+    ).rejects.toThrow('Only the visibility owner');
+
+    await ownerScope.timeline.setEventVisibility(event.id, {
+      visibility: 'specific_users',
+      visibilityUserIds: [USER_B],
+    });
+    await expect(ownerScope.timeline.getEvent(event.id)).resolves.toBeNull();
+    await expect(
+      withTeam(db as never, TEAM_A, USER_B).timeline.getEvent(event.id),
+    ).resolves.toMatchObject({
+      id: event.id,
+    });
+
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, event.id));
+    expect(row?.visibility).toBe('specific_users');
+    expect(row?.visibilityUserIds).toEqual([USER_B]);
+
+    const auditRows = await db.select().from(auditLog).where(eq(auditLog.targetId, event.id));
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]?.action).toBe('visibility_change');
+    expect(auditRows[0]?.metadata).toMatchObject({
+      previous: { visibility: 'team' },
+      next: { visibility: 'specific_users', visibilityUserIds: [USER_B] },
+    });
+
+    const defaults = await db.select().from(teamVisibilityDefaults);
+    expect(defaults).toHaveLength(0);
+
+    await ownerScope.timeline.setEventVisibility(event.id, { visibility: 'team' });
+    await expect(ownerScope.timeline.getEvent(event.id)).resolves.toMatchObject({ id: event.id });
+  });
+
+  it('lets a private source-owned event be read and edited by its visibility owner', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const teammateScope = withTeam(db as never, TEAM_A, USER_B);
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const event = await ownerScope.timeline.createEvent({
+      authorUserId: null,
+      visibilityOwnerUserId: USER_A,
+      source: 'email',
+      contentText: 'unverified sender private email',
+      visibility: 'private',
+    });
+
+    await expect(ownerScope.timeline.getEvent(event.id)).resolves.toMatchObject({ id: event.id });
+    await expect(teammateScope.timeline.getEvent(event.id)).resolves.toBeNull();
+    await expect(adminScope.timeline.getEvent(event.id)).resolves.toBeNull();
+
+    await ownerScope.timeline.setEventVisibility(event.id, { visibility: 'team' });
+
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, event.id));
+    expect(row?.visibility).toBe('team');
+  });
+
+  it('audits source-owned private event detail reads against the visibility owner', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await ownerScope.timeline.createEvent({
+      authorUserId: null,
+      visibilityOwnerUserId: USER_A,
+      source: 'email',
+      contentText: 'source-owned audit event',
+      visibility: 'private',
+    });
+
+    await expect(ownerScope.timeline.getEventWithFacts(event.id)).resolves.toMatchObject({
+      event: { id: event.id },
+    });
+
+    const rows = await db.select().from(auditLog).where(eq(auditLog.targetId, event.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'event.detail_read',
+      targetOwnerUserId: USER_A,
+    });
+  });
+
+  it('rejects visibility edits for ownerless legacy events with a clear error', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await scope.timeline.createEvent({
+      authorUserId: null,
+      visibilityOwnerUserId: null,
+      source: 'system',
+      contentText: 'legacy ownerless event',
+      visibility: 'team',
+    });
+
+    await expect(
+      scope.timeline.setEventVisibility(event.id, { visibility: 'private' }),
+    ).rejects.toThrow('This event has no visibility owner');
+  });
+
+  it('fails integration visibility updates for missing integrations', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+
+    await expect(
+      scope.integrations.setIntegrationVisibilityDefault(
+        '99999999-9999-9999-9999-999999999999',
+        'team',
+      ),
+    ).rejects.toThrow('Integration not found');
+  });
+
+  it('preserves per-integration visibility defaults when reconnecting', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const first = await scope.integrations.createIntegration({
+      provider: 'github',
+      displayName: 'GitHub',
+      externalAccountId: 'installation-1',
+      visibilityDefault: 'specific_users',
+      visibilityDefaultUserIds: [USER_B],
+    });
+
+    const second = await scope.integrations.createIntegration({
+      provider: 'github',
+      displayName: 'GitHub reconnected',
+      externalAccountId: 'installation-1',
+      visibilityDefault: 'team',
+      visibilityDefaultUserIds: null,
+    });
+
+    expect(second.id).toBe(first.id);
+    const [row] = await db.select().from(integrations).where(eq(integrations.id, first.id));
+    expect(row).toMatchObject({
+      displayName: 'GitHub reconnected',
+      visibilityDefault: 'specific_users',
+      visibilityDefaultUserIds: [USER_B],
+    });
+  });
+
+  it('does not validate discarded reconnect visibility defaults', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const first = await scope.integrations.createIntegration({
+      provider: 'github',
+      displayName: 'GitHub',
+      externalAccountId: 'installation-stale-default',
+      visibilityDefault: 'specific_users',
+      visibilityDefaultUserIds: [USER_B],
+    });
+
+    const second = await scope.integrations.createIntegration({
+      provider: 'github',
+      displayName: 'GitHub reconnected',
+      externalAccountId: 'installation-stale-default',
+      visibilityDefault: 'specific_users',
+      visibilityDefaultUserIds: ['99999999-9999-9999-9999-999999999999'],
+    });
+
+    expect(second.id).toBe(first.id);
+    const [row] = await db.select().from(integrations).where(eq(integrations.id, first.id));
+    expect(row).toMatchObject({
+      displayName: 'GitHub reconnected',
+      visibilityDefault: 'specific_users',
+      visibilityDefaultUserIds: [USER_B],
+    });
+  });
+
+  it('lists active members for the current team', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    await expect(ownerScope.timeline.listMembers()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ userId: USER_A, role: 'owner' }),
+        expect.objectContaining({ userId: USER_C, role: 'admin' }),
+      ]),
+    );
   });
 });

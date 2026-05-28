@@ -221,6 +221,7 @@ export interface TimelineEvent {
   createdAt: string;
   visibility: 'private' | 'team' | 'specific_users';
   visibilityUserIds: string[] | null;
+  visibilityOwnerUserId: string | null;
   sourceMetadata: unknown;
 }
 

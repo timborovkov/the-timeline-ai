@@ -8,15 +8,18 @@ import {
   facts as factsTable,
   rawEvents,
   teamMembers,
+  teamVisibilityDefaults,
   teams,
   teamRole,
   users,
+  visibilityDefaultSource,
 } from '@timeline/db';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import { createAuditScope } from './audit/scope.js';
 import { createCalendarScope } from './calendar/scope.js';
 import { createDocumentScope } from './documents/scope.js';
+import { getEnv } from './env.js';
 import { createIntegrationScope } from './integrations/scope.js';
 import { createJobRecoveryScope } from './job-recovery/index.js';
 import { embed as defaultEmbed, type EmbedResult } from './llm/embed.js';
@@ -26,12 +29,15 @@ import { createObjectScope } from './objects/index.js';
 import { createOnboardingScope } from './onboarding/index.js';
 import { decodeCursor, pageWindow } from './pagination.js';
 import {
+  buildPointId,
   getQdrantClient,
   type SearchHit,
   type SearchOpts,
   type SourceKind,
 } from './qdrant/client.js';
+import { enqueueEmbedJob } from './queue/queues.js';
 import { createSuggestionScope } from './suggestions/index.js';
+import { normalizeVisibilityUserIds, rawEventVisibleToUser } from './visibility.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.
@@ -53,8 +59,18 @@ export type EntityType = (typeof _entityTypeValues)[number];
 const _eventSourceValues = eventSource.enumValues;
 export type EventSource = (typeof _eventSourceValues)[number];
 export type CreatableEventSource = Exclude<EventSource, 'document'>;
+const _visibilityDefaultSourceValues = visibilityDefaultSource.enumValues;
+export type VisibilityDefaultSource = (typeof _visibilityDefaultSourceValues)[number];
+export type EventVisibility = 'private' | 'team' | 'specific_users';
+export type EmailEventVisibility = Exclude<EventVisibility, 'specific_users'>;
 
 const ROLE_RANK: Record<TeamRole, number> = { member: 0, admin: 1, owner: 2 };
+const SPECIFIC_USERS_DEFAULT_SOURCES = new Set<VisibilityDefaultSource>([
+  'document',
+  'meeting',
+  'integration',
+  'calendar',
+]);
 
 export interface EventListFilters {
   authorUserId?: string;
@@ -66,8 +82,8 @@ export interface EventListFilters {
   /**
    * Narrow to a specific `event_source` value. Pushes the predicate into
    * SQL so `limit` bounds the matching rows (not the pre-filter window).
-   * Mirrors the pg enum: 'web' | 'telegram' | 'email' | 'system' |
-   * 'document' | 'meeting' | 'integration'.
+   * Mirrors the pg enum: 'web' | 'telegram' | 'slack' | 'email' |
+   * 'system' | 'document' | 'meeting' | 'integration'.
    */
   source?: string;
   limit?: number;
@@ -80,13 +96,17 @@ export interface CreateEventInput {
   contentText?: string | null;
   contentAudioUrl?: string | null;
   occurredAt?: Date;
-  visibility?: 'private' | 'team' | 'specific_users';
+  visibility?: EventVisibility;
   visibilityUserIds?: string[] | null;
+  visibilityOwnerUserId?: string | null;
   sourceMetadata?: Record<string, unknown>;
 }
 
 export interface CreateEmailEventInput {
   authorUserId: string | null;
+  visibility?: EmailEventVisibility;
+  visibilityUserIds?: string[] | null;
+  visibilityOwnerUserId?: string | null;
   /** RFC 5322 Message-ID, normalized (no angle brackets). Drives the
    *  per-team unique index that makes Postmark retries idempotent. */
   messageId: string;
@@ -216,10 +236,33 @@ export interface EventWithFacts {
     authorUserId: string | null;
     contentText: string | null;
     contentAudioUrl: string | null;
-    visibility: 'private' | 'team' | 'specific_users';
+    visibility: EventVisibility;
+    visibilityOwnerUserId: string | null;
   };
   facts: EntityFact[];
   entities: { id: string; canonicalName: string; type: string }[];
+}
+
+export interface VisibilityDefaultRow {
+  source: VisibilityDefaultSource;
+  visibility: EventVisibility;
+  visibilityUserIds: string[] | null;
+  sourceOwnerUserId: string | null;
+  updatedByUserId: string | null;
+  updatedAt: Date | null;
+  inherited: boolean;
+}
+
+export interface SetVisibilityDefaultInput {
+  source: VisibilityDefaultSource;
+  visibility: EventVisibility;
+  visibilityUserIds?: string[] | null;
+  sourceOwnerUserId?: string | null;
+}
+
+export interface SetEventVisibilityInput {
+  visibility: EventVisibility;
+  visibilityUserIds?: string[] | null;
 }
 
 export interface TeamScopeDeps {
@@ -270,14 +313,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * to require a higher role than `member` (e.g. for admin-only operations).
  */
 export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScopeDeps = {}) {
-  const visibilityFilter = or(
-    eq(rawEvents.visibility, 'team'),
-    and(eq(rawEvents.visibility, 'private'), eq(rawEvents.authorUserId, userId)),
-    and(
-      eq(rawEvents.visibility, 'specific_users'),
-      sql`${userId}::uuid = ANY(${rawEvents.visibilityUserIds})`,
-    ),
-  );
+  const visibilityFilter = rawEventVisibleToUser(userId);
   const activeRawEventFilter = sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`;
 
   let membershipPromise: Promise<TeamRole> | undefined;
@@ -373,6 +409,102 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     }
   }
 
+  function sameVisibilityUsers(
+    a: string[] | null | undefined,
+    b: string[] | null | undefined,
+  ): boolean {
+    const left = [...new Set(a ?? [])].sort();
+    const right = [...new Set(b ?? [])].sort();
+    if (left.length !== right.length) return false;
+    return left.every((id, index) => id === right[index]);
+  }
+
+  async function validateVisibilityPatch(
+    input: { visibility: EventVisibility; visibilityUserIds?: string[] | null },
+    opts: { defaultSource?: VisibilityDefaultSource; allowSpecificUsers?: boolean } = {},
+  ): Promise<string[] | null> {
+    if (
+      input.visibility === 'specific_users' &&
+      !opts.allowSpecificUsers &&
+      (!opts.defaultSource || !SPECIFIC_USERS_DEFAULT_SOURCES.has(opts.defaultSource))
+    ) {
+      throw new Error('specific_users visibility is not supported for this source');
+    }
+    const normalized = normalizeVisibilityUserIds(input.visibility, input.visibilityUserIds);
+    if (normalized) {
+      for (const uid of normalized) await requireTeamMember(uid);
+    }
+    return normalized;
+  }
+
+  async function resolveVisibilityDefault(
+    source: VisibilityDefaultSource,
+  ): Promise<VisibilityDefaultRow> {
+    await ensureMember();
+    const rows = await db
+      .select()
+      .from(teamVisibilityDefaults)
+      .where(
+        and(
+          eq(teamVisibilityDefaults.teamId, teamId),
+          inArray(teamVisibilityDefaults.source, source === 'team' ? ['team'] : [source, 'team']),
+        ),
+      );
+    const bySource = new Map(rows.map((r) => [r.source, r] as const));
+    return materializeVisibilityDefault(source, bySource);
+  }
+
+  function materializeVisibilityDefault(
+    source: VisibilityDefaultSource,
+    bySource: Map<VisibilityDefaultSource, typeof teamVisibilityDefaults.$inferSelect>,
+  ): VisibilityDefaultRow {
+    const row = bySource.get(source) ?? (source === 'team' ? undefined : bySource.get('team'));
+    if (!row) {
+      return {
+        source,
+        visibility: 'team',
+        visibilityUserIds: null,
+        sourceOwnerUserId: null,
+        updatedByUserId: null,
+        updatedAt: null,
+        inherited: source !== 'team',
+      };
+    }
+    const inherited = row.source !== source;
+    const supportsSpecificUsers =
+      !inherited && SPECIFIC_USERS_DEFAULT_SOURCES.has(source) && row.source !== 'team';
+    const visibility =
+      row.visibility === 'specific_users' && !supportsSpecificUsers ? 'team' : row.visibility;
+    return {
+      source,
+      visibility,
+      visibilityUserIds: visibility === 'specific_users' ? row.visibilityUserIds : null,
+      sourceOwnerUserId: row.sourceOwnerUserId,
+      updatedByUserId: row.updatedByUserId,
+      updatedAt: row.updatedAt,
+      inherited,
+    };
+  }
+
+  async function deleteRawEventEmbeddingPoints(rawEventId: string): Promise<void> {
+    try {
+      const factRows = await db
+        .select({ id: factsTable.id })
+        .from(factsTable)
+        .where(and(eq(factsTable.teamId, teamId), eq(factsTable.rawEventId, rawEventId)));
+      const activeModel = getEnv().EMBEDDING_MODEL ?? 'openai/text-embedding-3-small';
+      const models = [...new Set([activeModel, 'openai/text-embedding-3-small'])];
+      const pointIds = models.flatMap((model) => [
+        buildPointId('event', rawEventId, model),
+        ...factRows.map((f) => buildPointId('fact', f.id, model)),
+      ]);
+      await getQdrantClient().deletePoints(pointIds);
+    } catch {
+      // Visibility updates are authoritative in Postgres. Qdrant cleanup is
+      // best-effort; the DB visibility filter still gates hydrated results.
+    }
+  }
+
   // Phase 9 — document drive methods, spread in below. Document methods
   // share `ensureMember` / `requireTeamMember` so they participate in the
   // same membership-cache and team-isolation chokepoints.
@@ -391,6 +523,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     teamId,
     userId,
     ensureMember,
+    requireTeamMember,
   });
 
   const integrationScope = createIntegrationScope({
@@ -398,6 +531,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     teamId,
     userId,
     ensureMember,
+    requireTeamMember,
   });
 
   const mcpScope = createMcpScope({
@@ -496,6 +630,138 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         await ensureMember();
         const rows = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);
         return rows[0] ?? null;
+      },
+
+      resolveVisibilityDefault,
+
+      async getVisibilityDefaults(): Promise<VisibilityDefaultRow[]> {
+        await ensureMember('admin');
+        const sources = visibilityDefaultSource.enumValues;
+        const rows = await db
+          .select()
+          .from(teamVisibilityDefaults)
+          .where(eq(teamVisibilityDefaults.teamId, teamId));
+        const bySource = new Map(rows.map((row) => [row.source, row] as const));
+        return sources.map((source) => materializeVisibilityDefault(source, bySource));
+      },
+
+      async setVisibilityDefault(input: SetVisibilityDefaultInput): Promise<VisibilityDefaultRow> {
+        await ensureMember('admin');
+        const visibilityUserIds = await validateVisibilityPatch(
+          { visibility: input.visibility, visibilityUserIds: input.visibilityUserIds ?? null },
+          { defaultSource: input.source },
+        );
+        if (input.sourceOwnerUserId) await requireTeamMember(input.sourceOwnerUserId);
+
+        await db
+          .insert(teamVisibilityDefaults)
+          .values({
+            teamId,
+            source: input.source,
+            visibility: input.visibility,
+            visibilityUserIds,
+            sourceOwnerUserId: input.sourceOwnerUserId ?? null,
+            updatedByUserId: userId,
+            updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: [teamVisibilityDefaults.teamId, teamVisibilityDefaults.source],
+            set: {
+              visibility: input.visibility,
+              visibilityUserIds,
+              sourceOwnerUserId: input.sourceOwnerUserId ?? null,
+              updatedByUserId: userId,
+              updatedAt: new Date(),
+            },
+          });
+        return resolveVisibilityDefault(input.source);
+      },
+
+      async setEventVisibility(
+        id: string,
+        input: SetEventVisibilityInput,
+      ): Promise<typeof rawEvents.$inferSelect | null> {
+        await ensureMember();
+        const visibilityUserIds = await validateVisibilityPatch(
+          { visibility: input.visibility, visibilityUserIds: input.visibilityUserIds ?? null },
+          { allowSpecificUsers: true },
+        );
+        const existingRows = await db
+          .select()
+          .from(rawEvents)
+          .where(
+            and(
+              eq(rawEvents.id, id),
+              eq(rawEvents.teamId, teamId),
+              or(visibilityFilter, eq(rawEvents.visibilityOwnerUserId, userId)),
+              activeRawEventFilter,
+            ),
+          )
+          .limit(1);
+        const existing = existingRows[0];
+        if (!existing) return null;
+        if (existing.visibilityOwnerUserId === null) {
+          throw new Error('This event has no visibility owner');
+        }
+        if (existing.visibilityOwnerUserId !== userId) {
+          throw new Error('Only the visibility owner can change this event');
+        }
+        const sameVisibility = existing.visibility === input.visibility;
+        if (sameVisibility && sameVisibilityUsers(existing.visibilityUserIds, visibilityUserIds)) {
+          return existing;
+        }
+
+        const updated = await db.transaction(async (tx) => {
+          const updatedRows = await tx
+            .update(rawEvents)
+            .set({
+              visibility: input.visibility,
+              visibilityUserIds,
+              sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${JSON.stringify(
+                {
+                  visibility_changed_at: new Date().toISOString(),
+                },
+              )}::jsonb`,
+            })
+            .where(and(eq(rawEvents.id, id), eq(rawEvents.teamId, teamId)))
+            .returning();
+          const row = updatedRows[0];
+          if (!row) return null;
+
+          await tx.insert(auditLog).values({
+            teamId,
+            actorUserId: userId,
+            action: 'visibility_change',
+            targetType: 'raw_event',
+            targetId: id,
+            targetVisibility: row.visibility,
+            targetOwnerUserId: row.visibilityOwnerUserId,
+            targetVisibilityUserIds: row.visibilityUserIds,
+            metadata: {
+              previous: {
+                visibility: existing.visibility,
+                visibilityUserIds: existing.visibilityUserIds,
+              },
+              next: {
+                visibility: row.visibility,
+                visibilityUserIds: row.visibilityUserIds,
+              },
+              source: row.source,
+            },
+          });
+          return row;
+        });
+        if (!updated) return null;
+
+        if (existing.visibility === 'team' && updated.visibility !== 'team') {
+          await deleteRawEventEmbeddingPoints(id);
+        } else if (existing.visibility !== 'team' && updated.visibility === 'team') {
+          await enqueueEmbedJob({ scope: 'raw_event', teamId, rawEventId: id }).catch(() => {
+            // The row is already visible in Postgres; janitor/retry paths can
+            // reconcile the embedding if Redis is temporarily unavailable.
+          });
+        }
+        return updated;
       },
 
       listEvents,
@@ -630,6 +896,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
       async createEvent(input: CreateEventInput) {
         await ensureMember();
+        const visibilityUserIds = await validateVisibilityPatch(
+          {
+            visibility: input.visibility ?? 'team',
+            visibilityUserIds: input.visibilityUserIds ?? null,
+          },
+          { allowSpecificUsers: true },
+        );
         const rows = await db
           .insert(rawEvents)
           .values({
@@ -640,7 +913,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             contentAudioUrl: input.contentAudioUrl ?? null,
             occurredAt: input.occurredAt ?? new Date(),
             visibility: input.visibility ?? 'team',
-            visibilityUserIds: input.visibilityUserIds ?? null,
+            visibilityUserIds,
+            visibilityOwnerUserId: input.visibilityOwnerUserId ?? input.authorUserId,
             sourceMetadata: input.sourceMetadata ?? {},
           })
           .returning();
@@ -671,6 +945,10 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
        */
       async createEmailEvent(input: CreateEmailEventInput): Promise<CreateEmailEventResult | null> {
         await ensureMember();
+        const visibility = (input.visibility ?? 'team') as EventVisibility;
+        if (visibility === 'specific_users') {
+          throw new Error('specific_users visibility is not supported for email events');
+        }
         return db.transaction(async (tx) => {
           // Probe parent: in-reply-to first, then any reference we know about.
           let parentRootId: string | null = null;
@@ -765,7 +1043,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
               source: 'email',
               contentText: input.contentText,
               occurredAt: input.occurredAt,
-              visibility: 'team',
+              visibility,
+              visibilityUserIds: null,
+              visibilityOwnerUserId: input.visibilityOwnerUserId ?? input.authorUserId,
               sourceMetadata: composedMetadata,
             })
             .onConflictDoNothing()
@@ -861,7 +1141,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             targetType: 'raw_event',
             targetId: event.id,
             targetVisibility: event.visibility,
-            targetOwnerUserId: event.authorUserId,
+            targetOwnerUserId: event.visibilityOwnerUserId,
             targetVisibilityUserIds: event.visibilityUserIds,
             metadata: { source: event.source },
           });
@@ -909,6 +1189,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             contentText: event.contentText,
             contentAudioUrl: event.contentAudioUrl,
             visibility: event.visibility,
+            visibilityOwnerUserId: event.visibilityOwnerUserId,
           },
           facts: factRows,
           entities: entityRows,

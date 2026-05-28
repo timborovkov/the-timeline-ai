@@ -175,7 +175,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How does privacy work inside a team?',
-    a: 'Visibility lives on the event, not the team. Each event carries one of three modes: private (visible only to the author), team (visible to all team members), or specific_users (a named list). A brain dump captured in a team group chat can still be marked private. Team isolation is enforced at the query layer; per-event visibility is layered on top.',
+    a: 'Visibility lives on the event, not the team. Each event carries one of three modes: private (visible only to the author or source owner), team (visible to all team members), or specific_users (a named list). A brain dump captured in a team group chat can still be marked private. Team isolation is enforced at the query layer; per-event visibility is layered on top.',
   },
   {
     q: 'Can I export my team data?',

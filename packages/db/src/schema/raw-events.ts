@@ -56,6 +56,9 @@ export const rawEvents = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     visibility: eventVisibility('visibility').notNull().default('team'),
     visibilityUserIds: uuid('visibility_user_ids').array(),
+    visibilityOwnerUserId: uuid('visibility_owner_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     sourceMetadata: jsonb('source_metadata').notNull().default({}),
   },
   (table) => [
@@ -75,6 +78,7 @@ export const rawEvents = pgTable(
       table.id,
     ),
     index('raw_events_author_idx').on(table.authorUserId),
+    index('raw_events_visibility_owner_idx').on(table.teamId, table.visibilityOwnerUserId),
     // Idempotency: Telegram delivers the same update_id on retry when we
     // 5xx, time out, or crash before responding. The partial unique index
     // makes the second insert a no-op via ON CONFLICT DO NOTHING.

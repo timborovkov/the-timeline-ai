@@ -28,6 +28,7 @@ interface RawEventRow {
   contentText: string | null;
   occurredAt: Date;
   authorUserId: string | null;
+  visibilityOwnerUserId: string | null;
   source:
     | 'web'
     | 'telegram'
@@ -89,6 +90,7 @@ export function blankEmbeddingPayload(args: {
     entity_ids: [],
     occurred_at: args.occurredAt.toISOString(),
     author_user_id: args.authorUserId,
+    visibility_owner_user_id: null,
     source: 'system',
     visibility: 'team',
     visibility_user_ids: null,
@@ -176,6 +178,7 @@ async function buildEventOrFactPlan(
       contentText: rawEvents.contentText,
       occurredAt: rawEvents.occurredAt,
       authorUserId: rawEvents.authorUserId,
+      visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
       source: rawEvents.source,
       visibility: rawEvents.visibility,
       visibilityUserIds: rawEvents.visibilityUserIds,
@@ -211,6 +214,7 @@ async function buildEventOrFactPlan(
     event_id: row.id,
     occurred_at: row.occurredAt.toISOString(),
     author_user_id: row.authorUserId,
+    visibility_owner_user_id: row.visibilityOwnerUserId,
     source: row.source,
     visibility: row.visibility,
     visibility_user_ids: row.visibilityUserIds,
