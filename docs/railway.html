@@ -298,9 +298,10 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
         <li>
           Railway builds each app service with Railpack using the service's
           <code>railway.json</code> build command. The build installs the full pnpm workspace, so
-          operational scripts are available in <code>railway ssh</code>. The deploy images run with
-          <code>NODE_ENV=production</code> and <code>node</code> directly because Corepack's
-          <code>pnpm</code> shims are not active there.
+          operational scripts are available in <code>railway ssh</code>. The web build and deploy
+          images run with <code>NODE_ENV=production</code>; deploy commands use
+          <code>node</code> directly because Corepack's <code>pnpm</code> shims are not active
+          there.
         </li>
         <li>
           Migrations: run as a release-phase pre-deploy command on the <code>web</code> service and
