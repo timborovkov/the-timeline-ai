@@ -20,16 +20,19 @@ reviewed from the unified `/app/approvals` queue before becoming canonical
 state. Third-party integrations (Google Drive, Linear, GitHub native + custom
 MCP servers per team or per user) live at `/app/team/integrations` — plus an
 outbound MCP server at `/api/mcp/server` so external agents (Claude Desktop,
-Cursor, etc.) can query this Timeline. The main timeline, object sections,
-document lists, and document search are paginated for large beta workspaces,
-with short-lived visibility-aware Redis caches and React Query only on
-interactive surfaces. `/app/timeline` includes a dismissible team onboarding
-tutorial for the core capture surfaces. Public help docs live at `/help`, with a
-support/contact form that stores requests in Postgres, sends them through
-Postmark, and uses Turnstile in production. Email/password registration is also
-Turnstile-protected; signed-in expensive surfaces use named Redis-backed
-rate-limit policies. Owners/admins can recover team-scoped failed or stuck
-product jobs at `/app/team/jobs`. Railway deployment, deploy/startup
+Cursor, etc.) can query this Timeline. The Home Dashboard at `/app` gathers
+capture, onboarding, ingest access, pending approvals, and compact recent
+moments; `/app/timeline` is the dedicated grouped timeline browser with source
+presets, impact filters, density controls, inspector evidence, and hydrated
+Impact Context from suggestions, tasks/objects, documents, and calendar rows.
+The main timeline, object sections, document lists, and document search are
+paginated for large beta workspaces, with short-lived visibility-aware Redis
+caches and React Query only on interactive surfaces. Public help docs live at
+`/help`, with a support/contact form that stores requests in Postgres, sends
+them through Postmark, and uses Turnstile in production. Email/password
+registration is also Turnstile-protected; signed-in expensive surfaces use named
+Redis-backed rate-limit policies. Owners/admins can recover team-scoped failed
+or stuck product jobs at `/app/team/jobs`. Railway deployment, deploy/startup
 migrations, and structured logging are in place.
 
 ## Read first

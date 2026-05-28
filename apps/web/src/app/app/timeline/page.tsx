@@ -6,30 +6,40 @@ import {
   withTeam,
 } from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
-import { CircleCheckBig, Video } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { CaptureForm } from '@/components/capture-form';
 import { IndexStrip } from '@/components/index-strip';
-import { OnboardingChecklist } from '@/components/onboarding-checklist';
 import { SearchBar } from '@/components/search-bar';
-import { TeamAccessPanel } from '@/components/team-access-panel';
 import { TimelineFeed } from '@/components/timeline-feed';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import {
+  TIMELINE_IMPACT_FILTERS,
+  TIMELINE_PRESETS,
+  TIMELINE_SOURCES,
+  parseTimelineDensity,
+  parseTimelineImpact,
+  parseTimelineSource,
+  timelineHref,
+} from '@/lib/timeline-controls';
 
 interface Props {
   searchParams: Promise<{
     author?: string;
     from?: string;
     to?: string;
+    source?: string;
+    impact?: string;
+    density?: string;
     /** Prefilled by the ⌘K command bar. SearchBar reads it and auto-runs. */
     q?: string;
   }>;
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function parseDate(input: string | undefined): Date | undefined {
   if (!input) return undefined;
@@ -37,21 +47,19 @@ function parseDate(input: string | undefined): Date | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
-// `<input type="date">` returns YYYY-MM-DD which parses as midnight UTC.
-// For an inclusive end-of-day filter, shift the upper bound to the next
-// midnight so the whole selected day's events match.
 function parseEndOfDay(input: string | undefined): Date | undefined {
   const d = parseDate(input);
   if (!d) return undefined;
   return new Date(d.getTime() + 24 * 60 * 60 * 1000);
 }
 
-// Drop non-UUID `?author=…` values rather than passing them to Postgres,
-// which would throw on the UUID cast and 500 the page.
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function parseUuid(input: string | undefined): string | undefined {
   if (!input) return undefined;
   return UUID_RE.test(input) ? input : undefined;
+}
+
+function toDateInputValue(d: Date | undefined): string {
+  return d ? d.toISOString().slice(0, 10) : '';
 }
 
 export default async function TimelinePage({ searchParams }: Props) {
@@ -65,66 +73,42 @@ export default async function TimelinePage({ searchParams }: Props) {
   const scope = withTeam(db, active.teamId, session.user.id);
   const role = await scope.requireMembership();
   const isAdmin = role === 'owner' || role === 'admin';
-  const [onboardingState, team, pendingApprovals] = await Promise.all([
-    scope.onboarding.getChecklistState(),
-    scope.timeline.team(),
-    scope.suggestions.countPendingSuggestions(),
-  ]);
-  const telegramConnectionCount =
-    onboardingState.connectionCounts.telegramUserTeams +
-    onboardingState.connectionCounts.telegramChatBindings;
-  const slackConnectionCount =
-    onboardingState.connectionCounts.slackWorkspaceTeams +
-    onboardingState.connectionCounts.slackConversationBindings +
-    onboardingState.connectionCounts.slackUserTeams;
-  const integrationConnectionCount =
-    onboardingState.connectionCounts.nativeIntegrations +
-    onboardingState.connectionCounts.teamMcpServers;
 
-  // Parse once so the indicator chip, the open-state of <details>, the form
-  // inputs, and the actual query all agree on what's filtered. Raw
-  // `sp.author` may contain a non-UUID, `sp.from`/`sp.to` may contain an
-  // unparseable string — those are dropped by the parsers, so binding the
-  // form to raw `sp.*` would show invalid values that the feed quietly
-  // ignored. We keep two `to` variants because the query wants end-of-day
-  // (inclusive upper bound) but the <input type="date"> wants the picked
-  // day verbatim.
   const authorFilter = parseUuid(sp.author);
+  const sourceFilter = parseTimelineSource(sp.source);
+  const impactFilter = parseTimelineImpact(sp.impact);
+  const density = parseTimelineDensity(sp.density);
   const fromFilter = parseDate(sp.from);
   const toFilter = parseDate(sp.to);
   const toQueryFilter = parseEndOfDay(sp.to);
 
-  const eventPage = await scope.timeline.listEventsPage({
-    authorUserId: authorFilter,
-    from: fromFilter,
-    to: toQueryFilter,
-    limit: 30,
-  });
+  const [eventPage, members] = await Promise.all([
+    scope.timeline.listEventsPage({
+      authorUserId: authorFilter,
+      from: fromFilter,
+      to: toQueryFilter,
+      source: sourceFilter,
+      limit: 30,
+    }),
+    scope.timeline.listMembers(),
+  ]);
   const events = eventPage.items;
-  const webDefault = await scope.timeline.resolveVisibilityDefault('web');
-  const quickCaptureVisibility = webDefault.visibility === 'private' ? 'private' : 'team';
 
-  // Format a Date back to the YYYY-MM-DD string the <input type="date">
-  // expects. Both `parseDate` and `toISOString()` treat the value as UTC,
-  // so this round-trips a user-picked date cleanly.
-  const toDateInputValue = (d: Date | undefined): string => (d ? d.toISOString().slice(0, 10) : '');
-
-  const authorIds = Array.from(
-    new Set(events.map((e) => e.authorUserId).filter((v): v is string => v !== null)),
+  const userIds = Array.from(
+    new Set([
+      ...events.map((e) => e.authorUserId).filter((v): v is string => v !== null),
+      ...members.map((m) => m.userId),
+    ]),
   );
-  const authorRows =
-    authorIds.length > 0
+  const userRows =
+    userIds.length > 0
       ? await db
           .select({ id: users.id, name: users.name, email: users.email })
           .from(users)
-          .where(inArray(users.id, authorIds))
+          .where(inArray(users.id, userIds))
       : [];
-  // Sign GET URLs for any audio attachments. Phase 3 generates one per render;
-  // when timeline pagination starts to matter (Phase 8) we'll cache these.
-  // If S3 isn't configured in this environment, degrade gracefully — render
-  // the page without playback URLs rather than 500-ing the entire timeline
-  // because one column happens to reference object storage that isn't wired
-  // up here.
+  const userMap = new Map(userRows.map((m) => [m.id, m] as const));
+
   const audioEvents = events.filter((e) => e.contentAudioUrl);
   const audioUrlMap = new Map<string, string>();
   if (audioEvents.length > 0) {
@@ -143,88 +127,57 @@ export default async function TimelinePage({ searchParams }: Props) {
       );
       for (const [id, url] of pairs) if (url) audioUrlMap.set(id, url);
     } catch (err) {
-      console.error('[timeline] audio playback unavailable — S3 not configured', err);
+      console.error('[timeline] audio playback unavailable; S3 is not configured', err);
     }
   }
 
-  const members = await scope.timeline.listMembers();
-  const memberIds = members.map((m) => m.userId);
-  const memberRows =
-    memberIds.length > 0
-      ? await db
-          .select({ id: users.id, name: users.name, email: users.email })
-          .from(users)
-          .where(inArray(users.id, memberIds))
-      : [];
-  const memberUserMap = new Map(memberRows.map((m) => [m.id, m] as const));
-
   const hasSearch = Boolean(sp.q?.trim());
-  const hasFilters = Boolean(authorFilter ?? fromFilter ?? toFilter) || hasSearch;
+  const hasFilters =
+    Boolean(authorFilter ?? fromFilter ?? toFilter ?? sourceFilter ?? impactFilter) || hasSearch;
+  const sourceLabel = TIMELINE_SOURCES.find(([value]) => value === sourceFilter)?.[1];
   const eventCount = events.length;
+  const trimmedQuery = sp.q?.trim();
+  const baseParams = {
+    q: trimmedQuery === '' ? null : trimmedQuery,
+    author: authorFilter ?? null,
+    from: sp.from ?? null,
+    to: sp.to ?? null,
+    density: density === 'dense' ? 'dense' : null,
+  };
+  const impactItems = await scope.timeline.listImpactItems(events.map((event) => event.id));
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
+    <div className="mx-auto max-w-6xl space-y-6">
       <IndexStrip
-        srLabel={`Timeline · ${active.teamName} · ${eventCount} event${eventCount === 1 ? '' : 's'}${hasSearch ? ` · searching for ${sp.q ?? ''}` : ''}${hasFilters ? ' · filters on' : ''}`}
+        srLabel={`Timeline · ${active.teamName} · ${eventCount} event${eventCount === 1 ? '' : 's'} loaded${hasSearch ? ` · searching for ${sp.q ?? ''}` : ''}${hasFilters ? ' · filters on' : ''}`}
         segments={[
           { value: 'TIMELINE' },
           { label: 'team', value: active.teamName },
-          { label: 'events', value: eventCount },
-          ...(hasSearch
-            ? ([{ label: 'search', value: sp.q ?? '', signal: true }] as const)
-            : ([] as const)),
-          ...(hasFilters && !hasSearch
+          { label: 'loaded', value: eventCount },
+          ...(sourceLabel
+            ? ([{ label: 'source', value: sourceLabel, signal: true }] as const)
+            : []),
+          ...(impactFilter
+            ? ([{ label: 'impact', value: impactFilter, signal: true }] as const)
+            : []),
+          ...(hasSearch ? ([{ label: 'search', value: sp.q ?? '', signal: true }] as const) : []),
+          ...(hasFilters && !hasSearch && !sourceLabel
             ? ([{ label: 'filter', value: 'ON', signal: true }] as const)
-            : ([] as const)),
+            : []),
         ]}
-      />
-
-      {pendingApprovals > 0 ? (
-        <Link
-          href="/app/approvals"
-          className="flex items-center justify-between gap-3 border border-signal/40 bg-signal-soft px-3 py-2 text-sm text-signal transition-colors hover:bg-signal/20"
-        >
-          <span className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em]">
-            <CircleCheckBig className="h-4 w-4" />
-            {pendingApprovals} pending approval{pendingApprovals === 1 ? '' : 's'}
-          </span>
-          <span className="font-mono text-[11px] uppercase tracking-[0.12em]">Review</span>
-        </Link>
-      ) : null}
-
-      <section
-        id="capture"
-        aria-label="Capture"
-        className="rounded-sm border border-border bg-surface p-4 focus-within:border-border-strong"
-      >
-        <CaptureForm initialVisibility={quickCaptureVisibility} />
-      </section>
-
-      <OnboardingChecklist />
-
-      <section aria-label="Team access" className="space-y-3">
-        <TeamAccessPanel
-          team={team}
-          telegramConnectionCount={telegramConnectionCount}
-          slackConnectionCount={slackConnectionCount}
-          integrationConnectionCount={integrationConnectionCount}
-        />
-        <div className="flex justify-end">
-          <Button asChild variant="outline">
-            <Link href="/app/meetings">
-              <Video aria-hidden="true" />
-              Invite notetaker
-            </Link>
+        trailing={
+          <Button asChild variant="outline" size="sm">
+            <Link href="/app#capture">Capture</Link>
           </Button>
-        </div>
-      </section>
+        }
+      />
 
       <SearchBar initialQuery={sp.q ?? ''} />
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-            Recent activity
+            Moment browser
           </h2>
           <details className="text-sm" open={hasFilters}>
             <summary className="cursor-pointer list-none rounded-sm px-2 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg">
@@ -234,10 +187,41 @@ export default async function TimelinePage({ searchParams }: Props) {
               method="get"
               className="mt-3 flex flex-wrap items-end gap-3 rounded-sm border border-border bg-surface p-3 text-sm"
             >
-              {/* Preserve ⌘K's `q` across filter submissions — the form
-                  is plain GET and would otherwise drop any param it
-                  doesn't carry an input for. */}
               {sp.q ? <input type="hidden" name="q" value={sp.q} /> : null}
+              <label className="flex flex-col gap-1">
+                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                  Source
+                </span>
+                <select
+                  name="source"
+                  defaultValue={sourceFilter ?? ''}
+                  className="h-9 rounded-sm border border-border bg-bg px-2 text-sm focus:border-border-strong focus:outline-none"
+                >
+                  <option value="">All sources</option>
+                  {TIMELINE_SOURCES.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                  Impact
+                </span>
+                <select
+                  name="impact"
+                  defaultValue={impactFilter ?? ''}
+                  className="h-9 rounded-sm border border-border bg-bg px-2 text-sm focus:border-border-strong focus:outline-none"
+                >
+                  <option value="">All impact</option>
+                  {TIMELINE_IMPACT_FILTERS.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="flex flex-col gap-1">
                 <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
                   Author
@@ -248,11 +232,14 @@ export default async function TimelinePage({ searchParams }: Props) {
                   className="h-9 rounded-sm border border-border bg-bg px-2 text-sm focus:border-border-strong focus:outline-none"
                 >
                   <option value="">Everyone</option>
-                  {memberRows.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name ?? m.email}
-                    </option>
-                  ))}
+                  {members.map((m) => {
+                    const u = userMap.get(m.userId);
+                    return (
+                      <option key={m.userId} value={m.userId}>
+                        {u?.name ?? u?.email ?? m.userId}
+                      </option>
+                    );
+                  })}
                 </select>
               </label>
               <label className="flex flex-col gap-1">
@@ -283,8 +270,68 @@ export default async function TimelinePage({ searchParams }: Props) {
               >
                 Apply
               </button>
+              <input type="hidden" name="density" value={density} />
+              {hasFilters ? (
+                <Link
+                  href="/app/timeline"
+                  className="inline-flex h-9 items-center rounded-sm border border-border px-3 text-sm transition-colors hover:bg-surface-2"
+                >
+                  Clear
+                </Link>
+              ) : null}
             </form>
           </details>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border py-2">
+          <nav aria-label="Timeline presets" className="flex flex-wrap gap-1.5">
+            {TIMELINE_PRESETS.map((preset) => {
+              const href =
+                'all' in preset
+                  ? timelineHref(baseParams, { source: null, impact: null })
+                  : timelineHref(baseParams, {
+                      source: 'source' in preset ? preset.source : null,
+                      impact: 'impact' in preset ? preset.impact : null,
+                    });
+              const active =
+                ('source' in preset && preset.source === sourceFilter) ||
+                ('impact' in preset && preset.impact === impactFilter) ||
+                ('href' in preset && !sourceFilter && !impactFilter);
+              return (
+                <Link
+                  key={preset.label}
+                  href={href}
+                  aria-current={active ? 'page' : undefined}
+                  className={`inline-flex min-h-8 items-center rounded-sm border px-2.5 font-mono text-[11px] uppercase tracking-[0.12em] transition-colors ${
+                    active
+                      ? 'border-signal/50 bg-signal-soft text-signal'
+                      : 'border-border text-fg-muted hover:bg-surface hover:text-fg'
+                  }`}
+                >
+                  {preset.label}
+                </Link>
+              );
+            })}
+          </nav>
+          <div className="flex items-center gap-1 rounded-sm border border-border p-1">
+            {(['comfortable', 'dense'] as const).map((value) => (
+              <Link
+                key={value}
+                href={timelineHref(
+                  { ...baseParams, source: sourceFilter ?? null, impact: impactFilter ?? null },
+                  { density: value === 'dense' ? 'dense' : null },
+                )}
+                aria-current={density === value ? 'page' : undefined}
+                className={`inline-flex h-7 items-center rounded-sm px-2 font-mono text-[10px] uppercase tracking-[0.12em] transition-colors ${
+                  density === value
+                    ? 'bg-surface-2 text-fg'
+                    : 'text-fg-dim hover:bg-surface hover:text-fg'
+                }`}
+              >
+                {value}
+              </Link>
+            ))}
+          </div>
         </div>
 
         <TimelineFeed
@@ -295,20 +342,25 @@ export default async function TimelinePage({ searchParams }: Props) {
               createdAt: event.createdAt.toISOString(),
             })),
             nextCursor: eventPage.nextCursor,
-            authors: Object.fromEntries(authorRows.map((row) => [row.id, row])),
+            authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
             audioUrls: Object.fromEntries(audioUrlMap),
+            impactItems,
           }}
           filters={{
             author: authorFilter ?? null,
             from: sp.from ?? null,
             to: sp.to ?? null,
+            source: sourceFilter ?? null,
+            impact: impactFilter ?? null,
           }}
           currentUserId={session.user.id}
           isAdmin={isAdmin}
           members={members.map((m) => {
-            const u = memberUserMap.get(m.userId);
+            const u = userMap.get(m.userId);
             return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
           })}
+          density={density}
+          impactFilter={impactFilter ?? 'all'}
         />
       </section>
     </div>

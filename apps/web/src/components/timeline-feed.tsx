@@ -2,6 +2,8 @@
 
 import { useMemo } from 'react';
 
+import type { ImpactKind, ImpactItem } from '@/lib/timeline-moments';
+
 import { TimelineList } from '@/components/timeline-list';
 import { useTimelineInfiniteQuery, type TimelineEvent } from '@/lib/use-paginated-queries';
 
@@ -11,14 +13,37 @@ interface Props {
     nextCursor: string | null;
     authors: Record<string, { id: string; name: string | null; email: string }>;
     audioUrls: Record<string, string>;
+    impactItems: Record<string, ImpactItem[]>;
   };
-  filters: { author?: string | null; from?: string | null; to?: string | null };
+  filters: {
+    author?: string | null;
+    from?: string | null;
+    to?: string | null;
+    source?: string | null;
+    impact?: string | null;
+  };
   currentUserId: string;
   isAdmin: boolean;
   members: { id: string; label: string }[];
+  compact?: boolean;
+  maxMoments?: number;
+  emptyLabel?: string;
+  density?: 'comfortable' | 'dense';
+  impactFilter?: ImpactKind | 'all';
 }
 
-export function TimelineFeed({ initialPage, filters, currentUserId, isAdmin, members }: Props) {
+export function TimelineFeed({
+  initialPage,
+  filters,
+  currentUserId,
+  isAdmin,
+  members,
+  compact = false,
+  maxMoments,
+  emptyLabel,
+  density = 'comfortable',
+  impactFilter = 'all',
+}: Props) {
   const query = useTimelineInfiniteQuery(filters, initialPage);
   const pages = query.data.pages;
   const events = pages.flatMap((page) => page.items);
@@ -38,6 +63,14 @@ export function TimelineFeed({ initialPage, filters, currentUserId, isAdmin, mem
       ),
     [pages],
   );
+  const impactItemsByEventId = useMemo(
+    () =>
+      Object.fromEntries(pages.flatMap((page) => Object.entries(page.impactItems))) as Record<
+        string,
+        ImpactItem[]
+      >,
+    [pages],
+  );
 
   return (
     <div className="space-y-3">
@@ -48,8 +81,14 @@ export function TimelineFeed({ initialPage, filters, currentUserId, isAdmin, mem
         currentUserId={currentUserId}
         isAdmin={isAdmin}
         members={members}
+        compact={compact}
+        maxMoments={maxMoments}
+        emptyLabel={emptyLabel}
+        density={density}
+        impactFilter={impactFilter}
+        impactItemsByEventId={impactItemsByEventId}
       />
-      <div className="flex justify-center">
+      <div className={compact ? 'hidden' : 'flex justify-center'}>
         <button
           type="button"
           disabled={!query.hasNextPage || query.isFetchingNextPage}

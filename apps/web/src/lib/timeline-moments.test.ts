@@ -1,0 +1,202 @@
+import { describe, expect, it } from 'vitest';
+
+import type { TimelineEvent } from '@/lib/use-paginated-queries';
+
+import {
+  buildTimelineMoments,
+  filterTimelineMomentsByImpact,
+  formatDateSection,
+  timelineGroupKey,
+  type TimelineAuthor,
+} from '@/lib/timeline-moments';
+
+const TEAM_ID = '11111111-1111-1111-1111-111111111111';
+const USER_ID = '22222222-2222-2222-2222-222222222222';
+const authorMap = new Map<string, TimelineAuthor>([
+  [USER_ID, { id: USER_ID, name: 'Tim', email: 'tim@example.com' }],
+]);
+
+function event(
+  input: Partial<TimelineEvent> & Pick<TimelineEvent, 'id' | 'source'>,
+): TimelineEvent {
+  return {
+    teamId: TEAM_ID,
+    authorUserId: USER_ID,
+    contentText: 'hello',
+    contentAudioUrl: null,
+    occurredAt: '2026-05-28T10:00:00.000Z',
+    createdAt: '2026-05-28T10:00:00.000Z',
+    visibility: 'team',
+    visibilityUserIds: null,
+    visibilityOwnerUserId: USER_ID,
+    sourceMetadata: {},
+    ...input,
+  };
+}
+
+describe('timeline moment grouping', () => {
+  it('labels today and yesterday date buckets', () => {
+    const now = new Date('2026-05-28T12:00:00.000Z');
+    expect(formatDateSection('2026-05-28T09:00:00.000Z', now)).toBe('Today');
+    expect(formatDateSection('2026-05-27T09:00:00.000Z', now)).toBe('Yesterday');
+  });
+
+  it('groups meetings by meeting id', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({ id: 'a', source: 'meeting', sourceMetadata: { meeting_id: 'meet-1' } }),
+        event({ id: 'b', source: 'meeting', sourceMetadata: { meeting_id: 'meet-1' } }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.rawEvents.map((e) => e.id).sort()).toEqual(['a', 'b']);
+  });
+
+  it('groups email by thread root', () => {
+    expect(
+      timelineGroupKey(
+        event({ id: 'email-2', source: 'email', sourceMetadata: { thread_root_id: 'email-1' } }),
+      ),
+    ).toBe('email:email-1');
+  });
+
+  it('groups Slack by conversation and thread', () => {
+    expect(
+      timelineGroupKey(
+        event({
+          id: 'slack-1',
+          source: 'slack',
+          sourceMetadata: {
+            slack_channel_id: 'C1',
+            slack_thread_ts: '1716717600.000200',
+          },
+        }),
+      ),
+    ).toBe('slack:C1:1716717600.000200');
+  });
+
+  it('groups Telegram chat messages into short time buckets', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-1',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:01:00.000Z',
+          sourceMetadata: { tg_chat_id: 'chat-1' },
+        }),
+        event({
+          id: 'tg-2',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:12:00.000Z',
+          sourceMetadata: { tg_chat_id: 'chat-1' },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(1);
+  });
+
+  it('falls standalone events back to their own ids', () => {
+    const moments = buildTimelineMoments(
+      [event({ id: 'web-1', source: 'web' }), event({ id: 'web-2', source: 'web' })],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(2);
+  });
+
+  it('prefers source truth labels over Timeline authors', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'slack-1',
+          source: 'slack',
+          sourceMetadata: {
+            slack_sender_name: 'Hanna',
+            slack_channel_name: 'sales',
+            slack_message_ts: '1716717600.000200',
+          },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments[0]?.actorLabel).toBe('Hanna');
+    expect(moments[0]?.contextLabel).toBe('sales');
+  });
+
+  it('derives metadata-first impact context', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'meeting-1',
+          source: 'meeting',
+          sourceMetadata: {
+            meeting_id: 'meet-1',
+            summary: 'Launch scope narrowed.',
+            action_items: [{ text: 'Send agenda', owner: 'Tim' }],
+          },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments[0]?.impactItems.map((item) => item.kind)).toEqual(['task', 'decision']);
+  });
+
+  it('merges hydrated impact context before metadata fallbacks', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'event-1',
+          source: 'document',
+          sourceMetadata: { document_id: 'doc-1', document_name: 'Spec.pdf' },
+        }),
+      ],
+      authorMap,
+      {
+        now: new Date('2026-05-28T12:00:00.000Z'),
+        impactItemsByEventId: {
+          'event-1': [
+            {
+              kind: 'approval',
+              label: 'Review launch task',
+              href: '/app/approvals',
+              status: 'pending',
+              sourceEventId: 'event-1',
+            },
+          ],
+        },
+      },
+    );
+
+    expect(moments[0]?.impactItems.map((item) => item.kind)).toEqual(['approval', 'document']);
+    expect(moments[0]?.impactItems[0]?.href).toBe('/app/approvals');
+  });
+
+  it('filters moments by hydrated impact kind', () => {
+    const moments = buildTimelineMoments(
+      [event({ id: 'task-event', source: 'web' }), event({ id: 'doc-event', source: 'web' })],
+      authorMap,
+      {
+        now: new Date('2026-05-28T12:00:00.000Z'),
+        impactItemsByEventId: {
+          'task-event': [{ kind: 'task', label: 'Send agenda', sourceEventId: 'task-event' }],
+          'doc-event': [{ kind: 'document', label: 'Spec.pdf', sourceEventId: 'doc-event' }],
+        },
+      },
+    );
+
+    expect(
+      filterTimelineMomentsByImpact(moments, 'task').map((moment) => moment.rawEvents[0]?.id),
+    ).toEqual(['task-event']);
+  });
+});

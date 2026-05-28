@@ -9,6 +9,8 @@ import {
 } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
 
+import type { ImpactItem } from '@/lib/timeline-moments';
+
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
 
@@ -17,6 +19,7 @@ interface TimelinePage {
   nextCursor: string | null;
   authors: Record<string, { id: string; name: string | null; email: string }>;
   audioUrls: Record<string, string>;
+  impactItems: Record<string, ImpactItem[]>;
 }
 
 interface DocumentListPage {
@@ -52,6 +55,8 @@ export function useTimelineInfiniteQuery(
     author?: string | null;
     from?: string | null;
     to?: string | null;
+    source?: string | null;
+    impact?: string | null;
   },
   initialPage: TimelinePage,
 ) {
@@ -59,7 +64,7 @@ export function useTimelineInfiniteQuery(
   const mounted = useRef(false);
   const queryKey = useMemo(
     () => queryKeys.timeline(filters),
-    [filters.author, filters.from, filters.to],
+    [filters.author, filters.from, filters.to, filters.source, filters.impact],
   );
   useEffect(() => {
     if (!mounted.current) {
@@ -80,12 +85,15 @@ export function useTimelineInfiniteQuery(
       if (filters.author) params.set('author', filters.author);
       if (filters.from) params.set('from', filters.from);
       if (filters.to) params.set('to', filters.to);
+      if (filters.source) params.set('source', filters.source);
+      if (filters.impact) params.set('impact', filters.impact);
       if (pageParam) params.set('cursor', pageParam);
       return readJson<{
         items: TimelineEvent[];
         nextCursor: string | null;
         authors: Record<string, { id: string; name: string | null; email: string }>;
         audioUrls: Record<string, string>;
+        impactItems: Record<string, ImpactItem[]>;
       }>(await fetch(`/api/timeline?${params.toString()}`));
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor,

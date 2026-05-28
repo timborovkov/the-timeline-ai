@@ -204,10 +204,10 @@ Linear-tight on operational surfaces. Comfortable on mobile and on forms.
   Top + bottom hairline border. Inspired by `git log --stat` and Bloomberg
   terminal header bars.
 - **Setup checklist** — `<TimelineOnboardingChecklist />`. A dense,
-  dismissible tutorial panel at the top of `/app/timeline`. It uses a
-  hairline-bounded header, mono progress counter, and five equal cells for
-  capture surfaces. Completion uses the signal accent; incomplete steps stay
-  neutral.
+  dismissible tutorial panel for the Home Dashboard, not the dedicated
+  timeline browser. It uses a hairline-bounded header, mono progress counter,
+  and five equal cells for capture surfaces. Completion uses the signal
+  accent; incomplete steps stay neutral.
 - **Inspector pane** — `<InspectorPane>` with `<InspectorHead>` (mono
   uppercase + ID), `<InspectorBody>` (key/value `<dl>`, mono), and
   `<InspectorQuote>` (Switzer, signal-color left border) for surfacing
@@ -257,14 +257,37 @@ Linear-tight on operational surfaces. Comfortable on mobile and on forms.
 The timeline is the canonical operational surface and the redesign's most
 visible change.
 
-- **Flat indexed feed, no cards.** Each event is a row, not a card. Row =
-  `grid grid-cols-[18ch_1fr_9ch] gap-4 py-3 border-b border-border`.
-- **Mono timestamp** in the left column: `font-mono text-xs text-fg-dim`.
-- **Body** in the middle column: speaker in `text-fg font-medium`, quote
-  in `text-fg-muted`. Citations inline.
-- **Source label** in the right column: mono uppercase 11px, signal color
-  when the event is live/streaming.
-- **Hover** lifts the row with `bg-surface`, no border change.
+- **Dedicated surface.** `/app` is the Home Dashboard for capture, onboarding,
+  ingest access, pending approvals, and compact recent activity. `/app/timeline`
+  is reserved for timeline browsing, filtering, inspection, and source
+  evidence.
+- **Timeline moments, not raw rows by default.** The browser is date-first:
+  sticky date sections contain source clusters, and each cluster contains one
+  or more raw events behind the user-facing moment.
+- **Indexed rail, no cards.** Moments sit on a left date/time rail with source
+  markers and hairline separators. Avoid floating cards; use hierarchy, icons,
+  spacing, and rail structure to create the visual timeline shape.
+- **Scan fields.** Every moment exposes when, source, actor/speaker, place or
+  source context, substance, and impact context without opening the inspector.
+- **Impact strip.** Show workspace consequences in a dedicated strip when
+  present: tasks, boards, objects, calendar events, documents, decisions,
+  follow-ups, and approvals. Hydrate from existing source evidence, suggestion
+  evidence, object/task changes, document versions, and calendar rows. Omit the
+  strip when empty rather than inventing completeness.
+- **Preset filters + density.** Timeline presets cover All, Meetings, Slack,
+  Email, Documents, Calendar, Approvals, Tasks, and Decisions. Density is a
+  URL-backed control with Comfortable as default and Dense as a tighter
+  operator view.
+- **Attribution split.** Scan-level copy preserves source truth ("who said or
+  did it in the source system"). Timeline control details such as captured by,
+  source owner, visibility owner, raw IDs, and source JSON live in the
+  inspector.
+- **Inline expansion + inspector.** Inline expansion handles quick
+  comprehension of raw events and impact. The right inspector handles forensic
+  evidence, exact timestamps, citations, visibility, audit trail, and source
+  metadata.
+- **Hover/selection** uses `bg-surface`, no border change, and visually connects
+  the selected moment to the inspector.
 - Skeletons match: `<Skeleton className="h-4 w-[18ch]" />` for ts,
   `<Skeleton className="h-4 w-3/4" />` for body, `<Skeleton className="h-3 w-[9ch]" />` for source.
 

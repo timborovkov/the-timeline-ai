@@ -1,17 +1,35 @@
-import { type InferSelectModel } from '@timeline/db';
-import { Trash2 } from 'lucide-react';
+'use client';
 
-import type { rawEvents } from '@timeline/db';
+import {
+  Bot,
+  CalendarDays,
+  Cable,
+  FileText,
+  Mail,
+  MessageSquare,
+  MousePointer,
+  Send,
+  Trash2,
+  Video,
+  type LucideIcon,
+} from 'lucide-react';
+import Link from 'next/link';
+import { useMemo } from 'react';
+
+import type { TimelineEvent } from '@/lib/use-paginated-queries';
 
 import { removeConversationalEventAction } from '@/app/actions/events';
 import { EventVisibilityForm } from '@/components/event-visibility-form';
+import { useInspector } from '@/components/inspector-context';
 import { Button } from '@/components/ui/button';
-
-type RawEvent = InferSelectModel<typeof rawEvents>;
-type TimelineEvent = Omit<RawEvent, 'occurredAt' | 'createdAt'> & {
-  occurredAt: Date | string;
-  createdAt: Date | string;
-};
+import {
+  buildTimelineMoments,
+  filterTimelineMomentsByImpact,
+  type ImpactItem,
+  type TimelineImpactFilter,
+  type TimelineMoment,
+} from '@/lib/timeline-moments';
+import { cn } from '@/lib/utils';
 
 interface Props {
   events: TimelineEvent[];
@@ -21,24 +39,56 @@ interface Props {
   currentUserId: string;
   isAdmin: boolean;
   members?: { id: string; label: string }[];
+  compact?: boolean;
+  maxMoments?: number;
+  emptyLabel?: string;
+  density?: 'comfortable' | 'dense';
+  impactFilter?: TimelineImpactFilter;
+  impactItemsByEventId?: Record<string, ImpactItem[]>;
 }
 
-// Mono ISO-ish timestamp for the left column. We render local time so the
-// 8-char clock face stays consistent across rows; the inspector pane shows
-// the full UTC ISO string for forensic correctness.
-function eventDate(d: Date | string): Date {
-  return d instanceof Date ? d : new Date(d);
+const SOURCE_ICON: Record<TimelineEvent['source'], LucideIcon> = {
+  web: MousePointer,
+  telegram: Send,
+  email: Mail,
+  system: Bot,
+  document: FileText,
+  meeting: Video,
+  integration: Cable,
+  calendar: CalendarDays,
+  slack: MessageSquare,
+};
+
+const IMPACT_LABEL: Record<ImpactItem['kind'], string> = {
+  task: 'Task',
+  board: 'Board',
+  object: 'Object',
+  calendar: 'Calendar',
+  document: 'Document',
+  decision: 'Decision',
+  approval: 'Approval',
+};
+
+function eventDate(input: string): Date {
+  return new Date(input);
 }
 
-function formatTimestamp(input: Date | string): string {
-  const d = eventDate(input);
-  const date = d.toLocaleDateString('en-CA'); // YYYY-MM-DD
-  const time = d.toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
+function formatTimestamp(input: string): string {
+  return eventDate(input).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
   });
-  return `${date} ${time}`;
+}
+
+function formatMetadataValue(value: unknown): string {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '[unserializable]';
+  }
 }
 
 function transcribeFailed(meta: unknown): boolean {
@@ -49,241 +99,175 @@ function transcribeFailed(meta: unknown): boolean {
   );
 }
 
-interface EmailMeta {
-  subject?: string;
-  from?: { email: string; name?: string };
-  to?: { email: string; name?: string }[];
-  cc?: { email: string; name?: string }[];
-  thread_root_id?: string;
-  sender_unverified?: boolean;
-  forwarded_from?: { email: string; name?: string };
-  attachments?: { filename: string; content_type: string; size_bytes: number }[];
+function canRemoveConversational(
+  event: TimelineEvent,
+  currentUserId: string,
+  isAdmin: boolean,
+): boolean {
+  return (
+    (event.source === 'telegram' || event.source === 'slack') &&
+    (isAdmin || event.authorUserId === currentUserId)
+  );
 }
 
-function emailMeta(meta: unknown): EmailMeta | null {
-  if (typeof meta !== 'object' || meta === null) return null;
-  return meta;
+function canEditVisibility(event: TimelineEvent, currentUserId: string): boolean {
+  return event.visibilityOwnerUserId === currentUserId;
 }
 
-function fmtAddr(a: { email: string; name?: string } | undefined): string {
-  if (!a) return '';
-  return a.name ? `${a.name} <${a.email}>` : a.email;
+function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] {
+  const groups = new Map<string, TimelineMoment[]>();
+  for (const moment of moments) {
+    const existing = groups.get(moment.dateLabel);
+    if (existing) existing.push(moment);
+    else groups.set(moment.dateLabel, [moment]);
+  }
+  return [...groups.entries()];
 }
 
-interface MeetingMeta {
-  meeting_id?: string;
-  title?: string;
-  summary?: string;
-  speakers?: string[];
-  duration_minutes?: number;
-  chunk_count?: number;
-  action_items?: { text: string; owner: string | null }[];
+function InspectorBody({ moment }: { moment: TimelineMoment }) {
+  const metadata = moment.rawEvents.flatMap((event) =>
+    typeof event.sourceMetadata === 'object' && event.sourceMetadata !== null
+      ? Object.entries(event.sourceMetadata as Record<string, unknown>).slice(0, 8)
+      : [],
+  );
+  return (
+    <div className="space-y-5">
+      <section>
+        <h3 className="mb-2 text-fg">SOURCE TRUTH</h3>
+        <p>
+          {moment.actorLabel} · {moment.contextLabel} · {moment.sourceLabel}
+        </p>
+      </section>
+      <section>
+        <h3 className="mb-2 text-fg">TIMELINE CONTROL</h3>
+        <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1">
+          <dt>visibility</dt>
+          <dd>{moment.rawEvents.map((event) => event.visibility).join(', ')}</dd>
+          <dt>events</dt>
+          <dd>{moment.rawEvents.length}</dd>
+          <dt>first event</dt>
+          <dd>{moment.rawEvents.at(-1)?.id ?? 'unknown'}</dd>
+        </dl>
+      </section>
+      {moment.impactItems.length > 0 ? (
+        <section>
+          <h3 className="mb-2 text-fg">IMPACT CONTEXT</h3>
+          <ul className="space-y-1">
+            {moment.impactItems.map((item, index) => (
+              <li key={`${item.kind}:${item.label}:${index}`}>
+                {item.href ? (
+                  <Link href={item.href}>
+                    {IMPACT_LABEL[item.kind]} · {item.label}
+                  </Link>
+                ) : (
+                  <>
+                    {IMPACT_LABEL[item.kind]} · {item.label}
+                  </>
+                )}
+                {item.status ? <span> · {item.status}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      <section>
+        <h3 className="mb-2 text-fg">RAW EVENTS</h3>
+        <ol className="space-y-2">
+          {moment.rawEvents.map((event) => (
+            <li key={event.id}>
+              [{event.id}]<br />
+              {formatTimestamp(event.occurredAt)}
+            </li>
+          ))}
+        </ol>
+      </section>
+      {metadata.length > 0 ? (
+        <section>
+          <h3 className="mb-2 text-fg">SOURCE METADATA</h3>
+          <dl className="space-y-1">
+            {metadata.map(([key, value], index) => (
+              <div key={`${key}:${index}`} className="grid grid-cols-[7rem_1fr] gap-2">
+                <dt className="truncate text-fg-dim">{key}</dt>
+                <dd className="truncate text-fg-muted">{formatMetadataValue(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
+    </div>
+  );
 }
 
-function meetingMeta(meta: unknown): MeetingMeta | null {
-  if (typeof meta !== 'object' || meta === null) return null;
-  if (!('meeting_id' in meta)) return null;
-  return meta as MeetingMeta;
-}
-
-const SOURCE_LABEL: Record<string, string> = {
-  email: 'EMAIL',
-  telegram: 'TG',
-  slack: 'SLACK',
-  voice: 'VOICE',
-  text: 'TEXT',
-  system: 'SYS',
-  meeting: 'MEET',
-};
-
-/**
- * Operational Archive flat timeline. Each event is an indexed row, not a
- * card. Three columns: mono timestamp · body · source label.
- *
- *   2026-05-25 14:02   miriam · "ship tomorrow"               EMAIL
- *   2026-05-25 13:48   jay · voice 2m11s · "cut docs"         VOICE
- */
-export function TimelineList({
-  events,
-  authorMap,
+function RawEventExpansion({
+  moment,
   audioUrlMap,
   currentUserId,
   isAdmin,
-  members = [],
-}: Props) {
-  if (events.length === 0) {
-    return (
-      <div className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
-        NO EVENTS YET → CAPTURE FROM ABOVE
-      </div>
-    );
-  }
-
+  members,
+}: {
+  moment: TimelineMoment;
+  audioUrlMap?: Map<string, string>;
+  currentUserId: string;
+  isAdmin: boolean;
+  members: { id: string; label: string }[];
+}) {
   return (
-    <ol className="border-t border-border" aria-label="Captured events, most recent first">
-      {events.map((event) => {
-        const author = event.authorUserId ? authorMap.get(event.authorUserId) : null;
-        const isEmail = event.source === 'email';
-        const isMeeting = event.source === 'meeting';
-        const canRemoveConversational =
-          (event.source === 'telegram' || event.source === 'slack') &&
-          (isAdmin || event.authorUserId === currentUserId);
-        const em = isEmail ? emailMeta(event.sourceMetadata) : null;
-        const mm = isMeeting ? meetingMeta(event.sourceMetadata) : null;
-        const meetingChunkCount =
-          isMeeting && typeof mm?.chunk_count === 'number' ? mm.chunk_count : null;
-        const senderUnverified = Boolean(em?.sender_unverified);
-        const authorLabel = author
-          ? (author.name ?? author.email)
-          : isEmail && em?.from
-            ? fmtAddr(em.from)
-            : isMeeting && mm?.speakers?.length
-              ? mm.speakers.join(', ')
-              : 'system';
-        const sourceLabel = SOURCE_LABEL[event.source] ?? event.source.toUpperCase();
-        const canEditVisibility = event.visibilityOwnerUserId === currentUserId;
-        return (
+    <details className="mt-3 border-t border-border pt-3">
+      <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim transition-colors hover:text-fg">
+        {moment.rawEvents.length} raw event{moment.rawEvents.length === 1 ? '' : 's'} · inspect
+      </summary>
+      <ol className="mt-3 space-y-3">
+        {moment.rawEvents.map((event) => (
           <li
             key={event.id}
             id={`ev-${event.id}`}
-            className="grid scroll-mt-20 grid-cols-[18ch_1fr] gap-x-4 gap-y-2 border-b border-border py-3 transition-colors hover:bg-surface md:grid-cols-[18ch_1fr_10ch]"
+            className="scroll-mt-20 border-l border-border pl-3"
           >
-            <time
-              dateTime={eventDate(event.occurredAt).toISOString()}
-              className="font-mono text-xs text-fg-dim"
-            >
-              {formatTimestamp(event.occurredAt)}
-            </time>
-            <div className="min-w-0 text-sm leading-snug">
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <span className="font-medium text-fg">{authorLabel}</span>
-                {senderUnverified ? (
-                  <span
-                    className="font-mono text-[11px] uppercase tracking-[0.1em] text-danger"
-                    title="From address does not match a team member"
-                  >
-                    unverified
-                  </span>
-                ) : null}
-                {event.visibility === 'private' ? (
-                  <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                    private
-                  </span>
-                ) : null}
-              </div>
-              <div className="mt-1.5 space-y-2">
-                {isMeeting && mm ? (
-                  <>
-                    {mm.title ? <p className="text-sm font-medium text-fg">{mm.title}</p> : null}
-                    <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                      {mm.duration_minutes ? `${String(mm.duration_minutes)}min` : ''}
-                      {mm.duration_minutes && mm.speakers?.length ? ' · ' : ''}
-                      {mm.speakers?.length
-                        ? `${String(mm.speakers.length)} speaker${mm.speakers.length === 1 ? '' : 's'}`
-                        : ''}
-                    </p>
-                  </>
-                ) : null}
-                {isEmail && em?.subject ? (
-                  <p className="text-sm font-medium text-fg">{em.subject}</p>
-                ) : null}
-                {isEmail && em?.forwarded_from ? (
-                  <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                    fwd from <span className="text-fg">{fmtAddr(em.forwarded_from)}</span>
-                  </p>
-                ) : null}
-                {isEmail && em?.thread_root_id && em.thread_root_id !== event.id ? (
-                  <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                    thread →{' '}
-                    <a href={`#ev-${em.thread_root_id}`} className="text-signal underline">
-                      root
-                    </a>
-                  </p>
-                ) : null}
-                {isEmail && em?.attachments && em.attachments.length > 0 ? (
-                  <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                    {em.attachments.length} attachment
-                    {em.attachments.length === 1 ? '' : 's'}
-                  </p>
-                ) : null}
-                {event.contentAudioUrl ? (
-                  audioUrlMap?.get(event.id) ? (
-                    <audio
-                      src={audioUrlMap.get(event.id)}
-                      controls
-                      preload="metadata"
-                      className="w-full max-w-md"
-                    />
-                  ) : (
-                    <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                      [audio unavailable]
-                    </p>
-                  )
-                ) : null}
-                {isMeeting && mm?.summary ? (
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
-                    {mm.summary}
-                  </p>
-                ) : event.contentText !== null ? (
-                  event.contentText.trim() === '' ? (
-                    <p className="text-sm italic text-fg-dim">(no speech detected)</p>
-                  ) : (
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
-                      {isMeeting && meetingChunkCount !== null
-                        ? meetingChunkCount > 0
-                          ? '(transcript available)'
-                          : '(no transcript captured)'
-                        : event.contentText}
-                    </p>
-                  )
-                ) : event.contentAudioUrl ? (
-                  transcribeFailed(event.sourceMetadata) ? (
-                    <p className="text-sm italic text-fg-dim">
-                      Transcription failed — voice memo is still playable.
-                    </p>
-                  ) : (
-                    <p className="text-sm italic text-fg-dim">Transcribing…</p>
-                  )
-                ) : (
-                  <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                    [empty event]
-                  </p>
-                )}
-                {isMeeting && mm?.action_items && mm.action_items.length > 0 ? (
-                  <ul className="mt-1 space-y-0.5 text-sm text-fg-muted">
-                    {mm.action_items.map((ai, i) => (
-                      <li key={i} className="flex items-start gap-1.5">
-                        <span className="mt-px text-fg-dim">-</span>
-                        <span>
-                          {ai.text}
-                          {ai.owner ? (
-                            <span className="ml-1 font-mono text-[11px] text-fg-dim">
-                              ({ai.owner})
-                            </span>
-                          ) : null}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                {canEditVisibility ? (
-                  <details className="pt-1 text-xs">
-                    <summary className="cursor-pointer font-mono uppercase tracking-[0.1em] text-fg-dim">
-                      Visibility
-                    </summary>
-                    <EventVisibilityForm
-                      eventId={event.id}
-                      visibility={event.visibility}
-                      visibilityUserIds={event.visibilityUserIds}
-                      members={members}
-                    />
-                  </details>
-                ) : null}
-              </div>
+            <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+              <span>{formatTimestamp(event.occurredAt)}</span>
+              <span>[{event.id}]</span>
+              {event.visibility === 'private' ? <span>Private</span> : null}
             </div>
-            <div className="col-start-2 -mt-1 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim md:col-start-3 md:mt-0 md:justify-end md:text-right">
-              <span aria-hidden="true">{sourceLabel}</span>
-              {canRemoveConversational ? (
+            {event.contentAudioUrl ? (
+              audioUrlMap?.get(event.id) ? (
+                <audio
+                  src={audioUrlMap.get(event.id)}
+                  controls
+                  preload="metadata"
+                  className="mt-2 w-full max-w-md"
+                />
+              ) : (
+                <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                  [audio unavailable]
+                </p>
+              )
+            ) : null}
+            {event.contentText?.trim() ? (
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
+                {event.contentText}
+              </p>
+            ) : event.contentAudioUrl ? (
+              <p className="mt-2 text-sm italic text-fg-dim">
+                {transcribeFailed(event.sourceMetadata)
+                  ? 'Transcription failed; voice memo is still playable.'
+                  : 'Transcribing...'}
+              </p>
+            ) : null}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {canEditVisibility(event, currentUserId) ? (
+                <details className="text-xs">
+                  <summary className="cursor-pointer font-mono uppercase tracking-[0.1em] text-fg-dim">
+                    Visibility
+                  </summary>
+                  <EventVisibilityForm
+                    eventId={event.id}
+                    visibility={event.visibility}
+                    visibilityUserIds={event.visibilityUserIds}
+                    members={members}
+                  />
+                </details>
+              ) : null}
+              {canRemoveConversational(event, currentUserId, isAdmin) ? (
                 <form action={removeConversationalEventAction}>
                   <input type="hidden" name="id" value={event.id} />
                   <Button
@@ -299,10 +283,184 @@ export function TimelineList({
                 </form>
               ) : null}
             </div>
-            <span className="sr-only">Source: {sourceLabel}</span>
           </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+function ImpactStrip({ items }: { items: ImpactItem[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Impact context">
+      {items.map((item, index) => {
+        const count = item.count && item.count > 1 ? ` ×${item.count}` : '';
+        const status = item.status ? ` · ${item.status}` : '';
+        const label = `${IMPACT_LABEL[item.kind]} · ${item.label}${count}${status}`;
+        const className =
+          'inline-flex min-h-6 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted';
+        return item.href ? (
+          <Link key={`${item.kind}:${item.label}:${index}`} href={item.href} className={className}>
+            {label}
+          </Link>
+        ) : (
+          <span key={`${item.kind}:${item.label}:${index}`} className={className}>
+            {label}
+          </span>
         );
       })}
-    </ol>
+    </div>
+  );
+}
+
+function TimelineMomentRow({
+  moment,
+  audioUrlMap,
+  currentUserId,
+  isAdmin,
+  members,
+  compact,
+  density,
+}: {
+  moment: TimelineMoment;
+  audioUrlMap?: Map<string, string>;
+  currentUserId: string;
+  isAdmin: boolean;
+  members: { id: string; label: string }[];
+  compact: boolean;
+  density: 'comfortable' | 'dense';
+}) {
+  const inspector = useInspector();
+  const Icon = SOURCE_ICON[moment.source];
+  const selected = inspector.open && inspector.content?.id === moment.id;
+  return (
+    <li
+      className={cn(
+        'grid grid-cols-[5.75rem_minmax(0,1fr)] border-b border-border transition-colors hover:bg-surface',
+        density === 'dense' && 'grid-cols-[4.75rem_minmax(0,1fr)]',
+        selected && 'bg-surface',
+      )}
+    >
+      <div
+        className={cn(
+          'relative py-4 pr-4 font-mono text-xs text-fg-dim',
+          density === 'dense' && 'py-3 text-[11px]',
+        )}
+      >
+        <span>{moment.timeLabel}</span>
+        <span aria-hidden="true" className="absolute right-1 top-0 h-full w-px bg-border" />
+        <span
+          className={cn(
+            'absolute right-[-5px] top-5 grid size-3 place-items-center border border-border-strong bg-bg text-signal',
+            density === 'dense' && 'top-4',
+          )}
+        >
+          <Icon className="size-2.5" aria-hidden="true" />
+        </span>
+      </div>
+      <div className={cn('min-w-0 py-4 pl-4', density === 'dense' && 'py-3')}>
+        <button
+          type="button"
+          onClick={() => {
+            inspector.show({
+              id: moment.id,
+              kind: moment.sourceLabel.toUpperCase(),
+              render: () => <InspectorBody moment={moment} />,
+            });
+          }}
+          className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
+        >
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+            <span className="text-fg">{moment.sourceLabel}</span>
+            <span>{moment.actorLabel}</span>
+            <span>{moment.contextLabel}</span>
+            <span>
+              {moment.rawEvents.length} raw event{moment.rawEvents.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <p
+            className={cn(
+              'mt-2 text-sm leading-relaxed text-fg-muted',
+              (compact || density === 'dense') && 'line-clamp-2',
+              density === 'dense' && 'mt-1 text-[13px] leading-6',
+            )}
+          >
+            {moment.summary}
+          </p>
+        </button>
+        <ImpactStrip items={moment.impactItems} />
+        {!compact ? (
+          <RawEventExpansion
+            moment={moment}
+            audioUrlMap={audioUrlMap}
+            currentUserId={currentUserId}
+            isAdmin={isAdmin}
+            members={members}
+          />
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+export function TimelineList({
+  events,
+  authorMap,
+  audioUrlMap,
+  currentUserId,
+  isAdmin,
+  members = [],
+  compact = false,
+  maxMoments,
+  emptyLabel = 'NO EVENTS YET',
+  density = 'comfortable',
+  impactFilter = 'all',
+  impactItemsByEventId = {},
+}: Props) {
+  const moments = useMemo(
+    () => buildTimelineMoments(events, authorMap, { impactItemsByEventId }),
+    [events, authorMap, impactItemsByEventId],
+  );
+  const filteredMoments = filterTimelineMomentsByImpact(moments, impactFilter);
+  const visibleMoments =
+    typeof maxMoments === 'number' ? filteredMoments.slice(0, maxMoments) : filteredMoments;
+  const dateGroups = groupedByDate(visibleMoments);
+
+  if (visibleMoments.length === 0) {
+    return (
+      <div className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
+        {emptyLabel}
+      </div>
+    );
+  }
+
+  return (
+    <div aria-label={compact ? 'Recent timeline moments' : 'Timeline moments'}>
+      {dateGroups.map(([date, group]) => (
+        <section key={date} aria-labelledby={`timeline-date-${date}`}>
+          <h2
+            id={`timeline-date-${date}`}
+            className="sticky top-14 z-10 border-y border-border bg-bg py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim"
+          >
+            {date}
+          </h2>
+          <ol>
+            {group.map((moment) => (
+              <TimelineMomentRow
+                key={moment.id}
+                moment={moment}
+                audioUrlMap={audioUrlMap}
+                currentUserId={currentUserId}
+                isAdmin={isAdmin}
+                members={members}
+                compact={compact}
+                density={density}
+              />
+            ))}
+          </ol>
+        </section>
+      ))}
+    </div>
   );
 }

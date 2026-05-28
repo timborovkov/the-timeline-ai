@@ -17,6 +17,17 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const EVENT_SOURCES = new Set([
+  'web',
+  'telegram',
+  'email',
+  'system',
+  'document',
+  'meeting',
+  'integration',
+  'calendar',
+  'slack',
+]);
 
 function parseDate(input: string | null): Date | undefined {
   if (!input) return undefined;
@@ -60,6 +71,9 @@ export async function GET(req: Request): Promise<Response> {
   const author = url.searchParams.get('author');
   const authorUserId = author && UUID_RE.test(author) ? author : undefined;
   const cursor = url.searchParams.get('cursor');
+  const sourceParam = url.searchParams.get('source');
+  const source = sourceParam && EVENT_SOURCES.has(sourceParam) ? sourceParam : undefined;
+  const impact = url.searchParams.get('impact') ?? undefined;
   const from = parseDate(url.searchParams.get('from'));
   const toRaw = parseDate(url.searchParams.get('to'));
   const to = toRaw ? new Date(toRaw.getTime() + 24 * 60 * 60 * 1000) : undefined;
@@ -74,6 +88,8 @@ export async function GET(req: Request): Promise<Response> {
     authorUserId,
     from?.toISOString(),
     to?.toISOString(),
+    source,
+    impact,
     cursor,
   ]);
   const page = await cachedJson(key, 30, async () => {
@@ -81,6 +97,7 @@ export async function GET(req: Request): Promise<Response> {
       authorUserId,
       from,
       to,
+      source,
       cursor,
       limit: 30,
     });
@@ -94,6 +111,7 @@ export async function GET(req: Request): Promise<Response> {
             .from(users)
             .where(inArray(users.id, authorIds))
         : [];
+    const impactItems = await scope.timeline.listImpactItems(result.items.map((event) => event.id));
     return {
       items: result.items.map((event) => ({
         ...event,
@@ -102,6 +120,7 @@ export async function GET(req: Request): Promise<Response> {
       })),
       nextCursor: result.nextCursor,
       authors: Object.fromEntries(authorRows.map((row) => [row.id, row])),
+      impactItems,
     };
   });
 

@@ -68,7 +68,7 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       <h2 id="phase-3">Phase 3 verification (transcription)</h2>
       <p>After setting <code>OPENROUTER_API_KEY</code> and starting <code>pnpm dev</code>:</p>
       <ol>
-        <li>Record a ~5s voice memo via the web recorder on <code>/app/timeline</code>.</li>
+        <li>Record a ~5s voice memo via the web recorder on <code>/app</code>.</li>
         <li>
           The row appears immediately with an audio player and a "Transcribing…" placeholder. The
           BullMQ <code>transcribe</code> worker pulls the bytes from RustFS, POSTs to
@@ -90,7 +90,7 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       </p>
       <ol>
         <li>
-          Post a text note on <code>/app/timeline</code> such as
+          Post a text note on <code>/app</code> such as
           <code>Met with John Ternus at Apple about SaaS licensing.</code>
         </li>
         <li>
@@ -181,7 +181,7 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 </code></pre>
         </li>
         <li>
-          Post 2–3 text notes on <code>/app/timeline</code>, e.g.
+          Post 2–3 text notes on <code>/app</code>, e.g.
           <code>Met with John Ternus at Apple about SaaS licensing.</code> and
           <code>Caught up with Apple folks on the agreement structure.</code>
         </li>

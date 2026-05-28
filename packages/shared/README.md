@@ -18,6 +18,7 @@ import { withTeam, llm } from "@timeline/shared";
 
 const scoped = withTeam(db, teamId, userId);
 const events = await scoped.timeline.listEvents({ limit: 20 });
+const impact = await scoped.timeline.listImpactItems(events.map((event) => event.id));
 const docs = await scoped.documents.searchDocumentChunks({ query: "pricing" });
 const tasks = await scoped.objects.listObjects({ type: "task", archived: false });
 

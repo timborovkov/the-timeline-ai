@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Inbox,
   KanbanSquare,
+  LayoutDashboard,
   MessageSquare,
   Settings,
   Video,
@@ -29,6 +30,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
+  { href: '/app', label: 'Home', icon: LayoutDashboard },
   { href: '/app/timeline', label: 'Timeline', icon: Clock },
   { href: '/app/chat', label: 'Chat', icon: MessageSquare },
   { href: '/app/objects', label: 'Objects', icon: Box },
@@ -55,5 +57,6 @@ export function visibleNavItems(role: 'owner' | 'admin' | 'member'): readonly Na
  * `/app/entities/<id>` or `/app/team/telegram`.
  */
 export function isNavItemActive(item: Pick<NavItem, 'href'>, pathname: string): boolean {
+  if (item.href === '/app') return pathname === '/app';
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
