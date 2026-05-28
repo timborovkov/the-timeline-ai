@@ -26,7 +26,7 @@ function makeMockModel(text: string): TranscriptionModel {
         warnings: [],
         response: {
           timestamp: new Date(),
-          modelId: 'openai/whisper-1',
+          modelId: TIMELINE_MODELS.transcription.id,
           headers: {},
         },
       }),
@@ -64,6 +64,7 @@ describe('transcribeAudio', () => {
       { model: makeMockModel('ok') },
     );
     expect(result.model).toBe(TIMELINE_MODELS.transcription.id);
+    expect(TIMELINE_MODELS.transcription.id).toBe('openai/whisper-large-v3');
   });
 
   it('throws when OPENROUTER_API_KEY is missing AND no model is injected', async () => {

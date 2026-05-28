@@ -52,7 +52,7 @@ export const TIMELINE_MODELS = {
     capabilities: ['embedding'],
   },
   transcription: {
-    id: 'openai/whisper-1',
+    id: 'openai/whisper-large-v3',
     provider: 'openrouter',
     capabilities: ['transcription'],
   },
