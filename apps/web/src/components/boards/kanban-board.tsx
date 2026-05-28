@@ -79,6 +79,7 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [savingCount, setSavingCount] = useState(0);
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
+  const savingCountRef = useRef(0);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -116,7 +117,8 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
       applyMove({ id, col });
       if (savedTimer.current) clearTimeout(savedTimer.current);
       setSaveState('saving');
-      setSavingCount((count) => count + 1);
+      savingCountRef.current += 1;
+      setSavingCount(savingCountRef.current);
       setCardErrors((errors) => {
         const { [id]: _cleared, ...rest } = errors;
         return rest;
@@ -132,20 +134,18 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
       if ('error' in result && result.error) {
         setCardErrors((errors) => ({ ...errors, [id]: result.error ?? 'Move failed' }));
       }
-      setSavingCount((count) => {
-        const next = Math.max(0, count - 1);
-        if (next === 0) {
-          if (failed) {
+      savingCountRef.current = Math.max(0, savingCountRef.current - 1);
+      setSavingCount(savingCountRef.current);
+      if (savingCountRef.current === 0) {
+        if (failed) {
+          setSaveState('idle');
+        } else {
+          setSaveState('saved');
+          savedTimer.current = setTimeout(() => {
             setSaveState('idle');
-          } else {
-            setSaveState('saved');
-            savedTimer.current = setTimeout(() => {
-              setSaveState('idle');
-            }, 1600);
-          }
+          }, 1600);
         }
-        return next;
-      });
+      }
       // Always refresh: on success the new column persists; on failure
       // useOptimistic snaps back to the unchanged server rows.
       router.refresh();

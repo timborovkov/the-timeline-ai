@@ -78,6 +78,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   const [linkKind, setLinkKind] = useState<(typeof RELATIONSHIP_KINDS)[number]>('related');
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localDetailRef = useRef(detail);
+  const savingCountRef = useRef(0);
 
   function updateLocalDetail(updater: (current: ObjectDetail) => ObjectDetail): void {
     const next = updater(localDetailRef.current);
@@ -105,7 +106,8 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
     updateLocalDetail((current) => ({ ...current, [field]: value }));
     if (savedTimer.current) clearTimeout(savedTimer.current);
     setSaveState('saving');
-    setSavingCount((count) => count + 1);
+    savingCountRef.current += 1;
+    setSavingCount(savingCountRef.current);
     startTransition(async () => {
       const actionValue = value instanceof Date ? value.toISOString() : value;
       const result = await updateObjectAction({ id: detail.id, [field]: actionValue });
@@ -124,20 +126,18 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
       } else {
         router.refresh();
       }
-      setSavingCount((count) => {
-        const next = Math.max(0, count - 1);
-        if (next === 0) {
-          if (failed) {
+      savingCountRef.current = Math.max(0, savingCountRef.current - 1);
+      setSavingCount(savingCountRef.current);
+      if (savingCountRef.current === 0) {
+        if (failed) {
+          setSaveState('idle');
+        } else {
+          setSaveState('saved');
+          savedTimer.current = setTimeout(() => {
             setSaveState('idle');
-          } else {
-            setSaveState('saved');
-            savedTimer.current = setTimeout(() => {
-              setSaveState('idle');
-            }, 1600);
-          }
+          }, 1600);
         }
-        return next;
-      });
+      }
     });
   }
 

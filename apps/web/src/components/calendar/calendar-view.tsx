@@ -327,7 +327,9 @@ export function CalendarView({
           : {}),
       };
       const optimisticId = editing?.id ?? `optimistic-${crypto.randomUUID()}`;
-      const previousEvents = localEvents;
+      const originalEvent = editing
+        ? (localEvents.find((event) => event.id === editing.id) ?? null)
+        : null;
       const optimisticEvent: CalendarEvent = {
         id: optimisticId,
         title,
@@ -353,7 +355,13 @@ export function CalendarView({
         ? await updateCalendarEventAction({ id: editing.id, ...input })
         : await createCalendarEventAction(input);
       if (!result.ok) {
-        setLocalEvents(previousEvents);
+        setLocalEvents((current) =>
+          editing
+            ? current.map((event) =>
+                event === optimisticEvent && originalEvent ? originalEvent : event,
+              )
+            : current.filter((event) => event !== optimisticEvent && event.id !== optimisticId),
+        );
         setSaveState('idle');
         setSurfaceError(result.error ?? 'Failed to save event.');
         setOpen(true);

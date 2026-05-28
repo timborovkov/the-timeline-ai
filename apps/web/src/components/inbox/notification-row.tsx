@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
 import { cn } from '@/lib/utils';
@@ -44,19 +44,35 @@ export function NotificationRow({
   // clears the unread dot — the server action runs async without
   // blocking the navigation.
   const [read, setRead] = useState(initiallyRead);
+  const individuallyReadRef = useRef(initiallyRead);
+  const bulkReadRef = useRef(false);
   // Sync from props when the parent refreshes (e.g. MarkAllReadButton
   // calls router.refresh() and notifications now report as read). Only
   // ratchet toward "read" — never override a local optimistic-read back
   // to unread, since the user's click is the authoritative intent and
   // the server may not have caught up yet.
   useEffect(() => {
-    if (initiallyRead) setRead(true);
+    if (initiallyRead) {
+      individuallyReadRef.current = true;
+      setRead(true);
+    }
   }, [initiallyRead]);
 
   useEffect(() => {
     function onAllRead(event: Event): void {
       if (!(event instanceof CustomEvent) || typeof event.detail !== 'boolean') return;
-      setRead(event.detail ? true : initiallyRead);
+      if (event.detail) {
+        setRead((current) => {
+          bulkReadRef.current = bulkReadRef.current || !current;
+          return true;
+        });
+        return;
+      }
+      setRead((current) => {
+        if (!bulkReadRef.current) return current;
+        bulkReadRef.current = false;
+        return individuallyReadRef.current || initiallyRead;
+      });
     }
     window.addEventListener('timeline:notifications-read-all', onAllRead);
     return () => {
@@ -66,6 +82,7 @@ export function NotificationRow({
 
   function markRead(): void {
     if (read) return;
+    individuallyReadRef.current = true;
     setRead(true);
     const onUnreadFilter = search.get('unread') === '1';
     startTransition(async () => {
@@ -76,6 +93,7 @@ export function NotificationRow({
         // actually recorded — otherwise the row shows as read while
         // the server still has it as unread, and on ?unread=1 it'd
         // linger with read styling but never drop out.
+        individuallyReadRef.current = initiallyRead;
         setRead(false);
         return;
       }
