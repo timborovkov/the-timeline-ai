@@ -38,15 +38,20 @@ function makeSummaryModel(text: string, onPrompt?: (prompt: string) => void): La
 describe('compressMessagesForContext', () => {
   it('leaves short transcripts unchanged', async () => {
     const messages: ModelMessage[] = [{ role: 'user', content: 'what changed today?' }];
+    let built = false;
     const result = await compressMessagesForContext({
       system: 'system',
       messages,
-      model: makeSummaryModel('unused'),
+      model: () => {
+        built = true;
+        return makeSummaryModel('unused');
+      },
       modelId: 'test/chat',
     });
 
     expect(result.compressed).toBe(false);
     expect(result.messages).toBe(messages);
+    expect(built).toBe(false);
   });
 
   it('summarizes older messages at the configured context threshold', async () => {

@@ -11,7 +11,7 @@ import {
 export interface CompressMessagesInput {
   system: string;
   messages: ModelMessage[];
-  model: LanguageModel;
+  model: LanguageModel | (() => LanguageModel);
   modelId?: string;
   contextWindowTokens?: number;
 }
@@ -132,6 +132,10 @@ function transcriptForSummaryWithinBudget(messages: ModelMessage[]): string {
   return entries.map((entry) => truncateTextToTokenBudget(entry, perEntryBudget)).join('\n\n');
 }
 
+function resolveSummaryModel(model: CompressMessagesInput['model']): LanguageModel {
+  return typeof model === 'function' ? model() : model;
+}
+
 export async function compressMessagesForContext(
   input: CompressMessagesInput,
 ): Promise<CompressMessagesResult> {
@@ -165,7 +169,7 @@ export async function compressMessagesForContext(
   }
 
   const result = await generateText({
-    model: input.model,
+    model: resolveSummaryModel(input.model),
     system: SUMMARY_SYSTEM_PROMPT,
     prompt: transcriptForSummaryWithinBudget(summarized),
     maxOutputTokens: DEFAULT_CHAT_MEMORY.summaryMaxOutputTokens,

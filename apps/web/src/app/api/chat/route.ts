@@ -202,7 +202,7 @@ export async function POST(req: Request): Promise<Response> {
   const memory = await llm.compressMessagesForContext({
     system,
     messages,
-    model: llm.buildOpenRouterLanguageModel(llm.TIMELINE_MODELS.summarization.id),
+    model: () => llm.buildOpenRouterLanguageModel(llm.TIMELINE_MODELS.summarization.id),
     modelId,
     contextWindowTokens: llm.TIMELINE_MODELS.agent.contextWindowTokens,
   });
