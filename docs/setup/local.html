@@ -138,21 +138,12 @@ pnpm lint &amp;&amp; pnpm typecheck           # CI-equivalent checks
 pnpm knip                             # dead code / unused deps
 pnpm format                           # prettier write
 pnpm db:studio                        # drizzle studio at localhost:4983
-NODE_ENV=development pnpm env:reset   # wipe and rebuild local dev data
 docker compose logs -f postgres       # tail a service
 docker compose down -v                # nuke local data
 </code></pre>
 
       <h2 id="resetting-local-data">Resetting local data</h2>
-      <p>
-        For a full environment reset while the stack is running, use the dev-only reset command. It
-        flushes Redis, removes Qdrant collections, empties RustFS buckets, rebuilds Postgres, and
-        reruns migrations. Running app and worker processes may show transient errors during the
-        reset.
-      </p>
-      <pre><code>NODE_ENV=development pnpm env:reset
-</code></pre>
-      <p>To recreate the Docker volumes themselves instead:</p>
+      <p>To recreate the Docker volumes:</p>
       <pre><code>docker compose down -v &amp;&amp; docker compose up -d
 pnpm db:migrate
 </code></pre>

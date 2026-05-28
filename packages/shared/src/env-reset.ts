@@ -14,7 +14,7 @@ type ResetNodeEnv = 'development' | 'test';
 
 export function assertResetNodeEnv(value: string | undefined): ResetNodeEnv {
   if (value === 'development' || value === 'test') return value;
-  throw new Error('env:reset requires NODE_ENV to be explicitly set to development or test');
+  throw new Error('dev:wipe requires NODE_ENV to be explicitly set to development or test');
 }
 
 interface ResetEnv {

@@ -22,7 +22,6 @@ Workspace commands:
 pnpm db:generate   # drizzle-kit generate after schema change
 pnpm db:migrate    # apply pending migrations
 pnpm db:studio     # local schema browser
-NODE_ENV=development pnpm env:reset   # wipe and rebuild a dev/test environment
 ```
 
 ## Where it fits
