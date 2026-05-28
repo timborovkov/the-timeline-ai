@@ -259,6 +259,18 @@ function TopNav() {
           >
             How it works
           </Link>
+          <Link
+            href="/help"
+            className="hidden px-3 py-2 text-fg-muted transition-colors hover:text-fg sm:inline"
+          >
+            Docs
+          </Link>
+          <Link
+            href={CONTACT_HREF}
+            className="hidden px-3 py-2 text-fg-muted transition-colors hover:text-fg md:inline"
+          >
+            Contact
+          </Link>
           <Link href="/sign-in" className="px-3 py-2 text-fg-muted transition-colors hover:text-fg">
             Sign in
           </Link>
@@ -1058,6 +1070,12 @@ function Footer() {
           </Link>
           <Link href="#faq" className="hover:text-fg">
             FAQ
+          </Link>
+          <Link href="/help" className="hover:text-fg">
+            Docs
+          </Link>
+          <Link href={CONTACT_HREF} className="hover:text-fg">
+            Contact
           </Link>
           <Link href="/sign-in" className="hover:text-fg">
             Sign in
