@@ -52,15 +52,30 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  try {
-    const result = await slack.handleSlackEnvelope({ db, ...slackIngestDeps() }, payload);
-    if (result.challenge) {
-      return Response.json({ challenge: result.challenge }, { status: 200 });
+  if (isSlackUrlVerification(payload)) {
+    try {
+      const result = await slack.handleSlackEnvelope({ db, ...slackIngestDeps() }, payload);
+      if (result.challenge) {
+        return Response.json({ challenge: result.challenge }, { status: 200 });
+      }
+    } catch (err) {
+      log.error({ err }, 'slack url verification failed');
     }
-  } catch (err) {
-    log.error({ err }, 'slack event handler failed');
+    return Response.json({ ok: false, reason: 'invalid_challenge' }, { status: 200 });
   }
+
+  void slack.handleSlackEnvelope({ db, ...slackIngestDeps() }, payload).catch((err: unknown) => {
+    log.error({ err }, 'slack event handler failed');
+  });
   return Response.json({ ok: true }, { status: 200 });
+}
+
+function isSlackUrlVerification(payload: unknown): boolean {
+  return Boolean(
+    payload &&
+    typeof payload === 'object' &&
+    (payload as Record<string, unknown>).type === 'url_verification',
+  );
 }
 
 function extractSlackActor(payload: unknown): { teamId: string; userId: string } | null {
