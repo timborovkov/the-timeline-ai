@@ -339,6 +339,7 @@ export function CalendarView({
         location: draft.location.trim() || null,
         redacted: false,
         visibility: draft.visibility,
+        visibilityUserIds: draft.visibility === 'specific_users' ? draft.visibilityUserIds : null,
       };
       setSurfaceError(null);
       setSaveState('saving');

@@ -95,6 +95,7 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters }
       createdAt: now,
       visibility: isPrivate ? 'private' : 'team',
       visibilityUserIds: null,
+      visibilityOwnerUserId: currentUser.id,
       sourceMetadata: { optimistic: true },
     };
     if (!filterAllowsEvent(timelineFilters, event)) return null;
