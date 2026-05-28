@@ -1,7 +1,6 @@
 import { CalendarDays, Mail, MessageCircle, Send, Video } from 'lucide-react';
 import Link from 'next/link';
 
-import { AssociationLine } from './_concept-association-line';
 import { IntegrationCloud } from './_integration-cloud';
 
 import type { Metadata } from 'next';
@@ -482,16 +481,42 @@ const INPUTS = [
   'EMAIL',
   'CALENDAR',
   'WEB APP',
-  'DRIVE UPLOAD',
+  'TEAM DOCUMENT DRIVE',
   'MCP SERVERS',
   '3RD PARTY INTEGRATIONS',
 ] as const;
 
-const WORKSPACE_OBJECTS = [
-  { chip: 'obj:apple-q2', name: 'Apple', type: 'DEAL' },
-  { chip: 'obj:john-ternus', name: 'John Ternus', type: 'PERSON' },
-  { chip: 'task:revise-deck', name: 'Revise deck by Fri', type: 'TASK' },
-  { chip: 'obj:office-rules', name: 'Office Rules', type: 'DOCUMENT' },
+const WORKSPACE_OUTPUTS = [
+  {
+    label: 'TIMELINE',
+    detail: 'Events · decisions · who did what · when',
+    icon: '▤',
+    delay: 3.0,
+  },
+  {
+    label: 'AI CHAT',
+    detail: 'Free-form Q&A for the team · cited answers',
+    icon: '⌬',
+    delay: 3.45,
+  },
+  {
+    label: 'CALENDAR EVENTS',
+    detail: 'When the team agreed to do something',
+    icon: '◷',
+    delay: 3.9,
+  },
+  {
+    label: 'OBJECTS / PEOPLE',
+    detail: 'CRM-style people, companies, deals, documents',
+    icon: '◆',
+    delay: 4.35,
+  },
+  {
+    label: 'TASKS',
+    detail: 'What we agreed to do · owner · due date',
+    icon: '☑',
+    delay: 4.8,
+  },
 ] as const;
 
 function ConceptDiagram() {
@@ -546,109 +571,24 @@ function ConceptDiagram() {
         <div className="relative z-[1] bg-bg p-6 sm:p-7">
           <Mono>WORKSPACE</Mono>
 
-          {/* TIMELINE */}
-          <LitRow delay={3.0} className="mt-5">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-                ▤ TIMELINE
-              </span>
-              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-                2,847 EVENTS · CITED
-              </span>
-            </div>
-          </LitRow>
-
-          {/* OBJECTS group */}
-          <div className="mt-4">
-            <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              ◆ OBJECTS
-            </div>
-            <div data-cdg-objects="" className="relative mt-2 space-y-1.5 pl-3">
-              {WORKSPACE_OBJECTS.map((o, i) => (
-                <LitRow
-                  key={o.chip}
-                  id={`cdg-row-${o.chip.replace(/[^a-zA-Z0-9]/g, '-')}`}
-                  delay={3.5 + i * 0.45}
-                  dense
-                >
-                  <div className="flex items-center gap-2 text-sm">
-                    <CitationChipStatic id={o.chip} />
-                    <span className="text-fg">{o.name}</span>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
-                      · {o.type}
-                    </span>
-                  </div>
-                </LitRow>
-              ))}
-              {/* Association line: measured at runtime between the two row IDs;
-                  resilient to LitRow padding changes. */}
-              <AssociationLine
-                fromId="cdg-row-obj-apple-q2"
-                toId="cdg-row-obj-john-ternus"
-                containerSelector="[data-cdg-objects]"
-                label="↳ related"
-              />
-            </div>
+          <div className="mt-5 space-y-2">
+            {WORKSPACE_OUTPUTS.map((output) => (
+              <LitRow key={output.label} delay={output.delay} dense>
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+                    {output.icon} {output.label}
+                  </span>
+                  <span className="min-w-0 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim sm:text-right">
+                    {output.detail}
+                  </span>
+                </div>
+              </LitRow>
+            ))}
           </div>
-
-          {/* AGENT Q&A */}
-          <LitRow delay={5.8} className="mt-4">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-                ⌬ AGENT Q&A
-              </span>
-              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-                /ASK · CITED ANSWERS
-              </span>
-            </div>
-          </LitRow>
         </div>
 
         {/* Sweep line — sits behind content, crosses the full top row */}
         <span className="cdg-sweep" />
-      </div>
-
-      {/* Drop connectors — animate "everything settles into the drive".
-          Mobile: single grouped line. Desktop: three columns. */}
-      <div className="relative h-6 bg-bg sm:hidden">
-        <span
-          className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
-          style={{ animationDelay: '5.6s' }}
-        />
-      </div>
-      <div className="relative hidden h-6 gap-px bg-border sm:grid sm:grid-cols-3">
-        <div className="relative bg-bg">
-          <span
-            className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
-            style={{ animationDelay: '5.5s' }}
-          />
-        </div>
-        <div className="relative bg-bg">
-          <span
-            className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
-            style={{ animationDelay: '5.7s' }}
-          />
-        </div>
-        <div className="relative bg-bg">
-          <span
-            className="cdg-drop absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-fg-dim/60"
-            style={{ animationDelay: '5.9s' }}
-          />
-        </div>
-      </div>
-
-      {/* DRIVE foundation strip */}
-      <div className="border-t border-border bg-surface px-6 py-5 sm:px-7">
-        <div className="flex flex-wrap items-baseline justify-between gap-4">
-          <Mono className="text-fg">▣ TEAM DOCUMENT DRIVE</Mono>
-          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
-            FOUNDATION · TEAM-SCOPED
-          </span>
-        </div>
-        <p className="mt-2 text-sm leading-[1.6] text-fg-muted">
-          Immutable raw events · versioned blobs · vectors · the storage layer everything else rests
-          on.
-        </p>
       </div>
 
       <style>{CDG_STYLES}</style>
@@ -685,9 +625,6 @@ const CDG_STYLES = `
 
   /* Default (and reduced-motion) state: everything reads as "settled / lit". */
   .cdg-lit { opacity: 1; }
-  .cdg-assoc { opacity: 1; }
-  .cdg-assoc-label { opacity: 1; }
-  .cdg-drop { opacity: 0.55; }
   .cdg-sweep { display: none; }
   .cdg-pulse { opacity: 0.35; }
   .cdg-dot { opacity: 1; }
@@ -715,18 +652,6 @@ const CDG_STYLES = `
       opacity: 0;
       animation: cdg-lit 10s infinite ease-out;
     }
-    .cdg-assoc {
-      opacity: 0;
-      animation: cdg-assoc 10s infinite ease-out;
-    }
-    .cdg-assoc-label {
-      opacity: 0;
-      animation: cdg-assoc 10s infinite ease-out;
-    }
-    .cdg-drop {
-      opacity: 0;
-      animation: cdg-drop 10s infinite ease-out;
-    }
     .cdg-pulse {
       opacity: 0;
       animation: cdg-pulse 10s infinite ease-out;
@@ -750,20 +675,6 @@ const CDG_STYLES = `
     0%, 28%   { opacity: 0; }
     34%       { opacity: 1; }
     92%       { opacity: 1; }
-    98%, 100% { opacity: 0; }
-  }
-
-  @keyframes cdg-assoc {
-    0%, 52%   { opacity: 0; }
-    58%       { opacity: 1; }
-    92%       { opacity: 1; }
-    98%, 100% { opacity: 0; }
-  }
-
-  @keyframes cdg-drop {
-    0%, 52%   { opacity: 0; }
-    62%       { opacity: 0.55; }
-    92%       { opacity: 0.55; }
     98%, 100% { opacity: 0; }
   }
 
