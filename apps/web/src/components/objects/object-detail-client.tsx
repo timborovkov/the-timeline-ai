@@ -77,8 +77,16 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   const [linkId, setLinkId] = useState('');
   const [linkKind, setLinkKind] = useState<(typeof RELATIONSHIP_KINDS)[number]>('related');
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localDetailRef = useRef(detail);
+
+  function updateLocalDetail(updater: (current: ObjectDetail) => ObjectDetail): void {
+    const next = updater(localDetailRef.current);
+    localDetailRef.current = next;
+    setLocalDetail(next);
+  }
 
   useEffect(() => {
+    localDetailRef.current = detail;
     setLocalDetail(detail);
     setStageDraft(detail.stage ?? '');
     setDueDraft(detail.dueAt ? toLocalInput(detail.dueAt) : '');
@@ -91,10 +99,10 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   }, []);
 
   function patch(field: EditableField, value: string | number | Date | null): void {
-    const previousValue = localDetail[field];
+    const previousValue = localDetailRef.current[field];
     if (sameEditableValue(previousValue, value)) return;
     setError(null);
-    setLocalDetail((current) => ({ ...current, [field]: value }));
+    updateLocalDetail((current) => ({ ...current, [field]: value }));
     if (savedTimer.current) clearTimeout(savedTimer.current);
     setSaveState('saving');
     setSavingCount((count) => count + 1);
@@ -104,14 +112,14 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
       const failed = 'error' in result && result.error;
       if (failed) {
         setError(result.error ?? 'Update failed');
-        setLocalDetail((current) =>
-          sameEditableValue(current[field], value)
-            ? { ...current, [field]: previousValue }
-            : current,
-        );
-        if (field === 'stage') setStageDraft(previousValue === null ? '' : String(previousValue));
-        if (field === 'dueAt') {
-          setDueDraft(previousValue instanceof Date ? toLocalInput(previousValue) : '');
+        if (sameEditableValue(localDetailRef.current[field], value)) {
+          updateLocalDetail((current) => ({ ...current, [field]: previousValue }));
+          if (field === 'stage') {
+            setStageDraft(previousValue === null ? '' : String(previousValue));
+          }
+          if (field === 'dueAt') {
+            setDueDraft(previousValue instanceof Date ? toLocalInput(previousValue) : '');
+          }
         }
       } else {
         router.refresh();
