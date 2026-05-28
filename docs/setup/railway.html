@@ -138,6 +138,18 @@ SET source_metadata = source_metadata
   - 'reconcile_attempts_transcribe'
 WHERE id = '&lt;uuid&gt;';
 </code></pre>
+
+      <h2 id="environment-reset">8. Development environment reset</h2>
+      <p>
+        Non-production Railway environments can be wiped with the dev-only environment reset
+        command. It requires <code>NODE_ENV=development</code> or <code>NODE_ENV=test</code> to be
+        explicitly present, then flushes Redis, removes all Qdrant collections, empties configured
+        RustFS buckets, rebuilds Postgres, and runs migrations. Running services may fail
+        transiently during the reset; restart or redeploy them afterward if they keep stale
+        connections.
+      </p>
+      <pre><code>NODE_ENV=development pnpm env:reset
+</code></pre>
     </main>
   </body>
 </html>

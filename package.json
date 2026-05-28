@@ -14,6 +14,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "validate": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm knip",
+    "env:reset": "tsx scripts/env-reset.ts",
     "db:migrate": "pnpm --filter @timeline/db migrate",
     "db:generate": "pnpm --filter @timeline/db generate",
     "db:studio": "pnpm --filter @timeline/db studio"
@@ -26,6 +27,7 @@
     "eslint-plugin-unused-imports": "^4.1.4",
     "knip": "^5.40.0",
     "prettier": "^3.3.0",
+    "tsx": "^4.19.0",
     "turbo": "^2.1.0",
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.0.0"

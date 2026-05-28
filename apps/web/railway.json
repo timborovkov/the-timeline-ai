@@ -6,7 +6,7 @@
   },
   "deploy": {
     "preDeployCommand": ["node packages/db/dist/migrate.js"],
-    "startCommand": "node apps/web/server.js",
+    "startCommand": "node apps/web/start.mjs",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",

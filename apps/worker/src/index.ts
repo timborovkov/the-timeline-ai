@@ -16,8 +16,8 @@ import { startTranscribeWorker } from './workers/transcribe.js';
 const log = childLogger('worker');
 
 async function main(): Promise<void> {
-  // On Railway, the web service runs migrations as a preDeployCommand before
-  // its release shifts. Worker services deploy in parallel and can race that.
+  // On Railway, the web service runs migrations in preDeploy and again from
+  // its start wrapper. Worker services deploy in parallel and can race that.
   // Block here until the DB has at least as many migrations applied as the
   // journal bundled with this image expects, so we don't crash-loop on every
   // deploy that ships schema changes.
