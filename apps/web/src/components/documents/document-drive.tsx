@@ -140,7 +140,7 @@ export function DocumentDrive({
         addOptimisticDocument({
           id: req.documentId,
           name: file.name,
-          visibility: 'team',
+          visibility,
           updatedAt: new Date().toISOString(),
           ownerUserId: null,
           optimistic: true,
