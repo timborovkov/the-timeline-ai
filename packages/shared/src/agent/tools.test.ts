@@ -39,6 +39,10 @@ interface FakeScope {
   };
   calendar: {
     listCalendarEvents: ReturnType<typeof vi.fn>;
+    getCalendarSettings: ReturnType<typeof vi.fn>;
+  };
+  suggestions: {
+    createOrMergeSuggestionBundle: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -60,6 +64,10 @@ function makeFakeScope(): FakeScope {
     },
     calendar: {
       listCalendarEvents: vi.fn(),
+      getCalendarSettings: vi.fn().mockResolvedValue({ defaultTimezone: 'UTC' }),
+    },
+    suggestions: {
+      createOrMergeSuggestionBundle: vi.fn(),
     },
   };
 }
@@ -190,6 +198,40 @@ describe('buildAgentTools — team isolation', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('suggest_calendar_event derives all-day fallback dates in the event timezone', async () => {
+    const scope = makeFakeScope();
+    scope.calendar.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'Asia/Tokyo' });
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.suggest_calendar_event?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await exec(
+      {
+        title: 'Tokyo all-day',
+        startAt: '2026-06-01T15:00:00.000Z',
+        endAt: '2026-06-02T15:00:00.000Z',
+        timezone: 'Asia/Tokyo',
+        allDay: true,
+      },
+      {},
+    );
+
+    const input = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: { proposedPayload: Record<string, unknown> }[];
+    };
+    expect(input.items[0]?.proposedPayload).toMatchObject({
+      startDate: '2026-06-02',
+      endDate: '2026-06-03',
+      startAt: '2026-06-01T15:00:00.000Z',
+      endAt: '2026-06-02T15:00:00.000Z',
+      timezone: 'Asia/Tokyo',
+      allDay: true,
+    });
   });
 
   it('tool execute catches thrown errors and returns { error } — keeps stream alive', async () => {

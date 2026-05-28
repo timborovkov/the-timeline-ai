@@ -3,14 +3,15 @@ import { withTeam } from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import { CreateCalendarEventForm } from '@/components/calendar/calendar-event-form';
+import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CalendarView } from '@/components/calendar/calendar-view';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 interface PageProps {
-  searchParams: Promise<{ year?: string; month?: string }>;
+  searchParams: Promise<{ date?: string; view?: string }>;
 }
 
 export default async function CalendarPage({ searchParams }: PageProps) {
@@ -22,16 +23,24 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
 
-  const params = await searchParams;
+  const [params, settings, pendingSuggestions] = await Promise.all([
+    searchParams,
+    scope.calendar.getCalendarSettings(),
+    scope.suggestions.listPendingSuggestions(),
+  ]);
   const now = new Date();
-  const rawYear = params.year ? parseInt(params.year, 10) : NaN;
-  const rawMonth = params.month ? parseInt(params.month, 10) : NaN;
-  const year = Number.isFinite(rawYear) ? rawYear : now.getFullYear();
-  const month =
-    Number.isFinite(rawMonth) && rawMonth >= 0 && rawMonth <= 11 ? rawMonth : now.getMonth();
+  const anchor = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : null;
+  const anchorDate = anchor ? new Date(`${anchor}T00:00:00.000Z`) : now;
+  const view =
+    params.view === 'day' || params.view === 'week' || params.view === 'month'
+      ? params.view
+      : 'month';
+  const rangeDays = view === 'day' ? 2 : view === 'week' ? 14 : 70;
 
-  const from = new Date(Date.UTC(year, month, 1));
-  const to = new Date(Date.UTC(year, month + 1, 1));
+  const from = new Date(anchorDate);
+  from.setUTCDate(from.getUTCDate() - rangeDays);
+  const to = new Date(anchorDate);
+  to.setUTCDate(to.getUTCDate() + rangeDays);
 
   const [events, defaultRow, members] = await Promise.all([
     scope.calendar.listCalendarEvents({ from, to }),
@@ -51,6 +60,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   const serialized = events.map((e) => ({
     id: e.id,
     title: e.title,
+    description: e.description,
     startAt: e.startAt.toISOString(),
     endAt: e.endAt.toISOString(),
     timezone: e.timezone,
@@ -58,7 +68,15 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     location: e.location,
     redacted: e.redacted,
     visibility: e.visibility,
+    visibilityUserIds: e.visibilityUserIds,
   }));
+  const calendarSuggestions = pendingSuggestions
+    .map((bundle) => ({
+      ...bundle,
+      items: bundle.items.filter((item) => item.targetKind === 'calendar_event'),
+    }))
+    .filter((bundle) => bundle.items.length > 0)
+    .map(serializeSuggestionBundle);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -69,7 +87,16 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         </p>
       </header>
 
-      <CreateCalendarEventForm
+      {calendarSuggestions.length > 0 ? (
+        <section className="space-y-3">
+          <h2 className="text-sm font-medium tracking-tight">Calendar approvals</h2>
+          <ApprovalsClient suggestions={calendarSuggestions} />
+        </section>
+      ) : null}
+
+      <CalendarView
+        events={serialized}
+        timezone={settings.defaultTimezone}
         defaultVisibility={defaultRow.visibility}
         defaultVisibilityUserIds={defaultRow.visibilityUserIds}
         members={members.map((m) => {
@@ -77,7 +104,6 @@ export default async function CalendarPage({ searchParams }: PageProps) {
           return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
         })}
       />
-      <CalendarView events={serialized} />
     </div>
   );
 }

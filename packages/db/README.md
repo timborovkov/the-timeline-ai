@@ -1,10 +1,10 @@
 # @timeline/db
 
-Drizzle ORM schema, migrations, and the deploy-time `migrate` script for the Timeline Postgres database.
+Drizzle ORM schema, migrations, and the `migrate` script for the Timeline Postgres database.
 
 ## Why it exists
 
-One canonical schema definition shared by `apps/web`, `apps/worker`, and any future workspace consumer. The migrate entry point runs as a pre-deploy command on Railway so schema changes land before the new web image starts serving traffic.
+One canonical schema definition shared by `apps/web`, `apps/worker`, and any future workspace consumer. The migrate entry point runs as a pre-deploy command on Railway and from the web start wrapper under an advisory lock, so schema changes land before traffic and freshly reset dev environments converge on boot.
 
 ## How to use
 
@@ -22,10 +22,11 @@ Workspace commands:
 pnpm db:generate   # drizzle-kit generate after schema change
 pnpm db:migrate    # apply pending migrations
 pnpm db:studio     # local schema browser
+NODE_ENV=development pnpm env:reset   # wipe and rebuild a dev/test environment
 ```
 
 ## Where it fits
 
-- Deploy-time migration wiring: [docs/railway.html](../../docs/railway.html).
+- Deploy/startup migration wiring: [docs/railway.html](../../docs/railway.html).
 - Team-scope contract: [packages/shared/README.md](../shared/README.md).
 - Data model overview: [docs/product-brief.html](../../docs/product-brief.html).

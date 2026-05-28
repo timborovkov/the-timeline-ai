@@ -5,7 +5,14 @@ import { z } from 'zod';
 import { childLogger } from '../logger.js';
 import { getMcpManager } from '../mcp/client.js';
 import * as objects from '../objects/index.js';
+import { suggestionDedupeKey } from '../suggestions/index.js';
 import { type TeamScope } from '../team-scope.js';
+import {
+  localDateFromInstant,
+  localDateSpanToUtcRange,
+  resolveTimePhrase,
+  workspaceTimeContext,
+} from '../time/index.js';
 
 const log = childLogger('agent:tools');
 
@@ -481,7 +488,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
 
     suggest_task: tool({
       description:
-        "Propose a new task. The task is created with status='suggested' and agent_suggested=true; a human reviews on the object page or inbox. Use sparingly — only when the conversation reveals a concrete next action that nobody has captured. Set parentObjectId to link the task to a relevant deal/project/person.",
+        'Propose a new task. Records an approval-queue suggestion only; it does not create the canonical task until a human accepts it. Use when the conversation reveals a concrete next action. Set parentObjectId to link the task to a relevant deal/project/person.',
       inputSchema: z.object({
         title: z.string().trim().min(1).max(200),
         dueAt: z.string().datetime().optional(),
@@ -500,29 +507,50 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             parentObjectId?: string;
             sourceEventId?: string;
           };
-          const created = await scope.objects.createObject({
-            type: 'task',
-            canonicalName: input.title,
-            dueAt: input.dueAt ? new Date(input.dueAt) : null,
+          const dedupeKey = suggestionDedupeKey({
+            tool: 'suggest_task',
+            title: input.title,
+            dueAt: input.dueAt ?? null,
             ownerUserId: input.ownerUserId ?? null,
             parentObjectId: input.parentObjectId ?? null,
             sourceEventId: input.sourceEventId ?? null,
-            agentSuggested: true,
-            metadata: input.note ? { agent_note: input.note } : {},
-            actor: { kind: 'agent', userId: null },
+          });
+          const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
+            source: 'chat',
+            title: `Create task: ${input.title}`,
+            summary: input.note ?? null,
+            reason: 'The chat conversation implies a concrete next action.',
+            confidence: 'medium',
+            dedupeKey,
+            evidence: input.sourceEventId ? [{ rawEventId: input.sourceEventId }] : [],
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: input.title,
+                dedupeKey,
+                proposedPayload: {
+                  canonicalName: input.title,
+                  dueAt: input.dueAt ?? null,
+                  ownerUserId: input.ownerUserId ?? null,
+                  parentObjectId: input.parentObjectId ?? null,
+                  sourceEventId: input.sourceEventId ?? null,
+                  metadata: input.note ? { agent_note: input.note } : {},
+                },
+              },
+            ],
           });
           return {
             ok: true,
-            id: created.id,
-            status: created.status,
-            message: `Suggested task created. A teammate can accept it from /app/objects/${created.id}.`,
+            id: suggestion.id,
+            message: `Task suggestion recorded. A teammate can review it at /app/approvals.`,
           };
         }),
     }),
 
     propose_object_change: tool({
       description:
-        "Propose a change to an existing object's field (status, stage, priority, ownerUserId, assigneeUserId, dueAt). Writes a 'suggested' row to object_changes WITHOUT mutating the entity; a human accepts/rejects from the object page. Use after get_object verifies the current value.",
+        "Propose a change to an existing object's field (status, stage, priority, ownerUserId, assigneeUserId, dueAt). Records an approval-queue suggestion WITHOUT mutating the object. Use after get_object verifies the current value.",
       inputSchema: z.object({
         entityId: z.string().regex(UUID_RE),
         field: z.enum(['status', 'stage', 'priority', 'ownerUserId', 'assigneeUserId', 'dueAt']),
@@ -537,16 +565,34 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             newValue: unknown;
             note?: string;
           };
-          const proposed = await scope.objects.proposeObjectChange({
+          const dedupeKey = suggestionDedupeKey({
+            tool: 'propose_object_change',
             entityId: input.entityId,
             field: input.field,
             newValue: input.newValue,
-            note: input.note ?? null,
+          });
+          const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
+            source: 'chat',
+            title: `Update object ${input.entityId.slice(0, 8)}: ${input.field}`,
+            summary: input.note ?? null,
+            reason: 'The chat conversation implies a workspace object update.',
+            confidence: 'medium',
+            dedupeKey,
+            items: [
+              {
+                operation: 'update',
+                targetKind: 'object',
+                targetId: input.entityId,
+                title: `Update ${input.field}`,
+                dedupeKey,
+                proposedPayload: { [input.field]: input.newValue },
+              },
+            ],
           });
           return {
             ok: true,
-            change_id: proposed.id,
-            message: 'Suggestion recorded. A teammate will review on the object page.',
+            suggestion_id: suggestion.id,
+            message: 'Suggestion recorded. A teammate will review at /app/approvals.',
           };
         }),
     }),
@@ -919,6 +965,47 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         }),
     }),
 
+    resolve_time_context: tool({
+      description:
+        'Resolve workspace-relative time phrases into exact local date spans and UTC query ranges. Use for relative dates like today, yesterday, last week, week 24, or next Tuesday before querying timeline/calendar tools.',
+      inputSchema: z.object({
+        phrase: z.string().trim().min(1).max(100).optional(),
+        referenceDate: z.string().datetime().optional(),
+      }),
+      execute: async (raw) =>
+        safe('resolve_time_context', async () => {
+          const input = z
+            .object({
+              phrase: z.string().trim().min(1).max(100).optional(),
+              referenceDate: z.string().datetime().optional(),
+            })
+            .parse(raw);
+          const settings = await scope.calendar.getCalendarSettings();
+          const referenceDate = input.referenceDate ? new Date(input.referenceDate) : new Date();
+          const context = workspaceTimeContext(settings.defaultTimezone, referenceDate);
+          const resolved = input.phrase
+            ? resolveTimePhrase(input.phrase, {
+                timezone: settings.defaultTimezone,
+                referenceDate,
+              })
+            : null;
+          return {
+            context,
+            resolved: resolved
+              ? {
+                  phrase: resolved.phrase,
+                  timezone: resolved.timezone,
+                  local_start_date: resolved.localStartDate,
+                  local_end_date: resolved.localEndDate,
+                  from: resolved.from.toISOString(),
+                  to: resolved.to.toISOString(),
+                  explanation: resolved.explanation,
+                }
+              : null,
+          };
+        }),
+    }),
+
     get_calendar_event: tool({
       description:
         'Fetch one calendar event by UUID. Returns full details including description, timezone, location, and visibility. Use this to drill into a specific event after listing.',
@@ -953,12 +1040,21 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
 
     suggest_calendar_event: tool({
       description:
-        "Propose a new calendar event. Created with agent_suggested=true; a human reviews at /app/calendar. Use sparingly — only when the conversation clearly implies scheduling a specific event with a specific time. Always confirm the time with the user before suggesting. Set visibility to 'private' for personal events like dentist appointments.",
+        "Propose a new calendar event. Records an approval-queue suggestion only; it does not create the canonical event until a human accepts it. Date-only scheduling should be represented as an all-day event with startDate and exclusive endDate. Set visibility to 'private' for personal events like dentist appointments.",
       inputSchema: z.object({
         title: z.string().trim().min(1).max(200),
         startAt: z.string().datetime(),
         endAt: z.string().datetime(),
+        startDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        endDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
         timezone: z.string().max(100).optional(),
+        allDay: z.boolean().optional(),
         description: z.string().trim().max(1000).optional(),
         location: z.string().trim().max(500).optional(),
         visibility: z.enum(['team', 'private']).optional(),
@@ -971,28 +1067,159 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
               title: z.string().trim().min(1).max(200),
               startAt: z.string().datetime(),
               endAt: z.string().datetime(),
+              startDate: z
+                .string()
+                .regex(/^\d{4}-\d{2}-\d{2}$/)
+                .optional(),
+              endDate: z
+                .string()
+                .regex(/^\d{4}-\d{2}-\d{2}$/)
+                .optional(),
               timezone: z.string().max(100).optional(),
+              allDay: z.boolean().optional(),
               description: z.string().trim().max(1000).optional(),
               location: z.string().trim().max(500).optional(),
               visibility: z.enum(['team', 'private']).optional(),
               reminderMinutes: z.number().int().min(0).max(1440).optional(),
             })
             .parse(raw);
-          const created = await scope.calendar.createCalendarEvent({
+          const settings = await scope.calendar.getCalendarSettings();
+          const timezone = input.timezone ?? settings.defaultTimezone;
+          const allDay = input.allDay ?? false;
+          let startAt = input.startAt;
+          let endAt = input.endAt;
+          let startDate = input.startDate;
+          let endDate = input.endDate;
+          if (allDay) {
+            startDate = input.startDate ?? localDateFromInstant(input.startAt, timezone);
+            endDate = input.endDate ?? localDateFromInstant(input.endAt, timezone);
+            if (endDate <= startDate) {
+              const d = new Date(`${startDate}T00:00:00.000Z`);
+              d.setUTCDate(d.getUTCDate() + 1);
+              endDate = d.toISOString().slice(0, 10);
+            }
+            const range = localDateSpanToUtcRange(startDate, endDate, timezone);
+            startAt = range.from.toISOString();
+            endAt = range.to.toISOString();
+          }
+          const visibility = input.visibility ?? 'team';
+          const dedupeKey = suggestionDedupeKey({
+            tool: 'suggest_calendar_event',
             title: input.title,
-            startAt: new Date(input.startAt),
-            endAt: new Date(input.endAt),
-            timezone: input.timezone ?? 'UTC',
-            description: input.description ?? null,
-            location: input.location ?? null,
-            visibility: input.visibility ?? 'team',
+            startAt,
+            endAt,
+            timezone,
+            allDay,
+            visibility,
             reminderMinutes: input.reminderMinutes ?? null,
-            agentSuggested: true,
+            location: input.location ?? null,
+            description: input.description ?? null,
+          });
+          const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
+            source: 'chat',
+            title: `Create calendar event: ${input.title}`,
+            summary: input.description ?? null,
+            reason: 'The chat conversation implies a scheduled commitment.',
+            confidence: 'medium',
+            dedupeKey,
+            visibility,
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'calendar_event',
+                title: input.title,
+                dedupeKey,
+                proposedPayload: {
+                  title: input.title,
+                  startAt,
+                  endAt,
+                  ...(startDate ? { startDate } : {}),
+                  ...(endDate ? { endDate } : {}),
+                  timezone,
+                  allDay,
+                  description: input.description ?? null,
+                  location: input.location ?? null,
+                  visibility,
+                  reminderMinutes: input.reminderMinutes ?? null,
+                },
+              },
+            ],
           });
           return {
             ok: true,
-            id: created.id,
-            message: `Suggested calendar event created. A teammate can review at /app/calendar/${created.id}.`,
+            id: suggestion.id,
+            message: `Calendar suggestion recorded. A teammate can review at /app/approvals.`,
+          };
+        }),
+    }),
+
+    propose_calendar_update: tool({
+      description:
+        'Propose a refinement or cancellation for an existing calendar event. Records an approval-queue suggestion only. Use after get_calendar_event verifies the current value.',
+      inputSchema: z.object({
+        id: z.string().regex(UUID_RE),
+        patch: z
+          .object({
+            title: z.string().trim().min(1).max(200).optional(),
+            description: z.string().trim().max(1000).nullable().optional(),
+            startAt: z.string().datetime().optional(),
+            endAt: z.string().datetime().optional(),
+            timezone: z.string().max(100).optional(),
+            allDay: z.boolean().optional(),
+            location: z.string().trim().max(500).nullable().optional(),
+            visibility: z.enum(['team', 'private']).optional(),
+            reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+          })
+          .optional(),
+        cancel: z.boolean().optional(),
+        reason: z.string().trim().max(500).optional(),
+      }),
+      execute: async (raw) =>
+        safe('propose_calendar_update', async () => {
+          const input = z
+            .object({
+              id: z.string().regex(UUID_RE),
+              patch: z.record(z.unknown()).optional(),
+              cancel: z.boolean().optional(),
+              reason: z.string().trim().max(500).optional(),
+            })
+            .parse(raw);
+          const event = await scope.calendar.getCalendarEvent(input.id);
+          if (!event) return { ok: false, message: 'Calendar event not found' };
+          const operation = input.cancel ? 'archive_or_cancel' : 'update';
+          const payload = input.cancel ? {} : (input.patch ?? {});
+          const dedupeKey = suggestionDedupeKey({
+            tool: 'propose_calendar_update',
+            id: input.id,
+            operation,
+            payload,
+          });
+          const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
+            source: 'chat',
+            title: `${input.cancel ? 'Cancel' : 'Update'} calendar event: ${event.title}`,
+            summary: input.reason ?? null,
+            reason: input.reason ?? 'The chat conversation implies a calendar refinement.',
+            confidence: 'medium',
+            dedupeKey,
+            visibility: event.visibility,
+            visibilityOwnerUserId: event.createdByUserId,
+            visibilityUserIds: event.visibilityUserIds,
+            items: [
+              {
+                operation,
+                targetKind: 'calendar_event',
+                targetId: input.id,
+                title: `${input.cancel ? 'Cancel' : 'Update'} ${event.title}`,
+                dedupeKey,
+                proposedPayload: payload,
+              },
+            ],
+          });
+          return {
+            ok: true,
+            id: suggestion.id,
+            message:
+              'Calendar update suggestion recorded. A teammate can review at /app/approvals.',
           };
         }),
     }),

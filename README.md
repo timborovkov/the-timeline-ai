@@ -13,19 +13,24 @@ voice transcription, extracted facts + entities, semantic search, agent
 chat at `/app/chat`, workspace objects + boards + persisted chat sessions,
 a team document drive at `/app/documents` (folders, versioned uploads,
 chunked + embedded, cited inline with `[doc:<id>#v<n>:chunk:<id>]`), and
-an internal calendar at `/app/calendar` with timeline-linked events,
-private busy-block redaction, and calendar-aware agent tools. Third-party
-etc.) can query this Timeline. The main timeline, object sections, document
-lists, and document search are paginated for large beta workspaces, with
-short-lived visibility-aware Redis caches and React Query only on interactive
-surfaces. `/app/timeline` includes a dismissible team onboarding tutorial for
-the core capture surfaces. Public help docs live at `/help`, with a
+an internal calendar at `/app/calendar` with all-day events, ISO week/day/month
+views, private busy-block redaction, and calendar-aware agent tools. Agents and
+background workers now create proposal-only task/object/calendar suggestions,
+reviewed from the unified `/app/approvals` queue before becoming canonical
+state. Third-party integrations (Google Drive, Linear, GitHub native + custom
+MCP servers per team or per user) live at `/app/team/integrations` — plus an
+outbound MCP server at `/api/mcp/server` so external agents (Claude Desktop,
+Cursor, etc.) can query this Timeline. The main timeline, object sections,
+document lists, and document search are paginated for large beta workspaces,
+with short-lived visibility-aware Redis caches and React Query only on
+interactive surfaces. `/app/timeline` includes a dismissible team onboarding
+tutorial for the core capture surfaces. Public help docs live at `/help`, with a
 support/contact form that stores requests in Postgres, sends them through
-Postmark, and uses Turnstile in production. Email/password registration is
-also Turnstile-protected; signed-in expensive surfaces use named Redis-backed
+Postmark, and uses Turnstile in production. Email/password registration is also
+Turnstile-protected; signed-in expensive surfaces use named Redis-backed
 rate-limit policies. Owners/admins can recover team-scoped failed or stuck
-product jobs at `/app/team/jobs`. Railway deployment, deploy-time migrations,
-and structured logging are in place.
+product jobs at `/app/team/jobs`. Railway deployment, deploy/startup
+migrations, and structured logging are in place.
 
 ## Read first
 

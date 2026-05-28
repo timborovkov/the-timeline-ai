@@ -287,6 +287,8 @@ All icons from `lucide-react`. Canonical mapping:
 | Chat        | `MessageSquare` |
 | Objects     | `Boxes`         |
 | Boards      | `LayoutGrid`    |
+| Calendar    | `CalendarDays`  |
+| Approvals   | `CircleCheckBig` |
 | Documents   | `FileText`      |
 | Inbox       | `Inbox`         |
 | Team        | `Settings`      |

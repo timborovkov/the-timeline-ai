@@ -1,4 +1,13 @@
-import { agent, childLogger, getEnv, llm, objects, rateLimit, withTeam } from '@timeline/shared';
+import {
+  agent,
+  childLogger,
+  getEnv,
+  llm,
+  objects,
+  rateLimit,
+  time,
+  withTeam,
+} from '@timeline/shared';
 import { convertToModelMessages, safeValidateUIMessages, type UIMessage } from 'ai';
 import { z } from 'zod';
 
@@ -155,10 +164,13 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
+  const calendarSettings = await scope.calendar.getCalendarSettings();
+  const currentDate = new Date();
   const system = agent.buildSystemPrompt({
     teamName,
     userName,
-    currentDate: new Date(),
+    currentDate,
+    workspaceTime: time.workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });
   // Phase 11 — merge any custom MCP tools the team has connected. The
   // MCP manager caches per-team for 5 min so this is cheap on hot paths.

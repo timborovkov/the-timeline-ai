@@ -268,6 +268,12 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           .where(eq(rawEvents.id, rawEventId));
       });
 
+      try {
+        await queue.enqueueSuggestionJob({ rawEventId, teamId });
+      } catch (err) {
+        log.error({ err, rawEventId }, 'failed to enqueue suggestion job');
+      }
+
       // Enqueue embed jobs AFTER the transaction commits. One job for the
       // raw event body (covers events with zero facts; same point id is reused
       // on retry) and one per newly-inserted fact. Failures here are logged

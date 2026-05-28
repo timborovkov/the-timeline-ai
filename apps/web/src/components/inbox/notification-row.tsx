@@ -12,6 +12,7 @@ interface Props {
   kind: string;
   summary: string;
   entityId: string | null;
+  agentSuggestionId: string | null;
   createdAt: string;
   initiallyRead: boolean;
 }
@@ -27,7 +28,15 @@ function formatTs(ts: string): string {
   return `${date} ${time}`;
 }
 
-export function NotificationRow({ id, kind, summary, entityId, createdAt, initiallyRead }: Props) {
+export function NotificationRow({
+  id,
+  kind,
+  summary,
+  entityId,
+  agentSuggestionId,
+  createdAt,
+  initiallyRead,
+}: Props) {
   const router = useRouter();
   const search = useSearchParams();
   const [pending, startTransition] = useTransition();
@@ -82,9 +91,9 @@ export function NotificationRow({ id, kind, summary, entityId, createdAt, initia
           <span>{kind.replace(/_/g, ' ')}</span>
         </div>
         <p className="mt-1 text-fg">
-          {entityId ? (
+          {entityId || agentSuggestionId ? (
             <Link
-              href={`/app/objects/${entityId}`}
+              href={entityId ? `/app/objects/${entityId}` : '/app/approvals'}
               className="font-medium hover:underline"
               onClick={markRead}
             >

@@ -38,6 +38,9 @@ export const QUEUE_NAMES = {
   // Phase 13.4: owner/admin initiated team data export. The web app writes a
   // team_exports row, then this worker builds the expiring archive out of band.
   teamExport: 'team-export',
+  // Autonomous commitment extraction. Runs after raw-event fact extraction
+  // and writes proposal-only agent_suggestions rows for the approvals queue.
+  suggestions: 'suggestions',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -123,6 +126,38 @@ export async function closeExtractQueue(): Promise<void> {
   if (!_extractQueue) return;
   const q = _extractQueue;
   _extractQueue = undefined;
+  await q.close().catch(() => undefined);
+}
+
+export interface SuggestionJobData {
+  rawEventId: string;
+  teamId: string;
+}
+
+let _suggestionQueue: Queue<SuggestionJobData> | undefined;
+
+export function getSuggestionQueue(): Queue<SuggestionJobData> {
+  if (_suggestionQueue) return _suggestionQueue;
+  _suggestionQueue = new Queue<SuggestionJobData>(QUEUE_NAMES.suggestions, {
+    connection: getRedisConnection(),
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 3000 },
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  });
+  return _suggestionQueue;
+}
+
+export async function enqueueSuggestionJob(data: SuggestionJobData): Promise<void> {
+  await getSuggestionQueue().add('suggestions', data);
+}
+
+export async function closeSuggestionQueue(): Promise<void> {
+  if (!_suggestionQueue) return;
+  const q = _suggestionQueue;
+  _suggestionQueue = undefined;
   await q.close().catch(() => undefined);
 }
 

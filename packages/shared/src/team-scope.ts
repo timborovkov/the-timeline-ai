@@ -36,6 +36,7 @@ import {
   type SourceKind,
 } from './qdrant/client.js';
 import { enqueueEmbedJob } from './queue/queues.js';
+import { createSuggestionScope } from './suggestions/index.js';
 import { normalizeVisibilityUserIds, rawEventVisibleToUser } from './visibility.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
@@ -609,6 +610,17 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
       .limit(filters.limit ?? 200);
   }
+
+  const objectScope = createObjectScope(db, core);
+  const suggestionScope = createSuggestionScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+    requireTeamMember,
+    objects: objectScope,
+    calendar: calendarScope,
+  });
 
   return {
     ...core,
@@ -1449,7 +1461,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     },
     documents: documentScope,
     meetings: meetingScope,
-    objects: createObjectScope(db, core),
+    objects: objectScope,
+    suggestions: suggestionScope,
     integrations: integrationScope,
     mcp: mcpScope,
     onboarding: onboardingScope,

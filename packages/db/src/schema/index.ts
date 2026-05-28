@@ -24,4 +24,5 @@ export * from './visibility-defaults.js';
 export * from './audit-log.js';
 export * from './team-exports.js';
 export * from './onboarding.js';
+export * from './agent-suggestions.js';
 export * from './support.js';

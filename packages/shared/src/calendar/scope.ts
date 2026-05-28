@@ -800,6 +800,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         teamId,
         defaultReminderMinutes: 15,
         defaultVisibility: 'team' as const,
+        defaultTimezone: 'UTC',
         updatedAt: new Date(),
       };
     },
@@ -807,6 +808,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     async upsertCalendarSettings(patch: {
       defaultReminderMinutes?: number;
       defaultVisibility?: Visibility;
+      defaultTimezone?: string;
     }) {
       await ensureMember('admin');
       const insertValues: Record<string, unknown> = {
@@ -818,6 +820,9 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       }
       if (patch.defaultVisibility !== undefined) {
         insertValues.defaultVisibility = patch.defaultVisibility;
+      }
+      if (patch.defaultTimezone !== undefined) {
+        insertValues.defaultTimezone = patch.defaultTimezone;
       }
       const setClause: Record<string, unknown> = { updatedAt: new Date() };
       for (const k of Object.keys(insertValues)) {
