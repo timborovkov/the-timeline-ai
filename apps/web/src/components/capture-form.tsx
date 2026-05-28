@@ -215,7 +215,11 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters }
       // Keep visibility pill sticky — it's a preference, not per-post.
       router.refresh();
     } catch (err) {
-      if (!textCommitted && optimisticTextId) removeOptimisticTextEvent(optimisticTextId);
+      if (!textCommitted && optimisticTextId) {
+        removeOptimisticTextEvent(optimisticTextId);
+      } else if (textCommitted) {
+        router.refresh();
+      }
       setError(err instanceof Error ? err.message : 'Post failed');
     } finally {
       inFlightRef.current = false;

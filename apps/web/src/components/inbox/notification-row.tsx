@@ -44,6 +44,7 @@ export function NotificationRow({
   // clears the unread dot — the server action runs async without
   // blocking the navigation.
   const [read, setRead] = useState(initiallyRead);
+  const latestInitiallyReadRef = useRef(initiallyRead);
   const individuallyReadRef = useRef(initiallyRead);
   const bulkReadRef = useRef(false);
   // Sync from props when the parent refreshes (e.g. MarkAllReadButton
@@ -52,6 +53,7 @@ export function NotificationRow({
   // to unread, since the user's click is the authoritative intent and
   // the server may not have caught up yet.
   useEffect(() => {
+    latestInitiallyReadRef.current = initiallyRead;
     if (initiallyRead) {
       individuallyReadRef.current = true;
       setRead(true);
@@ -91,8 +93,8 @@ export function NotificationRow({
         // actually recorded — otherwise the row shows as read while
         // the server still has it as unread, and on ?unread=1 it'd
         // linger with read styling but never drop out.
-        individuallyReadRef.current = initiallyRead;
-        setRead(false);
+        individuallyReadRef.current = latestInitiallyReadRef.current;
+        setRead(latestInitiallyReadRef.current);
         return;
       }
       // On the unread-only view, the server filter excludes read rows —
