@@ -379,7 +379,8 @@
         <li>
           <strong>Chat / summarization / extraction</strong>: OpenRouter via Vercel AI SDK. Model
           ids, context windows, capabilities, and chat-memory thresholds are code-owned in the
-          shared model catalog so runtime env cannot silently drift between services.
+          shared model catalog, with Qwen / DeepSeek OSS models preferred for chat-style roles so
+          runtime env cannot silently drift between services.
         </li>
         <li>
           <strong>Embeddings</strong>: OpenRouter via OpenAI SDK.

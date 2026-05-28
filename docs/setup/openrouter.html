@@ -46,10 +46,11 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 
       <h2 id="model-pins">2. Model pins</h2>
       <p>
-        Model selection is code-owned in <code>packages/shared/src/llm/models.ts</code>. Keep chat,
+        Model selection is code-owned in <code>packages/shared/src/llm/models.ts</code>. Keep
         extraction, agent, summarization, vision, embedding, and transcription model ids there
-        together with their context windows, capabilities, and embedding dimensions. The environment
-        only supplies the OpenRouter key/base URL.
+        together with their context windows, capabilities, and embedding dimensions. Chat-style
+        roles prefer OSS models from Qwen and DeepSeek; the environment only supplies the OpenRouter
+        key/base URL.
       </p>
       <p>
         The embedding model remains special: changing it or its dimensions invalidates the current
@@ -61,7 +62,7 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       <pre><code>curl https://openrouter.ai/api/v1/chat/completions \
   -H "Authorization: Bearer $OPENROUTER_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}'
+  -d '{"model":"qwen/qwen3.7-max","messages":[{"role":"user","content":"ping"}]}'
 </code></pre>
 
       <h2 id="phase-3">Phase 3 verification (transcription)</h2>

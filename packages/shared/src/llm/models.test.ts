@@ -3,17 +3,34 @@ import { describe, expect, it } from 'vitest';
 import { TIMELINE_MODELS } from './models.js';
 
 describe('TIMELINE_MODELS', () => {
-  it('matches OpenRouter metadata for GPT-4o-mini chat-capable roles', () => {
-    const expectedCapabilities = ['chat', 'structured', 'tools', 'vision', 'file'];
+  it('matches OpenRouter metadata for OSS chat-capable roles', () => {
+    expect(TIMELINE_MODELS.extraction).toMatchObject({
+      id: 'deepseek/deepseek-v4-flash',
+      provider: 'openrouter',
+      contextWindowTokens: 1_048_576,
+      capabilities: ['chat', 'structured', 'tools'],
+    });
+    expect(TIMELINE_MODELS.agent).toMatchObject({
+      id: 'qwen/qwen3.7-max',
+      provider: 'openrouter',
+      contextWindowTokens: 1_000_000,
+      capabilities: ['chat', 'structured', 'tools'],
+    });
+    expect(TIMELINE_MODELS.summarization).toMatchObject({
+      id: 'deepseek/deepseek-v4-flash',
+      provider: 'openrouter',
+      contextWindowTokens: 1_048_576,
+      capabilities: ['chat', 'structured', 'tools'],
+    });
+  });
 
-    for (const key of ['extraction', 'agent', 'summarization', 'vision'] as const) {
-      expect(TIMELINE_MODELS[key]).toMatchObject({
-        id: 'openai/gpt-4o-mini',
-        provider: 'openrouter',
-        contextWindowTokens: 128_000,
-        capabilities: expectedCapabilities,
-      });
-    }
+  it('matches OpenRouter metadata for the OSS vision role', () => {
+    expect(TIMELINE_MODELS.vision).toMatchObject({
+      id: 'qwen/qwen3.6-flash',
+      provider: 'openrouter',
+      contextWindowTokens: 1_000_000,
+      capabilities: ['chat', 'structured', 'tools', 'vision', 'video'],
+    });
   });
 
   it('matches OpenRouter metadata for embeddings and transcription', () => {

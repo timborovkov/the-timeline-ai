@@ -3,7 +3,7 @@ export type ModelCapability =
   | 'structured'
   | 'tools'
   | 'vision'
-  | 'file'
+  | 'video'
   | 'embedding'
   | 'transcription';
 
@@ -17,28 +17,28 @@ export interface TimelineModelConfig {
 
 export const TIMELINE_MODELS = {
   extraction: {
-    id: 'openai/gpt-4o-mini',
+    id: 'deepseek/deepseek-v4-flash',
     provider: 'openrouter',
-    contextWindowTokens: 128_000,
-    capabilities: ['chat', 'structured', 'tools', 'vision', 'file'],
+    contextWindowTokens: 1_048_576,
+    capabilities: ['chat', 'structured', 'tools'],
   },
   agent: {
-    id: 'openai/gpt-4o-mini',
+    id: 'qwen/qwen3.7-max',
     provider: 'openrouter',
-    contextWindowTokens: 128_000,
-    capabilities: ['chat', 'structured', 'tools', 'vision', 'file'],
+    contextWindowTokens: 1_000_000,
+    capabilities: ['chat', 'structured', 'tools'],
   },
   summarization: {
-    id: 'openai/gpt-4o-mini',
+    id: 'deepseek/deepseek-v4-flash',
     provider: 'openrouter',
-    contextWindowTokens: 128_000,
-    capabilities: ['chat', 'structured', 'tools', 'vision', 'file'],
+    contextWindowTokens: 1_048_576,
+    capabilities: ['chat', 'structured', 'tools'],
   },
   vision: {
-    id: 'openai/gpt-4o-mini',
+    id: 'qwen/qwen3.6-flash',
     provider: 'openrouter',
-    contextWindowTokens: 128_000,
-    capabilities: ['chat', 'structured', 'tools', 'vision', 'file'],
+    contextWindowTokens: 1_000_000,
+    capabilities: ['chat', 'structured', 'tools', 'vision', 'video'],
   },
   embedding: {
     id: 'openai/text-embedding-3-small',
