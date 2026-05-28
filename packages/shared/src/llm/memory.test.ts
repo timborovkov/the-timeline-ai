@@ -58,6 +58,33 @@ describe('compressMessagesForContext', () => {
     expect(result.messages.at(-1)).toEqual({ role: 'user', content: 'latest question' });
   });
 
+  it('uses the target model context window for compression thresholds', async () => {
+    const messages: ModelMessage[] = [
+      { role: 'user', content: 'compact but over tiny context '.repeat(150) },
+      { role: 'assistant', content: 'older answer' },
+      { role: 'user', content: 'latest question' },
+    ];
+
+    const largeContext = await compressMessagesForContext({
+      system: 'system',
+      messages,
+      model: makeSummaryModel('unused'),
+      modelId: 'test/large',
+      contextWindowTokens: 128_000,
+    });
+    const tinyContext = await compressMessagesForContext({
+      system: 'system',
+      messages,
+      model: makeSummaryModel('Tiny context needed compression.'),
+      modelId: 'test/tiny',
+      contextWindowTokens: 1_000,
+    });
+
+    expect(largeContext.compressed).toBe(false);
+    expect(tinyContext.compressed).toBe(true);
+    expect(tinyContext.triggerTokens).toBe(800);
+  });
+
   it('fences compressed summaries and neutralizes nested external-content tags', async () => {
     const messages: ModelMessage[] = [
       { role: 'user', content: 'old context '.repeat(45_000) },

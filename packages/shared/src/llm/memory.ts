@@ -7,6 +7,7 @@ export interface CompressMessagesInput {
   messages: ModelMessage[];
   model: LanguageModel;
   modelId?: string;
+  contextWindowTokens?: number;
 }
 
 export interface CompressMessagesResult {
@@ -109,7 +110,7 @@ function transcriptForSummary(messages: ModelMessage[]): string {
 export async function compressMessagesForContext(
   input: CompressMessagesInput,
 ): Promise<CompressMessagesResult> {
-  const contextWindow = TIMELINE_MODELS.agent.contextWindowTokens;
+  const contextWindow = input.contextWindowTokens ?? TIMELINE_MODELS.agent.contextWindowTokens;
   const triggerTokens = Math.floor(contextWindow * DEFAULT_CHAT_MEMORY.triggerFraction);
   const estimatedTokens = estimateTextTokens(input.system) + messagesTokenEstimate(input.messages);
   if (estimatedTokens < triggerTokens) {
@@ -160,5 +161,3 @@ export async function compressMessagesForContext(
     summarizedMessages: summarized.length,
   };
 }
-
-export { messagesTokenEstimate };
