@@ -15,12 +15,6 @@ export interface TimelineModelConfig {
 }
 
 export const TIMELINE_MODELS = {
-  chat: {
-    id: 'openai/gpt-4o-mini',
-    provider: 'openrouter',
-    contextWindowTokens: 128_000,
-    capabilities: ['chat', 'structured', 'tools', 'vision'],
-  },
   extraction: {
     id: 'openai/gpt-4o-mini',
     provider: 'openrouter',

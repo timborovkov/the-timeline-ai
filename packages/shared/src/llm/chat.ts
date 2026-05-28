@@ -18,7 +18,7 @@ export interface ChatStructuredInput<TSchema extends ZodTypeAny> {
   schema: TSchema;
   prompt: string;
   system?: string;
-  /** Override the configured extraction/chat model for this call. */
+  /** Override the configured extraction model for this call. */
   model?: string;
 }
 
