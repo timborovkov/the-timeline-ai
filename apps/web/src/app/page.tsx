@@ -432,12 +432,13 @@ function Solution() {
 
 const INPUTS = [
   'TELEGRAM',
-  'GOOGLE MEET',
+  'SLACK',
+  'GOOGLE MEET / ZOOM / TEAMS',
   'EMAIL',
-  'WEB / PWA',
+  'WEB APP',
   'DRIVE UPLOAD',
-  'MCP / CRM',
-  'ZOOM / TEAMS',
+  'MCP SERVERS',
+  '3RD PARTY INTEGRATIONS',
 ] as const;
 
 const WORKSPACE_OBJECTS = [
