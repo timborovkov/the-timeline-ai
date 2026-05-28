@@ -53,13 +53,13 @@
             <td><code>web</code></td>
             <td>App</td>
             <td><code>apps/web/railway.json</code> (Railpack)</td>
-            <td><code>pnpm --filter @timeline/web start</code></td>
+            <td><code>NODE_ENV=production node apps/web/start.mjs</code></td>
           </tr>
           <tr>
             <td><code>worker</code></td>
             <td>App</td>
             <td><code>apps/worker/railway.json</code> (Railpack)</td>
-            <td><code>pnpm --filter @timeline/worker start</code></td>
+            <td><code>NODE_ENV=production node apps/worker/dist/index.js</code></td>
           </tr>
           <tr>
             <td><code>postgres</code></td>
@@ -155,6 +155,12 @@ TURNSTILE_SECRET_KEY=&lt;cloudflare turnstile secret key&gt;
 NODE_ENV=production
 LOG_LEVEL=info
 </code></pre>
+      <p>
+        Keep <code>NODE_ENV</code> set to <code>production</code> in both staging and production
+        Railway environments. Use Railway's environment name and <code>SENTRY_ENVIRONMENT</code> for
+        labels such as <code>staging</code>; Node.js and the app env schema only accept
+        <code>development</code>, <code>test</code>, or <code>production</code>.
+      </p>
       <p>
         Use Railway's "shared variables" feature at the project level for anything used by 2+
         services (everything except service-local overrides).
@@ -292,16 +298,16 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
         <li>
           Railway builds each app service with Railpack using the service's
           <code>railway.json</code> build command. The build installs the full pnpm workspace, so
-          operational scripts are available in <code>railway ssh</code>. The web pre-deploy command
-          checks for <code>pnpm</code>, <code>tsx</code>, the wipe script, and the Drizzle migration
-          journal before applying migrations.
+          operational scripts are available in <code>railway ssh</code>. The deploy images run with
+          <code>NODE_ENV=production</code> and <code>node</code> directly because Corepack's
+          <code>pnpm</code> shims are not active there.
         </li>
         <li>
           Migrations: run as a release-phase pre-deploy command on the <code>web</code> service and
           again from the web start wrapper under a Postgres advisory lock. The pre-deploy command is
           already wired in <code>apps/web/railway.json</code>:
           <pre><code>"preDeployCommand": [
-  "sh -lc 'test -f scripts/env-reset.ts &amp;&amp; test -f packages/db/drizzle/meta/_journal.json &amp;&amp; pnpm exec tsx --version &amp;&amp; node packages/db/dist/migrate.js'"
+  "NODE_ENV=production node packages/db/dist/migrate.js"
 ]
 </code></pre>
           The script (<code>packages/db/src/migrate.ts</code>) is built before deploy, and the

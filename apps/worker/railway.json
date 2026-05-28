@@ -5,7 +5,7 @@
     "buildCommand": "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @timeline/db build && pnpm --filter @timeline/shared build && pnpm --filter @timeline/worker build"
   },
   "deploy": {
-    "startCommand": "pnpm --filter @timeline/worker start",
+    "startCommand": "NODE_ENV=production node apps/worker/dist/index.js",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }

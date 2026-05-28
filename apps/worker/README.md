@@ -22,7 +22,7 @@ pnpm --filter @timeline/worker redocument-embed   -- --team=<teamId> [--target-c
 Production starts the combined worker entry point (see [docs/railway.html](../../docs/railway.html)):
 
 ```bash
-pnpm --filter @timeline/worker start
+NODE_ENV=production node apps/worker/dist/index.js
 ```
 
 ## Where it fits

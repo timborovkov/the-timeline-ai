@@ -88,6 +88,11 @@
         Postmark, Sentry) as <strong>secret</strong>.
       </p>
       <p>
+        Keep <code>NODE_ENV</code> as <code>production</code> for both Railway environments. Use the
+        Railway environment name and <code>SENTRY_ENVIRONMENT</code> for labels like
+        <code>staging</code>; the app rejects <code>NODE_ENV=staging</code>.
+      </p>
+      <p>
         For production abuse controls, also set <code>TURNSTILE_SITE_KEY</code>,
         <code>TURNSTILE_SECRET_KEY</code>, and <code>SUPPORT_EMAIL</code>. Turnstile is only
         rendered on anonymous public forms: email/password registration and
