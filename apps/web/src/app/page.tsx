@@ -1,3 +1,4 @@
+import { CalendarDays, Mail, MessageCircle, Send, Video } from 'lucide-react';
 import Link from 'next/link';
 
 import { AssociationLine } from './_concept-association-line';
@@ -56,6 +57,16 @@ export const metadata: Metadata = {
 
 const CONTACT_HREF = '/help/support';
 
+const NATIVE_INGEST = [
+  { label: 'Telegram', icon: Send },
+  { label: 'Slack', icon: MessageCircle },
+  { label: 'Google Meet', icon: Video },
+  { label: 'Zoom', icon: Video },
+  { label: 'Microsoft Teams', icon: Video },
+  { label: 'Email', icon: Mail },
+  { label: 'Calendar', icon: CalendarDays },
+] as const;
+
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-bg text-fg">
@@ -110,6 +121,7 @@ function StructuredData() {
           'Telegram bot ingest with /ask agent',
           'Slack bot ingest with /ask and @Timeline agent answers',
           'Email ingest via Postmark',
+          'Calendar events in the same operational timeline',
           'Document drive with version history',
           'Meeting transcripts from Google Meet, Microsoft Teams, and Zoom (Recall.ai)',
           'Agent answers with auditable citations',
@@ -149,7 +161,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How is capture done?',
-    a: 'Six surfaces feed one pipeline. (1) Web and PWA: typed notes, audio uploads, drag-drop documents. (2) Telegram bot: voice memos and text in DMs or team groups; /ask runs the same agent as web chat. (3) Slack bot: DMs, bound channels, file attachments, /ask, and @Timeline threaded answers. (4) Email: forward, CC, or BCC to your team address, parsed by Postmark. (5) Document drive: team folders with version history. (6) Meeting bots (Google Meet, Microsoft Teams, Zoom via Recall.ai) — transcripts and action items land in the same pipeline as voice memos.',
+    a: 'Native surfaces feed one pipeline. Telegram and Slack capture chat, voice, files, /ask, and @Timeline context. Google Meet, Zoom, and Microsoft Teams land through meeting bots. Email, calendar events, web notes, drive uploads, MCP servers, and third-party integrations all become cited timeline events.',
   },
   {
     q: 'What models power the agent?',
@@ -301,8 +313,30 @@ function Hero() {
           </div>
           <HeroMock />
         </div>
+        <NativeIngestStrip />
       </div>
     </section>
+  );
+}
+
+function NativeIngestStrip() {
+  return (
+    <div className="mt-14 border-y border-border py-3">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-dim">
+          Native ingest
+        </span>
+        {NATIVE_INGEST.map(({ label, icon: Icon }) => (
+          <span
+            key={label}
+            className="inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted"
+          >
+            <Icon className="size-3.5 text-fg-dim" aria-hidden="true" />
+            {label}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -435,6 +469,7 @@ const INPUTS = [
   'SLACK',
   'GOOGLE MEET / ZOOM / TEAMS',
   'EMAIL',
+  'CALENDAR',
   'WEB APP',
   'DRIVE UPLOAD',
   'MCP SERVERS',
@@ -752,7 +787,7 @@ function HowItWorks() {
     {
       n: '01',
       title: 'Land',
-      body: 'Voice memo, Slack, Telegram, email, upload, or meeting bot. Immutable raw event, team-scoped.',
+      body: 'Voice memo, Slack, Telegram, email, calendar event, upload, or meeting bot. Immutable raw event, team-scoped.',
     },
     {
       n: '02',
@@ -790,33 +825,39 @@ function HowItWorks() {
 function Surfaces() {
   return (
     <Section id="surfaces">
-      <IndexStrip>SURFACES · ONE PIPELINE, MANY MOUTHS</IndexStrip>
-      <div className="mt-10 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
+      <IndexStrip>SURFACES · NATIVE INGEST + EXTENSIBILITY</IndexStrip>
+      <div className="mt-10 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
         <SurfaceTile
-          label="WEB & PWA"
-          body="Typed notes, audio uploads, drag-drop documents. Same shortcuts everywhere."
+          label="TELEGRAM"
+          body="Voice memos, text, and attachments in DMs or team groups. /ask runs the same cited agent."
         />
         <SurfaceTile
-          label="TELEGRAM BOT"
-          body="Voice memos and text in DMs or team groups. /ask runs the same agent as web chat."
+          label="SLACK"
+          body="DMs, bound channels, files, /ask, and @Timeline replies. Thread context becomes searchable memory."
         />
         <SurfaceTile
-          label="SLACK BOT"
-          body="DMs and bound channels become timeline events. /ask is private; @Timeline replies in-thread."
-        />
-        <SurfaceTile label="EMAIL" body="Forward, CC, or BCC to your team address." />
-        <SurfaceTile
-          label="DOCUMENT DRIVE"
-          body="Team folders with version history. Uploads and edits become timeline events."
+          label="MEET / ZOOM / TEAMS"
+          body="Meeting bots transcribe calls and file decisions, tasks, and cited summaries."
         />
         <SurfaceTile
-          label="MEETING BOTS"
-          body="Paste a Meet, Teams, or Zoom link. A silent Recall.ai bot joins, transcribes, and files decisions and tasks."
+          label="EMAIL"
+          body="Forward, CC, or BCC to your team address. Parsed mail lands beside chat and meetings."
         />
         <SurfaceTile
-          label="CUSTOM MCP"
-          coming
-          body="Connect internal tools or any third-party MCP server. No bespoke connectors."
+          label="CALENDAR"
+          body="Scheduled work, all-day events, and time-aware context appear in the same timeline."
+        />
+        <SurfaceTile
+          label="WEB APP"
+          body="Typed notes, audio uploads, drag-drop files, approvals, and cited agent chat."
+        />
+        <SurfaceTile
+          label="DRIVE UPLOAD"
+          body="Team folders with version history. Uploads and edits become searchable document events."
+        />
+        <SurfaceTile
+          label="MCP + INTEGRATIONS"
+          body="Connect MCP servers and third-party systems like CRMs, ERPs, issue trackers, and docs."
         />
       </div>
     </Section>
