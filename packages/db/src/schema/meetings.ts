@@ -12,9 +12,9 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { eventVisibility, rawEvents } from './raw-events.js';
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { eventVisibility, rawEvents } from '#src/schema/raw-events.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 // Phase 10 — Meeting bots. A user pastes a Google Meet / Microsoft Teams /
 // Zoom URL; a silent bot joins via the configured provider (Recall.ai by

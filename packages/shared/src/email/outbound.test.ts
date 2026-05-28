@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { sendTeamInviteEmail } from './outbound.js';
+import { sendTeamInviteEmail } from '#src/email/outbound.js';
 
 const OLD_ENV = process.env;
 

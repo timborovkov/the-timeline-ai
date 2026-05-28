@@ -1,4 +1,4 @@
-import type { PostmarkAddress, PostmarkInbound } from './postmark-schema.js';
+import type { PostmarkAddress, PostmarkInbound } from '#src/email/postmark-schema.js';
 
 /**
  * Parsed address pair shaped for storage in `source_metadata`. Stable JSON

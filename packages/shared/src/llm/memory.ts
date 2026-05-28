@@ -6,7 +6,7 @@ import {
   inputTokenBudgetFor,
   TIMELINE_MODELS,
   truncateTextToTokenBudget,
-} from './models.js';
+} from '#src/llm/models.js';
 
 export interface CompressMessagesInput {
   system: string;

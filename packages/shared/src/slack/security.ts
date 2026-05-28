@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
-import { getEnv } from '../env.js';
+import { getEnv } from '#src/env.js';
 
 const MAX_SKEW_SECONDS = 5 * 60;
 

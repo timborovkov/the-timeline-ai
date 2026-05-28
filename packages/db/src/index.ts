@@ -1,13 +1,13 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-import * as schema from './schema/index.js';
+import * as schema from '#src/schema/index.js';
 
-export * from './schema/index.js';
+export * from '#src/schema/index.js';
 export { schema };
-export { migrateDatabase } from './migrate.js';
-export { postgresResetStatements, resetPostgresSchema } from './reset.js';
-export { waitForMigrations } from './wait-for-migrations.js';
+export { migrateDatabase } from '#src/migrate.js';
+export { postgresResetStatements, resetPostgresSchema } from '#src/reset.js';
+export { waitForMigrations } from '#src/wait-for-migrations.js';
 export type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
 
 type Schema = typeof schema;

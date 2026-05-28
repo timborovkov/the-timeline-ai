@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createJobRecoveryScope } from './index.js';
+import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');

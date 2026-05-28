@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { scheduleMeetingBotAction } from './meetings.js';
-
 import type * as SharedModuleNS from '@timeline/shared';
+
+import { scheduleMeetingBotAction } from '@/app/actions/meetings';
 
 const fakes = vi.hoisted(() => ({
   fakeAuth: vi.fn(),

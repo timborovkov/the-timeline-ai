@@ -10,8 +10,8 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { rawEvents } from './raw-events.js';
-import { teams } from './teams.js';
+import { rawEvents } from '#src/schema/raw-events.js';
+import { teams } from '#src/schema/teams.js';
 
 export const facts = pgTable(
   'facts',

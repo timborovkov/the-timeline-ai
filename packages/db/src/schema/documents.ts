@@ -13,9 +13,9 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { eventVisibility, rawEvents } from './raw-events.js';
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { eventVisibility, rawEvents } from '#src/schema/raw-events.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 // Phase 9 — Team Document Drive. Folders form a tree (self-referential
 // parent_folder_id); documents live in a folder or at the team root

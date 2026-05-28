@@ -10,11 +10,11 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { agentSuggestionItems, agentSuggestions } from './agent-suggestions.js';
-import { entities } from './entities.js';
-import { objectChanges } from './object-changes.js';
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { agentSuggestionItems, agentSuggestions } from '#src/schema/agent-suggestions.js';
+import { entities } from '#src/schema/entities.js';
+import { objectChanges } from '#src/schema/object-changes.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 // In-app notifications. v1 fan-out is in-process inside `updateObject` and
 // the overdue-detector worker. Push/email delivery is out of scope for

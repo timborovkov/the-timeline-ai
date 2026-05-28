@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
-import { verifySvixSignature } from './svix.js';
+import { verifySvixSignature } from '#src/meeting-bots/svix.js';
 
 function sign(secret: string, id: string, ts: number, body: string): string {
   const stripped = secret.startsWith('whsec_') ? secret.slice('whsec_'.length) : secret;

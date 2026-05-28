@@ -7,10 +7,9 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { CitationText } from './citation';
-import { ToolStep } from './tool-step';
-
 import { unpinChatSessionAction } from '@/app/actions/chat';
+import { CitationText } from '@/components/chat/citation';
+import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
 import { cn } from '@/lib/utils';
 

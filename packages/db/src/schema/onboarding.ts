@@ -1,7 +1,7 @@
 import { pgEnum, pgTable, primaryKey, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 export const onboardingStep = pgEnum('onboarding_step', [
   'first_note',

@@ -16,11 +16,10 @@ import {
 import { UnrecoverableError } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 
-import { TIMELINE_MODELS } from '../llm/models.js';
-import { type PointScope, type QdrantPayload, type SourceKind } from '../qdrant/client.js';
-import { type EmbedJobData } from '../queue/queues.js';
-
-import { renderRawEventForAi } from './raw-event-renderer.js';
+import { renderRawEventForAi } from '#src/embedding/raw-event-renderer.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { type PointScope, type QdrantPayload, type SourceKind } from '#src/qdrant/client.js';
+import { type EmbedJobData } from '#src/queue/queues.js';
 
 interface RawEventRow {
   id: string;

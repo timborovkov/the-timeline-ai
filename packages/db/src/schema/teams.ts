@@ -1,6 +1,6 @@
 import { index, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-import { users } from './users.js';
+import { users } from '#src/schema/users.js';
 
 export const teamRole = pgEnum('team_role', ['owner', 'admin', 'member']);
 export const teamInviteSendStatus = pgEnum('team_invite_send_status', [

@@ -14,7 +14,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { processMeetingFinalizeJob } from './meetingFinalize.js';
+import { processMeetingFinalizeJob } from '#src/workers/meetingFinalize.js';
 
 /**
  * Integration tests for the meeting-finalize worker handler. Uses pglite

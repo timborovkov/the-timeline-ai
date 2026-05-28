@@ -1,8 +1,8 @@
 import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-import { entities } from './entities.js';
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { entities } from '#src/schema/entities.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 // Manual, mutable notes attached to a workspace object. Unlike raw_events
 // (append-only), notes can be edited and soft-deleted by their author.

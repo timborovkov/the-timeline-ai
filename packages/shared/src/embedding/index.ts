@@ -1,2 +1,2 @@
-export * from './sources.js';
-export * from './raw-event-renderer.js';
+export * from '#src/embedding/sources.js';
+export * from '#src/embedding/raw-event-renderer.js';

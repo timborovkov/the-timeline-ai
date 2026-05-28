@@ -12,10 +12,10 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 
-import { decryptJson, encryptJson } from '../crypto/secrets.js';
-import { rawEventVisibleToUser, validateVisibilityUserIds } from '../visibility.js';
+import type { IntegrationRow } from '#src/integrations/types.js';
 
-import type { IntegrationRow } from './types.js';
+import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
+import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
 // Phase 11 — Team-scoped integration helpers. Every read/write goes
 // through `withTeam`-style membership enforcement so a forged team_id

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TIMELINE_MODELS } from './models.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 
 describe('TIMELINE_MODELS', () => {
   it('matches OpenRouter metadata for OSS chat-capable roles', () => {

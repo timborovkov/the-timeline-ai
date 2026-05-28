@@ -1,14 +1,13 @@
 import { type Db } from '@timeline/db';
 import { type ModelMessage } from 'ai';
 
-import { getEnv } from '../env.js';
-import { streamChat, type ChatDeps } from '../llm/chat.js';
-import { childLogger } from '../logger.js';
-import { withTeam } from '../team-scope.js';
-import { workspaceTimeContext } from '../time/index.js';
-
-import { AGENT_PROMPT_VERSION, buildSystemPrompt } from './system-prompt.js';
-import { buildAgentTools } from './tools.js';
+import { AGENT_PROMPT_VERSION, buildSystemPrompt } from '#src/agent/system-prompt.js';
+import { buildAgentTools } from '#src/agent/tools.js';
+import { getEnv } from '#src/env.js';
+import { streamChat, type ChatDeps } from '#src/llm/chat.js';
+import { childLogger } from '#src/logger.js';
+import { withTeam } from '#src/team-scope.js';
+import { workspaceTimeContext } from '#src/time/index.js';
 
 const log = childLogger('agent:ask');
 

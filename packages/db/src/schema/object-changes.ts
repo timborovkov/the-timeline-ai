@@ -1,9 +1,9 @@
 import { index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-import { entities } from './entities.js';
-import { rawEvents } from './raw-events.js';
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { entities } from '#src/schema/entities.js';
+import { rawEvents } from '#src/schema/raw-events.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 // Immutable audit log of changes to workspace objects (entities). Every
 // manual edit, every applied agent suggestion, and every system-triggered

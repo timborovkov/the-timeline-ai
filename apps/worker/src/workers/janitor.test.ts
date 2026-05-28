@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { processJanitorTick } from './janitor.js';
+import { processJanitorTick } from '#src/workers/janitor.js';
 
 /**
  * Integration tests for the janitor tick. Uses pglite for Postgres + stub

@@ -13,10 +13,10 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { entities } from './entities.js';
-import { eventVisibility } from './raw-events.js';
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { entities } from '#src/schema/entities.js';
+import { eventVisibility } from '#src/schema/raw-events.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 // Phase 11 — Calendar. A calendar event is a first-class table (not an
 // entity). Each event produces two raw_events rows: one at creation time

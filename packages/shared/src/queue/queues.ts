@@ -1,6 +1,6 @@
 import { Queue } from 'bullmq';
 
-import { getRedisConnection } from './connection.js';
+import { getRedisConnection } from '#src/queue/connection.js';
 
 export const QUEUE_NAMES = {
   transcribe: 'transcribe',

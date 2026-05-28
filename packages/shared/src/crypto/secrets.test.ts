@@ -2,15 +2,14 @@ import { randomBytes } from 'node:crypto';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetEnvForTests } from '../env.js';
-
 import {
   decryptJson,
   decryptSecret,
   encryptJson,
   encryptSecret,
   resetSecretsKeyCacheForTests,
-} from './secrets.js';
+} from '#src/crypto/secrets.js';
+import { resetEnvForTests } from '#src/env.js';
 
 describe('crypto/secrets', () => {
   const originalKey = process.env.SECRETS_ENCRYPTION_KEY;

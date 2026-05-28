@@ -16,22 +16,21 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { encryptJson, resetSecretsKeyCacheForTests } from '../crypto/secrets.js';
-import { resetEnvForTests } from '../env.js';
-
-const askAgentMock = vi.hoisted(() => vi.fn());
-
-vi.mock('../agent/ask.js', () => ({
-  askAgent: askAgentMock,
-}));
-
+import { encryptJson, resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
+import { resetEnvForTests } from '#src/env.js';
 import {
   bindSlackConversation,
   handleSlackEnvelope,
   handleSlackSlashCommand,
   linkSlackUserFromOAuth,
   unbindSlackConversation,
-} from './dispatcher.js';
+} from '#src/slack/dispatcher.js';
+
+const askAgentMock = vi.hoisted(() => vi.fn());
+
+vi.mock('#src/agent/ask.js', () => ({
+  askAgent: askAgentMock,
+}));
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');

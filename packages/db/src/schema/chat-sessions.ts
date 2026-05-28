@@ -1,8 +1,8 @@
 import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-import { entities } from './entities.js';
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { entities } from '#src/schema/entities.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 // Persisted chat conversations. A session belongs to a team and a creator;
 // it can optionally pin to a workspace object so "ask about this deal"

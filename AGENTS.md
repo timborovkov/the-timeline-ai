@@ -64,6 +64,15 @@ tool. When in doubt, invoke the skill.
   No direct OpenAI / OpenRouter SDK calls from app or worker code.
 - **`pnpm` only** (no `npm` / `yarn`). Workspace packages are wired via
   Turborepo; `pnpm -r build` is the canonical build.
+- **Use the repo's canonical import paths.** In `apps/web/src`, use the `@/`
+  alias for source imports and exports instead of relative paths (`../`,
+  `./foo`). The only expected relative side-effect import there is local CSS,
+  such as `./globals.css`. In `apps/worker/src`, `packages/shared/src`, and
+  `packages/db/src`, use the package-local Node `imports` alias (`#src/...`) for
+  internal source imports/exports. Across package boundaries, use the workspace
+  package names (`@timeline/db`, `@timeline/shared`, and exported subpaths)
+  rather than deep relative paths; root scripts should also consume exported
+  `@timeline/*` subpaths instead of reaching into `packages/*/src`.
 - **Run `pnpm validate` before declaring work complete.** Runs
   `format:check`, `typecheck`, `lint`, and `knip` in sequence — the same
   gates CI enforces. Fix failures at the root cause; do not skip.

@@ -1,9 +1,8 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { generateText, type FilePart, type ImagePart, type LanguageModel } from 'ai';
 
-import { getEnv } from '../env.js';
-
-import { TIMELINE_MODELS } from './models.js';
+import { getEnv } from '#src/env.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 
 /**
  * Vision-based text extraction. One inference layer for OCR/transcription of

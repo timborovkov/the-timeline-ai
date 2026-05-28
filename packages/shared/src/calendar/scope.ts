@@ -8,10 +8,10 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
-import { TIMELINE_MODELS } from '../llm/models.js';
-import { getQdrantClient, buildPointId } from '../qdrant/client.js';
-import { enqueueCalendarEventEmbedJob } from '../queue/queues.js';
-import { validateVisibilityUserIds } from '../visibility.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { getQdrantClient, buildPointId } from '#src/qdrant/client.js';
+import { enqueueCalendarEventEmbedJob } from '#src/queue/queues.js';
+import { validateVisibilityUserIds } from '#src/visibility.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
 type CalendarEventSource = 'internal' | 'google' | 'caldav';

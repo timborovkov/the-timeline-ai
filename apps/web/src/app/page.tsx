@@ -1,11 +1,10 @@
 import { CalendarDays, Mail, MessageCircle, Send, Video } from 'lucide-react';
 import Link from 'next/link';
 
-import { IntegrationCloud } from './_integration-cloud';
-
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
+import { IntegrationCloud } from '@/app/_integration-cloud';
 import { Logo, Wordmark } from '@/components/brand/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';

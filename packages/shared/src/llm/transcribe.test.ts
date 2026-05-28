@@ -1,12 +1,11 @@
 import { MockTranscriptionModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetEnvForTests } from '../env.js';
-
-import { TIMELINE_MODELS } from './models.js';
-import { transcribeAudio } from './transcribe.js';
-
 import type { TranscriptionModel } from 'ai';
+
+import { resetEnvForTests } from '#src/env.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { transcribeAudio } from '#src/llm/transcribe.js';
 
 // Tests for the transcribe wrapper. The wrapper delegates to the Vercel AI
 // SDK via the OpenAI provider pointed at OpenRouter; tests inject a mock

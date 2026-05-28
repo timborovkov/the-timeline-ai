@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseCitations } from './citation.js';
+import { parseCitations } from '#src/citation.js';
 
 const EV = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const ENT = '11111111-2222-3333-4444-555555555555';

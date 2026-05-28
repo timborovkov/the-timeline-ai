@@ -3,10 +3,29 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "imports": {
+    "#src/*.js": {
+      "types": "./src/*.ts",
+      "development": "./src/*.ts",
+      "default": "./dist/*.js"
+    }
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./migrate": {
+      "types": "./src/migrate.ts",
+      "development": "./src/migrate.ts",
+      "import": "./dist/migrate.js",
+      "default": "./dist/migrate.js"
+    },
+    "./reset": {
+      "types": "./src/reset.ts",
+      "development": "./src/reset.ts",
+      "import": "./dist/reset.js",
+      "default": "./dist/reset.js"
     }
   },
   "main": "./dist/index.js",
@@ -16,9 +35,9 @@
     "dev": "tsc -p tsconfig.json --watch",
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "generate": "drizzle-kit generate",
-    "migrate": "drizzle-kit migrate",
-    "studio": "drizzle-kit studio"
+    "generate": "NODE_OPTIONS=--conditions=development drizzle-kit generate",
+    "migrate": "NODE_OPTIONS=--conditions=development drizzle-kit migrate",
+    "studio": "NODE_OPTIONS=--conditions=development drizzle-kit studio"
   },
   "dependencies": {
     "drizzle-orm": "^0.38.0",

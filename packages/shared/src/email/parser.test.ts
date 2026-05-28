@@ -10,9 +10,9 @@ import {
   parseReferences,
   senderAuthVerdict,
   stripQuotedReply,
-} from './parser.js';
-import { postmarkInboundSchema } from './postmark-schema.js';
-import { verifyPostmarkBasicAuth } from './secret.js';
+} from '#src/email/parser.js';
+import { postmarkInboundSchema } from '#src/email/postmark-schema.js';
+import { verifyPostmarkBasicAuth } from '#src/email/secret.js';
 
 // Pure-function tests that don't require Postgres. End-to-end ingest is
 // verified manually via the Postmark test inbox documented in

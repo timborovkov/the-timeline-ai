@@ -16,8 +16,8 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { renderRawEventForAi } from './raw-event-renderer.js';
-import { buildEmbeddingPlan } from './sources.js';
+import { renderRawEventForAi } from '#src/embedding/raw-event-renderer.js';
+import { buildEmbeddingPlan } from '#src/embedding/sources.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');

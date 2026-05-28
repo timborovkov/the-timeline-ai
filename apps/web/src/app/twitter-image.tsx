@@ -3,7 +3,7 @@
 // generator so the rendered HTML carries both `og:image` and
 // `twitter:image`. Metadata config (runtime/alt/size/contentType) MUST
 // be declared inline; Next's metadata analyzer can't follow re-exports.
-export { default } from './opengraph-image';
+export { default } from '@/app/opengraph-image';
 
 export const runtime = 'edge';
 export const alt = 'The Timeline — the operations log your team can talk to';

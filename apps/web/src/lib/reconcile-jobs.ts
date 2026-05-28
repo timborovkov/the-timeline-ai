@@ -2,7 +2,7 @@ import { facts as factsTable, rawEvents } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
 import { and, eq, isNotNull, isNull, lt, notExists, sql } from 'drizzle-orm';
 
-import { db } from './db';
+import { db } from '@/lib/db';
 
 const log = childLogger('web:reconcile-jobs');
 

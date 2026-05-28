@@ -1,8 +1,8 @@
 import { index, pgEnum, pgTable, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
-import { entities } from './entities.js';
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { entities } from '#src/schema/entities.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 // Explicit, human/agent-authored links between workspace objects. The
 // timeline's co-occurrence signal stays as a derived view (computed on read

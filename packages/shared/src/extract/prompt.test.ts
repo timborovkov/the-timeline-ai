@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildExtractionPrompt } from './prompt.js';
+import { buildExtractionPrompt } from '#src/extract/prompt.js';
 
 describe('buildExtractionPrompt', () => {
   it('includes the current event under a labelled header', () => {

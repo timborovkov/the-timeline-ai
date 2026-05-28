@@ -16,28 +16,28 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
-import { createAuditScope } from './audit/scope.js';
-import { createCalendarScope } from './calendar/scope.js';
-import { createDocumentScope } from './documents/scope.js';
-import { createIntegrationScope } from './integrations/scope.js';
-import { createJobRecoveryScope } from './job-recovery/index.js';
-import { embed as defaultEmbed, type EmbedResult } from './llm/embed.js';
-import { TIMELINE_MODELS } from './llm/models.js';
-import { createMcpScope } from './mcp/scope.js';
-import { createMeetingScope } from './meetings/scope.js';
-import { createObjectScope } from './objects/index.js';
-import { createOnboardingScope } from './onboarding/index.js';
-import { decodeCursor, pageWindow } from './pagination.js';
+import { createAuditScope } from '#src/audit/scope.js';
+import { createCalendarScope } from '#src/calendar/scope.js';
+import { createDocumentScope } from '#src/documents/scope.js';
+import { createIntegrationScope } from '#src/integrations/scope.js';
+import { createJobRecoveryScope } from '#src/job-recovery/index.js';
+import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { createMcpScope } from '#src/mcp/scope.js';
+import { createMeetingScope } from '#src/meetings/scope.js';
+import { createObjectScope } from '#src/objects/index.js';
+import { createOnboardingScope } from '#src/onboarding/index.js';
+import { decodeCursor, pageWindow } from '#src/pagination.js';
 import {
   buildPointId,
   getQdrantClient,
   type SearchHit,
   type SearchOpts,
   type SourceKind,
-} from './qdrant/client.js';
-import { enqueueEmbedJob } from './queue/queues.js';
-import { createSuggestionScope } from './suggestions/index.js';
-import { normalizeVisibilityUserIds, rawEventVisibleToUser } from './visibility.js';
+} from '#src/qdrant/client.js';
+import { enqueueEmbedJob } from '#src/queue/queues.js';
+import { createSuggestionScope } from '#src/suggestions/index.js';
+import { normalizeVisibilityUserIds, rawEventVisibleToUser } from '#src/visibility.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.

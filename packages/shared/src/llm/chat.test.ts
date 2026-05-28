@@ -2,12 +2,11 @@ import { MockLanguageModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { resetEnvForTests } from '../env.js';
-
-import { chatStructured, resolveAgentModelId, streamChat } from './chat.js';
-import { TIMELINE_MODELS } from './models.js';
-
 import type { LanguageModel } from 'ai';
+
+import { resetEnvForTests } from '#src/env.js';
+import { chatStructured, resolveAgentModelId, streamChat } from '#src/llm/chat.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 
 const ENV_BACKUP = { ...process.env };
 

@@ -10,9 +10,8 @@ import {
 } from 'ai';
 import { type z, type ZodTypeAny } from 'zod';
 
-import { getEnv } from '../env.js';
-
-import { TIMELINE_MODELS } from './models.js';
+import { getEnv } from '#src/env.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 
 export interface ChatStructuredInput<TSchema extends ZodTypeAny> {
   schema: TSchema;

@@ -1,9 +1,8 @@
 import { type Db } from '@timeline/db';
 
-import { childLogger } from '../logger.js';
-import { withTeam } from '../team-scope.js';
-
-import { resolveBearerKey } from './keys.js';
+import { childLogger } from '#src/logger.js';
+import { resolveBearerKey } from '#src/mcp-server/keys.js';
+import { withTeam } from '#src/team-scope.js';
 
 const log = childLogger('mcp-server');
 

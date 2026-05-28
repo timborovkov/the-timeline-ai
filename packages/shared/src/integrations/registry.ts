@@ -1,10 +1,9 @@
-import { getEnv } from '../env.js';
+import type { IntegrationProvider } from '#src/integrations/types.js';
 
-import { githubProvider } from './providers/github.js';
-import { googleDriveProvider } from './providers/google-drive.js';
-import { linearProvider } from './providers/linear.js';
-
-import type { IntegrationProvider } from './types.js';
+import { getEnv } from '#src/env.js';
+import { githubProvider } from '#src/integrations/providers/github.js';
+import { googleDriveProvider } from '#src/integrations/providers/google-drive.js';
+import { linearProvider } from '#src/integrations/providers/linear.js';
 
 // Phase 11 — Provider registry + integration catalog.
 //

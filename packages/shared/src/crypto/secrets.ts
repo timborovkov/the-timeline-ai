@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
-import { getEnv } from '../env.js';
+import { getEnv } from '#src/env.js';
 
 // AES-256-GCM secret helper used by Phase 11 integrations. Every refresh
 // token, bearer token, header value, and MCP auth blob is encrypted at

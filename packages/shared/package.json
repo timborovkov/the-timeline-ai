@@ -3,6 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "imports": {
+    "#src/*.js": {
+      "types": "./src/*.ts",
+      "development": "./src/*.ts",
+      "default": "./dist/*.js"
+    }
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -24,6 +31,12 @@
       "import": "./dist/env.js",
       "types": "./dist/env.d.ts"
     },
+    "./env-reset": {
+      "types": "./src/env-reset.ts",
+      "development": "./src/env-reset.ts",
+      "import": "./dist/env-reset.js",
+      "default": "./dist/env-reset.js"
+    },
     "./email": {
       "import": "./dist/email/index.js",
       "types": "./dist/email/index.d.ts"
@@ -39,6 +52,12 @@
     "./slug": {
       "import": "./dist/slug.js",
       "types": "./dist/slug.d.ts"
+    },
+    "./s3/client": {
+      "types": "./src/s3/client.ts",
+      "development": "./src/s3/client.ts",
+      "import": "./dist/s3/client.js",
+      "default": "./dist/s3/client.js"
     },
     "./citation": {
       "import": "./dist/citation.js",
@@ -56,7 +75,7 @@
     "dev": "tsc -p tsconfig.json --watch",
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "NODE_OPTIONS=--conditions=development vitest run"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.46",

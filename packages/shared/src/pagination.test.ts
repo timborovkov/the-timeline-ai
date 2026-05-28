@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { decodeCursor, encodeCursor, pageWindow } from './pagination.js';
+import { decodeCursor, encodeCursor, pageWindow } from '#src/pagination.js';
 
 describe('cursor pagination helpers', () => {
   it('round-trips opaque time/id cursors', () => {

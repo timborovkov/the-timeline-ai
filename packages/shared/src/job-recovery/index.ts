@@ -14,10 +14,10 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, inArray, isNotNull, isNull, lt, notExists, or, sql } from 'drizzle-orm';
 
-import * as queue from '../queue/index.js';
-import { rawEventVisibleToUser } from '../visibility.js';
-
 import type { JobType } from 'bullmq';
+
+import * as queue from '#src/queue/index.js';
+import { rawEventVisibleToUser } from '#src/visibility.js';
 
 type TeamRole = 'owner' | 'admin' | 'member';
 

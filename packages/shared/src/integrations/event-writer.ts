@@ -1,9 +1,9 @@
 import { type Db, entities, rawEvents } from '@timeline/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
-import { enqueueEmbedJob, enqueueObjectEmbedJob } from '../queue/queues.js';
+import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integrations/types.js';
 
-import type { IntegrationEvent, IntegrationRow, ObjectMapping } from './types.js';
+import { enqueueEmbedJob, enqueueObjectEmbedJob } from '#src/queue/queues.js';
 
 // Phase 11 — Persist normalized integration events into raw_events with
 // source='integration' + dedup_key. The partial unique index

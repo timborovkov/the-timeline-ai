@@ -64,6 +64,59 @@ export default tseslint.config(
     },
   },
   {
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'ImportDeclaration[source.value=/^\\.(?!.*\\.css$)/]',
+          message: 'Use the @/ alias for web source imports instead of relative paths.',
+        },
+        {
+          selector: 'ExportNamedDeclaration[source.value=/^\\.(?!.*\\.css$)/]',
+          message: 'Use the @/ alias for web source exports instead of relative paths.',
+        },
+        {
+          selector: 'ExportAllDeclaration[source.value=/^\\.(?!.*\\.css$)/]',
+          message: 'Use the @/ alias for web source exports instead of relative paths.',
+        },
+      ],
+    },
+  },
+  {
+    files: ['apps/worker/src/**/*.ts', 'packages/{db,shared}/src/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'ImportDeclaration[source.value=/^\\./]',
+          message: 'Use the package-local #src/ alias for internal package source imports.',
+        },
+        {
+          selector: 'ExportNamedDeclaration[source.value=/^\\./]',
+          message: 'Use the package-local #src/ alias for internal package source exports.',
+        },
+        {
+          selector: 'ExportAllDeclaration[source.value=/^\\./]',
+          message: 'Use the package-local #src/ alias for internal package source exports.',
+        },
+      ],
+    },
+  },
+  {
+    files: ['scripts/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'ImportDeclaration[source.value=/^\\.\\.\\/packages\\//]',
+          message:
+            'Use exported @timeline/* package subpaths instead of deep relative package imports.',
+        },
+      ],
+    },
+  },
+  {
     files: ['**/*.config.{js,mjs,ts}', '**/scripts/**'],
     rules: {
       'no-console': 'off',

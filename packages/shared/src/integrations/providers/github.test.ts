@@ -2,9 +2,8 @@ import { createHmac } from 'node:crypto';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetEnvForTests } from '../../env.js';
-
-import { githubProvider, verifyGithubSignature } from './github.js';
+import { resetEnvForTests } from '#src/env.js';
+import { githubProvider, verifyGithubSignature } from '#src/integrations/providers/github.js';
 
 function expectFirst<T>(arr: T[]): T {
   const first = arr[0];

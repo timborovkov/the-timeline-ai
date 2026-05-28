@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetEnvForTests } from '../env.js';
-
-import { createRecallProvider } from './recall.js';
+import { resetEnvForTests } from '#src/env.js';
+import { createRecallProvider } from '#src/meeting-bots/recall.js';
 
 const ENV_BACKUP = { ...process.env };
 

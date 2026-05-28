@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { auditTargetPresentation, canSeeAuditTarget } from './scope.js';
+import { auditTargetPresentation, canSeeAuditTarget } from '#src/audit/scope.js';
 
 describe('canSeeAuditTarget', () => {
   it('allows team-visible targets', () => {

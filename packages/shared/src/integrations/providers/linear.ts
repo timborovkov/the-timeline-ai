@@ -1,8 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-import { getEnv } from '../../env.js';
-import { childLogger } from '../../logger.js';
-
 import type {
   IntegrationEvent,
   IntegrationProvider,
@@ -10,7 +7,10 @@ import type {
   OAuthStartInput,
   ProviderResource,
   SyncContext,
-} from '../types.js';
+} from '#src/integrations/types.js';
+
+import { getEnv } from '#src/env.js';
+import { childLogger } from '#src/logger.js';
 
 // Phase 11 — Linear provider.
 //

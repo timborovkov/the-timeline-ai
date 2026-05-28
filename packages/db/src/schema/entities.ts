@@ -13,9 +13,9 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { rawEvents } from './raw-events.js';
-import { teams } from './teams.js';
-import { users } from './users.js';
+import { rawEvents } from '#src/schema/raw-events.js';
+import { teams } from '#src/schema/teams.js';
+import { users } from '#src/schema/users.js';
 
 // Phase 8 widens this so a single `entities` table backs every durable
 // workspace object — not just extraction artifacts. New values are appended;

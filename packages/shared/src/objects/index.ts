@@ -25,12 +25,12 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
-import { childLogger } from '../logger.js';
-import { decodeCursor, pageWindow } from '../pagination.js';
-import * as embedQueue from '../queue/queues.js';
-import { rawEventVisibleToUser } from '../visibility.js';
+import type { TeamScopeCore } from '#src/team-scope.js';
 
-import type { TeamScopeCore } from '../team-scope.js';
+import { childLogger } from '#src/logger.js';
+import { decodeCursor, pageWindow } from '#src/pagination.js';
+import * as embedQueue from '#src/queue/queues.js';
+import { rawEventVisibleToUser } from '#src/visibility.js';
 
 const embedLog = childLogger('objects:embed');
 

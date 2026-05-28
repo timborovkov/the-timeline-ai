@@ -7,7 +7,7 @@ import { calendarEvents, rawEvents } from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { buildPlanForTests } from './embed.js';
+import { buildPlanForTests } from '#src/workers/embed.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../../../packages/db/drizzle');

@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetEnvForTests } from '../env.js';
-
-import { signOAuthState, verifyOAuthState } from './oauth-state.js';
+import { resetEnvForTests } from '#src/env.js';
+import { signOAuthState, verifyOAuthState } from '#src/mcp/oauth-state.js';
 
 describe('mcp/oauth-state', () => {
   const originalSecret = process.env.AUTH_SECRET;

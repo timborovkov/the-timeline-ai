@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { getEnv, resetEnvForTests } from './env.js';
+import { getEnv, resetEnvForTests } from '#src/env.js';
 
 const ENV_BACKUP = { ...process.env };
 

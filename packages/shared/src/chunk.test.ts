@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { chunkText, estimateTokens } from './chunk.js';
+import { chunkText, estimateTokens } from '#src/chunk.js';
 
 describe('estimateTokens', () => {
   it('returns 0 for empty input', () => {

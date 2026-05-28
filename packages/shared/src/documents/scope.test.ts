@@ -7,7 +7,7 @@ import { type Db } from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { withTeam } from '../team-scope.js';
+import { withTeam } from '#src/team-scope.js';
 
 /**
  * Real-DB integration tests for the Phase 9 document scope. Uses pglite

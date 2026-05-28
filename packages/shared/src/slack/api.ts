@@ -1,4 +1,4 @@
-import type { SlackFile } from './types.js';
+import type { SlackFile } from '#src/slack/types.js';
 
 export interface SlackConversation {
   id: string;

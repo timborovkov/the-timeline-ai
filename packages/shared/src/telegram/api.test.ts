@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { HttpTelegramApi } from './api.js';
+import { HttpTelegramApi } from '#src/telegram/api.js';
 
 describe('HttpTelegramApi file downloads', () => {
   afterEach(() => {
