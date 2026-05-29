@@ -3,7 +3,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import { auditLog, integrations, rawEvents, teamVisibilityDefaults } from '@timeline/db';
+import {
+  auditLog,
+  documents,
+  documentVersions,
+  integrations,
+  rawEvents,
+  teamVisibilityDefaults,
+} from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -412,6 +419,65 @@ describe('withTeam namespaced port', () => {
     expect(rows[0]).toMatchObject({
       action: 'event.detail_read',
       targetOwnerUserId: USER_A,
+    });
+  });
+
+  it('does not leak private document impact through team-visible source events', async () => {
+    const documentId = '00000000-0000-0000-0000-000000000502';
+    const versionId = '00000000-0000-0000-0000-000000000503';
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const teammateScope = withTeam(db as never, TEAM_A, USER_B);
+
+    const event = await ownerScope.timeline.createEvent({
+      authorUserId: USER_A,
+      source: 'document',
+      contentText: 'Uploaded board-private planning notes',
+      visibility: 'team',
+    });
+
+    await db.insert(documents).values({
+      id: documentId,
+      teamId: TEAM_A,
+      name: 'Private planning notes.pdf',
+      ownerUserId: USER_A,
+      visibility: 'team',
+    });
+    await db.insert(documentVersions).values({
+      id: versionId,
+      teamId: TEAM_A,
+      documentId,
+      version: 1,
+      objectKey: 'documents/private-planning-notes.pdf',
+      byteSize: 1024,
+      contentType: 'application/pdf',
+      checksumSha256: 'test-checksum',
+      uploadedByUserId: USER_A,
+      sourceEventId: event.id,
+      processingStatus: 'embedded',
+    });
+
+    await expect(teammateScope.timeline.listImpactItems([event.id])).resolves.toMatchObject({
+      [event.id]: [
+        expect.objectContaining({
+          kind: 'document',
+          label: 'Private planning notes.pdf',
+        }),
+      ],
+    });
+
+    await ownerScope.documents.setDocumentVisibility({
+      id: documentId,
+      visibility: 'private',
+    });
+
+    await expect(teammateScope.timeline.listImpactItems([event.id])).resolves.toEqual({});
+    await expect(ownerScope.timeline.listImpactItems([event.id])).resolves.toMatchObject({
+      [event.id]: [
+        expect.objectContaining({
+          kind: 'document',
+          label: 'Private planning notes.pdf',
+        }),
+      ],
     });
   });
 

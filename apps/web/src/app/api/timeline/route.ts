@@ -9,30 +9,43 @@ import {
 } from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
 
+import type { TimelineEvent } from '@/lib/use-paginated-queries';
+
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { parseTimelineImpact, parseTimelineSource } from '@/lib/timeline-controls';
+import { collectTimelinePage } from '@/lib/timeline-page';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const EVENT_SOURCES = new Set([
-  'web',
-  'telegram',
-  'email',
-  'system',
-  'document',
-  'meeting',
-  'integration',
-  'calendar',
-  'slack',
-]);
-
 function parseDate(input: string | null): Date | undefined {
   if (!input) return undefined;
   const d = new Date(input);
   return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+function serializeTimelineEvent(event: {
+  id: string;
+  teamId: string;
+  authorUserId: string | null;
+  source: TimelineEvent['source'];
+  contentText: string | null;
+  contentAudioUrl: string | null;
+  occurredAt: Date;
+  createdAt: Date;
+  visibility: TimelineEvent['visibility'];
+  visibilityUserIds: string[] | null;
+  visibilityOwnerUserId: string | null;
+  sourceMetadata: unknown;
+}): TimelineEvent {
+  return {
+    ...event,
+    occurredAt: event.occurredAt.toISOString(),
+    createdAt: event.createdAt.toISOString(),
+  };
 }
 
 async function signAudio(events: { id: string; contentAudioUrl: string | null }[]) {
@@ -71,9 +84,8 @@ export async function GET(req: Request): Promise<Response> {
   const author = url.searchParams.get('author');
   const authorUserId = author && UUID_RE.test(author) ? author : undefined;
   const cursor = url.searchParams.get('cursor');
-  const sourceParam = url.searchParams.get('source');
-  const source = sourceParam && EVENT_SOURCES.has(sourceParam) ? sourceParam : undefined;
-  const impact = url.searchParams.get('impact') ?? undefined;
+  const source = parseTimelineSource(url.searchParams.get('source') ?? undefined);
+  const impact = parseTimelineImpact(url.searchParams.get('impact') ?? undefined);
   const from = parseDate(url.searchParams.get('from'));
   const toRaw = parseDate(url.searchParams.get('to'));
   const to = toRaw ? new Date(toRaw.getTime() + 24 * 60 * 60 * 1000) : undefined;
@@ -93,13 +105,24 @@ export async function GET(req: Request): Promise<Response> {
     cursor,
   ]);
   const page = await cachedJson(key, 30, async () => {
-    const result = await scope.timeline.listEventsPage({
-      authorUserId,
-      from,
-      to,
-      source,
+    const result = await collectTimelinePage({
       cursor,
-      limit: 30,
+      impact,
+      fetchPage: async ({ cursor: pageCursor, limit }) => {
+        const eventsPage = await scope.timeline.listEventsPage({
+          authorUserId,
+          from,
+          to,
+          source,
+          cursor: pageCursor ?? undefined,
+          limit,
+        });
+        return {
+          items: eventsPage.items.map(serializeTimelineEvent),
+          nextCursor: eventsPage.nextCursor,
+        };
+      },
+      hydrateImpact: (eventIds) => scope.timeline.listImpactItems(eventIds),
     });
     const authorIds = Array.from(
       new Set(result.items.map((e) => e.authorUserId).filter((v): v is string => v !== null)),
@@ -111,16 +134,11 @@ export async function GET(req: Request): Promise<Response> {
             .from(users)
             .where(inArray(users.id, authorIds))
         : [];
-    const impactItems = await scope.timeline.listImpactItems(result.items.map((event) => event.id));
     return {
-      items: result.items.map((event) => ({
-        ...event,
-        occurredAt: event.occurredAt.toISOString(),
-        createdAt: event.createdAt.toISOString(),
-      })),
+      items: result.items,
       nextCursor: result.nextCursor,
       authors: Object.fromEntries(authorRows.map((row) => [row.id, row])),
-      impactItems,
+      impactItems: result.impactItems,
     };
   });
 

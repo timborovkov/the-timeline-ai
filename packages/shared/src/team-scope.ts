@@ -680,6 +680,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         ),
       ),
     );
+    const documentVisibility = or(
+      eq(documents.visibility, 'team'),
+      and(eq(documents.visibility, 'private'), eq(documents.ownerUserId, userId)),
+      and(
+        eq(documents.visibility, 'specific_users'),
+        sql`${userId}::uuid = ANY(${documents.visibilityUserIds})`,
+      ),
+    );
 
     const [suggestionRows, objectChangeRows, entityRows, documentRows, calendarRows] =
       await Promise.all([
@@ -754,6 +762,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
               eq(documentVersions.teamId, teamId),
               inArray(documentVersions.sourceEventId, ids),
               isNull(documents.deletedAt),
+              documentVisibility,
             ),
           ),
         db
@@ -787,11 +796,19 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             ? `/app/objects/${targetId}`
             : '/app/approvals';
       pushTimelineImpact(impact, row.rawEventId, {
-        kind: row.itemStatus === 'pending' ? 'approval' : kind,
+        kind,
         label: row.title,
         href,
         status: row.itemStatus === 'pending' ? 'pending' : row.suggestionStatus,
       });
+      if (row.itemStatus === 'pending') {
+        pushTimelineImpact(impact, row.rawEventId, {
+          kind: 'approval',
+          label: row.title,
+          href: '/app/approvals',
+          status: 'pending',
+        });
+      }
     }
 
     for (const row of objectChangeRows) {
