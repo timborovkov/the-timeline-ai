@@ -14,7 +14,7 @@ import type { ImpactItem } from '@/lib/timeline-moments';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
 
-interface TimelinePage {
+export interface TimelinePage {
   items: TimelineEvent[];
   nextCursor: string | null;
   authors: Record<string, { id: string; name: string | null; email: string }>;
@@ -22,7 +22,7 @@ interface TimelinePage {
   impactItems: Record<string, ImpactItem[]>;
 }
 
-interface DocumentListPage {
+export interface DocumentListPage {
   items: {
     id: string;
     name: string;

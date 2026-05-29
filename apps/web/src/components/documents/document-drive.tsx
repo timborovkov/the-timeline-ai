@@ -16,7 +16,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { queryKeys } from '@/lib/query-keys';
-import { useDocumentListQuery } from '@/lib/use-paginated-queries';
+import { type DocumentListPage, useDocumentListQuery } from '@/lib/use-paginated-queries';
 
 interface FolderItem {
   id: string;
@@ -32,11 +32,6 @@ interface DocumentItem {
   updatedAt: string;
   ownerUserId: string | null;
   optimistic?: boolean;
-}
-
-interface DocumentListPage {
-  items: DocumentItem[];
-  nextCursor: string | null;
 }
 
 interface Crumb {

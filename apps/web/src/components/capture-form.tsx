@@ -15,18 +15,11 @@ import { AudioRecorder, type RecordedClip } from '@/components/audio-recorder';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { queryKeys } from '@/lib/query-keys';
-import { type TimelineEvent } from '@/lib/use-paginated-queries';
+import { type TimelineEvent, type TimelinePage } from '@/lib/use-paginated-queries';
 import { cn } from '@/lib/utils';
 
 function baseMimeType(mt: string): string {
   return mt.split(';')[0]?.trim() ?? mt;
-}
-
-interface TimelinePageData {
-  items: TimelineEvent[];
-  nextCursor: string | null;
-  authors: Record<string, { id: string; name: string | null; email: string }>;
-  audioUrls: Record<string, string>;
 }
 
 interface Props {
@@ -99,7 +92,7 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters }
       sourceMetadata: { optimistic: true },
     };
     if (!filterAllowsEvent(timelineFilters, event)) return null;
-    queryClient.setQueriesData<InfiniteData<TimelinePageData, string | null>>(
+    queryClient.setQueriesData<InfiniteData<TimelinePage, string | null>>(
       { queryKey: queryKeys.timeline(timelineFilters), exact: true },
       (previous) => {
         if (!previous?.pages[0]) return previous;
@@ -124,7 +117,7 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters }
   }
 
   function removeOptimisticTextEvent(id: string): void {
-    queryClient.setQueriesData<InfiniteData<TimelinePageData, string | null>>(
+    queryClient.setQueriesData<InfiniteData<TimelinePage, string | null>>(
       { queryKey: queryKeys.timeline(timelineFilters), exact: true },
       (previous) => {
         if (!previous) return previous;
