@@ -1,11 +1,18 @@
 import {
   type Db,
   auditLog,
+  agentSuggestionEvidence,
+  agentSuggestionItems,
+  agentSuggestions,
+  calendarEvents,
+  documents,
+  documentVersions,
   entities,
   entityType,
   eventSource,
   factEntities,
   facts as factsTable,
+  objectChanges,
   rawEvents,
   teamMembers,
   teamVisibilityDefaults,
@@ -83,11 +90,29 @@ export interface EventListFilters {
    * Narrow to a specific `event_source` value. Pushes the predicate into
    * SQL so `limit` bounds the matching rows (not the pre-filter window).
    * Mirrors the pg enum: 'web' | 'telegram' | 'slack' | 'email' |
-   * 'system' | 'document' | 'meeting' | 'integration'.
+   * 'system' | 'document' | 'meeting' | 'integration' | 'calendar'.
    */
   source?: string;
   limit?: number;
   cursor?: string | null;
+}
+
+export type TimelineImpactKind =
+  | 'task'
+  | 'board'
+  | 'object'
+  | 'calendar'
+  | 'document'
+  | 'decision'
+  | 'approval';
+
+export interface TimelineImpactItem {
+  kind: TimelineImpactKind;
+  label: string;
+  href?: string;
+  count?: number;
+  status?: string;
+  sourceEventId?: string;
 }
 
 export interface CreateEventInput {
@@ -612,6 +637,238 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       .limit(filters.limit ?? 200);
   }
 
+  function pushTimelineImpact(
+    map: Map<string, TimelineImpactItem[]>,
+    rawEventId: string | null | undefined,
+    item: Omit<TimelineImpactItem, 'sourceEventId'>,
+  ) {
+    if (!rawEventId) return;
+    const existing = map.get(rawEventId) ?? [];
+    const next: TimelineImpactItem = { ...item, sourceEventId: rawEventId };
+    const key = `${next.kind}:${next.label}:${next.href ?? ''}:${next.status ?? ''}`;
+    if (
+      !existing.some(
+        (candidate) =>
+          `${candidate.kind}:${candidate.label}:${candidate.href ?? ''}:${candidate.status ?? ''}` ===
+          key,
+      )
+    ) {
+      existing.push(next);
+    }
+    map.set(rawEventId, existing);
+  }
+
+  async function listTimelineImpactItems(
+    rawEventIds: string[],
+  ): Promise<Record<string, TimelineImpactItem[]>> {
+    const ids = [...new Set(rawEventIds.filter((id) => UUID_RE.test(id)))];
+    if (ids.length === 0) return {};
+    await ensureMember();
+
+    const impact = new Map<string, TimelineImpactItem[]>();
+    const suggestionVisibility = and(
+      eq(agentSuggestions.teamId, teamId),
+      or(
+        eq(agentSuggestions.visibility, 'team'),
+        and(
+          eq(agentSuggestions.visibility, 'private'),
+          eq(agentSuggestions.visibilityOwnerUserId, userId),
+        ),
+        and(
+          eq(agentSuggestions.visibility, 'specific_users'),
+          sql`${userId}::uuid = ANY(${agentSuggestions.visibilityUserIds})`,
+        ),
+      ),
+    );
+    const documentVisibility = or(
+      eq(documents.visibility, 'team'),
+      and(eq(documents.visibility, 'private'), eq(documents.ownerUserId, userId)),
+      and(
+        eq(documents.visibility, 'specific_users'),
+        sql`${userId}::uuid = ANY(${documents.visibilityUserIds})`,
+      ),
+    );
+    const calendarVisibility = or(
+      eq(calendarEvents.visibility, 'team'),
+      and(eq(calendarEvents.visibility, 'private'), eq(calendarEvents.createdByUserId, userId)),
+      and(
+        eq(calendarEvents.visibility, 'specific_users'),
+        sql`${userId}::uuid = ANY(${calendarEvents.visibilityUserIds})`,
+      ),
+    );
+
+    const [suggestionRows, objectChangeRows, entityRows, documentRows, calendarRows] =
+      await Promise.all([
+        db
+          .select({
+            rawEventId: agentSuggestionEvidence.rawEventId,
+            suggestionId: agentSuggestions.id,
+            suggestionStatus: agentSuggestions.status,
+            itemStatus: agentSuggestionItems.status,
+            targetKind: agentSuggestionItems.targetKind,
+            targetId: agentSuggestionItems.targetId,
+            resultId: agentSuggestionItems.resultId,
+            title: agentSuggestionItems.title,
+          })
+          .from(agentSuggestionEvidence)
+          .innerJoin(
+            agentSuggestions,
+            eq(agentSuggestionEvidence.suggestionId, agentSuggestions.id),
+          )
+          .innerJoin(
+            agentSuggestionItems,
+            eq(agentSuggestionItems.suggestionId, agentSuggestions.id),
+          )
+          .where(
+            and(
+              eq(agentSuggestionEvidence.teamId, teamId),
+              inArray(agentSuggestionEvidence.rawEventId, ids),
+              suggestionVisibility,
+            ),
+          ),
+        db
+          .select({
+            rawEventId: objectChanges.sourceEventId,
+            entityId: objectChanges.entityId,
+            entityName: entities.canonicalName,
+            entityType: entities.type,
+            field: objectChanges.field,
+            status: objectChanges.status,
+            note: objectChanges.note,
+          })
+          .from(objectChanges)
+          .innerJoin(entities, eq(objectChanges.entityId, entities.id))
+          .where(and(eq(objectChanges.teamId, teamId), inArray(objectChanges.sourceEventId, ids))),
+        db
+          .select({
+            rawEventId: entities.sourceEventId,
+            entityId: entities.id,
+            entityName: entities.canonicalName,
+            entityType: entities.type,
+            status: entities.status,
+          })
+          .from(entities)
+          .where(
+            and(
+              eq(entities.teamId, teamId),
+              inArray(entities.sourceEventId, ids),
+              isNull(entities.archivedAt),
+              isNull(entities.mergedIntoId),
+            ),
+          ),
+        db
+          .select({
+            rawEventId: documentVersions.sourceEventId,
+            documentId: documents.id,
+            documentName: documents.name,
+            status: documentVersions.processingStatus,
+          })
+          .from(documentVersions)
+          .innerJoin(documents, eq(documentVersions.documentId, documents.id))
+          .where(
+            and(
+              eq(documentVersions.teamId, teamId),
+              inArray(documentVersions.sourceEventId, ids),
+              isNull(documents.deletedAt),
+              documentVisibility,
+            ),
+          ),
+        db
+          .select({
+            id: calendarEvents.id,
+            title: calendarEvents.title,
+            startAt: calendarEvents.startAt,
+            scheduledRawEventId: calendarEvents.scheduledRawEventId,
+            startAtRawEventId: calendarEvents.startAtRawEventId,
+          })
+          .from(calendarEvents)
+          .where(
+            and(
+              eq(calendarEvents.teamId, teamId),
+              isNull(calendarEvents.deletedAt),
+              or(
+                inArray(calendarEvents.scheduledRawEventId, ids),
+                inArray(calendarEvents.startAtRawEventId, ids),
+              ),
+              calendarVisibility,
+            ),
+          ),
+      ]);
+
+    for (const row of suggestionRows) {
+      const kind = row.targetKind === 'calendar_event' ? 'calendar' : row.targetKind;
+      const targetId = row.resultId ?? row.targetId;
+      const href =
+        kind === 'calendar'
+          ? '/app/calendar'
+          : targetId
+            ? `/app/objects/${targetId}`
+            : '/app/approvals';
+      pushTimelineImpact(impact, row.rawEventId, {
+        kind,
+        label: row.title,
+        href,
+        status: row.itemStatus === 'pending' ? 'pending' : row.suggestionStatus,
+      });
+      if (row.itemStatus === 'pending') {
+        pushTimelineImpact(impact, row.rawEventId, {
+          kind: 'approval',
+          label: row.title,
+          href: '/app/approvals',
+          status: 'pending',
+        });
+      }
+    }
+
+    for (const row of objectChangeRows) {
+      const kind = row.entityType === 'task' || row.entityType === 'follow_up' ? 'task' : 'object';
+      pushTimelineImpact(impact, row.rawEventId, {
+        kind,
+        label: row.note ?? `${row.entityName} · ${row.field}`,
+        href: `/app/objects/${row.entityId}`,
+        status: row.status,
+      });
+    }
+
+    for (const row of entityRows) {
+      const kind = row.entityType === 'task' || row.entityType === 'follow_up' ? 'task' : 'object';
+      pushTimelineImpact(impact, row.rawEventId, {
+        kind,
+        label: row.entityName,
+        href: `/app/objects/${row.entityId}`,
+        status: row.status,
+      });
+    }
+
+    for (const row of documentRows) {
+      pushTimelineImpact(impact, row.rawEventId, {
+        kind: 'document',
+        label: row.documentName,
+        href: `/app/documents/${row.documentId}`,
+        status: row.status,
+      });
+    }
+
+    for (const row of calendarRows) {
+      const date = row.startAt.toISOString().slice(0, 10);
+      const href = `/app/calendar?date=${date}&view=day`;
+      pushTimelineImpact(impact, row.scheduledRawEventId, {
+        kind: 'calendar',
+        label: row.title,
+        href,
+        status: 'scheduled',
+      });
+      pushTimelineImpact(impact, row.startAtRawEventId, {
+        kind: 'calendar',
+        label: row.title,
+        href,
+        status: 'event',
+      });
+    }
+
+    return Object.fromEntries(impact);
+  }
+
   const objectScope = createObjectScope(db, core);
   const suggestionScope = createSuggestionScope({
     db,
@@ -765,6 +1022,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       },
 
       listEvents,
+
+      listImpactItems: listTimelineImpactItems,
 
       async listEventsPage(
         filters: EventListFilters = {},

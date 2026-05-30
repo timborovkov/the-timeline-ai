@@ -12,12 +12,13 @@ import { inArray } from 'drizzle-orm';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { parseTimelineImpact, parseTimelineSource } from '@/lib/timeline-controls';
+import { collectTimelinePage, serializeTimelineEvent } from '@/lib/timeline-page';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 function parseDate(input: string | null): Date | undefined {
   if (!input) return undefined;
   const d = new Date(input);
@@ -60,6 +61,8 @@ export async function GET(req: Request): Promise<Response> {
   const author = url.searchParams.get('author');
   const authorUserId = author && UUID_RE.test(author) ? author : undefined;
   const cursor = url.searchParams.get('cursor');
+  const source = parseTimelineSource(url.searchParams.get('source') ?? undefined);
+  const impact = parseTimelineImpact(url.searchParams.get('impact') ?? undefined);
   const from = parseDate(url.searchParams.get('from'));
   const toRaw = parseDate(url.searchParams.get('to'));
   const to = toRaw ? new Date(toRaw.getTime() + 24 * 60 * 60 * 1000) : undefined;
@@ -74,15 +77,29 @@ export async function GET(req: Request): Promise<Response> {
     authorUserId,
     from?.toISOString(),
     to?.toISOString(),
+    source,
+    impact,
     cursor,
   ]);
   const page = await cachedJson(key, 30, async () => {
-    const result = await scope.timeline.listEventsPage({
-      authorUserId,
-      from,
-      to,
+    const result = await collectTimelinePage({
       cursor,
-      limit: 30,
+      impact,
+      fetchPage: async ({ cursor: pageCursor, limit }) => {
+        const eventsPage = await scope.timeline.listEventsPage({
+          authorUserId,
+          from,
+          to,
+          source,
+          cursor: pageCursor ?? undefined,
+          limit,
+        });
+        return {
+          items: eventsPage.items.map(serializeTimelineEvent),
+          nextCursor: eventsPage.nextCursor,
+        };
+      },
+      hydrateImpact: (eventIds) => scope.timeline.listImpactItems(eventIds),
     });
     const authorIds = Array.from(
       new Set(result.items.map((e) => e.authorUserId).filter((v): v is string => v !== null)),
@@ -95,13 +112,10 @@ export async function GET(req: Request): Promise<Response> {
             .where(inArray(users.id, authorIds))
         : [];
     return {
-      items: result.items.map((event) => ({
-        ...event,
-        occurredAt: event.occurredAt.toISOString(),
-        createdAt: event.createdAt.toISOString(),
-      })),
+      items: result.items,
       nextCursor: result.nextCursor,
       authors: Object.fromEntries(authorRows.map((row) => [row.id, row])),
+      impactItems: result.impactItems,
     };
   });
 

@@ -25,6 +25,22 @@ An immutable source record captured into the timeline. Raw events are the
 evidence layer behind facts, objects, agent answers, and later exports.
 _Avoid_: Message, activity, log entry
 
+**Timeline Moment**:
+A user-facing cluster of related raw events shown together on the timeline so
+team members can understand a meaningful slice of work before drilling into
+individual source evidence. The timeline is date-first, with source clusters
+inside each date and impact shown as attached context.
+_Avoid_: Raw Event when referring to the grouped browsing unit
+
+**Impact Context**:
+The workspace consequences or links attached to a timeline moment, such as
+tasks, boards, objects, calendar events, documents, decisions, follow-ups, or
+pending approvals that were created, changed, referenced, or suggested from the
+underlying evidence. Impact Context is truthful partial context: v1/v2 surfaces
+hydrate it from existing metadata, suggestion evidence, object/task changes,
+document versions, and calendar rows without inventing missing graph links.
+_Avoid_: Related items when discussing what changed because of source evidence
+
 **Capture Surface**:
 A way information enters the timeline, such as web capture, Telegram, Slack,
 email, documents, meetings, integrations, or calendar import.
@@ -165,6 +181,12 @@ It teaches the product loop; it is not a requirement that external data has
 successfully arrived.
 _Avoid_: Setup wizard, activation gate
 
+**Home Dashboard**:
+The signed-in landing surface for a team member. It gathers capture, onboarding,
+ingest access, pending approvals, and a compact recent activity view without
+trying to be the canonical event browser.
+_Avoid_: Timeline when referring to the landing page
+
 **Workspace Time Context**:
 The team's default frame for interpreting relative dates, day boundaries, week
 numbers, and calendar display when no user-specific timezone is explicitly
@@ -216,6 +238,11 @@ _Avoid_: Ticket unless a ticketing workflow exists
 An author is attribution for content. A visibility owner controls the audience.
 These are often the same person, but shared sources such as group chats,
 forwarded email, meetings, and integrations can separate the concepts.
+
+**Source Truth vs. Timeline Control**:
+Timeline display should preserve who actually said or did something in the
+source system separately from who captured it, owns the source, or controls
+visibility inside the Timeline.
 
 **Sender vs. Source Owner**:
 Sender answers who produced a captured message. Source owner answers which
