@@ -38,6 +38,7 @@ const RELATIONSHIP_KINDS = [
 type ObjectDetail = objects.ObjectDetail;
 type LocalSuggestion = ComponentProps<typeof ApprovalsClient>['suggestions'][number];
 type EditableField = 'status' | 'stage' | 'priority' | 'dueAt';
+type EditableValue = string | number | Date | null;
 type SaveState = 'idle' | 'saving' | 'saved';
 type DraftField = 'stage' | 'dueAt';
 
@@ -82,6 +83,12 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localDetailRef = useRef(detail);
   const serverDetailRef = useRef(detail);
+  const queuedFieldValuesRef = useRef<Record<EditableField, EditableValue | undefined>>({
+    status: undefined,
+    stage: undefined,
+    priority: undefined,
+    dueAt: undefined,
+  });
   const savingCountRef = useRef(0);
   const batchHadFailureRef = useRef(false);
   const focusedDraftsRef = useRef<Record<DraftField, boolean>>({ stage: false, dueAt: false });
@@ -133,11 +140,19 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
     };
   }, []);
 
-  function patch(field: EditableField, value: string | number | Date | null): void {
+  function patch(field: EditableField, value: EditableValue): void {
     const currentValue = localDetailRef.current[field];
     if (sameEditableValue(currentValue, value)) return;
     setError(null);
     updateLocalDetail((current) => ({ ...current, [field]: value }));
+    if (savingFieldsRef.current[field] > 0) {
+      queuedFieldValuesRef.current[field] = value;
+      return;
+    }
+    beginFieldSave(field, value);
+  }
+
+  function beginFieldSave(field: EditableField, value: EditableValue): void {
     savingFieldsRef.current[field] += 1;
     if (isDraftField(field)) savingDraftsRef.current[field] += 1;
     if (savedTimer.current) clearTimeout(savedTimer.current);
@@ -153,7 +168,10 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
         batchHadFailureRef.current = true;
         setError(result.error ?? 'Update failed');
         const rollbackValue = serverDetailRef.current[field];
-        if (sameEditableValue(localDetailRef.current[field], value)) {
+        if (
+          queuedFieldValuesRef.current[field] === undefined &&
+          sameEditableValue(localDetailRef.current[field], value)
+        ) {
           updateLocalDetail((current) => ({
             ...current,
             [field]: field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue,
@@ -169,23 +187,34 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
       } else {
         router.refresh();
       }
-      savingCountRef.current = Math.max(0, savingCountRef.current - 1);
-      setSavingCount(savingCountRef.current);
-      if (savingCountRef.current === 0) {
-        if (batchHadFailureRef.current) {
-          setSaveState('idle');
-        } else {
-          setSaveState('saved');
-          savedTimer.current = setTimeout(() => {
-            setSaveState('idle');
-          }, 1600);
-        }
-      }
-      if (isDraftField(field)) {
-        savingDraftsRef.current[field] = Math.max(0, savingDraftsRef.current[field] - 1);
-      }
-      savingFieldsRef.current[field] = Math.max(0, savingFieldsRef.current[field] - 1);
+      finishFieldSave(field);
     });
+  }
+
+  function finishFieldSave(field: EditableField): void {
+    savingCountRef.current = Math.max(0, savingCountRef.current - 1);
+    if (isDraftField(field)) {
+      savingDraftsRef.current[field] = Math.max(0, savingDraftsRef.current[field] - 1);
+    }
+    savingFieldsRef.current[field] = Math.max(0, savingFieldsRef.current[field] - 1);
+
+    const queuedValue = queuedFieldValuesRef.current[field];
+    queuedFieldValuesRef.current[field] = undefined;
+    if (queuedValue !== undefined) {
+      beginFieldSave(field, queuedValue);
+    }
+
+    setSavingCount(savingCountRef.current);
+    if (savingCountRef.current === 0) {
+      if (batchHadFailureRef.current) {
+        setSaveState('idle');
+      } else {
+        setSaveState('saved');
+        savedTimer.current = setTimeout(() => {
+          setSaveState('idle');
+        }, 1600);
+      }
+    }
   }
 
   function addNote(): void {
