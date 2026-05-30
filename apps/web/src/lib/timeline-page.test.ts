@@ -81,18 +81,18 @@ describe('collectTimelinePage', () => {
     expect(page.nextCursor).toBe('c');
   });
 
-  it('trims impact-filtered pages to the requested limit', async () => {
+  it('requests only remaining capacity for impact-filtered pages', async () => {
+    const requestedLimits: number[] = [];
     const page = await collectTimelinePage({
       impact: 'task',
       limit: 1,
-      fetchPage: () =>
-        Promise.resolve({
-          items: [
-            event('task-newer', '2026-05-28T12:00:00.000Z'),
-            event('task-older', '2026-05-28T11:00:00.000Z'),
-          ],
+      fetchPage: ({ limit }) => {
+        requestedLimits.push(limit);
+        return Promise.resolve({
+          items: [event('task-newer', '2026-05-28T12:00:00.000Z')],
           nextCursor: 'next',
-        }),
+        });
+      },
       hydrateImpact: (ids) =>
         Promise.resolve(
           Object.fromEntries(ids.map((id) => [id, [{ kind: 'task' as const, label: id }]])),
@@ -101,5 +101,6 @@ describe('collectTimelinePage', () => {
 
     expect(page.items.map((item) => item.id)).toEqual(['task-newer']);
     expect(page.nextCursor).toBe('next');
+    expect(requestedLimits).toEqual([1]);
   });
 });

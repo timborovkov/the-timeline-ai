@@ -73,7 +73,8 @@ export async function collectTimelinePage({
   let nextCursor: string | null = null;
 
   for (let scanned = 0; scanned < maxScanPages; scanned++) {
-    const page = await fetchPage({ cursor: scanCursor, limit: pageSize });
+    const remaining = Math.max(1, limit - collected.size);
+    const page = await fetchPage({ cursor: scanCursor, limit: Math.min(pageSize, remaining) });
     const pageImpactItems = await hydrateImpact(page.items.map((event) => event.id));
     Object.assign(impactItems, pageImpactItems);
 
@@ -93,9 +94,9 @@ export async function collectTimelinePage({
   }
 
   return {
-    items: [...collected.values()]
-      .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
-      .slice(0, limit),
+    items: [...collected.values()].sort(
+      (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+    ),
     nextCursor,
     impactItems,
   };
