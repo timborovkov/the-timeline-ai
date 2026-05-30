@@ -70,7 +70,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   const [pending, startTransition] = useTransition();
   const [localDetail, setLocalDetail] = useState(detail);
   const [stageDraft, setStageDraft] = useState(detail.stage ?? '');
-  const [dueDraft, setDueDraft] = useState(detail.dueAt ? toLocalInput(detail.dueAt) : '');
+  const [dueDraft, setDueDraft] = useState(toLocalInputValue(detail.dueAt));
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [savingCount, setSavingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +122,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
       return next;
     });
     if (!draftIsProtected('stage')) setStageDraft(detail.stage ?? '');
-    if (!draftIsProtected('dueAt')) setDueDraft(detail.dueAt ? toLocalInput(detail.dueAt) : '');
+    if (!draftIsProtected('dueAt')) setDueDraft(toLocalInputValue(detail.dueAt));
   }, [detail]);
 
   useEffect(() => {
@@ -151,12 +151,15 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
         batchHadFailureRef.current = true;
         setError(result.error ?? 'Update failed');
         if (sameEditableValue(localDetailRef.current[field], value)) {
-          updateLocalDetail((current) => ({ ...current, [field]: previousValue }));
+          updateLocalDetail((current) => ({
+            ...current,
+            [field]: field === 'dueAt' ? toDateOrNull(previousValue) : previousValue,
+          }));
           if (field === 'stage') {
             setStageDraft(previousValue === null ? '' : String(previousValue));
           }
           if (field === 'dueAt') {
-            setDueDraft(previousValue instanceof Date ? toLocalInput(previousValue) : '');
+            setDueDraft(toLocalInputValue(previousValue));
           }
         }
       } else {
@@ -706,9 +709,23 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function sameEditableValue(a: unknown, b: unknown): boolean {
   if (a instanceof Date || b instanceof Date) {
-    return a instanceof Date && b instanceof Date && a.getTime() === b.getTime();
+    const aDate = toDateOrNull(a);
+    const bDate = toDateOrNull(b);
+    return aDate !== null && bDate !== null && aDate.getTime() === bDate.getTime();
   }
   return Object.is(a, b);
+}
+
+function toDateOrNull(value: unknown): Date | null {
+  if (value instanceof Date) return value;
+  if (typeof value !== 'string') return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function toLocalInputValue(value: unknown): string {
+  const d = toDateOrNull(value);
+  return d ? toLocalInput(d) : '';
 }
 
 function toLocalInput(d: Date): string {
