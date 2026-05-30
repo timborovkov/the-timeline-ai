@@ -416,10 +416,15 @@ export function TimelineList({
   emptyLabel = 'NO EVENTS YET',
   density = 'comfortable',
   impactFilter = 'all',
-  impactItemsByEventId = {},
+  impactItemsByEventId,
 }: Props) {
   const moments = useMemo(
-    () => buildTimelineMoments(events, authorMap, { impactItemsByEventId }),
+    () =>
+      buildTimelineMoments(
+        events,
+        authorMap,
+        impactItemsByEventId === undefined ? {} : { impactItemsByEventId },
+      ),
     [events, authorMap, impactItemsByEventId],
   );
   const filteredMoments = filterTimelineMomentsByImpact(moments, impactFilter);

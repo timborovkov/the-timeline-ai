@@ -30,6 +30,7 @@ interface Props {
   emptyLabel?: string;
   density?: 'comfortable' | 'dense';
   impactFilter?: ImpactKind | 'all';
+  live?: boolean;
 }
 
 export function TimelineFeed({
@@ -43,8 +44,9 @@ export function TimelineFeed({
   emptyLabel,
   density = 'comfortable',
   impactFilter = 'all',
+  live = true,
 }: Props) {
-  const query = useTimelineInfiniteQuery(filters, initialPage);
+  const query = useTimelineInfiniteQuery(filters, initialPage, { enabled: live });
   const pages = query.data.pages;
   const events = pages.flatMap((page) => page.items);
   const authorMap = useMemo(

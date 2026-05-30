@@ -93,9 +93,9 @@ export async function collectTimelinePage({
   }
 
   return {
-    items: [...collected.values()].sort(
-      (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
-    ),
+    items: [...collected.values()]
+      .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+      .slice(0, limit),
     nextCursor,
     impactItems,
   };

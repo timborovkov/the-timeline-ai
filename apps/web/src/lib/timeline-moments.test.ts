@@ -178,8 +178,32 @@ describe('timeline moment grouping', () => {
       },
     );
 
-    expect(moments[0]?.impactItems.map((item) => item.kind)).toEqual(['approval', 'document']);
+    expect(moments[0]?.impactItems.map((item) => item.kind)).toEqual(['approval']);
     expect(moments[0]?.impactItems[0]?.href).toBe('/app/approvals');
+  });
+
+  it('does not synthesize document or calendar impact from metadata when hydration is authoritative', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'document-event',
+          source: 'document',
+          sourceMetadata: { document_id: 'doc-1', document_name: 'Private.pdf' },
+        }),
+        event({
+          id: 'calendar-event',
+          source: 'calendar',
+          sourceMetadata: { calendar_event_id: 'cal-1', title: 'Private meeting' },
+        }),
+      ],
+      authorMap,
+      {
+        now: new Date('2026-05-28T12:00:00.000Z'),
+        impactItemsByEventId: {},
+      },
+    );
+
+    expect(moments.flatMap((moment) => moment.impactItems)).toEqual([]);
   });
 
   it('filters moments by hydrated impact kind', () => {

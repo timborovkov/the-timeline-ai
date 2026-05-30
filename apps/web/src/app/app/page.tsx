@@ -1,5 +1,10 @@
 import { users } from '@timeline/db';
-import { withTeam } from '@timeline/shared';
+import {
+  getAudioBucket,
+  getS3PresignClient,
+  getSignedGetObjectUrl,
+  withTeam,
+} from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
 import { CircleCheckBig, Mail, Video } from 'lucide-react';
 import Link from 'next/link';
@@ -16,6 +21,30 @@ import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+async function signAudio(events: { id: string; contentAudioUrl: string | null }[]) {
+  const audioEvents = events.filter((event) => event.contentAudioUrl);
+  const audioUrls = new Map<string, string>();
+  if (audioEvents.length === 0) return audioUrls;
+  try {
+    const s3 = getS3PresignClient();
+    const bucket = getAudioBucket();
+    const pairs = await Promise.all(
+      audioEvents.map(async (event) => {
+        try {
+          const url = await getSignedGetObjectUrl(s3, bucket, event.contentAudioUrl ?? '', 3600);
+          return [event.id, url] as const;
+        } catch {
+          return [event.id, ''] as const;
+        }
+      }),
+    );
+    for (const [id, url] of pairs) if (url) audioUrls.set(id, url);
+  } catch (err) {
+    console.error('[home] audio playback unavailable; S3 is not configured', err);
+  }
+  return audioUrls;
+}
 
 export default async function HomeDashboardPage() {
   const session = await auth();
@@ -50,7 +79,10 @@ export default async function HomeDashboardPage() {
     onboardingState.connectionCounts.teamMcpServers;
   const quickCaptureVisibility = webDefault.visibility === 'private' ? 'private' : 'team';
   const events = eventPage.items;
-  const impactItems = await scope.timeline.listImpactItems(events.map((event) => event.id));
+  const [impactItems, audioUrlMap] = await Promise.all([
+    scope.timeline.listImpactItems(events.map((event) => event.id)),
+    signAudio(events),
+  ]);
 
   const userIds = Array.from(
     new Set([
@@ -153,9 +185,9 @@ export default async function HomeDashboardPage() {
               occurredAt: event.occurredAt.toISOString(),
               createdAt: event.createdAt.toISOString(),
             })),
-            nextCursor: eventPage.nextCursor,
+            nextCursor: null,
             authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
-            audioUrls: {},
+            audioUrls: Object.fromEntries(audioUrlMap),
             impactItems,
           }}
           filters={{}}
@@ -167,6 +199,7 @@ export default async function HomeDashboardPage() {
           })}
           compact
           maxMoments={8}
+          live={false}
           emptyLabel="NO MOMENTS YET -> CAPTURE ABOVE"
         />
       </section>

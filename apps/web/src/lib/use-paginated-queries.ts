@@ -59,6 +59,7 @@ export function useTimelineInfiniteQuery(
     impact?: string | null;
   },
   initialPage: TimelinePage,
+  options: { enabled?: boolean } = {},
 ) {
   const queryClient = useQueryClient();
   const mounted = useRef(false);
@@ -79,6 +80,7 @@ export function useTimelineInfiniteQuery(
   }, [initialPage, queryClient, queryKey]);
   return useInfiniteQuery({
     queryKey,
+    enabled: options.enabled ?? true,
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams();

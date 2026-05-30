@@ -144,8 +144,10 @@ export default async function TimelinePage({ searchParams }: Props) {
   }
 
   const hasSearch = Boolean(sp.q?.trim());
-  const hasFilters =
-    Boolean(authorFilter ?? fromFilter ?? toFilter ?? sourceFilter ?? impactFilter) || hasSearch;
+  const hasPanelFilters = Boolean(
+    authorFilter ?? fromFilter ?? toFilter ?? sourceFilter ?? impactFilter,
+  );
+  const hasFilters = hasPanelFilters || hasSearch;
   const sourceLabel = TIMELINE_SOURCES.find(([value]) => value === sourceFilter)?.[1];
   const eventCount = events.length;
   const trimmedQuery = sp.q?.trim();
@@ -281,9 +283,12 @@ export default async function TimelinePage({ searchParams }: Props) {
                 Apply
               </button>
               <input type="hidden" name="density" value={density} />
-              {hasFilters ? (
+              {hasPanelFilters ? (
                 <Link
-                  href="/app/timeline"
+                  href={timelineHref(
+                    { q: baseParams.q, density: baseParams.density },
+                    { author: null, from: null, to: null, source: null, impact: null },
+                  )}
                   className="inline-flex h-9 items-center rounded-sm border border-border px-3 text-sm transition-colors hover:bg-surface-2"
                 >
                   Clear

@@ -255,7 +255,12 @@ function clipped(text: string, max = 220): string {
   return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
 }
 
-function impactItemsForEvent(event: TimelineEvent): ImpactItem[] {
+function impactItemsForEvent(
+  event: TimelineEvent,
+  options: { includeVisibilityScopedMetadata: boolean } = {
+    includeVisibilityScopedMetadata: true,
+  },
+): ImpactItem[] {
   const meta = metaObject(event.sourceMetadata);
   const items: ImpactItem[] = [];
   if (event.source === 'meeting') {
@@ -272,7 +277,10 @@ function impactItemsForEvent(event: TimelineEvent): ImpactItem[] {
       items.push({ kind: 'decision', label: 'Summary extracted', sourceEventId: event.id });
     }
   }
-  if (event.source === 'calendar' || stringMeta(meta, 'calendar_event_id')) {
+  if (
+    options.includeVisibilityScopedMetadata &&
+    (event.source === 'calendar' || stringMeta(meta, 'calendar_event_id'))
+  ) {
     const calendarId = stringMeta(meta, 'calendar_event_id');
     items.push({
       kind: 'calendar',
@@ -282,9 +290,10 @@ function impactItemsForEvent(event: TimelineEvent): ImpactItem[] {
     });
   }
   if (
-    event.source === 'document' ||
-    stringMeta(meta, 'document_id') ||
-    stringMeta(meta, 'documentId')
+    options.includeVisibilityScopedMetadata &&
+    (event.source === 'document' ||
+      stringMeta(meta, 'document_id') ||
+      stringMeta(meta, 'documentId'))
   ) {
     const documentId = stringMeta(meta, 'document_id') ?? stringMeta(meta, 'documentId');
     items.push({
@@ -334,6 +343,8 @@ export function buildTimelineMoments(
 ): TimelineMoment[] {
   const now = options instanceof Date ? options : (options.now ?? new Date());
   const hydrated = options instanceof Date ? {} : (options.impactItemsByEventId ?? {});
+  const hasAuthoritativeHydration =
+    !(options instanceof Date) && options.impactItemsByEventId !== undefined;
   const groups = new Map<string, TimelineEvent[]>();
   for (const event of events) {
     const key = `${dateKey(event.occurredAt)}:${timelineGroupKey(event)}`;
@@ -369,7 +380,9 @@ export function buildTimelineMoments(
           impactItems: dedupeImpact(
             sorted.flatMap((event) => [
               ...(hydrated[event.id] ?? []),
-              ...impactItemsForEvent(event),
+              ...impactItemsForEvent(event, {
+                includeVisibilityScopedMetadata: !hasAuthoritativeHydration,
+              }),
             ]),
           ),
         },
