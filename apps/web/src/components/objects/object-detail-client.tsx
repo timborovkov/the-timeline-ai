@@ -81,6 +81,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   const [linkKind, setLinkKind] = useState<(typeof RELATIONSHIP_KINDS)[number]>('related');
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localDetailRef = useRef(detail);
+  const serverDetailRef = useRef(detail);
   const savingCountRef = useRef(0);
   const batchHadFailureRef = useRef(false);
   const focusedDraftsRef = useRef<Record<DraftField, boolean>>({ stage: false, dueAt: false });
@@ -111,6 +112,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   }
 
   useEffect(() => {
+    serverDetailRef.current = detail;
     setLocalDetail((current) => {
       const next = { ...detail };
       for (const field of EDITABLE_FIELDS) {
@@ -132,8 +134,8 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   }, []);
 
   function patch(field: EditableField, value: string | number | Date | null): void {
-    const previousValue = localDetailRef.current[field];
-    if (sameEditableValue(previousValue, value)) return;
+    const currentValue = localDetailRef.current[field];
+    if (sameEditableValue(currentValue, value)) return;
     setError(null);
     updateLocalDetail((current) => ({ ...current, [field]: value }));
     savingFieldsRef.current[field] += 1;
@@ -150,18 +152,20 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
       if (failed) {
         batchHadFailureRef.current = true;
         setError(result.error ?? 'Update failed');
+        const rollbackValue = serverDetailRef.current[field];
         if (sameEditableValue(localDetailRef.current[field], value)) {
           updateLocalDetail((current) => ({
             ...current,
-            [field]: field === 'dueAt' ? toDateOrNull(previousValue) : previousValue,
+            [field]: field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue,
           }));
           if (field === 'stage') {
-            setStageDraft(previousValue === null ? '' : String(previousValue));
+            setStageDraft(rollbackValue === null ? '' : String(rollbackValue));
           }
           if (field === 'dueAt') {
-            setDueDraft(toLocalInputValue(previousValue));
+            setDueDraft(toLocalInputValue(rollbackValue));
           }
         }
+        router.refresh();
       } else {
         router.refresh();
       }
