@@ -119,7 +119,15 @@ export default async function HomeDashboardPage() {
           aria-label="Capture"
           className="rounded-sm border border-border bg-surface p-4 focus-within:border-border-strong"
         >
-          <CaptureForm initialVisibility={quickCaptureVisibility} />
+          <CaptureForm
+            initialVisibility={quickCaptureVisibility}
+            currentUser={{
+              id: session.user.id,
+              name: session.user.name ?? null,
+              email: session.user.email ?? '',
+            }}
+            filters={{}}
+          />
         </section>
 
         <section aria-label="Needs attention" className="space-y-3">

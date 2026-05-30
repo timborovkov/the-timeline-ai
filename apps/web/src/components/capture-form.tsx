@@ -25,19 +25,13 @@ function baseMimeType(mt: string): string {
 interface Props {
   initialVisibility?: 'team' | 'private';
   currentUser: { id: string; name: string | null; email: string };
-  filters: { author?: string | null; from?: string | null; to?: string | null };
+  filters?: { author?: string | null; from?: string | null; to?: string | null };
 }
 
-function normalizeFilters(filters: Props['filters']): Required<Props['filters']> {
-  return {
-    author: filters.author ?? null,
-    from: filters.from ?? null,
-    to: filters.to ?? null,
-  };
-}
+type CaptureFilters = NonNullable<Props['filters']>;
 
 function filterAllowsEvent(
-  filters: Props['filters'],
+  filters: CaptureFilters,
   event: Pick<TimelineEvent, 'authorUserId' | 'occurredAt'>,
 ): boolean {
   if (filters.author && filters.author !== event.authorUserId) return false;
@@ -49,10 +43,9 @@ function filterAllowsEvent(
   return true;
 }
 
-export function CaptureForm({ initialVisibility = 'team', currentUser, filters }: Props) {
+export function CaptureForm({ initialVisibility = 'team', currentUser, filters = {} }: Props) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const timelineFilters = normalizeFilters(filters);
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isPrivate, setIsPrivate] = useState(initialVisibility === 'private');
@@ -91,9 +84,9 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters }
       visibilityOwnerUserId: currentUser.id,
       sourceMetadata: { optimistic: true },
     };
-    if (!filterAllowsEvent(timelineFilters, event)) return null;
+    if (!filterAllowsEvent(filters, event)) return null;
     queryClient.setQueriesData<InfiniteData<TimelinePage, string | null>>(
-      { queryKey: queryKeys.timeline(timelineFilters), exact: true },
+      { queryKey: queryKeys.timeline(filters), exact: true },
       (previous) => {
         if (!previous?.pages[0]) return previous;
         const first = previous.pages[0];
@@ -118,7 +111,7 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters }
 
   function removeOptimisticTextEvent(id: string): void {
     queryClient.setQueriesData<InfiniteData<TimelinePage, string | null>>(
-      { queryKey: queryKeys.timeline(timelineFilters), exact: true },
+      { queryKey: queryKeys.timeline(filters), exact: true },
       (previous) => {
         if (!previous) return previous;
         return {
