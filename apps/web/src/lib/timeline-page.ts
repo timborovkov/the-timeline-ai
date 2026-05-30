@@ -1,4 +1,4 @@
-import type { ImpactItem, ImpactKind } from '@/lib/timeline-moments';
+import type { ImpactItem, ImpactKind, TimelineMoment } from '@/lib/timeline-moments';
 import type { TimelineEvent } from '@/lib/use-paginated-queries';
 
 import { buildTimelineMoments, filterTimelineMomentsByImpact } from '@/lib/timeline-moments';
@@ -67,30 +67,33 @@ export async function collectTimelinePage({
     };
   }
 
-  const collected = new Map<string, TimelineEvent>();
+  const scannedEvents = new Map<string, TimelineEvent>();
   const impactItems: Record<string, ImpactItem[]> = {};
   let scanCursor = cursor;
   let nextCursor: string | null = null;
+  let matchingMoments: TimelineMoment[] = [];
 
   for (let scanned = 0; scanned < maxScanPages; scanned++) {
-    const remaining = Math.max(1, limit - collected.size);
-    const page = await fetchPage({ cursor: scanCursor, limit: Math.min(pageSize, remaining) });
+    const page = await fetchPage({ cursor: scanCursor, limit: pageSize });
     const pageImpactItems = await hydrateImpact(page.items.map((event) => event.id));
     Object.assign(impactItems, pageImpactItems);
+    for (const event of page.items) scannedEvents.set(event.id, event);
 
-    const matchingMoments = filterTimelineMomentsByImpact(
-      buildTimelineMoments(page.items, new Map(), { impactItemsByEventId: pageImpactItems }),
+    matchingMoments = filterTimelineMomentsByImpact(
+      buildTimelineMoments([...scannedEvents.values()], new Map(), {
+        impactItemsByEventId: impactItems,
+      }),
       impact,
     );
-    for (const moment of matchingMoments) {
-      for (const event of moment.rawEvents) {
-        collected.set(event.id, event);
-      }
-    }
 
     nextCursor = page.nextCursor;
-    if (!nextCursor || collected.size >= limit) break;
+    if (!nextCursor || matchingMoments.length >= limit) break;
     scanCursor = nextCursor;
+  }
+
+  const collected = new Map<string, TimelineEvent>();
+  for (const moment of matchingMoments) {
+    for (const event of moment.rawEvents) collected.set(event.id, event);
   }
 
   return {

@@ -7,7 +7,11 @@ import { collectTimelinePage } from '@/lib/timeline-page';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = '22222222-2222-2222-2222-222222222222';
 
-function event(id: string, occurredAt: string): TimelineEvent {
+function event(
+  id: string,
+  occurredAt: string,
+  overrides: Partial<TimelineEvent> = {},
+): TimelineEvent {
   return {
     id,
     teamId: TEAM_ID,
@@ -21,6 +25,7 @@ function event(id: string, occurredAt: string): TimelineEvent {
     visibilityUserIds: null,
     visibilityOwnerUserId: USER_ID,
     sourceMetadata: {},
+    ...overrides,
   };
 }
 
@@ -81,26 +86,45 @@ describe('collectTimelinePage', () => {
     expect(page.nextCursor).toBe('c');
   });
 
-  it('requests only remaining capacity for impact-filtered pages', async () => {
-    const requestedLimits: number[] = [];
+  it('keeps grouped moment siblings from scanned pages when one event matches impact', async () => {
     const page = await collectTimelinePage({
       impact: 'task',
       limit: 1,
-      fetchPage: ({ limit }) => {
-        requestedLimits.push(limit);
-        return Promise.resolve({
-          items: [event('task-newer', '2026-05-28T12:00:00.000Z')],
-          nextCursor: 'next',
-        });
-      },
+      pageSize: 1,
+      fetchPage: ({ cursor }) =>
+        Promise.resolve(
+          cursor === null
+            ? {
+                items: [
+                  event('email-newer', '2026-05-28T12:00:00.000Z', {
+                    source: 'email',
+                    sourceMetadata: { thread_root_id: 'thread-1' },
+                  }),
+                ],
+                nextCursor: 'older',
+              }
+            : {
+                items: [
+                  event('email-older', '2026-05-28T11:00:00.000Z', {
+                    source: 'email',
+                    sourceMetadata: { thread_root_id: 'thread-1' },
+                  }),
+                ],
+                nextCursor: 'next',
+              },
+        ),
       hydrateImpact: (ids) =>
         Promise.resolve(
-          Object.fromEntries(ids.map((id) => [id, [{ kind: 'task' as const, label: id }]])),
+          Object.fromEntries(
+            ids.map((id) => [
+              id,
+              id === 'email-older' ? [{ kind: 'task' as const, label: id }] : [],
+            ]),
+          ),
         ),
     });
 
-    expect(page.items.map((item) => item.id)).toEqual(['task-newer']);
+    expect(page.items.map((item) => item.id)).toEqual(['email-newer', 'email-older']);
     expect(page.nextCursor).toBe('next');
-    expect(requestedLimits).toEqual([1]);
   });
 });
