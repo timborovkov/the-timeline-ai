@@ -9,13 +9,11 @@ import {
 } from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
 
-import type { TimelineEvent } from '@/lib/use-paginated-queries';
-
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { parseTimelineImpact, parseTimelineSource } from '@/lib/timeline-controls';
-import { collectTimelinePage } from '@/lib/timeline-page';
+import { collectTimelinePage, serializeTimelineEvent } from '@/lib/timeline-page';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,27 +23,6 @@ function parseDate(input: string | null): Date | undefined {
   if (!input) return undefined;
   const d = new Date(input);
   return Number.isNaN(d.getTime()) ? undefined : d;
-}
-
-function serializeTimelineEvent(event: {
-  id: string;
-  teamId: string;
-  authorUserId: string | null;
-  source: TimelineEvent['source'];
-  contentText: string | null;
-  contentAudioUrl: string | null;
-  occurredAt: Date;
-  createdAt: Date;
-  visibility: TimelineEvent['visibility'];
-  visibilityUserIds: string[] | null;
-  visibilityOwnerUserId: string | null;
-  sourceMetadata: unknown;
-}): TimelineEvent {
-  return {
-    ...event,
-    occurredAt: event.occurredAt.toISOString(),
-    createdAt: event.createdAt.toISOString(),
-  };
 }
 
 async function signAudio(events: { id: string; contentAudioUrl: string | null }[]) {

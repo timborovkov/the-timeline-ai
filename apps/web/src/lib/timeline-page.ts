@@ -24,8 +24,31 @@ interface CollectTimelinePageOptions {
   hydrateImpact: (eventIds: string[]) => Promise<Record<string, ImpactItem[]>>;
 }
 
+interface SerializableTimelineEvent {
+  id: string;
+  teamId: string;
+  authorUserId: string | null;
+  source: TimelineEvent['source'];
+  contentText: string | null;
+  contentAudioUrl: string | null;
+  occurredAt: Date;
+  createdAt: Date;
+  visibility: TimelineEvent['visibility'];
+  visibilityUserIds: string[] | null;
+  visibilityOwnerUserId: string | null;
+  sourceMetadata: unknown;
+}
+
 const DEFAULT_PAGE_SIZE = 30;
 const DEFAULT_MAX_SCAN_PAGES = 10;
+
+export function serializeTimelineEvent(event: SerializableTimelineEvent): TimelineEvent {
+  return {
+    ...event,
+    occurredAt: event.occurredAt.toISOString(),
+    createdAt: event.createdAt.toISOString(),
+  };
+}
 
 export async function collectTimelinePage({
   cursor = null,

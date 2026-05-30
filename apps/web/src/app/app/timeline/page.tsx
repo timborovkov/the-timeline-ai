@@ -9,8 +9,6 @@ import { inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import type { TimelineEvent } from '@/lib/use-paginated-queries';
-
 import { IndexStrip } from '@/components/index-strip';
 import { SearchBar } from '@/components/search-bar';
 import { TimelineFeed } from '@/components/timeline-feed';
@@ -27,7 +25,7 @@ import {
   parseTimelineSource,
   timelineHref,
 } from '@/lib/timeline-controls';
-import { collectTimelinePage } from '@/lib/timeline-page';
+import { collectTimelinePage, serializeTimelineEvent } from '@/lib/timeline-page';
 
 interface Props {
   searchParams: Promise<{
@@ -63,27 +61,6 @@ function parseUuid(input: string | undefined): string | undefined {
 
 function toDateInputValue(d: Date | undefined): string {
   return d ? d.toISOString().slice(0, 10) : '';
-}
-
-function serializeTimelineEvent(event: {
-  id: string;
-  teamId: string;
-  authorUserId: string | null;
-  source: TimelineEvent['source'];
-  contentText: string | null;
-  contentAudioUrl: string | null;
-  occurredAt: Date;
-  createdAt: Date;
-  visibility: TimelineEvent['visibility'];
-  visibilityUserIds: string[] | null;
-  visibilityOwnerUserId: string | null;
-  sourceMetadata: unknown;
-}): TimelineEvent {
-  return {
-    ...event,
-    occurredAt: event.occurredAt.toISOString(),
-    createdAt: event.createdAt.toISOString(),
-  };
 }
 
 export default async function TimelinePage({ searchParams }: Props) {

@@ -688,6 +688,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         sql`${userId}::uuid = ANY(${documents.visibilityUserIds})`,
       ),
     );
+    const calendarVisibility = or(
+      eq(calendarEvents.visibility, 'team'),
+      and(eq(calendarEvents.visibility, 'private'), eq(calendarEvents.createdByUserId, userId)),
+      and(
+        eq(calendarEvents.visibility, 'specific_users'),
+        sql`${userId}::uuid = ANY(${calendarEvents.visibilityUserIds})`,
+      ),
+    );
 
     const [suggestionRows, objectChangeRows, entityRows, documentRows, calendarRows] =
       await Promise.all([
@@ -782,6 +790,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
                 inArray(calendarEvents.scheduledRawEventId, ids),
                 inArray(calendarEvents.startAtRawEventId, ids),
               ),
+              calendarVisibility,
             ),
           ),
       ]);
