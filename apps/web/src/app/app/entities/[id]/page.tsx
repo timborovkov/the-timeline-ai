@@ -1,5 +1,12 @@
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Entity',
+  description: 'Review an entity timeline and related context.',
+};
+
 // Phase 8: entity profile pages were folded into `/app/objects/[id]`. Keep
 // the old URL alive as a redirect so existing links (Telegram replies,
 // email citations, agent answers, browser history) resolve to the new page.

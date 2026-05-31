@@ -1,11 +1,18 @@
 import { withTeam } from '@timeline/shared';
 import { notFound, redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { ObjectDetailClient } from '@/components/objects/object-detail-client';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
+
+export const metadata: Metadata = {
+  title: 'Object',
+  description: 'Review an object timeline and related suggestions.',
+};
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -36,13 +43,10 @@ export default async function ObjectDetailPage({ params }: PageProps) {
   if (!detail) notFound();
 
   await scope.objects.markVisited(detail.id);
-  const suggestions = (await scope.suggestions.listPendingSuggestions())
-    .map((bundle) => ({
-      ...bundle,
-      items: bundle.items.filter((item) => item.targetId === detail.id),
-    }))
-    .filter((bundle) => bundle.items.length > 0)
-    .map(serializeSuggestionBundle);
+  const suggestions = (await scope.suggestions.listPendingSuggestions()).flatMap((bundle) => {
+    const items = bundle.items.filter((item) => item.targetId === detail.id);
+    return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
+  });
 
   return (
     <div className="mx-auto max-w-4xl">

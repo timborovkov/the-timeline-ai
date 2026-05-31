@@ -3,12 +3,19 @@ import { withTeam } from '@timeline/shared';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { Breadcrumb } from '@/components/breadcrumb';
 import { IndexStrip } from '@/components/index-strip';
 import { McpShareUi } from '@/components/integrations/mcp-share';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'MCP share',
+  description: 'Share team-visible timeline context through MCP.',
+};
 
 export const dynamic = 'force-dynamic';
 
@@ -25,11 +32,13 @@ export default async function McpSharePage() {
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
   const scope = withTeam(db, active.teamId, session.user.id);
+  let canManageMcpShare = true;
   try {
     await scope.requireMembership('admin');
   } catch {
-    redirect('/app/team/integrations');
+    canManageMcpShare = false;
   }
+  if (!canManageMcpShare) redirect('/app/team/integrations');
   const rows = await db
     .select()
     .from(mcpOutboundKeys)

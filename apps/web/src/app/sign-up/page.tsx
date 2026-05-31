@@ -1,10 +1,17 @@
 import Link from 'next/link';
 
+import type { Metadata } from 'next';
+
 import { SignUpForm } from '@/components/auth-form';
 import { GitHubSignInButton } from '@/components/github-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { hasGitHubAuth } from '@/lib/auth';
+
+export const metadata: Metadata = {
+  title: 'Sign up',
+  description: 'Create a Timeline AI account.',
+};
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +43,7 @@ export default async function SignUpPage({ searchParams }: Props) {
               )}
               {invite ? (
                 <p className="text-xs text-muted-foreground">
-                  After GitHub sign-in we&rsquo;ll send you to the invite — accept it from there
+                  After GitHub sign-in we&rsquo;ll send you to the invite; accept it from there
                   using the same email the invite was sent to.
                 </p>
               ) : null}

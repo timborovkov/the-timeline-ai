@@ -1,11 +1,18 @@
 import { withTeam } from '@timeline/shared';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { KanbanBoard } from '@/components/boards/kanban-board';
 import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Tasks',
+  description: 'Review tasks discovered from timeline activity.',
+};
 
 const TASK_COLUMNS = ['todo', 'doing', 'done', 'blocked', 'cancelled'];
 

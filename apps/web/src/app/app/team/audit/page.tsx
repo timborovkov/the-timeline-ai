@@ -1,12 +1,19 @@
 import { withTeam } from '@timeline/shared';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { Breadcrumb } from '@/components/breadcrumb';
 import { IndexStrip } from '@/components/index-strip';
 import { Badge } from '@/components/ui/badge';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Team audit',
+  description: 'Review team activity and audit history.',
+};
 
 export const dynamic = 'force-dynamic';
 
@@ -17,11 +24,13 @@ export default async function TrustAuditPage() {
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  let canViewAudit = true;
   try {
     await scope.requireMembership('admin');
   } catch {
-    redirect('/app/team');
+    canViewAudit = false;
   }
+  if (!canViewAudit) redirect('/app/team');
 
   const rows = await scope.audit.list(200);
 
@@ -41,7 +50,7 @@ export default async function TrustAuditPage() {
           <li className="px-3 py-2 text-fg-muted">No audit entries yet.</li>
         ) : (
           rows.map((row) => (
-            <li key={row.id} className="grid gap-2 px-3 py-3 sm:grid-cols-[1fr_auto]">
+            <li key={row.id} className="grid gap-2 p-3 sm:grid-cols-[1fr_auto]">
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">

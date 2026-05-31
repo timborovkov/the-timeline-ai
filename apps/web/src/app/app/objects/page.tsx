@@ -2,10 +2,17 @@ import { type objects, withTeam } from '@timeline/shared';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Objects',
+  description: 'Browse tracked timeline objects.',
+};
 
 const TYPE_LABEL: Record<string, string> = {
   person: 'People',

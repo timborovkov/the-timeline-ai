@@ -1,6 +1,8 @@
 import { withTeam } from '@timeline/shared';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { Breadcrumb } from '@/components/breadcrumb';
 import { IndexStrip } from '@/components/index-strip';
 import { JobRecoveryList } from '@/components/job-recovery/job-recovery-list';
@@ -8,6 +10,11 @@ import { JobDashboard } from '@/components/jobs/job-dashboard';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Jobs',
+  description: 'Review failed jobs and recovery actions.',
+};
 
 export const dynamic = 'force-dynamic';
 
@@ -18,11 +25,13 @@ export default async function JobRecoveryPage() {
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  let canViewJobs = true;
   try {
     await scope.requireMembership('admin');
   } catch {
-    redirect('/app/team');
+    canViewJobs = false;
   }
+  if (!canViewJobs) redirect('/app/team');
 
   const items = await scope.jobRecovery.listRecoverableJobs();
 

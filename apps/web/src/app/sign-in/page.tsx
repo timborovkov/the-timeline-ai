@@ -1,10 +1,17 @@
 import Link from 'next/link';
 
+import type { Metadata } from 'next';
+
 import { SignInForm } from '@/components/auth-form';
 import { GitHubSignInButton } from '@/components/github-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { hasGitHubAuth } from '@/lib/auth';
+
+export const metadata: Metadata = {
+  title: 'Sign in',
+  description: 'Sign in to your Timeline AI workspace.',
+};
 
 interface Props {
   searchParams: Promise<{ callbackUrl?: string }>;

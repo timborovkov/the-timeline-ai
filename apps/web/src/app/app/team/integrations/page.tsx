@@ -1,7 +1,10 @@
 import { users } from '@timeline/db';
 import { integrations as integrationsLib, withTeam } from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
+
+import type { Metadata } from 'next';
 
 import { ActionChip } from '@/components/action-chip';
 import { Breadcrumb } from '@/components/breadcrumb';
@@ -13,6 +16,11 @@ import { AddCustomMcpServerLauncher, McpServersUi } from '@/components/integrati
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Integrations',
+  description: 'Connect and manage third-party integrations.',
+};
 
 export const dynamic = 'force-dynamic';
 
@@ -175,10 +183,10 @@ export default async function IntegrationsPage({
         <div className="rounded-sm border border-dashed border-border bg-surface p-6 text-sm text-fg-muted">
           <p className="mb-1 font-medium text-fg">No integrations configured.</p>
           <p>
-            Add OAuth client + webhook secret env vars to enable Drive, Linear, or GitHub — see{' '}
-            <a className="text-signal underline" href="/docs/setup/integrations.html">
+            Add OAuth client + webhook secret env vars to enable Drive, Linear, or GitHub; see{' '}
+            <Link className="text-signal underline" href="/docs/setup/integrations.html">
               setup
-            </a>
+            </Link>
             . Or add any MCP-compatible server above.
           </p>
         </div>

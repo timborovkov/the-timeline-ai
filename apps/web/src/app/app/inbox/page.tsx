@@ -2,12 +2,19 @@ import { withTeam } from '@timeline/shared';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { MarkAllReadButton } from '@/components/inbox/mark-all-read-button';
 import { NotificationRow } from '@/components/inbox/notification-row';
 import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Inbox',
+  description: 'Review notifications and timeline updates.',
+};
 
 export default async function InboxPage({
   searchParams,

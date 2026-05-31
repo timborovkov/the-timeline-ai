@@ -4,10 +4,17 @@ import { inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { ScheduleMeetingBotForm } from '@/components/meeting-forms';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Meetings',
+  description: 'Schedule and review meeting notes.',
+};
 
 export default async function MeetingsPage() {
   const session = await auth();
