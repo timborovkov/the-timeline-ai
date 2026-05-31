@@ -168,6 +168,8 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
         const failed = 'error' in result && result.error;
         if (failed) {
           handleFieldSaveFailure(field, value, result.error ?? 'Update failed');
+        } else if (!batchHadFailureRef.current) {
+          setError(null);
         }
         router.refresh();
       } catch (err) {
