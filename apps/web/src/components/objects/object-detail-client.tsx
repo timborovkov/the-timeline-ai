@@ -24,6 +24,7 @@ import {
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
+import { errorMessage } from '@/lib/utils';
 
 const RELATIONSHIP_KINDS = [
   'related',
@@ -777,10 +778,6 @@ function toLocalInput(d: Date): string {
   // not on UTC.
   const pad = (n: number): string => n.toString().padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function errorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
 }
 
 function formatValue(v: unknown): string {

@@ -37,6 +37,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { errorMessage } from '@/lib/utils';
 
 type CalendarViewMode = 'month' | 'week' | 'day';
 type SaveState = 'idle' | 'saving' | 'saved';
@@ -777,8 +778,4 @@ function DayCell({
       </div>
     </div>
   );
-}
-
-function errorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
 }

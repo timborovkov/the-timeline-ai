@@ -16,7 +16,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useOptimistic, useRef, useState, useTransition } from 'react';
 
 import { updateObjectAction } from '@/app/actions/objects';
-import { cn } from '@/lib/utils';
+import { cn, errorMessage } from '@/lib/utils';
 
 type GroupKey = 'status' | 'stage' | 'priority';
 
@@ -271,8 +271,4 @@ function Card({ row, error }: { row: objects.ObjectRow; error?: string }) {
       ) : null}
     </li>
   );
-}
-
-function errorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
 }
