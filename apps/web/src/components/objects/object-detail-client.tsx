@@ -143,7 +143,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
 
   function patch(field: EditableField, value: EditableValue): void {
     const currentValue = localDetailRef.current[field];
-    if (sameEditableValue(currentValue, value)) return;
+    if (sameEditableValue(field, currentValue, value)) return;
     setError(null);
     updateLocalDetail((current) => ({ ...current, [field]: value }));
     if (savingFieldsRef.current[field] > 0) {
@@ -187,7 +187,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
     const rollbackValue = serverDetailRef.current[field];
     if (
       queuedFieldValuesRef.current[field] === undefined &&
-      sameEditableValue(localDetailRef.current[field], value)
+      sameEditableValue(field, localDetailRef.current[field], value)
     ) {
       updateLocalDetail((current) => ({
         ...current,
@@ -213,6 +213,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
     queuedFieldValuesRef.current[field] = undefined;
     if (queuedValue !== undefined) {
       beginFieldSave(field, queuedValue);
+      return;
     }
 
     setSavingCount(savingCountRef.current);
@@ -751,8 +752,9 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function sameEditableValue(a: unknown, b: unknown): boolean {
+function sameEditableValue(field: EditableField, a: unknown, b: unknown): boolean {
   if (a === null || a === undefined || b === null || b === undefined) return Object.is(a, b);
+  if (field !== 'dueAt') return Object.is(a, b);
   const aDate = toDateOrNull(a);
   const bDate = toDateOrNull(b);
   if (aDate !== null || bDate !== null) {
