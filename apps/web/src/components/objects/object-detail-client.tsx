@@ -741,9 +741,10 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function sameEditableValue(a: unknown, b: unknown): boolean {
-  if (a instanceof Date || b instanceof Date) {
-    const aDate = toDateOrNull(a);
-    const bDate = toDateOrNull(b);
+  if (a === null || a === undefined || b === null || b === undefined) return Object.is(a, b);
+  const aDate = toDateOrNull(a);
+  const bDate = toDateOrNull(b);
+  if (aDate !== null || bDate !== null) {
     return aDate !== null && bDate !== null && aDate.getTime() === bDate.getTime();
   }
   return Object.is(a, b);
