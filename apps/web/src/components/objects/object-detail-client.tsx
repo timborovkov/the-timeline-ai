@@ -11,6 +11,8 @@ import {
   useTransition,
 } from 'react';
 
+import type { SaveState } from '@/lib/utils';
+
 import {
   acceptObjectChangeAction,
   addRelationshipAction,
@@ -40,7 +42,6 @@ type ObjectDetail = objects.ObjectDetail;
 type LocalSuggestion = ComponentProps<typeof ApprovalsClient>['suggestions'][number];
 type EditableField = 'status' | 'stage' | 'priority' | 'dueAt';
 type EditableValue = string | number | Date | null;
-type SaveState = 'idle' | 'saving' | 'saved';
 type DraftField = 'stage' | 'dueAt';
 
 const EDITABLE_FIELDS: EditableField[] = ['status', 'stage', 'priority', 'dueAt'];

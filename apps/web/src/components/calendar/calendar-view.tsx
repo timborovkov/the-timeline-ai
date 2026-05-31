@@ -20,6 +20,8 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 
+import type { SaveState } from '@/lib/utils';
+
 import {
   createCalendarEventAction,
   deleteCalendarEventAction,
@@ -40,7 +42,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { errorMessage } from '@/lib/utils';
 
 type CalendarViewMode = 'month' | 'week' | 'day';
-type SaveState = 'idle' | 'saving' | 'saved';
 
 interface CalendarEvent {
   id: string;

@@ -130,6 +130,10 @@ export function DocumentDrive({
         toast.error(req.error ?? 'Upload failed');
         return;
       }
+      if (req.maxBytes && file.size > req.maxBytes) {
+        toast.error(`File exceeds ${String(Math.round(req.maxBytes / 1024 / 1024))} MiB limit`);
+        return;
+      }
       if (req.documentId) {
         optimisticDocumentId = req.documentId;
         addOptimisticDocument({
@@ -140,11 +144,6 @@ export function DocumentDrive({
           ownerUserId: null,
           optimistic: true,
         });
-      }
-      if (req.maxBytes && file.size > req.maxBytes) {
-        if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
-        toast.error(`File exceeds ${String(Math.round(req.maxBytes / 1024 / 1024))} MiB limit`);
-        return;
       }
       const put = await fetch(req.url, {
         method: 'PUT',

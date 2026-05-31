@@ -15,6 +15,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useOptimistic, useRef, useState, useTransition } from 'react';
 
+import type { SaveState } from '@/lib/utils';
+
 import { updateObjectAction } from '@/app/actions/objects';
 import { cn, errorMessage } from '@/lib/utils';
 
@@ -36,8 +38,6 @@ function colValue(row: objects.ObjectRow, key: GroupKey): string {
   if (v === null) return 'unset';
   return String(v);
 }
-
-type SaveState = 'idle' | 'saving' | 'saved';
 
 export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
   // Only apply DEFAULT_STATUS_COLS when actually grouping by status — for
