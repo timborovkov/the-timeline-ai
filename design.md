@@ -159,7 +159,7 @@ Departs from the v1 centered `max-w-3xl` prose column. New shell:
 │ rail│ ─────────────────────────────────│  (collapsible)  │
 │     │   index strip                    │                 │
 │  ▣  │   EVENTS · 2,847 · 14d · acme    │  citation src   │
-│  ▦  │ ─────────────────────────────────│  raw event JSON │
+│  ▦  │ ─────────────────────────────────│  raw evidence   │
 │  ◧  │   feed / board / object / chat   │  related links  │
 │  ◑  │                                  │                 │
 └─────┴──────────────────────────────────┴─────────────────┘
@@ -172,11 +172,13 @@ Departs from the v1 centered `max-w-3xl` prose column. New shell:
 - **Main column** fills available width. **No `max-w-3xl` artificial
   column** except long-form prose surfaces (single document view, single
   note view) — those wrap in a `<ProseContainer>` that sets `max-w-prose`.
-- **Right inspector pane** (`w-80` = 320px, collapsible to 0): shows
-  citation source, raw event JSON, related objects, audit trail. Hidden by
-  default; opens when the user clicks a citation chip, an object
-  reference, or the inspector toggle. This pane is the structural
-  expression of "every claim is cited."
+- **Right inspector pane** (`w-96` = 384px, collapsible to 0): shows
+  citation source, summarized raw event evidence, related objects, and audit
+  trail. Long ids truncate visually with full values available on hover. Large
+  raw-event groups are capped with an overflow count. Hidden by default;
+  opens when the user clicks a citation chip, an object reference, or the
+  inspector toggle. This pane is the structural expression of "every claim is
+  cited."
 - **Command bar** persistent across the top of the main column. Cmd+K
   focuses. The product's center of gravity is search/jump/ask, not the
   sidebar.
@@ -284,8 +286,8 @@ visible change.
   inspector.
 - **Inline expansion + inspector.** Inline expansion handles quick
   comprehension of raw events and impact. The right inspector handles forensic
-  evidence, exact timestamps, citations, visibility, audit trail, and source
-  metadata.
+  evidence summaries, exact timestamps, citations, visibility, audit trail, and
+  source metadata without turning high-volume groups into raw log dumps.
 - **Hover/selection** uses `bg-surface`, no border change, and visually connects
   the selected moment to the inspector.
 - Skeletons match: `<Skeleton className="h-4 w-[18ch]" />` for ts,

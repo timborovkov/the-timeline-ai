@@ -29,13 +29,13 @@ export function InspectorPane() {
       role="dialog"
       aria-label={`Inspector for ${id}`}
       aria-labelledby="inspector-title"
-      className={cn('hidden w-80 shrink-0 border-l border-border bg-surface lg:flex lg:flex-col')}
+      className={cn('hidden w-96 shrink-0 border-l border-border bg-surface lg:flex lg:flex-col')}
     >
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
-        <div className="flex items-baseline gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          <span>{kind}</span>
-          <span className="text-fg-dim">·</span>
-          <span id="inspector-title" className="text-signal">
+        <div className="flex min-w-0 items-baseline gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+          <span className="shrink-0">{kind}</span>
+          <span className="shrink-0 text-fg-dim">·</span>
+          <span id="inspector-title" title={id} className="min-w-0 truncate text-signal">
             [{id}]
           </span>
         </div>

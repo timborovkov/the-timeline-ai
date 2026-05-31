@@ -26,7 +26,7 @@ interface Props {
  * Operational Archive v2 shell. Three columns:
  *   • 56px icon rail (mobile: hamburger sheet)
  *   • main column with persistent ⌘K command bar
- *   • collapsible 320px right inspector pane (hidden by default, opens
+ *   • collapsible 384px right inspector pane (hidden by default, opens
  *     when a citation chip / object reference is activated)
  */
 export function AppShell({ active, memberships, recipientInvites, user, children }: Props) {
