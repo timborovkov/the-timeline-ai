@@ -827,7 +827,13 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         const drows = await tx
           .select()
           .from(documents)
-          .where(and(eq(documents.id, version.documentId), eq(documents.teamId, teamId)))
+          .where(
+            and(
+              eq(documents.id, version.documentId),
+              eq(documents.teamId, teamId),
+              isNull(documents.deletedAt),
+            ),
+          )
           .limit(1);
         const document = drows[0] as DocumentRow | undefined;
         if (!document) throw new Error('Document not found for version');
@@ -875,7 +881,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         const dUpdated = await tx
           .update(documents)
           .set({ currentVersionId: version.id, updatedAt: new Date() })
-          .where(eq(documents.id, document.id))
+          .where(and(eq(documents.id, document.id), isNull(documents.deletedAt)))
           .returning();
         const updatedDocument = dUpdated[0] as DocumentRow | undefined;
         if (!updatedDocument) throw new Error('Failed to update document');

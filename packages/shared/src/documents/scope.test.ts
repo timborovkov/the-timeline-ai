@@ -148,6 +148,37 @@ describe('document scope — finalizeDocumentVersion idempotency (P1 fix)', () =
     );
     expect(events.rows[0]?.count).toBe('1');
   });
+
+  it('does not finalize a version after the document was deleted', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const created = await scope.createDocument({
+      name: 'interrupted.txt',
+      folderId: null,
+      filename: 'interrupted.txt',
+      contentType: 'text/plain',
+    });
+
+    await scope.softDeleteDocument(created.document.id);
+
+    await expect(
+      scope.finalizeDocumentVersion({
+        versionId: created.version.id,
+        byteSize: 100,
+        contentType: 'text/plain',
+      }),
+    ).rejects.toThrow('Document not found for version');
+
+    const docs = await pg.query<{ current_version_id: string | null }>(
+      `SELECT current_version_id FROM documents WHERE id = $1`,
+      [created.document.id],
+    );
+    expect(docs.rows[0]?.current_version_id).toBeNull();
+    const events = await pg.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM raw_events WHERE source = 'document' AND source_metadata->>'document_id' = $1`,
+      [created.document.id],
+    );
+    expect(events.rows[0]?.count).toBe('1');
+  });
 });
 
 describe('document scope — visibility filter', () => {

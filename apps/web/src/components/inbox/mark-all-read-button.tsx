@@ -23,15 +23,19 @@ export function MarkAllReadButton({ hasUnread }: { hasUnread: boolean }) {
         setLocallyRead(true);
         window.dispatchEvent(new CustomEvent('timeline:notifications-read-all', { detail: true }));
         startTransition(async () => {
-          const result = await markAllNotificationsReadAction();
-          if ('error' in result && result.error) {
-            setLocallyRead(false);
-            window.dispatchEvent(
-              new CustomEvent('timeline:notifications-read-all', { detail: false }),
-            );
-            return;
+          try {
+            const result = await markAllNotificationsReadAction();
+            if (!('error' in result) || !result.error) {
+              router.refresh();
+              return;
+            }
+          } catch {
+            // Fall through to the same rollback as an explicit action error.
           }
-          router.refresh();
+          setLocallyRead(false);
+          window.dispatchEvent(
+            new CustomEvent('timeline:notifications-read-all', { detail: false }),
+          );
         });
       }}
       className="rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary/20 disabled:opacity-50"

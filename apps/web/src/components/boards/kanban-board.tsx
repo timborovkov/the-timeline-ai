@@ -79,7 +79,9 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [savingCount, setSavingCount] = useState(0);
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
+  const [savingCardIds, setSavingCardIds] = useState<ReadonlySet<string>>(() => new Set());
   const savingCountRef = useRef(0);
+  const savingCardIdsRef = useRef<Set<string>>(new Set());
   const batchHadFailureRef = useRef(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -105,6 +107,7 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
     const id = e.active.id as string;
     const col = e.over?.id as string | undefined;
     if (!col) return;
+    if (savingCardIdsRef.current.has(id)) return;
     const row = items.find((r) => r.id === id);
     if (!row || colValue(row, groupBy) === col) return;
     // `startTransition` is required to call setState (via useOptimistic) and
@@ -120,7 +123,9 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
       setSaveState('saving');
       if (savingCountRef.current === 0) batchHadFailureRef.current = false;
       savingCountRef.current += 1;
+      savingCardIdsRef.current.add(id);
       setSavingCount(savingCountRef.current);
+      setSavingCardIds(new Set(savingCardIdsRef.current));
       setCardErrors((errors) => {
         const { [id]: _cleared, ...rest } = errors;
         return rest;
@@ -143,7 +148,9 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
         setCardErrors((errors) => ({ ...errors, [id]: errorMessage(err, 'Move failed') }));
       } finally {
         savingCountRef.current = Math.max(0, savingCountRef.current - 1);
+        savingCardIdsRef.current.delete(id);
         setSavingCount(savingCountRef.current);
+        setSavingCardIds(new Set(savingCardIdsRef.current));
         if (savingCountRef.current === 0) {
           if (batchHadFailureRef.current) {
             setSaveState('idle');
@@ -183,7 +190,13 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
           height so each column can host its own vertical scroll. */}
       <div className="flex h-full gap-3 overflow-x-auto pb-2">
         {allCols.map((c) => (
-          <Column key={c} id={c} rows={byCol.get(c) ?? []} cardErrors={cardErrors} />
+          <Column
+            key={c}
+            id={c}
+            rows={byCol.get(c) ?? []}
+            cardErrors={cardErrors}
+            savingCardIds={savingCardIds}
+          />
         ))}
       </div>
     </DndContext>
@@ -194,10 +207,12 @@ function Column({
   id,
   rows,
   cardErrors,
+  savingCardIds,
 }: {
   id: string;
   rows: objects.ObjectRow[];
   cardErrors: Record<string, string>;
+  savingCardIds: ReadonlySet<string>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
@@ -219,15 +234,18 @@ function Column({
           would push its parent and only the page would scroll. */}
       <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         {rows.map((r) => (
-          <Card key={r.id} row={r} error={cardErrors[r.id]} />
+          <Card key={r.id} row={r} error={cardErrors[r.id]} saving={savingCardIds.has(r.id)} />
         ))}
       </ul>
     </div>
   );
 }
 
-function Card({ row, error }: { row: objects.ObjectRow; error?: string }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: row.id });
+function Card({ row, error, saving }: { row: objects.ObjectRow; error?: string; saving: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: row.id,
+    disabled: saving,
+  });
   const style = transform
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
     : undefined;
@@ -240,6 +258,7 @@ function Card({ row, error }: { row: objects.ObjectRow; error?: string }) {
       className={cn(
         'cursor-grab rounded-sm border border-border bg-bg px-3 py-2 text-sm transition-colors hover:border-border-strong',
         isDragging && 'opacity-50',
+        saving && 'cursor-progress opacity-80',
         error && 'border-danger/50',
       )}
     >

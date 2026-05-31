@@ -4,7 +4,7 @@ import { type InfiniteData, useQueryClient } from '@tanstack/react-query';
 import { Folder as FolderIcon, FolderPlus, Upload } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useRef, useState, useTransition } from 'react';
+import { useMemo, useRef, useState, useTransition } from 'react';
 import { toast } from 'sonner';
 
 import {
@@ -77,10 +77,11 @@ export function DocumentDrive({
   const [visibilityUserIds, setVisibilityUserIds] = useState<string[]>(
     defaultVisibilityUserIds ?? [],
   );
-  const documentQuery = useDocumentListQuery(currentFolderId, {
-    items: documents,
-    nextCursor: documentsNextCursor,
-  });
+  const initialDocumentPage = useMemo(
+    () => ({ items: documents, nextCursor: documentsNextCursor }),
+    [documents, documentsNextCursor],
+  );
+  const documentQuery = useDocumentListQuery(currentFolderId, initialDocumentPage);
   const visibleDocuments = documentQuery.data.pages.flatMap((page) => page.items);
 
   function addOptimisticDocument(document: DocumentItem): void {
@@ -345,22 +346,31 @@ export function DocumentDrive({
                       key={d.id}
                       className="flex items-center justify-between rounded-sm border border-border bg-card p-3 hover:border-fg/20"
                     >
-                      <Link
-                        href={`/app/documents/${d.id}`}
-                        className="flex items-center gap-3 text-sm"
-                      >
-                        <span className="font-medium">{d.name}</span>
-                        {d.optimistic ? (
+                      {d.optimistic ? (
+                        <span className="flex items-center gap-3 text-sm">
+                          <span className="font-medium">{d.name}</span>
                           <Badge variant="outline" className="text-[10px]">
                             uploading
                           </Badge>
-                        ) : null}
-                        {d.visibility !== 'team' && (
-                          <Badge variant="outline" className="text-[10px]">
-                            {d.visibility}
-                          </Badge>
-                        )}
-                      </Link>
+                          {d.visibility !== 'team' && (
+                            <Badge variant="outline" className="text-[10px]">
+                              {d.visibility}
+                            </Badge>
+                          )}
+                        </span>
+                      ) : (
+                        <Link
+                          href={`/app/documents/${d.id}`}
+                          className="flex items-center gap-3 text-sm"
+                        >
+                          <span className="font-medium">{d.name}</span>
+                          {d.visibility !== 'team' && (
+                            <Badge variant="outline" className="text-[10px]">
+                              {d.visibility}
+                            </Badge>
+                          )}
+                        </Link>
+                      )}
                       <span className="text-xs text-muted-foreground">
                         {new Date(d.updatedAt).toLocaleDateString()}
                       </span>
