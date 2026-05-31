@@ -69,6 +69,9 @@ const IMPACT_LABEL: Record<ImpactItem['kind'], string> = {
   approval: 'Approval',
 };
 
+const INSPECTOR_RAW_EVENT_LIMIT = 8;
+const INSPECTOR_METADATA_LIMIT = 8;
+
 function eventDate(input: string): Date {
   return new Date(input);
 }
@@ -89,6 +92,37 @@ function formatMetadataValue(value: unknown): string {
   } catch {
     return '[unserializable]';
   }
+}
+
+function formatShortId(id: string): string {
+  return id.length > 13 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
+}
+
+function formatVisibilitySummary(events: TimelineEvent[]): string {
+  const counts = new Map<string, number>();
+  for (const event of events) {
+    counts.set(event.visibility, (counts.get(event.visibility) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([visibility, count]) =>
+      count === events.length ? visibility : `${visibility} x ${count}`,
+    )
+    .join(' · ');
+}
+
+function inspectorMetadataEntries(moment: TimelineMoment): [string, unknown][] {
+  const entries: [string, unknown][] = [];
+  const seen = new Set<string>();
+  for (const event of moment.rawEvents) {
+    if (typeof event.sourceMetadata !== 'object' || event.sourceMetadata === null) continue;
+    for (const [key, value] of Object.entries(event.sourceMetadata as Record<string, unknown>)) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      entries.push([key, value]);
+      if (entries.length >= INSPECTOR_METADATA_LIMIT) return entries;
+    }
+  }
+  return entries;
 }
 
 function transcribeFailed(meta: unknown): boolean {
@@ -125,38 +159,56 @@ function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] 
 }
 
 function InspectorBody({ moment }: { moment: TimelineMoment }) {
-  const metadata = moment.rawEvents.flatMap((event) =>
-    typeof event.sourceMetadata === 'object' && event.sourceMetadata !== null
-      ? Object.entries(event.sourceMetadata as Record<string, unknown>).slice(0, 8)
-      : [],
-  );
+  const metadata = inspectorMetadataEntries(moment);
+  const latestEvent = moment.rawEvents[0];
+  const firstEvent = moment.rawEvents.at(-1);
+  const visibleRawEvents = moment.rawEvents.slice(0, INSPECTOR_RAW_EVENT_LIMIT);
+  const hiddenRawEventCount = moment.rawEvents.length - visibleRawEvents.length;
+
   return (
     <div className="space-y-5">
       <section>
-        <h3 className="mb-2 text-fg">SOURCE TRUTH</h3>
-        <p>
+        <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+          Source truth
+        </h3>
+        <p className="text-sm leading-6 text-fg-muted">
           {moment.actorLabel} · {moment.contextLabel} · {moment.sourceLabel}
         </p>
       </section>
       <section>
-        <h3 className="mb-2 text-fg">TIMELINE CONTROL</h3>
-        <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1">
-          <dt>visibility</dt>
-          <dd>{moment.rawEvents.map((event) => event.visibility).join(', ')}</dd>
-          <dt>events</dt>
+        <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+          Timeline control
+        </h3>
+        <dl className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-2">
+          <dt className="text-fg-dim">visibility</dt>
+          <dd className="min-w-0 break-words text-fg-muted">
+            {formatVisibilitySummary(moment.rawEvents)}
+          </dd>
+          <dt className="text-fg-dim">events</dt>
           <dd>{moment.rawEvents.length}</dd>
-          <dt>first event</dt>
-          <dd>{moment.rawEvents.at(-1)?.id ?? 'unknown'}</dd>
+          <dt className="text-fg-dim">first</dt>
+          <dd className="min-w-0 break-all" title={firstEvent?.id}>
+            {firstEvent ? formatShortId(firstEvent.id) : 'unknown'}
+          </dd>
+          <dt className="text-fg-dim">latest</dt>
+          <dd className="min-w-0 break-all" title={latestEvent?.id}>
+            {latestEvent ? formatShortId(latestEvent.id) : 'unknown'}
+          </dd>
         </dl>
       </section>
       {moment.impactItems.length > 0 ? (
         <section>
-          <h3 className="mb-2 text-fg">IMPACT CONTEXT</h3>
-          <ul className="space-y-1">
+          <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+            Impact context
+          </h3>
+          <ul className="space-y-1.5">
             {moment.impactItems.map((item, index) => (
-              <li key={`${item.kind}:${item.label}:${index}`}>
+              <li
+                key={`${item.kind}:${item.label}:${index}`}
+                className="rounded-sm border border-border bg-surface-2 px-2 py-1.5"
+              >
                 {item.href ? (
-                  <Link href={item.href}>
+                  <Link href={item.href} className="text-fg hover:text-signal">
                     {IMPACT_LABEL[item.kind]} · {item.label}
                   </Link>
                 ) : (
@@ -171,24 +223,42 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
         </section>
       ) : null}
       <section>
-        <h3 className="mb-2 text-fg">RAW EVENTS</h3>
-        <ol className="space-y-2">
-          {moment.rawEvents.map((event) => (
-            <li key={event.id}>
-              [{event.id}]<br />
-              {formatTimestamp(event.occurredAt)}
+        <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+          Raw events
+        </h3>
+        <ol className="space-y-1.5">
+          {visibleRawEvents.map((event) => (
+            <li
+              key={event.id}
+              className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-sm border border-border bg-bg px-2 py-1.5"
+            >
+              <span className="min-w-0 break-all text-fg-muted" title={event.id}>
+                [{formatShortId(event.id)}]
+              </span>
+              <time className="text-right text-fg-dim" dateTime={event.occurredAt}>
+                {formatTimestamp(event.occurredAt)}
+              </time>
             </li>
           ))}
         </ol>
+        {hiddenRawEventCount > 0 ? (
+          <p className="mt-2 rounded-sm border border-border bg-surface-2 px-2 py-1.5 text-fg-dim">
+            + {hiddenRawEventCount} older raw event{hiddenRawEventCount === 1 ? '' : 's'}
+          </p>
+        ) : null}
       </section>
       {metadata.length > 0 ? (
         <section>
-          <h3 className="mb-2 text-fg">SOURCE METADATA</h3>
-          <dl className="space-y-1">
+          <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+            Source metadata
+          </h3>
+          <dl className="space-y-1.5">
             {metadata.map(([key, value], index) => (
-              <div key={`${key}:${index}`} className="grid grid-cols-[7rem_1fr] gap-2">
+              <div key={`${key}:${index}`} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
                 <dt className="truncate text-fg-dim">{key}</dt>
-                <dd className="truncate text-fg-muted">{formatMetadataValue(value)}</dd>
+                <dd className="min-w-0 truncate text-fg-muted" title={formatMetadataValue(value)}>
+                  {formatMetadataValue(value)}
+                </dd>
               </div>
             ))}
           </dl>
