@@ -131,27 +131,33 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
           : groupBy === 'stage'
             ? { id, stage: col === 'unset' ? null : col }
             : { id, status: col };
-      const result = await updateObjectAction(patch);
-      const failed = 'error' in result && result.error;
-      if (failed) {
-        batchHadFailureRef.current = true;
-        setCardErrors((errors) => ({ ...errors, [id]: result.error ?? 'Move failed' }));
-      }
-      savingCountRef.current = Math.max(0, savingCountRef.current - 1);
-      setSavingCount(savingCountRef.current);
-      if (savingCountRef.current === 0) {
-        if (batchHadFailureRef.current) {
-          setSaveState('idle');
-        } else {
-          setSaveState('saved');
-          savedTimer.current = setTimeout(() => {
-            setSaveState('idle');
-          }, 1600);
+      try {
+        const result = await updateObjectAction(patch);
+        const failed = 'error' in result && result.error;
+        if (failed) {
+          batchHadFailureRef.current = true;
+          setCardErrors((errors) => ({ ...errors, [id]: result.error ?? 'Move failed' }));
         }
+      } catch (err) {
+        batchHadFailureRef.current = true;
+        setCardErrors((errors) => ({ ...errors, [id]: errorMessage(err, 'Move failed') }));
+      } finally {
+        savingCountRef.current = Math.max(0, savingCountRef.current - 1);
+        setSavingCount(savingCountRef.current);
+        if (savingCountRef.current === 0) {
+          if (batchHadFailureRef.current) {
+            setSaveState('idle');
+          } else {
+            setSaveState('saved');
+            savedTimer.current = setTimeout(() => {
+              setSaveState('idle');
+            }, 1600);
+          }
+        }
+        // Always refresh: on success the new column persists; on failure
+        // useOptimistic snaps back to the unchanged server rows.
+        router.refresh();
       }
-      // Always refresh: on success the new column persists; on failure
-      // useOptimistic snaps back to the unchanged server rows.
-      router.refresh();
     });
   }
 
@@ -265,4 +271,8 @@ function Card({ row, error }: { row: objects.ObjectRow; error?: string }) {
       ) : null}
     </li>
   );
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
 }

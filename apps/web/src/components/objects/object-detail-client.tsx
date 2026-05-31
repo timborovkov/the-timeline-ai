@@ -161,34 +161,42 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
     savingCountRef.current += 1;
     setSavingCount(savingCountRef.current);
     startTransition(async () => {
-      const actionValue = value instanceof Date ? value.toISOString() : value;
-      const result = await updateObjectAction({ id: detail.id, [field]: actionValue });
-      const failed = 'error' in result && result.error;
-      if (failed) {
-        batchHadFailureRef.current = true;
-        setError(result.error ?? 'Update failed');
-        const rollbackValue = serverDetailRef.current[field];
-        if (
-          queuedFieldValuesRef.current[field] === undefined &&
-          sameEditableValue(localDetailRef.current[field], value)
-        ) {
-          updateLocalDetail((current) => ({
-            ...current,
-            [field]: field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue,
-          }));
-          if (field === 'stage') {
-            setStageDraft(rollbackValue === null ? '' : String(rollbackValue));
-          }
-          if (field === 'dueAt') {
-            setDueDraft(toLocalInputValue(rollbackValue));
-          }
+      try {
+        const actionValue = value instanceof Date ? value.toISOString() : value;
+        const result = await updateObjectAction({ id: detail.id, [field]: actionValue });
+        const failed = 'error' in result && result.error;
+        if (failed) {
+          handleFieldSaveFailure(field, value, result.error ?? 'Update failed');
         }
         router.refresh();
-      } else {
+      } catch (err) {
+        handleFieldSaveFailure(field, value, errorMessage(err, 'Update failed'));
         router.refresh();
+      } finally {
+        finishFieldSave(field);
       }
-      finishFieldSave(field);
     });
+  }
+
+  function handleFieldSaveFailure(field: EditableField, value: EditableValue, message: string) {
+    batchHadFailureRef.current = true;
+    setError(message);
+    const rollbackValue = serverDetailRef.current[field];
+    if (
+      queuedFieldValuesRef.current[field] === undefined &&
+      sameEditableValue(localDetailRef.current[field], value)
+    ) {
+      updateLocalDetail((current) => ({
+        ...current,
+        [field]: field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue,
+      }));
+      if (field === 'stage') {
+        setStageDraft(rollbackValue === null ? '' : String(rollbackValue));
+      }
+      if (field === 'dueAt') {
+        setDueDraft(toLocalInputValue(rollbackValue));
+      }
+    }
   }
 
   function finishFieldSave(field: EditableField): void {
@@ -769,6 +777,10 @@ function toLocalInput(d: Date): string {
   // not on UTC.
   const pad = (n: number): string => n.toString().padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
 }
 
 function formatValue(v: unknown): string {

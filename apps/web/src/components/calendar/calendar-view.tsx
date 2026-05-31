@@ -363,10 +363,26 @@ export function CalendarView({
           ? current.map((event) => (event.id === editing.id ? optimisticEvent : event))
           : [optimisticEvent, ...current],
       );
-      const result = editing
-        ? await updateCalendarEventAction({ id: editing.id, ...input })
-        : await createCalendarEventAction(input);
-      if (!result.ok) {
+      try {
+        const result = editing
+          ? await updateCalendarEventAction({ id: editing.id, ...input })
+          : await createCalendarEventAction(input);
+        if (!result.ok) {
+          throw new Error(result.error ?? 'Failed to save event.');
+        }
+        const savedId = result.id;
+        if (!editing && typeof savedId === 'string') {
+          setLocalEvents((current) =>
+            current.map((event) => (event.id === optimisticId ? { ...event, id: savedId } : event)),
+          );
+        }
+        setSaveState('saved');
+        router.refresh();
+        savedTimer.current = setTimeout(() => {
+          setSaveState('idle');
+        }, 1600);
+      } catch (err) {
+        const message = errorMessage(err, 'Failed to save event.');
         setLocalEvents((current) =>
           editing
             ? current.map((event) =>
@@ -377,24 +393,13 @@ export function CalendarView({
             : current.filter((event) => event !== optimisticEvent && event.id !== optimisticId),
         );
         setSaveState('idle');
-        setSurfaceError(result.error ?? 'Failed to save event.');
+        setSurfaceError(message);
         if (dialogContextRef.current === saveDialogContext) {
           setOpen(true);
-          setError(result.error ?? 'Failed to save event.');
+          setError(message);
         }
-        return;
+        router.refresh();
       }
-      const savedId = result.id;
-      if (!editing && typeof savedId === 'string') {
-        setLocalEvents((current) =>
-          current.map((event) => (event.id === optimisticId ? { ...event, id: savedId } : event)),
-        );
-      }
-      setSaveState('saved');
-      router.refresh();
-      savedTimer.current = setTimeout(() => {
-        setSaveState('idle');
-      }, 1600);
     });
   }
 
@@ -772,4 +777,8 @@ function DayCell({
       </div>
     </div>
   );
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
 }
