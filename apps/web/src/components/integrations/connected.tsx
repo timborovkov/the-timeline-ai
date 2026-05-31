@@ -22,9 +22,11 @@ interface MemberOption {
   label: string;
 }
 
+const EMPTY_MEMBERS: MemberOption[] = [];
+
 export function ConnectedIntegrations({
   connected,
-  members = [],
+  members = EMPTY_MEMBERS,
 }: {
   connected: ConnectedRow[];
   members?: MemberOption[];

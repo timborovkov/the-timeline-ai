@@ -62,6 +62,8 @@ interface CalendarViewProps {
   members?: { id: string; label: string }[];
 }
 
+const EMPTY_MEMBERS: NonNullable<CalendarViewProps['members']> = [];
+
 interface Draft {
   title: string;
   description: string;
@@ -205,7 +207,7 @@ export function CalendarView({
   timezone,
   defaultVisibility = 'team',
   defaultVisibilityUserIds = null,
-  members = [],
+  members = EMPTY_MEMBERS,
 }: CalendarViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -347,7 +349,7 @@ export function CalendarView({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <CalendarDays className="h-5 w-5 text-muted-foreground" />
+          <CalendarDays className="size-5 text-muted-foreground" />
           <div>
             <h2 className="text-lg font-semibold">{titleFor(safeMode, anchor)}</h2>
             <p className="text-xs text-muted-foreground">{timezone} · ISO weeks</p>
@@ -374,7 +376,7 @@ export function CalendarView({
             }}
             aria-label="Previous"
           >
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft className="size-4" />
           </Button>
           <Button
             variant="outline"
@@ -393,7 +395,7 @@ export function CalendarView({
             }}
             aria-label="Next"
           >
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="size-4" />
           </Button>
           <Button
             size="sm"
@@ -401,7 +403,7 @@ export function CalendarView({
               openCreate();
             }}
           >
-            <Plus className="mr-1 h-4 w-4" />
+            <Plus className="mr-1 size-4" />
             New
           </Button>
         </div>
@@ -611,13 +613,13 @@ export function CalendarView({
             <div>
               {editing ? (
                 <Button type="button" variant="outline" onClick={remove} disabled={pending}>
-                  <Trash2 className="mr-1 h-4 w-4" />
+                  <Trash2 className="mr-1 size-4" />
                   Delete
                 </Button>
               ) : null}
             </div>
             <Button type="button" onClick={save} disabled={pending}>
-              <Check className="mr-1 h-4 w-4" />
+              <Check className="mr-1 size-4" />
               {pending ? 'Saving...' : 'Save'}
             </Button>
           </DialogFooter>
@@ -681,9 +683,9 @@ function DayCell({
             }`}
           >
             <span className="inline-flex items-center gap-1">
-              {event.allDay ? null : <Clock className="h-3 w-3" />}
+              {event.allDay ? null : <Clock className="size-3" />}
               {event.allDay ? event.title : `${formatTime(event, timezone)} ${event.title}`}
-              {!event.redacted ? <Pencil className="h-3 w-3 opacity-50" /> : null}
+              {!event.redacted ? <Pencil className="size-3 opacity-50" /> : null}
             </span>
           </button>
         ))}
