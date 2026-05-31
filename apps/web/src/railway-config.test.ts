@@ -23,4 +23,12 @@ describe('Railway web config', () => {
     expect(config.deploy?.startCommand).not.toContain('pnpm');
     expect(config.deploy?.startCommand).not.toContain('NODE_ENV=staging');
   });
+
+  it('copies Next static assets into the standalone server bundle during builds', () => {
+    const packageJson = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { scripts?: Record<string, string> };
+
+    expect(packageJson.scripts?.build).toContain('node scripts/prepare-standalone.mjs');
+  });
 });
