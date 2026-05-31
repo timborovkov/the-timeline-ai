@@ -301,7 +301,10 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
           operational scripts are available in <code>railway ssh</code>. The web build and deploy
           images run with <code>NODE_ENV=production</code>; deploy commands use
           <code>node</code> directly because Corepack's <code>pnpm</code> shims are not active
-          there.
+          there. The <code>@timeline/web</code> build also runs
+          <code>apps/web/scripts/prepare-standalone.mjs</code>, which copies
+          <code>.next/static</code> and <code>public</code> into the standalone server tree so
+          Railway serves the hashed CSS, JavaScript chunks, connector icons, and self-hosted fonts.
         </li>
         <li>
           Migrations: run as a release-phase pre-deploy command on the <code>web</code> service and
