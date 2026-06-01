@@ -122,9 +122,11 @@ export function DesktopSidebar({ active, memberships, recipientInvites }: Props)
         </Tooltip>
       </div>
 
-      <RailNav role={active.role} expanded={expanded} />
+      <div className="min-h-0 w-full flex-1 overflow-y-auto">
+        <RailNav role={active.role} expanded={expanded} />
+      </div>
 
-      <div className={cn('mt-auto flex flex-col gap-1', expanded ? 'w-full' : 'items-center')}>
+      <div className={cn('flex shrink-0 flex-col pt-3', expanded ? 'w-full' : 'items-center')}>
         <TeamSwitcher
           active={active}
           memberships={memberships}
