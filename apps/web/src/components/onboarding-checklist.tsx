@@ -23,12 +23,19 @@ export function OnboardingChecklist() {
       </button>
     );
   }
+  const completedCount = data.items.filter((item) => item.completed).length;
+
   return (
-    <section className="rounded-sm border border-border bg-surface p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          Setup checklist
-        </h2>
+    <section className="rounded-sm border border-border bg-surface">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+            Setup checklist
+          </h2>
+          <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted">
+            {completedCount}/{data.items.length} complete
+          </span>
+        </div>
         <button
           type="button"
           disabled={checklistPending}
@@ -41,18 +48,18 @@ export function OnboardingChecklist() {
           <X className="size-4" />
         </button>
       </div>
-      <ul className="mt-3 grid gap-2">
+      <ul className="flex gap-px overflow-x-auto bg-border [scrollbar-width:thin]">
         {data.items.map((item) => (
           <li
             key={item.key}
-            className="grid gap-3 rounded-sm border border-border bg-bg px-3 py-2 text-sm leading-5 sm:grid-cols-[1fr_auto] sm:items-center"
+            className="flex min-h-44 w-64 shrink-0 flex-col justify-between bg-bg px-4 py-3 text-sm leading-5"
           >
             <span className="min-w-0">
-              <span className="flex items-center gap-2">
+              <span className="flex items-start gap-2">
                 {item.completed ? (
-                  <CheckCircle2 className="size-4 shrink-0 text-signal" aria-hidden="true" />
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-signal" aria-hidden="true" />
                 ) : (
-                  <Circle className="size-4 shrink-0 text-fg-dim" aria-hidden="true" />
+                  <Circle className="mt-0.5 size-4 shrink-0 text-fg-dim" aria-hidden="true" />
                 )}
                 <span className="font-medium text-fg">{item.label}</span>
               </span>
@@ -60,7 +67,7 @@ export function OnboardingChecklist() {
                 {onboardingMeta(item.key).description}
               </span>
             </span>
-            <span className="flex items-center gap-2 sm:justify-end">
+            <span className="mt-4 flex items-center gap-2">
               {item.completed ? (
                 <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
                   Done

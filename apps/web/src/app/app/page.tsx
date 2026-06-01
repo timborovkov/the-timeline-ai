@@ -129,7 +129,7 @@ export default async function HomeDashboardPage() {
         />
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.65fr)]">
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.65fr)]">
         <section
           id="capture"
           aria-label="Capture"
@@ -172,9 +172,10 @@ export default async function HomeDashboardPage() {
               label={team?.inboundEmail ? 'Email ingest ready' : 'Configure email ingest'}
             />
           </div>
-          <OnboardingChecklist />
         </section>
       </div>
+
+      <OnboardingChecklist />
 
       <section aria-label="Team access" className="space-y-3">
         <TeamAccessPanel
