@@ -36,6 +36,21 @@ describe('nav items', () => {
     ).toBe(true);
   });
 
+  it('does not keep Team active for source routes nested under team settings', () => {
+    expect(
+      isNavItemActive(
+        { href: '/app/team', activeHrefs: ['/app/team', '/app/team/jobs'] },
+        '/app/team/slack',
+      ),
+    ).toBe(false);
+    expect(
+      isNavItemActive(
+        { href: '/app/team', activeHrefs: ['/app/team', '/app/team/jobs'] },
+        '/app/team/jobs/retries',
+      ),
+    ).toBe(true);
+  });
+
   it('formats attention badges without rendering zero state', () => {
     expect(formatNavBadge(undefined)).toBeNull();
     expect(formatNavBadge(0)).toBeNull();

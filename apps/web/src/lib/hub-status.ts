@@ -1,12 +1,16 @@
 import {
+  boardViews,
+  calendarEvents,
   documents,
   documentVersions,
+  entities,
+  notifications,
   type integrations,
   type meetingStatus,
   type mcpServers,
 } from '@timeline/db';
 import { withTeam } from '@timeline/shared';
-import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 
@@ -53,8 +57,22 @@ export function attentionCount(...counts: number[]): number {
   return counts.reduce((sum, count) => sum + Math.max(0, count), 0);
 }
 
-function isOpenTask(status: string | null): boolean {
-  return status !== 'done' && status !== 'cancelled';
+export function workAttentionCount({
+  pendingApprovals,
+  unreadNotifications,
+  unreadApprovalNotifications,
+  overdueTasks,
+}: {
+  pendingApprovals: number;
+  unreadNotifications: number;
+  unreadApprovalNotifications: number;
+  overdueTasks: number;
+}): number {
+  const unreadNonApprovalNotifications = Math.max(
+    0,
+    unreadNotifications - unreadApprovalNotifications,
+  );
+  return attentionCount(pendingApprovals, unreadNonApprovalNotifications, overdueTasks);
 }
 
 function countIntegrationErrors(rows: IntegrationRow[]): number {
@@ -130,29 +148,103 @@ async function countVisibleDocuments(teamId: string, userId: string): Promise<nu
   return rows[0]?.total ?? 0;
 }
 
+async function countTeamRows(conditions: Parameters<typeof and>): Promise<number> {
+  const rows = await db
+    .select({ total: sql<number>`COUNT(*)::int` })
+    .from(entities)
+    .where(and(...conditions));
+  return rows[0]?.total ?? 0;
+}
+
+async function countUnreadApprovalNotifications(teamId: string, userId: string): Promise<number> {
+  const rows = await db
+    .select({ total: sql<number>`COUNT(*)::int` })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.teamId, teamId),
+        eq(notifications.userId, userId),
+        isNull(notifications.readAt),
+        isNotNull(notifications.agentSuggestionId),
+      ),
+    );
+  return rows[0]?.total ?? 0;
+}
+
+async function getWorkInventoryCounts(teamId: string, userId: string, now: Date, inTwoWeeks: Date) {
+  const activeObjectConditions = [
+    eq(entities.teamId, teamId),
+    isNull(entities.mergedIntoId),
+    isNull(entities.archivedAt),
+  ];
+  const openTaskConditions = [
+    ...activeObjectConditions,
+    eq(entities.type, 'task'),
+    ne(entities.status, 'done'),
+    ne(entities.status, 'cancelled'),
+  ];
+  const calendarReadVisibility = sql`(
+    ${calendarEvents.visibility} = 'team'
+    OR ${calendarEvents.visibility} = 'private'
+    OR ${calendarEvents.createdByUserId} = ${userId}::uuid
+    OR (${calendarEvents.visibility} = 'specific_users' AND ${userId}::uuid = ANY(${calendarEvents.visibilityUserIds}))
+  )`;
+
+  const [objectsTotal, tasksOpen, tasksOverdue, boardsTotal, upcomingRows] = await Promise.all([
+    countTeamRows(activeObjectConditions),
+    countTeamRows(openTaskConditions),
+    countTeamRows([...openTaskConditions, lt(entities.dueAt, now)]),
+    db
+      .select({ total: sql<number>`COUNT(*)::int` })
+      .from(boardViews)
+      .where(eq(boardViews.teamId, teamId)),
+    db
+      .select({ total: sql<number>`COUNT(*)::int` })
+      .from(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.teamId, teamId),
+          calendarReadVisibility,
+          isNull(calendarEvents.deletedAt),
+          sql`${calendarEvents.endAt} >= ${now}`,
+          lt(calendarEvents.startAt, inTwoWeeks),
+        ),
+      ),
+  ]);
+
+  return {
+    objectsTotal,
+    tasksOpen,
+    tasksOverdue,
+    boardsTotal: boardsTotal[0]?.total ?? 0,
+    upcomingCalendarEvents: upcomingRows[0]?.total ?? 0,
+  };
+}
+
 export async function getWorkStatusSummary(scope: TeamScope): Promise<WorkStatusSummary> {
   const now = new Date();
   const inTwoWeeks = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-  const [objects, tasks, boards, calendarEvents, unreadNotifications, pendingApprovals] =
+  await scope.requireMembership();
+  const [inventory, unreadNotifications, unreadApprovalNotifications, pendingApprovals] =
     await Promise.all([
-      scope.objects.listObjects({ archived: false, limit: 500 }),
-      scope.objects.listObjects({ type: 'task', archived: false, limit: 500 }),
-      scope.objects.listBoardViews(),
-      scope.calendar.listCalendarEvents({ from: now, to: inTwoWeeks, limit: 100 }),
+      getWorkInventoryCounts(scope.teamId, scope.userId, now, inTwoWeeks),
       scope.objects.unreadNotificationCount(),
+      countUnreadApprovalNotifications(scope.teamId, scope.userId),
       scope.suggestions.countPendingSuggestions(),
     ]);
 
-  const openTasks = tasks.filter((task) => isOpenTask(task.status));
-  const overdueTasks = openTasks.filter((task) => task.dueAt !== null && task.dueAt < now);
-
   return {
-    attention: attentionCount(pendingApprovals, unreadNotifications, overdueTasks.length),
-    objectsTotal: objects.length,
-    tasksOpen: openTasks.length,
-    tasksOverdue: overdueTasks.length,
-    boardsTotal: boards.length,
-    upcomingCalendarEvents: calendarEvents.length,
+    attention: workAttentionCount({
+      pendingApprovals,
+      unreadNotifications,
+      unreadApprovalNotifications,
+      overdueTasks: inventory.tasksOverdue,
+    }),
+    objectsTotal: inventory.objectsTotal,
+    tasksOpen: inventory.tasksOpen,
+    tasksOverdue: inventory.tasksOverdue,
+    boardsTotal: inventory.boardsTotal,
+    upcomingCalendarEvents: inventory.upcomingCalendarEvents,
     unreadNotifications,
     pendingApprovals,
   };
@@ -216,7 +308,7 @@ export async function getSourcesStatusSummary(
     meetingMinutesUsed,
     nativeIntegrations: onboarding.connectionCounts.nativeIntegrations,
     integrationErrors,
-    mcpServers: onboarding.connectionCounts.teamMcpServers,
+    mcpServers: mcpServerRows.length,
     mcpErrors,
   };
 }

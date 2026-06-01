@@ -97,6 +97,7 @@ export function isNavItemActive(
   const hrefs = item.activeHrefs ?? [item.href];
   return hrefs.some((href) => {
     if (href === '/app') return pathname === '/app';
+    if (item.activeHrefs && href === item.href) return pathname === href;
     return pathname === href || pathname.startsWith(`${href}/`);
   });
 }
