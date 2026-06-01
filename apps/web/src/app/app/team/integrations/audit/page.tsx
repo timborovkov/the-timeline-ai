@@ -1,11 +1,18 @@
 import { withTeam } from '@timeline/shared';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { Breadcrumb } from '@/components/breadcrumb';
 import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Integration audit',
+  description: 'Review integration activity and sync history.',
+};
 
 export const dynamic = 'force-dynamic';
 
@@ -18,11 +25,13 @@ export default async function IntegrationAuditPage() {
   // Audit rows can contain provider/external_account_id metadata + sync
   // error details (file/issue names, partial payloads) that the rest of
   // the integration mutations gate to admins. Match that posture here.
+  let canViewAudit = true;
   try {
     await scope.requireMembership('admin');
   } catch {
-    redirect('/app/team/integrations');
+    canViewAudit = false;
   }
+  if (!canViewAudit) redirect('/app/team/integrations');
   const rows = await scope.integrations.listAudit(null, 200);
   return (
     <div className="mx-auto max-w-4xl space-y-8">

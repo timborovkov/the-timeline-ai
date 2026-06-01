@@ -4,11 +4,18 @@ import { type UIMessage } from 'ai';
 import { and, eq, inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { ChatPane } from '@/components/chat/chat-pane';
 import { SessionSidebar } from '@/components/chat/session-sidebar';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Chat',
+  description: 'Ask questions across timeline context.',
+};
 
 export const dynamic = 'force-dynamic';
 
@@ -111,8 +118,7 @@ export default async function ChatPage({
 
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
-  const team = await scope.timeline.team();
-  const params = await searchParams;
+  const [team, params] = await Promise.all([scope.timeline.team(), searchParams]);
   const requestedSessionId = params.session ?? null;
 
   const sessions = await scope.objects.listChatSessions({ limit: 50 });

@@ -8,10 +8,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+const EMPTY_MEMBERS: { id: string; label: string }[] = [];
+
 export function ScheduleMeetingBotForm({
   defaultVisibility = 'team',
   defaultVisibilityUserIds = null,
-  members = [],
+  members = EMPTY_MEMBERS,
 }: {
   defaultVisibility?: 'team' | 'private' | 'specific_users';
   defaultVisibilityUserIds?: string[] | null;

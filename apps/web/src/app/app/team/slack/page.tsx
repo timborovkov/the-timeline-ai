@@ -11,6 +11,8 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { bindSlackConversationAction, unbindSlackConversationAction } from '@/app/actions/slack';
 import { IndexStrip } from '@/components/index-strip';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +21,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Slack',
+  description: 'Configure Slack capture and bindings.',
+};
 
 export default async function SlackSettingsPage() {
   const session = await auth();
@@ -34,42 +41,42 @@ export default async function SlackSettingsPage() {
     env.SLACK_CLIENT_ID && env.SLACK_CLIENT_SECRET && env.SLACK_SIGNING_SECRET,
   );
 
-  const installs = await db
-    .select({
-      workspaceId: slackWorkspaces.id,
-      name: slackWorkspaces.name,
-      slackTeamId: slackWorkspaces.slackTeamId,
-      enabled: slackWorkspaceTeams.enabled,
-    })
-    .from(slackWorkspaceTeams)
-    .innerJoin(slackWorkspaces, eq(slackWorkspaces.id, slackWorkspaceTeams.workspaceId))
-    .where(eq(slackWorkspaceTeams.teamId, active.teamId));
+  const [installs, bindings, linkedSlackUsers] = await Promise.all([
+    db
+      .select({
+        workspaceId: slackWorkspaces.id,
+        name: slackWorkspaces.name,
+        slackTeamId: slackWorkspaces.slackTeamId,
+        enabled: slackWorkspaceTeams.enabled,
+      })
+      .from(slackWorkspaceTeams)
+      .innerJoin(slackWorkspaces, eq(slackWorkspaces.id, slackWorkspaceTeams.workspaceId))
+      .where(eq(slackWorkspaceTeams.teamId, active.teamId)),
+    db
+      .select()
+      .from(slackConversationBindings)
+      .where(
+        and(
+          eq(slackConversationBindings.teamId, active.teamId),
+          eq(slackConversationBindings.enabled, true),
+        ),
+      )
+      .orderBy(desc(slackConversationBindings.createdAt)),
+    db
+      .select({
+        id: slackUsers.id,
+        slackUserId: slackUsers.slackUserId,
+        name: slackUsers.name,
+        realName: slackUsers.realName,
+        email: slackUsers.email,
+        userId: slackUserTeams.userId,
+        isActive: slackUserTeams.isActive,
+      })
+      .from(slackUserTeams)
+      .innerJoin(slackUsers, eq(slackUsers.id, slackUserTeams.slackUserId))
+      .where(eq(slackUserTeams.teamId, active.teamId)),
+  ]);
   const install = installs[0] ?? null;
-
-  const bindings = await db
-    .select()
-    .from(slackConversationBindings)
-    .where(
-      and(
-        eq(slackConversationBindings.teamId, active.teamId),
-        eq(slackConversationBindings.enabled, true),
-      ),
-    )
-    .orderBy(desc(slackConversationBindings.createdAt));
-
-  const linkedSlackUsers = await db
-    .select({
-      id: slackUsers.id,
-      slackUserId: slackUsers.slackUserId,
-      name: slackUsers.name,
-      realName: slackUsers.realName,
-      email: slackUsers.email,
-      userId: slackUserTeams.userId,
-      isActive: slackUserTeams.isActive,
-    })
-    .from(slackUserTeams)
-    .innerJoin(slackUsers, eq(slackUsers.id, slackUserTeams.slackUserId))
-    .where(eq(slackUserTeams.teamId, active.teamId));
 
   const userIds = linkedSlackUsers.map((u) => u.userId);
   const appUsers =
@@ -171,14 +178,16 @@ export default async function SlackSettingsPage() {
                 <option value="" disabled>
                   Choose a channel
                 </option>
-                {conversations
-                  .filter((c) => !boundIds.has(c.id))
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      #{c.name ?? c.id}
-                      {c.is_member === false ? ' (invite bot first)' : ''}
-                    </option>
-                  ))}
+                {conversations.flatMap((c) =>
+                  boundIds.has(c.id)
+                    ? []
+                    : [
+                        <option key={c.id} value={c.id}>
+                          #{c.name ?? c.id}
+                          {c.is_member === false ? ' (invite bot first)' : ''}
+                        </option>,
+                      ],
+                )}
               </select>
               <Button type="submit">Bind</Button>
             </form>

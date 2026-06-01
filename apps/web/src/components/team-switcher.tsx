@@ -36,10 +36,12 @@ interface Props {
   variant?: 'full' | 'rail';
 }
 
+const EMPTY_RECIPIENT_INVITES: RecipientInvite[] = [];
+
 export function TeamSwitcher({
   active,
   memberships,
-  recipientInvites = [],
+  recipientInvites = EMPTY_RECIPIENT_INVITES,
   variant = 'full',
 }: Props) {
   const monogram = initials(active.teamName);
@@ -198,7 +200,7 @@ export function TeamSwitcher({
             )}
           </section>
 
-          <section className="space-y-3 rounded-md border border-border bg-surface px-4 py-4">
+          <section className="space-y-3 rounded-md border border-border bg-surface p-4">
             <div className="flex items-center gap-2">
               <Plus className="size-4 text-fg-dim" />
               <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">

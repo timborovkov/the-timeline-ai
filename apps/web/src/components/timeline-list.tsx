@@ -47,6 +47,8 @@ interface Props {
   impactItemsByEventId?: Record<string, ImpactItem[]>;
 }
 
+const EMPTY_MEMBERS: NonNullable<Props['members']> = [];
+
 const SOURCE_ICON: Record<TimelineEvent['source'], LucideIcon> = {
   web: MousePointer,
   telegram: Send,
@@ -253,8 +255,8 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
             Source metadata
           </h3>
           <dl className="space-y-1.5">
-            {metadata.map(([key, value], index) => (
-              <div key={`${key}:${index}`} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
+            {metadata.map(([key, value]) => (
+              <div key={key} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
                 <dt className="truncate text-fg-dim">{key}</dt>
                 <dd className="min-w-0 truncate text-fg-muted" title={formatMetadataValue(value)}>
                   {formatMetadataValue(value)}
@@ -303,6 +305,7 @@ function RawEventExpansion({
                 <audio
                   src={audioUrlMap.get(event.id)}
                   controls
+                  aria-label="Voice memo"
                   preload="metadata"
                   className="mt-2 w-full max-w-md"
                 />
@@ -344,7 +347,7 @@ function RawEventExpansion({
                     type="submit"
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 text-fg-dim hover:text-danger"
+                    className="size-7 text-fg-dim hover:text-danger"
                     title="Remove from timeline"
                   >
                     <Trash2 aria-hidden="true" className="size-3.5" />
@@ -480,7 +483,7 @@ export function TimelineList({
   audioUrlMap,
   currentUserId,
   isAdmin,
-  members = [],
+  members = EMPTY_MEMBERS,
   compact = false,
   maxMoments,
   emptyLabel = 'NO EVENTS YET',

@@ -10,6 +10,7 @@ import { CircleCheckBig, Mail, Video } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 import { CaptureForm } from '@/components/capture-form';
@@ -21,6 +22,11 @@ import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Dashboard',
+  description: 'Capture events and review the latest timeline activity.',
+};
 
 async function signAudio(events: { id: string; contentAudioUrl: string | null }[]) {
   const audioEvents = events.filter((event) => event.contentAudioUrl);

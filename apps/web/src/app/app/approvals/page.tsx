@@ -2,12 +2,19 @@ import { withTeam } from '@timeline/shared';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
+
+export const metadata: Metadata = {
+  title: 'Approvals',
+  description: 'Review pending agent suggestions and approvals.',
+};
 
 const STATUS_FILTERS = ['pending', 'failed', 'resolved', 'all'] as const;
 

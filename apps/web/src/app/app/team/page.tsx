@@ -3,6 +3,8 @@ import { withTeam } from '@timeline/shared';
 import { and, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import {
   changeMemberRoleAction,
   removeMemberAction,
@@ -19,6 +21,11 @@ import { VisibilityDefaultSettings } from '@/components/visibility-default-setti
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Team settings',
+  description: 'Manage team members, defaults, and access.',
+};
 
 export default async function TeamSettingsPage() {
   const session = await auth();

@@ -1,10 +1,17 @@
 import { withTeam } from '@timeline/shared';
 import { notFound, redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { DocumentDetail } from '@/components/documents/document-detail';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Document',
+  description: 'Review a document and extracted timeline context.',
+};
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
