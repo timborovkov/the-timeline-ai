@@ -1,5 +1,7 @@
 import { join } from 'node:path';
 
+import { withSentryConfig } from '@sentry/nextjs';
+
 import type { NextConfig } from 'next';
 
 const workspaceRoot = join(__dirname, '../..');
@@ -28,4 +30,13 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+const sentryOptions = {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  tunnelRoute: '/sentry-tunnel',
+  silent: !process.env.CI,
+  widenClientFileUpload: Boolean(process.env.SENTRY_AUTH_TOKEN),
+};
+
+export default withSentryConfig(nextConfig, sentryOptions);

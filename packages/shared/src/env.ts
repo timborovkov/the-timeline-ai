@@ -132,6 +132,17 @@ const schema = z.object({
   // Sentry (optional)
   SENTRY_DSN: z.string().optional(),
   SENTRY_ENVIRONMENT: z.string().optional(),
+  NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
+  SENTRY_PROFILES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
+  SENTRY_AUTH_TOKEN: z.string().optional(),
+  SENTRY_ORG: z.string().optional(),
+  SENTRY_PROJECT: z.string().optional(),
+
+  // PostHog product analytics + feature flags. Browser-facing values are
+  // intentionally public; server helpers no-op when the project key is unset.
+  NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
+  NEXT_PUBLIC_POSTHOG_HOST: z.url().default('https://eu.i.posthog.com'),
 
   // Phase 10 — Meeting bots. Provider defaults to Recall.ai. Set
   // RECALL_API_KEY + RECALL_STATUS_WEBHOOK_SECRET (Svix-signed status

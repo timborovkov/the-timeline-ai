@@ -23,6 +23,12 @@
       "import": "./dist/integrations/registry.js",
       "types": "./dist/integrations/registry.d.ts"
     },
+    "./analytics": {
+      "types": "./src/analytics/events.ts",
+      "development": "./src/analytics/events.ts",
+      "import": "./dist/analytics/events.js",
+      "default": "./dist/analytics/events.js"
+    },
     "./job-recovery": {
       "types": "./src/job-recovery/index.ts",
       "development": "./src/job-recovery/index.ts",

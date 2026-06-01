@@ -9,6 +9,7 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
 import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
+import { trackProductEvent } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { ensureSoloTeam } from '@/lib/default-team';
@@ -32,9 +33,9 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
   const userId = session.user.id;
   const sessionEmail = session.user.email?.toLowerCase();
 
-  let teamId: string;
+  let accepted: { teamId: string; role: 'admin' | 'member' };
   try {
-    teamId = await db.transaction(async (tx) => {
+    accepted = await db.transaction(async (tx) => {
       const invites = await tx
         .select()
         .from(teamInvites)
@@ -92,7 +93,7 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
             sql`${teamInvites.id} <> ${invite.id}`,
           ),
         );
-      return invite.teamId;
+      return { teamId: invite.teamId, role: invite.role };
     });
   } catch (e) {
     // Only known sentinel reasons get surfaced in the URL; anything else
@@ -129,11 +130,19 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
   await clearPendingInvite();
 
   const cookieStore = await cookies();
-  cookieStore.set(ACTIVE_TEAM_COOKIE, teamId, {
+  cookieStore.set(ACTIVE_TEAM_COOKIE, accepted.teamId, {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
     maxAge: 60 * 60 * 24 * 365,
+  });
+  await trackProductEvent(userId, 'invite_accepted', {
+    teamId: accepted.teamId,
+    userId,
+    role: accepted.role,
+    source: 'accept_invite',
+  }).catch((err: unknown) => {
+    log.warn({ err, teamId: accepted.teamId, userId }, 'analytics_invite_accepted_failed');
   });
   redirect('/app/timeline');
 }
@@ -174,9 +183,9 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
   if (!parsed.success) return;
   const userId = session.user.id;
 
-  let teamId: string;
+  let accepted: { teamId: string; role: 'admin' | 'member' };
   try {
-    teamId = await db.transaction(async (tx) => {
+    accepted = await db.transaction(async (tx) => {
       const currentUsers = await tx
         .select({ email: users.email, emailVerified: users.emailVerified })
         .from(users)
@@ -243,7 +252,7 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
             sql`${teamInvites.id} <> ${invite.id}`,
           ),
         );
-      return invite.teamId;
+      return { teamId: invite.teamId, role: invite.role };
     });
   } catch {
     revalidatePath('/app', 'layout');
@@ -251,11 +260,19 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(ACTIVE_TEAM_COOKIE, teamId, {
+  cookieStore.set(ACTIVE_TEAM_COOKIE, accepted.teamId, {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
     maxAge: 60 * 60 * 24 * 365,
+  });
+  await trackProductEvent(userId, 'invite_accepted', {
+    teamId: accepted.teamId,
+    userId,
+    role: accepted.role,
+    source: 'accept_invite',
+  }).catch((err: unknown) => {
+    log.warn({ err, teamId: accepted.teamId, userId }, 'analytics_invite_accepted_failed');
   });
   redirect('/app/timeline');
 }

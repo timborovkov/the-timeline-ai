@@ -15,6 +15,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEvent } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
@@ -246,6 +247,23 @@ export async function finalizeDocumentVersionAction(
       teamId: got.teamId,
     });
     await safeMarkOnboardingStep(got.scope, 'first_document');
+    await Promise.all([
+      trackProductEvent(got.userId, 'document_uploaded', {
+        teamId: got.teamId,
+        userId: got.userId,
+        documentId: finalized.document.id,
+        versionId: finalized.version.id,
+        byteSize: head.contentLength,
+        contentType: head.contentType ?? version.contentType ?? 'application/octet-stream',
+        visibility: finalized.document.visibility,
+      }),
+      trackProductEvent(got.userId, 'onboarding_step_completed', {
+        teamId: got.teamId,
+        userId: got.userId,
+        step: 'first_document',
+        source: 'automatic',
+      }),
+    ]).catch(() => undefined);
     revalidatePath('/app/documents');
     revalidatePath(`/app/documents/${finalized.document.id}`);
     revalidatePath('/app/timeline');

@@ -25,11 +25,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@sentry/node": "^10.55.0",
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",
     "bullmq": "^5.77.7",
     "drizzle-orm": "^0.45.2",
     "mammoth": "^1.12.0",
+    "posthog-node": "^5.35.11",
     "zod": "^4.4.3"
   },
   "devDependencies": {

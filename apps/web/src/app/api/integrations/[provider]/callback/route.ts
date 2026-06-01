@@ -7,6 +7,7 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { trackProductEvent } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
@@ -105,6 +106,20 @@ export async function GET(
       created.id,
     );
     await safeMarkOnboardingStep(scope, 'first_integration');
+    await Promise.all([
+      trackProductEvent(session.user.id, 'integration_connected', {
+        teamId: verified.teamId,
+        userId: session.user.id,
+        integrationId: created.id,
+        provider,
+      }),
+      trackProductEvent(session.user.id, 'onboarding_step_completed', {
+        teamId: verified.teamId,
+        userId: session.user.id,
+        step: 'first_integration',
+        source: 'automatic',
+      }),
+    ]).catch(() => undefined);
     return NextResponse.redirect(
       new URL(`/app/team/integrations?connected=${provider}&integrationId=${created.id}`, req.url),
     );

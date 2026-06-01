@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 
 import type { ReactNode } from 'react';
 
+import { AnalyticsProvider } from '@/components/analytics-provider';
 import { AppShell } from '@/components/app-shell';
 import { QueryProvider } from '@/components/query-provider';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -73,22 +74,24 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   );
 
   return (
-    <QueryProvider>
-      <AppShell
-        active={active}
-        memberships={memberships}
-        recipientInvites={recipientInvites.map((invite) => ({
-          id: invite.id,
-          teamName: invite.teamName,
-          role: invite.role === 'owner' ? 'member' : invite.role,
-          expiresAt: invite.expiresAt.toISOString(),
-          invitedBy: invite.inviterName ?? invite.inviterEmail,
-        }))}
-        user={session.user}
-        badges={badges}
-      >
-        {children}
-      </AppShell>
-    </QueryProvider>
+    <AnalyticsProvider userId={session.user.id} teamId={active.teamId}>
+      <QueryProvider>
+        <AppShell
+          active={active}
+          memberships={memberships}
+          recipientInvites={recipientInvites.map((invite) => ({
+            id: invite.id,
+            teamName: invite.teamName,
+            role: invite.role === 'owner' ? 'member' : invite.role,
+            expiresAt: invite.expiresAt.toISOString(),
+            invitedBy: invite.inviterName ?? invite.inviterEmail,
+          }))}
+          user={session.user}
+          badges={badges}
+        >
+          {children}
+        </AppShell>
+      </QueryProvider>
+    </AnalyticsProvider>
   );
 }

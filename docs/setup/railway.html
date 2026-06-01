@@ -85,7 +85,8 @@
       <p>
         In <strong>Settings → Variables</strong>, set everything from <code>.env.example</code> that
         isn't a local-only default. Mark provider tokens and secrets (OpenRouter, Telegram, Slack,
-        Postmark, Resend, Sentry) as <strong>secret</strong>.
+        Postmark, Resend, Sentry) as <strong>secret</strong>. PostHog's public project key and host
+        are not secrets, but keep them environment-specific.
       </p>
       <p>
         Keep <code>NODE_ENV</code> as <code>production</code> for both Railway environments. Use the
@@ -98,6 +99,13 @@
         rendered on anonymous public forms: email/password registration and
         <code>/help/support</code>. OAuth sign-up and signed-in app forms do not show CAPTCHA; they
         use rate limits, permission checks, and product quotas instead.
+      </p>
+      <p>
+        For product analytics, set <code>NEXT_PUBLIC_POSTHOG_KEY</code> and
+        <code>NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com</code>. For error monitoring, set
+        <code>SENTRY_DSN</code>, <code>NEXT_PUBLIC_SENTRY_DSN</code>,
+        <code>SENTRY_ENVIRONMENT</code>, and optional source-map upload variables
+        <code>SENTRY_AUTH_TOKEN</code>, <code>SENTRY_ORG</code>, and <code>SENTRY_PROJECT</code>.
       </p>
 
       <h2 id="healthchecks">6. Healthchecks</h2>

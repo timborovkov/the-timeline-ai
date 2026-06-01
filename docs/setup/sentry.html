@@ -11,10 +11,10 @@
     <main id="main">
       <h1>Sentry setup</h1>
       <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-22</span></div>
-      <blockquote><p>Optional in Phase 1. Strongly recommended before production.</p></blockquote>
+      <blockquote><p>Optional locally. Strongly recommended before production.</p></blockquote>
       <p class="tldr">
-        Hook the web and worker services into Sentry for error tracking. Env vars are accepted
-        today; full wiring lands when prioritized.
+        Hook the web and worker services into Sentry for error tracking. The integration is wired in
+        code and stays disabled when DSNs are blank.
       </p>
 
       <h2 id="project">1. Project</h2>
@@ -28,15 +28,29 @@
       </ol>
       <p>Set in <code>.env</code>:</p>
       <pre><code>SENTRY_DSN=https://...@o0.ingest.sentry.io/0
+NEXT_PUBLIC_SENTRY_DSN=https://...@o0.ingest.sentry.io/0
 SENTRY_ENVIRONMENT=development
+SENTRY_TRACES_SAMPLE_RATE=0
+SENTRY_PROFILES_SAMPLE_RATE=0
 </code></pre>
 
       <h2 id="wiring">2. Wiring</h2>
       <p>
-        Initialization lands when this becomes a phase priority. For now: env vars are accepted and
-        read by <code>packages/shared/env.ts</code>; if absent, the app runs without error tracking
-        and logs a warning at startup.
+        The web service initializes Sentry from the Next.js instrumentation files and routes browser
+        events through <code>/sentry-tunnel</code>. The worker initializes <code>@sentry/node</code>
+        on startup, captures fatal startup/shutdown errors, and flushes before exit.
       </p>
+      <p>
+        Keep <code>sendDefaultPii</code> disabled. Do not attach cookies, auth headers, prompts,
+        transcripts, filenames, uploaded content, or raw document text to Sentry events. The
+        scrubber removes request cookies and auth headers before send.
+      </p>
+      <h2 id="source-maps">3. Source maps</h2>
+      <p>Set these only in CI/deploy environments that should upload source maps:</p>
+      <pre><code>SENTRY_AUTH_TOKEN=
+SENTRY_ORG=
+SENTRY_PROJECT=
+</code></pre>
     </main>
   </body>
 </html>

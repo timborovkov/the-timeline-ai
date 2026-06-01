@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEvent } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
@@ -105,6 +106,20 @@ export async function POST(req: Request): Promise<Response> {
         authConfig,
       });
       await safeMarkOnboardingStep(scope, 'first_integration');
+      await Promise.all([
+        trackProductEvent(session.user.id, 'integration_connected', {
+          teamId: active.teamId,
+          userId: session.user.id,
+          integrationId: server.id,
+          provider: 'mcp',
+        }),
+        trackProductEvent(session.user.id, 'onboarding_step_completed', {
+          teamId: active.teamId,
+          userId: session.user.id,
+          step: 'first_integration',
+          source: 'automatic',
+        }),
+      ]).catch(() => undefined);
       return NextResponse.json({
         id: server.id,
         catalogId: entry.id,
@@ -137,6 +152,24 @@ export async function POST(req: Request): Promise<Response> {
     if (custom.data.ownership !== 'personal') {
       await safeMarkOnboardingStep(scope, 'first_integration');
     }
+    await Promise.all([
+      trackProductEvent(session.user.id, 'integration_connected', {
+        teamId: active.teamId,
+        userId: session.user.id,
+        integrationId: server.id,
+        provider: 'mcp',
+      }),
+      ...(custom.data.ownership !== 'personal'
+        ? [
+            trackProductEvent(session.user.id, 'onboarding_step_completed', {
+              teamId: active.teamId,
+              userId: session.user.id,
+              step: 'first_integration',
+              source: 'automatic',
+            }),
+          ]
+        : []),
+    ]).catch(() => undefined);
     return NextResponse.json({ id: server.id, needsOauth: custom.data.authType === 'oauth' });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'add_failed';

@@ -12,6 +12,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEvent } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
@@ -68,6 +69,21 @@ export async function createTextEventAction(
   });
   await safeMarkOnboardingStep(scope, 'first_note');
   await deleteCacheKey(cacheKey(['onboarding', active.teamId, session.user.id]));
+  await Promise.all([
+    trackProductEvent(session.user.id, 'capture_created', {
+      teamId: active.teamId,
+      userId: session.user.id,
+      rawEventId: event.id,
+      captureType: 'text',
+      visibility: parsed.data.visibility,
+    }),
+    trackProductEvent(session.user.id, 'onboarding_step_completed', {
+      teamId: active.teamId,
+      userId: session.user.id,
+      step: 'first_note',
+      source: 'automatic',
+    }),
+  ]).catch(() => undefined);
 
   const processingWarnings: string[] = [];
   try {
@@ -259,6 +275,22 @@ export async function createAudioEventAction(
   });
   await safeMarkOnboardingStep(scope, 'first_note');
   await deleteCacheKey(cacheKey(['onboarding', active.teamId, session.user.id]));
+  await Promise.all([
+    trackProductEvent(session.user.id, 'capture_created', {
+      teamId: active.teamId,
+      userId: session.user.id,
+      rawEventId: event.id,
+      captureType: 'audio',
+      visibility: parsed.data.visibility,
+      durationSec: parsed.data.durationSec,
+    }),
+    trackProductEvent(session.user.id, 'onboarding_step_completed', {
+      teamId: active.teamId,
+      userId: session.user.id,
+      step: 'first_note',
+      source: 'automatic',
+    }),
+  ]).catch(() => undefined);
 
   try {
     const queue = await requireRedisQueue();

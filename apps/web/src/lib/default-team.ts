@@ -19,18 +19,18 @@ import { db } from '@/lib/db';
 export async function ensureSoloTeam(
   userId: string,
   hint: { name?: string | null; email?: string | null } = {},
-): Promise<void> {
+): Promise<string | null> {
   const existing = await db
     .select({ teamId: teamMembers.teamId })
     .from(teamMembers)
     .where(and(eq(teamMembers.userId, userId), isNull(teamMembers.removedAt)))
     .limit(1);
-  if (existing.length > 0) return;
+  if (existing.length > 0) return null;
 
   const label = hint.name ?? hint.email?.split('@')[0] ?? 'team';
   const slug = `${slugify(`${label}-team`) || 'team'}-${randomSlugSuffix()}`;
   const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     const inserted = await tx
       .insert(teams)
       .values({ name: `${label}'s Team`, slug, inboundEmail })
@@ -38,5 +38,6 @@ export async function ensureSoloTeam(
     const teamId = inserted[0]?.id;
     if (!teamId) throw new Error('Failed to create default team');
     await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
+    return teamId;
   });
 }

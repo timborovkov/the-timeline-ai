@@ -2,6 +2,7 @@ import { closeDb, getDb } from '@timeline/db';
 import { waitForMigrations } from '@timeline/db/wait-for-migrations';
 import { childLogger, queue } from '@timeline/shared';
 
+import { captureWorkerException, flushWorkerSentry, initWorkerSentry } from '#src/monitoring.js';
 import { startDocumentExtractWorker } from '#src/workers/documentExtract.js';
 import { startEmbedWorker } from '#src/workers/embed.js';
 import { startExtractWorker } from '#src/workers/extract.js';
@@ -15,6 +16,8 @@ import { startTeamExportWorker } from '#src/workers/teamExport.js';
 import { startTranscribeWorker } from '#src/workers/transcribe.js';
 
 const log = childLogger('worker');
+
+initWorkerSentry();
 
 async function main(): Promise<void> {
   // On Railway, the web service runs migrations in preDeploy and again from
@@ -79,7 +82,9 @@ async function main(): Promise<void> {
       await queue.closeRedisConnection();
     } catch (err: unknown) {
       log.error({ err }, 'shutdown error');
+      captureWorkerException(err, { signal, component: 'worker_shutdown' });
     } finally {
+      await flushWorkerSentry().catch(() => false);
       await closeDb().catch(() => undefined);
       process.exit(0);
     }
@@ -90,5 +95,8 @@ async function main(): Promise<void> {
 
 main().catch((err: unknown) => {
   log.fatal({ err }, 'fatal');
-  process.exit(1);
+  captureWorkerException(err, { component: 'worker_startup' });
+  void flushWorkerSentry().finally(() => {
+    process.exit(1);
+  });
 });
