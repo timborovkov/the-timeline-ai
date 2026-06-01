@@ -25,16 +25,24 @@ function baseMimeType(mt: string): string {
 interface Props {
   initialVisibility?: 'team' | 'private';
   currentUser: { id: string; name: string | null; email: string };
-  filters?: { author?: string | null; from?: string | null; to?: string | null };
+  filters?: {
+    author?: string | null;
+    from?: string | null;
+    to?: string | null;
+    source?: string | null;
+    impact?: string | null;
+  };
 }
 
 type CaptureFilters = NonNullable<Props['filters']>;
 
 function filterAllowsEvent(
   filters: CaptureFilters,
-  event: Pick<TimelineEvent, 'authorUserId' | 'occurredAt'>,
+  event: Pick<TimelineEvent, 'authorUserId' | 'occurredAt' | 'source'>,
 ): boolean {
   if (filters.author && filters.author !== event.authorUserId) return false;
+  if (filters.source && filters.source !== event.source) return false;
+  if (filters.impact) return false;
   const occurredAt = new Date(event.occurredAt).getTime();
   if (filters.from && occurredAt < new Date(filters.from).getTime()) return false;
   if (filters.to && occurredAt >= new Date(filters.to).getTime() + 24 * 60 * 60 * 1000) {

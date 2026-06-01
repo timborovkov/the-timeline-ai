@@ -11,6 +11,7 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { CaptureForm } from '@/components/capture-form';
 import { IndexStrip } from '@/components/index-strip';
 import { SearchBar } from '@/components/search-bar';
 import { TimelineFeed } from '@/components/timeline-feed';
@@ -90,7 +91,7 @@ export default async function TimelinePage({ searchParams }: Props) {
   const toFilter = parseDate(sp.to);
   const toQueryFilter = parseEndOfDay(sp.to);
 
-  const [timelinePage, members] = await Promise.all([
+  const [timelinePage, members, webDefault] = await Promise.all([
     collectTimelinePage({
       impact: impactFilter,
       fetchPage: async ({ cursor, limit }) => {
@@ -110,8 +111,10 @@ export default async function TimelinePage({ searchParams }: Props) {
       hydrateImpact: (eventIds) => scope.timeline.listImpactItems(eventIds),
     }),
     scope.timeline.listMembers(),
+    scope.timeline.resolveVisibilityDefault('web'),
   ]);
   const events = timelinePage.items;
+  const quickCaptureVisibility = webDefault.visibility === 'private' ? 'private' : 'team';
 
   const userIds = Array.from(
     new Set([
@@ -185,11 +188,37 @@ export default async function TimelinePage({ searchParams }: Props) {
             : []),
         ]}
         trailing={
-          <Button asChild variant="outline" size="sm">
-            <Link href="/app#capture">Capture</Link>
-          </Button>
+          hasFilters ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href="/app/timeline#capture">Capture</Link>
+            </Button>
+          ) : undefined
         }
       />
+
+      {!hasFilters ? (
+        <section
+          id="capture"
+          aria-label="Capture"
+          className="rounded-sm border border-border bg-surface p-4 focus-within:border-border-strong"
+        >
+          <CaptureForm
+            initialVisibility={quickCaptureVisibility}
+            currentUser={{
+              id: session.user.id,
+              name: session.user.name ?? null,
+              email: session.user.email ?? '',
+            }}
+            filters={{
+              author: authorFilter ?? null,
+              from: sp.from ?? null,
+              to: sp.to ?? null,
+              source: sourceFilter ?? null,
+              impact: impactFilter ?? null,
+            }}
+          />
+        </section>
+      ) : null}
 
       <SearchBar initialQuery={sp.q ?? ''} />
 

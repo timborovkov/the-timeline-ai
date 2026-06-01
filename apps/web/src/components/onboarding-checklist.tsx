@@ -44,7 +44,7 @@ export function OnboardingChecklist() {
         {data.items.map((item) => (
           <li
             key={item.key}
-            className="flex items-center justify-between rounded-sm border border-border bg-bg px-3 py-2 text-sm"
+            className="flex items-center justify-between rounded-sm border border-border bg-bg px-3 py-2 text-xs leading-5"
           >
             <span>{item.label}</span>
             <button
