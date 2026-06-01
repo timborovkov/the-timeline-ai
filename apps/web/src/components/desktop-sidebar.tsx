@@ -1,7 +1,7 @@
 'use client';
 
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 
 import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
@@ -18,6 +18,7 @@ interface Props {
 }
 
 const SIDEBAR_STORAGE_KEY = 'timeline.sidebar.expanded';
+const useBrowserLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 function readStoredExpanded(): boolean {
   try {
@@ -38,8 +39,21 @@ function writeStoredExpanded(expanded: boolean) {
 export function DesktopSidebar({ active, memberships, recipientInvites }: Props) {
   const [expanded, setExpanded] = useState(true);
 
-  useEffect(() => {
+  useBrowserLayoutEffect(() => {
     setExpanded(readStoredExpanded());
+  }, []);
+
+  useEffect(() => {
+    function handleStorage(event: StorageEvent) {
+      if (event.key === SIDEBAR_STORAGE_KEY) {
+        setExpanded(event.newValue !== 'false');
+      }
+    }
+
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   function toggleExpanded() {
