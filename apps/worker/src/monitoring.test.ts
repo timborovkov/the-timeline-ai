@@ -9,6 +9,17 @@ const withScope = vi.fn((fn: (scope: { setTag: typeof setScopeTag }) => void) =>
   fn({ setTag: setScopeTag });
 });
 
+interface WorkerBeforeSendEvent {
+  request?: {
+    cookies?: Record<string, string>;
+    headers?: Record<string, string>;
+  };
+}
+
+interface WorkerSentryInitOptions {
+  beforeSend?: (event: WorkerBeforeSendEvent) => WorkerBeforeSendEvent;
+}
+
 vi.mock('@sentry/node', () => ({
   init,
   setTag,
@@ -55,5 +66,28 @@ describe('worker Sentry monitoring', () => {
     expect(setScopeTag).toHaveBeenCalledWith('jobName', 'meeting-finalize');
     expect(captureException).toHaveBeenCalledOnce();
     expect(flush).toHaveBeenCalledWith(2000);
+  });
+
+  it('scrubs request auth material case-insensitively', async () => {
+    process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
+    const monitoring = await import('#src/monitoring.js');
+
+    monitoring.initWorkerSentry();
+    const initOptions = init.mock.calls[0]?.[0] as WorkerSentryInitOptions | undefined;
+    const beforeSend = initOptions?.beforeSend;
+    const event = beforeSend?.({
+      request: {
+        cookies: { session: 'secret' },
+        headers: {
+          Authorization: 'Bearer token',
+          Cookie: 'session=secret',
+          'X-Auth-Token': 'token',
+          'x-request-id': 'req-1',
+        },
+      },
+    });
+
+    expect(event?.request?.cookies).toBeUndefined();
+    expect(event?.request?.headers).toEqual({ 'x-request-id': 'req-1' });
   });
 });

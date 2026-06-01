@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ErrorEvent } from '@sentry/nextjs';
 
-import { scrubSentryEvent, sentrySampleRate } from '@/sentry.shared';
+import { parseSentrySampleRate, scrubSentryEvent, sentrySampleRate } from '@/sentry.shared';
 
 describe('Sentry web config helpers', () => {
   it('defaults invalid sample rates to zero', () => {
@@ -12,6 +12,8 @@ describe('Sentry web config helpers', () => {
     expect(sentrySampleRate('SENTRY_TRACES_SAMPLE_RATE')).toBe(0);
     process.env.SENTRY_TRACES_SAMPLE_RATE = '0.25';
     expect(sentrySampleRate('SENTRY_TRACES_SAMPLE_RATE')).toBe(0.25);
+    expect(parseSentrySampleRate(undefined)).toBe(0);
+    expect(parseSentrySampleRate('0.5')).toBe(0.5);
   });
 
   it('scrubs request auth material', () => {
@@ -20,8 +22,11 @@ describe('Sentry web config helpers', () => {
         cookies: { session: 'secret' },
         headers: {
           authorization: 'Bearer token',
+          Authorization: 'Bearer other-token',
           cookie: 'session=secret',
+          Cookie: 'session=other-secret',
           'x-auth-token': 'token',
+          'X-Auth-Token': 'other-token',
           'x-request-id': 'req-1',
         },
       },

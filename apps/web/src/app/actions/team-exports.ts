@@ -8,7 +8,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import { resolveActiveTeam } from '@/lib/active-team';
-import { trackProductEvent } from '@/lib/analytics';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
@@ -76,11 +76,11 @@ export async function createTeamExportAction(
     return { error: 'Export was created but could not be queued' };
   }
 
-  await trackProductEvent(session.user.id, 'team_export_requested', {
+  trackProductEventBestEffort(session.user.id, 'team_export_requested', {
     teamId: active.teamId,
     userId: session.user.id,
     exportId: id,
-  }).catch(() => undefined);
+  });
 
   revalidatePath('/app/team');
   return { ok: true };

@@ -10,7 +10,7 @@ import { convertToModelMessages, safeValidateUIMessages, type UIMessage } from '
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
-import { trackProductEvent } from '@/lib/analytics';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
@@ -248,13 +248,13 @@ export async function POST(req: Request): Promise<Response> {
   // because useChat re-sends the full transcript every request and the
   // earlier user turns were persisted on their respective calls.
   const latestUserMessage = [...uiMessages].reverse().find((m) => m.role === 'user') ?? null;
-  await trackProductEvent(session.user.id, 'chat_message_sent', {
+  trackProductEventBestEffort(session.user.id, 'chat_message_sent', {
     teamId: active.teamId,
     userId: session.user.id,
     sessionId: sessionId ?? null,
     persisted: Boolean(sessionId),
     messageCount: uiMessages.length,
-  }).catch(() => undefined);
+  });
 
   const result = llm.streamChat({
     system,
@@ -277,7 +277,7 @@ export async function POST(req: Request): Promise<Response> {
         },
         'chat completion',
       );
-      void trackProductEvent(session.user.id, 'agent_answer_generated', {
+      trackProductEventBestEffort(session.user.id, 'agent_answer_generated', {
         teamId: active.teamId,
         userId: session.user.id,
         sessionId: sessionId ?? null,
@@ -286,7 +286,7 @@ export async function POST(req: Request): Promise<Response> {
         toolCount: 'toolCalls' in e && Array.isArray(e.toolCalls) ? e.toolCalls.length : 0,
         promptVersion: agent.AGENT_PROMPT_VERSION,
         ...tokenUsage(e.usage),
-      }).catch(() => undefined);
+      });
       if (!sessionId) return;
       // Persist after the stream resolves. Errors here must NOT crash the
       // response — the user already saw the assistant reply and a failed

@@ -62,12 +62,14 @@ function firstCount(rows: { total: number }[]): number {
 }
 
 export function createOnboardingScope({ db, teamId, userId, ensureMember }: OnboardingScopeDeps) {
-  async function markStepComplete(step: OnboardingStep): Promise<void> {
+  async function markStepComplete(step: OnboardingStep): Promise<boolean> {
     await ensureMember();
-    await db
+    const inserted = await db
       .insert(teamOnboardingCompletions)
       .values({ teamId, step, completedByUserId: userId })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ step: teamOnboardingCompletions.step });
+    return inserted.length > 0;
   }
 
   return {

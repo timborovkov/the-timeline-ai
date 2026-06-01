@@ -1,5 +1,7 @@
 import * as Sentry from '@sentry/node';
 
+const SENSITIVE_HEADER_NAMES = new Set(['authorization', 'cookie', 'x-auth-token']);
+
 function sampleRate(name: string): number {
   const value = Number(process.env[name] ?? 0);
   return Number.isFinite(value) && value >= 0 && value <= 1 ? value : 0;
@@ -21,9 +23,11 @@ export function initWorkerSentry(): boolean {
       if (event.request) {
         delete event.request.cookies;
         if (event.request.headers) {
-          delete event.request.headers.authorization;
-          delete event.request.headers.cookie;
-          delete event.request.headers['x-auth-token'];
+          event.request.headers = Object.fromEntries(
+            Object.entries(event.request.headers).filter(
+              ([key]) => !SENSITIVE_HEADER_NAMES.has(key.toLowerCase()),
+            ),
+          );
         }
       }
       return event;

@@ -9,7 +9,7 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
 import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
-import { trackProductEvent } from '@/lib/analytics';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { ensureSoloTeam } from '@/lib/default-team';
@@ -136,13 +136,11 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
     path: '/',
     maxAge: 60 * 60 * 24 * 365,
   });
-  await trackProductEvent(userId, 'invite_accepted', {
+  trackProductEventBestEffort(userId, 'invite_accepted', {
     teamId: accepted.teamId,
     userId,
     role: accepted.role,
     source: 'accept_invite',
-  }).catch((err: unknown) => {
-    log.warn({ err, teamId: accepted.teamId, userId }, 'analytics_invite_accepted_failed');
   });
   redirect('/app/timeline');
 }
@@ -266,13 +264,11 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
     path: '/',
     maxAge: 60 * 60 * 24 * 365,
   });
-  await trackProductEvent(userId, 'invite_accepted', {
+  trackProductEventBestEffort(userId, 'invite_accepted', {
     teamId: accepted.teamId,
     userId,
     role: accepted.role,
     source: 'accept_invite',
-  }).catch((err: unknown) => {
-    log.warn({ err, teamId: accepted.teamId, userId }, 'analytics_invite_accepted_failed');
   });
   redirect('/app/timeline');
 }

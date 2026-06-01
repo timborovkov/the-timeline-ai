@@ -8,10 +8,11 @@ const log = childLogger('web:onboarding');
 export async function safeMarkOnboardingStep(
   scope: Pick<TeamScope, 'onboarding'>,
   step: onboarding.OnboardingStep,
-): Promise<void> {
+): Promise<boolean> {
   try {
-    await scope.onboarding.markStepComplete(step);
+    return await scope.onboarding.markStepComplete(step);
   } catch (err) {
     log.warn({ err, step }, 'onboarding_step_mark_failed');
+    return false;
   }
 }

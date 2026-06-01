@@ -11,7 +11,7 @@ import { AuthError } from 'next-auth';
 import { z } from 'zod';
 
 import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
-import { trackProductEvent } from '@/lib/analytics';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { signIn } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
@@ -199,18 +199,18 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
   });
 
   if (createdAccount.event === 'team_created') {
-    await trackProductEvent(createdAccount.userId, 'team_created', {
+    trackProductEventBestEffort(createdAccount.userId, 'team_created', {
       teamId: createdAccount.activeTeamId,
       userId: createdAccount.userId,
       source: 'signup',
-    }).catch(() => undefined);
+    });
   } else {
-    await trackProductEvent(createdAccount.userId, 'invite_accepted', {
+    trackProductEventBestEffort(createdAccount.userId, 'invite_accepted', {
       teamId: createdAccount.activeTeamId,
       userId: createdAccount.userId,
       role: createdAccount.role ?? 'member',
       source: 'signup',
-    }).catch(() => undefined);
+    });
   }
 
   // Best-effort auto-signin. The account already exists and is committed —
