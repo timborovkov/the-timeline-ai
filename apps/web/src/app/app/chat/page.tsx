@@ -1,9 +1,10 @@
 import { entities, type Db } from '@timeline/db';
-import { type objects, withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared/team-scope';
 import { type UIMessage } from 'ai';
 import { and, eq, inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
+import type * as objects from '@timeline/shared/objects';
 import type { Metadata } from 'next';
 
 import { ChatPane } from '@/components/chat/chat-pane';

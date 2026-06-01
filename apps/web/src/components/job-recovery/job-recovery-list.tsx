@@ -4,7 +4,7 @@ import { RotateCcw, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
-import type { jobRecovery } from '@timeline/shared';
+import type * as jobRecovery from '@timeline/shared/job-recovery';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

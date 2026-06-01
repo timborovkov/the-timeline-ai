@@ -1,4 +1,6 @@
-import { cacheKey, cachedJson, deleteCacheKey, onboarding, withTeam } from '@timeline/shared';
+import { cacheKey, cachedJson, deleteCacheKey } from '@timeline/shared/cache';
+import * as onboarding from '@timeline/shared/onboarding';
+import { withTeam } from '@timeline/shared/team-scope';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';

@@ -1,16 +1,11 @@
-import {
-  childLogger,
-  getAudioBucket,
-  getDocumentsBucket,
-  getEnv,
-  getS3Client,
-  putObject,
-  queue,
-  rateLimit,
-  telegram,
-} from '@timeline/shared';
+import { getEnv } from '@timeline/shared/env';
+import { childLogger } from '@timeline/shared/logger';
+import * as rateLimit from '@timeline/shared/rate-limit';
+import { getAudioBucket, getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
+import * as telegram from '@timeline/shared/telegram';
 
 import { db } from '@/lib/db';
+import { requireRedisQueue } from '@/lib/queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -81,6 +76,7 @@ export async function POST(req: Request): Promise<Response> {
           });
         },
         async enqueueTranscribe(input) {
+          const queue = await requireRedisQueue();
           await queue.enqueueTranscribeJob(input);
         },
         buildAudioKey({ teamId, chatId, messageId, fileId, extension }) {
@@ -108,6 +104,7 @@ export async function POST(req: Request): Promise<Response> {
           });
         },
         async enqueueExtract(input) {
+          const queue = await requireRedisQueue();
           await queue.enqueueDocumentExtractJob(input);
         },
       }
@@ -119,6 +116,7 @@ export async function POST(req: Request): Promise<Response> {
   const extractDeps: telegram.ExtractEnqueueDeps | undefined = env.REDIS_URL
     ? {
         async enqueueExtract(input) {
+          const queue = await requireRedisQueue();
           await queue.enqueueExtractJob(input);
         },
       }
@@ -130,6 +128,7 @@ export async function POST(req: Request): Promise<Response> {
   const embedDeps: telegram.EmbedEnqueueDeps | undefined = env.REDIS_URL
     ? {
         async enqueueEmbed(input) {
+          const queue = await requireRedisQueue();
           await queue.enqueueEmbedJob(input);
         },
       }

@@ -1,9 +1,9 @@
 import { createHmac } from 'node:crypto';
 
-import { resetEnvForTests } from '@timeline/shared';
+import { resetEnvForTests } from '@timeline/shared/env';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as SharedModuleNS from '@timeline/shared';
+import type * as MeetingsModule from '@timeline/shared/meetings';
 
 /**
  * Route-level tests for the Recall status webhook. These cover the
@@ -31,24 +31,28 @@ const fakes = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/queue', () => ({
+  requireRedisQueue: vi.fn().mockResolvedValue({
+    enqueueMeetingFinalizeJob: fakes.fakeEnqueueFinalize,
+  }),
+}));
 
-vi.mock('@timeline/shared', async () => {
-  const actual = await vi.importActual<typeof SharedModuleNS>('@timeline/shared');
+vi.mock('@timeline/shared/logger', () => ({
+  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+}));
+
+vi.mock('@timeline/shared/team-scope', () => ({
+  withTeam: (...args: unknown[]) => {
+    fakes.fakeWithTeam(...args);
+    return { meetings: { updateMeetingStatus: fakes.fakeUpdateStatus } };
+  },
+}));
+
+vi.mock('@timeline/shared/meetings', async () => {
+  const actual = await vi.importActual<typeof MeetingsModule>('@timeline/shared/meetings');
   return {
     ...actual,
-    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-    withTeam: (...args: unknown[]) => {
-      fakes.fakeWithTeam(...args);
-      return { meetings: { updateMeetingStatus: fakes.fakeUpdateStatus } };
-    },
-    meetingsScope: {
-      ...actual.meetingsScope,
-      lookupMeetingByBotId: fakes.fakeLookup,
-    },
-    queue: {
-      ...actual.queue,
-      enqueueMeetingFinalizeJob: fakes.fakeEnqueueFinalize,
-    },
+    lookupMeetingByBotId: fakes.fakeLookup,
   };
 });
 

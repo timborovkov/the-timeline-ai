@@ -1,4 +1,5 @@
-import { integrations as integrationsLib, withTeam } from '@timeline/shared';
+import * as integrationsLib from '@timeline/shared/integrations';
+import { withTeam } from '@timeline/shared/team-scope';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 

@@ -1,6 +1,9 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-import { childLogger, integrations as integrationsLib, getEnv, withTeam } from '@timeline/shared';
+import { getEnv } from '@timeline/shared/env';
+import * as integrationsLib from '@timeline/shared/integrations';
+import { childLogger } from '@timeline/shared/logger';
+import { withTeam } from '@timeline/shared/team-scope';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 

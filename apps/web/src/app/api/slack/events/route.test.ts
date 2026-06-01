@@ -1,9 +1,11 @@
 import { createHmac } from 'node:crypto';
 
-import { resetEnvForTests } from '@timeline/shared';
+import { resetEnvForTests } from '@timeline/shared/env';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as SharedModuleNS from '@timeline/shared';
+import type * as EmailModule from '@timeline/shared/email';
+import type * as RateLimitModule from '@timeline/shared/rate-limit';
+import type * as SlackModule from '@timeline/shared/slack';
 
 const ENV_BACKUP = { ...process.env };
 
@@ -14,20 +16,28 @@ const fakes = vi.hoisted(() => ({
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/app/api/slack/_shared', () => ({ slackIngestDeps: () => ({}) }));
 
-vi.mock('@timeline/shared', async () => {
-  const actual = await vi.importActual<typeof SharedModuleNS>('@timeline/shared');
+vi.mock('@timeline/shared/logger', () => ({
+  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+}));
+
+vi.mock('@timeline/shared/email', async () => {
+  const actual = await vi.importActual<typeof EmailModule>('@timeline/shared/email');
+  return { ...actual, clientIpFromHeaders: () => null };
+});
+
+vi.mock('@timeline/shared/rate-limit', async () => {
+  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
   return {
     ...actual,
-    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-    email: { ...actual.email, clientIpFromHeaders: () => null },
-    rateLimit: {
-      ...actual.rateLimit,
-      checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
-    },
-    slack: {
-      ...actual.slack,
-      handleSlackEnvelope: fakes.handleSlackEnvelope,
-    },
+    checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
+  };
+});
+
+vi.mock('@timeline/shared/slack', async () => {
+  const actual = await vi.importActual<typeof SlackModule>('@timeline/shared/slack');
+  return {
+    ...actual,
+    handleSlackEnvelope: fakes.handleSlackEnvelope,
   };
 });
 

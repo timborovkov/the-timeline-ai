@@ -14,15 +14,10 @@ import {
   telegramUserTeams,
   users,
 } from '@timeline/db';
-import {
-  assertNotLastOwner,
-  buildInboundEmail,
-  randomSlugSuffix,
-  randomToken,
-  sendTeamInviteEmail,
-  slugify,
-  withTeam,
-} from '@timeline/shared';
+import { sendTeamInviteEmail } from '@timeline/shared/email';
+import { buildInboundEmail, randomSlugSuffix, randomToken, slugify } from '@timeline/shared/slug';
+import { assertNotLastOwner } from '@timeline/shared/team-roles';
+import { withTeam } from '@timeline/shared/team-scope';
 import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';

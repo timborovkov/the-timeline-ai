@@ -1,4 +1,5 @@
-import { closeDb, getDb, waitForMigrations } from '@timeline/db';
+import { closeDb, getDb } from '@timeline/db';
+import { waitForMigrations } from '@timeline/db/wait-for-migrations';
 import { childLogger, queue } from '@timeline/shared';
 
 import { startDocumentExtractWorker } from '#src/workers/documentExtract.js';

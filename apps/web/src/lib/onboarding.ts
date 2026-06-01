@@ -1,4 +1,7 @@
-import { childLogger, type onboarding, type TeamScope } from '@timeline/shared';
+import { childLogger } from '@timeline/shared/logger';
+import { type TeamScope } from '@timeline/shared/team-scope';
+
+import type * as onboarding from '@timeline/shared/onboarding';
 
 const log = childLogger('web:onboarding');
 

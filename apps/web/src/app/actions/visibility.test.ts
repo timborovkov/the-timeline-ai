@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as SharedModuleNS from '@timeline/shared';
-
 import { setEventVisibilityAction } from '@/app/actions/visibility';
 
 const fakes = vi.hoisted(() => ({
@@ -20,14 +18,10 @@ vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActive
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
 
-vi.mock('@timeline/shared', async () => {
-  const actual = await vi.importActual<typeof SharedModuleNS>('@timeline/shared');
-  return {
-    ...actual,
-    withTeam: () => fakes.fakeScope,
-    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-  };
-});
+vi.mock('@timeline/shared/team-scope', () => ({ withTeam: () => fakes.fakeScope }));
+vi.mock('@timeline/shared/logger', () => ({
+  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+}));
 
 const EVENT_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';

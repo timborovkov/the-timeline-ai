@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto';
 
-import { childLogger, integrations as integrationsLib, getEnv } from '@timeline/shared';
+import { getEnv } from '@timeline/shared/env';
+import * as integrationsLib from '@timeline/shared/integrations';
+import { childLogger } from '@timeline/shared/logger';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 

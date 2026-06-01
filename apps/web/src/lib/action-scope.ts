@@ -1,4 +1,4 @@
-import { withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared/team-scope';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';

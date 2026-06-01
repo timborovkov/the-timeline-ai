@@ -22,8 +22,9 @@ test('team-visible captured text events appear for another seeded member', async
   await signIn(page, e2eUsers.owner.email);
   await page.goto('/app/timeline');
   const capture = page.getByRole('region', { name: 'Capture' });
+  await expect(capture.locator('form[data-capture-ready="true"]')).toBeVisible();
   const textarea = capture.getByPlaceholder('What happened?');
-  await textarea.pressSequentially(note);
+  await textarea.fill(note);
   await expect(textarea).toHaveValue(note);
   await capture.getByRole('button', { name: 'Post' }).click();
   await expect(page.getByText(note).first()).toBeVisible();

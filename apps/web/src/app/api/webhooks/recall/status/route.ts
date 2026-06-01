@@ -1,7 +1,12 @@
-import { childLogger, getEnv, meetingBots, meetingsScope, queue, withTeam } from '@timeline/shared';
+import { getEnv } from '@timeline/shared/env';
+import { childLogger } from '@timeline/shared/logger';
+import * as meetingBots from '@timeline/shared/meeting-bots';
+import * as meetingsScope from '@timeline/shared/meetings';
+import { withTeam } from '@timeline/shared/team-scope';
 import { z } from 'zod';
 
 import { db } from '@/lib/db';
+import { requireRedisQueue } from '@/lib/queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -203,6 +208,7 @@ export async function POST(req: Request): Promise<Response> {
       // Duplicate enqueues (e.g. retried bot.call_ended after our 200) are
       // safe: the worker short-circuits on `status === 'completed'`, so
       // the cost of a duplicate is a single DB lookup.
+      const queue = await requireRedisQueue();
       await queue.enqueueMeetingFinalizeJob({
         meetingId: meeting.id,
         teamId: meeting.teamId,

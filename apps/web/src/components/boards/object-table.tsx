@@ -1,5 +1,6 @@
-import { type objects } from '@timeline/shared';
 import Link from 'next/link';
+
+import type * as objects from '@timeline/shared/objects';
 
 export function ObjectTable({ rows }: { rows: objects.ObjectRow[] }) {
   if (rows.length === 0) {

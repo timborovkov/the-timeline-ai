@@ -1,6 +1,6 @@
 'use server';
-
-import { slack, withTeam } from '@timeline/shared';
+import * as slack from '@timeline/shared/slack';
+import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 

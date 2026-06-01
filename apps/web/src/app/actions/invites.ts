@@ -1,7 +1,7 @@
 'use server';
 
 import { teamInvites, teamMembers, users } from '@timeline/db';
-import { childLogger } from '@timeline/shared';
+import { childLogger } from '@timeline/shared/logger';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';

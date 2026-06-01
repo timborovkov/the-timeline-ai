@@ -1,6 +1,4 @@
 'use client';
-
-import { type objects } from '@timeline/shared';
 import { useRouter } from 'next/navigation';
 import {
   type ComponentProps,
@@ -12,6 +10,7 @@ import {
 } from 'react';
 
 import type { SaveState } from '@/lib/utils';
+import type * as objects from '@timeline/shared/objects';
 
 import {
   acceptObjectChangeAction,

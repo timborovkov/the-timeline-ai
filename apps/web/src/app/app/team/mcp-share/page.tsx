@@ -1,5 +1,5 @@
 import { mcpOutboundKeys } from '@timeline/db';
-import { withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 

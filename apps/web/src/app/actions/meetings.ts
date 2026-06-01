@@ -1,6 +1,8 @@
 'use server';
-
-import { childLogger, meetingBots, rateLimit, withTeam } from '@timeline/shared';
+import { childLogger } from '@timeline/shared/logger';
+import * as meetingBots from '@timeline/shared/meeting-bots';
+import * as rateLimit from '@timeline/shared/rate-limit';
+import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as SharedModuleNS from '@timeline/shared';
+import type * as RateLimitModule from '@timeline/shared/rate-limit';
 
 import {
   createFolderAction,
@@ -11,7 +11,7 @@ import {
 
 /**
  * Server-action tests for `documents.ts`. Mocks the auth chokepoint
- * (auth + resolveActiveTeam) and the @timeline/shared IO surface
+ * (auth + resolveActiveTeam) and the shared IO surface
  * (presigned URL, headObject, scope, queue) so we can exercise the
  * genuinely-new behavior the actions add on top of the scope:
  *
@@ -61,30 +61,31 @@ const fakes = vi.hoisted(() => ({
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/queue', () => ({
+  requireRedisQueue: vi.fn().mockResolvedValue({
+    enqueueDocumentExtractJob: fakes.fakeEnqueueDocExtract,
+  }),
+}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
-vi.mock('@timeline/shared', async () => {
-  const actual = await vi.importActual<typeof SharedModuleNS>('@timeline/shared');
-  return {
-    ...actual,
-    withTeam: () => ({ documents: fakes.fakeScope }),
-    getDocumentsBucket: () => 'test-documents',
-    getS3Client: () => ({}) as unknown,
-    getS3PresignClient: () => ({}) as unknown,
-    getSignedPutObjectUrl: fakes.fakeGetSignedPutUrl,
-    getSignedGetObjectUrl: vi.fn().mockResolvedValue('https://signed-get/url'),
-    headObject: fakes.fakeHeadObject,
-    rateLimit: {
-      ...actual.rateLimit,
-      checkRateLimit: fakes.fakeCheckRateLimit,
-    },
-    queue: {
-      ...actual.queue,
-      enqueueDocumentExtractJob: fakes.fakeEnqueueDocExtract,
-    },
-    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-  };
+vi.mock('@timeline/shared/team-scope', () => ({
+  withTeam: () => ({ documents: fakes.fakeScope }),
+}));
+vi.mock('@timeline/shared/s3', () => ({
+  getDocumentsBucket: () => 'test-documents',
+  getS3Client: () => ({}) as unknown,
+  getS3PresignClient: () => ({}) as unknown,
+  getSignedPutObjectUrl: fakes.fakeGetSignedPutUrl,
+  getSignedGetObjectUrl: vi.fn().mockResolvedValue('https://signed-get/url'),
+  headObject: fakes.fakeHeadObject,
+}));
+vi.mock('@timeline/shared/rate-limit', async () => {
+  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
+  return { ...actual, checkRateLimit: fakes.fakeCheckRateLimit };
 });
+vi.mock('@timeline/shared/logger', () => ({
+  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+}));
 
 // Aliases for ergonomic use in test bodies.
 const {

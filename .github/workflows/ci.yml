@@ -62,6 +62,9 @@ jobs:
           DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
         run: pnpm build
 
+      - name: Web bundle hygiene
+        run: pnpm check:web-bundle
+
       - name: Knip (dead code / unused deps)
         env:
           DATABASE_URL: postgres://placeholder@localhost:5432/placeholder

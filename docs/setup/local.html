@@ -135,7 +135,9 @@ pnpm db:migrate
       <pre><code>pnpm dev                              # next + worker, watch mode
 pnpm validate                         # format, typecheck, lint, knip
 pnpm test                             # unit + integration tests
+pnpm check:web-bundle                 # scan built Next server chunks after a web build
 pnpm e2e                              # Playwright smoke; requires compose infra + migrations
+pnpm e2e:prod-smoke                   # build + standalone-server smoke; requires compose infra + migrations
 pnpm e2e:setup / pnpm e2e:cleanup     # seed/remove deterministic e2e users and team
 pnpm lint &amp;&amp; pnpm typecheck           # CI-equivalent checks
 pnpm knip                             # dead code / unused deps

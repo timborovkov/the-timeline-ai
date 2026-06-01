@@ -1,4 +1,8 @@
-import { childLogger, email, getEnv, rateLimit, slack } from '@timeline/shared';
+import * as email from '@timeline/shared/email';
+import { getEnv } from '@timeline/shared/env';
+import { childLogger } from '@timeline/shared/logger';
+import * as rateLimit from '@timeline/shared/rate-limit';
+import * as slack from '@timeline/shared/slack';
 
 import { db } from '@/lib/db';
 

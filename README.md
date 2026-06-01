@@ -68,10 +68,14 @@ Stable local and PR checks run through:
 ```bash
 pnpm validate
 pnpm test
+pnpm --filter @timeline/web build && pnpm check:web-bundle
 ```
 
 Playwright E2E is a service-backed smoke surface for auth/session behavior and
-team-visible timeline capture. Start the local infra and run migrations first:
+team-visible timeline capture. The default runner fails on noisy runtime logs
+such as missing modules, worker-thread crashes, critical dependency warnings,
+and React hydration/runtime errors. Start the local infra and run migrations
+first:
 
 ```bash
 docker compose up -d
@@ -79,10 +83,13 @@ pnpm db:migrate
 pnpm e2e
 ```
 
+`pnpm e2e:prod-smoke` builds the web app, starts the standalone server, signs in
+through the credentials UI, and checks `/app` plus `/app/timeline`.
 `pnpm e2e:setup` and `pnpm e2e:cleanup` seed and remove deterministic
 `timeline-e2e-*` users, memberships, sessions, and team-owned rows. GitHub
-Actions exposes E2E as a manual, non-blocking workflow so flaky browser or
-container support does not block pull requests.
+Actions exposes both E2E and production-ish smoke checks as manual,
+non-blocking workflow jobs so flaky browser or container support does not block
+pull requests.
 
 ## Wipe a Railway environment
 

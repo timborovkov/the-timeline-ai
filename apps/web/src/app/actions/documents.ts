@@ -1,17 +1,15 @@
 'use server';
-
+import { childLogger } from '@timeline/shared/logger';
+import * as rateLimit from '@timeline/shared/rate-limit';
 import {
-  childLogger,
   getDocumentsBucket,
   getS3Client,
   getS3PresignClient,
   getSignedGetObjectUrl,
   getSignedPutObjectUrl,
   headObject,
-  queue,
-  rateLimit,
-  withTeam,
-} from '@timeline/shared';
+} from '@timeline/shared/s3';
+import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -19,6 +17,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
+import { requireRedisQueue } from '@/lib/queue';
 
 const log = childLogger('web:actions:documents');
 
@@ -232,6 +231,7 @@ export async function finalizeDocumentVersionAction(
       byteSize: head.contentLength,
       contentType: head.contentType ?? version.contentType ?? 'application/octet-stream',
     });
+    const queue = await requireRedisQueue();
     await queue.enqueueDocumentExtractJob({
       documentVersionId: finalized.version.id,
       teamId: got.teamId,

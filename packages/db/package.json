@@ -27,6 +27,12 @@
       "development": "./src/reset.ts",
       "import": "./dist/reset.js",
       "default": "./dist/reset.js"
+    },
+    "./wait-for-migrations": {
+      "types": "./src/wait-for-migrations.ts",
+      "development": "./src/wait-for-migrations.ts",
+      "import": "./dist/wait-for-migrations.js",
+      "default": "./dist/wait-for-migrations.js"
     }
   },
   "main": "./dist/index.js",

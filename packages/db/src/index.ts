@@ -7,7 +7,6 @@ export * from '#src/schema/index.js';
 export { schema };
 export { migrateDatabase } from '#src/migrate.js';
 export { postgresResetStatements, resetPostgresSchema } from '#src/reset.js';
-export { waitForMigrations } from '#src/wait-for-migrations.js';
 export type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
 
 type Schema = typeof schema;

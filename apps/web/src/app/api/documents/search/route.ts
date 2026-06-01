@@ -1,4 +1,7 @@
-import { cacheKey, cachedJson, getEnv, rateLimit, withTeam } from '@timeline/shared';
+import { cacheKey, cachedJson } from '@timeline/shared/cache';
+import { getEnv } from '@timeline/shared/env';
+import * as rateLimit from '@timeline/shared/rate-limit';
+import { withTeam } from '@timeline/shared/team-scope';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';

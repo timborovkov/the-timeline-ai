@@ -73,3 +73,73 @@ jobs:
             playwright-report
             test-results
           if-no-files-found: ignore
+
+  prod-smoke:
+    name: Production-ish web smoke
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: timeline
+          POSTGRES_PASSWORD: timeline_dev
+          POSTGRES_DB: timeline
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U timeline -d timeline"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      AUTH_SECRET: e2e_auth_secret_at_least_sixteen_chars
+      AUTH_URL: http://localhost:3000
+      NEXTAUTH_URL: http://localhost:3000
+      DATABASE_URL: postgres://timeline:timeline_dev@127.0.0.1:5432/timeline
+      INBOUND_EMAIL_DOMAIN: e2e.localhost
+      E2E_RUN_ID: gha-prod-${{ github.run_id }}-${{ github.run_attempt }}
+      LOG_LEVEL: silent
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.12.0 --activate
+
+      - name: Configure pnpm store cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run migrations
+        run: pnpm db:migrate
+
+      - name: Run production-ish smoke
+        run: pnpm e2e:prod-smoke
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-prod-smoke
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore

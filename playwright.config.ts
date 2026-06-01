@@ -1,9 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:3000';
+const webServerCommand =
+  process.env.E2E_WEB_SERVER_COMMAND ??
+  'pnpm --filter @timeline/web exec next dev -H 127.0.0.1 -p 3000';
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: process.env.E2E_PROD_SMOKE === '1' ? [] : ['**/prod-smoke.spec.ts'],
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
@@ -18,10 +22,12 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
   webServer: {
-    command: 'pnpm --filter @timeline/web exec next dev -H 127.0.0.1 -p 3000',
+    command: webServerCommand,
     url: baseURL,
     reuseExistingServer: true,
     timeout: 120_000,
+    stdout: 'pipe',
+    stderr: 'pipe',
     env: {
       AUTH_URL: baseURL,
       NEXTAUTH_URL: baseURL,

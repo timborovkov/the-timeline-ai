@@ -42,7 +42,6 @@ import {
   type SearchOpts,
   type SourceKind,
 } from '#src/qdrant/client.js';
-import { enqueueEmbedJob } from '#src/queue/queues.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
 import { normalizeVisibilityUserIds, rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -78,6 +77,11 @@ const SPECIFIC_USERS_DEFAULT_SOURCES = new Set<VisibilityDefaultSource>([
   'integration',
   'calendar',
 ]);
+
+async function enqueueRawEventEmbed(input: { teamId: string; rawEventId: string }): Promise<void> {
+  const { enqueueEmbedJob } = await import(/* webpackIgnore: true */ '#src/queue/queues.js');
+  await enqueueEmbedJob({ scope: 'raw_event', teamId: input.teamId, rawEventId: input.rawEventId });
+}
 
 export interface EventListFilters {
   authorUserId?: string;
@@ -302,6 +306,9 @@ export interface TeamScopeDeps {
     vector: number[],
     opts: SearchOpts,
   ) => Promise<SearchHit[]>;
+  /** Inject raw-event embedding enqueue. Keeping this dependency lazy avoids
+   *  pulling BullMQ worker internals into read-only web server bundles. */
+  enqueueRawEventEmbed?: (input: { teamId: string; rawEventId: string }) => Promise<void>;
   /**
    * Skip the team-membership check on first query. Set only by trusted
    * callers that have already authenticated the team boundary via some
@@ -1013,7 +1020,10 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         if (existing.visibility === 'team' && updated.visibility !== 'team') {
           await deleteRawEventEmbeddingPoints(id);
         } else if (existing.visibility !== 'team' && updated.visibility === 'team') {
-          await enqueueEmbedJob({ scope: 'raw_event', teamId, rawEventId: id }).catch(() => {
+          await (deps.enqueueRawEventEmbed ?? enqueueRawEventEmbed)({
+            teamId,
+            rawEventId: id,
+          }).catch(() => {
             // The row is already visible in Postgres; janitor/retry paths can
             // reconcile the embedding if Redis is temporarily unavailable.
           });

@@ -1,6 +1,7 @@
 import { auditLog, mcpOutboundKeys } from '@timeline/db';
-import { mcpServer, withTeam } from '@timeline/shared';
 import { childLogger } from '@timeline/shared/logger';
+import * as mcpServer from '@timeline/shared/mcp-server';
+import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';

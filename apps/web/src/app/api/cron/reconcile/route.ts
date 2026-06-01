@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 
-import { childLogger, getEnv } from '@timeline/shared';
+import { getEnv } from '@timeline/shared/env';
+import { childLogger } from '@timeline/shared/logger';
 
 import { reconcileOrphanedJobs } from '@/lib/reconcile-jobs';
 

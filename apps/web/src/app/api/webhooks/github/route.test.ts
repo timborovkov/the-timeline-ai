@@ -1,9 +1,11 @@
 import { createHmac } from 'node:crypto';
 
-import { resetEnvForTests } from '@timeline/shared';
+import { resetEnvForTests } from '@timeline/shared/env';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as SharedModuleNS from '@timeline/shared';
+import type * as EmailModule from '@timeline/shared/email';
+import type * as IntegrationsModule from '@timeline/shared/integrations';
+import type * as RateLimitModule from '@timeline/shared/rate-limit';
 
 const ENV_BACKUP = { ...process.env };
 
@@ -24,25 +26,31 @@ vi.mock('@/lib/db', () => ({
     })),
   },
 }));
+vi.mock('@/lib/queue', () => ({
+  requireRedisQueue: vi.fn().mockResolvedValue({
+    enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
+  }),
+}));
 
-vi.mock('@timeline/shared', async () => {
-  const actual = await vi.importActual<typeof SharedModuleNS>('@timeline/shared');
+vi.mock('@timeline/shared/email', async () => {
+  const actual = await vi.importActual<typeof EmailModule>('@timeline/shared/email');
+  return { ...actual, clientIpFromHeaders: () => null };
+});
+
+vi.mock('@timeline/shared/rate-limit', async () => {
+  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
   return {
     ...actual,
-    email: { ...actual.email, clientIpFromHeaders: () => null },
-    rateLimit: {
-      ...actual.rateLimit,
-      checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
-    },
-    integrations: {
-      ...actual.integrations,
-      getProvider: () => ({ handleWebhook: fakes.handleWebhook }),
-      writeIntegrationEvents: fakes.writeIntegrationEvents,
-    },
-    queue: {
-      ...actual.queue,
-      enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
-    },
+    checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
+  };
+});
+
+vi.mock('@timeline/shared/integrations', async () => {
+  const actual = await vi.importActual<typeof IntegrationsModule>('@timeline/shared/integrations');
+  return {
+    ...actual,
+    getProvider: () => ({ handleWebhook: fakes.handleWebhook }),
+    writeIntegrationEvents: fakes.writeIntegrationEvents,
   };
 });
 

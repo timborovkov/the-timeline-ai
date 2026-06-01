@@ -10,7 +10,7 @@ const fakes = vi.hoisted(() => ({
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@timeline/shared', () => ({
+vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
     jobRecovery: { dismissFailedRecoverableJobs: fakes.fakeDismissFailed },

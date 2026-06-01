@@ -1,4 +1,6 @@
-import { email, mcpServer, rateLimit } from '@timeline/shared';
+import * as email from '@timeline/shared/email';
+import * as mcpServer from '@timeline/shared/mcp-server';
+import * as rateLimit from '@timeline/shared/rate-limit';
 import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';

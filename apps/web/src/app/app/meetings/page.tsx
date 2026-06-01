@@ -1,5 +1,5 @@
 import { users } from '@timeline/db';
-import { withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';

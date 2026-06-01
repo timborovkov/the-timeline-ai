@@ -1,7 +1,8 @@
-import { resetEnvForTests } from '@timeline/shared';
+import { resetEnvForTests } from '@timeline/shared/env';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as SharedModuleNS from '@timeline/shared';
+import type * as EmailModule from '@timeline/shared/email';
+import type * as RateLimitModule from '@timeline/shared/rate-limit';
 
 const ENV_BACKUP = { ...process.env };
 
@@ -11,20 +12,24 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('@/lib/db', () => ({ db: {} }));
 
-vi.mock('@timeline/shared', async () => {
-  const actual = await vi.importActual<typeof SharedModuleNS>('@timeline/shared');
+vi.mock('@timeline/shared/logger', () => ({
+  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+}));
+
+vi.mock('@timeline/shared/email', async () => {
+  const actual = await vi.importActual<typeof EmailModule>('@timeline/shared/email');
   return {
     ...actual,
-    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-    email: {
-      ...actual.email,
-      clientIpFromHeaders: () => null,
-      handleInbound: fakes.handleInbound,
-    },
-    rateLimit: {
-      ...actual.rateLimit,
-      checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
-    },
+    clientIpFromHeaders: () => null,
+    handleInbound: fakes.handleInbound,
+  };
+});
+
+vi.mock('@timeline/shared/rate-limit', async () => {
+  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
+  return {
+    ...actual,
+    checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
   };
 });
 

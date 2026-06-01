@@ -1,12 +1,9 @@
-import {
-  getAudioBucket,
-  getDocumentsBucket,
-  getEnv,
-  getS3Client,
-  putObject,
-  queue,
-  type slack,
-} from '@timeline/shared';
+import { getEnv } from '@timeline/shared/env';
+import { getAudioBucket, getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
+
+import type * as slack from '@timeline/shared/slack';
+
+import { requireRedisQueue } from '@/lib/queue';
 
 export function slackIngestDeps() {
   const env = getEnv();
@@ -31,6 +28,7 @@ export function slackIngestDeps() {
             });
           },
           async enqueueTranscribe(input: { rawEventId: string; teamId: string; audioKey: string }) {
+            const queue = await requireRedisQueue();
             await queue.enqueueTranscribeJob(input);
           },
           buildAudioKey(input: {
@@ -55,6 +53,7 @@ export function slackIngestDeps() {
             });
           },
           async enqueueExtract(input: { documentVersionId: string; teamId: string }) {
+            const queue = await requireRedisQueue();
             await queue.enqueueDocumentExtractJob(input);
           },
         }
@@ -62,6 +61,7 @@ export function slackIngestDeps() {
     extract: env.REDIS_URL
       ? {
           async enqueueExtract(input: { rawEventId: string; teamId: string }) {
+            const queue = await requireRedisQueue();
             await queue.enqueueExtractJob(input);
           },
         }
@@ -69,6 +69,7 @@ export function slackIngestDeps() {
     embed: env.REDIS_URL
       ? {
           async enqueueEmbed(input: { rawEventId: string; teamId: string }) {
+            const queue = await requireRedisQueue();
             await queue.enqueueEmbedJob(input);
           },
         }

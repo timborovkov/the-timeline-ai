@@ -3,7 +3,7 @@
 import { type InfiniteData, useQueryClient } from '@tanstack/react-query';
 import { Lock, Send, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useRef, useState } from 'react';
+import { type SyntheticEvent, useEffect, useRef, useState } from 'react';
 
 import {
   createAudioEventAction,
@@ -60,6 +60,7 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
   const [clip, setClip] = useState<RecordedClip | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
   // Bumped on successful post; passed as `key` to AudioRecorder so React
   // remounts it with a fresh `phase: 'idle'` / `clip: null` state. The
   // recorder owns its own clip state internally; without remount it would
@@ -68,6 +69,10 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
   // setPending is async; a quick double-click could enter submit twice before
   // the button disables. Same in-flight latch the old AudioRecorder used.
   const inFlightRef = useRef(false);
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   async function submitTextOnly(text: string): Promise<CreateEventState> {
     const fd = new FormData();
@@ -222,7 +227,12 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
   }
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} className="space-y-5">
+    <form
+      ref={formRef}
+      onSubmit={handleSubmit}
+      data-capture-ready={hydrated ? 'true' : 'false'}
+      className="space-y-5"
+    >
       <div className="flex items-baseline gap-x-3 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
         <span className="text-fg">CAPTURE</span>
         <span className="text-fg-dim">·</span>

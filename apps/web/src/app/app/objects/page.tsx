@@ -1,7 +1,8 @@
-import { type objects, withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared/team-scope';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import type * as objects from '@timeline/shared/objects';
 import type { Metadata } from 'next';
 
 import { IndexStrip } from '@/components/index-strip';
