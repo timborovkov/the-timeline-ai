@@ -8,6 +8,8 @@ import { GitHubSignInButton } from '@/components/github-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { auth, hasGitHubAuth } from '@/lib/auth';
+import { signedInAuthRedirect } from '@/lib/auth-redirect';
+import { readPendingInvite } from '@/lib/pending-invite';
 
 export const metadata: Metadata = {
   title: 'Sign up',
@@ -23,8 +25,10 @@ interface Props {
 export default async function SignUpPage({ searchParams }: Props) {
   const { invite } = await searchParams;
   const session = await auth();
-  if (session?.user)
-    redirect(invite ? `/accept-invite/${encodeURIComponent(invite)}` : '/app/timeline');
+  if (session?.user) {
+    const pendingInviteToken = await readPendingInvite();
+    redirect(signedInAuthRedirect({ inviteToken: invite, pendingInviteToken }));
+  }
 
   const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY ?? undefined;
   return (

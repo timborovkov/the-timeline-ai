@@ -8,7 +8,8 @@ import { GitHubSignInButton } from '@/components/github-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { auth, hasGitHubAuth } from '@/lib/auth';
-import { safeSameOriginPath } from '@/lib/safe-redirect';
+import { signedInAuthRedirect } from '@/lib/auth-redirect';
+import { readPendingInvite } from '@/lib/pending-invite';
 
 export const metadata: Metadata = {
   title: 'Sign in',
@@ -22,7 +23,10 @@ interface Props {
 export default async function SignInPage({ searchParams }: Props) {
   const { callbackUrl } = await searchParams;
   const session = await auth();
-  if (session?.user) redirect(safeSignedInRedirect(callbackUrl));
+  if (session?.user) {
+    const pendingInviteToken = await readPendingInvite();
+    redirect(signedInAuthRedirect({ callbackUrl, pendingInviteToken }));
+  }
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
@@ -54,10 +58,4 @@ export default async function SignInPage({ searchParams }: Props) {
       </Card>
     </main>
   );
-}
-
-function safeSignedInRedirect(callbackUrl: string | undefined) {
-  return safeSameOriginPath(callbackUrl, '/app/timeline', {
-    blockedPaths: ['/sign-in', '/sign-up'],
-  });
 }
