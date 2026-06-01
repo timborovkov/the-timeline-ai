@@ -18,6 +18,10 @@
 
 const ALLOWED_UPDATES = ['message', 'edited_message', 'callback_query'] as const;
 
+function nonEmptyEnv(value: string | undefined): string | undefined {
+  return value && value.length > 0 ? value : undefined;
+}
+
 interface WebhookInfo {
   url?: string;
   pending_update_count?: number;
@@ -98,7 +102,7 @@ export function register(): void {
 
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  const authUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL;
+  const authUrl = nonEmptyEnv(process.env.AUTH_URL) ?? nonEmptyEnv(process.env.NEXTAUTH_URL);
   if (!token || !secret || !authUrl) {
     const missing = [
       !token && 'TELEGRAM_BOT_TOKEN',

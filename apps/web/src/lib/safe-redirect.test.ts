@@ -9,11 +9,18 @@ afterEach(() => {
 });
 
 describe('safeSameOriginPath', () => {
-  it('falls back when the configured base URL is malformed', () => {
+  it('falls back when all configured base URLs are malformed', () => {
     process.env.AUTH_URL = '';
     process.env.NEXTAUTH_URL = 'not a url';
 
     expect(safeSameOriginPath('/app', '/fallback')).toBe('/fallback');
+  });
+
+  it('uses NEXTAUTH_URL when AUTH_URL is empty', () => {
+    process.env.AUTH_URL = '';
+    process.env.NEXTAUTH_URL = 'https://timeline.example.com';
+
+    expect(safeSameOriginPath('/app', '/fallback')).toBe('/app');
   });
 
   it('allows same-origin callback paths', () => {
@@ -30,5 +37,12 @@ describe('safeSameOriginPath', () => {
     expect(safeSameOriginPath('https://evil.example/app', '/fallback')).toBe('/fallback');
     expect(safeSameOriginPath('//evil.example/app', '/fallback')).toBe('/fallback');
     expect(safeSameOriginPath('/\\evil.example/app', '/fallback')).toBe('/fallback');
+  });
+
+  it('rejects explicitly blocked callback paths', () => {
+    process.env.AUTH_URL = 'https://timeline.example.com';
+    delete process.env.NEXTAUTH_URL;
+
+    expect(safeSameOriginPath('/sign-in', '/app', { blockedPaths: ['/sign-in'] })).toBe('/app');
   });
 });
