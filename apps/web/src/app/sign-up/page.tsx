@@ -30,6 +30,7 @@ export default async function SignUpPage({ searchParams }: Props) {
     redirect(signedInAuthRedirect({ inviteToken: invite, pendingInviteToken }));
   }
 
+  const requiresTurnstile = process.env.NODE_ENV === 'production';
   const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY ?? undefined;
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
@@ -63,7 +64,11 @@ export default async function SignUpPage({ searchParams }: Props) {
               </div>
             </>
           ) : null}
-          <SignUpForm inviteToken={invite} turnstileSiteKey={turnstileSiteKey} />
+          <SignUpForm
+            inviteToken={invite}
+            requiresTurnstile={requiresTurnstile}
+            turnstileSiteKey={turnstileSiteKey}
+          />
           <p className="text-sm text-muted-foreground">
             Already have an account?{' '}
             <Link

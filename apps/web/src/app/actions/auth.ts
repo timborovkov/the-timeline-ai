@@ -5,7 +5,7 @@ import { hashPassword } from '@timeline/shared/passwords';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { AuthError } from 'next-auth';
 import { z } from 'zod';
@@ -13,9 +13,9 @@ import { z } from 'zod';
 import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
 import { signIn } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { clientIpFromRequestHeaders } from '@/lib/request-ip';
+import { clientIpFromHeaders } from '@/lib/request-ip';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
-import { verifyTurnstileToken } from '@/lib/turnstile';
+import { turnstileHostnameFromHeaders, verifyTurnstileToken } from '@/lib/turnstile';
 
 const signUpSchema = z.object({
   name: z.string().min(1).max(80),
@@ -29,7 +29,8 @@ export interface SignUpState {
 }
 
 export async function signUpAction(_prev: SignUpState, formData: FormData): Promise<SignUpState> {
-  const clientIp = await clientIpFromRequestHeaders();
+  const h = await headers();
+  const clientIp = clientIpFromHeaders(h);
   const parsed = signUpSchema.safeParse({
     name: formData.get('name'),
     email: formData.get('email'),
@@ -56,6 +57,8 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
   const turnstileOk = await verifyTurnstileToken({
     token: formData.get('cf-turnstile-response'),
     remoteIp: clientIp,
+    expectedAction: 'signup',
+    expectedHostname: turnstileHostnameFromHeaders(h),
   });
   if (!turnstileOk) {
     return { error: 'Verification failed. Refresh and try again.' };

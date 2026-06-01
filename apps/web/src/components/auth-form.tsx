@@ -9,10 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-function SubmitButton({ label }: { label: string }) {
+function SubmitButton({ disabled = false, label }: { disabled?: boolean; label: string }) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending} className="w-full">
+    <Button type="submit" disabled={pending || disabled} className="w-full">
       {pending ? 'Working…' : label}
     </Button>
   );
@@ -45,9 +45,11 @@ export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
 
 export function SignUpForm({
   inviteToken,
+  requiresTurnstile,
   turnstileSiteKey,
 }: {
   inviteToken?: string;
+  requiresTurnstile: boolean;
   turnstileSiteKey?: string;
 }) {
   const [state, action] = useActionState<SignUpState, FormData>(signUpAction, {});
@@ -73,9 +75,13 @@ export function SignUpForm({
           required
         />
       </div>
-      <TurnstileWidget siteKey={turnstileSiteKey} />
+      {turnstileSiteKey ? (
+        <TurnstileWidget action="signup" siteKey={turnstileSiteKey} />
+      ) : requiresTurnstile ? (
+        <p className="text-sm text-destructive">Account creation protection is not configured.</p>
+      ) : null}
       {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-      <SubmitButton label="Create account" />
+      <SubmitButton label="Create account" disabled={requiresTurnstile && !turnstileSiteKey} />
     </form>
   );
 }

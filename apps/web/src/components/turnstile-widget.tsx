@@ -12,6 +12,7 @@ declare global {
         container: HTMLElement,
         options: {
           sitekey: string;
+          action?: string;
           theme?: 'light' | 'dark' | 'auto';
           'error-callback'?: () => void;
           'expired-callback'?: () => void;
@@ -23,7 +24,7 @@ declare global {
   }
 }
 
-export function TurnstileWidget({ siteKey }: { siteKey?: string }) {
+export function TurnstileWidget({ action, siteKey }: { action: string; siteKey?: string }) {
   const { pending } = useFormStatus();
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
@@ -39,12 +40,13 @@ export function TurnstileWidget({ siteKey }: { siteKey?: string }) {
       if (!siteKey || !containerRef.current || widgetIdRef.current || !window.turnstile) return;
       widgetIdRef.current = window.turnstile.render(containerRef.current, {
         sitekey: siteKey,
+        action,
         theme: 'light',
         'error-callback': reset,
         'expired-callback': reset,
       });
     });
-  }, [reset, siteKey]);
+  }, [action, reset, siteKey]);
 
   useEffect(() => {
     render();

@@ -99,7 +99,7 @@ export function SupportForm({
       </div>
 
       {turnstileSiteKey ? (
-        <TurnstileWidget siteKey={turnstileSiteKey} />
+        <TurnstileWidget action="support" siteKey={turnstileSiteKey} />
       ) : requiresTurnstile ? (
         <p className="text-sm text-danger">Support form protection is not configured.</p>
       ) : null}
