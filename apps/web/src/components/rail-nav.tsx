@@ -10,15 +10,22 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 
 /**
- * 56px-wide icon rail. Operational Archive v2 replacement for the old
- * 256px sidebar. Each item is an icon-only anchor with a Radix tooltip
- * surfacing the label; active route shows a 2px signal-color left bar +
- * signal text. Expects a TooltipProvider higher in the tree.
+ * Primary desktop navigation. In folded mode this renders the compact icon rail;
+ * in expanded mode it shows the same destinations with labels.
  */
-export function RailNav({ role }: { role: TeamMembership['role'] }) {
+export function RailNav({
+  role,
+  expanded = false,
+}: {
+  role: TeamMembership['role'];
+  expanded?: boolean;
+}) {
   const pathname = usePathname();
   return (
-    <nav aria-label="Primary" className="mt-4 flex flex-col items-center gap-1">
+    <nav
+      aria-label="Primary"
+      className={cn('mt-4 flex flex-col gap-1', expanded ? 'w-full' : 'items-center')}
+    >
       {visibleNavItems(role).map((item) => {
         const active = isNavItemActive(item, pathname);
         const Icon = item.icon;
@@ -30,8 +37,11 @@ export function RailNav({ role }: { role: TeamMembership['role'] }) {
                 aria-label={item.label}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'relative grid size-9 place-items-center rounded-sm transition-colors',
+                  'relative rounded-sm transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
+                  expanded
+                    ? 'flex h-9 w-full items-center gap-3 px-3 text-sm'
+                    : 'grid size-9 place-items-center',
                   active
                     ? 'bg-surface-2 text-signal'
                     : 'text-fg-muted hover:bg-surface-2 hover:text-fg',
@@ -44,9 +54,10 @@ export function RailNav({ role }: { role: TeamMembership['role'] }) {
                   />
                 ) : null}
                 <Icon aria-hidden="true" className="size-4" />
+                {expanded ? <span className="truncate">{item.label}</span> : null}
               </Link>
             </TooltipTrigger>
-            <TooltipContent side="right">{item.label}</TooltipContent>
+            {!expanded ? <TooltipContent side="right">{item.label}</TooltipContent> : null}
           </Tooltip>
         );
       })}
