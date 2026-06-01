@@ -9,6 +9,7 @@ import {
   acceptSuggestionItemAction,
   rejectSuggestionItemAction,
 } from '@/app/actions/suggestions';
+import { EmptyAction } from '@/components/empty-action';
 import { Button } from '@/components/ui/button';
 
 interface SuggestionItem {
@@ -76,9 +77,12 @@ export function ApprovalsClient({ suggestions }: Props) {
 
   if (suggestions.length === 0) {
     return (
-      <div className="border-y border-border py-12 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
-        No pending approvals
-      </div>
+      <EmptyAction
+        title="No pending approvals"
+        body="When the agent proposes tasks, objects, calendar items, or document changes, they will queue here before becoming canonical."
+        href="/app"
+        action="Back to home"
+      />
     );
   }
 

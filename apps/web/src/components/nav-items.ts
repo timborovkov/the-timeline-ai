@@ -1,16 +1,10 @@
 import {
-  Box,
-  CalendarDays,
-  CheckSquare,
-  CircleCheckBig,
   Clock,
-  FolderOpen,
-  Inbox,
-  KanbanSquare,
   LayoutDashboard,
+  LibraryBig,
   MessageSquare,
+  Plug,
   Settings,
-  Video,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -26,27 +20,67 @@ interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
+  activeHrefs?: readonly string[];
+  badgeKey?: keyof NavBadgeMap;
   adminOnly?: boolean;
+}
+
+export interface NavBadgeMap {
+  work?: number;
+  sources?: number;
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
   { href: '/app', label: 'Home', icon: LayoutDashboard },
   { href: '/app/timeline', label: 'Timeline', icon: Clock },
-  { href: '/app/chat', label: 'Chat', icon: MessageSquare },
-  { href: '/app/objects', label: 'Objects', icon: Box },
-  { href: '/app/documents', label: 'Documents', icon: FolderOpen },
-  { href: '/app/meetings', label: 'Meetings', icon: Video },
-  { href: '/app/calendar', label: 'Calendar', icon: CalendarDays },
-  { href: '/app/approvals', label: 'Approvals', icon: CircleCheckBig },
-  { href: '/app/tasks', label: 'Tasks', icon: CheckSquare },
-  { href: '/app/boards', label: 'Boards', icon: KanbanSquare },
-  { href: '/app/inbox', label: 'Inbox', icon: Inbox },
-  { href: '/app/team', label: 'Team', icon: Settings },
+  { href: '/app/chat', label: 'Ask', icon: MessageSquare },
+  {
+    href: '/app/work',
+    label: 'Work',
+    icon: LibraryBig,
+    badgeKey: 'work',
+    activeHrefs: [
+      '/app/work',
+      '/app/objects',
+      '/app/tasks',
+      '/app/boards',
+      '/app/calendar',
+      '/app/inbox',
+      '/app/approvals',
+    ],
+  },
+  {
+    href: '/app/sources',
+    label: 'Sources',
+    icon: Plug,
+    badgeKey: 'sources',
+    activeHrefs: [
+      '/app/sources',
+      '/app/documents',
+      '/app/meetings',
+      '/app/team/telegram',
+      '/app/team/slack',
+      '/app/team/integrations',
+      '/app/team/mcp-servers',
+      '/app/me/mcp-servers',
+    ],
+  },
+  {
+    href: '/app/team',
+    label: 'Team',
+    icon: Settings,
+    activeHrefs: ['/app/team', '/app/team/audit', '/app/team/jobs', '/app/team/mcp-share'],
+  },
 ] as const;
 
 export function visibleNavItems(role: 'owner' | 'admin' | 'member'): readonly NavItem[] {
   const canSeeAdminItems = role === 'owner' || role === 'admin';
   return NAV_ITEMS.filter((item) => !item.adminOnly || canSeeAdminItems);
+}
+
+export function formatNavBadge(value: number | undefined): string | null {
+  if (!value || value <= 0) return null;
+  return value > 99 ? '99+' : String(value);
 }
 
 /**
@@ -56,7 +90,14 @@ export function visibleNavItems(role: 'owner' | 'admin' | 'member'): readonly Na
  * on which row gets the active treatment on a deep route like
  * `/app/entities/<id>` or `/app/team/telegram`.
  */
-export function isNavItemActive(item: Pick<NavItem, 'href'>, pathname: string): boolean {
-  if (item.href === '/app') return pathname === '/app';
-  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+export function isNavItemActive(
+  item: Pick<NavItem, 'href' | 'activeHrefs'>,
+  pathname: string,
+): boolean {
+  const hrefs = item.activeHrefs ?? [item.href];
+  return hrefs.some((href) => {
+    if (href === '/app') return pathname === '/app';
+    if (item.activeHrefs && href === item.href) return pathname === href;
+    return pathname === href || pathname.startsWith(`${href}/`);
+  });
 }

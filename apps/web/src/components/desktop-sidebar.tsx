@@ -3,6 +3,7 @@
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useEffect, useLayoutEffect, useState } from 'react';
 
+import type { NavBadgeMap } from '@/components/nav-items';
 import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
 
@@ -15,6 +16,7 @@ interface Props {
   active: TeamMembership;
   memberships: TeamMembership[];
   recipientInvites: RecipientInvite[];
+  badges?: NavBadgeMap;
 }
 
 const SIDEBAR_STORAGE_KEY = 'timeline.sidebar.expanded';
@@ -36,7 +38,7 @@ function writeStoredExpanded(expanded: boolean) {
   }
 }
 
-export function DesktopSidebar({ active, memberships, recipientInvites }: Props) {
+export function DesktopSidebar({ active, memberships, recipientInvites, badges = {} }: Props) {
   const [expanded, setExpanded] = useState(true);
 
   useBrowserLayoutEffect(() => {
@@ -123,7 +125,7 @@ export function DesktopSidebar({ active, memberships, recipientInvites }: Props)
       </div>
 
       <div className="min-h-0 w-full flex-1 overflow-y-auto">
-        <RailNav role={active.role} expanded={expanded} />
+        <RailNav role={active.role} expanded={expanded} badges={badges} />
       </div>
 
       <div className={cn('flex shrink-0 flex-col pt-3', expanded ? 'w-full' : 'items-center')}>

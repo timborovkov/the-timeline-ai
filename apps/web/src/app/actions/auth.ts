@@ -191,7 +191,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     throw e;
   }
 
-  redirect('/app/timeline');
+  redirect('/app');
 }
 
 const signInSchema = z.object({
@@ -201,7 +201,7 @@ const signInSchema = z.object({
 });
 
 function safeCallbackUrl(input: string | undefined): string {
-  return safeSameOriginPath(input, '/app/timeline');
+  return safeSameOriginPath(input, '/app');
 }
 
 export interface SignInState {

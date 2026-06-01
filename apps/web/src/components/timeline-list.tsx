@@ -19,6 +19,7 @@ import { useMemo } from 'react';
 import type { TimelineEvent } from '@/lib/use-paginated-queries';
 
 import { removeConversationalEventAction } from '@/app/actions/events';
+import { EmptyAction } from '@/components/empty-action';
 import { EventVisibilityForm } from '@/components/event-visibility-form';
 import { useInspector } from '@/components/inspector-context';
 import { Button } from '@/components/ui/button';
@@ -42,6 +43,7 @@ interface Props {
   compact?: boolean;
   maxMoments?: number;
   emptyLabel?: string;
+  emptyAction?: { href: string; label: string; body: string };
   density?: 'comfortable' | 'dense';
   impactFilter?: TimelineImpactFilter;
   impactItemsByEventId?: Record<string, ImpactItem[]>;
@@ -487,6 +489,7 @@ export function TimelineList({
   compact = false,
   maxMoments,
   emptyLabel = 'NO EVENTS YET',
+  emptyAction,
   density = 'comfortable',
   impactFilter = 'all',
   impactItemsByEventId,
@@ -506,9 +509,20 @@ export function TimelineList({
   const dateGroups = groupedByDate(visibleMoments);
 
   if (visibleMoments.length === 0) {
+    if (emptyAction) {
+      return (
+        <EmptyAction
+          title={emptyLabel}
+          body={emptyAction.body}
+          href={emptyAction.href}
+          action={emptyAction.label}
+        />
+      );
+    }
+
     return (
-      <div className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
-        {emptyLabel}
+      <div className="border-y border-border py-10 text-center">
+        <p className="font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">{emptyLabel}</p>
       </div>
     );
   }

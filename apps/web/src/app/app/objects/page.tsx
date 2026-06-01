@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import type * as objects from '@timeline/shared/objects';
 import type { Metadata } from 'next';
 
+import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -115,13 +116,12 @@ export default async function ObjectsIndexPage({
       </nav>
 
       {rows.length === 0 ? (
-        <div className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
-          NO OBJECTS MATCH THIS FILTER →{' '}
-          <Link href="/app/objects/new" className="text-signal underline">
-            create one
-          </Link>{' '}
-          OR CAPTURE A NOTE
-        </div>
+        <EmptyAction
+          title={type ? 'No objects match this filter' : 'No objects yet'}
+          body="Objects are extracted from captured work. You can also create one manually when you already know what should be tracked."
+          href={type ? '/app/objects' : '/app#capture'}
+          action={type ? 'Clear filter' : 'Capture first note'}
+        />
       ) : (
         <div className="space-y-8">
           {typeKeys.map((typeKey) => {

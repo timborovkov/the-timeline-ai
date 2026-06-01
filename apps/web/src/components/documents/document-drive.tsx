@@ -298,9 +298,22 @@ export function DocumentDrive({
         className="rounded-sm border border-dashed border-border bg-card/30 p-6"
       >
         {folders.length === 0 && visibleDocuments.length === 0 ? (
-          <p className="text-center text-sm text-muted-foreground">
-            Drag a file here or click Upload to get started.
-          </p>
+          <div className="py-8 text-center">
+            <p className="font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
+              No documents yet
+            </p>
+            <p className="mx-auto mt-2 max-w-md text-sm text-fg-muted">
+              Upload a document to make contracts, policies, notes, and customer files searchable
+              and citeable.
+            </p>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="mt-4 inline-flex min-h-9 items-center rounded-sm border border-signal/40 bg-signal-soft px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-signal transition-colors hover:bg-signal/20"
+            >
+              Upload first document
+            </button>
+          </div>
         ) : (
           <div className="space-y-6">
             {folders.length > 0 && (

@@ -8,7 +8,12 @@ import { useEffect, useState } from 'react';
 import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
 
-import { isNavItemActive, visibleNavItems } from '@/components/nav-items';
+import {
+  formatNavBadge,
+  isNavItemActive,
+  type NavBadgeMap,
+  visibleNavItems,
+} from '@/components/nav-items';
 import { TeamSwitcher } from '@/components/team-switcher';
 import { cn } from '@/lib/utils';
 
@@ -16,9 +21,10 @@ interface Props {
   active: TeamMembership;
   memberships: TeamMembership[];
   recipientInvites: RecipientInvite[];
+  badges?: NavBadgeMap;
 }
 
-export function MobileNav({ active, memberships, recipientInvites }: Props) {
+export function MobileNav({ active, memberships, recipientInvites, badges = {} }: Props) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -112,6 +118,7 @@ export function MobileNav({ active, memberships, recipientInvites }: Props) {
               {visibleNavItems(active.role).map((item) => {
                 const isActive = isNavItemActive(item, pathname);
                 const Icon = item.icon;
+                const badge = formatNavBadge(item.badgeKey ? badges[item.badgeKey] : undefined);
                 return (
                   <Link
                     key={item.href}
@@ -128,7 +135,20 @@ export function MobileNav({ active, memberships, recipientInvites }: Props) {
                     )}
                   >
                     <Icon aria-hidden="true" className="size-4" />
-                    {item.label}
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    {badge ? (
+                      <span
+                        aria-label={`${item.label} attention ${badge}`}
+                        className={cn(
+                          'grid h-5 min-w-5 place-items-center rounded-sm border px-1 font-mono text-[10px]',
+                          isActive
+                            ? 'border-signal/40 bg-bg text-signal'
+                            : 'border-danger/40 text-danger',
+                        )}
+                      >
+                        {badge}
+                      </span>
+                    ) : null}
                   </Link>
                 );
               })}

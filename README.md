@@ -22,10 +22,15 @@ MCP servers per team or per user) live at `/app/team/integrations` — plus an
 outbound MCP server at `/api/mcp/server` so external agents (Claude Desktop,
 Cursor, etc.) can query this Timeline. The Home Dashboard at `/app` gathers
 capture, onboarding, ingest access, pending approvals, and compact recent
-moments; `/app/timeline` opens with quick capture followed by the dedicated
-grouped timeline browser with source presets, impact filters, density controls,
+moments; `/app/timeline` is the dedicated grouped timeline browser with source
+presets, impact filters, density controls, pagination,
 inspector evidence, and hydrated Impact Context from suggestions, tasks/objects,
-documents, and calendar rows.
+documents, and calendar rows. The primary sidebar stays intentionally small:
+Ask opens chat, Work groups objects/tasks/boards/calendar/inbox/approvals, and
+Sources groups email, Slack, Telegram, documents, meetings, integrations, and
+MCP servers. Work and Sources show small attention badges plus status-aware hub
+cards so users can see open work, unread/pending queues, source setup, and
+processing/connection issues without expanding the sidebar.
 The main timeline, object sections, document lists, and document search are
 paginated for large beta workspaces, with short-lived visibility-aware Redis
 caches and React Query only on interactive surfaces. Public help docs live at

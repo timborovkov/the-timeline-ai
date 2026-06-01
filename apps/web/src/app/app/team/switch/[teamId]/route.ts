@@ -15,7 +15,7 @@ export async function POST(
   const { teamId } = await params;
   const ok = await verifyMembership(session.user.id, teamId);
   if (!ok) {
-    return NextResponse.redirect(new URL('/app/timeline', req.url));
+    return NextResponse.redirect(new URL('/app', req.url));
   }
 
   const cookieStore = await cookies();
@@ -25,5 +25,5 @@ export async function POST(
     path: '/',
     maxAge: 60 * 60 * 24 * 365,
   });
-  return NextResponse.redirect(new URL('/app/timeline', req.url));
+  return NextResponse.redirect(new URL('/app', req.url));
 }
