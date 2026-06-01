@@ -27,16 +27,16 @@
   "dependencies": {
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",
-    "bullmq": "^5.0.0",
-    "drizzle-orm": "^0.38.0",
+    "bullmq": "^5.77.7",
+    "drizzle-orm": "^0.45.2",
     "mammoth": "^1.12.0",
-    "zod": "^3.23.0"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.4.6",
-    "@types/node": "^24.0.0",
-    "tsx": "^4.19.0",
-    "typescript": "*",
-    "vitest": "^4.1.6"
+    "@types/node": "^24.12.4",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.8"
   }
 }

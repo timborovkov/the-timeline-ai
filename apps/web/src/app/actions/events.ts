@@ -290,7 +290,7 @@ export async function createAudioEventAction(
 }
 
 const removeTelegramEventSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
 });
 
 export async function removeConversationalEventAction(formData: FormData): Promise<void> {

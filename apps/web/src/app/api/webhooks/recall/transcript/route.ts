@@ -67,12 +67,12 @@ const transcriptSchema = z
               })
               .optional(),
           })
-          .passthrough()
+          .loose()
           .optional(),
       })
-      .passthrough(),
+      .loose(),
   })
-  .passthrough();
+  .loose();
 
 /**
  * Coerce Recall's "transcript.data" event into our flat chunk shape.

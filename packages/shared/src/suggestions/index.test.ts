@@ -4,10 +4,23 @@ import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type * as QueueModule from '#src/queue/queues.js';
 
 import { suggestionDedupeKey } from '#src/suggestions/index.js';
 import { withTeam } from '#src/team-scope.js';
+
+vi.mock('#src/queue/queues.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof QueueModule>();
+  const enqueue = vi.fn(() => Promise.resolve(undefined));
+  return {
+    ...actual,
+    enqueueCalendarEventEmbedJob: enqueue,
+    enqueueEmbedJob: enqueue,
+    enqueueObjectEmbedJob: enqueue,
+  };
+});
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');

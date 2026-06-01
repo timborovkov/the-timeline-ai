@@ -31,7 +31,7 @@ const statusEventSchema = z.object({
       bot: z
         .object({
           id: z.string(),
-          metadata: z.record(z.unknown()).optional(),
+          metadata: z.record(z.string(), z.unknown()).optional(),
           status: z
             .object({
               code: z.string().optional(),
@@ -47,7 +47,7 @@ const statusEventSchema = z.object({
         })
         .optional(),
     })
-    .passthrough(),
+    .loose(),
 });
 
 export async function POST(req: Request): Promise<Response> {

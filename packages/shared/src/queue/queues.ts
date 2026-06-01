@@ -2,6 +2,8 @@ import { Queue } from 'bullmq';
 
 import { getRedisConnection } from '#src/queue/connection.js';
 
+type TimelineQueue<TData> = Queue<TData, unknown, string, TData, unknown, string>;
+
 export const QUEUE_NAMES = {
   transcribe: 'transcribe',
   // Phase 4/5 consumers — names reserved here so producers compile cleanly.
@@ -51,11 +53,18 @@ export interface TranscribeJobData {
   audioKey: string;
 }
 
-let _transcribeQueue: Queue<TranscribeJobData> | undefined;
+let _transcribeQueue: TimelineQueue<TranscribeJobData> | undefined;
 
-export function getTranscribeQueue(): Queue<TranscribeJobData> {
+export function getTranscribeQueue(): TimelineQueue<TranscribeJobData> {
   if (_transcribeQueue) return _transcribeQueue;
-  _transcribeQueue = new Queue<TranscribeJobData>(QUEUE_NAMES.transcribe, {
+  _transcribeQueue = new Queue<
+    TranscribeJobData,
+    unknown,
+    string,
+    TranscribeJobData,
+    unknown,
+    string
+  >(QUEUE_NAMES.transcribe, {
     connection: getRedisConnection(),
     defaultJobOptions: {
       attempts: 3,
@@ -68,7 +77,7 @@ export function getTranscribeQueue(): Queue<TranscribeJobData> {
 }
 
 export async function enqueueTranscribeJob(data: TranscribeJobData): Promise<void> {
-  // Intentionally NO jobId-based dedup. BullMQ blocks re-adds for any
+  // Intentionally NO jobId-based dedup. BullMQ blocks re-adds for unknown
   // existing job, including ones already in the failed-and-retained state
   // (`removeOnFail: { age: ... }`). That breaks two important paths:
   //   1. The Telegram webhook self-heal — when the prior job exhausted its
@@ -99,19 +108,22 @@ export interface ExtractJobData {
   teamId: string;
 }
 
-let _extractQueue: Queue<ExtractJobData> | undefined;
+let _extractQueue: TimelineQueue<ExtractJobData> | undefined;
 
-export function getExtractQueue(): Queue<ExtractJobData> {
+export function getExtractQueue(): TimelineQueue<ExtractJobData> {
   if (_extractQueue) return _extractQueue;
-  _extractQueue = new Queue<ExtractJobData>(QUEUE_NAMES.extract, {
-    connection: getRedisConnection(),
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 2000 },
-      removeOnComplete: { age: 3600, count: 1000 },
-      removeOnFail: { age: 24 * 3600 },
+  _extractQueue = new Queue<ExtractJobData, unknown, string, ExtractJobData, unknown, string>(
+    QUEUE_NAMES.extract,
+    {
+      connection: getRedisConnection(),
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 },
+        removeOnComplete: { age: 3600, count: 1000 },
+        removeOnFail: { age: 24 * 3600 },
+      },
     },
-  });
+  );
   return _extractQueue;
 }
 
@@ -134,11 +146,18 @@ export interface SuggestionJobData {
   teamId: string;
 }
 
-let _suggestionQueue: Queue<SuggestionJobData> | undefined;
+let _suggestionQueue: TimelineQueue<SuggestionJobData> | undefined;
 
-export function getSuggestionQueue(): Queue<SuggestionJobData> {
+export function getSuggestionQueue(): TimelineQueue<SuggestionJobData> {
   if (_suggestionQueue) return _suggestionQueue;
-  _suggestionQueue = new Queue<SuggestionJobData>(QUEUE_NAMES.suggestions, {
+  _suggestionQueue = new Queue<
+    SuggestionJobData,
+    unknown,
+    string,
+    SuggestionJobData,
+    unknown,
+    string
+  >(QUEUE_NAMES.suggestions, {
     connection: getRedisConnection(),
     defaultJobOptions: {
       attempts: 3,
@@ -253,19 +272,22 @@ export interface EmbedCalendarEventJobData extends EmbedJobBase {
   calendarEventId: string;
 }
 
-let _embedQueue: Queue<EmbedJobData> | undefined;
+let _embedQueue: TimelineQueue<EmbedJobData> | undefined;
 
-export function getEmbedQueue(): Queue<EmbedJobData> {
+export function getEmbedQueue(): TimelineQueue<EmbedJobData> {
   if (_embedQueue) return _embedQueue;
-  _embedQueue = new Queue<EmbedJobData>(QUEUE_NAMES.embed, {
-    connection: getRedisConnection(),
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 2000 },
-      removeOnComplete: { age: 3600, count: 1000 },
-      removeOnFail: { age: 24 * 3600 },
+  _embedQueue = new Queue<EmbedJobData, unknown, string, EmbedJobData, unknown, string>(
+    QUEUE_NAMES.embed,
+    {
+      connection: getRedisConnection(),
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 },
+        removeOnComplete: { age: 3600, count: 1000 },
+        removeOnFail: { age: 24 * 3600 },
+      },
     },
-  });
+  );
   return _embedQueue;
 }
 
@@ -345,11 +367,18 @@ export interface OverdueScanJobData {
   triggeredAt?: string;
 }
 
-let _overdueScanQueue: Queue<OverdueScanJobData> | undefined;
+let _overdueScanQueue: TimelineQueue<OverdueScanJobData> | undefined;
 
-export function getOverdueScanQueue(): Queue<OverdueScanJobData> {
+export function getOverdueScanQueue(): TimelineQueue<OverdueScanJobData> {
   if (_overdueScanQueue) return _overdueScanQueue;
-  _overdueScanQueue = new Queue<OverdueScanJobData>(QUEUE_NAMES.overdueScan, {
+  _overdueScanQueue = new Queue<
+    OverdueScanJobData,
+    unknown,
+    string,
+    OverdueScanJobData,
+    unknown,
+    string
+  >(QUEUE_NAMES.overdueScan, {
     connection: getRedisConnection(),
     defaultJobOptions: {
       // One retry — if the scan fails, the next hourly tick will pick up
@@ -397,11 +426,18 @@ export interface DocumentExtractJobData {
   targetCollection?: string;
 }
 
-let _documentExtractQueue: Queue<DocumentExtractJobData> | undefined;
+let _documentExtractQueue: TimelineQueue<DocumentExtractJobData> | undefined;
 
-export function getDocumentExtractQueue(): Queue<DocumentExtractJobData> {
+export function getDocumentExtractQueue(): TimelineQueue<DocumentExtractJobData> {
   if (_documentExtractQueue) return _documentExtractQueue;
-  _documentExtractQueue = new Queue<DocumentExtractJobData>(QUEUE_NAMES.documentExtract, {
+  _documentExtractQueue = new Queue<
+    DocumentExtractJobData,
+    unknown,
+    string,
+    DocumentExtractJobData,
+    unknown,
+    string
+  >(QUEUE_NAMES.documentExtract, {
     connection: getRedisConnection(),
     defaultJobOptions: {
       attempts: 3,
@@ -435,11 +471,18 @@ export interface MeetingFinalizeJobData {
   teamId: string;
 }
 
-let _meetingFinalizeQueue: Queue<MeetingFinalizeJobData> | undefined;
+let _meetingFinalizeQueue: TimelineQueue<MeetingFinalizeJobData> | undefined;
 
-export function getMeetingFinalizeQueue(): Queue<MeetingFinalizeJobData> {
+export function getMeetingFinalizeQueue(): TimelineQueue<MeetingFinalizeJobData> {
   if (_meetingFinalizeQueue) return _meetingFinalizeQueue;
-  _meetingFinalizeQueue = new Queue<MeetingFinalizeJobData>(QUEUE_NAMES.meetingFinalize, {
+  _meetingFinalizeQueue = new Queue<
+    MeetingFinalizeJobData,
+    unknown,
+    string,
+    MeetingFinalizeJobData,
+    unknown,
+    string
+  >(QUEUE_NAMES.meetingFinalize, {
     connection: getRedisConnection(),
     defaultJobOptions: {
       attempts: 3,
@@ -469,22 +512,25 @@ export interface JanitorJobData {
   triggeredAt?: string;
 }
 
-let _janitorQueue: Queue<JanitorJobData> | undefined;
+let _janitorQueue: TimelineQueue<JanitorJobData> | undefined;
 
-export function getJanitorQueue(): Queue<JanitorJobData> {
+export function getJanitorQueue(): TimelineQueue<JanitorJobData> {
   if (_janitorQueue) return _janitorQueue;
-  _janitorQueue = new Queue<JanitorJobData>(QUEUE_NAMES.janitor, {
-    connection: getRedisConnection(),
-    defaultJobOptions: {
-      // One retry — the next hourly tick covers a missed sweep, and the
-      // re-enqueue actions are themselves idempotent (worker advisory
-      // locks bail under-lock).
-      attempts: 2,
-      backoff: { type: 'fixed', delay: 60_000 },
-      removeOnComplete: { age: 3600, count: 24 },
-      removeOnFail: { age: 24 * 3600 },
+  _janitorQueue = new Queue<JanitorJobData, unknown, string, JanitorJobData, unknown, string>(
+    QUEUE_NAMES.janitor,
+    {
+      connection: getRedisConnection(),
+      defaultJobOptions: {
+        // One retry — the next hourly tick covers a missed sweep, and the
+        // re-enqueue actions are themselves idempotent (worker advisory
+        // locks bail under-lock).
+        attempts: 2,
+        backoff: { type: 'fixed', delay: 60_000 },
+        removeOnComplete: { age: 3600, count: 24 },
+        removeOnFail: { age: 24 * 3600 },
+      },
     },
-  });
+  );
   return _janitorQueue;
 }
 
@@ -533,11 +579,18 @@ export type IntegrationSyncJobData =
       triggeredBy?: string;
     };
 
-let _integrationSyncQueue: Queue<IntegrationSyncJobData> | undefined;
+let _integrationSyncQueue: TimelineQueue<IntegrationSyncJobData> | undefined;
 
-export function getIntegrationSyncQueue(): Queue<IntegrationSyncJobData> {
+export function getIntegrationSyncQueue(): TimelineQueue<IntegrationSyncJobData> {
   if (_integrationSyncQueue) return _integrationSyncQueue;
-  _integrationSyncQueue = new Queue<IntegrationSyncJobData>(QUEUE_NAMES.integrationSync, {
+  _integrationSyncQueue = new Queue<
+    IntegrationSyncJobData,
+    unknown,
+    string,
+    IntegrationSyncJobData,
+    unknown,
+    string
+  >(QUEUE_NAMES.integrationSync, {
     connection: getRedisConnection(),
     defaultJobOptions: {
       attempts: 3,
@@ -588,19 +641,22 @@ export interface McpHealthJobData {
   triggeredAt?: string;
 }
 
-let _mcpHealthQueue: Queue<McpHealthJobData> | undefined;
+let _mcpHealthQueue: TimelineQueue<McpHealthJobData> | undefined;
 
-export function getMcpHealthQueue(): Queue<McpHealthJobData> {
+export function getMcpHealthQueue(): TimelineQueue<McpHealthJobData> {
   if (_mcpHealthQueue) return _mcpHealthQueue;
-  _mcpHealthQueue = new Queue<McpHealthJobData>(QUEUE_NAMES.mcpHealth, {
-    connection: getRedisConnection(),
-    defaultJobOptions: {
-      attempts: 2,
-      backoff: { type: 'fixed', delay: 30_000 },
-      removeOnComplete: { age: 3600, count: 24 },
-      removeOnFail: { age: 24 * 3600 },
+  _mcpHealthQueue = new Queue<McpHealthJobData, unknown, string, McpHealthJobData, unknown, string>(
+    QUEUE_NAMES.mcpHealth,
+    {
+      connection: getRedisConnection(),
+      defaultJobOptions: {
+        attempts: 2,
+        backoff: { type: 'fixed', delay: 30_000 },
+        removeOnComplete: { age: 3600, count: 24 },
+        removeOnFail: { age: 24 * 3600 },
+      },
     },
-  });
+  );
   return _mcpHealthQueue;
 }
 
@@ -628,11 +684,18 @@ export interface TeamExportJobData {
   requestedByUserId: string;
 }
 
-let _teamExportQueue: Queue<TeamExportJobData> | undefined;
+let _teamExportQueue: TimelineQueue<TeamExportJobData> | undefined;
 
-export function getTeamExportQueue(): Queue<TeamExportJobData> {
+export function getTeamExportQueue(): TimelineQueue<TeamExportJobData> {
   if (_teamExportQueue) return _teamExportQueue;
-  _teamExportQueue = new Queue<TeamExportJobData>(QUEUE_NAMES.teamExport, {
+  _teamExportQueue = new Queue<
+    TeamExportJobData,
+    unknown,
+    string,
+    TeamExportJobData,
+    unknown,
+    string
+  >(QUEUE_NAMES.teamExport, {
     connection: getRedisConnection(),
     defaultJobOptions: {
       attempts: 2,

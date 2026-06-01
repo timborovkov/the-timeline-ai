@@ -16,7 +16,7 @@ import { ensureSoloTeam } from '@/lib/default-team';
 const log = childLogger('web:actions:invites');
 
 const acceptSchema = z.object({ token: z.string().min(1).max(256) });
-const recipientInviteSchema = z.object({ inviteId: z.string().uuid() });
+const recipientInviteSchema = z.object({ inviteId: z.uuid() });
 
 export async function acceptInviteAction(formData: FormData): Promise<void> {
   const session = await auth();

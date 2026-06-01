@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 const log = childLogger('web:api:mcp:oauth:start');
 
 const startSchema = z.object({
-  mcpServerId: z.string().uuid(),
+  mcpServerId: z.uuid(),
   scopes: z.array(z.string().max(64)).max(20).optional(),
 });
 

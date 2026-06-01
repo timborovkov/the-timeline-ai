@@ -18,7 +18,7 @@ const log = childLogger('web:auth');
 // normalized the same way as signUpAction / signInAction. Without this, a
 // mixed-case email would never match the stored lowercase row.
 const credentialsSchema = z.object({
-  email: z.string().email().toLowerCase(),
+  email: z.email().toLowerCase(),
   password: z.string().min(8),
 });
 

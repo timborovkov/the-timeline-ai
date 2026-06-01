@@ -18,7 +18,7 @@ import { verifyTurnstileToken } from '@/lib/turnstile';
 
 const signUpSchema = z.object({
   name: z.string().min(1).max(80),
-  email: z.string().email().toLowerCase(),
+  email: z.email().toLowerCase(),
   password: z.string().min(8).max(200),
   inviteToken: z.string().optional(),
 });
@@ -194,7 +194,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
 }
 
 const signInSchema = z.object({
-  email: z.string().email().toLowerCase(),
+  email: z.email().toLowerCase(),
   password: z.string().min(1),
   callbackUrl: z.string().max(2048).optional(),
 });

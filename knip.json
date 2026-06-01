@@ -16,11 +16,11 @@
       "ignoreDependencies": ["tailwindcss"]
     },
     "apps/worker": {
-      "entry": ["src/scripts/*.ts"],
+      "entry": ["src/index.ts", "src/scripts/*.ts", "src/workers/*.test.ts"],
       "project": ["src/**/*.ts"]
     },
     "packages/db": {
-      "entry": ["src/schema/**/*.ts", "src/migrate.ts"],
+      "entry": ["src/schema/**/*.ts"],
       "project": ["src/**/*.ts"]
     },
     "packages/shared": {

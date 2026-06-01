@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',
+    fileParallelism: false,
     env: {
       LOG_LEVEL: 'silent',
       // Many helpers (env-guarded webhook verifiers, OAuth state signing)

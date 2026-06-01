@@ -30,10 +30,10 @@ interface SuggestionWorkerDeps {
 const suggestionItemSchema = z.object({
   operation: z.enum(['create', 'update', 'archive_or_cancel']),
   targetKind: z.enum(['task', 'object', 'calendar_event']),
-  targetId: z.string().uuid().nullable().optional(),
+  targetId: z.uuid().nullable().optional(),
   title: z.string().min(1).max(200),
   description: z.string().max(500).nullable().optional(),
-  proposedPayload: z.record(z.unknown()),
+  proposedPayload: z.record(z.string(), z.unknown()),
 });
 
 const suggestionBundleSchema = z.object({

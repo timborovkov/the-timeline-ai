@@ -6,23 +6,23 @@ const schema = z.object({
 
   // Auth
   AUTH_SECRET: z.string().min(16, 'AUTH_SECRET must be at least 16 chars'),
-  AUTH_URL: z.string().url().default('http://localhost:3000'),
+  AUTH_URL: z.url().default('http://localhost:3000'),
   AUTH_GITHUB_ID: z.string().optional(),
   AUTH_GITHUB_SECRET: z.string().optional(),
 
   // Database
-  DATABASE_URL: z.string().url(),
+  DATABASE_URL: z.url(),
 
   // Redis (optional in Phase 1; required from Phase 3)
-  REDIS_URL: z.string().url().optional(),
+  REDIS_URL: z.url().optional(),
 
   // Qdrant (Phase 5+)
-  QDRANT_URL: z.string().url().optional(),
+  QDRANT_URL: z.url().optional(),
   QDRANT_API_KEY: z.string().optional(),
   QDRANT_COLLECTION: z.string().default('events'),
 
   // S3 / RustFS (Phase 3+)
-  S3_ENDPOINT: z.string().url().optional(),
+  S3_ENDPOINT: z.url().optional(),
   /**
    * Public HTTPS endpoint used when signing browser-facing PUT/GET URLs.
    * S3_ENDPOINT is typically Railway's private hostname (HTTP) which workers
@@ -34,7 +34,7 @@ const schema = z.object({
    * the same as "unset" — `.url()` would otherwise reject empty string and
    * crash startup for anyone who copied .env.example verbatim.
    */
-  S3_PUBLIC_ENDPOINT: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
+  S3_PUBLIC_ENDPOINT: z.preprocess((v) => (v === '' ? undefined : v), z.url().optional()),
   S3_REGION: z.string().optional(),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
@@ -51,7 +51,7 @@ const schema = z.object({
 
   // OpenRouter (Phase 3+)
   OPENROUTER_API_KEY: z.string().optional(),
-  OPENROUTER_BASE_URL: z.string().url().optional(),
+  OPENROUTER_BASE_URL: z.url().optional(),
 
   // Telegram (Phase 2+)
   TELEGRAM_BOT_TOKEN: z.string().optional(),
@@ -69,7 +69,7 @@ const schema = z.object({
    * local/dev environments where the public form should show a config error
    * instead of silently dropping messages.
    */
-  SUPPORT_EMAIL: z.preprocess((v) => (v === '' ? undefined : v), z.string().email().optional()),
+  SUPPORT_EMAIL: z.preprocess((v) => (v === '' ? undefined : v), z.email().optional()),
   INBOUND_EMAIL_DOMAIN: z.string().optional(),
   /**
    * Dev / no-own-domain fallback. When set to a Postmark-default inbound
@@ -126,9 +126,9 @@ const schema = z.object({
   // events) to enable. RECALL_TRANSCRIPT_WEBHOOK_URL is passed to the
   // provider when starting a bot so transcripts stream back to us.
   RECALL_API_KEY: z.string().optional(),
-  RECALL_BASE_URL: z.string().url().default('https://us-west-2.recall.ai/api/v1'),
+  RECALL_BASE_URL: z.url().default('https://us-west-2.recall.ai/api/v1'),
   RECALL_STATUS_WEBHOOK_SECRET: z.string().optional(),
-  RECALL_TRANSCRIPT_WEBHOOK_URL: z.string().url().optional(),
+  RECALL_TRANSCRIPT_WEBHOOK_URL: z.url().optional(),
   /**
    * Bot display name. The bot still appears as a participant in silent
    * mode — meeting platforms surface it in the participant list. Defaults

@@ -8,12 +8,12 @@ import {
   type StreamTextResult,
   type ToolSet,
 } from 'ai';
-import { type z, type ZodTypeAny } from 'zod';
+import { type z } from 'zod';
 
 import { getEnv } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 
-export interface ChatStructuredInput<TSchema extends ZodTypeAny> {
+export interface ChatStructuredInput<TSchema extends z.ZodType> {
   schema: TSchema;
   prompt: string;
   system?: string;
@@ -26,7 +26,7 @@ export interface ChatDeps {
   model?: LanguageModel;
 }
 
-export interface ChatStructuredResult<TSchema extends ZodTypeAny> {
+export interface ChatStructuredResult<TSchema extends z.ZodType> {
   object: z.infer<TSchema>;
   /** Identifier of the model that produced the response — persisted for audits. */
   model: string;
@@ -63,7 +63,7 @@ export function buildOpenRouterLanguageModel(modelId: string): LanguageModel {
  * function builds a provider from env (`OPENROUTER_API_KEY`,
  * `OPENROUTER_BASE_URL`).
  */
-export async function chatStructured<TSchema extends ZodTypeAny>(
+export async function chatStructured<TSchema extends z.ZodType>(
   input: ChatStructuredInput<TSchema>,
   deps: ChatDeps = {},
 ): Promise<ChatStructuredResult<TSchema>> {
@@ -79,7 +79,7 @@ export async function chatStructured<TSchema extends ZodTypeAny>(
     prompt: input.prompt,
     ...(input.system ? { system: input.system } : {}),
   });
-  return { object: result.object, model: modelId };
+  return { object: result.object as z.infer<TSchema>, model: modelId };
 }
 
 export interface StreamChatInput<TTools extends ToolSet> {

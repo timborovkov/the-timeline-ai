@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 
 const callSchema = z.object({
   tool: z.string().min(1).max(256),
-  args: z.record(z.unknown()).default({}),
+  args: z.record(z.string(), z.unknown()).default({}),
 });
 
 export async function GET(
