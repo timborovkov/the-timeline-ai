@@ -24,7 +24,7 @@ const schema = z.object({
     .array(
       z.object({
         id: z.string(),
-        detectedAt: z.string().datetime(),
+        detectedAt: z.iso.datetime(),
       }),
     )
     .min(1)

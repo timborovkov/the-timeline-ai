@@ -127,10 +127,10 @@ const objectCreatePayload = z.object({
   priority: z.number().int().min(1).max(4).nullable().optional(),
   ownerUserId: uuid.nullable().optional(),
   assigneeUserId: uuid.nullable().optional(),
-  dueAt: z.string().datetime().nullable().optional(),
+  dueAt: z.iso.datetime().nullable().optional(),
   parentObjectId: uuid.nullable().optional(),
   sourceEventId: uuid.nullable().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const objectUpdatePayload = z.object({
@@ -140,15 +140,15 @@ const objectUpdatePayload = z.object({
   priority: z.number().int().min(1).max(4).nullable().optional(),
   ownerUserId: uuid.nullable().optional(),
   assigneeUserId: uuid.nullable().optional(),
-  dueAt: z.string().datetime().nullable().optional(),
+  dueAt: z.iso.datetime().nullable().optional(),
   aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
 });
 
 const calendarCreatePayload = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().max(2000).nullable().optional(),
-  startAt: z.string().datetime(),
-  endAt: z.string().datetime(),
+  startAt: z.iso.datetime(),
+  endAt: z.iso.datetime(),
   startDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -164,7 +164,7 @@ const calendarCreatePayload = z.object({
   visibilityUserIds: z.array(uuid).nullable().optional(),
   reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
   linkedEntityIds: z.array(uuid).max(20).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const calendarUpdatePayload = calendarCreatePayload.partial();

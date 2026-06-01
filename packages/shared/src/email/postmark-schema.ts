@@ -54,7 +54,7 @@ export const postmarkInboundSchema = z
     Headers: z.array(headerSchema).optional().default([]),
     Attachments: z.array(attachmentSchema).optional().default([]),
   })
-  .passthrough();
+  .loose();
 
 export type PostmarkInbound = z.infer<typeof postmarkInboundSchema>;
 export type PostmarkAddress = z.infer<typeof addressSchema>;

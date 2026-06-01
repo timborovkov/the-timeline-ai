@@ -40,12 +40,12 @@
     "studio": "NODE_OPTIONS=--conditions=development drizzle-kit studio"
   },
   "dependencies": {
-    "drizzle-orm": "^0.38.0",
-    "postgres": "^3.4.0"
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "drizzle-kit": "^0.30.0",
-    "typescript": "*"
+    "@types/node": "^24.12.4",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^5.9.3"
   }
 }

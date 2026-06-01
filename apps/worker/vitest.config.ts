@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',
+    fileParallelism: false,
     env: {
       LOG_LEVEL: 'silent',
       // Bypass the OPENROUTER_API_KEY env gate in handlers that call

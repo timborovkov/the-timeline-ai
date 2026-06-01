@@ -19,7 +19,7 @@ interface Result {
 }
 
 const scheduleSchema = z.object({
-  meetingUrl: z.string().url().max(2000),
+  meetingUrl: z.url().max(2000),
   title: z.string().trim().max(200).optional(),
   visibility: z.enum(['team', 'private', 'specific_users']).default('team'),
   visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),

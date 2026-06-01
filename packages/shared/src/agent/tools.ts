@@ -44,8 +44,8 @@ const eventSourceSchema = z.enum([
 
 const searchTimelineInput = z.object({
   query: z.string().trim().min(1).max(500),
-  from: z.string().datetime().optional(),
-  to: z.string().datetime().optional(),
+  from: z.iso.datetime().optional(),
+  to: z.iso.datetime().optional(),
   source: eventSourceSchema.optional(),
   entityIds: z.array(z.string().regex(UUID_RE)).max(20).optional(),
   /**
@@ -63,8 +63,8 @@ const getEntityInput = z.object({
 });
 
 const listEventsInput = z.object({
-  from: z.string().datetime().optional(),
-  to: z.string().datetime().optional(),
+  from: z.iso.datetime().optional(),
+  to: z.iso.datetime().optional(),
   authorUserId: z.string().regex(UUID_RE).optional(),
   source: eventSourceSchema.optional(),
   limit: z.number().int().min(1).max(50).optional(),
@@ -90,7 +90,7 @@ const getDocumentChunkInput = z.object({
 });
 
 const listDocumentChangesInput = z.object({
-  since: z.string().datetime().optional(),
+  since: z.iso.datetime().optional(),
   limit: z.number().int().min(1).max(50).optional(),
 });
 
@@ -178,7 +178,7 @@ export async function buildMcpTools(scope: TeamScope): Promise<ToolSet> {
       // Cast to the AI SDK's expected type; the SDK accepts JSON Schema directly.
       inputSchema:
         (t.inputSchema as unknown as ReturnType<typeof z.object> | undefined) ??
-        (z.object({}).passthrough() as unknown as ReturnType<typeof z.object>),
+        (z.object({}).loose() as unknown as ReturnType<typeof z.object>),
       execute: async (args: unknown) => {
         try {
           const result = await getMcpManager().callTool(
@@ -451,7 +451,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
       inputSchema: z.object({
         entityId: z.string().regex(UUID_RE).optional(),
         status: z.enum(['applied', 'suggested', 'rejected']).optional(),
-        since: z.string().datetime().optional(),
+        since: z.iso.datetime().optional(),
         limit: z.number().int().min(1).max(50).optional(),
       }),
       execute: async (raw) =>
@@ -491,7 +491,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         'Propose a new task. Records an approval-queue suggestion only; it does not create the canonical task until a human accepts it. Use when the conversation reveals a concrete next action. Set parentObjectId to link the task to a relevant deal/project/person.',
       inputSchema: z.object({
         title: z.string().trim().min(1).max(200),
-        dueAt: z.string().datetime().optional(),
+        dueAt: z.iso.datetime().optional(),
         ownerUserId: z.string().regex(UUID_RE).optional(),
         note: z.string().trim().max(1000).optional(),
         parentObjectId: z.string().regex(UUID_RE).optional(),
@@ -928,16 +928,16 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
       description:
         "List calendar events for this team within a date range. Returns id, title, start_at, end_at, timezone, location, visibility. Use for 'what's on my calendar', 'what's scheduled this week', or 'any meetings Thursday'. Note: recurring events are materialized up to 3 months ahead; results may be incomplete for dates beyond that window.",
       inputSchema: z.object({
-        from: z.string().datetime().optional(),
-        to: z.string().datetime().optional(),
+        from: z.iso.datetime().optional(),
+        to: z.iso.datetime().optional(),
         limit: z.number().int().min(1).max(50).optional(),
       }),
       execute: async (raw) =>
         safe('list_calendar_events', async () => {
           const input = z
             .object({
-              from: z.string().datetime().optional(),
-              to: z.string().datetime().optional(),
+              from: z.iso.datetime().optional(),
+              to: z.iso.datetime().optional(),
               limit: z.number().int().min(1).max(50).optional(),
             })
             .parse(raw);
@@ -970,14 +970,14 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         'Resolve workspace-relative time phrases into exact local date spans and UTC query ranges. Use for relative dates like today, yesterday, last week, week 24, or next Tuesday before querying timeline/calendar tools.',
       inputSchema: z.object({
         phrase: z.string().trim().min(1).max(100).optional(),
-        referenceDate: z.string().datetime().optional(),
+        referenceDate: z.iso.datetime().optional(),
       }),
       execute: async (raw) =>
         safe('resolve_time_context', async () => {
           const input = z
             .object({
               phrase: z.string().trim().min(1).max(100).optional(),
-              referenceDate: z.string().datetime().optional(),
+              referenceDate: z.iso.datetime().optional(),
             })
             .parse(raw);
           const settings = await scope.calendar.getCalendarSettings();
@@ -1043,8 +1043,8 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         "Propose a new calendar event. Records an approval-queue suggestion only; it does not create the canonical event until a human accepts it. Date-only scheduling should be represented as an all-day event with startDate and exclusive endDate. Set visibility to 'private' for personal events like dentist appointments.",
       inputSchema: z.object({
         title: z.string().trim().min(1).max(200),
-        startAt: z.string().datetime(),
-        endAt: z.string().datetime(),
+        startAt: z.iso.datetime(),
+        endAt: z.iso.datetime(),
         startDate: z
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -1065,8 +1065,8 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           const input = z
             .object({
               title: z.string().trim().min(1).max(200),
-              startAt: z.string().datetime(),
-              endAt: z.string().datetime(),
+              startAt: z.iso.datetime(),
+              endAt: z.iso.datetime(),
               startDate: z
                 .string()
                 .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -1162,8 +1162,8 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           .object({
             title: z.string().trim().min(1).max(200).optional(),
             description: z.string().trim().max(1000).nullable().optional(),
-            startAt: z.string().datetime().optional(),
-            endAt: z.string().datetime().optional(),
+            startAt: z.iso.datetime().optional(),
+            endAt: z.iso.datetime().optional(),
             timezone: z.string().max(100).optional(),
             allDay: z.boolean().optional(),
             location: z.string().trim().max(500).nullable().optional(),
@@ -1179,7 +1179,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           const input = z
             .object({
               id: z.string().regex(UUID_RE),
-              patch: z.record(z.unknown()).optional(),
+              patch: z.record(z.string(), z.unknown()).optional(),
               cancel: z.boolean().optional(),
               reason: z.string().trim().max(500).optional(),
             })

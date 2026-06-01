@@ -8,3 +8,4 @@ packages/db/drizzle
 **/.next/**
 **/dist/**
 *.md
+apps/web/next-env.d.ts

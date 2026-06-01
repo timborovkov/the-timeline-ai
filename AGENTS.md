@@ -111,7 +111,7 @@ tool. When in doubt, invoke the skill.
 
 ```
 apps/
-  web/      Next.js 15 app (App Router, RSC, server actions, Auth.js)
+  web/      Next.js 16 app (App Router, RSC, server actions, Auth.js)
   worker/   BullMQ workers (transcribe, extract, embed, document-extract,
             meeting-finalize, overdue-scan, janitor, integration-sync,
             mcp-health)

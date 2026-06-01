@@ -23,9 +23,9 @@ const requestTypes = ['technical_support', 'sales', 'billing', 'security', 'othe
 const supportSchema = z.object({
   requestType: z.enum(requestTypes),
   name: z.string().trim().min(1).max(120),
-  email: z.string().trim().email().toLowerCase().max(240),
+  email: z.string().trim().toLowerCase().max(240).pipe(z.email()),
   message: z.string().trim().min(20).max(5000),
-  currentPage: z.string().trim().url().max(2048).optional().or(z.literal('')),
+  currentPage: z.string().trim().max(2048).pipe(z.url()).optional().or(z.literal('')),
   company: z.string().trim().max(0),
 });
 

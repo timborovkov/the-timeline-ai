@@ -11,7 +11,7 @@ export const slackFileSchema = z
     url_private: z.string().optional(),
     size: z.number().int().optional(),
   })
-  .passthrough();
+  .loose();
 
 export const slackMessageEventSchema = z
   .object({
@@ -34,7 +34,7 @@ export const slackMessageEventSchema = z
         thread_ts: z.string().optional(),
         files: z.array(slackFileSchema).optional(),
       })
-      .passthrough()
+      .loose()
       .optional(),
     previous_message: z
       .object({
@@ -43,12 +43,12 @@ export const slackMessageEventSchema = z
         ts: z.string().optional(),
         thread_ts: z.string().optional(),
       })
-      .passthrough()
+      .loose()
       .optional(),
     deleted_ts: z.string().optional(),
     files: z.array(slackFileSchema).optional(),
   })
-  .passthrough();
+  .loose();
 
 export const slackAppMentionEventSchema = z
   .object({
@@ -61,7 +61,7 @@ export const slackAppMentionEventSchema = z
     thread_ts: z.string().optional(),
     channel_type: z.string().optional(),
   })
-  .passthrough();
+  .loose();
 
 export const slackEventCallbackSchema = z
   .object({
@@ -73,7 +73,7 @@ export const slackEventCallbackSchema = z
     event_time: z.number().int().optional(),
     event: z.union([slackMessageEventSchema, slackAppMentionEventSchema]),
   })
-  .passthrough();
+  .loose();
 
 export const slackUrlVerificationSchema = z.object({
   type: z.literal('url_verification'),

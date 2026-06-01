@@ -58,7 +58,7 @@ const boardFilterSchema = z.object({
 function sanitizeBoardFilter(filter: Record<string, unknown>): objects.ObjectListFilter {
   // Validate field-by-field. A single bad field shouldn't nuke the whole
   // filter — keep the rest and drop the invalid one.
-  const shape = boardFilterSchema.shape as Record<string, z.ZodTypeAny>;
+  const shape = boardFilterSchema.shape as Record<string, z.ZodType>;
   const out: objects.ObjectListFilter = {};
   for (const [key, value] of Object.entries(filter)) {
     if (value === undefined) continue;

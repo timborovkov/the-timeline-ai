@@ -22,17 +22,17 @@
   "devDependencies": {
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",
-    "@typescript-eslint/eslint-plugin": "^8.0.0",
-    "eslint": "^9.0.0",
-    "eslint-config-prettier": "^9.0.0",
-    "eslint-plugin-import": "^2.31.0",
-    "eslint-plugin-unused-imports": "^4.1.4",
-    "knip": "^5.40.0",
-    "prettier": "^3.3.0",
-    "tsx": "^4.19.0",
-    "turbo": "^2.1.0",
-    "typescript": "^5.6.0",
-    "typescript-eslint": "^8.0.0"
+    "@typescript-eslint/eslint-plugin": "^8.60.0",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-unused-imports": "^4.4.1",
+    "knip": "^6.15.0",
+    "prettier": "^3.8.3",
+    "tsx": "^4.22.4",
+    "turbo": "^2.9.16",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.60.0"
   },
   "engines": {
     "node": ">=24.0.0",

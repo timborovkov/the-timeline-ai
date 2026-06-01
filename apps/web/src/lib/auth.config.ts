@@ -13,9 +13,8 @@ const authSecret =
 
 /* eslint-disable @typescript-eslint/no-unnecessary-condition */
 /**
- * Edge-safe auth config: providers + callbacks that do NOT need Node-only
- * APIs (no DB, no bcrypt, no node:crypto). The middleware imports only this
- * file so it can run on the edge runtime; the full auth setup lives in
+ * Lightweight auth config: providers + callbacks that do NOT need DB or
+ * bcrypt. The proxy imports only this file; the full auth setup lives in
  * `auth.ts` and runs server-side.
  */
 export const authConfig: NextAuthConfig = {

@@ -38,7 +38,7 @@ const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const createTeamSchema = z.object({ name: z.string().min(1).max(80) });
 const renameTeamSchema = z.object({
-  teamId: z.string().uuid(),
+  teamId: z.uuid(),
   name: z.string().trim().min(1).max(80),
 });
 
@@ -141,7 +141,7 @@ export async function renameTeamAction(
 }
 
 const inviteSchema = z.object({
-  email: z.string().email().toLowerCase(),
+  email: z.email().toLowerCase(),
   role: z.enum(['admin', 'member']).default('member'),
 });
 

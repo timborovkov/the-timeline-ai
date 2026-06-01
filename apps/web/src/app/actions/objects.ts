@@ -32,7 +32,7 @@ const createObjectSchema = z.object({
   status: z.string().trim().min(1).max(40).optional(),
   ownerUserId: uuidSchema.nullable().optional(),
   assigneeUserId: uuidSchema.nullable().optional(),
-  dueAt: z.string().datetime().nullable().optional(),
+  dueAt: z.iso.datetime().nullable().optional(),
   parentObjectId: uuidSchema.nullable().optional(),
 });
 
@@ -71,7 +71,7 @@ const updateObjectSchema = z.object({
   priority: z.number().int().min(1).max(4).nullable().optional(),
   ownerUserId: uuidSchema.nullable().optional(),
   assigneeUserId: uuidSchema.nullable().optional(),
-  dueAt: z.string().datetime().nullable().optional(),
+  dueAt: z.iso.datetime().nullable().optional(),
   aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
 });
 

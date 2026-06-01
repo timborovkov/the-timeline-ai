@@ -14,7 +14,7 @@ const bindSchema = z.object({
 });
 
 const idSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
 });
 
 export async function bindSlackConversationAction(formData: FormData): Promise<void> {

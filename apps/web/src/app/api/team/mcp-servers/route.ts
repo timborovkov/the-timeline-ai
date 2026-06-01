@@ -27,7 +27,7 @@ const catalogShortcutSchema = z.object({
 
 const customSchema = z.object({
   name: z.string().min(1).max(80),
-  url: z.string().url().max(1024),
+  url: z.url().max(1024),
   authType: z.enum(['none', 'bearer', 'header', 'basic', 'oauth', 'url_key']),
   authConfig: z
     .union([

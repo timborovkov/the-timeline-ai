@@ -16,8 +16,8 @@ const log = childLogger('web:api:integrations:callback');
 const PROVIDERS = new Set(['google_drive', 'linear', 'github']);
 
 const stateSchema = z.object({
-  teamId: z.string().uuid(),
-  userId: z.string().uuid(),
+  teamId: z.uuid(),
+  userId: z.uuid(),
   provider: z.enum(['google_drive', 'linear', 'github']),
   nonce: z.string(),
   iat: z.number(),
