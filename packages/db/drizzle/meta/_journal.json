@@ -204,6 +204,13 @@
       "when": 1795652040000,
       "tag": "0028_phase12_slack_capture",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1795652100000,
+      "tag": "0029_legal_acceptance",
+      "breakpoints": true
     }
   ]
 }

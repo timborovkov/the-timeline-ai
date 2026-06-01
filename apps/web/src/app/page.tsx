@@ -99,7 +99,7 @@ function StructuredData() {
         '@id': '#org',
         name: SITE_NAME,
         url: '/',
-        email: 'tim@irmin.co',
+        email: 'thetimeline@timb.dev',
       },
       {
         '@type': 'WebSite',
@@ -928,6 +928,12 @@ function Footer({ isSignedIn }: { isSignedIn: boolean }) {
           </Link>
           <Link href="/help" className="hover:text-fg">
             Docs
+          </Link>
+          <Link href="/terms" className="hover:text-fg">
+            Terms
+          </Link>
+          <Link href="/privacy" className="hover:text-fg">
+            Privacy
           </Link>
           <Link href={CONTACT_HREF} className="hover:text-fg">
             Contact

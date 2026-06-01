@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 
@@ -75,6 +76,25 @@ export function SignUpForm({
           required
         />
       </div>
+      <label className="flex items-start gap-3 text-sm leading-6 text-muted-foreground">
+        <input
+          type="checkbox"
+          name="legalAccepted"
+          required
+          className="mt-1 size-4 rounded-sm border-border"
+        />
+        <span>
+          I agree to the{' '}
+          <Link href="/terms" className="text-primary hover:underline">
+            Terms of Use
+          </Link>{' '}
+          and acknowledge the{' '}
+          <Link href="/privacy" className="text-primary hover:underline">
+            Privacy Policy
+          </Link>
+          .
+        </span>
+      </label>
       {turnstileSiteKey ? (
         <TurnstileWidget action="signup" siteKey={turnstileSiteKey} />
       ) : requiresTurnstile ? (

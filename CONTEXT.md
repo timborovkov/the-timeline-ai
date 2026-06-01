@@ -15,6 +15,12 @@ A person who belongs to a team. Team membership grants access to team-visible
 items, but does not grant access to another member's private items.
 _Avoid_: User when the team relationship matters
 
+**Legal Acceptance**:
+A person-level acknowledgement of the current Terms of Use and Privacy Policy
+versions required before entering the signed-in product. Legal acceptance
+belongs to the person, not to each team membership.
+_Avoid_: Team acceptance, membership acceptance
+
 **Owner/Admin**:
 A team member with elevated control over team settings and shared operational
 workflows. This role does not override private or restricted item visibility.

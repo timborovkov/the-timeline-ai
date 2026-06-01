@@ -377,6 +377,9 @@ out of scope.
       the DB. No in-app support admin UI is required for Phase 13.
 - [x] Protect public support forms with Cloudflare Turnstile in production, a
       honeypot field, and rate limits.
+- [x] Add public Terms of Use and Privacy Policy pages, link them from public
+      footers and the sitemap, and require user-level acceptance of the current
+      legal versions before entering the signed-in product.
 
 ### Slice 13.8 — Standardized abuse-control rate limits
 

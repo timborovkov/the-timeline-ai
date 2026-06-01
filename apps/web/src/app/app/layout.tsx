@@ -10,10 +10,16 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getNavAttentionSummary } from '@/lib/hub-status';
+import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
+
+  const legal = await getUserLegalAcceptance(session.user.id);
+  if (!legal || !hasCurrentLegalAcceptance(legal)) {
+    redirect('/legal/accept');
+  }
 
   const { active, memberships } = await resolveActiveTeam(session.user.id);
   const currentUsers = await db

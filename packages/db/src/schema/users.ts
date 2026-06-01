@@ -10,6 +10,9 @@ export const users = pgTable('users', {
   emailVerified: timestamp('emailVerified', { mode: 'date', withTimezone: true }),
   image: text('image'),
   passwordHash: text('password_hash'),
+  legalTermsVersion: text('legal_terms_version'),
+  legalPrivacyVersion: text('legal_privacy_version'),
+  legalAcceptedAt: timestamp('legal_accepted_at', { mode: 'date', withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

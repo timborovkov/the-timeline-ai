@@ -91,6 +91,12 @@ export function HelpShell({ children, isSignedIn }: HelpShellProps) {
             <Link href="/help/support" className="hover:text-fg">
               Support
             </Link>
+            <Link href="/terms" className="hover:text-fg">
+              Terms
+            </Link>
+            <Link href="/privacy" className="hover:text-fg">
+              Privacy
+            </Link>
             {isSignedIn ? (
               <Link href="/app/timeline" className="hover:text-fg">
                 Dashboard
