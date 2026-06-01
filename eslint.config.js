@@ -73,12 +73,32 @@ export default tseslint.config(
           message: 'Use the @/ alias for web source imports instead of relative paths.',
         },
         {
+          selector: 'ImportDeclaration[source.value="@timeline/shared"]',
+          message:
+            'apps/web must import @timeline/shared through explicit subpath exports, not the root barrel.',
+        },
+        {
           selector: 'ExportNamedDeclaration[source.value=/^\\.(?!.*\\.css$)/]',
           message: 'Use the @/ alias for web source exports instead of relative paths.',
         },
         {
+          selector: 'ExportNamedDeclaration[source.value="@timeline/shared"]',
+          message:
+            'apps/web must re-export @timeline/shared through explicit subpath exports, not the root barrel.',
+        },
+        {
           selector: 'ExportAllDeclaration[source.value=/^\\.(?!.*\\.css$)/]',
           message: 'Use the @/ alias for web source exports instead of relative paths.',
+        },
+        {
+          selector: 'ExportAllDeclaration[source.value="@timeline/shared"]',
+          message:
+            'apps/web must re-export @timeline/shared through explicit subpath exports, not the root barrel.',
+        },
+        {
+          selector: 'Literal[value="@timeline/shared"]',
+          message:
+            'apps/web tests must mock/import explicit @timeline/shared subpaths instead of the root barrel.',
         },
       ],
     },

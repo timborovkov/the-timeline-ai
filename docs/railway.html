@@ -323,10 +323,11 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
           progress.
           <p>
             The worker service deploys in parallel with <code>web</code> and doesn't run migrations
-            itself. It calls <code>waitForMigrations()</code> from <code>@timeline/db</code> at
-            startup, which polls <code>drizzle.__drizzle_migrations</code> until the row count
-            matches the journal bundled with the worker image. Default timeout 5 minutes. This
-            avoids crash-looping on every deploy that ships schema changes.
+            itself. It calls <code>waitForMigrations()</code> from
+            <code>@timeline/db/wait-for-migrations</code> at startup, which polls
+            <code>drizzle.__drizzle_migrations</code> until the row count matches the journal
+            bundled with the worker image. Default timeout 5 minutes. This avoids crash-looping on
+            every deploy that ships schema changes.
           </p>
           <p>
             <strong>SSL note.</strong> Inside a Railway project, <code>DATABASE_URL</code> resolves

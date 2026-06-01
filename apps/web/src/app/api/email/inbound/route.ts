@@ -1,16 +1,11 @@
-import {
-  childLogger,
-  email,
-  getAttachmentsBucket,
-  getAudioBucket,
-  getEnv,
-  getS3Client,
-  putObject,
-  queue,
-  rateLimit,
-} from '@timeline/shared';
+import * as email from '@timeline/shared/email';
+import { getEnv } from '@timeline/shared/env';
+import { childLogger } from '@timeline/shared/logger';
+import * as rateLimit from '@timeline/shared/rate-limit';
+import { getAttachmentsBucket, getAudioBucket, getS3Client, putObject } from '@timeline/shared/s3';
 
 import { db } from '@/lib/db';
+import { requireRedisQueue } from '@/lib/queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -141,6 +136,7 @@ export async function POST(req: Request): Promise<Response> {
           });
         },
         async enqueueTranscribe(input) {
+          const queue = await requireRedisQueue();
           await queue.enqueueTranscribeJob(input);
         },
         buildAttachmentKey({ teamId, messageId, filename }) {
@@ -155,6 +151,7 @@ export async function POST(req: Request): Promise<Response> {
   const extractDeps: email.ExtractEnqueueDeps | undefined = env.REDIS_URL
     ? {
         async enqueueExtract(input) {
+          const queue = await requireRedisQueue();
           await queue.enqueueExtractJob(input);
         },
       }
@@ -163,6 +160,7 @@ export async function POST(req: Request): Promise<Response> {
   const embedDeps: email.EmbedEnqueueDeps | undefined = env.REDIS_URL
     ? {
         async enqueueEmbed(input) {
+          const queue = await requireRedisQueue();
           await queue.enqueueEmbedJob(input);
         },
       }

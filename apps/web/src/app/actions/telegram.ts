@@ -1,7 +1,8 @@
 'use server';
 
 import { telegramChatBindings, telegramLinkTokens } from '@timeline/db';
-import { randomToken, withTeam } from '@timeline/shared';
+import { randomToken } from '@timeline/shared/slug';
+import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 

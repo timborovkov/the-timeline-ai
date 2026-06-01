@@ -1,6 +1,6 @@
 'use server';
-
-import { onboarding, withTeam } from '@timeline/shared';
+import * as onboarding from '@timeline/shared/onboarding';
+import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';

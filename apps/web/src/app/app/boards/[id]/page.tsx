@@ -1,4 +1,5 @@
-import { objects, withTeam } from '@timeline/shared';
+import * as objects from '@timeline/shared/objects';
+import { withTeam } from '@timeline/shared/team-scope';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { z } from 'zod';

@@ -16,7 +16,16 @@ const nextConfig: NextConfig = {
   // and drizzle-orm as real node_modules in the standalone output. Runtime
   // startup migrations are handled by apps/web/start.mjs outside Next's
   // instrumentation bundle.
-  serverExternalPackages: ['drizzle-orm', 'postgres'],
+  serverExternalPackages: ['bullmq', 'drizzle-orm', 'ioredis', 'postgres'],
+  webpack(config, { isServer }) {
+    if (isServer) {
+      config.externals.push({
+        bullmq: 'commonjs bullmq',
+        ioredis: 'commonjs ioredis',
+      });
+    }
+    return config;
+  },
 };
 
 export default nextConfig;

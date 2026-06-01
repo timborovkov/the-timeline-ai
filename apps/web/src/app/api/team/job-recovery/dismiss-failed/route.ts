@@ -1,6 +1,8 @@
-import { withTeam, type jobRecovery } from '@timeline/shared';
+import { withTeam } from '@timeline/shared/team-scope';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+
+import type * as jobRecovery from '@timeline/shared/job-recovery';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';

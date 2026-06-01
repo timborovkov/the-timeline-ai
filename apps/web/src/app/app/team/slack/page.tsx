@@ -6,7 +6,9 @@ import {
   slackWorkspaceTeams,
   users,
 } from '@timeline/db';
-import { getEnv, slack, withTeam } from '@timeline/shared';
+import { getEnv } from '@timeline/shared/env';
+import * as slack from '@timeline/shared/slack';
+import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';

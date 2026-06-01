@@ -12,7 +12,8 @@ function getRoot(): Logger {
   const rawLevel = process.env.LOG_LEVEL ?? 'info';
   const level = LEVELS.has(rawLevel) ? rawLevel : 'info';
   const nodeEnv = process.env.NODE_ENV ?? 'development';
-  const usePretty = nodeEnv === 'development';
+  const usePretty =
+    nodeEnv === 'development' && level !== 'silent' && process.env.LOG_PRETTY === 'true';
   _root = pino({
     level,
     base: { env: nodeEnv },

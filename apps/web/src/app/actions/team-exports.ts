@@ -1,13 +1,8 @@
 'use server';
 
 import { auditLog, teamExports } from '@timeline/db';
-import {
-  getExportsBucket,
-  getS3PresignClient,
-  getSignedGetObjectUrl,
-  queue,
-  withTeam,
-} from '@timeline/shared';
+import { getExportsBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
+import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, lt } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -15,6 +10,7 @@ import { redirect } from 'next/navigation';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { requireRedisQueue } from '@/lib/queue';
 
 export interface CreateTeamExportState {
   error?: string;
@@ -60,6 +56,7 @@ export async function createTeamExportAction(
   });
 
   try {
+    const queue = await requireRedisQueue();
     await queue.enqueueTeamExportJob({
       teamExportId: id,
       teamId: active.teamId,

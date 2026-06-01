@@ -1,13 +1,11 @@
-import {
-  agent,
-  childLogger,
-  getEnv,
-  llm,
-  objects,
-  rateLimit,
-  time,
-  withTeam,
-} from '@timeline/shared';
+import * as agent from '@timeline/shared/agent';
+import { getEnv } from '@timeline/shared/env';
+import * as llm from '@timeline/shared/llm';
+import { childLogger } from '@timeline/shared/logger';
+import * as objects from '@timeline/shared/objects';
+import * as rateLimit from '@timeline/shared/rate-limit';
+import { withTeam } from '@timeline/shared/team-scope';
+import * as time from '@timeline/shared/time';
 import { convertToModelMessages, safeValidateUIMessages, type UIMessage } from 'ai';
 import { z } from 'zod';
 

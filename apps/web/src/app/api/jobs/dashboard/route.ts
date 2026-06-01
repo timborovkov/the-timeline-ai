@@ -5,13 +5,15 @@ import {
   meetings,
   rawEvents,
 } from '@timeline/db';
-import { cacheKey, cachedJson, queue, withTeam } from '@timeline/shared';
+import { cacheKey, cachedJson } from '@timeline/shared/cache';
+import { withTeam } from '@timeline/shared/team-scope';
 import { and, count, eq, isNotNull, lt, notExists, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { requireRedisQueue } from '@/lib/queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -165,6 +167,7 @@ export async function POST(req: Request): Promise<Response> {
   await scope.requireMembership('admin');
   const parsed = retrySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: 'invalid_input' }, { status: 400 });
+  const queue = await requireRedisQueue();
 
   if (parsed.data.kind === 'document_processing') {
     const version = await scope.documents.getDocumentVersion(parsed.data.id);

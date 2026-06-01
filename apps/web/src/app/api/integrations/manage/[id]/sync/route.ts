@@ -1,9 +1,10 @@
-import { queue, withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared/team-scope';
 import { NextResponse } from 'next/server';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { requireRedisQueue } from '@/lib/queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,6 +27,7 @@ export async function POST(
   }
   const integration = await scope.integrations.getIntegration(id);
   if (!integration) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  const queue = await requireRedisQueue();
   await queue.enqueueIntegrationSyncJob({
     kind: 'backfill',
     integrationId: integration.id,

@@ -1,8 +1,9 @@
 import { facts as factsTable, rawEvents } from '@timeline/db';
-import { childLogger, queue } from '@timeline/shared';
+import { childLogger } from '@timeline/shared/logger';
 import { and, eq, isNotNull, isNull, lt, notExists, sql } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
+import { requireRedisQueue } from '@/lib/queue';
 
 const log = childLogger('web:reconcile-jobs');
 
@@ -134,6 +135,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
       )
       .limit(BATCH_LIMIT);
 
+    const queue = await requireRedisQueue();
     const transcribeQueue = queue.getTranscribeQueue();
     const inflight = await collectInflightRawEventIds(transcribeQueue);
     for (const row of stuck) {
@@ -172,6 +174,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
       )
       .limit(BATCH_LIMIT);
 
+    const queue = await requireRedisQueue();
     const extractQueue = queue.getExtractQueue();
     const inflight = await collectInflightRawEventIds(extractQueue);
     for (const row of stuck) {
@@ -206,6 +209,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
       )
       .limit(BATCH_LIMIT);
 
+    const queue = await requireRedisQueue();
     const embedQueue = queue.getEmbedQueue();
     const inflight = await collectInflightRawEventIds(embedQueue);
     for (const row of stuck) {

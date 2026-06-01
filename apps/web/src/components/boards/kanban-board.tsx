@@ -10,12 +10,12 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { type objects } from '@timeline/shared';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useOptimistic, useRef, useState, useTransition } from 'react';
 
 import type { SaveState } from '@/lib/utils';
+import type * as objects from '@timeline/shared/objects';
 
 import { updateObjectAction } from '@/app/actions/objects';
 import { cn, errorMessage } from '@/lib/utils';

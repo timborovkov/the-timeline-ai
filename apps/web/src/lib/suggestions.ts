@@ -1,4 +1,4 @@
-import type { suggestions as suggestionTypes } from '@timeline/shared';
+import type * as suggestionTypes from '@timeline/shared/suggestions';
 
 type SuggestionBundle = suggestionTypes.SuggestionBundle;
 

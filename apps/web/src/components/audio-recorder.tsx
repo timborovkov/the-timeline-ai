@@ -34,6 +34,7 @@ interface AudioRecorderProps {
 }
 
 export function AudioRecorder({ onClipChange, disabled = false }: AudioRecorderProps = {}) {
+  const [supported, setSupported] = useState(true);
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [clip, setClip] = useState<RecordedClip | null>(null);
@@ -42,6 +43,10 @@ export function AudioRecorder({ onClipChange, disabled = false }: AudioRecorderP
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
+
+  useEffect(() => {
+    setSupported(typeof MediaRecorder !== 'undefined');
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -80,8 +85,6 @@ export function AudioRecorder({ onClipChange, disabled = false }: AudioRecorderP
       recorderRef.current = null;
     };
   }, []);
-
-  const supported = typeof MediaRecorder !== 'undefined';
 
   async function start(): Promise<void> {
     setError(null);

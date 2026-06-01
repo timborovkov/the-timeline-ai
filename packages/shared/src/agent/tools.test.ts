@@ -168,6 +168,20 @@ describe('buildAgentTools — team isolation', () => {
     expect(passed).not.toHaveProperty('userId');
   });
 
+  it('search_timeline accepts the Slack source filter', async () => {
+    const scope = makeFakeScope();
+    scope.timeline.searchEvents.mockResolvedValue([]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.search_timeline?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+    await exec({ query: 'launch update', source: 'slack' }, {});
+    expect(scope.timeline.searchEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'launch update', source: 'slack' }),
+    );
+  });
+
   it('list_events forwards authorUserId verbatim — scope must enforce team', async () => {
     const scope = makeFakeScope();
     scope.timeline.listEvents.mockResolvedValue([]);
@@ -176,6 +190,25 @@ describe('buildAgentTools — team isolation', () => {
     await exec({ authorUserId: '00000000-0000-0000-0000-000000000001' }, {});
     expect(scope.timeline.listEvents).toHaveBeenCalledWith(
       expect.objectContaining({ authorUserId: '00000000-0000-0000-0000-000000000001' }),
+    );
+  });
+
+  it('list_events forwards Slack and calendar source filters', async () => {
+    const scope = makeFakeScope();
+    scope.timeline.listEvents.mockResolvedValue([]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.list_events?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
+
+    await exec({ source: 'slack' }, {});
+    await exec({ source: 'calendar' }, {});
+
+    expect(scope.timeline.listEvents).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ source: 'slack' }),
+    );
+    expect(scope.timeline.listEvents).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ source: 'calendar' }),
     );
   });
 

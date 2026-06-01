@@ -1,7 +1,8 @@
-import { resetEnvForTests } from '@timeline/shared';
+import { resetEnvForTests } from '@timeline/shared/env';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as SharedModuleNS from '@timeline/shared';
+import type * as MeetingsModule from '@timeline/shared/meetings';
+import type * as RateLimitModule from '@timeline/shared/rate-limit';
 
 /**
  * Route-level tests for the Recall transcript webhook. Covers:
@@ -29,28 +30,33 @@ const fakes = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/queue', () => ({
+  requireRedisQueue: vi.fn().mockResolvedValue({
+    enqueueExtractJob: fakes.fakeEnqueueExtract,
+    enqueueEmbedJob: fakes.fakeEnqueueEmbed,
+    enqueueMeetingChunkEmbedJob: fakes.fakeEnqueueMeetingChunk,
+  }),
+}));
 
-vi.mock('@timeline/shared', async () => {
-  const actual = await vi.importActual<typeof SharedModuleNS>('@timeline/shared');
+vi.mock('@timeline/shared/logger', () => ({
+  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+}));
+
+vi.mock('@timeline/shared/team-scope', () => ({
+  withTeam: () => ({ meetings: { appendMeetingChunk: fakes.fakeAppendChunk } }),
+}));
+
+vi.mock('@timeline/shared/meetings', async () => {
+  const actual = await vi.importActual<typeof MeetingsModule>('@timeline/shared/meetings');
   return {
     ...actual,
-    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-    withTeam: () => ({ meetings: { appendMeetingChunk: fakes.fakeAppendChunk } }),
-    meetingsScope: {
-      ...actual.meetingsScope,
-      lookupMeetingByBotId: fakes.fakeLookup,
-    },
-    queue: {
-      ...actual.queue,
-      enqueueExtractJob: fakes.fakeEnqueueExtract,
-      enqueueEmbedJob: fakes.fakeEnqueueEmbed,
-      enqueueMeetingChunkEmbedJob: fakes.fakeEnqueueMeetingChunk,
-    },
-    rateLimit: {
-      ...actual.rateLimit,
-      checkRateLimit: fakes.fakeRateLimit,
-    },
+    lookupMeetingByBotId: fakes.fakeLookup,
   };
+});
+
+vi.mock('@timeline/shared/rate-limit', async () => {
+  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
+  return { ...actual, checkRateLimit: fakes.fakeRateLimit };
 });
 
 const { POST } = await import('./route.js');

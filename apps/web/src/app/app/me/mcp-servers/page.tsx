@@ -1,4 +1,4 @@
-import { withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared/team-scope';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';

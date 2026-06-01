@@ -3,14 +3,9 @@
 import { randomUUID } from 'node:crypto';
 
 import { rawEvents } from '@timeline/db';
-import {
-  childLogger,
-  getAudioBucket,
-  getS3PresignClient,
-  getSignedPutObjectUrl,
-  queue,
-  withTeam,
-} from '@timeline/shared';
+import { childLogger } from '@timeline/shared/logger';
+import { getAudioBucket, getS3PresignClient, getSignedPutObjectUrl } from '@timeline/shared/s3';
+import { withTeam } from '@timeline/shared/team-scope';
 import { eq, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -19,6 +14,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
+import { requireRedisQueue } from '@/lib/queue';
 
 const log = childLogger('web:actions');
 
@@ -71,6 +67,7 @@ export async function createTextEventAction(
   await safeMarkOnboardingStep(scope, 'first_note');
 
   try {
+    const queue = await requireRedisQueue();
     await queue.enqueueExtractJob({ rawEventId: event.id, teamId: event.teamId });
   } catch (err) {
     log.error({ err }, 'failed to enqueue extract job');
@@ -97,6 +94,7 @@ export async function createTextEventAction(
   // produce zero facts, and races safely with the extract worker via
   // deterministic Qdrant point ids.
   try {
+    const queue = await requireRedisQueue();
     await queue.enqueueEmbedJob({ rawEventId: event.id, teamId: event.teamId });
   } catch (err) {
     log.error({ err }, 'failed to enqueue embed job');
@@ -248,6 +246,7 @@ export async function createAudioEventAction(
   await safeMarkOnboardingStep(scope, 'first_note');
 
   try {
+    const queue = await requireRedisQueue();
     await queue.enqueueTranscribeJob({
       rawEventId: event.id,
       teamId: event.teamId,

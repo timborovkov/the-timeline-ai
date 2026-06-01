@@ -1,9 +1,12 @@
 import { integrationSelections, integrations as integrationsTable } from '@timeline/db';
-import { email, integrations as integrationsLib, queue, rateLimit } from '@timeline/shared';
+import * as email from '@timeline/shared/email';
+import * as integrationsLib from '@timeline/shared/integrations';
+import * as rateLimit from '@timeline/shared/rate-limit';
 import { and, eq, inArray } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
+import { requireRedisQueue } from '@/lib/queue';
 
 // Pull the Linear team id out of a webhook payload. The schema varies by
 // entity type — Linear puts it at different paths for Issue vs Comment
@@ -131,6 +134,7 @@ export async function POST(req: Request): Promise<Response> {
       if (events.length > 0) {
         await integrationsLib.writeIntegrationEvents({ db, integration, events });
       }
+      const queue = await requireRedisQueue();
       await queue.enqueueIntegrationSyncJob({
         kind: 'incremental',
         integrationId: integration.id,

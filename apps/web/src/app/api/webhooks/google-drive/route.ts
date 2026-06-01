@@ -1,11 +1,14 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { integrations as integrationsTable } from '@timeline/db';
-import { email, getEnv, queue, rateLimit } from '@timeline/shared';
+import * as email from '@timeline/shared/email';
+import { getEnv } from '@timeline/shared/env';
+import * as rateLimit from '@timeline/shared/rate-limit';
 import { and, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
+import { requireRedisQueue } from '@/lib/queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -73,11 +76,16 @@ export async function POST(req: Request): Promise<Response> {
   if (!integration) {
     return NextResponse.json({ ok: true });
   }
-  await queue.enqueueIntegrationSyncJob({
-    kind: 'incremental',
-    integrationId: integration.id,
-    teamId: integration.teamId,
-    triggeredBy: 'webhook',
-  });
+  try {
+    const queue = await requireRedisQueue();
+    await queue.enqueueIntegrationSyncJob({
+      kind: 'incremental',
+      integrationId: integration.id,
+      teamId: integration.teamId,
+      triggeredBy: 'webhook',
+    });
+  } catch {
+    return NextResponse.json({ ok: true, reason: 'enqueue_failed' }, { status: 200 });
+  }
   return NextResponse.json({ ok: true });
 }

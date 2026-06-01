@@ -1,4 +1,6 @@
-import { getEnv, slack, withTeam } from '@timeline/shared';
+import { getEnv } from '@timeline/shared/env';
+import * as slack from '@timeline/shared/slack';
+import { withTeam } from '@timeline/shared/team-scope';
 import { redirect } from 'next/navigation';
 
 import { resolveActiveTeam } from '@/lib/active-team';

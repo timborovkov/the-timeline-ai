@@ -1,5 +1,5 @@
 import { auditLog, mcpOutboundKeys } from '@timeline/db';
-import { withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 

@@ -1,4 +1,4 @@
-import type { objects } from '@timeline/shared';
+import type * as objects from '@timeline/shared/objects';
 
 /**
  * Client-safe mirror of `objects.OBJECT_TYPES` (which is itself derived

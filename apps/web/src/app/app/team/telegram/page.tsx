@@ -5,7 +5,8 @@ import {
   telegramUserTeams,
   users,
 } from '@timeline/db';
-import { getEnv, withTeam } from '@timeline/shared';
+import { getEnv } from '@timeline/shared/env';
+import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 

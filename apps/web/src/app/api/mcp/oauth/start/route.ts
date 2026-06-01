@@ -1,4 +1,6 @@
-import { childLogger, mcp, withTeam } from '@timeline/shared';
+import { childLogger } from '@timeline/shared/logger';
+import * as mcp from '@timeline/shared/mcp';
+import { withTeam } from '@timeline/shared/team-scope';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 

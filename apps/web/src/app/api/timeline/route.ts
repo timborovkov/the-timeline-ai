@@ -1,12 +1,7 @@
 import { users } from '@timeline/db';
-import {
-  cacheKey,
-  cachedJson,
-  getAudioBucket,
-  getS3PresignClient,
-  getSignedGetObjectUrl,
-  withTeam,
-} from '@timeline/shared';
+import { cacheKey, cachedJson } from '@timeline/shared/cache';
+import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
+import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 
 import { resolveActiveTeam } from '@/lib/active-team';

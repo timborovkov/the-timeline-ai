@@ -1,10 +1,6 @@
 import { users } from '@timeline/db';
-import {
-  getAudioBucket,
-  getS3PresignClient,
-  getSignedGetObjectUrl,
-  withTeam,
-} from '@timeline/shared';
+import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
+import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import { CircleCheckBig, Mail, Video } from 'lucide-react';
 import Link from 'next/link';

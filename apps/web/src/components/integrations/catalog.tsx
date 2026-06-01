@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import type { integrations as integrationsLib } from '@timeline/shared';
+import type * as integrationsLib from '@timeline/shared/integrations';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

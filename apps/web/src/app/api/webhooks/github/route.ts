@@ -1,9 +1,12 @@
 import { integrationSelections, integrations as integrationsTable } from '@timeline/db';
-import { email, integrations as integrationsLib, queue, rateLimit } from '@timeline/shared';
+import * as email from '@timeline/shared/email';
+import * as integrationsLib from '@timeline/shared/integrations';
+import * as rateLimit from '@timeline/shared/rate-limit';
 import { and, eq, inArray } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
+import { requireRedisQueue } from '@/lib/queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -110,6 +113,7 @@ export async function POST(req: Request): Promise<Response> {
   // selections, so this is safe — unselected repos won't generate events.
   for (const integration of rows) {
     try {
+      const queue = await requireRedisQueue();
       await queue.enqueueIntegrationSyncJob({
         kind: 'incremental',
         integrationId: integration.id,

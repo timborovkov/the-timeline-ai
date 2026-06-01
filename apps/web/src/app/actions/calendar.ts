@@ -1,6 +1,6 @@
 'use server';
-
-import { childLogger, withTeam } from '@timeline/shared';
+import { childLogger } from '@timeline/shared/logger';
+import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 

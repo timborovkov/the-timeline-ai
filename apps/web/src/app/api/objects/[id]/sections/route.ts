@@ -1,4 +1,5 @@
-import { cacheKey, cachedJson, withTeam } from '@timeline/shared';
+import { cacheKey, cachedJson } from '@timeline/shared/cache';
+import { withTeam } from '@timeline/shared/team-scope';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';

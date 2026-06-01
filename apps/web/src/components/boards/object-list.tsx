@@ -1,5 +1,6 @@
-import { type objects } from '@timeline/shared';
 import Link from 'next/link';
+
+import type * as objects from '@timeline/shared/objects';
 
 type GroupKey = 'status' | 'stage' | 'priority' | 'type';
 

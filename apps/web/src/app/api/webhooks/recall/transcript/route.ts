@@ -1,15 +1,13 @@
-import {
-  childLogger,
-  email,
-  getEnv,
-  meetingsScope,
-  queue,
-  rateLimit,
-  withTeam,
-} from '@timeline/shared';
+import * as email from '@timeline/shared/email';
+import { getEnv } from '@timeline/shared/env';
+import { childLogger } from '@timeline/shared/logger';
+import * as meetingsScope from '@timeline/shared/meetings';
+import * as rateLimit from '@timeline/shared/rate-limit';
+import { withTeam } from '@timeline/shared/team-scope';
 import { z } from 'zod';
 
 import { db } from '@/lib/db';
+import { requireRedisQueue } from '@/lib/queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -200,6 +198,7 @@ export async function POST(req: Request): Promise<Response> {
     // raw_event — a single consolidated event is created by the
     // meeting-finalize worker when the call ends.
     if (env.REDIS_URL) {
+      const queue = await requireRedisQueue();
       await queue.enqueueMeetingChunkEmbedJob(meeting.teamId, result.chunkId);
     }
     return Response.json({ ok: true, chunkId: result.chunkId }, { status: 200 });

@@ -40,6 +40,7 @@ const eventSourceSchema = z.enum([
   'meeting',
   'integration',
   'calendar',
+  'slack',
 ]);
 
 const searchTimelineInput = z.object({

@@ -23,6 +23,12 @@
       "import": "./dist/integrations/registry.js",
       "types": "./dist/integrations/registry.d.ts"
     },
+    "./job-recovery": {
+      "types": "./src/job-recovery/index.ts",
+      "development": "./src/job-recovery/index.ts",
+      "import": "./dist/job-recovery/index.js",
+      "default": "./dist/job-recovery/index.js"
+    },
     "./logger": {
       "import": "./dist/logger.js",
       "types": "./dist/logger.d.ts"
@@ -30,6 +36,24 @@
     "./env": {
       "import": "./dist/env.js",
       "types": "./dist/env.d.ts"
+    },
+    "./queue": {
+      "types": "./src/queue/index.ts",
+      "development": "./src/queue/index.ts",
+      "import": "./dist/queue/index.js",
+      "default": "./dist/queue/index.js"
+    },
+    "./s3": {
+      "types": "./src/s3/index.ts",
+      "development": "./src/s3/index.ts",
+      "import": "./dist/s3/index.js",
+      "default": "./dist/s3/index.js"
+    },
+    "./team-scope": {
+      "types": "./src/team-scope.ts",
+      "development": "./src/team-scope.ts",
+      "import": "./dist/team-scope.js",
+      "default": "./dist/team-scope.js"
     },
     "./env-reset": {
       "types": "./src/env-reset.ts",
@@ -41,9 +65,94 @@
       "import": "./dist/email/index.js",
       "types": "./dist/email/index.d.ts"
     },
+    "./agent": {
+      "types": "./src/agent/index.ts",
+      "development": "./src/agent/index.ts",
+      "import": "./dist/agent/index.js",
+      "default": "./dist/agent/index.js"
+    },
+    "./cache": {
+      "types": "./src/cache.ts",
+      "development": "./src/cache.ts",
+      "import": "./dist/cache.js",
+      "default": "./dist/cache.js"
+    },
+    "./crypto": {
+      "types": "./src/crypto/index.ts",
+      "development": "./src/crypto/index.ts",
+      "import": "./dist/crypto/index.js",
+      "default": "./dist/crypto/index.js"
+    },
+    "./llm": {
+      "types": "./src/llm/index.ts",
+      "development": "./src/llm/index.ts",
+      "import": "./dist/llm/index.js",
+      "default": "./dist/llm/index.js"
+    },
+    "./mcp": {
+      "types": "./src/mcp/index.ts",
+      "development": "./src/mcp/index.ts",
+      "import": "./dist/mcp/index.js",
+      "default": "./dist/mcp/index.js"
+    },
+    "./mcp-server": {
+      "types": "./src/mcp-server/index.ts",
+      "development": "./src/mcp-server/index.ts",
+      "import": "./dist/mcp-server/index.js",
+      "default": "./dist/mcp-server/index.js"
+    },
+    "./meeting-bots": {
+      "types": "./src/meeting-bots/index.ts",
+      "development": "./src/meeting-bots/index.ts",
+      "import": "./dist/meeting-bots/index.js",
+      "default": "./dist/meeting-bots/index.js"
+    },
+    "./meetings": {
+      "types": "./src/meetings/index.ts",
+      "development": "./src/meetings/index.ts",
+      "import": "./dist/meetings/index.js",
+      "default": "./dist/meetings/index.js"
+    },
+    "./objects": {
+      "types": "./src/objects/index.ts",
+      "development": "./src/objects/index.ts",
+      "import": "./dist/objects/index.js",
+      "default": "./dist/objects/index.js"
+    },
+    "./onboarding": {
+      "types": "./src/onboarding/index.ts",
+      "development": "./src/onboarding/index.ts",
+      "import": "./dist/onboarding/index.js",
+      "default": "./dist/onboarding/index.js"
+    },
     "./passwords": {
+      "development": "./src/passwords.ts",
       "import": "./dist/passwords.js",
       "types": "./dist/passwords.d.ts"
+    },
+    "./slack": {
+      "types": "./src/slack/index.ts",
+      "development": "./src/slack/index.ts",
+      "import": "./dist/slack/index.js",
+      "default": "./dist/slack/index.js"
+    },
+    "./suggestions": {
+      "types": "./src/suggestions/index.ts",
+      "development": "./src/suggestions/index.ts",
+      "import": "./dist/suggestions/index.js",
+      "default": "./dist/suggestions/index.js"
+    },
+    "./team-roles": {
+      "types": "./src/team-roles.ts",
+      "development": "./src/team-roles.ts",
+      "import": "./dist/team-roles.js",
+      "default": "./dist/team-roles.js"
+    },
+    "./telegram": {
+      "types": "./src/telegram/index.ts",
+      "development": "./src/telegram/index.ts",
+      "import": "./dist/telegram/index.js",
+      "default": "./dist/telegram/index.js"
     },
     "./rate-limit": {
       "import": "./dist/rate-limit/index.js",

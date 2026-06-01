@@ -1,6 +1,5 @@
 'use server';
-
-import { objects } from '@timeline/shared';
+import * as objects from '@timeline/shared/objects';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
