@@ -114,11 +114,11 @@ export default function PrivacyPage() {
             <td>Transactional email, inbound email, invites, and support mail.</td>
           </tr>
           <tr>
-            <td>Sentry, if enabled</td>
+            <td>Sentry</td>
             <td>Error reporting and diagnostics.</td>
           </tr>
           <tr>
-            <td>PostHog, if enabled</td>
+            <td>PostHog</td>
             <td>Product analytics and feature flags.</td>
           </tr>
           <tr>
