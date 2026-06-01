@@ -14,7 +14,7 @@ import type { ImpactItem } from '@/lib/timeline-moments';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
 
-interface TimelinePage {
+export interface TimelinePage {
   items: TimelineEvent[];
   nextCursor: string | null;
   authors: Record<string, { id: string; name: string | null; email: string }>;
@@ -22,13 +22,14 @@ interface TimelinePage {
   impactItems: Record<string, ImpactItem[]>;
 }
 
-interface DocumentListPage {
+export interface DocumentListPage {
   items: {
     id: string;
     name: string;
     visibility: string;
     updatedAt: string;
     ownerUserId: string | null;
+    optimistic?: boolean;
   }[];
   nextCursor: string | null;
 }
@@ -164,6 +165,7 @@ export function useDocumentListQuery(folderId: string | null, initialPage: Docum
           visibility: string;
           updatedAt: string;
           ownerUserId: string | null;
+          optimistic?: boolean;
         }[];
         nextCursor: string | null;
       }>(await fetch(`/api/documents/list?${params.toString()}`));
@@ -204,6 +206,34 @@ export function useOnboardingChecklistQuery() {
           body: JSON.stringify(input),
         }),
       ),
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.onboarding() });
+      const previous = queryClient.getQueryData<{
+        dismissed: boolean;
+        items: { key: string; label: string; completed: boolean }[];
+      }>(queryKeys.onboarding());
+      if (previous) {
+        queryClient.setQueryData<typeof previous>(queryKeys.onboarding(), {
+          ...previous,
+          dismissed:
+            input.action === 'dismiss'
+              ? true
+              : input.action === 'reopen'
+                ? false
+                : previous.dismissed,
+          items:
+            input.action === 'complete' && input.key
+              ? previous.items.map((item) =>
+                  item.key === input.key ? { ...item, completed: true } : item,
+                )
+              : previous.items,
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _input, context) => {
+      if (context?.previous) queryClient.setQueryData(queryKeys.onboarding(), context.previous);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.onboarding() });
     },

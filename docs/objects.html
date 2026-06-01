@@ -397,17 +397,17 @@
           <tr>
             <td><code>/app/objects/[id]</code></td>
             <td>
-              Editable status/stage/priority/due, notes CRUD, related objects with kind chips +
-              unlink, open tasks, recent changes audit list, "since your last visit" banner, archive
-              button.
+              Optimistic status/stage/priority/due edits, notes CRUD, related objects with kind
+              chips + unlink, open tasks, recent changes audit list, "since your last visit" banner,
+              archive button.
             </td>
           </tr>
           <tr>
             <td><code>/app/inbox</code></td>
             <td>
               Notifications with unread-first sort. <span class="pill">all</span> /
-              <span class="pill">unread</span> tabs, per-row mark-read (optimistic, hover or click),
-              mark-all button.
+              <span class="pill">unread</span> tabs, optimistic per-row mark-read (hover or click),
+              and optimistic mark-all.
             </td>
           </tr>
           <tr>
@@ -422,8 +422,8 @@
             <td>
               Renders one of <code>kanban</code> / <code>table</code> / <code>list</code> per
               <code>board.kind</code> over <code>listObjects(board.filter)</code>. Kanban supports
-              drag-to-move (<code>@dnd-kit/core</code>, optimistic), backed by
-              <code>updateObjectAction</code>.
+              drag-to-move (<code>@dnd-kit/core</code>, optimistic), quiet board-level save
+              confirmation, and per-card failure feedback backed by <code>updateObjectAction</code>.
             </td>
           </tr>
           <tr>

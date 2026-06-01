@@ -18,7 +18,9 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+
+import type { SaveState } from '@/lib/utils';
 
 import {
   createCalendarEventAction,
@@ -37,6 +39,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { errorMessage } from '@/lib/utils';
 
 type CalendarViewMode = 'month' | 'week' | 'day';
 
@@ -224,24 +227,39 @@ export function CalendarView({
         : [stableAnchor];
   }, [anchorKey, safeMode]);
   const currentToday = today(timezone);
+  const [localEvents, setLocalEvents] = useState(events);
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
   const [draft, setDraft] = useState<Draft>(() =>
     blankDraft(anchor, timezone, defaultVisibility, defaultVisibilityUserIds),
   );
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [surfaceError, setSurfaceError] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
   const [pending, startTransition] = useTransition();
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dialogContextRef = useRef(0);
+
+  useEffect(() => {
+    setLocalEvents(events);
+  }, [events]);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+    };
+  }, []);
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
     for (const day of visibleDays) {
-      const matches = events
+      const matches = localEvents
         .filter((event) => eventTouchesDate(event, day, timezone))
         .sort((a, b) => a.startAt.localeCompare(b.startAt));
       map.set(day.toString(), matches);
     }
     return map;
-  }, [events, timezone, visibleDays]);
+  }, [localEvents, timezone, visibleDays]);
 
   function push(nextMode: CalendarViewMode, nextDate: Temporal.PlainDate) {
     router.push(`/app/calendar?view=${nextMode}&date=${nextDate.toString()}`);
@@ -256,17 +274,21 @@ export function CalendarView({
   }
 
   function openCreate(day = anchor) {
+    dialogContextRef.current += 1;
     setEditing(null);
     setDraft(blankDraft(day, timezone, defaultVisibility, defaultVisibilityUserIds));
     setError(null);
+    setSurfaceError(null);
     setOpen(true);
   }
 
   function openEdit(event: CalendarEvent) {
     if (event.redacted) return;
+    dialogContextRef.current += 1;
     setEditing(event);
     setDraft(draftFromEvent(event, timezone));
     setError(null);
+    setSurfaceError(null);
     setOpen(true);
   }
 
@@ -305,6 +327,7 @@ export function CalendarView({
       return;
     }
     startTransition(async () => {
+      const saveDialogContext = dialogContextRef.current;
       const input = {
         title,
         description: draft.description.trim() || undefined,
@@ -318,15 +341,69 @@ export function CalendarView({
           ? { visibilityUserIds: draft.visibilityUserIds }
           : {}),
       };
-      const result = editing
-        ? await updateCalendarEventAction({ id: editing.id, ...input })
-        : await createCalendarEventAction(input);
-      if (!result.ok) {
-        setError(result.error ?? 'Failed to save event.');
-        return;
-      }
+      const optimisticId = editing?.id ?? `optimistic-${crypto.randomUUID()}`;
+      const originalEvent = editing
+        ? (localEvents.find((event) => event.id === editing.id) ?? null)
+        : null;
+      const optimisticEvent: CalendarEvent = {
+        id: optimisticId,
+        title,
+        description: draft.description.trim() || null,
+        startAt: times.start,
+        endAt: times.end,
+        timezone: draft.timezone,
+        allDay: draft.allDay,
+        location: draft.location.trim() || null,
+        redacted: false,
+        visibility: draft.visibility,
+        visibilityUserIds: draft.visibility === 'specific_users' ? draft.visibilityUserIds : null,
+      };
+      setSurfaceError(null);
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+      setSaveState('saving');
       setOpen(false);
-      router.refresh();
+      setLocalEvents((current) =>
+        editing
+          ? current.map((event) => (event.id === editing.id ? optimisticEvent : event))
+          : [optimisticEvent, ...current],
+      );
+      try {
+        const result = editing
+          ? await updateCalendarEventAction({ id: editing.id, ...input })
+          : await createCalendarEventAction(input);
+        if (!result.ok) {
+          throw new Error(result.error ?? 'Failed to save event.');
+        }
+        const savedId = result.id;
+        if (!editing && typeof savedId === 'string') {
+          setLocalEvents((current) =>
+            current.map((event) => (event.id === optimisticId ? { ...event, id: savedId } : event)),
+          );
+        }
+        setSaveState('saved');
+        router.refresh();
+        savedTimer.current = setTimeout(() => {
+          setSaveState('idle');
+        }, 1600);
+      } catch (err) {
+        const message = errorMessage(err, 'Failed to save event.');
+        setLocalEvents((current) =>
+          editing
+            ? current.map((event) =>
+                (event === optimisticEvent || event.id === optimisticId) && originalEvent
+                  ? originalEvent
+                  : event,
+              )
+            : current.filter((event) => event !== optimisticEvent && event.id !== optimisticId),
+        );
+        setSaveState('idle');
+        setSurfaceError(message);
+        if (dialogContextRef.current === saveDialogContext) {
+          setOpen(true);
+          setError(message);
+        }
+        router.refresh();
+      }
     });
   }
 
@@ -408,6 +485,17 @@ export function CalendarView({
           </Button>
         </div>
       </div>
+      {saveState !== 'idle' || surfaceError ? (
+        <div
+          role={surfaceError ? 'alert' : 'status'}
+          aria-live="polite"
+          className={`font-mono text-[11px] uppercase tracking-[0.12em] ${
+            surfaceError ? 'text-danger' : 'text-fg-dim'
+          }`}
+        >
+          {surfaceError ?? (saveState === 'saving' ? 'Saving...' : 'Saved')}
+        </div>
+      ) : null}
 
       {safeMode !== 'day' ? (
         <div className={`grid ${gridCols} gap-px rounded-lg border bg-border`}>
@@ -671,6 +759,7 @@ function DayCell({
           <button
             key={event.id}
             type="button"
+            disabled={event.id.startsWith('optimistic-')}
             onClick={() => {
               onEdit(event);
             }}
@@ -680,7 +769,7 @@ function DayCell({
                 : event.allDay
                   ? 'bg-signal/15 text-signal hover:bg-signal/25'
                   : 'bg-primary/10 text-foreground hover:bg-primary/15'
-            }`}
+            } disabled:opacity-70`}
           >
             <span className="inline-flex items-center gap-1">
               {event.allDay ? null : <Clock className="size-3" />}

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
 import { cn } from '@/lib/utils';
@@ -44,34 +44,78 @@ export function NotificationRow({
   // clears the unread dot — the server action runs async without
   // blocking the navigation.
   const [read, setRead] = useState(initiallyRead);
+  const readRef = useRef(initiallyRead);
+  const latestInitiallyReadRef = useRef(initiallyRead);
+  const individuallyReadRef = useRef(initiallyRead);
+  const bulkReadRef = useRef(false);
   // Sync from props when the parent refreshes (e.g. MarkAllReadButton
   // calls router.refresh() and notifications now report as read). Only
   // ratchet toward "read" — never override a local optimistic-read back
   // to unread, since the user's click is the authoritative intent and
   // the server may not have caught up yet.
   useEffect(() => {
-    if (initiallyRead) setRead(true);
+    latestInitiallyReadRef.current = initiallyRead;
+    if (initiallyRead) {
+      individuallyReadRef.current = true;
+      readRef.current = true;
+      setRead(true);
+    }
   }, [initiallyRead]);
 
+  useEffect(() => {
+    function onAllRead(event: Event): void {
+      if (!(event instanceof CustomEvent) || typeof event.detail !== 'boolean') return;
+      if (event.detail) {
+        bulkReadRef.current = bulkReadRef.current || !readRef.current;
+        readRef.current = true;
+        setRead(true);
+        return;
+      }
+      if (!bulkReadRef.current) return;
+      bulkReadRef.current = false;
+      const next = individuallyReadRef.current || latestInitiallyReadRef.current;
+      readRef.current = next;
+      setRead(next);
+    }
+    window.addEventListener('timeline:notifications-read-all', onAllRead);
+    return () => {
+      window.removeEventListener('timeline:notifications-read-all', onAllRead);
+    };
+  }, []);
+
   function markRead(): void {
-    if (read) return;
+    if (
+      read &&
+      (individuallyReadRef.current || latestInitiallyReadRef.current || !bulkReadRef.current)
+    ) {
+      return;
+    }
+    individuallyReadRef.current = true;
+    readRef.current = true;
     setRead(true);
     const onUnreadFilter = search.get('unread') === '1';
     startTransition(async () => {
-      const result = await markNotificationReadAction(id);
-      if ('error' in result && result.error) {
-        // Action failed (DB blip, scope mismatch). Roll back the
-        // optimistic state so the UI reflects what the server
-        // actually recorded — otherwise the row shows as read while
-        // the server still has it as unread, and on ?unread=1 it'd
-        // linger with read styling but never drop out.
-        setRead(false);
-        return;
+      try {
+        const result = await markNotificationReadAction(id);
+        if (!('error' in result) || !result.error) {
+          // On the unread-only view, the server filter excludes read rows —
+          // refresh so the now-read row drops out instead of lingering with
+          // muted styling. On the All view, the optimistic state is enough.
+          if (onUnreadFilter) router.refresh();
+          return;
+        }
+      } catch {
+        // Fall through to the same rollback as an explicit action error.
       }
-      // On the unread-only view, the server filter excludes read rows —
-      // refresh so the now-read row drops out instead of lingering with
-      // muted styling. On the All view, the optimistic state is enough.
-      if (onUnreadFilter) router.refresh();
+      // Action failed (DB blip, scope mismatch). Roll back the
+      // optimistic state so the UI reflects what the server
+      // actually recorded — otherwise the row shows as read while
+      // the server still has it as unread, and on ?unread=1 it'd
+      // linger with read styling but never drop out.
+      individuallyReadRef.current = latestInitiallyReadRef.current;
+      const next = latestInitiallyReadRef.current || bulkReadRef.current;
+      readRef.current = next;
+      setRead(next);
     });
   }
 

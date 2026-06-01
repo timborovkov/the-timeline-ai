@@ -13,10 +13,12 @@ import {
 import { type objects } from '@timeline/shared';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useOptimistic, useState, useTransition } from 'react';
+import { useEffect, useOptimistic, useRef, useState, useTransition } from 'react';
+
+import type { SaveState } from '@/lib/utils';
 
 import { updateObjectAction } from '@/app/actions/objects';
-import { cn } from '@/lib/utils';
+import { cn, errorMessage } from '@/lib/utils';
 
 type GroupKey = 'status' | 'stage' | 'priority';
 
@@ -74,7 +76,20 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
     });
   const [items, applyMove] = useOptimistic(rows, applyOptimistic);
   const [, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [savingCount, setSavingCount] = useState(0);
+  const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
+  const [savingCardIds, setSavingCardIds] = useState<ReadonlySet<string>>(() => new Set());
+  const savingCountRef = useRef(0);
+  const savingCardIdsRef = useRef<Set<string>>(new Set());
+  const batchHadFailureRef = useRef(false);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+    };
+  }, []);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -92,6 +107,7 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
     const id = e.active.id as string;
     const col = e.over?.id as string | undefined;
     if (!col) return;
+    if (savingCardIdsRef.current.has(id)) return;
     const row = items.find((r) => r.id === id);
     if (!row || colValue(row, groupBy) === col) return;
     // `startTransition` is required to call setState (via useOptimistic) and
@@ -103,31 +119,67 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
     if (groupBy === 'status' && col === 'unset') return;
     startTransition(async () => {
       applyMove({ id, col });
-      setError(null);
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+      setSaveState('saving');
+      if (savingCountRef.current === 0) batchHadFailureRef.current = false;
+      savingCountRef.current += 1;
+      savingCardIdsRef.current.add(id);
+      setSavingCount(savingCountRef.current);
+      setSavingCardIds(new Set(savingCardIdsRef.current));
+      setCardErrors((errors) => {
+        const { [id]: _cleared, ...rest } = errors;
+        return rest;
+      });
       const patch =
         groupBy === 'priority'
           ? { id, priority: col === 'unset' ? null : Number(col) }
           : groupBy === 'stage'
             ? { id, stage: col === 'unset' ? null : col }
             : { id, status: col };
-      const result = await updateObjectAction(patch);
-      if ('error' in result && result.error) {
-        // Surface the failure so the user understands why the card just
-        // snapped back to its original column on the next render.
-        setError(result.error);
+      try {
+        const result = await updateObjectAction(patch);
+        const failed = 'error' in result && result.error;
+        if (failed) {
+          batchHadFailureRef.current = true;
+          setCardErrors((errors) => ({ ...errors, [id]: result.error ?? 'Move failed' }));
+        }
+      } catch (err) {
+        batchHadFailureRef.current = true;
+        setCardErrors((errors) => ({ ...errors, [id]: errorMessage(err, 'Move failed') }));
+      } finally {
+        savingCountRef.current = Math.max(0, savingCountRef.current - 1);
+        savingCardIdsRef.current.delete(id);
+        setSavingCount(savingCountRef.current);
+        setSavingCardIds(new Set(savingCardIdsRef.current));
+        if (savingCountRef.current === 0) {
+          if (batchHadFailureRef.current) {
+            setSaveState('idle');
+          } else {
+            setSaveState('saved');
+            savedTimer.current = setTimeout(() => {
+              setSaveState('idle');
+            }, 1600);
+          }
+        }
+        // Always refresh: on success the new column persists; on failure
+        // useOptimistic snaps back to the unchanged server rows.
+        router.refresh();
       }
-      // Always refresh: on success the new column persists; on failure
-      // useOptimistic snaps back to the unchanged server rows.
-      router.refresh();
     });
   }
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-      {error && (
-        <p className="mb-2 text-sm text-destructive" role="status">
-          {error}
-        </p>
+      {saveState !== 'idle' && (
+        <div
+          className="mb-2 text-right font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
+          role="status"
+          aria-live="polite"
+        >
+          {saveState === 'saving'
+            ? `Saving${savingCount > 1 ? ` ${savingCount} moves` : ''}...`
+            : 'Saved'}
+        </div>
       )}
       {/* Flex row with FIXED column widths. The previous
           `grid auto-cols-[minmax(240px,1fr)]` made each column compete for
@@ -138,14 +190,30 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
           height so each column can host its own vertical scroll. */}
       <div className="flex h-full gap-3 overflow-x-auto pb-2">
         {allCols.map((c) => (
-          <Column key={c} id={c} rows={byCol.get(c) ?? []} />
+          <Column
+            key={c}
+            id={c}
+            rows={byCol.get(c) ?? []}
+            cardErrors={cardErrors}
+            savingCardIds={savingCardIds}
+          />
         ))}
       </div>
     </DndContext>
   );
 }
 
-function Column({ id, rows }: { id: string; rows: objects.ObjectRow[] }) {
+function Column({
+  id,
+  rows,
+  cardErrors,
+  savingCardIds,
+}: {
+  id: string;
+  rows: objects.ObjectRow[];
+  cardErrors: Record<string, string>;
+  savingCardIds: ReadonlySet<string>;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
     <div
@@ -166,15 +234,18 @@ function Column({ id, rows }: { id: string; rows: objects.ObjectRow[] }) {
           would push its parent and only the page would scroll. */}
       <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         {rows.map((r) => (
-          <Card key={r.id} row={r} />
+          <Card key={r.id} row={r} error={cardErrors[r.id]} saving={savingCardIds.has(r.id)} />
         ))}
       </ul>
     </div>
   );
 }
 
-function Card({ row }: { row: objects.ObjectRow }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: row.id });
+function Card({ row, error, saving }: { row: objects.ObjectRow; error?: string; saving: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: row.id,
+    disabled: saving,
+  });
   const style = transform
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
     : undefined;
@@ -187,6 +258,8 @@ function Card({ row }: { row: objects.ObjectRow }) {
       className={cn(
         'cursor-grab rounded-sm border border-border bg-bg px-3 py-2 text-sm transition-colors hover:border-border-strong',
         isDragging && 'opacity-50',
+        saving && 'cursor-progress opacity-80',
+        error && 'border-danger/50',
       )}
     >
       <Link
@@ -212,6 +285,9 @@ function Card({ row }: { row: objects.ObjectRow }) {
           </span>
         )}
       </div>
+      {error ? (
+        <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-danger">{error}</p>
+      ) : null}
     </li>
   );
 }

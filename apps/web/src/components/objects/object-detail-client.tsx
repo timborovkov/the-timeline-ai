@@ -2,7 +2,16 @@
 
 import { type objects } from '@timeline/shared';
 import { useRouter } from 'next/navigation';
-import { type ComponentProps, type ReactNode, useState, useTransition } from 'react';
+import {
+  type ComponentProps,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
+
+import type { SaveState } from '@/lib/utils';
 
 import {
   acceptObjectChangeAction,
@@ -17,6 +26,7 @@ import {
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
+import { errorMessage } from '@/lib/utils';
 
 const RELATIONSHIP_KINDS = [
   'related',
@@ -30,6 +40,11 @@ const RELATIONSHIP_KINDS = [
 
 type ObjectDetail = objects.ObjectDetail;
 type LocalSuggestion = ComponentProps<typeof ApprovalsClient>['suggestions'][number];
+type EditableField = 'status' | 'stage' | 'priority' | 'dueAt';
+type EditableValue = string | number | Date | null;
+type DraftField = 'stage' | 'dueAt';
+
+const EDITABLE_FIELDS: EditableField[] = ['status', 'stage', 'priority', 'dueAt'];
 
 interface Props {
   detail: ObjectDetail;
@@ -56,20 +71,170 @@ function statusOptions(type: string): string[] {
 export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [localDetail, setLocalDetail] = useState(detail);
+  const [stageDraft, setStageDraft] = useState(detail.stage ?? '');
+  const [dueDraft, setDueDraft] = useState(toLocalInputValue(detail.dueAt));
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [savingCount, setSavingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [noteBody, setNoteBody] = useState('');
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingBody, setEditingBody] = useState('');
   const [linkId, setLinkId] = useState('');
   const [linkKind, setLinkKind] = useState<(typeof RELATIONSHIP_KINDS)[number]>('related');
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localDetailRef = useRef(detail);
+  const serverDetailRef = useRef(detail);
+  const queuedFieldValuesRef = useRef<Record<EditableField, EditableValue | undefined>>({
+    status: undefined,
+    stage: undefined,
+    priority: undefined,
+    dueAt: undefined,
+  });
+  const savingCountRef = useRef(0);
+  const batchHadFailureRef = useRef(false);
+  const focusedDraftsRef = useRef<Record<DraftField, boolean>>({ stage: false, dueAt: false });
+  const savingDraftsRef = useRef<Record<DraftField, number>>({ stage: 0, dueAt: 0 });
+  const savingFieldsRef = useRef<Record<EditableField, number>>({
+    status: 0,
+    stage: 0,
+    priority: 0,
+    dueAt: 0,
+  });
 
-  function patch(field: string, value: unknown): void {
-    setError(null);
-    startTransition(async () => {
-      const result = await updateObjectAction({ id: detail.id, [field]: value });
-      if ('error' in result && result.error) setError(result.error);
-      else router.refresh();
+  function updateLocalDetail(updater: (current: ObjectDetail) => ObjectDetail): void {
+    const next = updater(localDetailRef.current);
+    localDetailRef.current = next;
+    setLocalDetail(next);
+  }
+
+  function isDraftField(field: EditableField): field is DraftField {
+    return field === 'stage' || field === 'dueAt';
+  }
+
+  function draftIsProtected(field: DraftField): boolean {
+    return focusedDraftsRef.current[field] || savingDraftsRef.current[field] > 0;
+  }
+
+  function fieldIsProtected(field: EditableField): boolean {
+    return savingFieldsRef.current[field] > 0 || (isDraftField(field) && draftIsProtected(field));
+  }
+
+  useEffect(() => {
+    serverDetailRef.current = detail;
+    setLocalDetail((current) => {
+      const next = { ...detail };
+      for (const field of EDITABLE_FIELDS) {
+        if (fieldIsProtected(field)) {
+          next[field] = current[field] as never;
+        }
+      }
+      localDetailRef.current = next;
+      return next;
     });
+    if (!draftIsProtected('stage')) setStageDraft(detail.stage ?? '');
+    if (!draftIsProtected('dueAt')) setDueDraft(toLocalInputValue(detail.dueAt));
+  }, [detail]);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+    };
+  }, []);
+
+  function patch(field: EditableField, value: EditableValue): void {
+    const currentValue = localDetailRef.current[field];
+    if (sameEditableValue(field, currentValue, value)) return;
+    setError(null);
+    updateLocalDetail((current) => ({ ...current, [field]: value }));
+    if (savingFieldsRef.current[field] > 0) {
+      queuedFieldValuesRef.current[field] = value;
+      return;
+    }
+    beginFieldSave(field, value);
+  }
+
+  function beginFieldSave(
+    field: EditableField,
+    value: EditableValue,
+    options: { preserveBatchFailure?: boolean } = {},
+  ): void {
+    savingFieldsRef.current[field] += 1;
+    if (isDraftField(field)) savingDraftsRef.current[field] += 1;
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    setSaveState('saving');
+    if (savingCountRef.current === 0 && !options.preserveBatchFailure) {
+      batchHadFailureRef.current = false;
+    }
+    savingCountRef.current += 1;
+    setSavingCount(savingCountRef.current);
+    startTransition(async () => {
+      try {
+        const actionValue = value instanceof Date ? value.toISOString() : value;
+        const result = await updateObjectAction({ id: detail.id, [field]: actionValue });
+        const failed = 'error' in result && result.error;
+        if (failed) {
+          handleFieldSaveFailure(field, value, result.error ?? 'Update failed');
+        } else if (!batchHadFailureRef.current) {
+          setError(null);
+        }
+        router.refresh();
+      } catch (err) {
+        handleFieldSaveFailure(field, value, errorMessage(err, 'Update failed'));
+        router.refresh();
+      } finally {
+        finishFieldSave(field);
+      }
+    });
+  }
+
+  function handleFieldSaveFailure(field: EditableField, value: EditableValue, message: string) {
+    batchHadFailureRef.current = true;
+    setError(message);
+    const rollbackValue = serverDetailRef.current[field];
+    if (
+      queuedFieldValuesRef.current[field] === undefined &&
+      sameEditableValue(field, localDetailRef.current[field], value)
+    ) {
+      updateLocalDetail((current) => ({
+        ...current,
+        [field]: field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue,
+      }));
+      if (field === 'stage') {
+        setStageDraft(rollbackValue === null ? '' : String(rollbackValue));
+      }
+      if (field === 'dueAt') {
+        setDueDraft(toLocalInputValue(rollbackValue));
+      }
+    }
+  }
+
+  function finishFieldSave(field: EditableField): void {
+    savingCountRef.current = Math.max(0, savingCountRef.current - 1);
+    if (isDraftField(field)) {
+      savingDraftsRef.current[field] = Math.max(0, savingDraftsRef.current[field] - 1);
+    }
+    savingFieldsRef.current[field] = Math.max(0, savingFieldsRef.current[field] - 1);
+
+    const queuedValue = queuedFieldValuesRef.current[field];
+    queuedFieldValuesRef.current[field] = undefined;
+    if (queuedValue !== undefined) {
+      beginFieldSave(field, queuedValue, { preserveBatchFailure: batchHadFailureRef.current });
+      setSavingCount(savingCountRef.current);
+      return;
+    }
+
+    setSavingCount(savingCountRef.current);
+    if (savingCountRef.current === 0) {
+      if (batchHadFailureRef.current) {
+        setSaveState('idle');
+      } else {
+        setSaveState('saved');
+        savedTimer.current = setTimeout(() => {
+          setSaveState('idle');
+        }, 1600);
+      }
+    }
   }
 
   function addNote(): void {
@@ -138,6 +303,17 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
             {error}
           </div>
         )}
+        {saveState !== 'idle' && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
+          >
+            {saveState === 'saving'
+              ? `Saving${savingCount > 1 ? ` ${savingCount} changes` : ''}...`
+              : 'Saved'}
+          </div>
+        )}
       </header>
 
       {suggestions.length > 0 ? (
@@ -150,29 +326,35 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
       <section className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         <Field label="Status">
           <select
-            value={detail.status}
-            disabled={pending}
+            value={localDetail.status}
             onChange={(e) => {
               patch('status', e.target.value);
             }}
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           >
-            {statusOptions(detail.type).map((s) => (
+            {statusOptions(localDetail.type).map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>
             ))}
-            {!statusOptions(detail.type).includes(detail.status) && (
-              <option value={detail.status}>{detail.status}</option>
+            {!statusOptions(localDetail.type).includes(localDetail.status) && (
+              <option value={localDetail.status}>{localDetail.status}</option>
             )}
           </select>
         </Field>
         <Field label="Stage">
           <input
-            defaultValue={detail.stage ?? ''}
-            disabled={pending}
+            value={stageDraft}
+            onFocus={() => {
+              focusedDraftsRef.current.stage = true;
+            }}
+            onChange={(e) => {
+              setStageDraft(e.target.value);
+            }}
             onBlur={(e) => {
+              focusedDraftsRef.current.stage = false;
               const v = e.target.value.trim();
+              setStageDraft(v);
               patch('stage', v === '' ? null : v);
             }}
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
@@ -181,8 +363,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
         </Field>
         <Field label="Priority">
           <select
-            value={detail.priority ?? ''}
-            disabled={pending}
+            value={localDetail.priority ?? ''}
             onChange={(e) => {
               patch('priority', e.target.value === '' ? null : Number(e.target.value));
             }}
@@ -198,11 +379,17 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
         <Field label="Due date">
           <input
             type="datetime-local"
-            defaultValue={detail.dueAt ? toLocalInput(detail.dueAt) : ''}
-            disabled={pending}
+            value={dueDraft}
+            onFocus={() => {
+              focusedDraftsRef.current.dueAt = true;
+            }}
+            onChange={(e) => {
+              setDueDraft(e.target.value);
+            }}
             onBlur={(e) => {
+              focusedDraftsRef.current.dueAt = false;
               const v = e.target.value;
-              patch('dueAt', v === '' ? null : new Date(v).toISOString());
+              patch('dueAt', v === '' ? null : new Date(v));
             }}
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           />
@@ -571,6 +758,29 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       {children}
     </label>
   );
+}
+
+function sameEditableValue(field: EditableField, a: unknown, b: unknown): boolean {
+  if (a === null || a === undefined || b === null || b === undefined) return Object.is(a, b);
+  if (field !== 'dueAt') return Object.is(a, b);
+  const aDate = toDateOrNull(a);
+  const bDate = toDateOrNull(b);
+  if (aDate !== null || bDate !== null) {
+    return aDate !== null && bDate !== null && aDate.getTime() === bDate.getTime();
+  }
+  return Object.is(a, b);
+}
+
+function toDateOrNull(value: unknown): Date | null {
+  if (value instanceof Date) return value;
+  if (typeof value !== 'string') return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function toLocalInputValue(value: unknown): string {
+  const d = toDateOrNull(value);
+  return d ? toLocalInput(d) : '';
 }
 
 function toLocalInput(d: Date): string {
