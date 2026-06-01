@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { rawEvents } from '@timeline/db';
+import { cacheKey, deleteCacheKey } from '@timeline/shared/cache';
 import { childLogger } from '@timeline/shared/logger';
 import { getAudioBucket, getS3PresignClient, getSignedPutObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -26,6 +27,7 @@ const createTextSchema = z.object({
 export interface CreateEventState {
   error?: string;
   ok?: boolean;
+  warning?: string;
   // Monotonic id that changes on every successful submit so the client can
   // distinguish two consecutive successes (otherwise `ok: true` looks identical
   // to React's dep-array check and effects won't re-fire).
@@ -65,7 +67,9 @@ export async function createTextEventAction(
     visibility: parsed.data.visibility,
   });
   await safeMarkOnboardingStep(scope, 'first_note');
+  await deleteCacheKey(cacheKey(['onboarding', active.teamId, session.user.id]));
 
+  const processingWarnings: string[] = [];
   try {
     const queue = await requireRedisQueue();
     await queue.enqueueExtractJob({ rawEventId: event.id, teamId: event.teamId });
@@ -88,6 +92,7 @@ export async function createTextEventAction(
       .catch((markErr: unknown) => {
         log.error({ err: markErr }, 'failed to mark extract failure');
       });
+    processingWarnings.push('structured extraction');
   }
   // Independently enqueue an event-level embed job (Phase 5). Same
   // independence rationale as the transcribe worker — covers events that
@@ -111,10 +116,19 @@ export async function createTextEventAction(
       .catch((markErr: unknown) => {
         log.error({ err: markErr }, 'failed to mark embed failure');
       });
+    processingWarnings.push('semantic search');
   }
 
+  revalidatePath('/app');
   revalidatePath('/app/timeline');
-  return { ok: true, at: Date.now() };
+  return {
+    ok: true,
+    at: Date.now(),
+    warning:
+      processingWarnings.length > 0
+        ? `Saved. ${processingWarnings.join(' and ')} need attention before this is fully searchable.`
+        : undefined,
+  };
 }
 
 // ---------- Audio capture (Phase 3) ----------
@@ -244,6 +258,7 @@ export async function createAudioEventAction(
     sourceMetadata,
   });
   await safeMarkOnboardingStep(scope, 'first_note');
+  await deleteCacheKey(cacheKey(['onboarding', active.teamId, session.user.id]));
 
   try {
     const queue = await requireRedisQueue();
@@ -277,6 +292,7 @@ export async function createAudioEventAction(
         log.error({ err: markErr }, 'failed to mark row failure');
       });
     revalidatePath('/app/timeline');
+    revalidatePath('/app');
     return {
       ok: true,
       warning:
@@ -285,6 +301,7 @@ export async function createAudioEventAction(
   }
 
   revalidatePath('/app/timeline');
+  revalidatePath('/app');
   return { ok: true };
 }
 

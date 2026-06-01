@@ -225,9 +225,9 @@ out of scope.
       keeping tutorial completion outside the dedicated timeline browser.
 - [x] Split the landing and browser surfaces: `/app` now hosts capture,
       onboarding, ingest access, pending approvals, and compact recent moments;
-      `/app/timeline` opens quick capture by default above the grouped moment
-      browser with source presets, impact filters, density controls, inspector
-      evidence, and hydrated Impact Context.
+      `/app/timeline` is the grouped full archive browser with source presets,
+      impact filters, density controls, pagination, inspector evidence, and
+      hydrated Impact Context.
 - [x] Track team-level completion with per-user dismissal. Any teammate
       completing a setup step marks it done for the team; each user can hide
       the checklist for themselves.

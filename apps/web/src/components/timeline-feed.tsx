@@ -28,6 +28,7 @@ interface Props {
   compact?: boolean;
   maxMoments?: number;
   emptyLabel?: string;
+  emptyAction?: { href: string; label: string; body: string };
   density?: 'comfortable' | 'dense';
   impactFilter?: ImpactKind | 'all';
   live?: boolean;
@@ -42,6 +43,7 @@ export function TimelineFeed({
   compact = false,
   maxMoments,
   emptyLabel,
+  emptyAction,
   density = 'comfortable',
   impactFilter = 'all',
   live = true,
@@ -86,6 +88,7 @@ export function TimelineFeed({
         compact={compact}
         maxMoments={maxMoments}
         emptyLabel={emptyLabel}
+        emptyAction={emptyAction}
         density={density}
         impactFilter={impactFilter}
         impactItemsByEventId={impactItemsByEventId}

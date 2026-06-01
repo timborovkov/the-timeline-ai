@@ -1,6 +1,6 @@
 import { safeSameOriginPath } from '@/lib/safe-redirect';
 
-const APP_FALLBACK = '/app/timeline';
+const APP_FALLBACK = '/app';
 const AUTH_PATHS = ['/sign-in', '/sign-up'];
 
 function inviteRedirectPath(token: string): string {

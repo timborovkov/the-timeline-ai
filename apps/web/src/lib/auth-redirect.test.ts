@@ -44,8 +44,6 @@ describe('signedInAuthRedirect', () => {
   it('blocks auth-page callback loops before considering fallback', () => {
     process.env.AUTH_URL = 'https://timeline.example.com';
 
-    expect(signedInAuthRedirect({ callbackUrl: '/sign-in?callbackUrl=/app' })).toBe(
-      '/app/timeline',
-    );
+    expect(signedInAuthRedirect({ callbackUrl: '/sign-in?callbackUrl=/app' })).toBe('/app');
   });
 });

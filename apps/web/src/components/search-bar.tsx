@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 
 import { CitationChip } from '@/components/citation-chip';
 import { Card, CardContent } from '@/components/ui/card';
+import { searchErrorMessage } from '@/lib/ux-errors';
 
 interface SearchResult {
   eventId: string;
@@ -76,17 +77,7 @@ export function SearchBar({ initialQuery = '' }: Props) {
       // finally block.
       if (myRequestId !== requestIdRef.current) return;
       if (!res.ok || !data.ok) {
-        if (data.error === 'search_unconfigured') {
-          setError(
-            'Search is not configured for this environment (missing OPENROUTER_API_KEY or QDRANT_URL).',
-          );
-        } else if (data.error === 'embed_failed') {
-          setError('Could not embed your query. Try again in a moment.');
-        } else if (data.error === 'qdrant_failed') {
-          setError('Vector store is unreachable. Try again in a moment.');
-        } else {
-          setError(data.error ?? `Search failed (${String(res.status)}).`);
-        }
+        setError(searchErrorMessage(data.error, res.status));
         setResults(null);
         return;
       }
@@ -94,7 +85,7 @@ export function SearchBar({ initialQuery = '' }: Props) {
     } catch (err) {
       if (myRequestId !== requestIdRef.current) return;
       console.error('[search] request failed', err);
-      setError('Network error while searching.');
+      setError('Network error while searching. Your timeline is still available; try again.');
       setResults(null);
     } finally {
       if (myRequestId === requestIdRef.current) setLoading(false);
@@ -168,8 +159,13 @@ export function SearchBar({ initialQuery = '' }: Props) {
       </form>
 
       {error && (
-        <Card>
-          <CardContent className="py-4 text-sm text-destructive">{error}</CardContent>
+        <Card className="border-danger/30">
+          <CardContent className="space-y-1 py-4">
+            <p className="text-sm text-danger">{error}</p>
+            <p className="text-xs text-fg-muted">
+              Capture and browsing still work while search is unavailable.
+            </p>
+          </CardContent>
         </Card>
       )}
 

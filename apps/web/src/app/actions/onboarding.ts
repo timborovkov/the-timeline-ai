@@ -28,15 +28,15 @@ export async function dismissOnboardingChecklistAction(): Promise<void> {
   const scope = await getOnboardingScope();
   if (!scope) return;
   await scope.dismissChecklist();
-  revalidatePath('/app/timeline');
+  revalidatePath('/app');
 }
 
 export async function reopenOnboardingChecklistAction(): Promise<void> {
   const scope = await getOnboardingScope();
   if (!scope) redirect('/sign-in');
   await scope.reopenChecklist();
-  revalidatePath('/app/timeline');
-  redirect('/app/timeline');
+  revalidatePath('/app');
+  redirect('/app');
 }
 
 export async function openOnboardingStepAction(formData: FormData): Promise<void> {
@@ -46,7 +46,7 @@ export async function openOnboardingStepAction(formData: FormData): Promise<void
   const href = redirectSchema.safeParse(formData.get('href'));
   if (step.success) {
     await scope.markStepComplete(step.data);
-    revalidatePath('/app/timeline');
+    revalidatePath('/app');
   }
-  redirect(href.success ? href.data : '/app/timeline');
+  redirect(href.success ? href.data : '/app');
 }

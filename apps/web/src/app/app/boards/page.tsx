@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { BoardCreateForm } from '@/components/boards/board-create-form';
+import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -36,9 +37,12 @@ export default async function BoardsIndexPage() {
       </section>
 
       {boards.length === 0 ? (
-        <div className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
-          NO BOARDS YET → PIN A FILTER ABOVE
-        </div>
+        <EmptyAction
+          title="No boards yet"
+          body="Boards are saved views over objects and tasks. Create one after a few captures or start with a simple task board."
+          href="/app#capture"
+          action="Capture source material"
+        />
       ) : (
         <ul className="grid grid-cols-1 gap-px overflow-hidden border border-border sm:grid-cols-2">
           {boards.map((b) => (

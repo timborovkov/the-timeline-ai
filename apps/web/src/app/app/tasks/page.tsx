@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { KanbanBoard } from '@/components/boards/kanban-board';
+import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -55,9 +56,18 @@ export default async function TasksPage() {
         className="mb-5 shrink-0"
       />
 
-      <div className="min-h-0 flex-1">
-        <KanbanBoard rows={rows} groupBy="status" columns={TASK_COLUMNS} />
-      </div>
+      {rows.length === 0 ? (
+        <EmptyAction
+          title="No tasks yet"
+          body="Tasks are proposed from captured decisions, meetings, and follow-ups. Capture one commitment to start the task board."
+          href="/app#capture"
+          action="Capture a follow-up"
+        />
+      ) : (
+        <div className="min-h-0 flex-1">
+          <KanbanBoard rows={rows} groupBy="status" columns={TASK_COLUMNS} />
+        </div>
+      )}
     </div>
   );
 }

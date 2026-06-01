@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { EmptyAction } from '@/components/empty-action';
 import { MarkAllReadButton } from '@/components/inbox/mark-all-read-button';
 import { NotificationRow } from '@/components/inbox/notification-row';
 import { IndexStrip } from '@/components/index-strip';
@@ -69,11 +70,12 @@ export default async function InboxPage({
       </nav>
 
       {rows.length === 0 ? (
-        <div className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
-          {unreadOnly
-            ? 'NO UNREAD NOTIFICATIONS'
-            : 'NO NOTIFICATIONS YET → CHANGES TO OBJECTS YOU OWN WILL LAND HERE'}
-        </div>
+        <EmptyAction
+          title={unreadOnly ? 'No unread notifications' : 'No notifications yet'}
+          body="Notifications appear when objects you own change or agent suggestions need your attention."
+          href={unreadOnly ? '/app/inbox' : '/app/objects'}
+          action={unreadOnly ? 'Show all notifications' : 'Open objects'}
+        />
       ) : (
         <ul className="border-t border-border">
           {rows.map((n) => (

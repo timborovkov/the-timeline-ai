@@ -12,6 +12,7 @@ import { CitationText } from '@/components/chat/citation';
 import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
 import { cn } from '@/lib/utils';
+import { chatErrorMessage } from '@/lib/ux-errors';
 
 interface Props {
   teamName: string;
@@ -91,6 +92,13 @@ export function ChatPane({
         },
         fetch: async (url, init) => {
           const res = await fetch(url, init);
+          if (!res.ok) {
+            const data = (await res
+              .clone()
+              .json()
+              .catch(() => null)) as { error?: string } | null;
+            throw new Error(chatErrorMessage(data?.error, res.status));
+          }
           const id = res.headers.get('x-tl-session-id');
           if (id && id !== sessionIdRef.current) {
             // Update the ref SYNCHRONOUSLY before scheduling the
@@ -267,12 +275,17 @@ export function ChatPane({
       </div>
 
       {error && (
-        <p
+        <div
           role="alert"
-          className="shrink-0 font-mono text-xs uppercase tracking-[0.12em] text-danger"
+          className="shrink-0 rounded-sm border border-danger/30 bg-danger/5 px-3 py-2"
         >
-          {error.message || 'Chat failed. Make sure OPENROUTER_API_KEY is configured.'}
-        </p>
+          <p className="font-mono text-xs uppercase tracking-[0.12em] text-danger">
+            {error.message || 'Chat is unavailable right now.'}
+          </p>
+          <p className="mt-1 text-xs text-fg-muted">
+            Saved timeline events are still available from Home and Timeline.
+          </p>
+        </div>
       )}
 
       <form

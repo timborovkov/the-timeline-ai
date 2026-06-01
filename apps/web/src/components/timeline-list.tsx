@@ -42,6 +42,7 @@ interface Props {
   compact?: boolean;
   maxMoments?: number;
   emptyLabel?: string;
+  emptyAction?: { href: string; label: string; body: string };
   density?: 'comfortable' | 'dense';
   impactFilter?: TimelineImpactFilter;
   impactItemsByEventId?: Record<string, ImpactItem[]>;
@@ -487,6 +488,7 @@ export function TimelineList({
   compact = false,
   maxMoments,
   emptyLabel = 'NO EVENTS YET',
+  emptyAction,
   density = 'comfortable',
   impactFilter = 'all',
   impactItemsByEventId,
@@ -507,8 +509,19 @@ export function TimelineList({
 
   if (visibleMoments.length === 0) {
     return (
-      <div className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
-        {emptyLabel}
+      <div className="border-y border-border py-10 text-center">
+        <p className="font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">{emptyLabel}</p>
+        {emptyAction ? (
+          <>
+            <p className="mx-auto mt-2 max-w-md text-sm text-fg-muted">{emptyAction.body}</p>
+            <Link
+              href={emptyAction.href}
+              className="mt-4 inline-flex min-h-9 items-center rounded-sm border border-signal/40 bg-signal-soft px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-signal transition-colors hover:bg-signal/20"
+            >
+              {emptyAction.label}
+            </Link>
+          </>
+        ) : null}
       </div>
     );
   }

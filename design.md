@@ -208,8 +208,8 @@ Linear-tight on operational surfaces. Comfortable on mobile and on forms.
 - **Setup checklist** — `<TimelineOnboardingChecklist />`. A dense,
   dismissible tutorial panel for the Home Dashboard, not the dedicated
   timeline browser. It uses a hairline-bounded header, mono progress counter,
-  and five equal cells for capture surfaces. Completion uses the signal
-  accent; incomplete steps stay neutral.
+  and actionable rows for each capture/source step. Completion uses the signal
+  accent; incomplete steps stay neutral with one direct CTA.
 - **Inspector pane** — `<InspectorPane>` with `<InspectorHead>` (mono
   uppercase + ID), `<InspectorBody>` (key/value `<dl>`, mono), and
   `<InspectorQuote>` (Switzer, signal-color left border) for surfacing
@@ -261,8 +261,8 @@ visible change.
 
 - **Dedicated surface.** `/app` is the Home Dashboard for capture, onboarding,
   ingest access, pending approvals, and compact recent activity. `/app/timeline`
-  lands with quick capture open, then continues into timeline browsing,
-  filtering, inspection, and source evidence.
+  is only the full archive browser: timeline browsing, filtering, pagination,
+  inspection, and source evidence.
 - **Timeline moments, not raw rows by default.** The browser is date-first:
   sticky date sections contain source clusters, and each cluster contains one
   or more raw events behind the user-facing moment.

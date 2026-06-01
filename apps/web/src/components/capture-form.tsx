@@ -61,6 +61,9 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [notice, setNotice] = useState<{ tone: 'success' | 'warning'; message: string } | null>(
+    null,
+  );
   // Bumped on successful post; passed as `key` to AudioRecorder so React
   // remounts it with a fresh `phase: 'idle'` / `clip: null` state. The
   // recorder owns its own clip state internally; without remount it would
@@ -138,7 +141,7 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
     );
   }
 
-  async function submitAudio(): Promise<void> {
+  async function submitAudio(): Promise<string | null> {
     if (!clip) throw new Error('No clip to upload');
     const base = baseMimeType(clip.mimeType);
     const req = await requestAudioUploadAction(base);
@@ -158,7 +161,7 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
       visibility: isPrivate ? 'private' : 'team',
     });
     if (!create.ok) throw new Error(create.error ?? 'Save failed');
-    if (create.warning) setError(create.warning);
+    return create.warning ?? null;
   }
 
   async function handleSubmit(e: SyntheticEvent<HTMLFormElement>): Promise<void> {
@@ -172,8 +175,10 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
     inFlightRef.current = true;
     setPending(true);
     setError(null);
+    setNotice(null);
     let optimisticTextId: string | null = null;
     let textCommitted = false;
+    const warnings: string[] = [];
     try {
       // Text + voice in the same Post become two separate events on the
       // timeline. We deliberately do NOT pack typed text into the audio
@@ -191,12 +196,14 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
         if (!result.ok) {
           throw new Error(result.error ?? 'Post failed');
         }
+        if (result.warning) warnings.push(result.warning);
         textCommitted = true;
         if (textareaRef.current) textareaRef.current.value = '';
       }
       const hadClip = clip !== null;
       if (clip) {
-        await submitAudio();
+        const audioWarning = await submitAudio();
+        if (audioWarning) warnings.push(audioWarning);
       }
       formRef.current?.reset();
       // Only clear clip / remount the recorder when an audio clip was
@@ -212,6 +219,14 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
         setRecorderKey((k) => k + 1);
       }
       // Keep visibility pill sticky — it's a preference, not per-post.
+      setNotice({
+        tone: warnings.length > 0 ? 'warning' : 'success',
+        message:
+          warnings.length > 0
+            ? warnings.join(' ')
+            : 'Saved to the timeline. Processing will add search, facts, and citations when available.',
+      });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.onboarding() });
       router.refresh();
     } catch (err) {
       if (!textCommitted && optimisticTextId) {
@@ -220,6 +235,7 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
         router.refresh();
       }
       setError(err instanceof Error ? err.message : 'Post failed');
+      setNotice(null);
     } finally {
       inFlightRef.current = false;
       setPending(false);
@@ -231,7 +247,7 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
       ref={formRef}
       onSubmit={handleSubmit}
       data-capture-ready={hydrated ? 'true' : 'false'}
-      className="space-y-5"
+      className="space-y-4 sm:space-y-5"
     >
       <div className="flex items-baseline gap-x-3 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
         <span className="text-fg">CAPTURE</span>
@@ -242,7 +258,7 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
         ref={textareaRef}
         name="text"
         placeholder="What happened?"
-        rows={4}
+        rows={3}
         className="resize-none rounded-md border-0 bg-transparent p-0 text-[15px] leading-7 shadow-none ring-0 ring-offset-0 transition-colors focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:[outline:none]"
       />
       <AudioRecorder key={recorderKey} onClipChange={setClip} disabled={pending} />
@@ -281,6 +297,19 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
           </Button>
         </div>
       </div>
+      {notice ? (
+        <p
+          role="status"
+          className={cn(
+            'rounded-sm border px-3 py-2 text-xs leading-5',
+            notice.tone === 'warning'
+              ? 'border-danger/30 bg-danger/5 text-danger'
+              : 'border-signal/30 bg-signal-soft text-fg',
+          )}
+        >
+          {notice.message}
+        </p>
+      ) : null}
     </form>
   );
 }
