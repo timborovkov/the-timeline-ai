@@ -115,13 +115,12 @@ export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingB
     name: 'recall',
 
     async joinMeeting(input: JoinMeetingInput): Promise<JoinMeetingResult> {
-      // Always use Recall's own transcription engine (Whisper-based)
-      // with auto language detection. Platform captions are unreliable
-      // for multilingual teams.
-      const recallStreamingProvider: { mode: 'prioritize_low_latency'; language_code?: string } = {
-        mode: 'prioritize_low_latency',
+      // Always use Recall's multilingual transcription with auto language
+      // detection. Low-latency mode only supports English language codes.
+      const recallStreamingProvider = {
+        mode: 'prioritize_accuracy',
+        language_code: 'auto',
       };
-      if (input.language) recallStreamingProvider.language_code = input.language;
 
       const body = {
         meeting_url: input.meetingUrl,

@@ -19,10 +19,6 @@ export interface JoinMeetingInput {
   /** Transcript webhook the provider should call. Required because Recall
    *  configures it per-bot, not per-account. */
   transcriptWebhookUrl: string;
-  /** ISO-639-1 language hint for transcription (e.g. 'fi', 'en'). When
-   *  set, Recall uses its own transcription engine with the language hint
-   *  instead of the platform's built-in captions. */
-  language?: string;
 }
 
 export interface JoinMeetingResult {
