@@ -8,7 +8,7 @@
       "entry": [
         "src/app/**/{page,route,layout,loading,error,not-found,template,default,sitemap,robots,manifest,icon,apple-icon,opengraph-image,twitter-image}.{ts,tsx,js,jsx}",
         "src/app/actions/*.ts",
-        "src/middleware.{ts,tsx}",
+        "src/proxy.{ts,tsx}",
         "postcss.config.{js,mjs,cjs,ts}"
       ],
       "project": ["src/**/*.{ts,tsx}"],
@@ -16,7 +16,7 @@
       "ignoreDependencies": ["tailwindcss"]
     },
     "apps/worker": {
-      "entry": ["src/index.ts", "src/scripts/*.ts", "src/workers/*.test.ts"],
+      "entry": ["src/scripts/*.ts", "src/workers/*.test.ts"],
       "project": ["src/**/*.ts"]
     },
     "packages/db": {
