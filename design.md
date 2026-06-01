@@ -215,8 +215,9 @@ Linear-tight on operational surfaces. Comfortable on mobile and on forms.
 - **Setup checklist** — `<TimelineOnboardingChecklist />`. A dense,
   dismissible tutorial panel for the Home Dashboard, not the dedicated
   timeline browser. It uses a hairline-bounded header, mono progress counter,
-  and actionable rows for each capture/source step. Completion uses the signal
-  accent; incomplete steps stay neutral with one direct CTA.
+  and a horizontal strip of fixed-width action cards for each capture/source
+  step. Completion uses the signal accent; incomplete steps stay neutral with
+  one direct CTA.
 - **Inspector pane** — `<InspectorPane>` with `<InspectorHead>` (mono
   uppercase + ID), `<InspectorBody>` (key/value `<dl>`, mono), and
   `<InspectorQuote>` (Switzer, signal-color left border) for surfacing
