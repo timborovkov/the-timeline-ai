@@ -154,12 +154,18 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
     beginFieldSave(field, value);
   }
 
-  function beginFieldSave(field: EditableField, value: EditableValue): void {
+  function beginFieldSave(
+    field: EditableField,
+    value: EditableValue,
+    options: { preserveBatchFailure?: boolean } = {},
+  ): void {
     savingFieldsRef.current[field] += 1;
     if (isDraftField(field)) savingDraftsRef.current[field] += 1;
     if (savedTimer.current) clearTimeout(savedTimer.current);
     setSaveState('saving');
-    if (savingCountRef.current === 0) batchHadFailureRef.current = false;
+    if (savingCountRef.current === 0 && !options.preserveBatchFailure) {
+      batchHadFailureRef.current = false;
+    }
     savingCountRef.current += 1;
     setSavingCount(savingCountRef.current);
     startTransition(async () => {
@@ -213,7 +219,8 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
     const queuedValue = queuedFieldValuesRef.current[field];
     queuedFieldValuesRef.current[field] = undefined;
     if (queuedValue !== undefined) {
-      beginFieldSave(field, queuedValue);
+      beginFieldSave(field, queuedValue, { preserveBatchFailure: batchHadFailureRef.current });
+      setSavingCount(savingCountRef.current);
       return;
     }
 
