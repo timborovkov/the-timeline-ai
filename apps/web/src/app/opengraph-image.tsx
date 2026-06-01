@@ -33,7 +33,7 @@ export default function OpengraphImage() {
         }}
       >
         <span>THE TIMELINE · OPERATIONAL ARCHIVE · v1</span>
-        <span>thetimeline.ai</span>
+        <span>thetimeline.cc</span>
       </div>
 
       {/* Hero block — mark + headline */}

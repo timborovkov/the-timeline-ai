@@ -42,7 +42,7 @@ SUPPORT_EMAIL=support@example.com
         <li>In Postmark, configure an outbound sender signature or verified domain.</li>
         <li>Set the sender address in the app environment.</li>
       </ol>
-      <pre><code>TRANSACTIONAL_EMAIL_FROM="The Timeline &lt;invites@your-domain.com&gt;"
+      <pre><code>TRANSACTIONAL_EMAIL_FROM="The Timeline &lt;invites@thetimeline.cc&gt;"
 </code></pre>
       <p>
         Team settings sends invite emails after the invite row is committed. If Postmark is
@@ -57,7 +57,7 @@ SUPPORT_EMAIL=support@example.com
         <li>In the server, go to <strong>Inbound</strong> → set up an inbound stream.</li>
         <li>
           Set the inbound webhook URL to:
-          <pre><code>https://&lt;your-app-domain&gt;/api/email/inbound
+          <pre><code>https://thetimeline.cc/api/email/inbound
 </code></pre>
         </li>
         <li>Enable <strong>Include raw email content in JSON payload</strong>.</li>
@@ -75,7 +75,7 @@ SUPPORT_EMAIL=support@example.com
       <pre><code>POSTMARK_WEBHOOK_SECRET=&lt;the_hex_string&gt;
 </code></pre>
       <p>In the Postmark dashboard, set the webhook URL with credentials embedded:</p>
-      <pre><code>https://postmark:&lt;the_hex_string&gt;@&lt;your-app-domain&gt;/api/email/inbound
+      <pre><code>https://postmark:&lt;the_hex_string&gt;@thetimeline.cc/api/email/inbound
 </code></pre>
       <p>
         (Either <code>user:secret</code> or <code>:secret</code> is accepted; the secret can be in
@@ -98,11 +98,11 @@ SUPPORT_EMAIL=support@example.com
         Each team gets <code>&lt;team-slug&gt;@&lt;INBOUND_EMAIL_DOMAIN&gt;</code>. Configure MX
         records for that domain to point at Postmark.
       </p>
-      <pre><code>INBOUND_EMAIL_DOMAIN=in.thetimeline.app
+      <pre><code>INBOUND_EMAIL_DOMAIN=in.thetimeline.cc
 </code></pre>
       <p>
         Teams created before Phase 7 are backfilled to <code>&lt;slug&gt;@inbound.invalid</code>.
-        Run a one-off <code>UPDATE teams SET inbound_email = slug || '@in.thetimeline.app'</code> if
+        Run a one-off <code>UPDATE teams SET inbound_email = slug || '@in.thetimeline.cc'</code> if
         you need to flip a legacy team to the production domain.
       </p>
 

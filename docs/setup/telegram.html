@@ -81,7 +81,7 @@
         continues.
       </p>
       <p>For local development (or to register manually):</p>
-      <pre><code>curl -F "url=https://&lt;your-app-domain&gt;/api/telegram/webhook" \
+      <pre><code>curl -F "url=https://thetimeline.cc/api/telegram/webhook" \
      -F "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
      -F 'allowed_updates=["message","edited_message","callback_query"]' \
      "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook"
