@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Slack conversational capture setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-27</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-01</span></div>
       <p class="tldr">
         Slack is a first-party Capture Surface like Telegram: install the app with OAuth, link Slack
         users with OAuth, bind channels from Timeline, and let DMs route through the user's active
@@ -50,7 +50,20 @@ SLACK_SIGNING_SECRET=
           <code>&lt;AUTH_URL&gt;/api/slack/user-link/callback</code>.
         </li>
         <li>Events Request URL: <code>&lt;AUTH_URL&gt;/api/slack/events</code>.</li>
-        <li>Slash command Request URL: <code>&lt;AUTH_URL&gt;/api/slack/commands</code>.</li>
+        <li>
+          Slash Commands → Create New Command:
+          <ul>
+            <li>Command: <code>/ask</code></li>
+            <li>Request URL: <code>&lt;AUTH_URL&gt;/api/slack/commands</code></li>
+            <li>Short description: <code>Ask the Timeline AI</code></li>
+            <li>Usage hint: <code>[question]</code></li>
+            <li>
+              Leave <strong>Escape channels, users, and links sent to your app</strong> unchecked.
+              Timeline treats the command text as a natural-language question, so readable
+              <code>@user</code> and <code>#channel</code> text is more useful than Slack IDs.
+            </li>
+          </ul>
+        </li>
       </ul>
       <p>
         The events and slash-command endpoints verify Slack's
