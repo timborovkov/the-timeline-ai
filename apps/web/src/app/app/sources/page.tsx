@@ -179,7 +179,7 @@ export default async function SourcesPage() {
         ]}
       />
 
-      <div className="grid grid-cols-1 gap-px overflow-hidden border border-border sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-px overflow-hidden border border-border bg-border sm:grid-cols-2">
         {SOURCE_LINKS.map((item) => (
           <HubStatusCard
             key={item.href}
