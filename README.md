@@ -120,8 +120,9 @@ pnpm check:web-bundle     # inspect built Next server chunks
 - [`docs/adr/`](./docs/adr/) — durable architecture decisions.
 
 Setup guides for external services live under [`docs/setup`](./docs/setup/):
-Telegram, Slack, OpenRouter, Postmark, Recall.ai meeting bots, Sentry, Railway,
-third-party integrations, and Timeline-as-MCP-server.
+Telegram, Slack, OpenRouter, Postmark, Resend transactional email, Recall.ai
+meeting bots, Sentry, Railway, third-party integrations, and
+Timeline-as-MCP-server.
 
 ## Contributing
 

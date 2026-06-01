@@ -69,10 +69,11 @@ export default function PrivacyPage() {
 
       <h2>4. AI Processing</h2>
       <p>
-        The Timeline sends relevant content to model providers or model-routing services to support
-        features such as transcription, embeddings, extraction, summarization, and agent answers. AI
-        outputs can be inaccurate or incomplete and should be verified against cited source
-        material.
+        The Timeline uses OpenRouter to route relevant content to selected AI model providers for
+        features such as chat, transcription, embeddings, extraction, summarization, OCR, and agent
+        answers. Model selection may vary by task, capability, cost, reliability, or product
+        configuration. AI outputs can be inaccurate or incomplete and should be verified against
+        cited source material.
       </p>
 
       <h2>5. Core Sub-Processors</h2>
@@ -86,9 +87,10 @@ export default function PrivacyPage() {
         </thead>
         <tbody>
           <tr>
-            <td>OpenRouter / OpenAI-compatible model providers</td>
+            <td>OpenRouter and selected AI model providers</td>
             <td>
-              Model routing, chat, embeddings, transcription, extraction, and related AI features.
+              Routing requests to selected AI models for chat, embeddings, transcription,
+              extraction, summarization, OCR, and agent answers.
             </td>
           </tr>
           <tr>
@@ -112,6 +114,13 @@ export default function PrivacyPage() {
           <tr>
             <td>Postmark</td>
             <td>Transactional email, inbound email, invites, and support mail.</td>
+          </tr>
+          <tr>
+            <td>Resend</td>
+            <td>
+              Transactional email and video-call related notifications, such as invites,
+              confirmations, reminders, and service messages.
+            </td>
           </tr>
           <tr>
             <td>Sentry</td>
