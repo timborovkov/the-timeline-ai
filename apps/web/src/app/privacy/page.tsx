@@ -51,8 +51,8 @@ export default function PrivacyPage() {
         </li>
         <li>Support data submitted through public or signed-in support forms.</li>
         <li>
-          Technical data, such as IP address, request metadata, logs, diagnostics, and abuse
-          signals.
+          Technical and product usage data, such as IP address, request metadata, logs, diagnostics,
+          abuse signals, feature-flag evaluation data, and product analytics events.
         </li>
       </ul>
 
@@ -63,6 +63,7 @@ export default function PrivacyPage() {
         <li>Capture, transcribe, extract, embed, search, summarize, and display team content.</li>
         <li>Generate citations, suggestions, notifications, and agent answers.</li>
         <li>Respond to support, billing, security, and legal requests.</li>
+        <li>Understand product usage, improve workflows, and evaluate feature flags.</li>
         <li>Prevent abuse, enforce terms, and protect users, teams, and the service.</li>
       </ul>
 
@@ -117,6 +118,10 @@ export default function PrivacyPage() {
             <td>Error reporting and diagnostics.</td>
           </tr>
           <tr>
+            <td>PostHog, if enabled</td>
+            <td>Product analytics and feature flags.</td>
+          </tr>
+          <tr>
             <td>Cloudflare Turnstile</td>
             <td>Abuse prevention on public forms and email/password signup.</td>
           </tr>
@@ -133,8 +138,9 @@ export default function PrivacyPage() {
       <h2>7. Cookies</h2>
       <p>
         We use essential cookies and similar technologies for authentication, sessions, security,
-        team selection, invite handling, preferences, and abuse prevention. We do not use a separate
-        cookie consent flow for non-essential advertising cookies in the current product.
+        team selection, invite handling, preferences, abuse prevention, product analytics, and
+        feature flags. We do not use a separate cookie consent flow for advertising cookies in the
+        current product.
       </p>
 
       <h2>8. Retention</h2>
