@@ -1,143 +1,137 @@
-# The Timeline
+<p align="center">
+  <img src="./docs/timeline-logo.svg" alt="The Timeline logo" width="112" height="112" />
+</p>
 
-A multi-tenant team memory system. Capture work as it happens — voice notes,
-text dumps, forwarded emails, Telegram and Slack messages, meeting transcripts — and
-the system compiles a searchable, queryable history of who did what, talked
-to whom, and decided what. Then ask a tool-using agent about it: every
-claim it surfaces links back to the raw event it came from. No black-box
-summaries.
+<h1 align="center">The Timeline</h1>
 
-Current state: through Phase 13.7. Web + Telegram + Slack + email + document drive +
-meeting-bot capture (silent Recall.ai bot for Google Meet / Teams / Zoom),
-voice transcription, extracted facts + entities, semantic search, agent
-chat at `/app/chat`, workspace objects + boards + persisted chat sessions,
-a team document drive at `/app/documents` (folders, versioned uploads,
-chunked + embedded, cited inline with `[doc:<id>#v<n>:chunk:<id>]`), and
-an internal calendar at `/app/calendar` with all-day events, ISO week/day/month
-views, private busy-block redaction, and calendar-aware agent tools. Agents and
-background workers now create proposal-only task/object/calendar suggestions,
-reviewed from the unified `/app/approvals` queue before becoming canonical
-state. Third-party integrations (Google Drive, Linear, GitHub native + custom
-MCP servers per team or per user) live at `/app/team/integrations` — plus an
-outbound MCP server at `/api/mcp/server` so external agents (Claude Desktop,
-Cursor, etc.) can query this Timeline. The Home Dashboard at `/app` gathers
-capture, onboarding, ingest access, pending approvals, and compact recent
-moments; `/app/timeline` is the dedicated grouped timeline browser with source
-presets, impact filters, density controls, pagination,
-inspector evidence, and hydrated Impact Context from suggestions, tasks/objects,
-documents, and calendar rows. The primary sidebar stays intentionally small:
-Ask opens chat, Work groups objects/tasks/boards/calendar/inbox/approvals, and
-Sources groups email, Slack, Telegram, documents, meetings, integrations, and
-MCP servers. Work and Sources show small attention badges plus status-aware hub
-cards so users can see open work, unread/pending queues, source setup, and
-processing/connection issues without expanding the sidebar.
-The main timeline, object sections, document lists, and document search are
-paginated for large beta workspaces, with short-lived visibility-aware Redis
-caches and React Query only on interactive surfaces. Public help docs live at
-`/help`, with a support/contact form that stores requests in Postgres, sends
-them through Postmark, and uses Turnstile in production. Email/password
-registration is also Turnstile-protected; signed-in expensive surfaces use named
-Redis-backed rate-limit policies. Owners/admins can recover team-scoped failed
-or stuck product jobs at `/app/team/jobs`. Railway deployment, deploy/startup
-migrations, and structured logging are in place.
+<p align="center">
+  Open-source team memory: capture work as it happens, then query it with cited answers.
+</p>
 
-## Read first
+The Timeline is a multi-tenant knowledge system for teams that need a reliable
+record of what happened, what changed, and why. It accepts messy real-world
+inputs — notes, voice memos, email, Slack, Telegram, documents, meetings, and
+integration events — and turns them into an auditable timeline of raw events,
+extracted facts, workspace objects, calendar entries, approvals, and searchable
+documents.
 
-- [`docs/product-brief.html`](./docs/product-brief.html) — what we're building and why.
-- [`todo.md`](./todo.md) — ordered build plan, phased.
-- [`design.md`](./design.md) — design system, the source of truth for UI.
-- [`CONTEXT.md`](./CONTEXT.md) — product language and domain glossary.
-- [`docs/adr/`](./docs/adr/) — durable architecture and product decisions.
+Every agent answer is grounded in evidence. Raw events remain immutable, derived
+facts can be reprocessed as extraction improves, and citations point back to the
+source material instead of hiding behind black-box summaries.
 
-## Local development
+## What You Can Build With It
 
-See [`docs/setup/local.html`](./docs/setup/local.html).
+- A searchable team activity archive with source-level citations.
+- A chat interface that can answer questions across events, documents,
+  meetings, calendar rows, and connected tools.
+- Lightweight CRM, project, task, and decision tracking derived from everyday
+  communication.
+- Team document search with versioned uploads, chunked embeddings, and inline
+  document citations.
+- Silent, consent-gated meeting transcript capture for Google Meet, Microsoft
+  Teams, and Zoom.
+- Slack, Telegram, email, Linear, GitHub, Google Drive, and custom MCP-powered
+  ingestion surfaces.
+- An outbound MCP server so tools like Claude Desktop and Cursor can query a
+  team's Timeline.
 
-Short version:
+## Project Status
+
+The core product is active and usable for local development: web app, workers,
+capture surfaces, document drive, meetings, integrations, MCP, approvals,
+calendar, onboarding, job recovery, tests, and deployment docs are in place.
+
+The repo is still moving quickly, but the README is written as an entry point
+for contributors and operators rather than as a phase log. For the detailed
+product rationale and implementation history, start with the docs below.
+
+## Architecture
+
+This is a pnpm/Turborepo monorepo.
+
+| Path | Purpose |
+| --- | --- |
+| `apps/web` | Next.js app, public docs, auth, server actions, UI, API routes, and inbound webhooks. |
+| `apps/worker` | BullMQ workers for transcription, extraction, embeddings, documents, meetings, integrations, MCP health, and maintenance jobs. |
+| `packages/db` | Drizzle schema, migrations, and database package exports. |
+| `packages/shared` | Team-scoped data access, LLM wrapper, Qdrant/S3 wrappers, queues, integrations, calendar, documents, meetings, objects, MCP, and other shared domain modules. |
+| `docs` | Product, setup, architecture, and deployment documentation. |
+
+The two most important boundaries are:
+
+- **Team isolation:** Postgres access flows through `withTeam(db, teamId,
+  userId)` in `@timeline/shared`; Qdrant searches are filtered by `team_id`.
+- **One inference layer:** app and worker code call `llm.chat()`,
+  `llm.embed()`, `llm.transcribe()`, and `llm.extractTextFromMedia()` from
+  `@timeline/shared`.
+
+## Quick Start
+
+Prerequisites:
+
+- Node 24+
+- pnpm 9+
+- Docker Desktop or a compatible Docker runtime
 
 ```bash
 cp .env.example .env
-# fill AUTH_SECRET=$(openssl rand -base64 32)
+ln -sf ../../.env apps/web/.env
+
+# Fill required local secrets.
+openssl rand -base64 32 # AUTH_SECRET
+openssl rand -base64 32 # SECRETS_ENCRYPTION_KEY
+
 docker compose up -d
 pnpm install
-pnpm db:generate && pnpm db:migrate
+pnpm db:migrate
 pnpm dev
 ```
 
 Open <http://localhost:3000>.
 
-## Tests
+For the full walkthrough, see
+[`docs/setup/local.html`](./docs/setup/local.html).
 
-Stable local and PR checks run through:
-
-```bash
-pnpm validate
-pnpm test
-pnpm --filter @timeline/web build && pnpm check:web-bundle
-```
-
-Playwright E2E is a service-backed smoke surface for auth/session behavior and
-team-visible timeline capture. The default runner fails on noisy runtime logs
-such as missing modules, worker-thread crashes, critical dependency warnings,
-and React hydration/runtime errors. Start the local infra and run migrations
-first:
+## Useful Commands
 
 ```bash
-docker compose up -d
-pnpm db:migrate
-pnpm e2e
+pnpm dev                  # Next.js app + worker in watch mode
+pnpm validate             # format check, typecheck, lint, knip
+pnpm test                 # unit and integration tests
+pnpm e2e                  # Playwright smoke tests
+pnpm db:generate          # generate Drizzle migrations after schema changes
+pnpm db:migrate           # apply database migrations
+pnpm check:web-bundle     # inspect built Next server chunks
 ```
 
-`pnpm e2e:prod-smoke` builds the web app, starts the standalone server, signs in
-through the credentials UI, and checks `/app` plus `/app/timeline`.
-`pnpm e2e:setup` and `pnpm e2e:cleanup` seed and remove deterministic
-`timeline-e2e-*` users, memberships, sessions, and team-owned rows. GitHub
-Actions exposes both E2E and production-ish smoke checks as manual,
-non-blocking workflow jobs so flaky browser or container support does not block
-pull requests.
+`pnpm validate` is the main pre-merge gate.
 
-## Wipe a Railway environment
+## Documentation
 
-The destructive dev wipe runs inside the deployed web/app service so Railway
-private service URLs resolve normally. Use it only for a non-production
-environment unless you intentionally want to wipe the linked resources.
+- [`docs/product-brief.html`](./docs/product-brief.html) — product vision,
+  principles, and architecture overview.
+- [`docs/setup/local.html`](./docs/setup/local.html) — complete local setup.
+- [`docs/index.html`](./docs/index.html) — documentation index.
+- [`design.md`](./design.md) — UI design system and product interaction model.
+- [`todo.md`](./todo.md) — phased build plan and remaining work.
+- [`docs/adr/`](./docs/adr/) — durable architecture decisions.
 
-```bash
-railway login
-railway link
-# Select the workspace, project, environment, and web app service (web / @timeline/app).
-railway ssh
+Setup guides for external services live under [`docs/setup`](./docs/setup/):
+Telegram, Slack, OpenRouter, Postmark, Recall.ai meeting bots, Sentry, Railway,
+third-party integrations, and Timeline-as-MCP-server.
 
-pnpm dev:wipe
-```
+## Contributing
 
-Set `NODE_ENV=development` and `ALLOW_DESTRUCTIVE_DEV_WIPE=wipe-dev` as Railway
-variables on the non-production app service before running the command. If those
-variables are not already present in the SSH shell, the full explicit form is:
+This project values changes that keep the system auditable, team-scoped, and
+operable. Before opening a change, please:
 
-```bash
-NODE_ENV=development ALLOW_DESTRUCTIVE_DEV_WIPE=wipe-dev pnpm dev:wipe
-```
+- Keep raw events immutable.
+- Route team data access through the scoped modules from `withTeam`.
+- Keep direct provider calls behind the shared inference and integration layers.
+- Encrypt integration secrets at rest through the shared secrets helpers.
+- Fence external MCP and integration content before it reaches the agent.
+- Run `pnpm validate` before handing work back.
 
-`railway run` is not the same thing: it runs locally with Railway variables
-injected. For this workflow, SSH into the app container and run the wipe command
-there. Railway wipes require `ALLOW_DESTRUCTIVE_DEV_WIPE=wipe-dev` so a linked
-production shell cannot be wiped by setting `NODE_ENV` alone.
+For UI work, follow [`design.md`](./design.md). For setup or operational changes,
+update the relevant docs in the same change.
 
-## External service setup
-
-These live behind their own walkthroughs because every account has its own
-dashboard quirks:
-
-- [`docs/setup/telegram.html`](./docs/setup/telegram.html) — Telegram bot (Phase 2+).
-- [`docs/setup/slack.html`](./docs/setup/slack.html) — Slack conversational capture.
-- [`docs/setup/openrouter.html`](./docs/setup/openrouter.html) — OpenRouter API
-  (Phase 3+).
-- [`docs/setup/postmark.html`](./docs/setup/postmark.html) — inbound email, outbound team invites, and support/contact mail.
-- [`docs/setup/meeting-bots.html`](./docs/setup/meeting-bots.html) — Recall.ai meeting bots (Phase 10).
-- [`docs/setup/integrations.html`](./docs/setup/integrations.html) — third-party integrations (Drive/Linear/GitHub), custom MCP servers, and Timeline-as-MCP-server (Phase 11).
-- [`docs/setup/sentry.html`](./docs/setup/sentry.html) — error tracking.
-- [`docs/setup/railway.html`](./docs/setup/railway.html) — staging + production
-  deploys.
-
-All env vars are documented inline in [`.env.example`](./.env.example).
