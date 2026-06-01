@@ -8,15 +8,21 @@ const log = childLogger('web:turnstile');
 interface SiteverifyResponse {
   success?: boolean;
   'error-codes'?: string[];
+  action?: string;
+  hostname?: string;
 }
 
 export async function verifyTurnstileToken(input: {
   token: FormDataEntryValue | null;
   remoteIp?: string | null;
+  expectedAction?: string;
+  expectedHostname?: string | null;
 }): Promise<boolean> {
   const env = getEnv();
   if (!env.TURNSTILE_SECRET_KEY) return env.NODE_ENV !== 'production';
-  if (typeof input.token !== 'string' || input.token.length === 0) return false;
+  if (typeof input.token !== 'string' || input.token.length === 0 || input.token.length > 2048) {
+    return false;
+  }
 
   const body = new FormData();
   body.append('secret', env.TURNSTILE_SECRET_KEY);
@@ -31,11 +37,39 @@ export async function verifyTurnstileToken(input: {
       body,
     });
     const data = (await res.json()) as SiteverifyResponse;
-    if (data.success) return true;
-    log.warn({ errors: data['error-codes'] ?? [] }, 'turnstile verification failed');
-    return false;
+    if (!data.success) {
+      log.warn({ errors: data['error-codes'] ?? [] }, 'turnstile verification failed');
+      return false;
+    }
+    if (input.expectedAction && data.action !== input.expectedAction) {
+      log.warn(
+        { expected: input.expectedAction, received: data.action },
+        'turnstile action mismatch',
+      );
+      return false;
+    }
+    if (input.expectedHostname && data.hostname !== input.expectedHostname) {
+      log.warn(
+        { expected: input.expectedHostname, received: data.hostname },
+        'turnstile hostname mismatch',
+      );
+      return false;
+    }
+    return true;
   } catch (err) {
     log.warn({ err }, 'turnstile verification request failed');
     return false;
+  }
+}
+
+export function turnstileHostnameFromHeaders(headers: Headers): string | null {
+  const host = headers.get('x-forwarded-host') ?? headers.get('host');
+  if (!host) return null;
+  const firstHost = host.split(',')[0]?.trim();
+  if (!firstHost) return null;
+  try {
+    return new URL(`https://${firstHost}`).hostname;
+  } catch {
+    return null;
   }
 }

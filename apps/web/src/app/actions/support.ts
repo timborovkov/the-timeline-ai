@@ -11,7 +11,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { clientIpFromHeaders } from '@/lib/request-ip';
-import { verifyTurnstileToken } from '@/lib/turnstile';
+import { turnstileHostnameFromHeaders, verifyTurnstileToken } from '@/lib/turnstile';
 
 export interface SupportFormState {
   ok?: boolean;
@@ -61,6 +61,8 @@ export async function submitSupportRequestAction(
   const turnstileOk = await verifyTurnstileToken({
     token: formData.get('cf-turnstile-response'),
     remoteIp: ip,
+    expectedAction: 'support',
+    expectedHostname: turnstileHostnameFromHeaders(h),
   });
   if (!turnstileOk) return { error: 'Verification failed. Refresh and try again.' };
 
