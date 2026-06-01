@@ -21,7 +21,7 @@ import { VisibilityDefaultSettings } from '@/components/visibility-default-setti
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { nonEmptyEnv } from '@/lib/safe-redirect';
+import { getSiteUrl } from '@/lib/site-url';
 
 export const metadata: Metadata = {
   title: 'Team settings',
@@ -254,11 +254,7 @@ export default async function TeamSettingsPage() {
               <ul className="divide-y">
                 {inviteRows.map((invite) => {
                   const inviter = userMap.get(invite.invitedByUserId);
-                  const baseUrl =
-                    nonEmptyEnv(process.env.AUTH_URL) ??
-                    nonEmptyEnv(process.env.NEXTAUTH_URL) ??
-                    'http://localhost:3000';
-                  const url = `${baseUrl}/accept-invite/${invite.token}`;
+                  const url = `${getSiteUrl()}/accept-invite/${invite.token}`;
                   return (
                     <li key={invite.id} className="space-y-2 py-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">

@@ -6,14 +6,18 @@ import { nonEmptyEnv } from '@/lib/safe-redirect';
  * production by accident.
  *
  * Resolution order:
- *   1. `AUTH_URL` / `NEXTAUTH_URL` — the value we explicitly set in prod.
+ *   1. `AUTH_URL` — the value we explicitly set in production.
  *   2. `VERCEL_URL` — auto-injected by Vercel for preview deploys
  *      (host only, no protocol). Prepend `https://`.
- *   3. `http://localhost:3000` — local dev fallback.
+ *   3. `NEXTAUTH_URL` — legacy compatibility fallback.
+ *   4. `http://localhost:3000` — local dev fallback.
  */
 export function getSiteUrl(): string {
-  const authUrl = nonEmptyEnv(process.env.AUTH_URL) ?? nonEmptyEnv(process.env.NEXTAUTH_URL);
+  const authUrl = nonEmptyEnv(process.env.AUTH_URL);
   if (authUrl) return authUrl;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  const vercelUrl = nonEmptyEnv(process.env.VERCEL_URL);
+  if (vercelUrl) return `https://${vercelUrl}`;
+  const nextAuthUrl = nonEmptyEnv(process.env.NEXTAUTH_URL);
+  if (nextAuthUrl) return nextAuthUrl;
   return 'http://localhost:3000';
 }
