@@ -69,7 +69,7 @@ const NAV_ITEMS: readonly NavItem[] = [
     href: '/app/team',
     label: 'Team',
     icon: Settings,
-    activeHrefs: ['/app/team', '/app/team/jobs', '/app/team/mcp-share'],
+    activeHrefs: ['/app/team', '/app/team/audit', '/app/team/jobs', '/app/team/mcp-share'],
   },
 ] as const;
 

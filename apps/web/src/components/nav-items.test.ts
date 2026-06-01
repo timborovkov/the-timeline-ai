@@ -39,13 +39,19 @@ describe('nav items', () => {
   it('does not keep Team active for source routes nested under team settings', () => {
     expect(
       isNavItemActive(
-        { href: '/app/team', activeHrefs: ['/app/team', '/app/team/jobs'] },
+        { href: '/app/team', activeHrefs: ['/app/team', '/app/team/audit', '/app/team/jobs'] },
         '/app/team/slack',
       ),
     ).toBe(false);
     expect(
       isNavItemActive(
-        { href: '/app/team', activeHrefs: ['/app/team', '/app/team/jobs'] },
+        { href: '/app/team', activeHrefs: ['/app/team', '/app/team/audit', '/app/team/jobs'] },
+        '/app/team/audit',
+      ),
+    ).toBe(true);
+    expect(
+      isNavItemActive(
+        { href: '/app/team', activeHrefs: ['/app/team', '/app/team/audit', '/app/team/jobs'] },
         '/app/team/jobs/retries',
       ),
     ).toBe(true);

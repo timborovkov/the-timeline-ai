@@ -24,6 +24,8 @@ export const metadata: Metadata = {
   description: 'Capture events and review the latest timeline activity.',
 };
 
+const FIRST_RUN_GUIDE_TOTAL = 4;
+
 async function signAudio(events: { id: string; contentAudioUrl: string | null }[]) {
   const audioEvents = events.filter((event) => event.contentAudioUrl);
   const audioUrls = new Map<string, string>();
@@ -82,6 +84,7 @@ export default async function HomeDashboardPage() {
   const quickCaptureVisibility = webDefault.visibility === 'private' ? 'private' : 'team';
   const events = eventPage.items;
   const completedSetupCount = onboardingState.steps.filter((step) => step.completed).length;
+  const completedGuideCount = countFirstRunGuideCompleted(onboardingState.steps);
   const showFirstRunGuide =
     !onboardingState.dismissed && (events.length === 0 || completedSetupCount < 2);
   const [impactItems, audioUrlMap] = await Promise.all([
@@ -120,8 +123,8 @@ export default async function HomeDashboardPage() {
 
       {showFirstRunGuide ? (
         <FirstRunGuide
-          completed={completedSetupCount}
-          total={onboardingState.steps.length}
+          completed={completedGuideCount}
+          total={FIRST_RUN_GUIDE_TOTAL}
           inboundEmail={team?.inboundEmail ?? null}
         />
       ) : null}
@@ -231,6 +234,16 @@ export default async function HomeDashboardPage() {
       </section>
     </div>
   );
+}
+
+function countFirstRunGuideCompleted(steps: { step: string; completed: boolean }[]): number {
+  const completed = new Set(steps.filter((step) => step.completed).map((step) => step.step));
+  return [
+    completed.has('first_note'),
+    completed.has('email_forwarding'),
+    completed.has('first_document'),
+    completed.has('first_integration') || completed.has('telegram') || completed.has('slack'),
+  ].filter(Boolean).length;
 }
 
 function FirstRunGuide({
