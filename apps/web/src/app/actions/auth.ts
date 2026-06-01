@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
 import { signIn } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 import { clientIpFromHeaders } from '@/lib/request-ip';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
 import { turnstileHostnameFromHeaders, verifyTurnstileToken } from '@/lib/turnstile';
@@ -22,6 +23,7 @@ const signUpSchema = z.object({
   email: z.email().toLowerCase(),
   password: z.string().min(8).max(200),
   inviteToken: z.string().optional(),
+  legalAccepted: z.literal('on'),
 });
 
 export interface SignUpState {
@@ -36,6 +38,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     email: formData.get('email'),
     password: formData.get('password'),
     inviteToken: formData.get('inviteToken') ?? undefined,
+    legalAccepted: formData.get('legalAccepted'),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -95,7 +98,14 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     activeTeamId = await db.transaction(async (tx) => {
       const inserted = await tx
         .insert(users)
-        .values({ name, email, passwordHash })
+        .values({
+          name,
+          email,
+          passwordHash,
+          legalTermsVersion: TERMS_VERSION,
+          legalPrivacyVersion: PRIVACY_VERSION,
+          legalAcceptedAt: new Date(),
+        })
         .returning({ id: users.id });
       const userId = inserted[0]?.id;
       if (!userId) throw new Error('Failed to create user');

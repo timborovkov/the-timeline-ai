@@ -40,6 +40,9 @@ source material instead of hiding behind black-box summaries.
 The core product is active and usable for local development: web app, workers,
 capture surfaces, document drive, meetings, integrations, MCP, approvals,
 calendar, onboarding, job recovery, tests, and deployment docs are in place.
+Public help, Terms of Use, and Privacy Policy pages are also served from the web
+app; email/password signup is Turnstile-protected, and signed-in users must
+accept the current legal versions before entering `/app`.
 
 The repo is still moving quickly, but the README is written as an entry point
 for contributors and operators rather than as a phase log. For the detailed
@@ -117,8 +120,9 @@ pnpm check:web-bundle     # inspect built Next server chunks
 - [`docs/adr/`](./docs/adr/) — durable architecture decisions.
 
 Setup guides for external services live under [`docs/setup`](./docs/setup/):
-Telegram, Slack, OpenRouter, Postmark, Recall.ai meeting bots, Sentry, Railway,
-third-party integrations, and Timeline-as-MCP-server.
+Telegram, Slack, OpenRouter, Postmark, Resend transactional email, Recall.ai
+meeting bots, Sentry, Railway, third-party integrations, and
+Timeline-as-MCP-server.
 
 ## Contributing
 
@@ -134,4 +138,3 @@ operable. Before opening a change, please:
 
 For UI work, follow [`design.md`](./design.md). For setup or operational changes,
 update the relevant docs in the same change.
-
