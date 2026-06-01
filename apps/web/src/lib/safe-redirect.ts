@@ -27,9 +27,11 @@ export function safeSameOriginPath(
   if (!allowedOrigin) return fallback;
 
   let path: string;
+  let pathname: string;
   try {
     const target = new URL(input, allowedOrigin);
     if (target.origin !== allowedOrigin) return fallback;
+    pathname = target.pathname.replace(/\/+$/, '') || '/';
     path = `${target.pathname}${target.search}${target.hash}`;
   } catch {
     return fallback;
@@ -38,6 +40,6 @@ export function safeSameOriginPath(
   if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) {
     return fallback;
   }
-  if (options.blockedPaths?.includes(path)) return fallback;
+  if (options.blockedPaths?.includes(pathname)) return fallback;
   return path;
 }

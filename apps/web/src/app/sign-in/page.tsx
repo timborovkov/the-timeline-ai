@@ -57,5 +57,7 @@ export default async function SignInPage({ searchParams }: Props) {
 }
 
 function safeSignedInRedirect(callbackUrl: string | undefined) {
-  return safeSameOriginPath(callbackUrl, '/app', { blockedPaths: ['/sign-in', '/sign-up'] });
+  return safeSameOriginPath(callbackUrl, '/app/timeline', {
+    blockedPaths: ['/sign-in', '/sign-up'],
+  });
 }

@@ -2,6 +2,8 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { cookies } from 'next/headers';
 
+import { nonEmptyEnv } from '@/lib/safe-redirect';
+
 const COOKIE_NAME = 'pending_invite';
 const TTL_MS = 15 * 60 * 1000;
 
@@ -11,7 +13,7 @@ interface SignedPayload {
 }
 
 function getSecret(): string {
-  const s = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+  const s = nonEmptyEnv(process.env.AUTH_SECRET) ?? nonEmptyEnv(process.env.NEXTAUTH_SECRET);
   if (!s) throw new Error('AUTH_SECRET is required');
   return s;
 }

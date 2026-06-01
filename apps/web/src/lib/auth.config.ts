@@ -1,10 +1,15 @@
 import type { NextAuthConfig } from 'next-auth';
 
+import { nonEmptyEnv } from '@/lib/safe-redirect';
+
 const localAuthSecret =
   process.env.NODE_ENV === 'development'
     ? 'timeline-local-development-auth-secret-do-not-use-in-production'
     : undefined;
-const authSecret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? localAuthSecret;
+const authSecret =
+  nonEmptyEnv(process.env.AUTH_SECRET) ??
+  nonEmptyEnv(process.env.NEXTAUTH_SECRET) ??
+  localAuthSecret;
 
 /* eslint-disable @typescript-eslint/no-unnecessary-condition */
 /**

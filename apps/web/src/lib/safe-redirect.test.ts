@@ -43,6 +43,16 @@ describe('safeSameOriginPath', () => {
     process.env.AUTH_URL = 'https://timeline.example.com';
     delete process.env.NEXTAUTH_URL;
 
-    expect(safeSameOriginPath('/sign-in', '/app', { blockedPaths: ['/sign-in'] })).toBe('/app');
+    expect(safeSameOriginPath('/sign-in', '/app/timeline', { blockedPaths: ['/sign-in'] })).toBe(
+      '/app/timeline',
+    );
+    expect(
+      safeSameOriginPath('/sign-in?callbackUrl=/app', '/app/timeline', {
+        blockedPaths: ['/sign-in'],
+      }),
+    ).toBe('/app/timeline');
+    expect(safeSameOriginPath('/sign-in/', '/app/timeline', { blockedPaths: ['/sign-in'] })).toBe(
+      '/app/timeline',
+    );
   });
 });

@@ -23,7 +23,8 @@ interface Props {
 export default async function SignUpPage({ searchParams }: Props) {
   const { invite } = await searchParams;
   const session = await auth();
-  if (session?.user) redirect(invite ? `/accept-invite/${encodeURIComponent(invite)}` : '/app');
+  if (session?.user)
+    redirect(invite ? `/accept-invite/${encodeURIComponent(invite)}` : '/app/timeline');
 
   const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY ?? undefined;
   return (
