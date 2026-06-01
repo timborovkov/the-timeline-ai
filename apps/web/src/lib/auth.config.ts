@@ -4,6 +4,7 @@ const localAuthSecret =
   process.env.NODE_ENV === 'development'
     ? 'timeline-local-development-auth-secret-do-not-use-in-production'
     : undefined;
+const authSecret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? localAuthSecret;
 
 /* eslint-disable @typescript-eslint/no-unnecessary-condition */
 /**
@@ -14,7 +15,7 @@ const localAuthSecret =
  */
 export const authConfig: NextAuthConfig = {
   trustHost: true,
-  secret: process.env.AUTH_SECRET ?? localAuthSecret,
+  secret: authSecret,
   pages: { signIn: '/sign-in' },
   session: { strategy: 'jwt' },
   providers: [],

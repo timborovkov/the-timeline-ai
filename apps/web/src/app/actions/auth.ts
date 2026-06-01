@@ -211,7 +211,9 @@ const signInSchema = z.object({
 function safeCallbackUrl(input: string | undefined): string {
   const fallback = '/app/timeline';
   if (!input) return fallback;
-  const allowedOrigin = new URL(process.env.AUTH_URL ?? 'http://localhost:3000').origin;
+  const allowedOrigin = new URL(
+    process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3000',
+  ).origin;
   let path: string;
   try {
     const target = new URL(input, allowedOrigin);

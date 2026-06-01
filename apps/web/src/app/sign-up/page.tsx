@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
@@ -6,7 +7,7 @@ import { SignUpForm } from '@/components/auth-form';
 import { GitHubSignInButton } from '@/components/github-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { hasGitHubAuth } from '@/lib/auth';
+import { auth, hasGitHubAuth } from '@/lib/auth';
 
 export const metadata: Metadata = {
   title: 'Sign up',
@@ -21,6 +22,9 @@ interface Props {
 
 export default async function SignUpPage({ searchParams }: Props) {
   const { invite } = await searchParams;
+  const session = await auth();
+  if (session?.user) redirect(invite ? `/accept-invite/${encodeURIComponent(invite)}` : '/app');
+
   const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY ?? undefined;
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">

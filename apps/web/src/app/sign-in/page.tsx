@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
@@ -6,7 +7,7 @@ import { SignInForm } from '@/components/auth-form';
 import { GitHubSignInButton } from '@/components/github-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { hasGitHubAuth } from '@/lib/auth';
+import { auth, hasGitHubAuth } from '@/lib/auth';
 
 export const metadata: Metadata = {
   title: 'Sign in',
@@ -19,6 +20,9 @@ interface Props {
 
 export default async function SignInPage({ searchParams }: Props) {
   const { callbackUrl } = await searchParams;
+  const session = await auth();
+  if (session?.user) redirect(safeSignedInRedirect(callbackUrl));
+
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
       <Card>
@@ -49,4 +53,21 @@ export default async function SignInPage({ searchParams }: Props) {
       </Card>
     </main>
   );
+}
+
+function safeSignedInRedirect(callbackUrl: string | undefined) {
+  if (!callbackUrl) return '/app';
+  const allowedOrigin = new URL(
+    process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3000',
+  ).origin;
+  try {
+    const target = new URL(callbackUrl, allowedOrigin);
+    const path = `${target.pathname}${target.search}${target.hash}`;
+    if (target.origin !== allowedOrigin || !path.startsWith('/') || path.startsWith('//')) {
+      return '/app';
+    }
+    return path.includes('\\') ? '/app' : path;
+  } catch {
+    return '/app';
+  }
 }
