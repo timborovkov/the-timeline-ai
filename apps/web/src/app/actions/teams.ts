@@ -162,7 +162,7 @@ interface InviteDeliveryInput {
 }
 
 function inviteUrl(token: string): string {
-  const baseUrl = process.env.AUTH_URL ?? 'http://localhost:3000';
+  const baseUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
   return `${baseUrl}/accept-invite/${token}`;
 }
 

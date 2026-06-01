@@ -11,7 +11,7 @@ interface SignedPayload {
 }
 
 function getSecret(): string {
-  const s = process.env.AUTH_SECRET;
+  const s = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
   if (!s) throw new Error('AUTH_SECRET is required');
   return s;
 }

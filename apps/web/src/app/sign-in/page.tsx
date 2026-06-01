@@ -8,6 +8,7 @@ import { GitHubSignInButton } from '@/components/github-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { auth, hasGitHubAuth } from '@/lib/auth';
+import { safeSameOriginPath } from '@/lib/safe-redirect';
 
 export const metadata: Metadata = {
   title: 'Sign in',
@@ -56,18 +57,5 @@ export default async function SignInPage({ searchParams }: Props) {
 }
 
 function safeSignedInRedirect(callbackUrl: string | undefined) {
-  if (!callbackUrl) return '/app';
-  const allowedOrigin = new URL(
-    process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3000',
-  ).origin;
-  try {
-    const target = new URL(callbackUrl, allowedOrigin);
-    const path = `${target.pathname}${target.search}${target.hash}`;
-    if (target.origin !== allowedOrigin || !path.startsWith('/') || path.startsWith('//')) {
-      return '/app';
-    }
-    return path.includes('\\') ? '/app' : path;
-  } catch {
-    return '/app';
-  }
+  return safeSameOriginPath(callbackUrl, '/app');
 }

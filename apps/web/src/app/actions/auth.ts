@@ -14,6 +14,7 @@ import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
 import { signIn } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { clientIpFromRequestHeaders } from '@/lib/request-ip';
+import { safeSameOriginPath } from '@/lib/safe-redirect';
 import { verifyTurnstileToken } from '@/lib/turnstile';
 
 const signUpSchema = z.object({
@@ -199,34 +200,8 @@ const signInSchema = z.object({
   callbackUrl: z.string().max(2048).optional(),
 });
 
-// Whitelist callbackUrl to same-origin destinations to prevent open redirect.
-// Two attacks the naive version missed:
-//   1. `http://allowed.com//evil.com/x` parses same-origin, but its pathname
-//      is `//evil.com/x`. Returning that lets the browser interpret it as a
-//      protocol-relative URL → external redirect.
-//   2. `/\evil.com` looks like a relative path (starts with `/`, not `//`),
-//      but browsers normalize `\` to `/`, making it `//evil.com` → external.
-// Defense: parse with a base origin so the URL parser normalizes both forms,
-// then re-validate the final path is a single-slash relative path.
 function safeCallbackUrl(input: string | undefined): string {
-  const fallback = '/app/timeline';
-  if (!input) return fallback;
-  const allowedOrigin = new URL(
-    process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3000',
-  ).origin;
-  let path: string;
-  try {
-    const target = new URL(input, allowedOrigin);
-    if (target.origin !== allowedOrigin) return fallback;
-    path = `${target.pathname}${target.search}${target.hash}`;
-  } catch {
-    return fallback;
-  }
-  // Final invariants: absolute path, single leading slash, no backslash.
-  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) {
-    return fallback;
-  }
-  return path;
+  return safeSameOriginPath(input, '/app/timeline');
 }
 
 export interface SignInState {

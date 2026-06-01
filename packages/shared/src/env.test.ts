@@ -44,4 +44,16 @@ describe('getEnv', () => {
     expect('EMBEDDING_MODEL' in getEnv()).toBe(false);
     expect('AGENT_MODEL' in getEnv()).toBe(false);
   });
+
+  it('accepts NEXTAUTH aliases for Auth.js deployment variables', () => {
+    setBaseEnv({
+      AUTH_SECRET: undefined,
+      AUTH_URL: undefined,
+      NEXTAUTH_SECRET: 'b'.repeat(32),
+      NEXTAUTH_URL: 'https://timeline.example.com',
+    });
+
+    expect(getEnv().AUTH_SECRET).toBe('b'.repeat(32));
+    expect(getEnv().AUTH_URL).toBe('https://timeline.example.com');
+  });
 });

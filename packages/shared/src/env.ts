@@ -1,5 +1,17 @@
 import { z } from 'zod';
 
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return {
+    ...raw,
+    AUTH_SECRET: nonEmptyString(raw.AUTH_SECRET) ?? nonEmptyString(raw.NEXTAUTH_SECRET),
+    AUTH_URL: nonEmptyString(raw.AUTH_URL) ?? nonEmptyString(raw.NEXTAUTH_URL),
+  };
+}
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
@@ -177,7 +189,7 @@ let _env: Env | undefined;
 
 export function getEnv(): Env {
   if (_env) return _env;
-  const parsed = schema.safeParse(process.env);
+  const parsed = schema.safeParse(applyAuthAliases(process.env));
   if (!parsed.success) {
     const issues = parsed.error.issues
       .map((i) => `  - ${i.path.join('.')}: ${i.message}`)

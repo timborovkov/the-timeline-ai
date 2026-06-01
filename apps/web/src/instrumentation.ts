@@ -98,7 +98,7 @@ export function register(): void {
 
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  const authUrl = process.env.AUTH_URL;
+  const authUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL;
   if (!token || !secret || !authUrl) {
     const missing = [
       !token && 'TELEGRAM_BOT_TOKEN',
