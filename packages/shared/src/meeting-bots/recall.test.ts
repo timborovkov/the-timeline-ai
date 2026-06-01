@@ -59,7 +59,8 @@ describe('createRecallProvider', () => {
       transcript: {
         provider: {
           recallai_streaming: {
-            mode: 'prioritize_low_latency',
+            mode: 'prioritize_accuracy',
+            language_code: 'auto',
           },
         },
       },
@@ -67,7 +68,7 @@ describe('createRecallProvider', () => {
     expect(body.output_media).toBeUndefined();
   });
 
-  it('joinMeeting maps language to Recall.ai streaming language_code', async () => {
+  it('joinMeeting always uses auto language detection for multilingual meetings', async () => {
     const { fetcher, calls } = makeFetcher(() => Response.json({ id: 'bot-123' }));
     const provider = createRecallProvider({ fetcher });
     await provider.joinMeeting({
@@ -76,7 +77,6 @@ describe('createRecallProvider', () => {
       meetingUrl: 'https://meet.google.com/abc-defg-hij',
       platform: 'meet',
       transcriptWebhookUrl: 'https://example.com/webhook',
-      language: 'en-US',
     });
 
     const call = calls[0];
@@ -86,8 +86,8 @@ describe('createRecallProvider', () => {
       transcript: {
         provider: {
           recallai_streaming: {
-            language_code: 'en-US',
-            mode: 'prioritize_low_latency',
+            language_code: 'auto',
+            mode: 'prioritize_accuracy',
           },
         },
       },
