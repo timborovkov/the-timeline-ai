@@ -1,7 +1,14 @@
 import Link from 'next/link';
 
+import type { Metadata } from 'next';
+
 import { IndexStrip } from '@/components/index-strip';
 import { NewObjectForm } from '@/components/objects/new-object-form';
+
+export const metadata: Metadata = {
+  title: 'New object',
+  description: 'Create a tracked timeline object.',
+};
 
 export default function NewObjectPage() {
   return (

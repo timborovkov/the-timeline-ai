@@ -9,6 +9,8 @@ import { inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { IndexStrip } from '@/components/index-strip';
 import { SearchBar } from '@/components/search-bar';
 import { TimelineFeed } from '@/components/timeline-feed';
@@ -26,6 +28,11 @@ import {
   timelineHref,
 } from '@/lib/timeline-controls';
 import { collectTimelinePage, serializeTimelineEvent } from '@/lib/timeline-page';
+
+export const metadata: Metadata = {
+  title: 'Timeline',
+  description: 'Explore and filter the team timeline.',
+};
 
 interface Props {
   searchParams: Promise<{

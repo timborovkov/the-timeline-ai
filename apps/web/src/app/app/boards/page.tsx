@@ -2,11 +2,18 @@ import { withTeam } from '@timeline/shared';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { BoardCreateForm } from '@/components/boards/board-create-form';
 import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Boards',
+  description: 'Browse saved boards for timeline work.',
+};
 
 export default async function BoardsIndexPage() {
   const session = await auth();

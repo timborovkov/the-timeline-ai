@@ -9,6 +9,8 @@ import { getEnv, withTeam } from '@timeline/shared';
 import { and, desc, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { revokeLinkTokenAction, unbindChatAction } from '@/app/actions/telegram';
 import { IndexStrip } from '@/components/index-strip';
 import { GenerateGroupTokenForm, GeneratePersonalTokenForm } from '@/components/telegram-forms';
@@ -18,6 +20,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Telegram',
+  description: 'Configure Telegram capture and bindings.',
+};
 
 export default async function TelegramSettingsPage() {
   const session = await auth();
@@ -51,36 +58,36 @@ export default async function TelegramSettingsPage() {
         isNull(telegramLinkTokens.consumedAt),
         gt(telegramLinkTokens.expiresAt, now),
       );
-  const activeTokens = await db
-    .select({
-      id: telegramLinkTokens.id,
-      scope: telegramLinkTokens.scope,
-      expiresAt: telegramLinkTokens.expiresAt,
-      issuedByUserId: telegramLinkTokens.issuedByUserId,
-    })
-    .from(telegramLinkTokens)
-    .where(tokensWhere)
-    .orderBy(desc(telegramLinkTokens.createdAt));
-
-  const bindings = await db
-    .select()
-    .from(telegramChatBindings)
-    .where(eq(telegramChatBindings.teamId, active.teamId))
-    .orderBy(desc(telegramChatBindings.createdAt));
-
-  const linkedTgUsers = await db
-    .select({
-      id: telegramUsers.id,
-      tgUserId: telegramUsers.tgUserId,
-      username: telegramUsers.username,
-      firstName: telegramUsers.firstName,
-      lastName: telegramUsers.lastName,
-      userId: telegramUsers.userId,
-      isActive: telegramUserTeams.isActive,
-    })
-    .from(telegramUserTeams)
-    .innerJoin(telegramUsers, eq(telegramUserTeams.telegramUserId, telegramUsers.id))
-    .where(eq(telegramUserTeams.teamId, active.teamId));
+  const [activeTokens, bindings, linkedTgUsers] = await Promise.all([
+    db
+      .select({
+        id: telegramLinkTokens.id,
+        scope: telegramLinkTokens.scope,
+        expiresAt: telegramLinkTokens.expiresAt,
+        issuedByUserId: telegramLinkTokens.issuedByUserId,
+      })
+      .from(telegramLinkTokens)
+      .where(tokensWhere)
+      .orderBy(desc(telegramLinkTokens.createdAt)),
+    db
+      .select()
+      .from(telegramChatBindings)
+      .where(eq(telegramChatBindings.teamId, active.teamId))
+      .orderBy(desc(telegramChatBindings.createdAt)),
+    db
+      .select({
+        id: telegramUsers.id,
+        tgUserId: telegramUsers.tgUserId,
+        username: telegramUsers.username,
+        firstName: telegramUsers.firstName,
+        lastName: telegramUsers.lastName,
+        userId: telegramUsers.userId,
+        isActive: telegramUserTeams.isActive,
+      })
+      .from(telegramUserTeams)
+      .innerJoin(telegramUsers, eq(telegramUserTeams.telegramUserId, telegramUsers.id))
+      .where(eq(telegramUserTeams.teamId, active.teamId)),
+  ]);
 
   const userIds = linkedTgUsers.map((u) => u.userId).filter((id): id is string => Boolean(id));
   const userRows =

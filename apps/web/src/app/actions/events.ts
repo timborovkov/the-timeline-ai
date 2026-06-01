@@ -121,20 +121,29 @@ export async function createTextEventAction(
 
 // ---------- Audio capture (Phase 3) ----------
 
-const MIME_TO_EXT_WEB: Record<string, string> = {
-  'audio/webm': 'webm',
-  'audio/ogg': 'ogg',
-  'audio/mpeg': 'mp3',
-  'audio/mp4': 'm4a',
-  'audio/wav': 'wav',
-  'audio/x-wav': 'wav',
-};
-
 const mimeTypeSchema = z
   .string()
   .min(1)
   .max(100)
   .regex(/^audio\//, 'Must be an audio MIME type');
+
+function audioExtensionForMime(mimeType: string): string {
+  switch (mimeType) {
+    case 'audio/webm':
+      return 'webm';
+    case 'audio/ogg':
+      return 'ogg';
+    case 'audio/mpeg':
+      return 'mp3';
+    case 'audio/mp4':
+      return 'm4a';
+    case 'audio/wav':
+    case 'audio/x-wav':
+      return 'wav';
+    default:
+      return 'bin';
+  }
+}
 
 interface RequestAudioUploadResult {
   ok: boolean;
@@ -159,7 +168,7 @@ export async function requestAudioUploadAction(
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
 
-  const ext = MIME_TO_EXT_WEB[parsedMime.data] ?? 'bin';
+  const ext = audioExtensionForMime(parsedMime.data);
   // User-scoped key prefix so a teammate who learns or guesses someone else's
   // upload key cannot attach that object to their own event row via
   // createAudioEventAction. The prefix check on confirm enforces the same

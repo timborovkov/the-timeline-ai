@@ -1,10 +1,17 @@
 import { withTeam } from '@timeline/shared';
 import { notFound, redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { CancelMeetingButton } from '@/components/meeting-forms';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Meeting',
+  description: 'Review meeting transcript and timeline details.',
+};
 
 interface Props {
   params: Promise<{ id: string }>;

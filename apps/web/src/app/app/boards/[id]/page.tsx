@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { z } from 'zod';
 
+import type { Metadata } from 'next';
+
 import { DeleteBoardButton } from '@/components/boards/delete-board-button';
 import { KanbanBoard } from '@/components/boards/kanban-board';
 import { ObjectList } from '@/components/boards/object-list';
@@ -11,6 +13,11 @@ import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Board',
+  description: 'Review a saved board and its timeline context.',
+};
 
 type GroupKey = 'status' | 'stage' | 'priority' | 'type';
 

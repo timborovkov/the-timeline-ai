@@ -1,5 +1,12 @@
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Team MCP servers',
+  description: 'Manage team MCP server connections.',
+};
+
 // Phase 11 — the standalone MCP servers page was folded into
 // /app/team/integrations. Keep this route as a permanent redirect so old
 // bookmarks still resolve. Forward the query string (the OAuth callback

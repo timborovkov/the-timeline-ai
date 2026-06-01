@@ -3,12 +3,19 @@ import { withTeam } from '@timeline/shared';
 import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CalendarView } from '@/components/calendar/calendar-view';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
+
+export const metadata: Metadata = {
+  title: 'Calendar',
+  description: 'Review team calendar events and suggestions.',
+};
 
 interface PageProps {
   searchParams: Promise<{ date?: string; view?: string }>;
@@ -70,13 +77,10 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     visibility: e.visibility,
     visibilityUserIds: e.visibilityUserIds,
   }));
-  const calendarSuggestions = pendingSuggestions
-    .map((bundle) => ({
-      ...bundle,
-      items: bundle.items.filter((item) => item.targetKind === 'calendar_event'),
-    }))
-    .filter((bundle) => bundle.items.length > 0)
-    .map(serializeSuggestionBundle);
+  const calendarSuggestions = pendingSuggestions.flatMap((bundle) => {
+    const items = bundle.items.filter((item) => item.targetKind === 'calendar_event');
+    return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
+  });
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">

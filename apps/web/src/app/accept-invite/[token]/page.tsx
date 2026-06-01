@@ -2,11 +2,18 @@ import { teamInvites, teams } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import Link from 'next/link';
 
+import type { Metadata } from 'next';
+
 import { acceptInviteAction } from '@/app/actions/invites';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'Accept invite',
+  description: 'Review and accept a team invitation.',
+};
 
 interface Props {
   params: Promise<{ token: string }>;
@@ -14,9 +21,7 @@ interface Props {
 }
 
 export default async function AcceptInvitePage({ params, searchParams }: Props) {
-  const { token } = await params;
-  const { error } = await searchParams;
-  const session = await auth();
+  const [{ token }, { error }, session] = await Promise.all([params, searchParams, auth()]);
 
   if (!session?.user) {
     // Show a choice: existing users sign in (and come back here), new users

@@ -1,12 +1,19 @@
 import { withTeam } from '@timeline/shared';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
+
 import { Breadcrumb } from '@/components/breadcrumb';
 import { IndexStrip } from '@/components/index-strip';
 import { McpServersUi } from '@/components/integrations/mcp-servers';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const metadata: Metadata = {
+  title: 'My MCP servers',
+  description: 'Manage personal MCP server connections.',
+};
 
 export const dynamic = 'force-dynamic';
 
