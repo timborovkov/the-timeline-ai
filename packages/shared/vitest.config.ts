@@ -1,17 +1,52 @@
 import { defineConfig } from 'vitest/config';
 
+const env = {
+  LOG_LEVEL: 'silent',
+  // Many helpers (env-guarded webhook verifiers, OAuth state signing)
+  // resolve the env schema lazily. Provide the required fields so test
+  // imports don't fail with `AUTH_SECRET required`.
+  AUTH_SECRET: 'test-auth-secret-must-be-at-least-16-chars',
+  DATABASE_URL: 'postgres://test:test@localhost:5432/test',
+};
+
+const pgliteTests = [
+  'src/calendar/scope.test.ts',
+  'src/documents/scope.test.ts',
+  'src/email/dispatcher.test.ts',
+  'src/embedding/sources.test.ts',
+  'src/integrations/event-writer.test.ts',
+  'src/job-recovery/index.test.ts',
+  'src/mcp-server/handler.test.ts',
+  'src/meetings/scope.test.ts',
+  'src/slack/dispatcher.test.ts',
+  'src/suggestions/index.test.ts',
+  'src/team-exports/index.test.ts',
+  'src/team-scope.test.ts',
+  'src/telegram/dispatcher.test.ts',
+];
+
 export default defineConfig({
   test: {
-    include: ['src/**/*.test.ts'],
-    environment: 'node',
-    fileParallelism: false,
-    env: {
-      LOG_LEVEL: 'silent',
-      // Many helpers (env-guarded webhook verifiers, OAuth state signing)
-      // resolve the env schema lazily. Provide the required fields so test
-      // imports don't fail with `AUTH_SECRET required`.
-      AUTH_SECRET: 'test-auth-secret-must-be-at-least-16-chars',
-      DATABASE_URL: 'postgres://test:test@localhost:5432/test',
-    },
+    projects: [
+      {
+        test: {
+          name: 'unit',
+          include: ['src/**/*.test.ts'],
+          exclude: pgliteTests,
+          environment: 'node',
+          env,
+        },
+      },
+      {
+        test: {
+          name: 'pglite',
+          include: pgliteTests,
+          environment: 'node',
+          fileParallelism: false,
+          hookTimeout: 60_000,
+          env,
+        },
+      },
+    ],
   },
 });

@@ -61,6 +61,29 @@ pnpm dev
 
 Open <http://localhost:3000>.
 
+## Tests
+
+Stable local and PR checks run through:
+
+```bash
+pnpm validate
+pnpm test
+```
+
+Playwright E2E is a service-backed smoke surface for auth/session behavior and
+team-visible timeline capture. Start the local infra and run migrations first:
+
+```bash
+docker compose up -d
+pnpm db:migrate
+pnpm e2e
+```
+
+`pnpm e2e:setup` and `pnpm e2e:cleanup` seed and remove deterministic
+`timeline-e2e-*` users, memberships, sessions, and team-owned rows. GitHub
+Actions exposes E2E as a manual, non-blocking workflow so flaky browser or
+container support does not block pull requests.
+
 ## Wipe a Railway environment
 
 The destructive dev wipe runs inside the deployed web/app service so Railway

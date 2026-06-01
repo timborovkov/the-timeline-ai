@@ -3,6 +3,8 @@ dist
 .next
 .turbo
 coverage
+playwright-report
+test-results
 pnpm-lock.yaml
 packages/db/drizzle
 **/.next/**

@@ -71,7 +71,17 @@ const TOOLS = [
           // in callTool below. Strict MCP clients that validate args
           // against this schema couldn't request integration / document
           // / meeting rows otherwise.
-          enum: ['web', 'telegram', 'email', 'system', 'document', 'meeting', 'integration'],
+          enum: [
+            'web',
+            'telegram',
+            'email',
+            'system',
+            'document',
+            'meeting',
+            'integration',
+            'calendar',
+            'slack',
+          ],
         },
         limit: { type: 'integer', minimum: 1, maximum: 50 },
       },
@@ -231,6 +241,8 @@ async function callTool(
         'document',
         'meeting',
         'integration',
+        'calendar',
+        'slack',
       ];
       if (typeof args.source === 'string' && ALLOWED_SOURCES.includes(args.source)) {
         filters.source = args.source;

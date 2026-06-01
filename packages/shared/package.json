@@ -42,6 +42,7 @@
       "types": "./dist/email/index.d.ts"
     },
     "./passwords": {
+      "development": "./src/passwords.ts",
       "import": "./dist/passwords.js",
       "types": "./dist/passwords.d.ts"
     },

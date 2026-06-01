@@ -8,7 +8,7 @@ on:
 
 jobs:
   ci:
-    name: Lint · Typecheck · Format · Knip · Build
+    name: Lint · Typecheck · Tests · Format · Knip · Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -48,6 +48,12 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+      - name: Unit and integration tests
+        env:
+          AUTH_SECRET: ci_dummy_secret_at_least_16_chars
+          DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
+        run: pnpm test
 
       - name: Build packages
         env:

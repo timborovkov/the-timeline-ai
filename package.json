@@ -10,6 +10,10 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "e2e": "DATABASE_URL=${DATABASE_URL:-postgres://timeline:timeline_dev@localhost:5432/timeline} AUTH_SECRET=${AUTH_SECRET:-e2e-auth-secret-at-least-sixteen-characters} NODE_OPTIONS=--conditions=development playwright test",
+    "e2e:ui": "DATABASE_URL=${DATABASE_URL:-postgres://timeline:timeline_dev@localhost:5432/timeline} AUTH_SECRET=${AUTH_SECRET:-e2e-auth-secret-at-least-sixteen-characters} NODE_OPTIONS=--conditions=development playwright test --ui",
+    "e2e:setup": "DATABASE_URL=${DATABASE_URL:-postgres://timeline:timeline_dev@localhost:5432/timeline} NODE_OPTIONS=--conditions=development tsx e2e/setup.ts",
+    "e2e:cleanup": "DATABASE_URL=${DATABASE_URL:-postgres://timeline:timeline_dev@localhost:5432/timeline} NODE_OPTIONS=--conditions=development tsx e2e/cleanup.ts",
     "knip": "DATABASE_URL=${DATABASE_URL:-postgres://placeholder@localhost:5432/placeholder} knip",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -20,6 +24,7 @@
     "db:studio": "pnpm --filter @timeline/db studio"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",
     "@typescript-eslint/eslint-plugin": "^8.60.0",

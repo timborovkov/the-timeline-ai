@@ -1,0 +1,95 @@
+import { createHmac } from 'node:crypto';
+
+import { resetEnvForTests } from '@timeline/shared';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type * as SharedModuleNS from '@timeline/shared';
+
+const ENV_BACKUP = { ...process.env };
+
+const fakes = vi.hoisted(() => ({
+  integrationRows: [] as { id: string; teamId: string }[],
+  enqueueIntegrationSyncJob: vi.fn(),
+}));
+
+vi.mock('@/lib/db', () => ({
+  db: {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn(() => Promise.resolve(fakes.integrationRows)),
+        })),
+      })),
+    })),
+  },
+}));
+
+vi.mock('@timeline/shared', async () => {
+  const actual = await vi.importActual<typeof SharedModuleNS>('@timeline/shared');
+  return {
+    ...actual,
+    email: { ...actual.email, clientIpFromHeaders: () => null },
+    rateLimit: {
+      ...actual.rateLimit,
+      checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
+    },
+    queue: {
+      ...actual.queue,
+      enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
+    },
+  };
+});
+
+const { POST } = await import('./route.js');
+
+function channelToken(integrationId: string, secret = 'drive-secret'): string {
+  const sig = createHmac('sha256', secret).update(integrationId).digest('hex');
+  return `${integrationId}.${sig}`;
+}
+
+beforeEach(() => {
+  process.env.GOOGLE_DRIVE_WEBHOOK_SECRET = 'drive-secret';
+  resetEnvForTests();
+  fakes.integrationRows = [{ id: 'integration-1', teamId: 'team-1' }];
+  vi.clearAllMocks();
+});
+
+afterEach(() => {
+  process.env = { ...ENV_BACKUP };
+  resetEnvForTests();
+});
+
+describe('POST /api/webhooks/google-drive', () => {
+  it('rejects missing and badly signed channel tokens', async () => {
+    const missing = await POST(new Request('https://timeline.test/api/webhooks/google-drive'));
+    expect(missing.status).toBe(200);
+    await expect(missing.json()).resolves.toMatchObject({ reason: 'missing_token' });
+
+    const bad = await POST(
+      new Request('https://timeline.test/api/webhooks/google-drive', {
+        headers: { 'x-goog-channel-token': 'integration-1.bad' },
+      }),
+    );
+    expect(bad.status).toBe(200);
+    await expect(bad.json()).resolves.toMatchObject({ reason: 'bad_signature' });
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+  });
+
+  it('enqueues an incremental sync for a valid channel token', async () => {
+    const response = await POST(
+      new Request('https://timeline.test/api/webhooks/google-drive', {
+        method: 'POST',
+        headers: { 'x-goog-channel-token': channelToken('integration-1') },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true });
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith({
+      kind: 'incremental',
+      integrationId: 'integration-1',
+      teamId: 'team-1',
+      triggeredBy: 'webhook',
+    });
+  });
+});
