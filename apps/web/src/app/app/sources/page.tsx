@@ -190,6 +190,9 @@ export default async function SourcesPage() {
             metrics={item.metrics(summary)}
           />
         ))}
+        {SOURCE_LINKS.length % 2 === 1 ? (
+          <div aria-hidden="true" className="hidden bg-bg sm:block" />
+        ) : null}
       </div>
     </div>
   );
