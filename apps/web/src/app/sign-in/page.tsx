@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
@@ -6,7 +7,9 @@ import { SignInForm } from '@/components/auth-form';
 import { GitHubSignInButton } from '@/components/github-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { hasGitHubAuth } from '@/lib/auth';
+import { auth, hasGitHubAuth } from '@/lib/auth';
+import { signedInAuthRedirect } from '@/lib/auth-redirect';
+import { readPendingInvite } from '@/lib/pending-invite';
 
 export const metadata: Metadata = {
   title: 'Sign in',
@@ -19,6 +22,12 @@ interface Props {
 
 export default async function SignInPage({ searchParams }: Props) {
   const { callbackUrl } = await searchParams;
+  const session = await auth();
+  if (session?.user) {
+    const pendingInviteToken = await readPendingInvite();
+    redirect(signedInAuthRedirect({ callbackUrl, pendingInviteToken }));
+  }
+
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
       <Card>

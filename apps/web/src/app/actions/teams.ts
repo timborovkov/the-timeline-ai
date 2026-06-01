@@ -32,6 +32,7 @@ import { z } from 'zod';
 import { ACTIVE_TEAM_COOKIE, resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { getSiteUrl } from '@/lib/site-url';
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -162,8 +163,7 @@ interface InviteDeliveryInput {
 }
 
 function inviteUrl(token: string): string {
-  const baseUrl = process.env.AUTH_URL ?? 'http://localhost:3000';
-  return `${baseUrl}/accept-invite/${token}`;
+  return `${getSiteUrl()}/accept-invite/${token}`;
 }
 
 async function deliverInviteEmail(input: InviteDeliveryInput): Promise<InviteState> {

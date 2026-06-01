@@ -1,9 +1,15 @@
 import type { NextAuthConfig } from 'next-auth';
 
+import { nonEmptyEnv } from '@/lib/safe-redirect';
+
 const localAuthSecret =
   process.env.NODE_ENV === 'development'
     ? 'timeline-local-development-auth-secret-do-not-use-in-production'
     : undefined;
+const authSecret =
+  nonEmptyEnv(process.env.AUTH_SECRET) ??
+  nonEmptyEnv(process.env.NEXTAUTH_SECRET) ??
+  localAuthSecret;
 
 /* eslint-disable @typescript-eslint/no-unnecessary-condition */
 /**
@@ -14,7 +20,7 @@ const localAuthSecret =
  */
 export const authConfig: NextAuthConfig = {
   trustHost: true,
-  secret: process.env.AUTH_SECRET ?? localAuthSecret,
+  secret: authSecret,
   pages: { signIn: '/sign-in' },
   session: { strategy: 'jwt' },
   providers: [],

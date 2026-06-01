@@ -8,6 +8,7 @@ import { IntegrationCloud } from '@/app/_integration-cloud';
 import { Logo, Wordmark } from '@/components/brand/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
+import { auth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
 const SITE_NAME = 'The Timeline';
@@ -65,13 +66,16 @@ const NATIVE_INGEST = [
   { label: 'Calendar', icon: CalendarDays },
 ] as const;
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const session = await auth();
+  const isSignedIn = Boolean(session?.user);
+
   return (
     <div className="min-h-screen bg-bg text-fg">
       <StructuredData />
-      <TopNav />
+      <TopNav isSignedIn={isSignedIn} />
       <main id="main">
-        <Hero />
+        <Hero isSignedIn={isSignedIn} />
         <Problem />
         <Solution />
         <Surfaces />
@@ -79,9 +83,9 @@ export default function LandingPage() {
         <Receipts />
         <Principles />
         <FAQ />
-        <FinalCTA />
+        <FinalCTA isSignedIn={isSignedIn} />
       </main>
-      <Footer />
+      <Footer isSignedIn={isSignedIn} />
     </div>
   );
 }
@@ -236,7 +240,7 @@ function Section({
 /*  Sections                                                                   */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-function TopNav() {
+function TopNav({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-bg/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
@@ -268,12 +272,19 @@ function TopNav() {
           >
             Contact
           </Link>
-          <Link href="/sign-in" className="px-3 py-2 text-fg-muted transition-colors hover:text-fg">
-            Sign in
-          </Link>
+          {isSignedIn ? null : (
+            <Link
+              href="/sign-in"
+              className="px-3 py-2 text-fg-muted transition-colors hover:text-fg"
+            >
+              Sign in
+            </Link>
+          )}
           <ThemeToggle className="text-fg-muted hover:text-fg" />
           <Button asChild size="sm">
-            <Link href="/sign-up">Create team</Link>
+            <Link href={isSignedIn ? '/app' : '/sign-up'}>
+              {isSignedIn ? 'Go to dashboard' : 'Create team'}
+            </Link>
           </Button>
         </nav>
       </div>
@@ -281,7 +292,7 @@ function TopNav() {
   );
 }
 
-function Hero() {
+function Hero({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <section className="px-6 pb-24 pt-16 sm:pt-24">
       <div className="mx-auto max-w-6xl">
@@ -304,17 +315,21 @@ function Hero() {
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
               <Button asChild size="lg">
-                <Link href="/sign-up">Create your team →</Link>
+                <Link href={isSignedIn ? '/app' : '/sign-up'}>
+                  {isSignedIn ? 'Go to dashboard →' : 'Create your team →'}
+                </Link>
               </Button>
               <Button asChild size="lg" variant="outline">
                 <a href={CONTACT_HREF}>Talk to us</a>
               </Button>
-              <Link
-                href="/sign-in"
-                className="px-3 py-2 text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline"
-              >
-                Sign in
-              </Link>
+              {isSignedIn ? null : (
+                <Link
+                  href="/sign-in"
+                  className="px-3 py-2 text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline"
+                >
+                  Sign in
+                </Link>
+              )}
             </div>
             <p className="mt-10 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
               INDEXED · CITED · NEVER FORGOTTEN
@@ -867,7 +882,7 @@ function FAQ() {
   );
 }
 
-function FinalCTA() {
+function FinalCTA({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <Section id="cta" className="bg-surface">
       <div className="border-l-2 border-signal pl-6 sm:pl-10">
@@ -877,7 +892,9 @@ function FinalCTA() {
         </h2>
         <div className="mt-10 flex flex-wrap items-center gap-3">
           <Button asChild size="lg">
-            <Link href="/sign-up">Create your team →</Link>
+            <Link href={isSignedIn ? '/app' : '/sign-up'}>
+              {isSignedIn ? 'Go to dashboard →' : 'Create your team →'}
+            </Link>
           </Button>
           <Button asChild size="lg" variant="outline">
             <a href={CONTACT_HREF}>Talk to us</a>
@@ -891,7 +908,7 @@ function FinalCTA() {
   );
 }
 
-function Footer() {
+function Footer({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <footer className="border-t border-border px-6 py-10">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
@@ -915,8 +932,8 @@ function Footer() {
           <Link href={CONTACT_HREF} className="hover:text-fg">
             Contact
           </Link>
-          <Link href="/sign-in" className="hover:text-fg">
-            Sign in
+          <Link href={isSignedIn ? '/app' : '/sign-in'} className="hover:text-fg">
+            {isSignedIn ? 'Dashboard' : 'Sign in'}
           </Link>
         </nav>
       </div>
