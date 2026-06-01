@@ -5,7 +5,12 @@ import { usePathname } from 'next/navigation';
 
 import type { TeamMembership } from '@/lib/active-team';
 
-import { isNavItemActive, visibleNavItems } from '@/components/nav-items';
+import {
+  formatNavBadge,
+  isNavItemActive,
+  type NavBadgeMap,
+  visibleNavItems,
+} from '@/components/nav-items';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -16,9 +21,11 @@ import { cn } from '@/lib/utils';
 export function RailNav({
   role,
   expanded = false,
+  badges = {},
 }: {
   role: TeamMembership['role'];
   expanded?: boolean;
+  badges?: NavBadgeMap;
 }) {
   const pathname = usePathname();
   return (
@@ -29,6 +36,7 @@ export function RailNav({
       {visibleNavItems(role).map((item) => {
         const active = isNavItemActive(item, pathname);
         const Icon = item.icon;
+        const badge = formatNavBadge(item.badgeKey ? badges[item.badgeKey] : undefined);
         return (
           <Tooltip key={item.href}>
             <TooltipTrigger asChild>
@@ -54,7 +62,21 @@ export function RailNav({
                   />
                 ) : null}
                 <Icon aria-hidden="true" className="size-4" />
-                {expanded ? <span className="truncate">{item.label}</span> : null}
+                {expanded ? <span className="min-w-0 flex-1 truncate">{item.label}</span> : null}
+                {badge ? (
+                  <span
+                    aria-label={`${item.label} attention ${badge}`}
+                    className={cn(
+                      'grid min-w-5 place-items-center rounded-sm border px-1 font-mono text-[10px] leading-4',
+                      active
+                        ? 'border-signal/40 bg-bg text-signal'
+                        : 'border-danger/40 text-danger',
+                      expanded ? 'ml-auto h-5' : 'absolute -right-1 -top-1 h-4',
+                    )}
+                  >
+                    {badge}
+                  </span>
+                ) : null}
               </Link>
             </TooltipTrigger>
             {!expanded ? <TooltipContent side="right">{item.label}</TooltipContent> : null}

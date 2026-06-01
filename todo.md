@@ -228,6 +228,13 @@ out of scope.
       `/app/timeline` is the grouped full archive browser with source presets,
       impact filters, density controls, pagination, inspector evidence, and
       hydrated Impact Context.
+- [x] Simplify primary navigation to Home, Timeline, Ask, Work, Sources, and
+      Team. Work groups object-like artifacts and queues (objects, tasks,
+      boards, calendar, inbox, approvals); Sources groups capture and
+      integration surfaces.
+- [x] Add status-aware Work/Sources hubs and compact sidebar attention badges
+      for pending/unread/overdue work plus source processing or connection
+      issues.
 - [x] Track team-level completion with per-user dismissal. Any teammate
       completing a setup step marks it done for the team; each user can hide
       the checklist for themselves.

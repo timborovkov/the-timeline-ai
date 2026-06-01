@@ -1,6 +1,7 @@
 import { Search } from 'lucide-react';
 import Link from 'next/link';
 
+import type { NavBadgeMap } from '@/components/nav-items';
 import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
 import type { ReactNode } from 'react';
@@ -21,6 +22,7 @@ interface Props {
   memberships: TeamMembership[];
   recipientInvites: RecipientInvite[];
   user: { name?: string | null; email?: string | null };
+  badges?: NavBadgeMap;
   children: ReactNode;
 }
 
@@ -31,7 +33,14 @@ interface Props {
  *   • collapsible 384px right inspector pane (hidden by default, opens
  *     when a citation chip / object reference is activated)
  */
-export function AppShell({ active, memberships, recipientInvites, user, children }: Props) {
+export function AppShell({
+  active,
+  memberships,
+  recipientInvites,
+  user,
+  badges = {},
+  children,
+}: Props) {
   return (
     <InspectorProvider>
       <SkipLink />
@@ -42,6 +51,7 @@ export function AppShell({ active, memberships, recipientInvites, user, children
             active={active}
             memberships={memberships}
             recipientInvites={recipientInvites}
+            badges={badges}
           />
         </TooltipProvider>
 
@@ -53,6 +63,7 @@ export function AppShell({ active, memberships, recipientInvites, user, children
                 active={active}
                 memberships={memberships}
                 recipientInvites={recipientInvites}
+                badges={badges}
               />
               <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg">
                 The Timeline

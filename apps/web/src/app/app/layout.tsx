@@ -9,6 +9,7 @@ import { QueryProvider } from '@/components/query-provider';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { getNavAttentionSummary } from '@/lib/hub-status';
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const session = await auth();
@@ -58,6 +59,13 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     );
   }
 
+  const badges = await getNavAttentionSummary(active.teamId, session.user.id).catch(
+    (err: unknown) => {
+      console.error('[app-shell] failed to load navigation attention badges', err);
+      return {};
+    },
+  );
+
   return (
     <QueryProvider>
       <AppShell
@@ -71,6 +79,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           invitedBy: invite.inviterName ?? invite.inviterEmail,
         }))}
         user={session.user}
+        badges={badges}
       >
         {children}
       </AppShell>

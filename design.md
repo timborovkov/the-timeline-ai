@@ -159,16 +159,23 @@ Departs from the v1 centered `max-w-3xl` prose column. New shell:
 │labels │ ───────────────────────────────│  (collapsible)  │
 │+ team │  index strip                   │                 │
 │Home   │  EVENTS · 2,847 · 14d · acme   │  citation src   │
-│Chat   │ ───────────────────────────────│  raw evidence   │
-│Docs   │  feed / board / object / chat  │  related links  │
+│Ask    │ ───────────────────────────────│  raw evidence   │
+│Work   │  feed / board / object / chat  │  related links  │
+│Sources│                                │                 │
 │Team   │                                │                 │
 └─────┴──────────────────────────────────┴─────────────────┘
 ```
 
 - **Left sidebar** (`w-64` = 256px default, foldable to `w-14` = 56px):
-  nav labels and the current team are visible by default. Folded mode uses
-  the icon-only rail with tooltips. Active route shows a 2px signal-color
-  bar at its left edge plus `bg-surface-2 text-signal`.
+  six primary destinations: Home, Timeline, Ask, Work, Sources, Team. Nav
+  labels and the current team are visible by default. Folded mode uses the
+  icon-only rail with tooltips. Active route shows a 2px signal-color bar at
+  its left edge plus `bg-surface-2 text-signal`. Work groups Objects, Tasks,
+  Boards, Calendar, Inbox, and Approvals. Sources groups Email, Slack,
+  Telegram, Documents, Meetings, Integrations, and MCP servers. Work and
+  Sources may show compact numeric attention badges; zero state stays hidden.
+  Their hub pages use the same hairline grid as the sidebar IA and expose
+  status chips for counts, health, and next actions.
 - **Main column** fills available width. **No `max-w-3xl` artificial
   column** except long-form prose surfaces (single document view, single
   note view) — those wrap in a `<ProseContainer>` that sets `max-w-prose`.
@@ -314,15 +321,11 @@ All icons from `lucide-react`. Canonical mapping:
 
 | Nav         | Icon            |
 | ----------- | --------------- |
-| Capture     | `Plus`          |
+| Home        | `LayoutDashboard` |
 | Timeline    | `Clock`         |
-| Chat        | `MessageSquare` |
-| Objects     | `Boxes`         |
-| Boards      | `LayoutGrid`    |
-| Calendar    | `CalendarDays`  |
-| Approvals   | `CircleCheckBig` |
-| Documents   | `FileText`      |
-| Inbox       | `Inbox`         |
+| Ask         | `MessageSquare` |
+| Work        | `LibraryBig`    |
+| Sources     | `Plug`          |
 | Team        | `Settings`      |
 
 Other recurring icons: `Send` (submit, Telegram connection), `Cable` (integrations),
@@ -430,8 +433,9 @@ keyboard or assistive-tech users.
 - **Global keys:**
   - `⌘K` / `Ctrl+K` — focuses the command bar from anywhere.
   - `Esc` — closes the topmost overlay (dialog → inspector → menu → command bar).
-  - `g t` / `g c` / `g o` / `g b` — jump to Timeline / Chat / Objects /
-    Boards (vim-style leader, registered in
+  - `g t` / `g c` / `g o` / `g b` — jump to Timeline / Ask / Objects /
+    Boards (legacy object/board shortcuts stay available even though Work is
+    the primary sidebar parent; registered in
     [apps/web/src/components/keymap.tsx](apps/web/src/components/keymap.tsx)).
 - **Citation chip** is a `<button>` (not a link) — Enter / Space opens the
   inspector pane and moves focus into it. Escape returns focus to the chip.
