@@ -19,6 +19,7 @@ import { useMemo } from 'react';
 import type { TimelineEvent } from '@/lib/use-paginated-queries';
 
 import { removeConversationalEventAction } from '@/app/actions/events';
+import { EmptyAction } from '@/components/empty-action';
 import { EventVisibilityForm } from '@/components/event-visibility-form';
 import { useInspector } from '@/components/inspector-context';
 import { Button } from '@/components/ui/button';
@@ -508,20 +509,20 @@ export function TimelineList({
   const dateGroups = groupedByDate(visibleMoments);
 
   if (visibleMoments.length === 0) {
+    if (emptyAction) {
+      return (
+        <EmptyAction
+          title={emptyLabel}
+          body={emptyAction.body}
+          href={emptyAction.href}
+          action={emptyAction.label}
+        />
+      );
+    }
+
     return (
       <div className="border-y border-border py-10 text-center">
         <p className="font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">{emptyLabel}</p>
-        {emptyAction ? (
-          <>
-            <p className="mx-auto mt-2 max-w-md text-sm text-fg-muted">{emptyAction.body}</p>
-            <Link
-              href={emptyAction.href}
-              className="mt-4 inline-flex min-h-9 items-center rounded-sm border border-signal/40 bg-signal-soft px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-signal transition-colors hover:bg-signal/20"
-            >
-              {emptyAction.label}
-            </Link>
-          </>
-        ) : null}
       </div>
     );
   }
