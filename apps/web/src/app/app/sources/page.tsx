@@ -1,4 +1,4 @@
-import { withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared/team-scope';
 import {
   Bot,
   FileText,
@@ -163,7 +163,7 @@ export default async function SourcesPage() {
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
   const scope = withTeam(db, active.teamId, session.user.id);
-  const summary = await getSourcesStatusSummary(scope, active.teamId, session.user.id);
+  const summary = await getSourcesStatusSummary(scope);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">

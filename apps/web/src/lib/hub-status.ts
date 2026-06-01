@@ -9,7 +9,7 @@ import {
   type meetingStatus,
   type mcpServers,
 } from '@timeline/db';
-import { withTeam } from '@timeline/shared';
+import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
@@ -250,11 +250,7 @@ export async function getWorkStatusSummary(scope: TeamScope): Promise<WorkStatus
   };
 }
 
-export async function getSourcesStatusSummary(
-  scope: TeamScope,
-  teamId: string,
-  userId: string,
-): Promise<SourcesStatusSummary> {
+export async function getSourcesStatusSummary(scope: TeamScope): Promise<SourcesStatusSummary> {
   const [
     onboarding,
     team,
@@ -267,8 +263,8 @@ export async function getSourcesStatusSummary(
   ] = await Promise.all([
     scope.onboarding.getChecklistState(),
     scope.timeline.team(),
-    countVisibleDocuments(teamId, userId),
-    countVisibleDocumentAttention(teamId, userId),
+    countVisibleDocuments(scope.teamId, scope.userId),
+    countVisibleDocumentAttention(scope.teamId, scope.userId),
     scope.meetings.listMeetings({ limit: 50 }),
     scope.meetings.getCurrentMonthMinutes(),
     scope.integrations.listIntegrations(),
@@ -320,7 +316,7 @@ export async function getNavAttentionSummary(
   const scope = withTeam(db, teamId, userId);
   const [work, sources] = await Promise.all([
     getWorkStatusSummary(scope),
-    getSourcesStatusSummary(scope, teamId, userId),
+    getSourcesStatusSummary(scope),
   ]);
   return { work: work.attention, sources: sources.attention };
 }
