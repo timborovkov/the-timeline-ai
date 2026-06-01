@@ -172,6 +172,8 @@ async function countUnreadApprovalNotifications(teamId: string, userId: string):
 }
 
 async function getWorkInventoryCounts(teamId: string, userId: string, now: Date, inTwoWeeks: Date) {
+  const nowIso = now.toISOString();
+  const inTwoWeeksIso = inTwoWeeks.toISOString();
   const activeObjectConditions = [
     eq(entities.teamId, teamId),
     isNull(entities.mergedIntoId),
@@ -206,8 +208,8 @@ async function getWorkInventoryCounts(teamId: string, userId: string, now: Date,
           eq(calendarEvents.teamId, teamId),
           calendarReadVisibility,
           isNull(calendarEvents.deletedAt),
-          sql`${calendarEvents.endAt} >= ${now}`,
-          lt(calendarEvents.startAt, inTwoWeeks),
+          sql`${calendarEvents.endAt} >= ${nowIso}::timestamptz`,
+          sql`${calendarEvents.startAt} < ${inTwoWeeksIso}::timestamptz`,
         ),
       ),
   ]);

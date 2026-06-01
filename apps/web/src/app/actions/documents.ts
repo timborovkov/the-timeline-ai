@@ -1,4 +1,5 @@
 'use server';
+import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import {
@@ -132,6 +133,14 @@ export async function requestDocumentUploadAction(
 ): Promise<RequestUploadResult> {
   const got = await withScopeOrError();
   if ('error' in got) return { ok: false, error: got.error };
+  const env = getEnv();
+  if (env.NODE_ENV === 'production' && !env.S3_PUBLIC_ENDPOINT) {
+    return {
+      ok: false,
+      error:
+        'Document uploads are not configured: set S3_PUBLIC_ENDPOINT to the public HTTPS RustFS URL.',
+    };
+  }
   const rl = await rateLimit.checkRateLimit({
     key: rateLimit.rateLimitKey('document_upload', 'user', got.userId),
     ...rateLimit.RATE_LIMITS.documentUpload,

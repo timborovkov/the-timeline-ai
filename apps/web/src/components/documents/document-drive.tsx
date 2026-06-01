@@ -50,6 +50,28 @@ interface Props {
   members: { id: string; label: string }[];
 }
 
+type UploadPhase = 'preparing' | 'uploading' | 'finalizing' | 'failed';
+
+interface UploadState {
+  id: string;
+  name: string;
+  phase: UploadPhase;
+  error?: string;
+}
+
+function uploadStateId(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function uploadPhaseLabel(upload: UploadState): string {
+  if (upload.phase === 'failed') return upload.error ? `Failed: ${upload.error}` : 'Failed';
+  if (upload.phase === 'preparing') return 'Preparing upload';
+  if (upload.phase === 'uploading') return 'Uploading';
+  return 'Finishing';
+}
+
 export function DocumentDrive({
   currentFolderId,
   breadcrumbs,
@@ -64,13 +86,7 @@ export function DocumentDrive({
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
-  // Set of in-flight upload filenames. Multi-file drop fires
-  // handleUploadFile concurrently for each file; a single `string |
-  // null` state would let the first finisher clobber the "Uploading…"
-  // indicator while siblings are still running. The Set lets all
-  // active uploads count toward "busy" and surface the most recent
-  // filename in the button label.
-  const [uploading, setUploading] = useState<readonly string[]>([]);
+  const [uploads, setUploads] = useState<readonly UploadState[]>([]);
   const [visibility, setVisibility] = useState<'team' | 'private' | 'specific_users'>(
     defaultVisibility,
   );
@@ -83,6 +99,25 @@ export function DocumentDrive({
   );
   const documentQuery = useDocumentListQuery(currentFolderId, initialDocumentPage);
   const visibleDocuments = documentQuery.data.pages.flatMap((page) => page.items);
+  const activeUploads = uploads.filter((upload) => upload.phase !== 'failed');
+  const activeUpload = activeUploads[0];
+
+  function updateUpload(id: string, patch: Partial<UploadState>): void {
+    setUploads((prev) =>
+      prev.map((upload) => (upload.id === id ? { ...upload, ...patch } : upload)),
+    );
+  }
+
+  function clearUpload(id: string): void {
+    setUploads((prev) => prev.filter((upload) => upload.id !== id));
+  }
+
+  function failUpload(id: string, message: string): void {
+    updateUpload(id, { phase: 'failed', error: message });
+    window.setTimeout(() => {
+      clearUpload(id);
+    }, 8000);
+  }
 
   function addOptimisticDocument(document: DocumentItem): void {
     queryClient.setQueryData<InfiniteData<DocumentListPage, string | null> | undefined>(
@@ -116,7 +151,8 @@ export function DocumentDrive({
   }
 
   async function handleUploadFile(file: File): Promise<void> {
-    setUploading((prev) => [...prev, file.name]);
+    const uploadId = uploadStateId();
+    setUploads((prev) => [...prev, { id: uploadId, name: file.name, phase: 'preparing' }]);
     let optimisticDocumentId: string | null = null;
     try {
       const req = await requestDocumentUploadAction({
@@ -128,11 +164,15 @@ export function DocumentDrive({
         visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
       });
       if (!req.ok || !req.url || !req.versionId) {
-        toast.error(req.error ?? 'Upload failed');
+        const message = req.error ?? 'Upload failed';
+        toast.error(message);
+        failUpload(uploadId, message);
         return;
       }
       if (req.maxBytes && file.size > req.maxBytes) {
-        toast.error(`File exceeds ${String(Math.round(req.maxBytes / 1024 / 1024))} MiB limit`);
+        const message = `File exceeds ${String(Math.round(req.maxBytes / 1024 / 1024))} MiB limit`;
+        toast.error(message);
+        failUpload(uploadId, message);
         return;
       }
       if (req.documentId) {
@@ -146,6 +186,7 @@ export function DocumentDrive({
           optimistic: true,
         });
       }
+      updateUpload(uploadId, { phase: 'uploading' });
       const put = await fetch(req.url, {
         method: 'PUT',
         body: file,
@@ -153,29 +194,33 @@ export function DocumentDrive({
       });
       if (!put.ok) {
         if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
-        toast.error(`Upload failed (${String(put.status)})`);
+        const message = `Storage upload failed (${String(put.status)})`;
+        toast.error(message);
+        failUpload(uploadId, message);
         return;
       }
+      updateUpload(uploadId, { phase: 'finalizing' });
       const fin = await finalizeDocumentVersionAction({ versionId: req.versionId });
       if (!fin.ok) {
         if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
-        toast.error(fin.error ?? 'Finalize failed');
+        const message = fin.error ?? 'Finalize failed';
+        toast.error(message);
+        failUpload(uploadId, message);
         return;
       }
       toast.success(`Uploaded ${file.name}`);
+      clearUpload(uploadId);
       router.refresh();
     } catch (err) {
       if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
-      toast.error(err instanceof Error ? err.message : 'Upload error');
-    } finally {
-      // Remove ONLY this file's entry — leave any sibling uploads
-      // still in-flight in the busy set. Splice-by-first-index handles
-      // the rare case of dropping the same filename twice in one batch.
-      setUploading((prev) => {
-        const i = prev.indexOf(file.name);
-        if (i < 0) return prev;
-        return [...prev.slice(0, i), ...prev.slice(i + 1)];
-      });
+      const message =
+        err instanceof TypeError
+          ? 'Browser could not reach document storage. Check S3_PUBLIC_ENDPOINT and RustFS CORS.'
+          : err instanceof Error
+            ? err.message
+            : 'Upload error';
+      toast.error(message);
+      failUpload(uploadId, message);
     }
   }
 
@@ -243,18 +288,36 @@ export function DocumentDrive({
           <Button
             size="sm"
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploading.length > 0}
+            disabled={activeUploads.length > 0}
           >
             <Upload className="mr-2 h-4 w-4" />
-            {uploading.length === 0
+            {activeUploads.length === 0
               ? 'Upload'
-              : uploading.length === 1
-                ? `Uploading ${uploading[0]}…`
-                : `Uploading ${String(uploading.length)} files…`}
+              : activeUploads.length === 1
+                ? `${activeUpload ? uploadPhaseLabel(activeUpload) : 'Uploading'}…`
+                : `Uploading ${String(activeUploads.length)} files…`}
           </Button>
           <input ref={fileInputRef} type="file" className="hidden" onChange={onFileChange} />
         </div>
       </header>
+      {uploads.length > 0 ? (
+        <div className="space-y-2 rounded-sm border border-border bg-card/40 p-3" role="status">
+          {uploads.map((upload) => (
+            <div key={upload.id} className="flex items-center justify-between gap-3 text-sm">
+              <span className="truncate font-medium">{upload.name}</span>
+              <span
+                className={
+                  upload.phase === 'failed'
+                    ? 'shrink-0 text-xs text-destructive'
+                    : 'shrink-0 text-xs text-muted-foreground'
+                }
+              >
+                {uploadPhaseLabel(upload)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-3 rounded-sm border border-border p-3 text-sm">
         <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
           New item visibility
