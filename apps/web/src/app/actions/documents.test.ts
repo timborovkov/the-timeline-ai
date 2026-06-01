@@ -1,3 +1,4 @@
+import { resetEnvForTests } from '@timeline/shared/env';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as RateLimitModule from '@timeline/shared/rate-limit';
@@ -105,6 +106,9 @@ const USER_ID = '22222222-2222-2222-2222-222222222222';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetEnvForTests();
+  Object.assign(process.env, { NODE_ENV: 'test' });
+  delete process.env.S3_PUBLIC_ENDPOINT;
   fakeAuth.mockResolvedValue({ user: { id: USER_ID } });
   fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakeCheckRateLimit.mockResolvedValue({ ok: true, remaining: 10 });
@@ -203,6 +207,23 @@ describe('documents actions — schema validation gates the scope', () => {
 // ---------------------------------------------------------------------------
 
 describe('requestDocumentUploadAction', () => {
+  it('rejects production browser uploads when the public S3 endpoint is missing', async () => {
+    Object.assign(process.env, { NODE_ENV: 'production' });
+    resetEnvForTests();
+
+    const r = await requestDocumentUploadAction({
+      name: 'Acme MSA',
+      filename: 'msa.pdf',
+      contentType: 'application/pdf',
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('S3_PUBLIC_ENDPOINT');
+    expect(fakeCheckRateLimit).not.toHaveBeenCalled();
+    expect(fakeScope.createDocument).not.toHaveBeenCalled();
+    expect(fakeGetSignedPutUrl).not.toHaveBeenCalled();
+  });
+
   it('creates a new document + returns presigned PUT URL when documentId is absent', async () => {
     fakeScope.createDocument.mockResolvedValue({
       document: { id: DOC_ID },

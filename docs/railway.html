@@ -166,12 +166,12 @@ LOG_LEVEL=info
         services (everything except service-local overrides).
       </p>
       <p>
-        <strong>About <code>S3_PUBLIC_ENDPOINT</code>:</strong> the browser uploads voice notes and
-        fetches audio for playback directly against this URL, so it must be publicly reachable over
-        HTTPS. Expose the RustFS service via a Railway public domain (Settings → Networking →
-        Generate Domain) and set <code>S3_PUBLIC_ENDPOINT</code> to that URL.
-        <code>S3_ENDPOINT</code> stays on the private network — workers and server-side code keep
-        using it.
+        <strong>About <code>S3_PUBLIC_ENDPOINT</code>:</strong> the browser uploads voice notes,
+        document files, and fetches audio for playback directly against this URL, so it must be
+        publicly reachable over HTTPS. Expose the RustFS service via a Railway public domain
+        (Settings → Networking → Generate Domain) and set <code>S3_PUBLIC_ENDPOINT</code> to that
+        URL. <code>S3_ENDPOINT</code> stays on the private network — workers and server-side code
+        keep using it.
       </p>
       <p>
         <strong>About <code>TURNSTILE_*</code>:</strong> Turnstile is used only on anonymous abuse
