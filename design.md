@@ -261,8 +261,8 @@ visible change.
 
 - **Dedicated surface.** `/app` is the Home Dashboard for capture, onboarding,
   ingest access, pending approvals, and compact recent activity. `/app/timeline`
-  is reserved for timeline browsing, filtering, inspection, and source
-  evidence.
+  lands with quick capture open, then continues into timeline browsing,
+  filtering, inspection, and source evidence.
 - **Timeline moments, not raw rows by default.** The browser is date-first:
   sticky date sections contain source clusters, and each cluster contains one
   or more raw events behind the user-facing moment.

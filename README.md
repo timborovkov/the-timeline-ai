@@ -22,9 +22,10 @@ MCP servers per team or per user) live at `/app/team/integrations` — plus an
 outbound MCP server at `/api/mcp/server` so external agents (Claude Desktop,
 Cursor, etc.) can query this Timeline. The Home Dashboard at `/app` gathers
 capture, onboarding, ingest access, pending approvals, and compact recent
-moments; `/app/timeline` is the dedicated grouped timeline browser with source
-presets, impact filters, density controls, inspector evidence, and hydrated
-Impact Context from suggestions, tasks/objects, documents, and calendar rows.
+moments; `/app/timeline` opens with quick capture followed by the dedicated
+grouped timeline browser with source presets, impact filters, density controls,
+inspector evidence, and hydrated Impact Context from suggestions, tasks/objects,
+documents, and calendar rows.
 The main timeline, object sections, document lists, and document search are
 paginated for large beta workspaces, with short-lived visibility-aware Redis
 caches and React Query only on interactive surfaces. Public help docs live at
