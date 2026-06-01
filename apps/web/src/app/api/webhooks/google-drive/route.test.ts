@@ -11,6 +11,7 @@ const ENV_BACKUP = { ...process.env };
 const fakes = vi.hoisted(() => ({
   integrationRows: [] as { id: string; teamId: string }[],
   enqueueIntegrationSyncJob: vi.fn(),
+  requireRedisQueue: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -25,9 +26,7 @@ vi.mock('@/lib/db', () => ({
   },
 }));
 vi.mock('@/lib/queue', () => ({
-  requireRedisQueue: vi.fn().mockResolvedValue({
-    enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
-  }),
+  requireRedisQueue: fakes.requireRedisQueue,
 }));
 
 vi.mock('@timeline/shared/email', async () => {
@@ -55,6 +54,9 @@ beforeEach(() => {
   resetEnvForTests();
   fakes.integrationRows = [{ id: 'integration-1', teamId: 'team-1' }];
   vi.clearAllMocks();
+  fakes.requireRedisQueue.mockResolvedValue({
+    enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
+  });
 });
 
 afterEach(() => {
@@ -94,5 +96,23 @@ describe('POST /api/webhooks/google-drive', () => {
       teamId: 'team-1',
       triggeredBy: 'webhook',
     });
+  });
+
+  it('acknowledges valid webhooks when Redis queue setup fails', async () => {
+    fakes.requireRedisQueue.mockRejectedValue(new Error('REDIS_URL is required'));
+
+    const response = await POST(
+      new Request('https://timeline.test/api/webhooks/google-drive', {
+        method: 'POST',
+        headers: { 'x-goog-channel-token': channelToken('integration-1') },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      reason: 'enqueue_failed',
+    });
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
   });
 });

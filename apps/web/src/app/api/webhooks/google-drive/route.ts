@@ -76,12 +76,16 @@ export async function POST(req: Request): Promise<Response> {
   if (!integration) {
     return NextResponse.json({ ok: true });
   }
-  const queue = await requireRedisQueue();
-  await queue.enqueueIntegrationSyncJob({
-    kind: 'incremental',
-    integrationId: integration.id,
-    teamId: integration.teamId,
-    triggeredBy: 'webhook',
-  });
+  try {
+    const queue = await requireRedisQueue();
+    await queue.enqueueIntegrationSyncJob({
+      kind: 'incremental',
+      integrationId: integration.id,
+      teamId: integration.teamId,
+      triggeredBy: 'webhook',
+    });
+  } catch {
+    return NextResponse.json({ ok: true, reason: 'enqueue_failed' }, { status: 200 });
+  }
   return NextResponse.json({ ok: true });
 }
