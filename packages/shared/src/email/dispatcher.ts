@@ -54,7 +54,7 @@ export interface EmbedEnqueueDeps {
 
 export interface DispatcherDeps {
   db: Db;
-  /** Per-team inbound address suffix (e.g. `in.thetimeline.app`). Used as
+  /** Per-team inbound address suffix (e.g. `in.thetimeline.cc`). Used as
    *  a last-resort filter so the dispatcher cannot route a stray recipient
    *  that happens to share another team's slug-on-some-other-domain.
    *

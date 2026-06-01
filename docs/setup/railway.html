@@ -115,7 +115,7 @@
         scheduler (or any cron service) every few minutes:
       </p>
       <pre><code>curl -fsS -H "Authorization: Bearer $CRON_SECRET" \
-  https://&lt;your-app-domain&gt;/api/cron/reconcile
+  https://thetimeline.cc/api/cron/reconcile
 </code></pre>
       <p>
         Leave <code>CRON_SECRET</code> unset to disable the endpoint (returns 503). The handler also

@@ -141,15 +141,15 @@ S3_BUCKET_AUDIO=timeline-audio
 S3_BUCKET_ATTACHMENTS=timeline-attachments
 S3_BUCKET_EXPORTS=timeline-exports
 AUTH_SECRET=&lt;32-byte random, generate per env&gt;
-AUTH_URL=https://&lt;your-domain&gt;
+AUTH_URL=https://thetimeline.cc
 OPENROUTER_API_KEY=&lt;openrouter key&gt;
 TELEGRAM_BOT_TOKEN=&lt;botfather token&gt;
 TELEGRAM_WEBHOOK_SECRET=&lt;32-byte random&gt;
 POSTMARK_SERVER_TOKEN=&lt;postmark token&gt;
-TRANSACTIONAL_EMAIL_FROM="The Timeline &lt;invites@your-domain&gt;"
+TRANSACTIONAL_EMAIL_FROM="The Timeline &lt;invites@thetimeline.cc&gt;"
 POSTMARK_WEBHOOK_SECRET=&lt;postmark secret&gt;
-SUPPORT_EMAIL=support@&lt;your-domain&gt;
-INBOUND_EMAIL_DOMAIN=in.thetimeline.app
+SUPPORT_EMAIL=support@thetimeline.cc
+INBOUND_EMAIL_DOMAIN=in.thetimeline.cc
 TURNSTILE_SITE_KEY=&lt;cloudflare turnstile site key&gt;
 TURNSTILE_SECRET_KEY=&lt;cloudflare turnstile secret key&gt;
 NODE_ENV=production
@@ -188,8 +188,8 @@ LOG_LEVEL=info
         Domains:
       </p>
       <ul>
-        <li><code>staging.thetimeline.app</code> → staging web</li>
-        <li><code>app.thetimeline.app</code> → production web</li>
+        <li><code>staging.thetimeline.cc</code> → staging web</li>
+        <li><code>thetimeline.cc</code> → production web</li>
       </ul>
       <p>
         Branch deploys: <code>main</code> → production, <code>staging</code> → staging. Configure
@@ -264,10 +264,10 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
         Telegram, Slack, and Postmark webhooks point at the <code>web</code> service public URL:
       </p>
       <ul>
-        <li>Telegram: <code>https://app.thetimeline.app/api/telegram/webhook</code></li>
-        <li>Slack Events API: <code>https://app.thetimeline.app/api/slack/events</code></li>
-        <li>Slack slash commands: <code>https://app.thetimeline.app/api/slack/commands</code></li>
-        <li>Postmark: <code>https://app.thetimeline.app/api/email/inbound</code></li>
+        <li>Telegram: <code>https://thetimeline.cc/api/telegram/webhook</code></li>
+        <li>Slack Events API: <code>https://thetimeline.cc/api/slack/events</code></li>
+        <li>Slack slash commands: <code>https://thetimeline.cc/api/slack/commands</code></li>
+        <li>Postmark: <code>https://thetimeline.cc/api/email/inbound</code></li>
       </ul>
       <p>
         The Telegram webhook is registered automatically by the <code>web</code> service on startup.
@@ -282,7 +282,7 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
       </p>
       <p>To register manually (e.g. from a laptop pointed at staging):</p>
       <pre><code>curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
-  -d "url=https://app.thetimeline.app/api/telegram/webhook" \
+  -d "url=https://thetimeline.cc/api/telegram/webhook" \
   -d "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
   -d "allowed_updates=[\"message\",\"edited_message\",\"callback_query\"]"
 </code></pre>

@@ -40,7 +40,7 @@
         </li>
         <li>
           Add the redirect URI:
-          <code>{AUTH_URL}/api/integrations/google_drive/callback</code>.
+          <code>https://thetimeline.cc/api/integrations/google_drive/callback</code>.
         </li>
         <li>Enable the Google Drive API for the project.</li>
         <li>
@@ -73,7 +73,10 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
             >linear.app/settings/api/applications</a
           >.
         </li>
-        <li>Redirect URI: <code>{AUTH_URL}/api/integrations/linear/callback</code>.</li>
+        <li>
+          Redirect URI:
+          <code>https://thetimeline.cc/api/integrations/linear/callback</code>.
+        </li>
         <li>
           Set:
           <pre><code>LINEAR_CLIENT_ID=...
@@ -82,7 +85,7 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
           In Linear Settings → API → Webhooks, point the webhook at
-          <code>{AUTH_URL}/api/webhooks/linear</code> with the secret above.
+          <code>https://thetimeline.cc/api/webhooks/linear</code> with the secret above.
         </li>
       </ol>
 
@@ -92,7 +95,10 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
           Create an OAuth App (or a GitHub App with OAuth) at
           <a href="https://github.com/settings/developers">github.com/settings/developers</a>.
         </li>
-        <li>Callback URL: <code>{AUTH_URL}/api/integrations/github/callback</code>.</li>
+        <li>
+          Callback URL:
+          <code>https://thetimeline.cc/api/integrations/github/callback</code>.
+        </li>
         <li>
           Set:
           <pre><code>GITHUB_APP_CLIENT_ID=...
@@ -100,8 +106,9 @@ GITHUB_APP_CLIENT_SECRET=...
 GITHUB_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
-          Add a webhook on each repo / org pointing at <code>{AUTH_URL}/api/webhooks/github</code>.
-          Content type <em>application/json</em>; secret matches the env var; subscribe to
+          Add a webhook on each repo / org pointing at
+          <code>https://thetimeline.cc/api/webhooks/github</code>. Content type
+          <em>application/json</em>; secret matches the env var; subscribe to
           <em>Pull requests</em> and <em>Issues</em>.
         </li>
       </ol>
@@ -149,7 +156,7 @@ GITHUB_WEBHOOK_SECRET=...</code></pre>
         <li>
           In the consuming agent, add an MCP server with:
           <ul>
-            <li>URL: <code>{AUTH_URL}/api/mcp/server</code></li>
+            <li>URL: <code>https://thetimeline.cc/api/mcp/server</code></li>
             <li>Header: <code>Authorization: Bearer tla_...</code></li>
           </ul>
         </li>
