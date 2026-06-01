@@ -155,20 +155,20 @@ Departs from the v1 centered `max-w-3xl` prose column. New shell:
 
 ```
 ┌─────┬──────────────────────────────────┬─────────────────┐
-│ 56px│   command bar  (⌘K, always on)   │  inspector pane │
-│ rail│ ─────────────────────────────────│  (collapsible)  │
-│     │   index strip                    │                 │
-│  ▣  │   EVENTS · 2,847 · 14d · acme    │  citation src   │
-│  ▦  │ ─────────────────────────────────│  raw evidence   │
-│  ◧  │   feed / board / object / chat   │  related links  │
-│  ◑  │                                  │                 │
+│sidebar│  command bar  (⌘K, always on)  │  inspector pane │
+│labels │ ───────────────────────────────│  (collapsible)  │
+│+ team │  index strip                   │                 │
+│Home   │  EVENTS · 2,847 · 14d · acme   │  citation src   │
+│Chat   │ ───────────────────────────────│  raw evidence   │
+│Docs   │  feed / board / object / chat  │  related links  │
+│Team   │                                │                 │
 └─────┴──────────────────────────────────┴─────────────────┘
 ```
 
-- **Left rail** (`w-14` = 56px default, expand to `w-60` = 240px on hover
-  or pin): icon-only nav with monospace section glyphs. No labels by
-  default; tooltip on hover. Active route shows a 2px signal-color bar at
-  its left edge plus `bg-surface-2 text-signal`.
+- **Left sidebar** (`w-64` = 256px default, foldable to `w-14` = 56px):
+  nav labels and the current team are visible by default. Folded mode uses
+  the icon-only rail with tooltips. Active route shows a 2px signal-color
+  bar at its left edge plus `bg-surface-2 text-signal`.
 - **Main column** fills available width. **No `max-w-3xl` artificial
   column** except long-form prose surfaces (single document view, single
   note view) — those wrap in a `<ProseContainer>` that sets `max-w-prose`.
@@ -598,4 +598,5 @@ No `shadcn` CLI is required to be installed or run.
 | 2026-05-25 | Switzer + Commit Mono, free-only stack                                     | Procurement-free, ships immediately. Mono is load-bearing; sans is secondary.            |
 | 2026-05-25 | Acid lime signal (`oklch(0.90 0.20 130)` dark)                             | Refuses the blue / violet trap. Polarizing on purpose.                                   |
 | 2026-05-25 | Three-pane shell, 56px icon rail, right inspector                          | Makes the "every claim is cited" promise structural.                                     |
+| 2026-06-01 | Desktop sidebar defaults expanded and folds to the icon rail               | Keeps team context and labels visible while preserving the dense rail mode.              |
 | 2026-05-25 | Timeline loses card chrome                                                 | Lets the timeline scale to thousands of events without visual clutter.                   |

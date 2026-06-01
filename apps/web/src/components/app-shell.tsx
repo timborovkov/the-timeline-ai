@@ -3,15 +3,14 @@ import type { TeamMembership } from '@/lib/active-team';
 import type { ReactNode } from 'react';
 
 import { CommandBar } from '@/components/command-bar';
+import { DesktopSidebar } from '@/components/desktop-sidebar';
 import { InspectorProvider } from '@/components/inspector-context';
 import { InspectorPane } from '@/components/inspector-pane';
 import { InspectorToggle } from '@/components/inspector-pane';
 import { MobileNav } from '@/components/mobile-nav';
-import { RailNav } from '@/components/rail-nav';
 import { SkipLink } from '@/components/skip-link';
-import { TeamSwitcher } from '@/components/team-switcher';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { UserMenu } from '@/components/user-menu';
 
 interface Props {
@@ -24,7 +23,7 @@ interface Props {
 
 /**
  * Operational Archive v2 shell. Three columns:
- *   • 56px icon rail (mobile: hamburger sheet)
+ *   • foldable desktop sidebar (mobile: hamburger sheet)
  *   • main column with persistent ⌘K command bar
  *   • collapsible 384px right inspector pane (hidden by default, opens
  *     when a citation chip / object reference is activated)
@@ -36,31 +35,11 @@ export function AppShell({ active, memberships, recipientInvites, user, children
       <div className="flex min-h-screen w-full bg-bg">
         {/* ── Left rail (desktop) ─────────────────────────────────── */}
         <TooltipProvider>
-          <aside
-            aria-label="Sidebar"
-            className="sticky top-0 hidden h-screen w-14 shrink-0 flex-col items-center border-r border-border bg-surface py-3 md:flex"
-          >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  aria-label="The Timeline"
-                  className="grid size-7 place-items-center rounded-sm font-mono text-[11px] font-bold text-signal"
-                >
-                  ▦
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="right">The Timeline</TooltipContent>
-            </Tooltip>
-            <RailNav role={active.role} />
-            <div className="mt-auto flex flex-col items-center gap-1">
-              <TeamSwitcher
-                active={active}
-                memberships={memberships}
-                recipientInvites={recipientInvites}
-                variant="rail"
-              />
-            </div>
-          </aside>
+          <DesktopSidebar
+            active={active}
+            memberships={memberships}
+            recipientInvites={recipientInvites}
+          />
         </TooltipProvider>
 
         {/* ── Main column ─────────────────────────────────────────── */}
