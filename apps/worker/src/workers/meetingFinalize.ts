@@ -8,6 +8,7 @@ import {
 } from '@timeline/db';
 import { childLogger, formatMeetingTranscript, getEnv, llm, queue } from '@timeline/shared';
 import { currentExtractionModelVersion } from '@timeline/shared/extraction-model-version';
+import { participantNames } from '@timeline/shared/meetings';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -174,19 +175,6 @@ function calendarTitleForMeeting(meeting: MeetingRow): string {
   return `${platformLabel(meeting.platform)} with Meeting Bot: ${title}`;
 }
 
-function participantNames(meeting: MeetingRow): string[] {
-  if (!Array.isArray(meeting.participants)) return [];
-  return meeting.participants
-    .map((participant) => {
-      if (!participant || typeof participant !== 'object') return null;
-      const record = participant as Record<string, unknown>;
-      const name = typeof record.name === 'string' ? record.name.trim() : '';
-      const email = typeof record.email === 'string' ? record.email.trim() : '';
-      return name || email || null;
-    })
-    .filter((value): value is string => Boolean(value));
-}
-
 function buildMeetingCalendarDescription(args: {
   meeting: MeetingRow;
   summary: string | null;
@@ -196,7 +184,7 @@ function buildMeetingCalendarDescription(args: {
     `Meeting: /app/meetings/${args.meeting.id}`,
     `Join URL: ${args.meeting.meetingUrl}`,
   ];
-  const participants = participantNames(args.meeting);
+  const participants = participantNames(args.meeting.participants);
   if (participants.length > 0) parts.push(`Participants: ${participants.join(', ')}`);
   if (args.summary) parts.push(`Summary: ${args.summary}`);
   if (args.actionItems.length > 0) {
@@ -220,7 +208,7 @@ function buildMeetingCalendarRawText(args: {
     `Meeting: /app/meetings/${args.meeting.id}`,
     `Join URL: ${args.meeting.meetingUrl}`,
   ];
-  const participants = participantNames(args.meeting);
+  const participants = participantNames(args.meeting.participants);
   if (participants.length > 0) parts.push(`Participants: ${participants.join(', ')}`);
   parts.push(`${args.startAt.toISOString()} to ${args.endAt.toISOString()}`);
   return parts.join(' | ');

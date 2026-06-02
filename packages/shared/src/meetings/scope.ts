@@ -10,6 +10,7 @@ import {
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
 import { currentExtractionModelVersion } from '#src/extraction-model-version.js';
+import { participantNames } from '#src/meetings/participants.js';
 import { formatMeetingTranscript } from '#src/meetings/transcript.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
 
@@ -89,19 +90,6 @@ function meetingCalendarDescription(args: {
   if (args.meetingUrl) parts.push(`Join URL: ${args.meetingUrl}`);
   parts.push('Summary stale: transcript changed after finalization.');
   return parts.join('\n\n');
-}
-
-function participantNames(participants: unknown): string[] {
-  if (!Array.isArray(participants)) return [];
-  return participants
-    .map((participant) => {
-      if (!participant || typeof participant !== 'object') return null;
-      const record = participant as Record<string, unknown>;
-      const name = typeof record.name === 'string' ? record.name.trim() : '';
-      const email = typeof record.email === 'string' ? record.email.trim() : '';
-      return name || email || null;
-    })
-    .filter((value): value is string => Boolean(value));
 }
 
 function staleMeetingCalendarRawText(args: {
@@ -353,7 +341,7 @@ export async function lookupMeetingByBotId(
   botId: string,
 ): Promise<Pick<
   MeetingRow,
-  'id' | 'teamId' | 'createdByUserId' | 'status' | 'platform' | 'provider'
+  'id' | 'teamId' | 'createdByUserId' | 'status' | 'platform' | 'provider' | 'defaultVisibility'
 > | null> {
   const rows = await db
     .select({
@@ -363,6 +351,7 @@ export async function lookupMeetingByBotId(
       status: meetings.status,
       platform: meetings.platform,
       provider: meetings.provider,
+      defaultVisibility: meetings.defaultVisibility,
     })
     .from(meetings)
     .where(eq(meetings.providerBotId, botId))

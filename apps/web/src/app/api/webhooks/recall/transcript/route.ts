@@ -200,7 +200,7 @@ export async function POST(req: Request): Promise<Response> {
     if (env.REDIS_URL) {
       const queue = await requireRedisQueue();
       await queue.enqueueMeetingChunkEmbedJob(meeting.teamId, result.chunkId);
-      if (result.refreshedCalendarEventId) {
+      if (meeting.defaultVisibility === 'team' && result.refreshedCalendarEventId) {
         await queue.enqueueCalendarEventEmbedJob(meeting.teamId, result.refreshedCalendarEventId);
       }
     }
