@@ -15,12 +15,12 @@
  * extraction time (in the worker), not here.
  */
 import { closeDb, getDb, rawEvents } from '@timeline/db';
-import { llm, queue } from '@timeline/shared';
+import { queue } from '@timeline/shared';
+import { currentExtractionModelVersion } from '@timeline/shared/extraction-model-version';
 import { and, asc, eq, gt, isNotNull, or, type SQL, sql } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const EXTRACTION_CODE_VERSION = '2026-05-a';
 const PAGE_SIZE = 500;
 
 function parseArgs(): { teamId: string; limit: number; dryRun: boolean } {
@@ -46,8 +46,7 @@ function parseArgs(): { teamId: string; limit: number; dryRun: boolean } {
 
 async function main(): Promise<void> {
   const { teamId, limit, dryRun } = parseArgs();
-  const modelId = llm.TIMELINE_MODELS.extraction.id;
-  const modelVersion = `${modelId}@${EXTRACTION_CODE_VERSION}`;
+  const modelVersion = currentExtractionModelVersion();
   console.log(
     `[reextract] team=${teamId} modelVersion=${modelVersion} limit=${
       Number.isFinite(limit) ? limit : 'unbounded'

@@ -24,7 +24,10 @@
         video). Each finalised utterance is written as a <code>meeting_transcript_chunks</code> row
         for the meeting detail UI and utterance-level search. When the call ends, the finalize
         worker creates one consolidated <code>raw_events</code> row with the full transcript and
-        LLM-generated summary so the meeting appears as a single timeline entry.
+        LLM-generated summary so the meeting appears as a single timeline entry, then creates a
+        native calendar event for the call with links back to the meeting detail page. The linked
+        calendar audit rows stay factual and extraction-skipped, so generated meeting notes do not
+        feed a second extraction pass.
       </p>
       <p>
         Completed meeting detail pages expose the transcript directly, with controls to download a

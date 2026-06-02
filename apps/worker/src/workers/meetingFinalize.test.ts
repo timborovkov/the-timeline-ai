@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import {
+  calendarEvents,
   type Db,
   meetings as meetingsTable,
   meetingTranscriptChunks,
@@ -52,6 +53,7 @@ async function applyMigrations(pg: PGlite): Promise<void> {
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const MEETING_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const MEETING_CREATED_AT = new Date('2026-05-25T09:55:00Z');
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 't', 'Test');`);
@@ -77,11 +79,14 @@ async function seedMeeting(
     provider: 'recall',
     platform: 'meet',
     meetingUrl: 'https://meet.google.com/test',
+    title: 'Weekly planning',
     status: opts.status ?? 'processing',
     defaultVisibility: 'team',
+    participants: [{ name: 'Alice' }, { name: 'Bob', email: 'bob@example.com' }],
     startedAt: 'startedAt' in opts ? opts.startedAt : new Date('2026-05-25T10:00:00Z'),
     endedAt: 'endedAt' in opts ? opts.endedAt : new Date('2026-05-25T10:30:00Z'),
     metadata: opts.metadata ?? {},
+    createdAt: MEETING_CREATED_AT,
   });
 }
 
@@ -174,6 +179,64 @@ describe('processMeetingFinalizeJob', () => {
     expect(eventMeta.duration_minutes).toBe(30);
     expect(enqueueExtractJob).toHaveBeenCalledWith({ rawEventId: events[0]?.id, teamId: TEAM_ID });
 
+    const calendarRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_ID));
+    expect(calendarRows).toHaveLength(1);
+    const calendarRow = calendarRows[0];
+    expect(calendarRow?.title).toBe('Google Meet with Meeting Bot: Weekly planning');
+    expect(calendarRow?.startAt.toISOString()).toBe('2026-05-25T10:00:00.000Z');
+    expect(calendarRow?.endAt.toISOString()).toBe('2026-05-25T10:30:00.000Z');
+    expect(calendarRow?.location).toBe('https://meet.google.com/test');
+    expect(calendarRow?.visibility).toBe('team');
+    expect(calendarRow?.description).toContain(`/app/meetings/${MEETING_ID}`);
+    expect(calendarRow?.description).toContain('Participants: Alice, Bob');
+    expect(calendarRow?.description).toContain('Summary: Meeting summary here.');
+    expect(calendarRow?.description).toContain('Bob owns the migration (Bob)');
+    expect(calendarRow?.metadata).toMatchObject({
+      source: 'meeting_bot',
+      meeting_id: MEETING_ID,
+      meeting_href: `/app/meetings/${MEETING_ID}`,
+    });
+
+    const calendarTimelineRows = await db
+      .select()
+      .from(rawEvents)
+      .where(eq(rawEvents.source, 'calendar'));
+    expect(calendarTimelineRows).toHaveLength(2);
+    expect(calendarTimelineRows.map((event) => event.sourceMetadata)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          calendar_event_id: calendarRow?.id,
+          action: 'scheduled',
+          meeting_id: MEETING_ID,
+        }),
+        expect.objectContaining({
+          calendar_event_id: calendarRow?.id,
+          action: 'event',
+          meeting_id: MEETING_ID,
+        }),
+      ]),
+    );
+    const scheduledEvent = calendarTimelineRows.find(
+      (event) => (event.sourceMetadata as Record<string, unknown>).action === 'scheduled',
+    );
+    const startEvent = calendarTimelineRows.find(
+      (event) => (event.sourceMetadata as Record<string, unknown>).action === 'event',
+    );
+    expect(scheduledEvent?.occurredAt.toISOString()).toBe(MEETING_CREATED_AT.toISOString());
+    for (const event of calendarTimelineRows) {
+      const meta = event.sourceMetadata as Record<string, unknown>;
+      expect(meta.extracted_at).toBeTypeOf('string');
+      expect(meta.extraction_skipped_at).toBeTypeOf('string');
+      expect(meta.extraction_skipped_reason).toBe('generated_from_meeting_bot');
+      expect(meta.extraction_model_version).toBeTypeOf('string');
+    }
+    expect(startEvent?.contentText).toContain('Participants: Alice, Bob');
+    expect(startEvent?.contentText).not.toContain('Summary: Meeting summary here.');
+    expect(startEvent?.contentText).not.toContain('Bob owns the migration');
+
     const chunks = await db
       .select()
       .from(meetingTranscriptChunks)
@@ -188,6 +251,11 @@ describe('processMeetingFinalizeJob', () => {
     expect(enqueueEmbedJob).toHaveBeenCalledWith({
       scope: 'raw_event',
       rawEventId: events[0]?.id,
+      teamId: TEAM_ID,
+    });
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'calendar_event',
+      calendarEventId: calendarRow?.id,
       teamId: TEAM_ID,
     });
   });
@@ -260,6 +328,9 @@ describe('processMeetingFinalizeJob', () => {
     );
 
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting')))[0];
+    const calendarRow = (
+      await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_ID))
+    )[0];
     const enqueueExtractJob = vi.fn().mockResolvedValue(undefined);
     const enqueueEmbedJob = vi.fn().mockResolvedValue(undefined);
     const result = await processMeetingFinalizeJob(
@@ -277,6 +348,11 @@ describe('processMeetingFinalizeJob', () => {
     expect(enqueueEmbedJob).toHaveBeenCalledWith({
       scope: 'raw_event',
       rawEventId: event?.id,
+      teamId: TEAM_ID,
+    });
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'calendar_event',
+      calendarEventId: calendarRow?.id,
       teamId: TEAM_ID,
     });
     const chunk = (
@@ -365,6 +441,12 @@ describe('processMeetingFinalizeJob', () => {
       .from(meetingUsage)
       .where(eq(meetingUsage.meetingId, MEETING_ID));
     expect(usage).toHaveLength(1);
+
+    const calendarRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_ID));
+    expect(calendarRows).toHaveLength(1);
   });
 
   it('team mismatch throws UnrecoverableError', async () => {

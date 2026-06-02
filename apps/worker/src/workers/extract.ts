@@ -1,5 +1,6 @@
 import { type Db, facts as factsTable, factEntities, rawEvents } from '@timeline/db';
 import { childLogger, embedding, extract, getEnv, llm, queue } from '@timeline/shared';
+import { makeExtractionModelVersion } from '@timeline/shared/extraction-model-version';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
 
@@ -26,11 +27,6 @@ interface RawEventRow {
  * id with a short code-rev hash so prompt or schema changes can be detected
  * by the re-extraction script even when the model id is unchanged.
  */
-const EXTRACTION_CODE_VERSION = '2026-05-a';
-function makeModelVersion(modelId: string): string {
-  return `${modelId}@${EXTRACTION_CODE_VERSION}`;
-}
-
 /**
  * Extract worker: reads a raw event's text, calls the LLM to produce
  * structured facts + entity mentions, and writes them in a single
@@ -62,7 +58,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
         );
       }
       const modelId = llm.TIMELINE_MODELS.extraction.id;
-      const modelVersion = makeModelVersion(modelId);
+      const modelVersion = makeExtractionModelVersion(modelId);
 
       // Cross-process idempotency. Two extract workers (or two retries on
       // different nodes) racing the same rawEventId would both pass the
@@ -117,7 +113,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
         const skipPatch = JSON.stringify({
           extraction_skipped_at: new Date().toISOString(),
           extraction_skipped_reason: `visibility=${row.visibility}`,
-          extraction_model_version: makeModelVersion(modelId),
+          extraction_model_version: makeExtractionModelVersion(modelId),
         });
         await deps.db
           .update(rawEvents)

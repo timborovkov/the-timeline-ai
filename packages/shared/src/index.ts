@@ -20,6 +20,7 @@ export * from '#src/chunk.js';
 export * from '#src/citation.js';
 export * from '#src/cache.js';
 export * from '#src/pagination.js';
+export * from '#src/extraction-model-version.js';
 export * from '#src/documents/index.js';
 export * from '#src/meetings/transcript.js';
 export * as meetingBots from '#src/meeting-bots/index.js';

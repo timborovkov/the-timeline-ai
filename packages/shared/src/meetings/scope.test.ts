@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import { meetings, meetingTranscriptChunks, rawEvents } from '@timeline/db';
+import { calendarEvents, meetings, meetingTranscriptChunks, rawEvents } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -113,6 +113,10 @@ describe('meetings scope', () => {
         action_items: [{ text: 'Old action', owner: null }],
       },
     });
+    await db
+      .update(meetings)
+      .set({ participants: [{ name: 'Alice' }, { name: 'Bob', email: 'bob@example.com' }] })
+      .where(eq(meetings.id, m.id));
     await scope.updateMeetingStatus(m.id, 'completed');
     const eventRows = await db
       .insert(rawEvents)
@@ -134,6 +138,74 @@ describe('meetings scope', () => {
       .returning({ id: rawEvents.id });
     const rawEventId = eventRows[0]?.id;
     if (!rawEventId) throw new Error('missing raw event');
+    const calendarRows = await db
+      .insert(calendarEvents)
+      .values({
+        teamId: TEAM_ID,
+        createdByUserId: USER_A,
+        title: 'Zoom with Meeting Bot: Planning',
+        description:
+          'Meeting: /app/meetings/test\n\nSummary: Old summary\n\nAction items: Old action',
+        startAt: new Date('2026-05-25T10:00:00Z'),
+        endAt: new Date('2026-05-25T10:30:00Z'),
+        timezone: 'UTC',
+        location: 'https://zoom.us/j/1',
+        visibility: 'team',
+        metadata: {
+          source: 'meeting_bot',
+          meeting_id: m.id,
+          summary: 'Old summary',
+          action_items: [{ text: 'Old action', owner: null }],
+        },
+      })
+      .returning({ id: calendarEvents.id });
+    const calendarEventId = calendarRows[0]?.id;
+    if (!calendarEventId) throw new Error('missing calendar event');
+    const calendarRawRows = await db
+      .insert(rawEvents)
+      .values([
+        {
+          teamId: TEAM_ID,
+          authorUserId: USER_A,
+          source: 'calendar',
+          contentText: 'Scheduled: Zoom with Meeting Bot: Planning',
+          occurredAt: new Date('2026-05-25T09:55:00Z'),
+          visibility: 'team',
+          sourceMetadata: {
+            calendar_event_id: calendarEventId,
+            action: 'scheduled',
+            meeting_id: m.id,
+            source: 'meeting_bot',
+            summary: 'Old summary',
+            action_items: [{ text: 'Old action', owner: null }],
+          },
+        },
+        {
+          teamId: TEAM_ID,
+          authorUserId: USER_A,
+          source: 'calendar',
+          contentText:
+            'Zoom with Meeting Bot: Planning | Summary: Old summary | Action items: Old action',
+          occurredAt: new Date('2026-05-25T10:00:00Z'),
+          visibility: 'team',
+          sourceMetadata: {
+            calendar_event_id: calendarEventId,
+            action: 'event',
+            meeting_id: m.id,
+            source: 'meeting_bot',
+            summary: 'Old summary',
+            action_items: [{ text: 'Old action', owner: null }],
+          },
+        },
+      ])
+      .returning({ id: rawEvents.id });
+    await db
+      .update(calendarEvents)
+      .set({
+        scheduledRawEventId: calendarRawRows[0]?.id,
+        startAtRawEventId: calendarRawRows[1]?.id,
+      })
+      .where(eq(calendarEvents.id, calendarEventId));
 
     const result = await scope.appendMeetingChunk({
       meetingId: m.id,
@@ -143,6 +215,7 @@ describe('meetings scope', () => {
       endMs: 2000,
       providerChunkId: 'utt-late',
     });
+    expect(result?.refreshedCalendarEventId).toBe(calendarEventId);
 
     const chunkRows = await db
       .select()
@@ -167,6 +240,45 @@ describe('meetings scope', () => {
     expect(meetingMeta.summary_model).toBeUndefined();
     expect(meetingMeta.action_items).toBeUndefined();
     expect(meetingMeta.summary_stale_at).toBeTypeOf('string');
+
+    const calendar = (
+      await db.select().from(calendarEvents).where(eq(calendarEvents.id, calendarEventId))
+    )[0];
+    expect(calendar?.description).toContain(
+      'Summary stale: transcript changed after finalization.',
+    );
+    expect(calendar?.description).not.toContain('Old summary');
+    expect(calendar?.description).not.toContain('Old action');
+    const calendarMeta = calendar?.metadata as Record<string, unknown>;
+    expect(calendarMeta.summary).toBeUndefined();
+    expect(calendarMeta.action_items).toBeUndefined();
+    expect(calendarMeta.summary_stale_at).toBeTypeOf('string');
+
+    const linkedCalendarRawRows = await db
+      .select()
+      .from(rawEvents)
+      .where(eq(rawEvents.source, 'calendar'));
+    for (const row of linkedCalendarRawRows) {
+      const meta = row.sourceMetadata as Record<string, unknown>;
+      expect(meta.summary).toBeUndefined();
+      expect(meta.action_items).toBeUndefined();
+      expect(meta.extracted_at).toBeTypeOf('string');
+      expect(meta.extraction_skipped_at).toBeTypeOf('string');
+      expect(meta.extraction_skipped_reason).toBe('generated_from_meeting_bot');
+      expect(meta.extraction_model_version).toBeTypeOf('string');
+      expect(meta.summary_stale_at).toBeTypeOf('string');
+    }
+    const startRaw = linkedCalendarRawRows.find(
+      (row) => (row.sourceMetadata as Record<string, unknown>).action === 'event',
+    );
+    expect(startRaw?.contentText).toContain(
+      'Summary stale: transcript changed after finalization.',
+    );
+    expect(startRaw?.contentText).toContain('Participants: Alice, Bob');
+    expect(startRaw?.contentText).not.toContain('\n\n');
+    expect(startRaw?.contentText?.match(/https:\/\/zoom\.us\/j\/1/g)).toHaveLength(1);
+    expect(startRaw?.contentText).not.toContain('Old summary');
+    expect(startRaw?.contentText).not.toContain('Old action');
   });
 
   it('appendMeetingChunk replay after finalize preserves existing summary metadata', async () => {

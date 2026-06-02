@@ -49,6 +49,12 @@
       "import": "./dist/env.js",
       "types": "./dist/env.d.ts"
     },
+    "./extraction-model-version": {
+      "types": "./src/extraction-model-version.ts",
+      "development": "./src/extraction-model-version.ts",
+      "import": "./dist/extraction-model-version.js",
+      "default": "./dist/extraction-model-version.js"
+    },
     "./queue": {
       "types": "./src/queue/index.ts",
       "development": "./src/queue/index.ts",
