@@ -1,4 +1,5 @@
 import {
+  calendarEvents,
   type Db,
   meetings,
   meetingTranscriptChunks,
@@ -8,6 +9,8 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
+import { currentExtractionModelVersion } from '#src/extraction-model-version.js';
+import { participantNames } from '#src/meetings/participants.js';
 import { formatMeetingTranscript } from '#src/meetings/transcript.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
 
@@ -76,12 +79,43 @@ export interface AppendChunkInput {
 export interface AppendChunkResult {
   chunkId: string;
   deduplicated: boolean;
+  refreshedCalendarEventId?: string;
+}
+
+function meetingCalendarDescription(args: {
+  meetingId: string;
+  meetingUrl: string | null;
+}): string {
+  const parts = [`Meeting: /app/meetings/${args.meetingId}`];
+  if (args.meetingUrl) parts.push(`Join URL: ${args.meetingUrl}`);
+  parts.push('Summary stale: transcript changed after finalization.');
+  return parts.join('\n\n');
+}
+
+function staleMeetingCalendarRawText(args: {
+  title: string;
+  meetingId: string;
+  meetingUrl: string | null;
+  participants: unknown;
+  startAt: Date;
+  endAt: Date;
+}): string {
+  const parts = [
+    args.title,
+    `Meeting: /app/meetings/${args.meetingId}`,
+    args.meetingUrl ? `Join URL: ${args.meetingUrl}` : '',
+  ];
+  const names = participantNames(args.participants);
+  if (names.length > 0) parts.push(`Participants: ${names.join(', ')}`);
+  parts.push('Summary stale: transcript changed after finalization.');
+  parts.push(`${args.startAt.toISOString()} to ${args.endAt.toISOString()}`);
+  return parts.filter((part) => part.length > 0).join(' | ');
 }
 
 async function refreshFinalizedMeetingEvent(
   tx: DbOrTx,
   args: { meetingId: string; teamId: string; rawEventId: string },
-) {
+): Promise<string | undefined> {
   const chunks = await tx
     .select()
     .from(meetingTranscriptChunks)
@@ -117,6 +151,83 @@ async function refreshFinalizedMeetingEvent(
       updatedAt: new Date(),
     })
     .where(and(eq(meetings.id, args.meetingId), eq(meetings.teamId, args.teamId)));
+
+  const calendarRows = await tx
+    .select({
+      id: calendarEvents.id,
+      title: calendarEvents.title,
+      meetingUrl: calendarEvents.location,
+      startAt: calendarEvents.startAt,
+      endAt: calendarEvents.endAt,
+      scheduledRawEventId: calendarEvents.scheduledRawEventId,
+      startAtRawEventId: calendarEvents.startAtRawEventId,
+    })
+    .from(calendarEvents)
+    .where(
+      and(
+        eq(calendarEvents.teamId, args.teamId),
+        sql`(${calendarEvents.metadata} ->> 'meeting_id') = ${args.meetingId}`,
+      ),
+    )
+    .limit(1);
+  const calendar = calendarRows[0];
+  if (!calendar) return undefined;
+
+  const meetingRows = await tx
+    .select({ participants: meetings.participants })
+    .from(meetings)
+    .where(and(eq(meetings.id, args.meetingId), eq(meetings.teamId, args.teamId)))
+    .limit(1);
+  const participants = meetingRows[0]?.participants ?? [];
+
+  const description = meetingCalendarDescription({
+    meetingId: args.meetingId,
+    meetingUrl: calendar.meetingUrl,
+  });
+  await tx
+    .update(calendarEvents)
+    .set({
+      description,
+      metadata: sql`(COALESCE(${calendarEvents.metadata}, '{}'::jsonb) - 'summary' - 'action_items') || ${metadataPatch}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(calendarEvents.id, calendar.id), eq(calendarEvents.teamId, args.teamId)));
+
+  const skipPatch = JSON.stringify({
+    extracted_at: new Date().toISOString(),
+    extraction_skipped_at: new Date().toISOString(),
+    extraction_skipped_reason: 'generated_from_meeting_bot',
+    extraction_model_version: currentExtractionModelVersion(),
+    summary_stale_at: new Date().toISOString(),
+  });
+  if (calendar.scheduledRawEventId) {
+    await tx
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'summary' - 'action_items') || ${skipPatch}::jsonb`,
+      })
+      .where(
+        and(eq(rawEvents.id, calendar.scheduledRawEventId), eq(rawEvents.teamId, args.teamId)),
+      );
+  }
+  if (calendar.startAtRawEventId) {
+    await tx
+      .update(rawEvents)
+      .set({
+        contentText: staleMeetingCalendarRawText({
+          title: calendar.title,
+          meetingId: args.meetingId,
+          meetingUrl: calendar.meetingUrl,
+          participants,
+          startAt: calendar.startAt,
+          endAt: calendar.endAt,
+        }),
+        sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'summary' - 'action_items') || ${skipPatch}::jsonb`,
+      })
+      .where(and(eq(rawEvents.id, calendar.startAtRawEventId), eq(rawEvents.teamId, args.teamId)));
+  }
+
+  return calendar.id;
 }
 
 /**
@@ -202,11 +313,14 @@ async function appendMeetingChunkTx(
   }
 
   if (rawEventId) {
-    await refreshFinalizedMeetingEvent(tx, {
+    const refreshedCalendarEventId = await refreshFinalizedMeetingEvent(tx, {
       meetingId: args.meetingId,
       teamId: args.teamId,
       rawEventId,
     });
+    return refreshedCalendarEventId
+      ? { chunkId, deduplicated: false, refreshedCalendarEventId }
+      : { chunkId, deduplicated: false };
   }
 
   return { chunkId, deduplicated: false };
@@ -227,7 +341,7 @@ export async function lookupMeetingByBotId(
   botId: string,
 ): Promise<Pick<
   MeetingRow,
-  'id' | 'teamId' | 'createdByUserId' | 'status' | 'platform' | 'provider'
+  'id' | 'teamId' | 'createdByUserId' | 'status' | 'platform' | 'provider' | 'defaultVisibility'
 > | null> {
   const rows = await db
     .select({
@@ -237,6 +351,7 @@ export async function lookupMeetingByBotId(
       status: meetings.status,
       platform: meetings.platform,
       provider: meetings.provider,
+      defaultVisibility: meetings.defaultVisibility,
     })
     .from(meetings)
     .where(eq(meetings.providerBotId, botId))

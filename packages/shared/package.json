@@ -23,6 +23,18 @@
       "import": "./dist/integrations/registry.js",
       "types": "./dist/integrations/registry.d.ts"
     },
+    "./analytics": {
+      "types": "./src/analytics/events.ts",
+      "development": "./src/analytics/events.ts",
+      "import": "./dist/analytics/events.js",
+      "default": "./dist/analytics/events.js"
+    },
+    "./analytics/posthog-node": {
+      "types": "./src/analytics/posthog-node.ts",
+      "development": "./src/analytics/posthog-node.ts",
+      "import": "./dist/analytics/posthog-node.js",
+      "default": "./dist/analytics/posthog-node.js"
+    },
     "./job-recovery": {
       "types": "./src/job-recovery/index.ts",
       "development": "./src/job-recovery/index.ts",
@@ -36,6 +48,12 @@
     "./env": {
       "import": "./dist/env.js",
       "types": "./dist/env.d.ts"
+    },
+    "./extraction-model-version": {
+      "types": "./src/extraction-model-version.ts",
+      "development": "./src/extraction-model-version.ts",
+      "import": "./dist/extraction-model-version.js",
+      "default": "./dist/extraction-model-version.js"
     },
     "./queue": {
       "types": "./src/queue/index.ts",
@@ -106,6 +124,12 @@
       "development": "./src/meeting-bots/index.ts",
       "import": "./dist/meeting-bots/index.js",
       "default": "./dist/meeting-bots/index.js"
+    },
+    "./monitoring/sentry-scrub": {
+      "types": "./src/monitoring/sentry-scrub.ts",
+      "development": "./src/monitoring/sentry-scrub.ts",
+      "import": "./dist/monitoring/sentry-scrub.js",
+      "default": "./dist/monitoring/sentry-scrub.js"
     },
     "./meetings": {
       "types": "./src/meetings/index.ts",
@@ -201,6 +225,7 @@
     "jszip": "3.10.1",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3",
+    "posthog-node": "^5.35.11",
     "zod": "^4.4.3"
   },
   "devDependencies": {

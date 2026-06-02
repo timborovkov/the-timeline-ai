@@ -95,7 +95,13 @@ async function registerWebhook(input: {
   };
 }
 
-export function register(): void {
+export async function register(): Promise<void> {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    await import('./sentry.server.config');
+  } else if (process.env.NEXT_RUNTIME === 'edge') {
+    await import('./sentry.edge.config');
+  }
+
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
   if (process.env.NODE_ENV !== 'production') return;
@@ -126,3 +132,5 @@ export function register(): void {
       );
     });
 }
+
+export { captureRequestError as onRequestError } from '@sentry/nextjs';

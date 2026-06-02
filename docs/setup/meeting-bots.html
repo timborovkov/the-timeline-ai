@@ -24,7 +24,14 @@
         video). Each finalised utterance is written as a <code>meeting_transcript_chunks</code> row
         for the meeting detail UI and utterance-level search. When the call ends, the finalize
         worker creates one consolidated <code>raw_events</code> row with the full transcript and
-        LLM-generated summary so the meeting appears as a single timeline entry.
+        LLM-generated summary so the meeting appears as a single timeline entry, then creates a
+        native calendar event for the call with links back to the meeting detail page. The linked
+        calendar audit rows stay factual and extraction-skipped, so generated meeting notes do not
+        feed a second extraction pass.
+      </p>
+      <p>
+        Completed meeting detail pages expose the transcript directly, with controls to download a
+        Markdown copy or open the browser print flow for PDF export.
       </p>
 
       <h2 id="provider">Why Recall.ai (and what else works)</h2>
@@ -152,7 +159,9 @@ RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcr
         <li>
           <strong>Meeting stuck in <code>joining</code></strong> — check Recall dashboard for the
           bot's status. Recall surfaces fatal errors (e.g. host blocked the join) on the bot detail
-          page.
+          page. If transcript chunks are landing but the status never advances, verify the
+          Svix-signed status webhook is delivering bot lifecycle events to
+          <code>/api/webhooks/recall/status</code>.
         </li>
         <li>
           <strong>No transcript chunks landing</strong> — verify

@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
@@ -104,7 +105,21 @@ export async function POST(req: Request): Promise<Response> {
         authType: entry.mcpAuthType,
         authConfig,
       });
-      await safeMarkOnboardingStep(scope, 'first_integration');
+      const completedFirstIntegration = await safeMarkOnboardingStep(scope, 'first_integration');
+      trackProductEventBestEffort(session.user.id, 'integration_connected', {
+        teamId: active.teamId,
+        userId: session.user.id,
+        integrationId: server.id,
+        provider: 'mcp',
+      });
+      if (completedFirstIntegration) {
+        trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
+          teamId: active.teamId,
+          userId: session.user.id,
+          step: 'first_integration',
+          source: 'automatic',
+        });
+      }
       return NextResponse.json({
         id: server.id,
         catalogId: entry.id,
@@ -134,8 +149,23 @@ export async function POST(req: Request): Promise<Response> {
       authConfig: custom.data.authConfig ?? null,
       ...(custom.data.ownership ? { ownership: custom.data.ownership } : {}),
     });
+    let completedFirstIntegration = false;
     if (custom.data.ownership !== 'personal') {
-      await safeMarkOnboardingStep(scope, 'first_integration');
+      completedFirstIntegration = await safeMarkOnboardingStep(scope, 'first_integration');
+    }
+    trackProductEventBestEffort(session.user.id, 'integration_connected', {
+      teamId: active.teamId,
+      userId: session.user.id,
+      integrationId: server.id,
+      provider: 'mcp',
+    });
+    if (completedFirstIntegration) {
+      trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
+        teamId: active.teamId,
+        userId: session.user.id,
+        step: 'first_integration',
+        source: 'automatic',
+      });
     }
     return NextResponse.json({ id: server.id, needsOauth: custom.data.authType === 'oauth' });
   } catch (err) {

@@ -2,8 +2,10 @@ import { teamInvites, teams, users } from '@timeline/db';
 import { and, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
+import { AnalyticsProvider } from '@/components/analytics-provider';
 import { AppShell } from '@/components/app-shell';
 import { QueryProvider } from '@/components/query-provider';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -11,6 +13,10 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getNavAttentionSummary } from '@/lib/hub-status';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const session = await auth();
@@ -73,22 +79,24 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   );
 
   return (
-    <QueryProvider>
-      <AppShell
-        active={active}
-        memberships={memberships}
-        recipientInvites={recipientInvites.map((invite) => ({
-          id: invite.id,
-          teamName: invite.teamName,
-          role: invite.role === 'owner' ? 'member' : invite.role,
-          expiresAt: invite.expiresAt.toISOString(),
-          invitedBy: invite.inviterName ?? invite.inviterEmail,
-        }))}
-        user={session.user}
-        badges={badges}
-      >
-        {children}
-      </AppShell>
-    </QueryProvider>
+    <AnalyticsProvider userId={session.user.id} teamId={active.teamId}>
+      <QueryProvider>
+        <AppShell
+          active={active}
+          memberships={memberships}
+          recipientInvites={recipientInvites.map((invite) => ({
+            id: invite.id,
+            teamName: invite.teamName,
+            role: invite.role === 'owner' ? 'member' : invite.role,
+            expiresAt: invite.expiresAt.toISOString(),
+            invitedBy: invite.inviterName ?? invite.inviterEmail,
+          }))}
+          user={session.user}
+          badges={badges}
+        >
+          {children}
+        </AppShell>
+      </QueryProvider>
+    </AnalyticsProvider>
   );
 }

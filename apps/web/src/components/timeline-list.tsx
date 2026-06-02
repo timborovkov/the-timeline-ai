@@ -4,6 +4,7 @@ import {
   Bot,
   CalendarDays,
   Cable,
+  ExternalLink,
   FileText,
   Mail,
   MessageSquare,
@@ -25,7 +26,11 @@ import { useInspector } from '@/components/inspector-context';
 import { Button } from '@/components/ui/button';
 import {
   buildTimelineMoments,
+  actorLabelsByTelegramUserId,
   filterTimelineMomentsByImpact,
+  meetingDetailHrefForMoment,
+  displayMeta,
+  telegramUsernameLabel,
   type ImpactItem,
   type TimelineImpactFilter,
   type TimelineMoment,
@@ -74,7 +79,6 @@ const IMPACT_LABEL: Record<ImpactItem['kind'], string> = {
 };
 
 const INSPECTOR_RAW_EVENT_LIMIT = 8;
-const INSPECTOR_METADATA_LIMIT = 8;
 
 function eventDate(input: string): Date {
   return new Date(input);
@@ -88,7 +92,7 @@ function formatTimestamp(input: string): string {
 }
 
 function formatMetadataValue(value: unknown): string {
-  if (value === null || value === undefined) return 'null';
+  if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   try {
@@ -96,6 +100,20 @@ function formatMetadataValue(value: unknown): string {
   } catch {
     return '[unserializable]';
   }
+}
+
+function metaObject(meta: unknown): Record<string, unknown> {
+  return typeof meta === 'object' && meta !== null ? (meta as Record<string, unknown>) : {};
+}
+
+function stringMeta(meta: Record<string, unknown>, key: string): string | null {
+  const value = meta[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function friendlyMeta(meta: Record<string, unknown>, key: string): string | null {
+  const value = formatMetadataValue(meta[key]).trim();
+  return value.length > 0 ? value : null;
 }
 
 function formatShortId(id: string): string {
@@ -114,16 +132,49 @@ function formatVisibilitySummary(events: TimelineEvent[]): string {
     .join(' · ');
 }
 
-function inspectorMetadataEntries(moment: TimelineMoment): [string, unknown][] {
-  const entries: [string, unknown][] = [];
+function addDetail(
+  entries: [string, string][],
+  seen: Set<string>,
+  label: string,
+  value: string | null,
+) {
+  if (!value || seen.has(label)) return;
+  seen.add(label);
+  entries.push([label, value]);
+}
+
+function inspectorSourceDetailEntries(moment: TimelineMoment): [string, string][] {
+  const entries: [string, string][] = [];
   const seen = new Set<string>();
+  const actorByTelegramUserId = actorLabelsByTelegramUserId(moment.rawEvents);
   for (const event of moment.rawEvents) {
     if (typeof event.sourceMetadata !== 'object' || event.sourceMetadata === null) continue;
-    for (const [key, value] of Object.entries(event.sourceMetadata as Record<string, unknown>)) {
-      if (seen.has(key)) continue;
-      seen.add(key);
-      entries.push([key, value]);
-      if (entries.length >= INSPECTOR_METADATA_LIMIT) return entries;
+    const meta = event.sourceMetadata as Record<string, unknown>;
+    if (event.source === 'telegram') {
+      addDetail(entries, seen, 'Sender', rawEventActorLabel(event, actorByTelegramUserId));
+      addDetail(entries, seen, 'Chat', stringMeta(meta, 'tg_chat_title'));
+      addDetail(entries, seen, 'Chat type', stringMeta(meta, 'tg_chat_type'));
+      addDetail(entries, seen, 'Caption', stringMeta(meta, 'tg_caption'));
+    } else if (event.source === 'slack') {
+      addDetail(entries, seen, 'Sender', stringMeta(meta, 'slack_sender_name'));
+      addDetail(entries, seen, 'Channel', stringMeta(meta, 'slack_channel_name'));
+    } else if (event.source === 'email') {
+      addDetail(entries, seen, 'Subject', stringMeta(meta, 'subject'));
+      addDetail(entries, seen, 'From', formatMetadataValue(meta.from).trim() || null);
+    } else if (event.source === 'document') {
+      addDetail(
+        entries,
+        seen,
+        'Document',
+        stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name'),
+      );
+      addDetail(entries, seen, 'Origin', stringMeta(meta, 'source'));
+    } else if (event.source === 'meeting' || event.source === 'calendar') {
+      addDetail(entries, seen, 'Title', stringMeta(meta, 'title'));
+    } else if (event.source === 'integration') {
+      addDetail(entries, seen, 'Provider', stringMeta(meta, 'provider'));
+      addDetail(entries, seen, 'Event', stringMeta(meta, 'event_type'));
+      addDetail(entries, seen, 'Actor', friendlyMeta(meta, 'actor'));
     }
   }
   return entries;
@@ -152,6 +203,54 @@ function canEditVisibility(event: TimelineEvent, currentUserId: string): boolean
   return event.visibilityOwnerUserId === currentUserId;
 }
 
+function rawEventActorLabel(
+  event: TimelineEvent,
+  actorByTelegramUserId = new Map<string, string>(),
+): string {
+  const meta = metaObject(event.sourceMetadata);
+  if (event.source === 'telegram') {
+    const userId = displayMeta(meta, 'tg_user_id');
+    return (
+      stringMeta(meta, 'tg_sender_name') ??
+      telegramUsernameLabel(meta) ??
+      (userId ? (actorByTelegramUserId.get(userId) ?? null) : null) ??
+      'Telegram sender'
+    );
+  }
+  if (event.source === 'slack') {
+    return stringMeta(meta, 'slack_sender_name') ?? 'Slack sender';
+  }
+  if (event.source === 'document') {
+    const source = stringMeta(meta, 'source');
+    return source ? `${source} attachment` : 'Document';
+  }
+  return event.source;
+}
+
+function rawEventContextLabel(event: TimelineEvent): string | null {
+  const meta = metaObject(event.sourceMetadata);
+  if (event.source === 'telegram') {
+    return stringMeta(meta, 'tg_chat_title') ?? stringMeta(meta, 'tg_chat_type');
+  }
+  if (event.source === 'slack') {
+    return stringMeta(meta, 'slack_channel_name') ?? stringMeta(meta, 'slack_channel_id');
+  }
+  if (event.source === 'document') {
+    return stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name');
+  }
+  return null;
+}
+
+function rawEventDocumentLink(event: TimelineEvent): { href: string; label: string } | null {
+  const meta = metaObject(event.sourceMetadata);
+  const documentId = stringMeta(meta, 'document_id') ?? stringMeta(meta, 'documentId');
+  if (!documentId) return null;
+  return {
+    href: `/app/documents/${documentId}`,
+    label: stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name') ?? 'Attachment',
+  };
+}
+
 function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] {
   const groups = new Map<string, TimelineMoment[]>();
   for (const moment of moments) {
@@ -163,7 +262,7 @@ function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] 
 }
 
 function InspectorBody({ moment }: { moment: TimelineMoment }) {
-  const metadata = inspectorMetadataEntries(moment);
+  const metadata = inspectorSourceDetailEntries(moment);
   const latestEvent = moment.rawEvents[0];
   const firstEvent = moment.rawEvents.at(-1);
   const visibleRawEvents = moment.rawEvents.slice(0, INSPECTOR_RAW_EVENT_LIMIT);
@@ -254,14 +353,14 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
       {metadata.length > 0 ? (
         <section>
           <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-            Source metadata
+            Source details
           </h3>
           <dl className="space-y-1.5">
             {metadata.map(([key, value]) => (
               <div key={key} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
                 <dt className="truncate text-fg-dim">{key}</dt>
-                <dd className="min-w-0 truncate text-fg-muted" title={formatMetadataValue(value)}>
-                  {formatMetadataValue(value)}
+                <dd className="min-w-0 truncate text-fg-muted" title={value}>
+                  {value}
                 </dd>
               </div>
             ))}
@@ -285,81 +384,99 @@ function RawEventExpansion({
   isAdmin: boolean;
   members: { id: string; label: string }[];
 }) {
+  const conversationEvents = [...moment.rawEvents].reverse();
+  const actorByTelegramUserId = actorLabelsByTelegramUserId(moment.rawEvents);
   return (
-    <details className="mt-3 border-t border-border pt-3">
+    <details className="mt-3 border-t border-border pt-3" open={moment.rawEvents.length > 1}>
       <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim transition-colors hover:text-fg">
         {moment.rawEvents.length} raw event{moment.rawEvents.length === 1 ? '' : 's'} · inspect
       </summary>
       <ol className="mt-3 space-y-3">
-        {moment.rawEvents.map((event) => (
-          <li
-            key={event.id}
-            id={`ev-${event.id}`}
-            className="scroll-mt-20 border-l border-border pl-3"
-          >
-            <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-              <span>{formatTimestamp(event.occurredAt)}</span>
-              <span>[{event.id}]</span>
-              {event.visibility === 'private' ? <span>Private</span> : null}
-            </div>
-            {event.contentAudioUrl ? (
-              audioUrlMap?.get(event.id) ? (
-                <audio
-                  src={audioUrlMap.get(event.id)}
-                  controls
-                  aria-label="Voice memo"
-                  preload="metadata"
-                  className="mt-2 w-full max-w-md"
-                />
-              ) : (
-                <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                  [audio unavailable]
-                </p>
-              )
-            ) : null}
-            {event.contentText?.trim() ? (
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
-                {event.contentText}
-              </p>
-            ) : event.contentAudioUrl ? (
-              <p className="mt-2 text-sm italic text-fg-dim">
-                {transcribeFailed(event.sourceMetadata)
-                  ? 'Transcription failed; voice memo is still playable.'
-                  : 'Transcribing...'}
-              </p>
-            ) : null}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {canEditVisibility(event, currentUserId) ? (
-                <details className="text-xs">
-                  <summary className="cursor-pointer font-mono uppercase tracking-[0.1em] text-fg-dim">
-                    Visibility
-                  </summary>
-                  <EventVisibilityForm
-                    eventId={event.id}
-                    visibility={event.visibility}
-                    visibilityUserIds={event.visibilityUserIds}
-                    members={members}
+        {conversationEvents.map((event, index) => {
+          const documentLink = rawEventDocumentLink(event);
+          const context = rawEventContextLabel(event);
+          return (
+            <li
+              key={event.id}
+              id={`ev-${event.id}`}
+              className="scroll-mt-20 border-l border-border pl-3"
+            >
+              <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                <span>{index + 1}</span>
+                <span>{formatTimestamp(event.occurredAt)}</span>
+                <span>{event.source}</span>
+                <span>{rawEventActorLabel(event, actorByTelegramUserId)}</span>
+                {context ? <span>{context}</span> : null}
+                <span>[{formatShortId(event.id)}]</span>
+                {event.visibility === 'private' ? <span>Private</span> : null}
+              </div>
+              {documentLink ? (
+                <Link
+                  href={documentLink.href}
+                  className="mt-2 inline-flex min-h-7 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:text-signal"
+                >
+                  Attachment · {documentLink.label}
+                </Link>
+              ) : null}
+              {event.contentAudioUrl ? (
+                audioUrlMap?.get(event.id) ? (
+                  <audio
+                    src={audioUrlMap.get(event.id)}
+                    controls
+                    aria-label="Voice memo"
+                    preload="metadata"
+                    className="mt-2 w-full max-w-md"
                   />
-                </details>
+                ) : (
+                  <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                    [audio unavailable]
+                  </p>
+                )
               ) : null}
-              {canRemoveConversational(event, currentUserId, isAdmin) ? (
-                <form action={removeConversationalEventAction}>
-                  <input type="hidden" name="id" value={event.id} />
-                  <Button
-                    type="submit"
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 text-fg-dim hover:text-danger"
-                    title="Remove from timeline"
-                  >
-                    <Trash2 aria-hidden="true" className="size-3.5" />
-                    <span className="sr-only">Remove from timeline</span>
-                  </Button>
-                </form>
+              {event.contentText?.trim() ? (
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
+                  {event.contentText}
+                </p>
+              ) : event.contentAudioUrl ? (
+                <p className="mt-2 text-sm italic text-fg-dim">
+                  {transcribeFailed(event.sourceMetadata)
+                    ? 'Transcription failed; voice memo is still playable.'
+                    : 'Transcribing...'}
+                </p>
               ) : null}
-            </div>
-          </li>
-        ))}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {canEditVisibility(event, currentUserId) ? (
+                  <details className="text-xs">
+                    <summary className="cursor-pointer font-mono uppercase tracking-[0.1em] text-fg-dim">
+                      Visibility
+                    </summary>
+                    <EventVisibilityForm
+                      eventId={event.id}
+                      visibility={event.visibility}
+                      visibilityUserIds={event.visibilityUserIds}
+                      members={members}
+                    />
+                  </details>
+                ) : null}
+                {canRemoveConversational(event, currentUserId, isAdmin) ? (
+                  <form action={removeConversationalEventAction}>
+                    <input type="hidden" name="id" value={event.id} />
+                    <Button
+                      type="submit"
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 text-fg-dim hover:text-danger"
+                      title="Remove from timeline"
+                    >
+                      <Trash2 aria-hidden="true" className="size-3.5" />
+                      <span className="sr-only">Remove from timeline</span>
+                    </Button>
+                  </form>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
       </ol>
     </details>
   );
@@ -409,6 +526,7 @@ function TimelineMomentRow({
   const inspector = useInspector();
   const Icon = SOURCE_ICON[moment.source];
   const selected = inspector.open && inspector.content?.id === moment.id;
+  const meetingHref = meetingDetailHrefForMoment(moment);
   return (
     <li
       className={cn(
@@ -464,6 +582,15 @@ function TimelineMomentRow({
             {moment.summary}
           </p>
         </button>
+        {meetingHref ? (
+          <Link
+            href={meetingHref}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:text-signal"
+          >
+            <ExternalLink aria-hidden="true" className="size-3" />
+            Open transcript
+          </Link>
+        ) : null}
         <ImpactStrip items={moment.impactItems} />
         {!compact ? (
           <RawEventExpansion

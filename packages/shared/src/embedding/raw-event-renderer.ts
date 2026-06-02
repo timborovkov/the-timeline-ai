@@ -26,9 +26,12 @@ function renderTelegramContext(meta: Metadata): string | null {
   const chatType = metadataString(meta, 'tg_chat_type');
   if (chatType) parts.push(chatType === 'private' ? 'DM' : chatType);
 
+  const senderName = metadataString(meta, 'tg_sender_name');
   const username = metadataString(meta, 'tg_username');
   const userId = metadataString(meta, 'tg_user_id');
-  if (username) {
+  if (senderName) {
+    parts.push(`sender ${senderName}`);
+  } else if (username) {
     parts.push(`sender @${username.replace(/^@/, '')}`);
   } else if (userId) {
     parts.push(`sender Telegram user ${userId}`);

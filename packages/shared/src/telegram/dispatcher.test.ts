@@ -58,6 +58,16 @@ const fakeTg: TelegramApi = {
   sendChatAction: () => Promise.resolve(),
 };
 
+function recordingTg(messages: string[]): TelegramApi {
+  return {
+    ...fakeTg,
+    sendMessage: (input) => {
+      messages.push(input.text);
+      return Promise.resolve();
+    },
+  };
+}
+
 async function activeTelegramRows(pg: PGlite) {
   const result = await pg.query<{
     id: string;
@@ -680,6 +690,140 @@ describe('handleUpdate telegram edit visibility', () => {
     });
   });
 
+  it('stores Telegram attachment document names in raw event metadata', async () => {
+    const upload = vi.fn().mockResolvedValue(undefined);
+    const enqueueExtract = vi.fn().mockResolvedValue(undefined);
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: {
+          ...fakeTg,
+          getFile: () => Promise.resolve({ file_id: 'doc-file', file_path: 'contract.pdf' }),
+          downloadFile: () => Promise.resolve(Buffer.from('%PDF-1.7')),
+        },
+        documents: { upload, enqueueExtract },
+      },
+      {
+        update_id: 206,
+        message: {
+          message_id: 26,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          document: {
+            file_id: 'doc-file',
+            file_name: 'contract.pdf',
+            mime_type: 'application/pdf',
+            file_size: 1024,
+          },
+        },
+      },
+    );
+
+    expect(upload).toHaveBeenCalledOnce();
+    expect(enqueueExtract).toHaveBeenCalledOnce();
+    const rows = await pg.query<{ metadata: Record<string, unknown> }>(
+      `SELECT source_metadata AS metadata
+       FROM raw_events
+       WHERE source = 'document'`,
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]?.metadata).toMatchObject({
+      document_name: 'contract.pdf',
+      source: 'telegram',
+      tg_file_id: 'doc-file',
+    });
+  });
+
+  it('shows the team name with the uuid for the sole linked Telegram team', async () => {
+    const messages: string[] = [];
+
+    await handleUpdate(
+      { db: db as never, tg: recordingTg(messages) },
+      {
+        update_id: 206,
+        message: {
+          message_id: 26,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: '/team',
+        },
+      },
+    );
+
+    expect(messages).toEqual([`Only one linked team: Team A (${TEAM_ID}). It's now active.`]);
+  });
+
+  it('shows team names with uuids when listing and switching Telegram teams', async () => {
+    const messages: string[] = [];
+    await pg.exec(`
+      INSERT INTO telegram_user_teams (telegram_user_id, team_id, linked_by_user_id, is_active, created_at)
+      VALUES (
+        '33333333-3333-3333-3333-333333333333',
+        '${OTHER_TEAM_ID}',
+        '${USER_A}',
+        false,
+        now() + interval '1 second'
+      );
+    `);
+
+    await handleUpdate(
+      { db: db as never, tg: recordingTg(messages) },
+      {
+        update_id: 207,
+        message: {
+          message_id: 27,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: '/team',
+        },
+      },
+    );
+    await handleUpdate(
+      { db: db as never, tg: recordingTg(messages) },
+      {
+        update_id: 208,
+        message: {
+          message_id: 28,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: '/team 2',
+        },
+      },
+    );
+
+    expect(messages).toEqual([
+      `Your linked teams:\n1. Team A (${TEAM_ID})  ← active\n2. Team B (${OTHER_TEAM_ID})\n\nTo switch, reply with /team <number> (e.g. /team 2).`,
+      `Active team is now Team B (${OTHER_TEAM_ID}).`,
+    ]);
+  });
+
+  it('shows the team name with the uuid in /whereami', async () => {
+    const messages: string[] = [];
+
+    await handleUpdate(
+      { db: db as never, tg: recordingTg(messages) },
+      {
+        update_id: 209,
+        message: {
+          message_id: 29,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: '/whereami',
+        },
+      },
+    );
+
+    expect(messages).toEqual([
+      `Active team: Team A (${TEAM_ID}). Messages you send here land in that team's timeline.`,
+    ]);
+  });
+
   it('acks DM captures but not group captures', async () => {
     const reactions: unknown[] = [];
     const tg: TelegramApi = {
@@ -805,6 +949,44 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(rows.rows[0]?.metadata).toMatchObject({
       tg_attachment_kind: 'audio',
       tg_file_id: 'song-file',
+    });
+  });
+
+  it('stores Telegram sender display names as source truth metadata', async () => {
+    await pg.exec(`
+      INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, bound_by_user_id, title)
+      VALUES (-200, '${TEAM_ID}', '${USER_A}', 'AuditAI');
+    `);
+
+    await handleUpdate(
+      { db: db as never, tg: fakeTg },
+      {
+        update_id: 214,
+        message: {
+          message_id: 25,
+          date: 1700000004,
+          chat: { id: -200, type: 'supergroup', title: 'AuditAI' },
+          from: {
+            id: 7503673734,
+            first_name: 'Otto',
+            last_name: 'Silventola',
+            username: 'otto',
+          },
+          text: 'group sender metadata',
+        },
+      },
+    );
+
+    const rows = await pg.query<{ metadata: Record<string, unknown> }>(
+      `SELECT source_metadata AS metadata
+       FROM raw_events
+       WHERE content_text = 'group sender metadata'`,
+    );
+    expect(rows.rows[0]?.metadata).toMatchObject({
+      tg_sender_name: 'Otto Silventola',
+      tg_username: 'otto',
+      tg_chat_title: 'AuditAI',
+      source_unverified: true,
     });
   });
 

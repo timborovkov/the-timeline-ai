@@ -13,6 +13,7 @@ import { db } from '@/lib/db';
 export const metadata: Metadata = {
   title: 'Accept invite',
   description: 'Review and accept a team invitation.',
+  robots: { index: false, follow: false },
 };
 
 interface Props {

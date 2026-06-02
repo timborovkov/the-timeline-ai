@@ -11,6 +11,7 @@ import { AuthError } from 'next-auth';
 import { z } from 'zod';
 
 import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { signIn } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
@@ -93,9 +94,14 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
 
   // All-or-nothing: user + (invite acceptance OR new team + membership) land
   // atomically. A mid-stream failure leaves zero orphan rows.
-  let activeTeamId: string;
+  let createdAccount: {
+    activeTeamId: string;
+    userId: string;
+    event: 'team_created' | 'invite_accepted';
+    role?: 'admin' | 'member';
+  };
   try {
-    activeTeamId = await db.transaction(async (tx) => {
+    createdAccount = await db.transaction(async (tx) => {
       const inserted = await tx
         .insert(users)
         .values({
@@ -151,7 +157,12 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
               sql`${teamInvites.id} <> ${invite.id}`,
             ),
           );
-        return invite.teamId;
+        return {
+          activeTeamId: invite.teamId,
+          userId,
+          event: 'invite_accepted' as const,
+          role: invite.role,
+        };
       }
 
       const baseSlug = slugify(`${name}-team`) || 'team';
@@ -164,7 +175,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
       const teamId = teamRows[0]?.id;
       if (!teamId) throw new Error('Failed to create team');
       await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
-      return teamId;
+      return { activeTeamId: teamId, userId, event: 'team_created' as const };
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : '';
@@ -180,12 +191,27 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(ACTIVE_TEAM_COOKIE, activeTeamId, {
+  cookieStore.set(ACTIVE_TEAM_COOKIE, createdAccount.activeTeamId, {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
     maxAge: 60 * 60 * 24 * 365,
   });
+
+  if (createdAccount.event === 'team_created') {
+    trackProductEventBestEffort(createdAccount.userId, 'team_created', {
+      teamId: createdAccount.activeTeamId,
+      userId: createdAccount.userId,
+      source: 'signup',
+    });
+  } else {
+    trackProductEventBestEffort(createdAccount.userId, 'invite_accepted', {
+      teamId: createdAccount.activeTeamId,
+      userId: createdAccount.userId,
+      role: createdAccount.role ?? 'member',
+      source: 'signup',
+    });
+  }
 
   // Best-effort auto-signin. The account already exists and is committed —
   // if signIn throws for any reason (Auth.js misconfig, transient adapter

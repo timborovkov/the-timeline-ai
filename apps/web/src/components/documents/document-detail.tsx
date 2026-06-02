@@ -3,7 +3,7 @@
 import { ArrowLeft, Download, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { toast } from 'sonner';
 
 import {
@@ -62,15 +62,28 @@ const STATUS_BADGE: Record<string, string> = {
 export function DocumentDetail({ document, versions, requestedVersion }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [currentDocument, setCurrentDocument] = useState(document);
   const [downloading, setDownloading] = useState<readonly string[]>([]);
 
+  useEffect(() => {
+    setCurrentDocument(document);
+  }, [document]);
+
   function onRename(): void {
-    const name = window.prompt('New name', document.name);
-    if (!name?.trim() || name === document.name) return;
+    const name = window.prompt('New name', currentDocument.name);
+    if (!name?.trim() || name === currentDocument.name) return;
     startTransition(async () => {
-      const res = await renameDocumentAction({ id: document.id, name: name.trim() });
+      const trimmedName = name.trim();
+      const res = await renameDocumentAction({ id: currentDocument.id, name: trimmedName });
       if (!res.ok) toast.error(res.error ?? 'Rename failed');
-      else router.refresh();
+      else {
+        setCurrentDocument((prev) => ({
+          ...prev,
+          name: trimmedName,
+          updatedAt: new Date().toISOString(),
+        }));
+        router.refresh();
+      }
     });
   }
 
@@ -80,12 +93,14 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
     )
       return;
     startTransition(async () => {
-      const res = await deleteDocumentAction(document.id);
+      const res = await deleteDocumentAction(currentDocument.id);
       if (!res.ok) toast.error(res.error ?? 'Delete failed');
       else {
         toast.success('Document deleted');
         router.push(
-          document.folderId ? `/app/documents?folder=${document.folderId}` : '/app/documents',
+          currentDocument.folderId
+            ? `/app/documents?folder=${currentDocument.folderId}`
+            : '/app/documents',
         );
       }
     });
@@ -109,25 +124,30 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
     <div className="space-y-6">
       <div>
         <Link
-          href={document.folderId ? `/app/documents?folder=${document.folderId}` : '/app/documents'}
+          href={
+            currentDocument.folderId
+              ? `/app/documents?folder=${currentDocument.folderId}`
+              : '/app/documents'
+          }
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="mr-1 h-3.5 w-3.5" />
-          Back to {document.folderPath}
+          Back to {currentDocument.folderPath}
         </Link>
       </div>
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
           <div className="space-y-1">
-            <CardTitle className="text-2xl">{document.name}</CardTitle>
+            <CardTitle className="text-2xl">{currentDocument.name}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              {document.folderPath} · Updated {new Date(document.updatedAt).toLocaleString()}
+              {currentDocument.folderPath} · Updated{' '}
+              {new Date(currentDocument.updatedAt).toLocaleString()}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {document.visibility !== 'team' && (
-              <Badge variant="outline">{document.visibility}</Badge>
+            {currentDocument.visibility !== 'team' && (
+              <Badge variant="outline">{currentDocument.visibility}</Badge>
             )}
             <Button size="sm" variant="outline" onClick={onRename} disabled={pending}>
               Rename
@@ -148,7 +168,7 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
           <ul className="divide-y divide-border">
             {versions.map((v) => {
               const highlight = requestedVersion === v.version;
-              const isCurrent = v.id === document.currentVersionId;
+              const isCurrent = v.id === currentDocument.currentVersionId;
               return (
                 <li
                   key={v.id}

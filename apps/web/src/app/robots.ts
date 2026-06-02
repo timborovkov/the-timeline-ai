@@ -2,7 +2,7 @@ import type { MetadataRoute } from 'next';
 
 import { getSiteUrl } from '@/lib/site-url';
 
-const PRIVATE_PATHS = ['/app/', '/api/', '/sign-in', '/sign-up', '/accept-invite/'];
+const DISALLOWED_PATHS = ['/api/'];
 
 const AI_AND_SEARCH_BOTS = [
   'Googlebot',
@@ -28,11 +28,11 @@ export default function robots(): MetadataRoute.Robots {
   const siteUrl = getSiteUrl();
   return {
     rules: [
-      { userAgent: '*', allow: '/', disallow: PRIVATE_PATHS },
+      { userAgent: '*', allow: '/', disallow: DISALLOWED_PATHS },
       ...AI_AND_SEARCH_BOTS.map((userAgent) => ({
         userAgent,
         allow: '/',
-        disallow: PRIVATE_PATHS,
+        disallow: DISALLOWED_PATHS,
       })),
     ],
     sitemap: `${siteUrl}/sitemap.xml`,

@@ -6,6 +6,7 @@ import {
   buildTimelineMoments,
   filterTimelineMomentsByImpact,
   formatDateSection,
+  meetingDetailHrefForMoment,
   timelineGroupKey,
   type TimelineAuthor,
 } from '@/lib/timeline-moments';
@@ -55,6 +56,46 @@ describe('timeline moment grouping', () => {
     expect(moments[0]?.rawEvents.map((e) => e.id).sort()).toEqual(['a', 'b']);
   });
 
+  it('links meeting moments to the meeting transcript detail', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'meeting-event',
+          source: 'meeting',
+          sourceMetadata: { meeting_id: 'eb5b3264-90cf-4f8a-b6ef-605fafb9583c' },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    const moment = moments[0];
+    expect(moment).toBeDefined();
+    if (!moment) throw new Error('expected one meeting moment');
+    expect(meetingDetailHrefForMoment(moment)).toBe(
+      '/app/meetings/eb5b3264-90cf-4f8a-b6ef-605fafb9583c',
+    );
+  });
+
+  it('does not link non-meeting moments to meeting transcripts', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'web-event',
+          source: 'web',
+          sourceMetadata: { meeting_id: 'eb5b3264-90cf-4f8a-b6ef-605fafb9583c' },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    const moment = moments[0];
+    expect(moment).toBeDefined();
+    if (!moment) throw new Error('expected one web moment');
+    expect(meetingDetailHrefForMoment(moment)).toBeNull();
+  });
+
   it('groups email by thread root', () => {
     expect(
       timelineGroupKey(
@@ -101,6 +142,79 @@ describe('timeline moment grouping', () => {
     expect(moments).toHaveLength(1);
   });
 
+  it('groups Telegram private chats by numeric chat id when no title exists', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-private-1',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:01:00.000Z',
+          sourceMetadata: { tg_chat_id: 7503673734, tg_chat_type: 'private' },
+        }),
+        event({
+          id: 'tg-private-2',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:12:00.000Z',
+          sourceMetadata: { tg_chat_id: 7503673734, tg_chat_type: 'private' },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(1);
+  });
+
+  it('keeps attachment document events with their parent Telegram message', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-parent',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:01:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_sender_name: 'Otto Silventola',
+          },
+          contentText: 'Here is the screenshot',
+        }),
+        event({
+          id: 'doc-child',
+          source: 'document',
+          occurredAt: '2026-05-28T10:02:00.000Z',
+          sourceMetadata: {
+            action: 'upload',
+            document_id: 'doc-1',
+            document_name: 'photo.jpg',
+            source: 'telegram',
+            parent_raw_event_id: 'tg-parent',
+          },
+          contentText: 'Uploaded photo.jpg',
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.sourceLabel).toBe('Telegram');
+    expect(moments[0]?.actorLabel).toBe('Otto Silventola');
+    expect(moments[0]?.contextLabel).toBe('AuditAI');
+    expect(moments[0]?.rawEvents.map((event) => event.id).sort()).toEqual([
+      'doc-child',
+      'tg-parent',
+    ]);
+    expect(moments[0]?.impactItems).toEqual([
+      {
+        kind: 'document',
+        label: 'photo.jpg',
+        href: '/app/documents/doc-1',
+        sourceEventId: 'doc-child',
+      },
+    ]);
+  });
+
   it('falls standalone events back to their own ids', () => {
     const moments = buildTimelineMoments(
       [event({ id: 'web-1', source: 'web' }), event({ id: 'web-2', source: 'web' })],
@@ -130,6 +244,133 @@ describe('timeline moment grouping', () => {
 
     expect(moments[0]?.actorLabel).toBe('Hanna');
     expect(moments[0]?.contextLabel).toBe('sales');
+  });
+
+  it('uses Telegram source truth sender names before Timeline authors', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-source-name',
+          source: 'telegram',
+          sourceMetadata: {
+            tg_sender_name: 'Otto Silventola',
+            tg_username: 'otto',
+            tg_chat_title: 'AuditAI',
+          },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments[0]?.actorLabel).toBe('Otto Silventola');
+    expect(moments[0]?.contextLabel).toBe('AuditAI');
+  });
+
+  it('uses the best Telegram sender label for bundled moments', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-latest',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:03:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_user_id: 7503673734,
+          },
+          contentText: 'Ok',
+        }),
+        event({
+          id: 'tg-with-username',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:01:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_user_id: 7503673734,
+            tg_username: '@ottosilventola',
+          },
+          contentText: 'Leaving a little earlier',
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.actorLabel).toBe('@ottosilventola');
+  });
+
+  it('does not borrow a sender label from a different Telegram user in the bundle', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-latest',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:03:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_user_id: 7503673734,
+          },
+          contentText: 'Ok',
+        }),
+        event({
+          id: 'tg-older-different-user',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:01:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_user_id: 12345,
+            tg_username: 'mikaelrintala',
+          },
+          contentText: 'Confirmed',
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.actorLabel).toBe('Tim');
+  });
+
+  it('treats Telegram sender as a valid literal source sender name', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-literal-sender-name',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:03:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_user_id: 7503673734,
+            tg_sender_name: 'Telegram sender',
+          },
+          contentText: 'Ok',
+        }),
+        event({
+          id: 'tg-same-user-username',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:01:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_user_id: 7503673734,
+            tg_username: 'ottosilventola',
+          },
+          contentText: 'Earlier',
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.actorLabel).toBe('Telegram sender');
   });
 
   it('derives metadata-first impact context', () => {

@@ -26,6 +26,7 @@ const fakes = vi.hoisted(() => ({
   fakeEnqueueExtract: vi.fn(),
   fakeEnqueueEmbed: vi.fn(),
   fakeEnqueueMeetingChunk: vi.fn(),
+  fakeEnqueueCalendarEvent: vi.fn(),
   fakeRateLimit: vi.fn(),
 }));
 
@@ -35,6 +36,7 @@ vi.mock('@/lib/queue', () => ({
     enqueueExtractJob: fakes.fakeEnqueueExtract,
     enqueueEmbedJob: fakes.fakeEnqueueEmbed,
     enqueueMeetingChunkEmbedJob: fakes.fakeEnqueueMeetingChunk,
+    enqueueCalendarEventEmbedJob: fakes.fakeEnqueueCalendarEvent,
   }),
 }));
 
@@ -118,6 +120,7 @@ beforeEach(() => {
     status: 'active',
     platform: 'meet',
     provider: 'recall',
+    defaultVisibility: 'team',
   });
   fakes.fakeAppendChunk.mockResolvedValue({
     chunkId: 'chunk-1',
@@ -230,6 +233,58 @@ describe('POST /api/webhooks/recall/transcript — happy path', () => {
     expect(fakes.fakeEnqueueExtract).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueEmbed).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueMeetingChunk).toHaveBeenCalledWith(TEAM_ID, 'chunk-1');
+    expect(fakes.fakeEnqueueCalendarEvent).not.toHaveBeenCalled();
+  });
+
+  it('re-embeds the linked calendar event when a late chunk stales it', async () => {
+    fakes.fakeAppendChunk.mockResolvedValueOnce({
+      chunkId: 'chunk-1',
+      deduplicated: false,
+      refreshedCalendarEventId: 'calendar-1',
+    });
+
+    const r = await POST(
+      makeRequest(
+        transcriptBody({
+          words: [{ text: 'late', startSec: 0, endSec: 1 }],
+          transcriptId: 'utt-late',
+        }),
+      ),
+    );
+
+    expect(r.status).toBe(200);
+    expect(fakes.fakeEnqueueMeetingChunk).toHaveBeenCalledWith(TEAM_ID, 'chunk-1');
+    expect(fakes.fakeEnqueueCalendarEvent).toHaveBeenCalledWith(TEAM_ID, 'calendar-1');
+  });
+
+  it('does not enqueue calendar embeds for private late chunks', async () => {
+    fakes.fakeLookup.mockResolvedValueOnce({
+      id: 'meeting-1',
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      status: 'active',
+      platform: 'meet',
+      provider: 'recall',
+      defaultVisibility: 'private',
+    });
+    fakes.fakeAppendChunk.mockResolvedValueOnce({
+      chunkId: 'chunk-1',
+      deduplicated: false,
+      refreshedCalendarEventId: 'calendar-1',
+    });
+
+    const r = await POST(
+      makeRequest(
+        transcriptBody({
+          words: [{ text: 'late', startSec: 0, endSec: 1 }],
+          transcriptId: 'utt-late',
+        }),
+      ),
+    );
+
+    expect(r.status).toBe(200);
+    expect(fakes.fakeEnqueueMeetingChunk).toHaveBeenCalledWith(TEAM_ID, 'chunk-1');
+    expect(fakes.fakeEnqueueCalendarEvent).not.toHaveBeenCalled();
   });
 
   it('duplicate providerChunkId — no downstream enqueues', async () => {
@@ -252,5 +307,6 @@ describe('POST /api/webhooks/recall/transcript — happy path', () => {
     expect(fakes.fakeEnqueueExtract).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueEmbed).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueMeetingChunk).not.toHaveBeenCalled();
+    expect(fakes.fakeEnqueueCalendarEvent).not.toHaveBeenCalled();
   });
 });

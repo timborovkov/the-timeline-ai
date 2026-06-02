@@ -8,9 +8,9 @@ contracts, not private implementation structure.
 
 Last checked in this branch: `pnpm validate` passes. Current suite shape:
 
-- Web Vitest: 46 files / 263 tests.
-- Shared Vitest: 55 files / 442 tests, including PGlite integration/eval coverage.
-- Worker Vitest: 8 files / 59 tests.
+- Web Vitest: 54 files / 296 tests.
+- Shared Vitest: 58 files / 456 tests, including PGlite integration/eval coverage.
+- Worker Vitest: 9 files / 65 tests.
 - Playwright: 11 local core E2E journeys plus 1 production-ish smoke journey.
 - E2E CI is still manual and `continue-on-error: true`; it is not a merge
   gate yet.
@@ -624,8 +624,8 @@ to leave untested.
 Once the suite is mature, split commands by layer:
 
 - `pnpm test`: fast unit and integration tests that should always pass.
-- `pnpm test:e2e`: local core Playwright E2E.
-- `pnpm test:e2e:prod-smoke`: production-ish smoke.
+- `pnpm e2e`: local core Playwright E2E.
+- `pnpm e2e:prod-smoke`: production-ish smoke.
 - `pnpm test:eval`: fast deterministic agent evals.
 - `pnpm validate`: format, typecheck, lint, `pnpm test`, and knip.
 - CI PR gate: validate plus core E2E when stable.

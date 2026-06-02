@@ -1,6 +1,6 @@
 # @timeline/web
 
-The Next.js 15 app — public help docs, support/contact, the Home Dashboard,
+The Next.js 16 app — public help docs, support/contact, the Home Dashboard,
 grouped timeline browser, capture surfaces, entity pages, agent chat, auth,
 server actions, and the inbound webhook routes for Telegram and Postmark.
 

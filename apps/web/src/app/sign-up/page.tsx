@@ -14,6 +14,7 @@ import { readPendingInvite } from '@/lib/pending-invite';
 export const metadata: Metadata = {
   title: 'Sign up',
   description: 'Create a Timeline AI account.',
+  robots: { index: false, follow: false },
 };
 
 export const dynamic = 'force-dynamic';

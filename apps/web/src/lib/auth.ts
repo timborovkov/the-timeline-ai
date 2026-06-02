@@ -8,6 +8,7 @@ import Credentials from 'next-auth/providers/credentials';
 import GitHub from 'next-auth/providers/github';
 import { z } from 'zod';
 
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { authConfig } from '@/lib/auth.config';
 import { ensureSoloTeam } from '@/lib/default-team';
 
@@ -91,7 +92,14 @@ const nextAuth = NextAuth({
         log.error({ err: (err as Error).message, userId }, 'createUser_pending_invite_read_failed');
       }
       if (pendingInvite) return;
-      await ensureSoloTeam(userId, { name: user.name, email: user.email });
+      const teamId = await ensureSoloTeam(userId, { name: user.name, email: user.email });
+      if (teamId) {
+        trackProductEventBestEffort(userId, 'team_created', {
+          teamId,
+          userId,
+          source: 'oauth',
+        });
+      }
     },
   },
 });

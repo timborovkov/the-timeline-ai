@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
@@ -152,6 +153,14 @@ export async function scheduleMeetingBotAction(
       error: err instanceof Error ? err.message : 'Failed to invite notetaker',
     };
   }
+
+  trackProductEventBestEffort(userId, 'meeting_bot_scheduled', {
+    teamId,
+    userId,
+    meetingId: meeting.id,
+    platform,
+    visibility: parsed.data.visibility,
+  });
 
   revalidatePath('/app/meetings');
   return { ok: true, meetingId: meeting.id };
