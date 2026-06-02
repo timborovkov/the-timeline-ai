@@ -101,6 +101,56 @@ describe('timeline moment grouping', () => {
     expect(moments).toHaveLength(1);
   });
 
+  it('keeps attachment document events with their parent Telegram message', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-parent',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:01:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_sender_name: 'Otto Silventola',
+          },
+          contentText: 'Here is the screenshot',
+        }),
+        event({
+          id: 'doc-child',
+          source: 'document',
+          occurredAt: '2026-05-28T10:02:00.000Z',
+          sourceMetadata: {
+            action: 'upload',
+            document_id: 'doc-1',
+            document_name: 'photo.jpg',
+            source: 'telegram',
+            parent_raw_event_id: 'tg-parent',
+          },
+          contentText: 'Uploaded photo.jpg',
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.sourceLabel).toBe('Telegram');
+    expect(moments[0]?.actorLabel).toBe('Otto Silventola');
+    expect(moments[0]?.contextLabel).toBe('AuditAI');
+    expect(moments[0]?.rawEvents.map((event) => event.id).sort()).toEqual([
+      'doc-child',
+      'tg-parent',
+    ]);
+    expect(moments[0]?.impactItems).toEqual([
+      {
+        kind: 'document',
+        label: 'photo.jpg',
+        href: '/app/documents/doc-1',
+        sourceEventId: 'doc-child',
+      },
+    ]);
+  });
+
   it('falls standalone events back to their own ids', () => {
     const moments = buildTimelineMoments(
       [event({ id: 'web-1', source: 'web' }), event({ id: 'web-2', source: 'web' })],
@@ -130,6 +180,27 @@ describe('timeline moment grouping', () => {
 
     expect(moments[0]?.actorLabel).toBe('Hanna');
     expect(moments[0]?.contextLabel).toBe('sales');
+  });
+
+  it('uses Telegram source truth sender names before Timeline authors', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-source-name',
+          source: 'telegram',
+          sourceMetadata: {
+            tg_sender_name: 'Otto Silventola',
+            tg_username: 'otto',
+            tg_chat_title: 'AuditAI',
+          },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments[0]?.actorLabel).toBe('Otto Silventola');
+    expect(moments[0]?.contextLabel).toBe('AuditAI');
   });
 
   it('derives metadata-first impact context', () => {
