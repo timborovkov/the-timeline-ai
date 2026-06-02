@@ -121,6 +121,7 @@ describe('embedding source plans', () => {
       sourceMetadata: {
         tg_chat_type: 'supergroup',
         tg_chat_title: 'sales',
+        tg_sender_name: 'Alice Example',
         tg_username: 'alice',
       },
     });
@@ -132,7 +133,7 @@ describe('embedding source plans', () => {
     );
 
     expect(plan?.text).toContain(
-      'Source context: Telegram | supergroup | sender @alice | chat sales',
+      'Source context: Telegram | supergroup | sender Alice Example | chat sales',
     );
     expect(plan?.text).toContain('Message:\nAcme asked for the SOC2 report by Friday');
   });

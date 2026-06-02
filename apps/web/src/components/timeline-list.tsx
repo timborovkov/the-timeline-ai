@@ -100,6 +100,15 @@ function formatMetadataValue(value: unknown): string {
   }
 }
 
+function metaObject(meta: unknown): Record<string, unknown> {
+  return typeof meta === 'object' && meta !== null ? (meta as Record<string, unknown>) : {};
+}
+
+function stringMeta(meta: Record<string, unknown>, key: string): string | null {
+  const value = meta[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
 function formatShortId(id: string): string {
   return id.length > 13 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
 }
@@ -152,6 +161,49 @@ function canRemoveConversational(
 
 function canEditVisibility(event: TimelineEvent, currentUserId: string): boolean {
   return event.visibilityOwnerUserId === currentUserId;
+}
+
+function rawEventActorLabel(event: TimelineEvent): string {
+  const meta = metaObject(event.sourceMetadata);
+  if (event.source === 'telegram') {
+    return (
+      stringMeta(meta, 'tg_sender_name') ??
+      (stringMeta(meta, 'tg_username') ? `@${stringMeta(meta, 'tg_username')}` : null) ??
+      'Telegram sender'
+    );
+  }
+  if (event.source === 'slack') {
+    return stringMeta(meta, 'slack_sender_name') ?? 'Slack sender';
+  }
+  if (event.source === 'document') {
+    const source = stringMeta(meta, 'source');
+    return source ? `${source} attachment` : 'Document';
+  }
+  return event.source;
+}
+
+function rawEventContextLabel(event: TimelineEvent): string | null {
+  const meta = metaObject(event.sourceMetadata);
+  if (event.source === 'telegram') {
+    return stringMeta(meta, 'tg_chat_title') ?? stringMeta(meta, 'tg_chat_type');
+  }
+  if (event.source === 'slack') {
+    return stringMeta(meta, 'slack_channel_name') ?? stringMeta(meta, 'slack_channel_id');
+  }
+  if (event.source === 'document') {
+    return stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name');
+  }
+  return null;
+}
+
+function rawEventDocumentLink(event: TimelineEvent): { href: string; label: string } | null {
+  const meta = metaObject(event.sourceMetadata);
+  const documentId = stringMeta(meta, 'document_id') ?? stringMeta(meta, 'documentId');
+  if (!documentId) return null;
+  return {
+    href: `/app/documents/${documentId}`,
+    label: stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name') ?? 'Attachment',
+  };
 }
 
 function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] {
@@ -287,81 +339,98 @@ function RawEventExpansion({
   isAdmin: boolean;
   members: { id: string; label: string }[];
 }) {
+  const conversationEvents = [...moment.rawEvents].reverse();
   return (
-    <details className="mt-3 border-t border-border pt-3">
+    <details className="mt-3 border-t border-border pt-3" open={moment.rawEvents.length > 1}>
       <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim transition-colors hover:text-fg">
         {moment.rawEvents.length} raw event{moment.rawEvents.length === 1 ? '' : 's'} · inspect
       </summary>
       <ol className="mt-3 space-y-3">
-        {moment.rawEvents.map((event) => (
-          <li
-            key={event.id}
-            id={`ev-${event.id}`}
-            className="scroll-mt-20 border-l border-border pl-3"
-          >
-            <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-              <span>{formatTimestamp(event.occurredAt)}</span>
-              <span>[{event.id}]</span>
-              {event.visibility === 'private' ? <span>Private</span> : null}
-            </div>
-            {event.contentAudioUrl ? (
-              audioUrlMap?.get(event.id) ? (
-                <audio
-                  src={audioUrlMap.get(event.id)}
-                  controls
-                  aria-label="Voice memo"
-                  preload="metadata"
-                  className="mt-2 w-full max-w-md"
-                />
-              ) : (
-                <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                  [audio unavailable]
-                </p>
-              )
-            ) : null}
-            {event.contentText?.trim() ? (
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
-                {event.contentText}
-              </p>
-            ) : event.contentAudioUrl ? (
-              <p className="mt-2 text-sm italic text-fg-dim">
-                {transcribeFailed(event.sourceMetadata)
-                  ? 'Transcription failed; voice memo is still playable.'
-                  : 'Transcribing...'}
-              </p>
-            ) : null}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {canEditVisibility(event, currentUserId) ? (
-                <details className="text-xs">
-                  <summary className="cursor-pointer font-mono uppercase tracking-[0.1em] text-fg-dim">
-                    Visibility
-                  </summary>
-                  <EventVisibilityForm
-                    eventId={event.id}
-                    visibility={event.visibility}
-                    visibilityUserIds={event.visibilityUserIds}
-                    members={members}
+        {conversationEvents.map((event, index) => {
+          const documentLink = rawEventDocumentLink(event);
+          const context = rawEventContextLabel(event);
+          return (
+            <li
+              key={event.id}
+              id={`ev-${event.id}`}
+              className="scroll-mt-20 border-l border-border pl-3"
+            >
+              <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                <span>{index + 1}</span>
+                <span>{formatTimestamp(event.occurredAt)}</span>
+                <span>{event.source}</span>
+                <span>{rawEventActorLabel(event)}</span>
+                {context ? <span>{context}</span> : null}
+                <span>[{formatShortId(event.id)}]</span>
+                {event.visibility === 'private' ? <span>Private</span> : null}
+              </div>
+              {documentLink ? (
+                <Link
+                  href={documentLink.href}
+                  className="mt-2 inline-flex min-h-7 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:text-signal"
+                >
+                  Attachment · {documentLink.label}
+                </Link>
+              ) : null}
+              {event.contentAudioUrl ? (
+                audioUrlMap?.get(event.id) ? (
+                  <audio
+                    src={audioUrlMap.get(event.id)}
+                    controls
+                    aria-label="Voice memo"
+                    preload="metadata"
+                    className="mt-2 w-full max-w-md"
                   />
-                </details>
+                ) : (
+                  <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                    [audio unavailable]
+                  </p>
+                )
               ) : null}
-              {canRemoveConversational(event, currentUserId, isAdmin) ? (
-                <form action={removeConversationalEventAction}>
-                  <input type="hidden" name="id" value={event.id} />
-                  <Button
-                    type="submit"
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 text-fg-dim hover:text-danger"
-                    title="Remove from timeline"
-                  >
-                    <Trash2 aria-hidden="true" className="size-3.5" />
-                    <span className="sr-only">Remove from timeline</span>
-                  </Button>
-                </form>
+              {event.contentText?.trim() ? (
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
+                  {event.contentText}
+                </p>
+              ) : event.contentAudioUrl ? (
+                <p className="mt-2 text-sm italic text-fg-dim">
+                  {transcribeFailed(event.sourceMetadata)
+                    ? 'Transcription failed; voice memo is still playable.'
+                    : 'Transcribing...'}
+                </p>
               ) : null}
-            </div>
-          </li>
-        ))}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {canEditVisibility(event, currentUserId) ? (
+                  <details className="text-xs">
+                    <summary className="cursor-pointer font-mono uppercase tracking-[0.1em] text-fg-dim">
+                      Visibility
+                    </summary>
+                    <EventVisibilityForm
+                      eventId={event.id}
+                      visibility={event.visibility}
+                      visibilityUserIds={event.visibilityUserIds}
+                      members={members}
+                    />
+                  </details>
+                ) : null}
+                {canRemoveConversational(event, currentUserId, isAdmin) ? (
+                  <form action={removeConversationalEventAction}>
+                    <input type="hidden" name="id" value={event.id} />
+                    <Button
+                      type="submit"
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 text-fg-dim hover:text-danger"
+                      title="Remove from timeline"
+                    >
+                      <Trash2 aria-hidden="true" className="size-3.5" />
+                      <span className="sr-only">Remove from timeline</span>
+                    </Button>
+                  </form>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
       </ol>
     </details>
   );

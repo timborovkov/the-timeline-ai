@@ -186,6 +186,15 @@ export function meetingDetailHrefForMoment(
   return null;
 }
 
+function parentRawEventId(event: TimelineEvent): string | null {
+  const meta = metaObject(event.sourceMetadata);
+  return (
+    stringMeta(meta, 'parent_raw_event_id') ??
+    stringMeta(meta, 'tg_parent_raw_event_id') ??
+    stringMeta(meta, 'slack_parent_raw_event_id')
+  );
+}
+
 function authorName(event: TimelineEvent, authorMap: Map<string, TimelineAuthor>): string | null {
   if (!event.authorUserId) return null;
   const author = authorMap.get(event.authorUserId);
@@ -199,7 +208,12 @@ function actorLabel(event: TimelineEvent, authorMap: Map<string, TimelineAuthor>
   }
   if (event.source === 'telegram') {
     const username = stringMeta(meta, 'tg_username');
-    return username ? `@${username}` : (authorName(event, authorMap) ?? 'Telegram sender');
+    return (
+      stringMeta(meta, 'tg_sender_name') ??
+      (username ? `@${username}` : null) ??
+      authorName(event, authorMap) ??
+      'Telegram sender'
+    );
   }
   if (event.source === 'email') {
     return formatAddress(meta.from) ?? authorName(event, authorMap) ?? 'Email sender';
@@ -358,8 +372,15 @@ export function buildTimelineMoments(
   const hasAuthoritativeHydration =
     !(options instanceof Date) && options.impactItemsByEventId !== undefined;
   const groups = new Map<string, TimelineEvent[]>();
+  const baseGroupKeyByEventId = new Map(
+    events.map((event) => [event.id, `${dateKey(event.occurredAt)}:${timelineGroupKey(event)}`]),
+  );
   for (const event of events) {
-    const key = `${dateKey(event.occurredAt)}:${timelineGroupKey(event)}`;
+    const parentId = parentRawEventId(event);
+    const key =
+      (parentId ? baseGroupKeyByEventId.get(parentId) : undefined) ??
+      baseGroupKeyByEventId.get(event.id);
+    if (!key) continue;
     const existing = groups.get(key);
     if (existing) existing.push(event);
     else groups.set(key, [event]);
@@ -372,6 +393,8 @@ export function buildTimelineMoments(
       );
       const lead = sorted[0];
       if (!lead) return [];
+      const displayLead =
+        sorted.find((event) => event.source === 'telegram' || event.source === 'slack') ?? lead;
       const summary =
         sorted.length === 1
           ? summaryForEvent(lead)
@@ -382,11 +405,11 @@ export function buildTimelineMoments(
           dateKey: dateKey(lead.occurredAt),
           dateLabel: formatDateSection(lead.occurredAt, now),
           timeLabel: timeLabel(sorted),
-          source: lead.source,
-          sourceLabel: SOURCE_LABEL[lead.source],
-          sourceIcon: SOURCE_ICON[lead.source],
-          actorLabel: actorLabel(lead, authorMap),
-          contextLabel: contextLabel(lead),
+          source: displayLead.source,
+          sourceLabel: SOURCE_LABEL[displayLead.source],
+          sourceIcon: SOURCE_ICON[displayLead.source],
+          actorLabel: actorLabel(displayLead, authorMap),
+          contextLabel: contextLabel(displayLead),
           summary: clipped(summary),
           rawEvents: sorted,
           impactItems: dedupeImpact(

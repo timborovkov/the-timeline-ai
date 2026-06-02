@@ -4,6 +4,7 @@ import {
   type Db,
   rawEvents,
   teamMembers,
+  teams,
   teamVisibilityDefaults,
   telegramChatBindings,
   telegramLinkTokens,
@@ -37,6 +38,10 @@ const log = childLogger('telegram');
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
+
+function formatTeamLabel(team: { teamId: string; teamName: string }): string {
+  return `${team.teamName} (${team.teamId})`;
+}
 
 /**
  * Audio ingest is dependency-injected so the dispatcher stays testable
@@ -324,7 +329,7 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
     return;
   }
   try {
-    const teamId = await ctx.db.transaction(async (tx) => {
+    const team = await ctx.db.transaction(async (tx) => {
       const tokens = await tx
         .select()
         .from(telegramLinkTokens)
@@ -416,11 +421,18 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
         })
         .where(eq(telegramLinkTokens.id, row.id));
 
-      return row.teamId;
+      const teamRows = await tx
+        .select({ teamId: teams.id, teamName: teams.name })
+        .from(teams)
+        .where(eq(teams.id, row.teamId))
+        .limit(1);
+      const team = teamRows[0];
+      if (!team) throw new Error('team_not_found');
+      return team;
     });
     await ctx.tg.sendMessage({
       chat_id: ctx.message.chat.id,
-      text: `Linked. This chat is now attributed to team ${teamId}. Run /team to switch active team later.`,
+      text: `Linked. This chat is now attributed to team ${formatTeamLabel(team)}. Run /team to switch active team later.`,
     });
   } catch (e) {
     const reason = e instanceof Error ? e.message : 'failed';
@@ -452,9 +464,11 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
     .select({
       id: telegramUserTeams.id,
       teamId: telegramUserTeams.teamId,
+      teamName: teams.name,
       isActive: telegramUserTeams.isActive,
     })
     .from(telegramUserTeams)
+    .innerJoin(teams, eq(teams.id, telegramUserTeams.teamId))
     .where(eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id))
     .orderBy(asc(telegramUserTeams.createdAt), asc(telegramUserTeams.id));
 
@@ -478,7 +492,7 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
     }
     await ctx.tg.sendMessage({
       chat_id: ctx.message.chat.id,
-      text: `Only one linked team (${first.teamId}). It's now active.`,
+      text: `Only one linked team: ${formatTeamLabel(first)}. It's now active.`,
     });
     return;
   }
@@ -504,7 +518,7 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
       });
       await ctx.tg.sendMessage({
         chat_id: ctx.message.chat.id,
-        text: `Active team is now ${target.teamId}.`,
+        text: `Active team is now ${formatTeamLabel(target)}.`,
       });
       return;
     }
@@ -515,7 +529,9 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
     return;
   }
 
-  const lines = memberships.map((m, i) => `${i + 1}. ${m.teamId}${m.isActive ? '  ← active' : ''}`);
+  const lines = memberships.map(
+    (m, i) => `${i + 1}. ${formatTeamLabel(m)}${m.isActive ? '  ← active' : ''}`,
+  );
   await ctx.tg.sendMessage({
     chat_id: ctx.message.chat.id,
     text:
@@ -532,9 +548,15 @@ async function cmdWhereamiDm(ctx: DmContext): Promise<void> {
     });
     return;
   }
+  const rows = await ctx.db
+    .select({ teamId: teams.id, teamName: teams.name })
+    .from(teams)
+    .where(eq(teams.id, ctx.activeTeamId))
+    .limit(1);
+  const label = rows[0] ? formatTeamLabel(rows[0]) : ctx.activeTeamId;
   await ctx.tg.sendMessage({
     chat_id: ctx.message.chat.id,
-    text: `Active team: ${ctx.activeTeamId}. Messages you send here land in that team's timeline.`,
+    text: `Active team: ${label}. Messages you send here land in that team's timeline.`,
   });
 }
 
@@ -582,10 +604,14 @@ async function cmdAskDm(ctx: DmContext, arg: string): Promise<void> {
 }
 
 function tgDisplayName(u: TgUser): string {
+  return telegramSenderName(u) ?? 'a teammate';
+}
+
+function telegramSenderName(u: TgUser): string | null {
   const parts = [u.first_name, u.last_name].filter((p): p is string => !!p && p.length > 0);
   if (parts.length > 0) return parts.join(' ');
   if (u.username) return `@${u.username}`;
-  return 'a teammate';
+  return null;
 }
 
 /**
@@ -1395,6 +1421,8 @@ async function insertEvent(
   if (input.message.chat.title) metadata.tg_chat_title = input.message.chat.title;
   if (input.message.from) {
     metadata.tg_user_id = input.message.from.id;
+    const senderName = telegramSenderName(input.message.from);
+    if (senderName) metadata.tg_sender_name = senderName;
     if (input.message.from.username) metadata.tg_username = input.message.from.username;
   }
   if (input.audio) {
@@ -1907,6 +1935,7 @@ async function ingestTelegramDocumentAttachment(
         sourceMetadata: {
           action: 'upload',
           document_id: doc.id,
+          document_name: attachment.filename,
           document_version: 1,
           source: 'telegram',
           tg_file_id: attachment.payload.file_id,
@@ -2046,6 +2075,8 @@ function telegramAttachmentMetadata(
   if (message.chat.title) metadata.tg_chat_title = message.chat.title;
   if (message.from) {
     metadata.tg_user_id = message.from.id;
+    const senderName = telegramSenderName(message.from);
+    if (senderName) metadata.tg_sender_name = senderName;
     if (message.from.username) metadata.tg_username = message.from.username;
   }
   if (message.caption) metadata.tg_caption = message.caption;

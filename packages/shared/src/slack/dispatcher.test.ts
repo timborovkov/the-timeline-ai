@@ -451,6 +451,17 @@ describe('Slack dispatcher routing', () => {
 
     expect(upload).toHaveBeenCalledOnce();
     expect(enqueueExtract).toHaveBeenCalledOnce();
+    const rows = await pg.query<{ metadata: Record<string, unknown> }>(
+      `SELECT source_metadata AS metadata
+       FROM raw_events
+       WHERE source = 'document'`,
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]?.metadata).toMatchObject({
+      document_name: 'plan.pdf',
+      source: 'slack',
+      slack_file_id: 'F1',
+    });
   });
 
   it('does not duplicate Slack attachments when a message with files is edited', async () => {
