@@ -9,12 +9,13 @@ import {
   LEGAL_SERVICE_URL,
   TERMS_VERSION,
 } from '@/lib/legal-versions';
+import { publicMetadata } from '@/lib/public-metadata';
 
-export const metadata: Metadata = {
+export const metadata: Metadata = publicMetadata({
   title: 'Terms of Use',
   description: 'Terms of Use for The Timeline.',
-  alternates: { canonical: '/terms' },
-};
+  path: '/terms',
+});
 
 export default function TermsPage() {
   return (

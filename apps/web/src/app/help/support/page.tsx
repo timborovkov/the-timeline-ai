@@ -2,12 +2,13 @@ import type { Metadata } from 'next';
 
 import { SupportForm } from '@/components/help/support-form';
 import { auth } from '@/lib/auth';
+import { publicMetadata } from '@/lib/public-metadata';
 
-export const metadata: Metadata = {
+export const metadata: Metadata = publicMetadata({
   title: 'Support',
   description: 'Contact The Timeline support.',
-  alternates: { canonical: '/help/support' },
-};
+  path: '/help/support',
+});
 
 export default async function SupportPage() {
   const session = await auth();

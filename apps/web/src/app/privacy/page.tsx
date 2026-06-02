@@ -8,12 +8,13 @@ import {
   LEGAL_PROVIDER,
   PRIVACY_VERSION,
 } from '@/lib/legal-versions';
+import { publicMetadata } from '@/lib/public-metadata';
 
-export const metadata: Metadata = {
+export const metadata: Metadata = publicMetadata({
   title: 'Privacy Policy',
   description: 'Privacy Policy for The Timeline.',
-  alternates: { canonical: '/privacy' },
-};
+  path: '/privacy',
+});
 
 export default function PrivacyPage() {
   return (
