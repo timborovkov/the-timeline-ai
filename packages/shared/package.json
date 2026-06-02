@@ -119,6 +119,12 @@
       "import": "./dist/meeting-bots/index.js",
       "default": "./dist/meeting-bots/index.js"
     },
+    "./monitoring/sentry-scrub": {
+      "types": "./src/monitoring/sentry-scrub.ts",
+      "development": "./src/monitoring/sentry-scrub.ts",
+      "import": "./dist/monitoring/sentry-scrub.js",
+      "default": "./dist/monitoring/sentry-scrub.js"
+    },
     "./meetings": {
       "types": "./src/meetings/index.ts",
       "development": "./src/meetings/index.ts",
