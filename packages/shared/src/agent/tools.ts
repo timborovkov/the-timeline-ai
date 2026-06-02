@@ -839,6 +839,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             return {
               operation: 'create' as const,
               targetKind: 'object_relationship' as const,
+              targetId: item.fromEntityId,
               title: `Add ${item.relationshipKind} relationship`,
               dedupeKey: suggestionDedupeKey([
                 'object-memory',

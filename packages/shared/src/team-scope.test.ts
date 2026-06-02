@@ -616,6 +616,61 @@ describe('withTeam namespaced port', () => {
     });
   });
 
+  it('links accepted relationship suggestion impact to the source object', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_A,
+      source: 'telegram',
+      contentText: 'Project Falcon is linked to Acme.',
+      visibility: 'team',
+    });
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Project Falcon',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Acme',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember project company relationship',
+      dedupeKey: 'impact-object-relationship',
+      evidence: [{ rawEventId: event.id }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          targetId: project.id,
+          title: 'Add linked relationship',
+          dedupeKey: 'impact-object-relationship:item',
+          proposedPayload: {
+            fromEntityId: project.id,
+            toEntityId: company.id,
+            kind: 'linked',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    await expect(scope.timeline.listImpactItems([event.id])).resolves.toMatchObject({
+      [event.id]: [
+        expect.objectContaining({
+          kind: 'object',
+          label: 'Add linked relationship',
+          href: `/app/objects/${project.id}`,
+          status: 'accepted',
+        }),
+      ],
+    });
+  });
+
   it('includes all approved facets from the current user linked person object', async () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
     const person = await scope.objects.createObject({

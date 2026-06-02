@@ -394,6 +394,50 @@ describe('buildAgentTools — team isolation', () => {
     });
   });
 
+  it('suggest_object_memory targets relationship proposals at the source object', async () => {
+    const scope = makeFakeScope();
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.suggest_object_memory?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+    const fromEntityId = '11111111-1111-4111-8111-111111111111';
+    const toEntityId = '22222222-2222-4222-8222-222222222222';
+
+    await exec(
+      {
+        title: 'Remember relationship',
+        items: [
+          {
+            kind: 'add_relationship',
+            fromEntityId,
+            toEntityId,
+            relationshipKind: 'linked',
+          },
+        ],
+      },
+      {},
+    );
+
+    const input = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: {
+        targetKind: string;
+        targetId: string | null;
+        proposedPayload: Record<string, unknown>;
+      }[];
+    };
+    expect(input.items[0]).toMatchObject({
+      targetKind: 'object_relationship',
+      targetId: fromEntityId,
+      proposedPayload: {
+        fromEntityId,
+        toEntityId,
+        kind: 'linked',
+      },
+    });
+  });
+
   it('tool execute catches thrown errors and returns { error } — keeps stream alive', async () => {
     const scope = makeFakeScope();
     scope.timeline.getEventWithFacts.mockRejectedValue(new Error('db down'));
