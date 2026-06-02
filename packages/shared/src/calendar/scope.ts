@@ -9,6 +9,7 @@ import {
 import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { childLogger } from '#src/logger.js';
 import { getQdrantClient, buildPointId } from '#src/qdrant/client.js';
 import { enqueueCalendarEventEmbedJob } from '#src/queue/queues.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
@@ -18,6 +19,8 @@ type CalendarEventSource = 'internal' | 'google' | 'caldav';
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 type CalendarQdrantAction = 'embed' | 'delete' | null;
+
+const log = childLogger('calendar:scope');
 
 export interface CalendarScopeDeps {
   db: Db;
@@ -260,6 +263,16 @@ async function deleteCalendarEventPoints(eventId: string): Promise<void> {
   }
 }
 
+async function enqueueCalendarEventEmbedding(teamId: string, eventId: string): Promise<void> {
+  try {
+    await enqueueCalendarEventEmbedJob(teamId, eventId);
+  } catch (err) {
+    // Calendar writes are durable even when Redis/search indexing is
+    // temporarily unavailable. Re-embed/backfill jobs can reconcile later.
+    log.warn({ err, teamId, eventId }, 'calendar embed enqueue failed');
+  }
+}
+
 export function createCalendarScope(deps: CalendarScopeDeps) {
   const { db, teamId, userId, ensureMember, requireTeamMember } = deps;
 
@@ -377,7 +390,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       });
 
       if (created.visibility === 'team') {
-        await enqueueCalendarEventEmbedJob(teamId, created.id);
+        await enqueueCalendarEventEmbedding(teamId, created.id);
       }
 
       return created;
@@ -645,7 +658,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
 
       if (!result) return null;
       if (result.qdrantAction === 'embed') {
-        await enqueueCalendarEventEmbedJob(teamId, id);
+        await enqueueCalendarEventEmbedding(teamId, id);
       } else if (result.qdrantAction === 'delete') {
         await deleteCalendarEventPoints(id);
       }

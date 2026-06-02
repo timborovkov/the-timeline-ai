@@ -37,6 +37,14 @@ const env = { ...process.env };
 delete env.NO_COLOR;
 env.DATABASE_URL ??= 'postgres://timeline:timeline_dev@localhost:5432/timeline';
 env.AUTH_SECRET ??= 'e2e-auth-secret-at-least-sixteen-characters';
+env.REDIS_URL ??= 'redis://localhost:6379';
+env.S3_ENDPOINT ??= 'http://localhost:9000';
+env.S3_PUBLIC_ENDPOINT ??= 'http://localhost:9000';
+env.S3_REGION ??= 'us-east-1';
+env.S3_ACCESS_KEY_ID ??= 'timeline';
+env.S3_SECRET_ACCESS_KEY ??= 'timeline_dev_secret';
+env.S3_FORCE_PATH_STYLE ??= 'true';
+env.S3_BUCKET_DOCUMENTS ??= 'timeline-documents';
 env.NODE_OPTIONS = [env.NODE_OPTIONS, '--conditions=development'].filter(Boolean).join(' ');
 
 const args = ['exec', 'playwright', 'test', ...process.argv.slice(2)];

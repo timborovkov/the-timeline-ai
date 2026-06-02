@@ -66,6 +66,7 @@ export default async function DocumentsPage({ searchParams }: Props) {
     <div className="mx-auto max-w-5xl space-y-6">
       <DocumentSearch />
       <DocumentDrive
+        key={folderId ?? 'root'}
         currentFolderId={folderId}
         breadcrumbs={breadcrumbs}
         defaultVisibility={defaults.visibility}
