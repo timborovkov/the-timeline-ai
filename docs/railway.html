@@ -146,9 +146,9 @@ OPENROUTER_API_KEY=&lt;openrouter key&gt;
 TELEGRAM_BOT_TOKEN=&lt;botfather token&gt;
 TELEGRAM_WEBHOOK_SECRET=&lt;32-byte random&gt;
 POSTMARK_SERVER_TOKEN=&lt;postmark token&gt;
-TRANSACTIONAL_EMAIL_FROM="The Timeline &lt;invites@thetimeline.cc&gt;"
+TRANSACTIONAL_EMAIL_FROM="The Timeline &lt;noreply@thetimeline.cc&gt;"
 POSTMARK_WEBHOOK_SECRET=&lt;postmark secret&gt;
-SUPPORT_EMAIL=support@thetimeline.cc
+SUPPORT_EMAIL=contact@thetimeline.cc
 INBOUND_EMAIL_DOMAIN=in.thetimeline.cc
 TURNSTILE_SITE_KEY=&lt;cloudflare turnstile site key&gt;
 TURNSTILE_SECRET_KEY=&lt;cloudflare turnstile secret key&gt;
@@ -164,6 +164,11 @@ SENTRY_PROFILES_SAMPLE_RATE=0
 NODE_ENV=production
 LOG_LEVEL=info
 </code></pre>
+      <p>
+        <code>AUTH_URL</code> is also the canonical public origin. Requests that arrive through
+        <code>www.thetimeline.cc</code> or the default <code>*.up.railway.app</code> host are
+        redirected to this origin before Auth.js runs.
+      </p>
       <p>
         Keep <code>NODE_ENV</code> set to <code>production</code> in both staging and production
         Railway environments. Use Railway's environment name and <code>SENTRY_ENVIRONMENT</code> for
@@ -278,6 +283,11 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
         <li>Slack slash commands: <code>https://thetimeline.cc/api/slack/commands</code></li>
         <li>Postmark: <code>https://thetimeline.cc/api/email/inbound</code></li>
       </ul>
+      <p>
+        The Cloudflare import template for the production web, email, and inbound DNS records lives
+        at <code>docs/setup/cloudflare-dns-template.txt</code>. Replace the Railway verification
+        placeholders with the full values from the Railway dashboard before importing.
+      </p>
       <p>
         The Telegram webhook is registered automatically by the <code>web</code> service on startup.
         The Next.js instrumentation hook at <code>apps/web/src/instrumentation.ts</code> runs once

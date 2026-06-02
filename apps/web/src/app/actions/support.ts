@@ -108,7 +108,8 @@ export async function submitSupportRequestAction(
   const requestId = row[0]?.id;
   if (!requestId) return { error: 'Could not save support request. Please try again.' };
 
-  if (!env.SUPPORT_EMAIL || !env.POSTMARK_SERVER_TOKEN) {
+  const fromEmail = env.TRANSACTIONAL_EMAIL_FROM ?? env.INVITE_EMAIL_FROM;
+  if (!env.SUPPORT_EMAIL || !env.POSTMARK_SERVER_TOKEN || !fromEmail) {
     await db
       .update(supportRequests)
       .set({ emailError: 'Support delivery is not configured.' })
@@ -121,6 +122,7 @@ export async function submitSupportRequestAction(
 
   const sent = await sendPostmarkSupportEmail({
     token: env.POSTMARK_SERVER_TOKEN,
+    fromEmail,
     supportEmail: env.SUPPORT_EMAIL,
     requestId,
     requestType: parsed.data.requestType,
@@ -154,6 +156,7 @@ export async function submitSupportRequestAction(
 
 async function sendPostmarkSupportEmail(input: {
   token: string;
+  fromEmail: string;
   supportEmail: string;
   requestId: string;
   requestType: (typeof requestTypes)[number];
@@ -187,7 +190,7 @@ async function sendPostmarkSupportEmail(input: {
       'X-Postmark-Server-Token': input.token,
     },
     body: JSON.stringify({
-      From: input.supportEmail,
+      From: input.fromEmail,
       To: input.supportEmail,
       ReplyTo: input.email,
       Subject: `[Timeline support] ${input.requestType} from ${input.name}`,

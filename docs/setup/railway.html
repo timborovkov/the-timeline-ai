@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Railway deployment setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-28</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-03</span></div>
       <p class="tldr">
         Project + environment provisioning for staging and production. For the full service
         architecture see <a href="../railway.html">docs/railway.html</a>.
@@ -92,6 +92,17 @@
         Keep <code>NODE_ENV</code> as <code>production</code> for both Railway environments. Use the
         Railway environment name and <code>SENTRY_ENVIRONMENT</code> for labels like
         <code>staging</code>; the app rejects <code>NODE_ENV=staging</code>.
+      </p>
+      <p>
+        Set <code>AUTH_URL</code> to the primary public origin, such as
+        <code>https://thetimeline.cc</code>. The web proxy redirects alternate hosts, including
+        <code>www</code> and Railway's default <code>*.up.railway.app</code> host, back to this
+        origin before Auth.js runs.
+      </p>
+      <p>
+        For Cloudflare-managed DNS, import <code>docs/setup/cloudflare-dns-template.txt</code> after
+        replacing the Railway verification placeholders with the full values from the Railway
+        dashboard.
       </p>
       <p>
         For production abuse controls, also set <code>TURNSTILE_SITE_KEY</code>,

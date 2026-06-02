@@ -117,7 +117,7 @@ function StructuredData() {
         name: SITE_NAME,
         url: siteUrl,
         logo: logoUrl,
-        email: 'thetimeline@timb.dev',
+        email: 'contact@thetimeline.cc',
       },
       {
         '@type': 'WebSite',
