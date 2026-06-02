@@ -2,6 +2,7 @@ import { teamInvites, teams, users } from '@timeline/db';
 import { and, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
+import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 import { AppShell } from '@/components/app-shell';
@@ -11,6 +12,10 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getNavAttentionSummary } from '@/lib/hub-status';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const session = await auth();

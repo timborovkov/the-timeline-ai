@@ -9,6 +9,7 @@ import { Logo, Wordmark } from '@/components/brand/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { auth } from '@/lib/auth';
+import { getSiteUrl } from '@/lib/site-url';
 import { cn } from '@/lib/utils';
 
 const SITE_NAME = 'The Timeline';
@@ -40,12 +41,21 @@ export const metadata: Metadata = {
     type: 'website',
     siteName: SITE_NAME,
     url: '/',
+    images: [
+      {
+        url: '/opengraph-image',
+        width: 1200,
+        height: 630,
+        alt: 'The Timeline — the operations log your team can talk to',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description:
       'Stop updating the CRM. Capture work as it happens; the agent files it. Every answer cited back to the raw event.',
+    images: ['/twitter-image'],
   },
   robots: {
     index: true,
@@ -91,31 +101,58 @@ export default async function LandingPage() {
 }
 
 function StructuredData() {
+  const siteUrl = getSiteUrl();
+  const logoUrl = new URL('/icon.svg', siteUrl).toString();
+  const ogImageUrl = new URL('/opengraph-image', siteUrl).toString();
+  const orgId = `${siteUrl}/#organization`;
+  const siteId = `${siteUrl}/#website`;
+  const appId = `${siteUrl}/#software`;
+  const pageId = `${siteUrl}/#webpage`;
   const graph = {
     '@context': 'https://schema.org',
     '@graph': [
       {
         '@type': 'Organization',
-        '@id': '#org',
+        '@id': orgId,
         name: SITE_NAME,
-        url: '/',
+        url: siteUrl,
+        logo: logoUrl,
         email: 'thetimeline@timb.dev',
       },
       {
         '@type': 'WebSite',
-        '@id': '#site',
-        url: '/',
+        '@id': siteId,
+        url: siteUrl,
         name: SITE_NAME,
         description: SITE_DESCRIPTION,
-        publisher: { '@id': '#org' },
+        publisher: { '@id': orgId },
+      },
+      {
+        '@type': 'WebPage',
+        '@id': pageId,
+        url: siteUrl,
+        name: `${SITE_NAME} — ${SITE_TAGLINE}`,
+        description: SITE_DESCRIPTION,
+        image: ogImageUrl,
+        isPartOf: { '@id': siteId },
+        about: { '@id': appId },
+        primaryImageOfPage: {
+          '@type': 'ImageObject',
+          url: ogImageUrl,
+          width: 1200,
+          height: 630,
+        },
       },
       {
         '@type': 'SoftwareApplication',
+        '@id': appId,
         name: SITE_NAME,
         applicationCategory: 'BusinessApplication',
         operatingSystem: 'Web, iOS, Android',
         description: SITE_DESCRIPTION,
-        url: '/',
+        url: siteUrl,
+        image: ogImageUrl,
+        publisher: { '@id': orgId },
         offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
         featureList: [
           'Voice-, chat-, and email-first capture',
