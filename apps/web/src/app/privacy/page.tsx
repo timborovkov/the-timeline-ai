@@ -16,6 +16,8 @@ export const metadata: Metadata = publicMetadata({
   path: '/privacy',
 });
 
+export const dynamic = 'force-dynamic';
+
 export default function PrivacyPage() {
   const legalContactEmail = getLegalContactEmail();
 

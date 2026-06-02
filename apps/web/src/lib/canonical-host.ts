@@ -20,6 +20,8 @@ function canonicalOrigin(): URL | null {
 }
 
 export function canonicalHostRedirect(request: NextRequest): NextResponse | null {
+  if (request.nextUrl.pathname === '/api/health') return null;
+
   const canonical = canonicalOrigin();
   if (!canonical) return null;
 

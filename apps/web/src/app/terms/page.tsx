@@ -17,6 +17,8 @@ export const metadata: Metadata = publicMetadata({
   path: '/terms',
 });
 
+export const dynamic = 'force-dynamic';
+
 export default function TermsPage() {
   const legalContactEmail = getLegalContactEmail();
 

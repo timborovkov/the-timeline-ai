@@ -19,6 +19,11 @@ describe('proxy matcher', () => {
     const source = readFileSync(join(process.cwd(), 'src/proxy.ts'), 'utf8');
     expect(source).toContain('sentry-tunnel');
   });
+
+  it('excludes the Railway health check route', () => {
+    const source = readFileSync(join(process.cwd(), 'src/proxy.ts'), 'utf8');
+    expect(source).toContain('api/health');
+  });
 });
 
 describe('canonicalHostRedirect', () => {
@@ -59,6 +64,16 @@ describe('canonicalHostRedirect', () => {
     process.env.AUTH_URL = '';
     process.env.NEXTAUTH_URL = '';
     const request = new NextRequest('http://localhost:3000/app');
+
+    expect(canonicalHostRedirect(request)).toBeNull();
+  });
+
+  it('does not redirect the health check route from probe hosts', () => {
+    process.env.AUTH_URL = 'https://thetimeline.cc';
+    process.env.NEXTAUTH_URL = '';
+    const request = new NextRequest('https://healthcheck.railway.app/api/health', {
+      headers: { host: 'healthcheck.railway.app', 'x-forwarded-proto': 'https' },
+    });
 
     expect(canonicalHostRedirect(request)).toBeNull();
   });
