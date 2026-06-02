@@ -10,14 +10,14 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Postmark email setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-27</span></div>
-      <p class="tldr">Postmark powers inbound timeline capture and outbound team invite emails.</p>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-03</span></div>
+      <p class="tldr">Postmark powers inbound timeline capture and outbound product emails.</p>
 
       <p>
         Per-team email ingest. A team's address is
         <code>&lt;team-slug&gt;@&lt;INBOUND_EMAIL_DOMAIN&gt;</code>, populated automatically on team
         creation. Forward, CC, or BCC any mail to that address and it lands in the timeline. The
-        same Postmark server token is also used to send transactional team invite emails.
+        same Postmark server token is also used to send transactional product emails.
       </p>
 
       <h2 id="account">1. Account + server</h2>
@@ -27,22 +27,23 @@
         <li>Copy the <strong>Server API Token</strong>.</li>
       </ol>
       <pre><code>POSTMARK_SERVER_TOKEN=...
-SUPPORT_EMAIL=support@example.com
+SUPPORT_EMAIL=contact@thetimeline.cc
 </code></pre>
       <p>
         <code>POSTMARK_SERVER_TOKEN</code> is used for outbound transactional email: team invites
-        and support/contact mail from <code>/help/support</code>. Set <code>SUPPORT_EMAIL</code> to
-        a verified Postmark sender; support requests are sent to that address and use the visitor's
-        email as <code>Reply-To</code>. The inbound webhook is authenticated separately via
-        <code>POSTMARK_WEBHOOK_SECRET</code>.
+        and support/contact mail from <code>/help/support</code>. Set
+        <code>TRANSACTIONAL_EMAIL_FROM</code> to the verified Postmark sender used in the
+        <code>From</code> header, and set <code>SUPPORT_EMAIL</code> to the mailbox destination for
+        support requests. Requests use the visitor's email as <code>Reply-To</code>. The inbound
+        webhook is authenticated separately via <code>POSTMARK_WEBHOOK_SECRET</code>.
       </p>
 
-      <h2 id="outbound-invites">2. Outbound invite email</h2>
+      <h2 id="outbound-invites">2. Outbound product email</h2>
       <ol>
         <li>In Postmark, configure an outbound sender signature or verified domain.</li>
         <li>Set the sender address in the app environment.</li>
       </ol>
-      <pre><code>TRANSACTIONAL_EMAIL_FROM="The Timeline &lt;invites@thetimeline.cc&gt;"
+      <pre><code>TRANSACTIONAL_EMAIL_FROM="The Timeline &lt;noreply@thetimeline.cc&gt;"
 </code></pre>
       <p>
         Team settings sends invite emails after the invite row is committed. If Postmark is
@@ -50,6 +51,10 @@ SUPPORT_EMAIL=support@example.com
         shows the send failure, and admins can copy the fallback invite URL or resend later.
         Signed-in recipients with a verified account email also see unexpired invites in the team
         switcher modal, where they can accept or decline without finding the email.
+      </p>
+      <p>
+        Add the DNS records Postmark shows for <code>thetimeline.cc</code>: DKIM TXT, Return-Path
+        CNAME, and a single SPF TXT record that includes <code>include:spf.mtasv.net</code>.
       </p>
 
       <h2 id="inbound-stream">3. Inbound stream</h2>
@@ -100,13 +105,23 @@ SUPPORT_EMAIL=support@example.com
       </p>
       <pre><code>INBOUND_EMAIL_DOMAIN=in.thetimeline.cc
 </code></pre>
+      <pre><code>MX in inbound.postmarkapp.com 10
+</code></pre>
       <p>
         Teams created before Phase 7 are backfilled to <code>&lt;slug&gt;@inbound.invalid</code>.
         Run a one-off <code>UPDATE teams SET inbound_email = slug || '@in.thetimeline.cc'</code> if
         you need to flip a legacy team to the production domain.
       </p>
 
-      <h2 id="what-gets-ingested">6. What gets ingested</h2>
+      <h2 id="public-mailboxes">6. Public contact mailboxes</h2>
+      <p>
+        <code>contact@thetimeline.cc</code> and <code>hello@thetimeline.cc</code> are public mailbox
+        aliases, not timeline ingest addresses. Configure them in the domain's mail-routing provider
+        to forward to the operator's personal inbox. When using Cloudflare Email Routing, keep the
+        root-domain MX records on Cloudflare's mail servers and add routing rules for both aliases.
+      </p>
+
+      <h2 id="what-gets-ingested">7. What gets ingested</h2>
       <p>For each inbound delivery the dispatcher:</p>
       <ol>
         <li>Parses the Postmark payload (Zod schema).</li>
@@ -150,7 +165,7 @@ SUPPORT_EMAIL=support@example.com
         no-ops.
       </p>
 
-      <h2 id="smoke-test">6. Smoke test</h2>
+      <h2 id="smoke-test">8. Smoke test</h2>
       <p>
         Postmark dashboard has a test inbound email feature. Send a test message; the app should
         write a <code>raw_events</code> row with <code>source='email'</code>. The timeline UI shows

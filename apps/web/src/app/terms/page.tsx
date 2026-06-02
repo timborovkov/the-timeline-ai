@@ -3,11 +3,11 @@ import type { Metadata } from 'next';
 import { LegalPage } from '@/components/legal-page';
 import {
   LEGAL_ADDRESS,
-  LEGAL_CONTACT_EMAIL,
   LEGAL_EFFECTIVE_DATE,
   LEGAL_PROVIDER,
   LEGAL_SERVICE_URL,
   TERMS_VERSION,
+  getLegalContactEmail,
 } from '@/lib/legal-versions';
 import { publicMetadata } from '@/lib/public-metadata';
 
@@ -17,7 +17,11 @@ export const metadata: Metadata = publicMetadata({
   path: '/terms',
 });
 
+export const dynamic = 'force-dynamic';
+
 export default function TermsPage() {
+  const legalContactEmail = getLegalContactEmail();
+
   return (
     <LegalPage
       eyebrow={`Version ${TERMS_VERSION} · Effective ${LEGAL_EFFECTIVE_DATE}`}
@@ -130,8 +134,13 @@ export default function TermsPage() {
 
       <h2>13. Contact</h2>
       <p>
-        Contact: <a href={`mailto:${LEGAL_CONTACT_EMAIL}`}>{LEGAL_CONTACT_EMAIL}</a>. Provider:{' '}
-        {LEGAL_PROVIDER}, {LEGAL_ADDRESS}.
+        Contact:{' '}
+        {legalContactEmail ? (
+          <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>
+        ) : (
+          'support email not configured'
+        )}
+        . Provider: {LEGAL_PROVIDER}, {LEGAL_ADDRESS}.
       </p>
     </LegalPage>
   );

@@ -9,6 +9,7 @@ import { Logo, Wordmark } from '@/components/brand/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { auth } from '@/lib/auth';
+import { getLegalContactEmail } from '@/lib/legal-versions';
 import { getSiteUrl } from '@/lib/site-url';
 import { cn } from '@/lib/utils';
 
@@ -101,6 +102,7 @@ export default async function LandingPage() {
 }
 
 function StructuredData() {
+  const legalContactEmail = getLegalContactEmail();
   const siteUrl = getSiteUrl();
   const logoUrl = new URL('/icon.svg', siteUrl).toString();
   const ogImageUrl = new URL('/opengraph-image', siteUrl).toString();
@@ -108,17 +110,20 @@ function StructuredData() {
   const siteId = `${siteUrl}/#website`;
   const appId = `${siteUrl}/#software`;
   const pageId = `${siteUrl}/#webpage`;
+  const organization: Record<string, string> = {
+    '@type': 'Organization',
+    '@id': orgId,
+    name: SITE_NAME,
+    url: siteUrl,
+    logo: logoUrl,
+  };
+  if (legalContactEmail) {
+    organization.email = legalContactEmail;
+  }
   const graph = {
     '@context': 'https://schema.org',
     '@graph': [
-      {
-        '@type': 'Organization',
-        '@id': orgId,
-        name: SITE_NAME,
-        url: siteUrl,
-        logo: logoUrl,
-        email: 'thetimeline@timb.dev',
-      },
+      organization,
       {
         '@type': 'WebSite',
         '@id': siteId,
