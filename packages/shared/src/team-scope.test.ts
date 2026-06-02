@@ -9,6 +9,7 @@ import {
   documents,
   documentVersions,
   integrations,
+  objectIdentityFacets,
   rawEvents,
   teamVisibilityDefaults,
 } from '@timeline/db';
@@ -564,6 +565,110 @@ describe('withTeam namespaced port', () => {
         }),
       ],
     });
+  });
+
+  it('links accepted object-memory suggestion impact to the object, not the created note', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_A,
+      source: 'telegram',
+      contentText: 'Miku handles customer follow-up.',
+      visibility: 'team',
+    });
+    const object = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Customer follow-up',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember project owner',
+      dedupeKey: 'impact-object-note',
+      evidence: [{ rawEventId: event.id }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: object.id,
+          title: 'Add project memory',
+          dedupeKey: 'impact-object-note:item',
+          proposedPayload: {
+            entityId: object.id,
+            body: 'Miku handles customer follow-up.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    await expect(scope.timeline.listImpactItems([event.id])).resolves.toMatchObject({
+      [event.id]: [
+        expect.objectContaining({
+          kind: 'object',
+          label: 'Add project memory',
+          href: `/app/objects/${object.id}`,
+          status: 'accepted',
+        }),
+      ],
+    });
+  });
+
+  it('includes all approved facets from the current user linked person object', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const person = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Tim Borovkov',
+      aliases: ['Timbo'],
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    await scope.objects.createIdentityFacet({
+      entityId: person.id,
+      kind: 'timeline_user',
+      value: USER_A,
+      linkedUserId: USER_A,
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.objects.createIdentityFacet({
+      entityId: person.id,
+      kind: 'telegram',
+      value: '@timbo0',
+      externalId: '12345',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.objects.createIdentityFacet({
+      entityId: person.id,
+      kind: 'email',
+      value: 'tim@example.com',
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    const context = await scope.timeline.currentUserIdentityContext();
+
+    expect(context.person).toMatchObject({
+      id: person.id,
+      canonicalName: 'Tim Borovkov',
+      aliases: ['Timbo'],
+    });
+    expect(context.facets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'timeline_user', value: USER_A }),
+        expect.objectContaining({ kind: 'telegram', value: '@timbo0', externalId: '12345' }),
+        expect.objectContaining({ kind: 'email', value: 'tim@example.com' }),
+      ]),
+    );
+    expect(context.facets).toHaveLength(3);
+
+    await db
+      .update(objectIdentityFacets)
+      .set({ status: 'archived' })
+      .where(eq(objectIdentityFacets.value, '@timbo0'));
+
+    const archivedContext = await scope.timeline.currentUserIdentityContext();
+    expect(archivedContext.facets.some((facet) => facet.value === '@timbo0')).toBe(false);
   });
 
   it('rejects visibility edits for ownerless legacy events with a clear error', async () => {

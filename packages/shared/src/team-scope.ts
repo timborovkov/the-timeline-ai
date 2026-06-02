@@ -1163,7 +1163,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
               row.targetKind === 'object_relationship'
             ? 'object'
             : row.targetKind;
-      const targetId = row.resultId ?? row.targetId;
+      const objectMemoryTarget =
+        row.targetKind === 'identity_facet' ||
+        row.targetKind === 'object_note' ||
+        row.targetKind === 'object_relationship';
+      const targetId = objectMemoryTarget
+        ? (row.targetId ?? row.resultId)
+        : (row.resultId ?? row.targetId);
       const href =
         kind === 'calendar'
           ? '/app/calendar'
@@ -1410,7 +1416,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           .from(users)
           .where(eq(users.id, userId))
           .limit(1);
-        const facetRows = await db
+        const linkedFacetRows = await db
           .select({
             id: objectIdentityFacets.id,
             kind: objectIdentityFacets.kind,
@@ -1428,12 +1434,40 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             and(
               eq(objectIdentityFacets.teamId, teamId),
               eq(objectIdentityFacets.linkedUserId, userId),
+              eq(objectIdentityFacets.kind, 'timeline_user'),
               eq(objectIdentityFacets.status, 'approved'),
               eq(entities.teamId, teamId),
               isNull(entities.mergedIntoId),
             ),
           )
           .orderBy(objectIdentityFacets.kind, objectIdentityFacets.value);
+        const linkedEntityIds = Array.from(new Set(linkedFacetRows.map((facet) => facet.entityId)));
+        const facetRows = linkedEntityIds.length
+          ? await db
+              .select({
+                id: objectIdentityFacets.id,
+                kind: objectIdentityFacets.kind,
+                value: objectIdentityFacets.value,
+                normalizedValue: objectIdentityFacets.normalizedValue,
+                provider: objectIdentityFacets.provider,
+                externalId: objectIdentityFacets.externalId,
+                entityId: entities.id,
+                canonicalName: entities.canonicalName,
+                aliases: entities.aliases,
+              })
+              .from(objectIdentityFacets)
+              .innerJoin(entities, eq(entities.id, objectIdentityFacets.entityId))
+              .where(
+                and(
+                  eq(objectIdentityFacets.teamId, teamId),
+                  inArray(objectIdentityFacets.entityId, linkedEntityIds),
+                  eq(objectIdentityFacets.status, 'approved'),
+                  eq(entities.teamId, teamId),
+                  isNull(entities.mergedIntoId),
+                ),
+              )
+              .orderBy(objectIdentityFacets.kind, objectIdentityFacets.value)
+          : [];
         const person = facetRows[0]
           ? {
               id: facetRows[0].entityId,
