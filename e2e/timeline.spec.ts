@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer';
 
 import { expect, type Page, test } from '@playwright/test';
 
-import { newSignedInPage, signIn } from './helpers.js';
+import { newSignedInPage, signIn, signInFromCurrentPage } from './helpers.js';
 import { e2eOtherTeam, e2eSeedEvents, e2eTeam, e2eUsers } from './test-data.js';
 
 /**
@@ -27,6 +27,33 @@ async function uploadTextDocument(page: Page, name: string, text: string): Promi
   });
   await expect(page.getByRole('status').getByText(name)).toBeVisible();
   await expect(page.getByRole('link', { name: literalPattern(name) })).toBeVisible();
+}
+
+async function createMemberInvite(page: Page, email: string): Promise<string> {
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Role', { exact: true }).selectOption('member');
+  await page.getByRole('button', { name: 'Create invite' }).click();
+  const inviteRow = page.locator('li').filter({ hasText: email }).last();
+  await expect(inviteRow).toBeVisible();
+  const inviteCode = inviteRow.locator('code', { hasText: '/accept-invite/' });
+  await expect(inviteCode).toBeVisible();
+  return (await inviteCode.innerText()).trim();
+}
+
+function invitePath(inviteUrl: string): string {
+  return new URL(inviteUrl).pathname;
+}
+
+function teamMemberRow(page: Page, email: string) {
+  return page.locator('li').filter({ hasText: email }).first();
+}
+
+async function waitForTeamSettingsPost(page: Page, action: () => Promise<void>): Promise<void> {
+  const response = page.waitForResponse(
+    (res) => res.url().includes('/app/team') && res.request().method() === 'POST',
+  );
+  await action();
+  await response;
 }
 
 test('seeded owner can sign in, switch teams, and sign out', async ({ page }) => {
@@ -86,6 +113,100 @@ test('timeline capture enforces team, private, specific-user, and cross-team vis
   await ownerPage.context().close();
   await memberPage.context().close();
   await nonMemberPage.context().close();
+});
+
+test('team admin invite, role, and removal journeys enforce permissions', async ({ browser }) => {
+  const ownerPage = await newSignedInPage(browser, 'owner');
+  const adminPage = await newSignedInPage(browser, 'admin');
+  const memberPage = await newSignedInPage(browser, 'member');
+  const inviteePage = await browser.newPage();
+
+  await ownerPage.goto('/app/team');
+  await expect(ownerPage.getByText('Team identity', { exact: true })).toBeVisible();
+  await expect(ownerPage.getByText('Team export', { exact: true })).toBeVisible();
+  await expect(ownerPage.getByText('Visibility defaults', { exact: true })).toBeVisible();
+  await expect(ownerPage.getByText('Members', { exact: true })).toBeVisible();
+  await expect(ownerPage.getByText('Invite a teammate', { exact: true })).toBeVisible();
+  await expect(ownerPage.getByText('Pending invites', { exact: true })).toBeVisible();
+
+  await memberPage.goto('/app/team');
+  await expect(memberPage.getByText('Members', { exact: true })).toBeVisible();
+  await expect(memberPage.getByText('Team identity', { exact: true })).toHaveCount(0);
+  await expect(memberPage.getByText('Team export', { exact: true })).toHaveCount(0);
+  await expect(memberPage.getByText('Visibility defaults', { exact: true })).toHaveCount(0);
+  await expect(memberPage.getByText('Invite a teammate', { exact: true })).toHaveCount(0);
+
+  await adminPage.goto('/app/team');
+  await expect(adminPage.getByText('Invite a teammate', { exact: true })).toBeVisible();
+  await expect(adminPage.getByLabel('Role', { exact: true })).toBeVisible();
+  await expect(
+    adminPage.getByLabel('Role', { exact: true }).locator('option[value="admin"]'),
+  ).toHaveCount(0);
+
+  await ownerPage.bringToFront();
+  await ownerPage.goto('/app/team');
+  await createMemberInvite(ownerPage, e2eUsers.pendingInvitee.email);
+  await expect(ownerPage.getByText(e2eUsers.pendingInvitee.email).first()).toBeVisible();
+  await waitForTeamSettingsPost(ownerPage, () =>
+    ownerPage
+      .getByRole('button', { name: `Resend invite to ${e2eUsers.pendingInvitee.email}` })
+      .click(),
+  );
+  await expect(
+    ownerPage.getByRole('button', { name: `Revoke invite to ${e2eUsers.pendingInvitee.email}` }),
+  ).toBeVisible();
+  await waitForTeamSettingsPost(ownerPage, () =>
+    ownerPage
+      .getByRole('button', { name: `Revoke invite to ${e2eUsers.pendingInvitee.email}` })
+      .click(),
+  );
+  await expect(
+    ownerPage.getByRole('button', { name: `Revoke invite to ${e2eUsers.pendingInvitee.email}` }),
+  ).toHaveCount(0);
+  await expect(ownerPage.getByText(e2eUsers.pendingInvitee.email)).toHaveCount(0);
+
+  const inviteUrl = await createMemberInvite(ownerPage, e2eUsers.invitee.email);
+  await inviteePage.goto(invitePath(inviteUrl));
+  await expect(inviteePage.getByText('Accept invite', { exact: true })).toBeVisible();
+  await inviteePage.getByRole('link', { name: 'Sign in' }).click();
+  await signInFromCurrentPage(inviteePage, e2eUsers.invitee.email, /\/accept-invite\/[^/]+$/);
+  await expect(inviteePage.getByText(`Join ${e2eTeam.name}?`, { exact: true })).toBeVisible();
+  await inviteePage.getByRole('button', { name: 'Join team' }).click();
+  await expect(inviteePage).toHaveURL(/\/app\/timeline/);
+  await expect(inviteePage.getByText(`team · ${e2eTeam.name}`)).toBeVisible();
+
+  await ownerPage.goto('/app/team');
+  await expect(teamMemberRow(ownerPage, e2eUsers.invitee.email)).toBeVisible();
+  await ownerPage.getByLabel(`Role for ${e2eUsers.invitee.email}`).selectOption('admin');
+  await waitForTeamSettingsPost(ownerPage, () =>
+    teamMemberRow(ownerPage, e2eUsers.invitee.email).getByRole('button', { name: 'Save' }).click(),
+  );
+  await expect(ownerPage.getByLabel(`Role for ${e2eUsers.invitee.email}`)).toHaveValue('admin');
+  await ownerPage.reload();
+  await expect(ownerPage.getByLabel(`Role for ${e2eUsers.invitee.email}`)).toHaveValue('admin');
+
+  await adminPage.reload();
+  await expect(
+    adminPage.getByRole('button', { name: `Remove ${e2eUsers.invitee.email}` }),
+  ).toHaveCount(0);
+
+  await waitForTeamSettingsPost(ownerPage, () =>
+    ownerPage.getByRole('button', { name: `Remove ${e2eUsers.invitee.email}` }).click(),
+  );
+  await expect(
+    ownerPage.getByRole('button', { name: `Remove ${e2eUsers.invitee.email}` }),
+  ).toHaveCount(0);
+  await expect(ownerPage.getByText('Removed members', { exact: true })).toBeVisible();
+  await expect(ownerPage.getByText(e2eUsers.invitee.email).first()).toBeVisible();
+
+  await inviteePage.goto('/app');
+  await expect(inviteePage.getByRole('heading', { name: 'No team yet' })).toBeVisible();
+  await expect(inviteePage.getByText(e2eTeam.name)).toHaveCount(0);
+
+  await ownerPage.context().close();
+  await adminPage.context().close();
+  await memberPage.context().close();
+  await inviteePage.context().close();
 });
 
 test('owner can create an object, update it, add a note, and archive it', async ({ browser }) => {

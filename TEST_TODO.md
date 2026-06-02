@@ -11,7 +11,7 @@ Last checked in this branch: `pnpm validate` passes. Current suite shape:
 - Web Vitest: 45 files / 249 tests.
 - Shared Vitest: 51 files / 414 tests, including PGlite integration coverage.
 - Worker Vitest: 7 files / 45 tests.
-- Playwright: 6 local core E2E journeys plus 1 production-ish smoke journey.
+- Playwright: 7 local core E2E journeys plus 1 production-ish smoke journey.
 - E2E CI is still manual and `continue-on-error: true`; it is not a merge
   gate yet.
 
@@ -29,7 +29,7 @@ Legend:
 | Feature / Subject | E2E | API / Route Tests | Server Action Tests | Shared / Integration Tests | Worker Tests | Component / UI Tests | Main Gaps |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Auth, sessions, redirects | Partial: real credentials login, saved auth state, sign-out flow | Thin: Auth.js route itself untested | Thin: sign-up/sign-in actions not directly covered in this plan | Thin: env/auth redirect helpers | Missing | Thin: auth redirect helpers | Expired/invalid session flows, OAuth login E2E, sign-up action tests |
-| Team switching and membership | Partial: app shell, team switcher, cross-team isolation | Covered indirectly through active-team gates on many routes | Strong for teams/invites/member role/remove | Strong PGlite team isolation and membership scope | Missing | Missing team admin UI tests | E2E invite/member role/remove flows, team settings component tests |
+| Team switching and membership | Partial: app shell, team switcher, invite/resend/revoke, invite acceptance, role change, member removal, cross-team isolation | Covered indirectly through active-team gates on many routes | Strong for teams/invites/member role/remove | Strong PGlite team isolation and membership scope | Missing | Missing team admin component tests | Deeper team settings component states and edge-case invite UI |
 | Timeline capture and visibility | Partial: create team event, private/team/specific-user/cross-team visibility | Strong for timeline list/search contracts and audio signing | Strong for capture and visibility actions | Strong PGlite team scope, visibility defaults, tombstones, embedding-source visibility | Missing old extract/transcribe processors | Thin timeline controls/page helpers | E2E timeline edit/delete/filtering, feed/list component states |
 | Objects, notes, and boards | Partial: object create/update/detail/archive, notes, board create/list/detail/filtering | Missing object sections route | Strong for objects and boards actions | Strong PGlite object CRUD, notes, chat sessions, suggestions, board views, isolation | Suggestions worker covered | Missing object/board UI components | E2E relationships, object sections route, object/board component states |
 | Documents and folders | Partial: folder create, upload/list/detail, rename/delete, team/private visibility | Strong list/search route contracts | Strong document actions | Strong PGlite document scope, object keys, folder ancestry, restore/delete semantics | Strong document-extract worker | Missing document UI components | Semantic search E2E, extracted chunk citations, worker-backed search, richer document UI states |
@@ -59,10 +59,10 @@ Legend:
   tests. These are valuable for auth/status/validation/side-effect intent, but
   they are less likely to discover deep product bugs on their own.
 - Biggest remaining product-risk gaps: E2E browser flows for document
-  search/extraction, chat, calendar, team admin, integrations, MCP settings,
-  onboarding, and job recovery; worker coverage for extract/transcribe/
-  integration sync/MCP health/team export; DB/queue/S3 contract tests; agent
-  evals; component state tests.
+  search/extraction, chat, calendar, integrations, MCP settings, onboarding,
+  and job recovery; worker coverage for extract/transcribe/integration sync/
+  MCP health/team export; DB/queue/S3 contract tests; agent evals; component
+  state tests.
 
 ## Current Test Surface
 
@@ -94,6 +94,9 @@ Current local coverage includes core product journeys:
 - Calendar create/edit/delete behavior with team/private visibility assertions.
 - Document folder creation, RustFS-backed upload, list/detail/version-history,
   rename/delete behavior, and team/private visibility assertions.
+- Team admin visibility, member invite/resend/revoke, signed-out invite
+  acceptance, role change, admin removal limits, owner removal, and removed-user
+  access loss.
 - Production-ish smoke verifies seeded owner login and timeline load.
 
 Current CI E2E workflow is manual and `continue-on-error: true`, so E2E does
@@ -268,7 +271,6 @@ the local E2E command reliable enough to gate CI.
   - Document semantic search, extracted chunk citations, and worker-backed
     extraction/search behavior.
   - Calendar specific-user visibility and timed event behavior.
-  - Team admin invite/member role/remove flows.
   - Onboarding checklist completion and dismissal.
   - Slack/Telegram settings screens for connect/disconnect/error states with
     provider calls stubbed at the boundary.

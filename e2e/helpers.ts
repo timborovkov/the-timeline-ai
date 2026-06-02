@@ -7,10 +7,18 @@ import { E2E_PASSWORD, E2E_RUN_ID, e2eUsers } from './test-data.js';
 
 export async function signIn(page: Page, email: string): Promise<void> {
   await page.goto('/sign-in');
+  await signInFromCurrentPage(page, email, /\/app(\/timeline)?/);
+}
+
+export async function signInFromCurrentPage(
+  page: Page,
+  email: string,
+  expectedUrl: RegExp,
+): Promise<void> {
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(E2E_PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/app(\/timeline)?/);
+  await expect(page).toHaveURL(expectedUrl);
 }
 
 type E2eUserKey = keyof typeof e2eUsers;

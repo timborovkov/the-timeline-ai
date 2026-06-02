@@ -36,7 +36,9 @@ export async function setupE2eData(): Promise<void> {
       (${e2eUsers.owner.id}, ${e2eUsers.owner.name}, ${e2eUsers.owner.email}, ${passwordHash}, NOW(), ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW()),
       (${e2eUsers.admin.id}, ${e2eUsers.admin.name}, ${e2eUsers.admin.email}, ${passwordHash}, NOW(), ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW()),
       (${e2eUsers.member.id}, ${e2eUsers.member.name}, ${e2eUsers.member.email}, ${passwordHash}, NOW(), ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW()),
-      (${e2eUsers.nonMember.id}, ${e2eUsers.nonMember.name}, ${e2eUsers.nonMember.email}, ${passwordHash}, NOW(), ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW())
+      (${e2eUsers.nonMember.id}, ${e2eUsers.nonMember.name}, ${e2eUsers.nonMember.email}, ${passwordHash}, NOW(), ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW()),
+      (${e2eUsers.invitee.id}, ${e2eUsers.invitee.name}, ${e2eUsers.invitee.email}, ${passwordHash}, NOW(), ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW()),
+      (${e2eUsers.pendingInvitee.id}, ${e2eUsers.pendingInvitee.name}, ${e2eUsers.pendingInvitee.email}, ${passwordHash}, NOW(), ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW())
   `;
   await sql`
     INSERT INTO team_members (team_id, user_id, role)

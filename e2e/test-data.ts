@@ -53,6 +53,16 @@ export const e2eUsers = {
     name: 'Timeline E2E Non Member',
     email: `${E2E_PREFIX}-non-member@example.test`,
   },
+  invitee: {
+    id: uuidFrom('invitee'),
+    name: 'Timeline E2E Invitee',
+    email: `${E2E_PREFIX}-invitee@example.test`,
+  },
+  pendingInvitee: {
+    id: uuidFrom('pending-invitee'),
+    name: 'Timeline E2E Pending Invitee',
+    email: `${E2E_PREFIX}-pending-invitee@example.test`,
+  },
 };
 
 export const e2eSeedEvents = {
