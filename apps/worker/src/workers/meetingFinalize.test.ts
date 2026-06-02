@@ -388,6 +388,31 @@ describe('processMeetingFinalizeJob', () => {
     expect((row?.metadata as Record<string, unknown>).summary).toBe('original summary');
   });
 
+  it('does not finalize or overwrite a failed meeting', async () => {
+    await seedMeeting(db as never, {
+      status: 'failed',
+      metadata: { failure_code: 'recording_permission_denied' },
+    });
+    await seedChunk(db as never, 0, 'This should not become a timeline event.', 'Alice');
+    const chat = makeChatStub('SHOULD NOT BE WRITTEN');
+
+    const result = await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+
+    expect(result.skipped).toBe('failed');
+    expect(chat).not.toHaveBeenCalled();
+    const row = (await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID)))[0];
+    expect(row?.status).toBe('failed');
+    expect((row?.metadata as Record<string, unknown>).failure_code).toBe(
+      'recording_permission_denied',
+    );
+    const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+    expect(events).toHaveLength(0);
+  });
+
   it('usage row is unique per meeting (re-insert is no-op)', async () => {
     await seedMeeting(db as never);
     await seedChunk(db as never, 0, 'Hello.', 'Alice');

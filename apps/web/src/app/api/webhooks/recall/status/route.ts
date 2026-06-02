@@ -45,6 +45,13 @@ const statusEventSchema = z.object({
             .optional(),
         })
         .optional(),
+      data: z
+        .object({
+          code: z.string().optional(),
+          updated_at: z.string().optional(),
+        })
+        .loose()
+        .optional(),
       status: z
         .object({
           code: z.string().optional(),
@@ -54,6 +61,13 @@ const statusEventSchema = z.object({
     })
     .loose(),
 });
+
+function statusCodeFromEvent(event: string): string | null {
+  if (!event.startsWith('bot.') && !event.startsWith('transcript.')) return null;
+  const code = event.split('.')[1];
+  if (!code) return null;
+  return code;
+}
 
 export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
@@ -98,8 +112,15 @@ export async function POST(req: Request): Promise<Response> {
   // updateMeetingStatus itself doesn't go through ensureMember.
   const scope = withTeam(db, meeting.teamId, meeting.createdByUserId ?? meeting.teamId);
 
-  const code = parsed.data.bot?.status?.code ?? parsed.data.status?.code;
-  const createdAt = parsed.data.bot?.status?.created_at ?? parsed.data.status?.created_at;
+  const code =
+    parsed.data.data?.code ??
+    parsed.data.status?.code ??
+    parsed.data.bot?.status?.code ??
+    statusCodeFromEvent(parsed.event);
+  const createdAt =
+    parsed.data.bot?.status?.created_at ??
+    parsed.data.status?.created_at ??
+    parsed.data.data?.updated_at;
   const mappedStatus = code ? meetingBots.recallMapStatus(code) : null;
 
   // Terminal-state guard. `completed` (finalize ran) and `failed` (user
@@ -129,10 +150,15 @@ export async function POST(req: Request): Promise<Response> {
   // We also defensively enqueue finalize when we see `done`/`analysis_done`
   // via status_change in case the separate `bot.call_ended` event was
   // dropped (Recall has shipped both shapes historically).
+  const isFailureEvent =
+    parsed.event === 'bot.fatal' || parsed.event === 'bot.failed' || mappedStatus === 'failed';
   const shouldEnqueueFinalize =
-    parsed.event === 'bot.call_ended' ||
-    (parsed.event === 'bot.status_change' &&
-      (code === 'done' || code === 'analysis_done' || mappedStatus === 'completed'));
+    !isFailureEvent &&
+    (parsed.event === 'bot.call_ended' ||
+      parsed.event === 'bot.done' ||
+      parsed.event === 'transcript.done' ||
+      (parsed.event === 'bot.status_change' &&
+        (code === 'done' || code === 'analysis_done' || mappedStatus === 'completed')));
 
   // Fail-fast Redis precheck. If we can't enqueue finalize, we must NOT
   // write `processing` to the DB and then return 503 — Recall will retry
@@ -147,7 +173,14 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
-    if (parsed.event === 'bot.status_change' && mappedStatus) {
+    if (isFailureEvent) {
+      // `failed` is terminal — overrides any in-flight state including
+      // `processing`. The terminal guard above only blocks transitions OUT
+      // of failed/completed; transitioning INTO failed is always allowed.
+      await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
+        metadata: { failure_at: new Date().toISOString(), failure_code: code ?? 'unknown' },
+      });
+    } else if (mappedStatus) {
       // Cap at `processing` — never promote to `completed` here.
       const cappedStatus = mappedStatus === 'completed' ? 'processing' : mappedStatus;
       // Don't regress: if we're already at `processing`, a late event
@@ -183,22 +216,6 @@ export async function POST(req: Request): Promise<Response> {
           'ignoring_backward_status_transition',
         );
       }
-    } else if (parsed.event === 'bot.call_ended') {
-      // Only update if we haven't already moved to processing (idempotent
-      // re-delivery).
-      if (meeting.status !== 'processing') {
-        await scope.meetings.updateMeetingStatus(meeting.id, 'processing', {
-          endedAt: createdAt ? new Date(createdAt) : new Date(),
-          metadata: { call_ended_at: createdAt ?? new Date().toISOString() },
-        });
-      }
-    } else if (parsed.event === 'bot.fatal' || parsed.event === 'bot.failed') {
-      // `failed` is terminal — overrides any in-flight state including
-      // `processing`. The terminal guard above only blocks transitions OUT
-      // of failed/completed; transitioning INTO failed is always allowed.
-      await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
-        metadata: { failure_at: new Date().toISOString(), failure_code: code ?? 'unknown' },
-      });
     }
     // Unknown events are intentionally ignored — Recall ships new event
     // types regularly and we don't want 5xx to trigger retry storms.

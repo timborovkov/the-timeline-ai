@@ -3,10 +3,12 @@ import { notFound, redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { MeetingExportButtons } from '@/components/meeting-export-buttons';
 import { CancelMeetingButton } from '@/components/meeting-forms';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { formatMeetingOffset, formatTranscriptExport } from '@/lib/meeting-transcript-export';
 
 export const metadata: Metadata = {
   title: 'Meeting',
@@ -18,13 +20,6 @@ interface Props {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function fmtMs(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
 
 export default async function MeetingDetailPage({ params }: Props) {
   const { id } = await params;
@@ -44,11 +39,21 @@ export default async function MeetingDetailPage({ params }: Props) {
 
   const summary = typeof meeting.metadata.summary === 'string' ? meeting.metadata.summary : null;
   const cancellable = ['pending', 'joining', 'active'].includes(meeting.status);
+  const title = meeting.title ?? `${meeting.platform} meeting`;
+  const transcriptExport = formatTranscriptExport({
+    title,
+    platform: meeting.platform,
+    status: meeting.status,
+    createdAt: meeting.createdAt,
+    meetingUrl: meeting.meetingUrl,
+    summary,
+    chunks,
+  });
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">{meeting.title ?? `${meeting.platform} meeting`}</h1>
+        <h1 className="text-2xl font-semibold">{title}</h1>
         <p className="text-xs text-muted-foreground">
           {meeting.platform} · {meeting.status} · {new Date(meeting.createdAt).toLocaleString()}
         </p>
@@ -57,6 +62,9 @@ export default async function MeetingDetailPage({ params }: Props) {
             {meeting.meetingUrl}
           </a>
         </p>
+        <div className="pt-2">
+          <MeetingExportButtons title={title} transcriptText={transcriptExport} />
+        </div>
         {cancellable ? (
           <div className="pt-2">
             <CancelMeetingButton meetingId={meeting.id} />
@@ -88,7 +96,7 @@ export default async function MeetingDetailPage({ params }: Props) {
             {chunks.map((c) => (
               <li key={c.id} className="flex gap-3">
                 <span className="w-12 shrink-0 font-mono text-xs text-muted-foreground">
-                  {fmtMs(c.startMs)}
+                  {formatMeetingOffset(c.startMs)}
                 </span>
                 <span className="flex-1">
                   {c.speaker ? (
