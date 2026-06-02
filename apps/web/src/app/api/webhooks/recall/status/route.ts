@@ -113,9 +113,9 @@ export async function POST(req: Request): Promise<Response> {
   const scope = withTeam(db, meeting.teamId, meeting.createdByUserId ?? meeting.teamId);
 
   const code =
-    parsed.data.bot?.status?.code ??
-    parsed.data.status?.code ??
     parsed.data.data?.code ??
+    parsed.data.status?.code ??
+    parsed.data.bot?.status?.code ??
     statusCodeFromEvent(parsed.event);
   const createdAt =
     parsed.data.bot?.status?.created_at ??
@@ -157,7 +157,7 @@ export async function POST(req: Request): Promise<Response> {
     (parsed.event === 'bot.call_ended' ||
       parsed.event === 'bot.done' ||
       parsed.event === 'transcript.done' ||
-      ((parsed.event === 'bot.status_change' || parsed.event.startsWith('bot.')) &&
+      (parsed.event === 'bot.status_change' &&
         (code === 'done' || code === 'analysis_done' || mappedStatus === 'completed')));
 
   // Fail-fast Redis precheck. If we can't enqueue finalize, we must NOT

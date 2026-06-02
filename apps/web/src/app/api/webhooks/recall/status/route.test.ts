@@ -254,6 +254,36 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
     });
   });
 
+  it('does not finalize arbitrary bot events when nested bot.status is stale done', async () => {
+    fakes.fakeLookup.mockResolvedValueOnce({
+      id: 'meeting-1',
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      status: 'joining',
+      platform: 'meet',
+      provider: 'recall',
+    });
+    const body = JSON.stringify({
+      event: 'bot.in_call_recording',
+      data: {
+        data: {
+          code: 'in_call_recording',
+          updated_at: '2026-06-02T12:00:00.000000+00:00',
+        },
+        bot: { id: BOT_ID, metadata: {}, status: { code: 'done' } },
+      },
+    });
+
+    const r = await POST(signedRequest(body));
+    expect(r.status).toBe(200);
+    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
+      'meeting-1',
+      'active',
+      expect.objectContaining({ startedAt: expect.any(Date) as Date }),
+    );
+    expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
+  });
+
   it('caps status_change at processing — never sets completed', async () => {
     const r = await POST(signedRequest(statusBody('bot.status_change', 'done')));
     expect(r.status).toBe(200);
