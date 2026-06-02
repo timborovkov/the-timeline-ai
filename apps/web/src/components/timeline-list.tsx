@@ -4,6 +4,7 @@ import {
   Bot,
   CalendarDays,
   Cable,
+  ExternalLink,
   FileText,
   Mail,
   MessageSquare,
@@ -26,6 +27,7 @@ import { Button } from '@/components/ui/button';
 import {
   buildTimelineMoments,
   filterTimelineMomentsByImpact,
+  meetingDetailHrefForMoment,
   type ImpactItem,
   type TimelineImpactFilter,
   type TimelineMoment,
@@ -478,6 +480,7 @@ function TimelineMomentRow({
   const inspector = useInspector();
   const Icon = SOURCE_ICON[moment.source];
   const selected = inspector.open && inspector.content?.id === moment.id;
+  const meetingHref = meetingDetailHrefForMoment(moment);
   return (
     <li
       className={cn(
@@ -533,6 +536,15 @@ function TimelineMomentRow({
             {moment.summary}
           </p>
         </button>
+        {meetingHref ? (
+          <Link
+            href={meetingHref}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:text-signal"
+          >
+            <ExternalLink aria-hidden="true" className="size-3" />
+            Open transcript
+          </Link>
+        ) : null}
         <ImpactStrip items={moment.impactItems} />
         {!compact ? (
           <RawEventExpansion
