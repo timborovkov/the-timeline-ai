@@ -25,6 +25,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@sentry/node": "^10.55.0",
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",
     "bullmq": "^5.77.7",

@@ -4,6 +4,7 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
@@ -63,7 +64,15 @@ export async function PATCH(req: Request): Promise<Response> {
   } else if (parsed.data.action === 'reopen') {
     await scope.onboarding.reopenChecklist();
   } else if (parsed.data.key) {
-    await scope.onboarding.markStepComplete(parsed.data.key);
+    const completedStep = await scope.onboarding.markStepComplete(parsed.data.key);
+    if (completedStep) {
+      trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
+        teamId: active.teamId,
+        userId: session.user.id,
+        step: parsed.data.key,
+        source: 'manual',
+      });
+    }
   } else {
     return Response.json({ error: 'invalid_input' }, { status: 400 });
   }

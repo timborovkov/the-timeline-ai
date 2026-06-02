@@ -26,7 +26,7 @@ export interface ActionState {
 
 type ResolvedScope =
   | { ok: false; error: string }
-  | { ok: true; scope: ReturnType<typeof withTeam>; userId: string };
+  | { ok: true; scope: ReturnType<typeof withTeam>; teamId: string; userId: string };
 
 export async function resolveScope(): Promise<ResolvedScope> {
   const session = await auth();
@@ -36,6 +36,7 @@ export async function resolveScope(): Promise<ResolvedScope> {
   return {
     ok: true,
     scope: withTeam(db, active.teamId, session.user.id),
+    teamId: active.teamId,
     userId: session.user.id,
   };
 }

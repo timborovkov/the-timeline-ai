@@ -12,6 +12,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
@@ -66,8 +67,23 @@ export async function createTextEventAction(
     contentText: parsed.data.text,
     visibility: parsed.data.visibility,
   });
-  await safeMarkOnboardingStep(scope, 'first_note');
+  const completedFirstNote = await safeMarkOnboardingStep(scope, 'first_note');
   await deleteCacheKey(cacheKey(['onboarding', active.teamId, session.user.id]));
+  trackProductEventBestEffort(session.user.id, 'capture_created', {
+    teamId: active.teamId,
+    userId: session.user.id,
+    rawEventId: event.id,
+    captureType: 'text',
+    visibility: parsed.data.visibility,
+  });
+  if (completedFirstNote) {
+    trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
+      teamId: active.teamId,
+      userId: session.user.id,
+      step: 'first_note',
+      source: 'automatic',
+    });
+  }
 
   const processingWarnings: string[] = [];
   try {
@@ -257,8 +273,24 @@ export async function createAudioEventAction(
     visibility: parsed.data.visibility,
     sourceMetadata,
   });
-  await safeMarkOnboardingStep(scope, 'first_note');
+  const completedFirstNote = await safeMarkOnboardingStep(scope, 'first_note');
   await deleteCacheKey(cacheKey(['onboarding', active.teamId, session.user.id]));
+  trackProductEventBestEffort(session.user.id, 'capture_created', {
+    teamId: active.teamId,
+    userId: session.user.id,
+    rawEventId: event.id,
+    captureType: 'audio',
+    visibility: parsed.data.visibility,
+    durationSec: parsed.data.durationSec,
+  });
+  if (completedFirstNote) {
+    trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
+      teamId: active.teamId,
+      userId: session.user.id,
+      step: 'first_note',
+      source: 'automatic',
+    });
+  }
 
   try {
     const queue = await requireRedisQueue();

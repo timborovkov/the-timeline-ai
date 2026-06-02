@@ -7,6 +7,7 @@ import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
@@ -66,7 +67,15 @@ async function generateLinkTokenAction(
     targetTgUsername,
     expiresAt,
   });
-  await safeMarkOnboardingStep(teamScope, 'telegram');
+  const completedTelegram = await safeMarkOnboardingStep(teamScope, 'telegram');
+  if (completedTelegram) {
+    trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
+      teamId: active.teamId,
+      userId: session.user.id,
+      step: 'telegram',
+      source: 'automatic',
+    });
+  }
   revalidatePath('/app/team/telegram');
   revalidatePath('/app/timeline');
   return { token, scope, expiresAt: expiresAt.toISOString() };

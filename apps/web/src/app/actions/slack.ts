@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
@@ -38,7 +39,15 @@ export async function bindSlackConversationAction(formData: FormData): Promise<v
       targetType: 'slack_conversation_binding',
       metadata: { action: 'bind', conversation_id: parsed.data.conversationId },
     });
-    await safeMarkOnboardingStep(scope, 'slack');
+    const completedSlack = await safeMarkOnboardingStep(scope, 'slack');
+    if (completedSlack) {
+      trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
+        teamId: active.teamId,
+        userId: session.user.id,
+        step: 'slack',
+        source: 'automatic',
+      });
+    }
   } catch {
     return;
   }

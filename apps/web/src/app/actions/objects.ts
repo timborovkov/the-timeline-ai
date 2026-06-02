@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 
 // Derived from the Postgres enum so adding a new object type doesn't
 // require synchronizing this schema with the drizzle enum by hand.
@@ -56,6 +57,13 @@ export async function createObjectAction(input: unknown): Promise<ActionState> {
     if (parsed.data.parentObjectId) {
       revalidatePath(`/app/objects/${parsed.data.parentObjectId}`);
     }
+    trackProductEventBestEffort(r.userId, 'object_created', {
+      teamId: r.teamId,
+      userId: r.userId,
+      objectId: obj.id,
+      objectType: parsed.data.type,
+      hasParent: Boolean(parsed.data.parentObjectId),
+    });
     return { ok: true, id: obj.id };
   } catch (err) {
     return { error: friendlyError(err, 'Failed to create object') };
