@@ -117,6 +117,7 @@ pnpm check:web-bundle     # inspect built Next server chunks
 - [`docs/index.html`](./docs/index.html) — documentation index.
 - [`design.md`](./design.md) — UI design system and product interaction model.
 - [`todo.md`](./todo.md) — phased build plan and remaining work.
+- [`TEST_TODO.md`](./TEST_TODO.md) — current test coverage map and expansion plan.
 - [`docs/adr/`](./docs/adr/) — durable architecture decisions.
 
 Setup guides for external services live under [`docs/setup`](./docs/setup/):
