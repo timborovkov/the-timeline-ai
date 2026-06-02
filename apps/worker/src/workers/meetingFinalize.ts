@@ -1,4 +1,5 @@
 import {
+  calendarEvents,
   type Db,
   meetings as meetingsTable,
   meetingTranscriptChunks,
@@ -61,6 +62,7 @@ interface ProcessResult {
 }
 
 type TranscriptChunk = typeof meetingTranscriptChunks.$inferSelect;
+type MeetingRow = typeof meetingsTable.$inferSelect;
 
 async function loadMeetingChunks(db: Db, meetingId: string, teamId: string) {
   return db
@@ -94,6 +96,20 @@ async function findFinalizedRawEventId(db: Db, meetingId: string, teamId: string
   return existing[0]?.id;
 }
 
+async function findMeetingCalendarEventId(db: Db, meetingId: string, teamId: string) {
+  const existing = await db
+    .select({ id: calendarEvents.id })
+    .from(calendarEvents)
+    .where(
+      and(
+        eq(calendarEvents.teamId, teamId),
+        sql`(${calendarEvents.metadata} ->> 'meeting_id') = ${meetingId}`,
+      ),
+    )
+    .limit(1);
+  return existing[0]?.id;
+}
+
 async function enqueueRawEventPipeline(
   env: ReturnType<typeof getEnv>,
   io: MeetingFinalizeIO,
@@ -111,6 +127,19 @@ async function enqueueRawEventPipeline(
   ]);
 }
 
+async function enqueueCalendarEventPipeline(
+  env: ReturnType<typeof getEnv>,
+  io: MeetingFinalizeIO,
+  calendarEventId: string | null | undefined,
+  teamId: string,
+) {
+  if (!calendarEventId) return;
+  if (!env.REDIS_URL && !io.enqueueEmbedJob) return;
+
+  const enqueueEmbedJob = io.enqueueEmbedJob ?? queue.enqueueEmbedJob;
+  await enqueueEmbedJob({ scope: 'calendar_event', calendarEventId, teamId });
+}
+
 async function enqueueMeetingChunkEmbeds(
   env: ReturnType<typeof getEnv>,
   io: MeetingFinalizeIO,
@@ -126,6 +155,166 @@ async function enqueueMeetingChunkEmbeds(
       enqueueEmbedJob({ scope: 'meeting_chunk', meetingChunkId, teamId }),
     ),
   );
+}
+
+function platformLabel(platform: MeetingRow['platform']): string {
+  switch (platform) {
+    case 'meet':
+      return 'Google Meet';
+    case 'teams':
+      return 'Microsoft Teams';
+    case 'zoom':
+      return 'Zoom';
+  }
+}
+
+function calendarTitleForMeeting(meeting: MeetingRow): string {
+  const title = meeting.title?.trim() ? meeting.title.trim() : 'Untitled meeting';
+  return `${platformLabel(meeting.platform)} with Meeting Bot: ${title}`;
+}
+
+function participantNames(meeting: MeetingRow): string[] {
+  if (!Array.isArray(meeting.participants)) return [];
+  return meeting.participants
+    .map((participant) => {
+      if (!participant || typeof participant !== 'object') return null;
+      const record = participant as Record<string, unknown>;
+      const name = typeof record.name === 'string' ? record.name.trim() : '';
+      const email = typeof record.email === 'string' ? record.email.trim() : '';
+      return name || email || null;
+    })
+    .filter((value): value is string => Boolean(value));
+}
+
+function buildMeetingCalendarDescription(args: {
+  meeting: MeetingRow;
+  summary: string | null;
+  actionItems: { text: string; owner: string | null }[];
+}): string {
+  const parts = [
+    `Meeting: /app/meetings/${args.meeting.id}`,
+    `Join URL: ${args.meeting.meetingUrl}`,
+  ];
+  const participants = participantNames(args.meeting);
+  if (participants.length > 0) parts.push(`Participants: ${participants.join(', ')}`);
+  if (args.summary) parts.push(`Summary: ${args.summary}`);
+  if (args.actionItems.length > 0) {
+    parts.push(
+      `Action items: ${args.actionItems
+        .map((item) => (item.owner ? `${item.text} (${item.owner})` : item.text))
+        .join('; ')}`,
+    );
+  }
+  return parts.join('\n\n');
+}
+
+async function createMeetingCalendarEvent(
+  tx: Db,
+  args: {
+    meeting: MeetingRow;
+    teamId: string;
+    startAt: Date;
+    endAt: Date;
+    summary: string | null;
+    actionItems: { text: string; owner: string | null }[];
+    minutes: number;
+  },
+): Promise<string | null> {
+  const existingCalendarEventId = await findMeetingCalendarEventId(
+    tx,
+    args.meeting.id,
+    args.teamId,
+  );
+  if (existingCalendarEventId) return existingCalendarEventId;
+
+  const title = calendarTitleForMeeting(args.meeting);
+  const description = buildMeetingCalendarDescription({
+    meeting: args.meeting,
+    summary: args.summary,
+    actionItems: args.actionItems,
+  });
+  const metadata = {
+    source: 'meeting_bot',
+    meeting_id: args.meeting.id,
+    meeting_url: args.meeting.meetingUrl,
+    platform: args.meeting.platform,
+    duration_minutes: args.minutes,
+    meeting_href: `/app/meetings/${args.meeting.id}`,
+  };
+
+  const [row] = await tx
+    .insert(calendarEvents)
+    .values({
+      teamId: args.teamId,
+      createdByUserId: args.meeting.createdByUserId,
+      title,
+      description,
+      startAt: args.startAt,
+      endAt: args.endAt,
+      timezone: 'UTC',
+      location: args.meeting.meetingUrl,
+      visibility: args.meeting.defaultVisibility,
+      visibilityUserIds: args.meeting.visibilityUserIds,
+      metadata,
+    })
+    .returning({ id: calendarEvents.id });
+
+  if (!row) return null;
+
+  const [scheduledRow] = await tx
+    .insert(rawEvents)
+    .values({
+      teamId: args.teamId,
+      authorUserId: args.meeting.createdByUserId,
+      source: 'calendar',
+      contentText: `Scheduled: ${title}`,
+      occurredAt: new Date(),
+      visibility: args.meeting.defaultVisibility,
+      visibilityUserIds: args.meeting.visibilityUserIds,
+      visibilityOwnerUserId: args.meeting.createdByUserId,
+      sourceMetadata: {
+        calendar_event_id: row.id,
+        action: 'scheduled',
+        meeting_id: args.meeting.id,
+        source: 'meeting_bot',
+      },
+    })
+    .returning({ id: rawEvents.id });
+
+  const [startAtRow] = await tx
+    .insert(rawEvents)
+    .values({
+      teamId: args.teamId,
+      authorUserId: args.meeting.createdByUserId,
+      source: 'calendar',
+      contentText: [
+        title,
+        description,
+        `at ${args.meeting.meetingUrl}`,
+        `${args.startAt.toISOString()} to ${args.endAt.toISOString()}`,
+      ].join(' | '),
+      occurredAt: args.startAt,
+      visibility: args.meeting.defaultVisibility,
+      visibilityUserIds: args.meeting.visibilityUserIds,
+      visibilityOwnerUserId: args.meeting.createdByUserId,
+      sourceMetadata: {
+        calendar_event_id: row.id,
+        action: 'event',
+        meeting_id: args.meeting.id,
+        source: 'meeting_bot',
+      },
+    })
+    .returning({ id: rawEvents.id });
+
+  await tx
+    .update(calendarEvents)
+    .set({
+      scheduledRawEventId: scheduledRow?.id ?? null,
+      startAtRawEventId: startAtRow?.id ?? null,
+    })
+    .where(eq(calendarEvents.id, row.id));
+
+  return row.id;
 }
 
 async function summarizeTranscript(
@@ -200,6 +389,7 @@ export async function processMeetingFinalizeJob(
     // so recover the consolidated event and enqueue again. Extract/embed are
     // worker-idempotent.
     const rawEventId = await findFinalizedRawEventId(deps.db, meetingId, teamId);
+    const calendarEventId = await findMeetingCalendarEventId(deps.db, meetingId, teamId);
     if (rawEventId) {
       const chunks = await loadMeetingChunks(deps.db, meetingId, teamId);
       await Promise.all([
@@ -210,6 +400,9 @@ export async function processMeetingFinalizeJob(
           chunks.map((c) => c.id),
           teamId,
         ),
+        meeting.defaultVisibility === 'team'
+          ? enqueueCalendarEventPipeline(env, io, calendarEventId, teamId)
+          : Promise.resolve(),
       ]);
     }
     return { skipped: 'already_completed', meetingId };
@@ -333,6 +526,24 @@ export async function processMeetingFinalizeJob(
             .onConflictDoNothing();
         }
 
+        const calendarStartAt = meeting.startedAt ?? meeting.createdAt;
+        let calendarEndAt =
+          meeting.endedAt && meeting.endedAt > calendarStartAt
+            ? meeting.endedAt
+            : new Date(calendarStartAt.getTime() + Math.max(1, minutes) * 60_000);
+        if (calendarEndAt <= calendarStartAt) {
+          calendarEndAt = new Date(calendarStartAt.getTime() + 60_000);
+        }
+        const calendarEventId = await createMeetingCalendarEvent(tx as never, {
+          meeting,
+          teamId,
+          startAt: calendarStartAt,
+          endAt: calendarEndAt,
+          summary: summarized.summary,
+          actionItems: summarized.actionItems,
+          minutes,
+        });
+
         // Status flip is last — a crash anywhere above means the retry will
         // re-enter and complete the remaining steps.
         await tx
@@ -340,7 +551,12 @@ export async function processMeetingFinalizeJob(
           .set({ status: 'completed', updatedAt: new Date() })
           .where(eq(meetingsTable.id, meetingId));
 
-        return { minutes, rawEventId, meetingChunkIds: finalChunks.map((c) => c.id) };
+        return {
+          minutes,
+          rawEventId,
+          calendarEventId,
+          meetingChunkIds: finalChunks.map((c) => c.id),
+        };
       });
 
       if ('retryChunks' in finalized) {
@@ -352,6 +568,9 @@ export async function processMeetingFinalizeJob(
         await Promise.all([
           enqueueRawEventPipeline(env, io, finalized.rawEventId, teamId),
           enqueueMeetingChunkEmbeds(env, io, finalized.meetingChunkIds, teamId),
+          meeting.defaultVisibility === 'team'
+            ? enqueueCalendarEventPipeline(env, io, finalized.calendarEventId, teamId)
+            : Promise.resolve(),
         ]);
       }
 

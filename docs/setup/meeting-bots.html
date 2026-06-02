@@ -24,7 +24,8 @@
         video). Each finalised utterance is written as a <code>meeting_transcript_chunks</code> row
         for the meeting detail UI and utterance-level search. When the call ends, the finalize
         worker creates one consolidated <code>raw_events</code> row with the full transcript and
-        LLM-generated summary so the meeting appears as a single timeline entry.
+        LLM-generated summary so the meeting appears as a single timeline entry, then creates a
+        native calendar event for the call with links back to the meeting detail page.
       </p>
 
       <h2 id="provider">Why Recall.ai (and what else works)</h2>
