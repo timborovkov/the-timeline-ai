@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { ErrorEvent } from '@sentry/nextjs';
 
-import { parseSentrySampleRate, scrubSentryEvent, sentrySampleRate } from '@/sentry.shared';
+import {
+  parseSentrySampleRate,
+  sanitizeRequestUrl,
+  scrubSentryEvent,
+  sentrySampleRate,
+} from '@/sentry.shared';
 
 describe('Sentry web config helpers', () => {
   it('defaults invalid sample rates to zero', () => {
@@ -19,6 +24,7 @@ describe('Sentry web config helpers', () => {
   it('scrubs request auth material', () => {
     const event = scrubSentryEvent({
       request: {
+        url: 'https://app.timeline.test/api/integrations/github/callback?code=secret&state=secret#frag',
         cookies: { session: 'secret' },
         headers: {
           authorization: 'Bearer token',
@@ -32,7 +38,19 @@ describe('Sentry web config helpers', () => {
       },
     } as unknown as ErrorEvent);
 
+    expect(event.request?.url).toBe('https://app.timeline.test/api/integrations/github/callback');
     expect(event.request?.cookies).toBeUndefined();
     expect(event.request?.headers).toEqual({ 'x-request-id': 'req-1' });
+  });
+
+  it('strips query strings and redacts invite tokens from request URLs', () => {
+    expect(
+      sanitizeRequestUrl(
+        'https://app.timeline.test/accept-invite/sensitive-token?callbackUrl=/app#fragment',
+      ),
+    ).toBe('https://app.timeline.test/accept-invite/[redacted]');
+    expect(sanitizeRequestUrl('/accept-invite/sensitive-token?invite=secret')).toBe(
+      '/accept-invite/[redacted]',
+    );
   });
 });

@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/node';
 
 const SENSITIVE_HEADER_NAMES = new Set(['authorization', 'cookie', 'x-auth-token']);
+const SENSITIVE_PATH_PREDECESSORS = new Set(['accept-invite']);
 
 function sampleRate(name: string): number {
   const value = Number(process.env[name] ?? 0);
@@ -21,6 +22,8 @@ export function initWorkerSentry(): boolean {
     sendDefaultPii: false,
     beforeSend(event) {
       if (event.request) {
+        const sanitizedUrl = sanitizeRequestUrl(event.request.url);
+        if (sanitizedUrl !== undefined) event.request.url = sanitizedUrl;
         delete event.request.cookies;
         if (event.request.headers) {
           event.request.headers = Object.fromEntries(
@@ -56,3 +59,28 @@ export async function flushWorkerSentry(timeoutMs = 2000): Promise<boolean> {
 }
 
 export const workerSentryInternals = { sampleRate };
+
+function sanitizeRequestUrl(rawUrl: string | undefined): string | undefined {
+  if (!rawUrl) return rawUrl;
+  const hasScheme = /^[a-z][a-z\d+.-]*:/i.test(rawUrl);
+
+  try {
+    const url = new URL(rawUrl, 'https://timeline.local');
+    url.search = '';
+    url.hash = '';
+    url.pathname = redactSensitivePath(url.pathname);
+    return hasScheme ? url.toString() : url.pathname;
+  } catch {
+    return redactSensitivePath(rawUrl.split(/[?#]/, 1)[0] ?? rawUrl);
+  }
+}
+
+function redactSensitivePath(pathname: string): string {
+  const parts = pathname.split('/');
+  return parts
+    .map((part, index) => {
+      const previous = parts[index - 1]?.toLowerCase();
+      return part && previous && SENSITIVE_PATH_PREDECESSORS.has(previous) ? '[redacted]' : part;
+    })
+    .join('/');
+}

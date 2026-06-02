@@ -20,10 +20,18 @@ function posthogConfig() {
   return { key: posthogKey(), host: posthogHost() };
 }
 
-export async function trackProductEvent<Name extends ProductEventName>(
+async function trackProductEvent<Name extends ProductEventName>(
   distinctId: string,
   event: Name,
   properties: ProductEventPayloads[Name],
 ): Promise<void> {
   await capturePostHogProductEvent(posthogConfig(), distinctId, event, properties);
+}
+
+export function trackProductEventBestEffort<Name extends ProductEventName>(
+  distinctId: string,
+  event: Name,
+  properties: ProductEventPayloads[Name],
+): void {
+  void trackProductEvent(distinctId, event, properties).catch(() => undefined);
 }

@@ -10,7 +10,7 @@ import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { trackProductEvent } from '#src/analytics.js';
+import { trackProductEventBestEffort } from '#src/analytics.js';
 
 const log = childLogger('worker:meeting-finalize');
 
@@ -355,13 +355,17 @@ export async function processMeetingFinalizeJob(
         ]);
       }
 
-      await trackProductEvent(meeting.createdByUserId ?? `team:${teamId}`, 'meeting_finalized', {
-        teamId,
-        userId: meeting.createdByUserId,
-        meetingId,
-        minutes: finalized.minutes,
-        actionItems: summarized.actionItems.length,
-      }).catch(() => undefined);
+      trackProductEventBestEffort(
+        meeting.createdByUserId ?? `team:${teamId}`,
+        'meeting_finalized',
+        {
+          teamId,
+          userId: meeting.createdByUserId,
+          meetingId,
+          minutes: finalized.minutes,
+          actionItems: summarized.actionItems.length,
+        },
+      );
 
       return {
         meetingId,

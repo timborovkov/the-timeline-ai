@@ -11,6 +11,7 @@ const withScope = vi.fn((fn: (scope: { setTag: typeof setScopeTag }) => void) =>
 
 interface WorkerBeforeSendEvent {
   request?: {
+    url?: string;
     cookies?: Record<string, string>;
     headers?: Record<string, string>;
   };
@@ -77,6 +78,7 @@ describe('worker Sentry monitoring', () => {
     const beforeSend = initOptions?.beforeSend;
     const event = beforeSend?.({
       request: {
+        url: 'https://app.timeline.test/api/mcp/oauth/callback?code=secret&state=secret#frag',
         cookies: { session: 'secret' },
         headers: {
           Authorization: 'Bearer token',
@@ -87,7 +89,23 @@ describe('worker Sentry monitoring', () => {
       },
     });
 
+    expect(event?.request?.url).toBe('https://app.timeline.test/api/mcp/oauth/callback');
     expect(event?.request?.cookies).toBeUndefined();
     expect(event?.request?.headers).toEqual({ 'x-request-id': 'req-1' });
+  });
+
+  it('redacts invite token path segments from request URLs', async () => {
+    process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
+    const monitoring = await import('#src/monitoring.js');
+
+    monitoring.initWorkerSentry();
+    const initOptions = init.mock.calls[0]?.[0] as WorkerSentryInitOptions | undefined;
+    const event = initOptions?.beforeSend?.({
+      request: {
+        url: 'https://app.timeline.test/accept-invite/sensitive-token?invite=secret',
+      },
+    });
+
+    expect(event?.request?.url).toBe('https://app.timeline.test/accept-invite/[redacted]');
   });
 });
