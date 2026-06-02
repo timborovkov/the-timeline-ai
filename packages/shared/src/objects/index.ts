@@ -1524,7 +1524,14 @@ export async function createIdentityFacet(
     }
 
     const existing = await tx
-      .select({ id: objectIdentityFacets.id, entityId: objectIdentityFacets.entityId })
+      .select({
+        id: objectIdentityFacets.id,
+        entityId: objectIdentityFacets.entityId,
+        provider: objectIdentityFacets.provider,
+        externalId: objectIdentityFacets.externalId,
+        linkedUserId: objectIdentityFacets.linkedUserId,
+        metadata: objectIdentityFacets.metadata,
+      })
       .from(objectIdentityFacets)
       .where(
         and(
@@ -1538,6 +1545,64 @@ export async function createIdentityFacet(
       if (existing[0].entityId !== input.entityId) {
         throw new Error('Identity facet already belongs to another person');
       }
+      const mergedMetadata = {
+        ...((existing[0].metadata && typeof existing[0].metadata === 'object'
+          ? existing[0].metadata
+          : {}) as Record<string, unknown>),
+        ...(input.metadata ?? {}),
+      };
+      await tx
+        .update(objectIdentityFacets)
+        .set({
+          value,
+          normalizedValue,
+          provider: input.provider !== undefined ? input.provider : existing[0].provider,
+          externalId: input.externalId !== undefined ? input.externalId : existing[0].externalId,
+          linkedUserId:
+            input.linkedUserId !== undefined ? input.linkedUserId : existing[0].linkedUserId,
+          source: input.source ?? (input.actor.kind === 'agent' ? 'agent_approved' : 'manual'),
+          metadata: mergedMetadata,
+          updatedAt: new Date(),
+        })
+        .where(eq(objectIdentityFacets.id, existing[0].id));
+      const summary = `Updated ${input.kind} identity for ${ent[0].canonicalName}: ${value}`;
+      const ev = await tx
+        .insert(rawEvents)
+        .values({
+          teamId: scope.teamId,
+          authorUserId: input.actor.userId ?? null,
+          source: 'system',
+          contentText: summary,
+          occurredAt: new Date(),
+          visibility: 'team',
+          sourceMetadata: {
+            kind: 'identity_facet_update',
+            entity_id: input.entityId,
+            identity_facet_id: existing[0].id,
+            identity_facet_kind: input.kind,
+          },
+        })
+        .returning({ id: rawEvents.id });
+      await tx.insert(objectChanges).values({
+        teamId: scope.teamId,
+        entityId: input.entityId,
+        actorUserId: input.actor.userId ?? null,
+        actorKind: input.actor.kind,
+        status: 'applied',
+        field: '__identity_facet_update__',
+        previousValue: { id: existing[0].id },
+        newValue: {
+          id: existing[0].id,
+          kind: input.kind,
+          value,
+          normalizedValue,
+          provider: input.provider !== undefined ? input.provider : existing[0].provider,
+          externalId: input.externalId !== undefined ? input.externalId : existing[0].externalId,
+          linkedUserId:
+            input.linkedUserId !== undefined ? input.linkedUserId : existing[0].linkedUserId,
+        },
+        sourceEventId: ev[0]?.id ?? null,
+      });
       return { id: existing[0].id };
     }
 

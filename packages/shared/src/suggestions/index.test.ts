@@ -292,10 +292,22 @@ describe('suggestion scope', () => {
     });
 
     expect(second.id).toBe(first.id);
-    const result = await pg.query<{ count: string }>(
-      `SELECT count(*)::text FROM object_identity_facets WHERE team_id = '${TEAM_ID}'`,
+    const result = await pg.query<{
+      count: string;
+      value: string;
+      external_id: string;
+      source: string;
+    }>(
+      `SELECT count(*)::text, max(value) AS value, max(external_id) AS external_id, max(source) AS source
+       FROM object_identity_facets
+       WHERE team_id = '${TEAM_ID}'`,
     );
     expect(result.rows[0]?.count).toBe('1');
+    expect(result.rows[0]).toMatchObject({
+      value: '@miku',
+      external_id: '12345',
+      source: 'manual',
+    });
   });
 
   it('does not treat another person identity facet as a successful target match', async () => {

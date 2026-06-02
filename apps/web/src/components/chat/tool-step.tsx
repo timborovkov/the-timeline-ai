@@ -133,12 +133,18 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
 
-  function run(action: () => Promise<{ ok?: boolean; error?: string }>) {
+  function run(
+    itemId: string,
+    resolvedStatus: string,
+    action: () => Promise<{ ok?: boolean; error?: string }>,
+  ) {
     setError(null);
     startTransition(async () => {
       const result = await action();
       if (result.error) setError(result.error);
+      else if (result.ok) setLocalStatuses((current) => ({ ...current, [itemId]: resolvedStatus }));
       router.refresh();
     });
   }
@@ -166,42 +172,49 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
       ) : null}
       {error ? <p className="mt-2 text-xs text-danger">{error}</p> : null}
       <ul className="mt-2 space-y-2">
-        {suggestion.items.map((item) => (
-          <li key={item.id} className="flex items-start justify-between gap-2 border-t pt-2">
-            <div className="min-w-0">
-              <div className="truncate text-xs font-medium">{item.title}</div>
-              <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                {item.status}
+        {suggestion.items.map((item) => {
+          const status = localStatuses[item.id] ?? item.status;
+          return (
+            <li key={item.id} className="flex items-start justify-between gap-2 border-t pt-2">
+              <div className="min-w-0">
+                <div className="truncate text-xs font-medium">{item.title}</div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                  {status}
+                </div>
               </div>
-            </div>
-            {item.status === 'pending' || item.status === 'failed' ? (
-              <div className="flex shrink-0 gap-1">
-                <button
-                  type="button"
-                  disabled={pending}
-                  className="rounded-sm border border-signal/40 px-2 py-1 text-signal disabled:opacity-50"
-                  onClick={() => {
-                    run(() => acceptSuggestionItemAction({ itemId: item.id }));
-                  }}
-                  aria-label={`Accept ${item.title}`}
-                >
-                  <Check className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  disabled={pending}
-                  className="rounded-sm border border-border px-2 py-1 text-muted-foreground disabled:opacity-50"
-                  onClick={() => {
-                    run(() => rejectSuggestionItemAction({ itemId: item.id }));
-                  }}
-                  aria-label={`Reject ${item.title}`}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ) : null}
-          </li>
-        ))}
+              {status === 'pending' || status === 'failed' ? (
+                <div className="flex shrink-0 gap-1">
+                  <button
+                    type="button"
+                    disabled={pending}
+                    className="rounded-sm border border-signal/40 px-2 py-1 text-signal disabled:opacity-50"
+                    onClick={() => {
+                      run(item.id, 'accepted', () =>
+                        acceptSuggestionItemAction({ itemId: item.id }),
+                      );
+                    }}
+                    aria-label={`Accept ${item.title}`}
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    className="rounded-sm border border-border px-2 py-1 text-muted-foreground disabled:opacity-50"
+                    onClick={() => {
+                      run(item.id, 'rejected', () =>
+                        rejectSuggestionItemAction({ itemId: item.id }),
+                      );
+                    }}
+                    aria-label={`Reject ${item.title}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
