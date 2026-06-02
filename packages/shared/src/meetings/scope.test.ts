@@ -113,6 +113,10 @@ describe('meetings scope', () => {
         action_items: [{ text: 'Old action', owner: null }],
       },
     });
+    await db
+      .update(meetings)
+      .set({ participants: [{ name: 'Alice' }, { name: 'Bob', email: 'bob@example.com' }] })
+      .where(eq(meetings.id, m.id));
     await scope.updateMeetingStatus(m.id, 'completed');
     const eventRows = await db
       .insert(rawEvents)
@@ -270,6 +274,9 @@ describe('meetings scope', () => {
     expect(startRaw?.contentText).toContain(
       'Summary stale: transcript changed after finalization.',
     );
+    expect(startRaw?.contentText).toContain('Participants: Alice, Bob');
+    expect(startRaw?.contentText).not.toContain('\n\n');
+    expect(startRaw?.contentText?.match(/https:\/\/zoom\.us\/j\/1/g)).toHaveLength(1);
     expect(startRaw?.contentText).not.toContain('Old summary');
     expect(startRaw?.contentText).not.toContain('Old action');
   });

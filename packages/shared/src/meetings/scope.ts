@@ -91,6 +91,39 @@ function meetingCalendarDescription(args: {
   return parts.join('\n\n');
 }
 
+function participantNames(participants: unknown): string[] {
+  if (!Array.isArray(participants)) return [];
+  return participants
+    .map((participant) => {
+      if (!participant || typeof participant !== 'object') return null;
+      const record = participant as Record<string, unknown>;
+      const name = typeof record.name === 'string' ? record.name.trim() : '';
+      const email = typeof record.email === 'string' ? record.email.trim() : '';
+      return name || email || null;
+    })
+    .filter((value): value is string => Boolean(value));
+}
+
+function staleMeetingCalendarRawText(args: {
+  title: string;
+  meetingId: string;
+  meetingUrl: string | null;
+  participants: unknown;
+  startAt: Date;
+  endAt: Date;
+}): string {
+  const parts = [
+    args.title,
+    `Meeting: /app/meetings/${args.meetingId}`,
+    args.meetingUrl ? `Join URL: ${args.meetingUrl}` : '',
+  ];
+  const names = participantNames(args.participants);
+  if (names.length > 0) parts.push(`Participants: ${names.join(', ')}`);
+  parts.push('Summary stale: transcript changed after finalization.');
+  parts.push(`${args.startAt.toISOString()} to ${args.endAt.toISOString()}`);
+  return parts.filter((part) => part.length > 0).join(' | ');
+}
+
 async function refreshFinalizedMeetingEvent(
   tx: DbOrTx,
   args: { meetingId: string; teamId: string; rawEventId: string },
@@ -152,6 +185,13 @@ async function refreshFinalizedMeetingEvent(
   const calendar = calendarRows[0];
   if (!calendar) return undefined;
 
+  const meetingRows = await tx
+    .select({ participants: meetings.participants })
+    .from(meetings)
+    .where(and(eq(meetings.id, args.meetingId), eq(meetings.teamId, args.teamId)))
+    .limit(1);
+  const participants = meetingRows[0]?.participants ?? [];
+
   const description = meetingCalendarDescription({
     meetingId: args.meetingId,
     meetingUrl: calendar.meetingUrl,
@@ -186,14 +226,14 @@ async function refreshFinalizedMeetingEvent(
     await tx
       .update(rawEvents)
       .set({
-        contentText: [
-          calendar.title,
-          description,
-          calendar.meetingUrl ? `at ${calendar.meetingUrl}` : '',
-          `${calendar.startAt.toISOString()} to ${calendar.endAt.toISOString()}`,
-        ]
-          .filter((part) => part.length > 0)
-          .join(' | '),
+        contentText: staleMeetingCalendarRawText({
+          title: calendar.title,
+          meetingId: args.meetingId,
+          meetingUrl: calendar.meetingUrl,
+          participants,
+          startAt: calendar.startAt,
+          endAt: calendar.endAt,
+        }),
         sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'summary' - 'action_items') || ${skipPatch}::jsonb`,
       })
       .where(and(eq(rawEvents.id, calendar.startAtRawEventId), eq(rawEvents.teamId, args.teamId)));
