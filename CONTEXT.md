@@ -47,6 +47,50 @@ hydrate it from existing metadata, suggestion evidence, object/task changes,
 document versions, and calendar rows without inventing missing graph links.
 _Avoid_: Related items when discussing what changed because of source evidence
 
+**Workspace Object**:
+A durable team memory item that represents something the team wants to track,
+such as a person, company, project, task, decision, deal, or follow-up.
+Workspace objects can be referenced by raw events, edited by teammates, and
+changed through approval-backed agent suggestions.
+_Avoid_: Entity when discussing the user-facing team memory item
+
+**Object Memory**:
+The team's durable understanding of a workspace object: its canonical name,
+aliases, structured fields, relationships, facts, notes, and approved changes
+over time. Object memory is visible and reviewable; it is not a hidden agent
+notebook.
+_Avoid_: Agent memory when it implies opaque private state
+
+**Object Memory Proposal**:
+An approval-backed agent suggestion to create or update object memory, such as
+adding an alias, identity facet, relationship, note, field value, or missing
+workspace object. Object memory proposals become canonical only when a teammate
+accepts them.
+_Avoid_: Memory write when it hides the approval step
+
+**Durable Information**:
+Information worth preserving because it changes future retrieval,
+interpretation, workflow, identity resolution, ownership, status, scheduling,
+or relationships for the team. Durable information is distinct from one-off
+chat preferences, acknowledgements, unsupported guesses, or facts already
+represented canonically without a meaningful correction.
+_Avoid_: Memory when it is too vague about what should persist
+
+**Person Object**:
+A workspace object for a real-world person, whether or not that person belongs
+to the Timeline team. A person object can carry names, nicknames, external
+identity facets such as handles and contact details, roles, company
+relationships, open-ended facts or notes, and an optional link to a Timeline
+team member when the person is also a product user.
+_Avoid_: Team Member when discussing identity outside product access
+
+**Identity Facet**:
+A structured identifier on a person object, such as an email address, phone
+number, Telegram handle, Slack user id, GitHub username, or linked Timeline
+team member. Identity facets are distinct from nicknames and freeform facts
+because they help resolve senders across capture surfaces.
+_Avoid_: Alias when referring to an external account or contact detail
+
 **Capture Surface**:
 A way information enters the timeline, such as web capture, Telegram, Slack,
 email, documents, meetings, integrations, or calendar import.
@@ -75,6 +119,13 @@ Sender, conversation, and thread information that helps interpret a captured
 message. Sender context belongs in source metadata and must be available to
 retrieval and extraction, not only to timeline display.
 _Avoid_: Display-only metadata
+
+**Sender Resolution**:
+The derived association between a captured sender and a person object. Sender
+resolution may be recorded when a message is ingested and re-evaluated when the
+team later approves new identity facets, but the original raw sender context
+remains unchanged.
+_Avoid_: Re-attribution when it implies editing the raw event
 
 **Source Owner**:
 The team member responsible for a shared capture surface when the source does

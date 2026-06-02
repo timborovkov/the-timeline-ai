@@ -402,6 +402,46 @@ out of scope.
 - [x] Keep usage tracking, billing dashboards, and model-spend caps out of Phase
       13.
 
+### Slice 13.9 — Approval-backed object memory
+
+Goal: make the agent's durable memory visible, reviewable workspace state across
+objects, tasks, calendar commitments, companies, people, deals, projects, and
+other first-class surfaces. See
+[`docs/adr/0003-object-memory-is-approval-backed-workspace-state.md`](docs/adr/0003-object-memory-is-approval-backed-workspace-state.md).
+
+- [ ] **Retrieval + prompt foundation:** agent tools expose raw sender context
+      and current resolved sender object/person identity for `search_timeline`,
+      `list_events`, `get_event`, entity/object event history, and any
+      conversational event citations. Sender output includes source-truth
+      handle/display/external id plus `resolved`/`unresolved`/`ambiguous`
+      status. The system prompt teaches the general object-memory loop with
+      examples for people, companies, projects, tasks, deals, calendar
+      commitments, and typo/alias cleanup. Web chat, Telegram `/ask`, Slack
+      `/ask`, and Slack mentions use the same native agent tool set and prompt
+      behavior, with MCP tools included wherever the surface can safely support
+      them.
+- [ ] **Approval-backed memory writes:** extend bundled `agent_suggestions` for
+      object-memory proposals instead of adding a hidden memory store or using a
+      separate suggested-change path. Supported proposal items include object
+      creation, aliases, identity facets (email, phone, Telegram, Slack,
+      GitHub, linked Timeline user), relationships, notes/facts, canonical-name
+      cleanup, status/owner/date refinements, and calendar/task/deal updates.
+      Accepting a proposal applies canonical state through the relevant
+      workspace scope, writes audit/timeline evidence where appropriate,
+      re-embeds changed objects, and preserves raw-event immutability.
+- [ ] **Prominent approval UX:** web chat renders inline approval cards for
+      agent-created proposal bundles with Accept/Reject controls, evidence, and
+      live status. `/app/approvals` remains the canonical queue. Sidebar badges
+      and notifications make pending approvals prominent and refresh in the
+      background. Telegram and Slack answers only say that the proposal was
+      queued in Timeline rather than trying to implement external interactive
+      approvals.
+- [ ] **Regression coverage:** tests cover sender context hydration from
+      Telegram/Slack metadata, post-approval resolution improving old events
+      without editing raw events, agent prompt/tool parity across web/TG/Slack,
+      suggestion dedupe/apply behavior for identity facets and object aliases,
+      and approval badge/notification updates.
+
 ## Phase 14 — Backup And Operations
 
 - [ ] RustFS backup cron service on Railway: nightly `rclone sync` to Backblaze B2 or chosen secondary store.
