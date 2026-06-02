@@ -245,6 +245,12 @@ function actorLabel(event: TimelineEvent, authorMap: Map<string, TimelineAuthor>
   return authorName(event, authorMap) ?? SOURCE_LABEL[event.source];
 }
 
+function telegramSourceActorLabel(event: TimelineEvent): string | null {
+  if (event.source !== 'telegram') return null;
+  const meta = metaObject(event.sourceMetadata);
+  return stringMeta(meta, 'tg_sender_name') ?? telegramUsernameLabel(meta);
+}
+
 function displayLeadForGroup(sorted: TimelineEvent[], fallback: TimelineEvent): TimelineEvent {
   return (
     sorted.find((event) => event.source === 'telegram' || event.source === 'slack') ?? fallback
@@ -270,8 +276,8 @@ function actorLabelForGroup(
 ): string {
   if (event.source !== 'telegram') return actorLabel(event, authorMap);
   const meta = metaObject(event.sourceMetadata);
-  const direct = actorLabel(event, new Map());
-  if (direct !== 'Telegram sender') return direct;
+  const direct = telegramSourceActorLabel(event);
+  if (direct) return direct;
   const userId = displayMeta(meta, 'tg_user_id');
   const label = userId ? actorLabelsByTelegramUserId(group).get(userId) : null;
   return label ?? actorLabel(event, authorMap);

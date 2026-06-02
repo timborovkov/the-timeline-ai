@@ -337,6 +337,42 @@ describe('timeline moment grouping', () => {
     expect(moments[0]?.actorLabel).toBe('Tim');
   });
 
+  it('treats Telegram sender as a valid literal source sender name', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-literal-sender-name',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:03:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_user_id: 7503673734,
+            tg_sender_name: 'Telegram sender',
+          },
+          contentText: 'Ok',
+        }),
+        event({
+          id: 'tg-same-user-username',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:01:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_user_id: 7503673734,
+            tg_username: 'ottosilventola',
+          },
+          contentText: 'Earlier',
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.actorLabel).toBe('Telegram sender');
+  });
+
   it('derives metadata-first impact context', () => {
     const moments = buildTimelineMoments(
       [
