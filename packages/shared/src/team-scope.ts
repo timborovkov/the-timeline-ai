@@ -785,10 +785,32 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       }
       filterGroups.push(personConditions.length > 0 ? or(...personConditions) : sql`false`);
     }
-    if (filters.senderSource && filters.personObjectId) {
+    if (filters.senderSource) {
       filterGroups.push(eq(rawEvents.source, filters.senderSource));
     }
     return filterGroups.length > 0 ? and(...filterGroups) : null;
+  }
+
+  async function senderFilteredEventIds(input: SearchEventsInput): Promise<string[] | null> {
+    if (!input.personObjectId && !input.senderHandle && !input.senderSource) return null;
+    const senderCondition = await senderFilterCondition(input);
+    if (!senderCondition) return null;
+    const conditions = [
+      eq(rawEvents.teamId, teamId),
+      visibilityFilter,
+      activeRawEventFilter,
+      senderCondition,
+    ];
+    if (input.from) conditions.push(gte(rawEvents.occurredAt, input.from));
+    if (input.to) conditions.push(lt(rawEvents.occurredAt, input.to));
+    if (input.source) {
+      conditions.push(eq(rawEvents.source, input.source));
+    }
+    const rows = await db
+      .select({ id: rawEvents.id })
+      .from(rawEvents)
+      .where(and(...conditions));
+    return rows.map((row) => row.id);
   }
 
   function sameVisibilityUsers(
@@ -2120,17 +2142,17 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           });
 
         const { vector } = await embedFn({ text: input.query });
+        const senderEventIds = await senderFilteredEventIds(input);
+        if (senderEventIds?.length === 0) return [];
 
         const searchOpts: SearchOpts = {
-          limit:
-            input.personObjectId || input.senderHandle
-              ? (input.limit ?? 20) * 4
-              : (input.limit ?? 20),
+          limit: input.limit ?? 20,
         };
         if (input.from) searchOpts.from = input.from;
         if (input.to) searchOpts.to = input.to;
         if (input.source) searchOpts.source = input.source;
         if (input.entityIds) searchOpts.entityIds = input.entityIds;
+        if (senderEventIds) searchOpts.eventIds = senderEventIds;
         // Only pass through the kind filter when explicitly set. If we always
         // defaulted to ['raw_event', 'fact'] we'd silently drop Phase 5 points
         // that pre-date the `source_kind` payload field (Qdrant's match-any

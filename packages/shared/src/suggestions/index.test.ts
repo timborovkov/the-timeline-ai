@@ -552,6 +552,65 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.count).toBe('1');
   });
 
+  it('records the existing relationship id when accepting a duplicate relationship suggestion', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const from = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Existing relationship project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const to = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Existing relationship company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const existing = await scope.objects.addRelationship({
+      fromEntityId: from.id,
+      toEntityId: to.id,
+      kind: 'linked',
+      actorUserId: USER_ID,
+    });
+    expect(existing?.id).toBeDefined();
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Duplicate project-company link',
+      dedupeKey: 'duplicate-object-relationship',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          targetId: from.id,
+          title: 'Add duplicate relationship',
+          dedupeKey: 'duplicate-object-relationship:item',
+          proposedPayload: {
+            fromEntityId: from.id,
+            toEntityId: to.id,
+            kind: 'linked',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const itemRows = await pg.query<{ result_id: string | null }>(
+      `SELECT result_id FROM agent_suggestion_items WHERE id = $1`,
+      [itemId],
+    );
+    expect(itemRows.rows[0]?.result_id).toBe(existing?.id);
+    const relationshipRows = await pg.query<{ count: string }>(
+      `SELECT count(*)::text
+       FROM entity_relationships
+       WHERE team_id = '${TEAM_ID}'
+         AND from_entity_id = '${from.id}'
+         AND to_entity_id = '${to.id}'
+         AND kind = 'linked'`,
+    );
+    expect(relationshipRows.rows[0]?.count).toBe('1');
+  });
+
   it('rejects evidence links outside the caller-visible team boundary', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
 

@@ -15,7 +15,7 @@ import {
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withTeam } from '#src/team-scope.js';
 
@@ -328,6 +328,98 @@ describe('withTeam namespaced port', () => {
     await expect(
       scope.timeline.listEvents({ source: 'telegram', personObjectId: person.id }),
     ).resolves.toMatchObject([{ id: eventId }]);
+  });
+
+  it('limits listEvents by senderSource even without handle or person filters', async () => {
+    const telegramId = '00000000-0000-0000-0000-000000000109';
+    const emailId = '00000000-0000-0000-0000-000000000110';
+    await insertTelegramEvent(pg, {
+      id: telegramId,
+      authorUserId: null,
+      text: 'telegram sender source event',
+      username: '@mikaelrintala',
+    });
+    await pg.query(
+      `INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, occurred_at, source_metadata)
+       VALUES ($1, $2, NULL, 'email', 'email sender source event', now(), $3::jsonb)`,
+      [emailId, TEAM_A, JSON.stringify({ from: { email: 'mikael@example.com' } })],
+    );
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+
+    await expect(scope.timeline.listEvents({ senderSource: 'telegram' })).resolves.toMatchObject([
+      { id: telegramId },
+    ]);
+    await expect(scope.timeline.listEvents({ senderSource: 'email' })).resolves.toMatchObject([
+      { id: emailId },
+    ]);
+  });
+
+  it('passes SQL sender-filtered event ids into semantic search', async () => {
+    const matchingId = '00000000-0000-0000-0000-000000000111';
+    const otherId = '00000000-0000-0000-0000-000000000112';
+    await insertTelegramEvent(pg, {
+      id: matchingId,
+      authorUserId: null,
+      text: 'matching sender search event',
+      username: '@mikaelrintala',
+    });
+    await insertTelegramEvent(pg, {
+      id: otherId,
+      authorUserId: null,
+      text: 'other sender search event',
+      username: '@someoneelse',
+    });
+    const qdrantSearch = vi.fn().mockResolvedValue([
+      {
+        id: 'point-1',
+        score: 0.9,
+        payload: {
+          team_id: TEAM_A,
+          source_kind: 'raw_event',
+          event_id: matchingId,
+          fact_id: null,
+          object_id: null,
+          note_id: null,
+          change_id: null,
+          entity_id: null,
+          entity_ids: [],
+          occurred_at: '2026-06-01T10:00:00.000Z',
+          author_user_id: null,
+          visibility_owner_user_id: null,
+          source: 'telegram',
+          visibility: 'team',
+          visibility_user_ids: null,
+          embedding_model: 'test',
+          document_id: null,
+          document_version_id: null,
+          document_chunk_id: null,
+          folder_id: null,
+          owner_user_id: null,
+          updated_at: null,
+          meeting_id: null,
+          meeting_chunk_id: null,
+          speaker: null,
+        },
+      },
+    ]);
+    const scope = withTeam(db as never, TEAM_A, USER_A, {
+      embed: () => Promise.resolve({ vector: [0.1], model: 'test' }),
+      qdrantSearch,
+    });
+
+    await expect(
+      scope.timeline.searchEvents({
+        query: 'sender search',
+        senderHandle: '@mikaelrintala',
+      }),
+    ).resolves.toHaveLength(1);
+
+    expect(qdrantSearch).toHaveBeenCalledWith(
+      TEAM_A,
+      USER_A,
+      [0.1],
+      expect.objectContaining({ eventIds: [matchingId] }),
+    );
   });
 
   it('does not hydrate entity facts whose source event has been tombstoned', async () => {

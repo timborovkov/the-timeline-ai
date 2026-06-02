@@ -1174,7 +1174,21 @@ export async function addRelationship(
     // onConflictDoNothing returns nothing on a duplicate; skip audit writes
     // in that case — the relationship already existed and the prior insert
     // logged it. Mirrors the email-event dedup path.
-    if (!row) return null;
+    if (!row) {
+      const existing = await tx
+        .select({ id: entityRelationships.id })
+        .from(entityRelationships)
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            eq(entityRelationships.fromEntityId, input.fromEntityId),
+            eq(entityRelationships.toEntityId, input.toEntityId),
+            eq(entityRelationships.kind, input.kind),
+          ),
+        )
+        .limit(1);
+      return existing[0] ?? null;
+    }
 
     const fromEnt = ends.find((e) => e.id === input.fromEntityId);
     const toEnt = ends.find((e) => e.id === input.toEntityId);
