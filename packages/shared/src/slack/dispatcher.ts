@@ -870,6 +870,7 @@ async function createSlackDocumentAttachment(
         sourceMetadata: {
           action: 'upload',
           document_id: doc.id,
+          document_name: input.filename,
           document_version: 1,
           source: 'slack',
           slack_file_id: input.file.id,
