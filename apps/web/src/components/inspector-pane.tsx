@@ -29,7 +29,9 @@ export function InspectorPane() {
       role="dialog"
       aria-label={`Inspector for ${id}`}
       aria-labelledby="inspector-title"
-      className={cn('hidden w-96 shrink-0 border-l border-border bg-surface lg:flex lg:flex-col')}
+      className={cn(
+        'sticky top-0 hidden h-screen w-96 shrink-0 self-start border-l border-border bg-surface lg:flex lg:flex-col',
+      )}
     >
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
         <div className="flex min-w-0 items-baseline gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
