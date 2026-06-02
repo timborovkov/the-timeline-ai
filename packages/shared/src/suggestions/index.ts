@@ -6,6 +6,7 @@ import {
   agentSuggestions,
   calendarEvents,
   entities,
+  objectIdentityFacets,
   notifications,
   rawEvents,
   teamMembers,
@@ -459,6 +460,49 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .limit(1);
       return rows[0]?.id ?? null;
     }
+    if (item.targetKind === 'identity_facet') {
+      const rows = await db
+        .select({ id: objectIdentityFacets.id })
+        .from(objectIdentityFacets)
+        .where(
+          and(
+            eq(objectIdentityFacets.teamId, teamId),
+            sql`${objectIdentityFacets.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
+          ),
+        )
+        .limit(1);
+      return rows[0]?.id ?? null;
+    }
+    if (item.targetKind === 'object_note') {
+      const rows = await db
+        .select({ id: sql<string | null>`${rawEvents.sourceMetadata} ->> 'note_id'` })
+        .from(rawEvents)
+        .where(
+          and(
+            eq(rawEvents.teamId, teamId),
+            eq(rawEvents.source, 'system'),
+            sql`${rawEvents.sourceMetadata} ->> 'kind' = 'object_note_create'`,
+            sql`${rawEvents.sourceMetadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
+          ),
+        )
+        .limit(1);
+      return rows[0]?.id ?? null;
+    }
+    if (item.targetKind === 'object_relationship') {
+      const rows = await db
+        .select({ id: sql<string | null>`${rawEvents.sourceMetadata} ->> 'relationship_id'` })
+        .from(rawEvents)
+        .where(
+          and(
+            eq(rawEvents.teamId, teamId),
+            eq(rawEvents.source, 'system'),
+            sql`${rawEvents.sourceMetadata} ->> 'kind' = 'relationship_create'`,
+            sql`${rawEvents.sourceMetadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
+          ),
+        )
+        .limit(1);
+      return rows[0]?.id ?? null;
+    }
     const rows = await db
       .select({ id: calendarEvents.id })
       .from(calendarEvents)
@@ -559,6 +603,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         entityId: parsed.entityId,
         body: parsed.body,
         authorUserId: userId,
+        metadata: { agent_suggestion_item_id: item.id },
       });
       return created.id;
     }
@@ -572,6 +617,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         kind: parsed.kind,
         actorUserId: null,
         actor: { kind: 'agent', userId: null },
+        metadata: { agent_suggestion_item_id: item.id },
       });
       return created?.id ?? null;
     }

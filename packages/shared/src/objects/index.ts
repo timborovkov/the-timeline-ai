@@ -1134,6 +1134,7 @@ export async function addRelationship(
     // `{ kind: 'agent', userId: null }` so the audit row attributes the link
     // to the agent, not a user.
     actor?: UpdateActor;
+    metadata?: Record<string, unknown>;
   },
 ): Promise<{ id: string } | null> {
   await scope.requireMembership();
@@ -1189,6 +1190,7 @@ export async function addRelationship(
         occurredAt: new Date(),
         visibility: 'team',
         sourceMetadata: {
+          ...(input.metadata ?? {}),
           kind: 'relationship_create',
           relationship_id: row.id,
           from_entity_id: input.fromEntityId,
@@ -1309,7 +1311,12 @@ export async function removeRelationship(
 export async function createNote(
   db: Db,
   scope: TeamScopeCore,
-  input: { entityId: string; body: string; authorUserId: string },
+  input: {
+    entityId: string;
+    body: string;
+    authorUserId: string;
+    metadata?: Record<string, unknown>;
+  },
 ): Promise<{ id: string }> {
   await scope.requireMembership();
   if (!UUID_RE.test(input.entityId)) throw new Error('Invalid entity id');
@@ -1353,6 +1360,7 @@ export async function createNote(
         occurredAt: new Date(),
         visibility: 'team',
         sourceMetadata: {
+          ...(input.metadata ?? {}),
           kind: 'object_note_create',
           entity_id: input.entityId,
           note_id: noteId,

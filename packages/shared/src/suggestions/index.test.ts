@@ -371,6 +371,109 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.count).toBe('1');
   });
 
+  it('does not recreate object notes when retrying after result bookkeeping was lost', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const object = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Memory retry project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember project fact',
+      dedupeKey: 'retry-object-note',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: object.id,
+          title: 'Add project note',
+          dedupeKey: 'retry-object-note:item',
+          proposedPayload: {
+            entityId: object.id,
+            body: 'Miku handles customer follow-up.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+    await pg.query(
+      `UPDATE agent_suggestion_items
+       SET status = 'failed', resolved_at = NULL, resolved_by_user_id = NULL, result_id = NULL
+       WHERE id = $1`,
+      [itemId],
+    );
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ count: string }>(
+      `SELECT count(*)::text
+       FROM object_notes
+       WHERE team_id = '${TEAM_ID}'
+         AND entity_id = '${object.id}'
+         AND body = 'Miku handles customer follow-up.'`,
+    );
+    expect(result.rows[0]?.count).toBe('1');
+  });
+
+  it('does not recreate object relationships when retrying after result bookkeeping was lost', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const from = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Relationship retry project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const to = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Relationship retry company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Link project and company',
+      dedupeKey: 'retry-object-relationship',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          targetId: from.id,
+          title: 'Add relationship',
+          dedupeKey: 'retry-object-relationship:item',
+          proposedPayload: {
+            fromEntityId: from.id,
+            toEntityId: to.id,
+            kind: 'linked',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+    await pg.query(
+      `UPDATE agent_suggestion_items
+       SET status = 'failed', resolved_at = NULL, resolved_by_user_id = NULL, result_id = NULL
+       WHERE id = $1`,
+      [itemId],
+    );
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ count: string }>(
+      `SELECT count(*)::text
+       FROM entity_relationships
+       WHERE team_id = '${TEAM_ID}'
+         AND from_entity_id = '${from.id}'
+         AND to_entity_id = '${to.id}'
+         AND kind = 'linked'`,
+    );
+    expect(result.rows[0]?.count).toBe('1');
+  });
+
   it('rejects evidence links outside the caller-visible team boundary', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
 
