@@ -9,7 +9,7 @@ const forbiddenPatterns = [
   {
     name: 'React hydration failure',
     pattern:
-      /Hydration failed|There was an error while hydrating|Text content does not match server-rendered HTML|Minified React error #418/i,
+      /Hydration failed|A tree hydrated but some attributes|There was an error while hydrating|Text content does not match server-rendered HTML|Minified React error #418/i,
   },
   {
     name: 'React runtime overlay',

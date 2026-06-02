@@ -16,7 +16,9 @@ const fakes = vi.hoisted(() => ({
   fakeTeam: vi.fn(),
   fakeChatSessionExists: vi.fn(),
   fakeCreateChatSession: vi.fn(),
+  fakeListObjects: vi.fn(),
   fakeGetCalendarSettings: vi.fn(),
+  fakeListCalendarEvents: vi.fn(),
   fakeBuildSystemPrompt: vi.fn(),
   fakeBuildAgentTools: vi.fn(),
   fakeBuildMcpTools: vi.fn(),
@@ -28,6 +30,8 @@ const fakes = vi.hoisted(() => ({
   fakeCompressMessagesForContext: vi.fn(),
   fakeStreamChat: vi.fn(),
   fakeAppendChatMessages: vi.fn(),
+  fakeCreateUIMessageStream: vi.fn(),
+  fakeCreateUIMessageStreamResponse: vi.fn(),
   fakeLoggerWarn: vi.fn(),
   fakeLoggerInfo: vi.fn(),
 }));
@@ -51,8 +55,12 @@ vi.mock('@timeline/shared/team-scope', () => ({
     objects: {
       chatSessionExists: fakes.fakeChatSessionExists,
       createChatSession: fakes.fakeCreateChatSession,
+      listObjects: fakes.fakeListObjects,
     },
-    calendar: { getCalendarSettings: fakes.fakeGetCalendarSettings },
+    calendar: {
+      getCalendarSettings: fakes.fakeGetCalendarSettings,
+      listCalendarEvents: fakes.fakeListCalendarEvents,
+    },
   }),
 }));
 vi.mock('@timeline/shared/agent', () => ({
@@ -80,8 +88,8 @@ vi.mock('@timeline/shared/llm', () => ({
 }));
 vi.mock('ai', () => ({
   convertToModelMessages: fakes.fakeConvertToModelMessages,
-  createUIMessageStream: vi.fn(),
-  createUIMessageStreamResponse: vi.fn(),
+  createUIMessageStream: fakes.fakeCreateUIMessageStream,
+  createUIMessageStreamResponse: fakes.fakeCreateUIMessageStreamResponse,
   safeValidateUIMessages: fakes.fakeSafeValidateUIMessages,
 }));
 
@@ -110,9 +118,26 @@ function streamResponse(body = 'chat stream'): Response {
   return new Response(body, { status: 200 });
 }
 
+interface TestStreamChunk {
+  type?: unknown;
+  toolName?: unknown;
+  output?: unknown;
+  delta?: unknown;
+}
+
+function isStreamBody(value: unknown): value is { chunks: TestStreamChunk[] } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'chunks' in value &&
+    Array.isArray((value as { chunks?: unknown }).chunks)
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   capturedOnFinish = null;
+  delete process.env.E2E_DETERMINISTIC_CHAT;
   fakes.fakeAuth.mockResolvedValue({
     user: { id: USER_ID, name: 'Tim', email: 'tim@example.test' },
   });
@@ -128,7 +153,40 @@ beforeEach(() => {
   fakes.fakeTeam.mockResolvedValue({ name: 'Team From Scope' });
   fakes.fakeChatSessionExists.mockResolvedValue(true);
   fakes.fakeCreateChatSession.mockResolvedValue({ id: SESSION_ID });
+  fakes.fakeListObjects.mockImplementation((filter?: { type?: string }) =>
+    filter?.type === 'task'
+      ? Promise.resolve([
+          {
+            id: '55555555-5555-4555-8555-555555555555',
+            type: 'task',
+            canonicalName: 'Durable task',
+            status: 'todo',
+            stage: null,
+            dueAt: null,
+          },
+        ])
+      : Promise.resolve([
+          {
+            id: '66666666-6666-4666-8666-666666666666',
+            type: 'project',
+            canonicalName: 'Durable object',
+            status: 'active',
+            stage: 'review',
+            dueAt: null,
+          },
+        ]),
+  );
   fakes.fakeGetCalendarSettings.mockResolvedValue({ defaultTimezone: 'Europe/Tallinn' });
+  fakes.fakeListCalendarEvents.mockResolvedValue([
+    {
+      id: '77777777-7777-4777-8777-777777777777',
+      title: 'Durable calendar event',
+      description: null,
+      location: null,
+      startAt: new Date('2026-06-09T00:00:00.000Z'),
+      allDay: true,
+    },
+  ]);
   fakes.fakeWorkspaceTimeContext.mockReturnValue('Tallinn time');
   fakes.fakeBuildSystemPrompt.mockReturnValue('system prompt');
   fakes.fakeBuildAgentTools.mockReturnValue({ search_timeline: { type: 'native' } });
@@ -151,6 +209,23 @@ beforeEach(() => {
     },
   );
   fakes.fakeAppendChatMessages.mockResolvedValue(undefined);
+  fakes.fakeCreateUIMessageStream.mockImplementation(
+    (input: { execute: (args: unknown) => void }) => {
+      const chunks: unknown[] = [];
+      input.execute({
+        writer: {
+          write: (chunk: unknown) => {
+            chunks.push(chunk);
+          },
+        },
+      });
+      return { chunks };
+    },
+  );
+  fakes.fakeCreateUIMessageStreamResponse.mockImplementation(
+    ({ stream }: { stream: { chunks: unknown[] } }) =>
+      Response.json({ chunks: stream.chunks }, { status: 200 }),
+  );
 });
 
 describe('POST /api/chat', () => {
@@ -257,6 +332,89 @@ describe('POST /api/chat', () => {
         maxSteps: 5,
       }),
     );
+  });
+
+  it('streams deterministic durable workspace state without bypassing route gates', async () => {
+    process.env.E2E_DETERMINISTIC_CHAT = '1';
+    const durableMessage = {
+      id: 'm-durable',
+      role: 'user',
+      parts: [{ type: 'text', text: 'What durable task calendar object state exists?' }],
+    };
+    fakes.fakeSafeValidateUIMessages.mockResolvedValue({
+      success: true,
+      data: [durableMessage],
+    });
+
+    const response = await POST(
+      request(validBody({ messages: [durableMessage], sessionId: SESSION_ID })),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-tl-session-id')).toBe(SESSION_ID);
+    expect(fakes.fakeRequireMembership).toHaveBeenCalled();
+    expect(fakes.fakeChatSessionExists).toHaveBeenCalledWith(SESSION_ID);
+    expect(fakes.fakeListObjects).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'task', archived: false, limit: 50 }),
+    );
+    expect(fakes.fakeListObjects).toHaveBeenCalledWith(
+      expect.objectContaining({ archived: false, limit: 50 }),
+    );
+    const calendarCall = fakes.fakeListCalendarEvents.mock.calls.at(0) as unknown as
+      | [{ from: Date; to: Date; limit: number }]
+      | undefined;
+    expect(calendarCall?.[0].from).toBeInstanceOf(Date);
+    expect(calendarCall?.[0].to).toBeInstanceOf(Date);
+    expect(calendarCall?.[0].limit).toBe(50);
+    expect(fakes.fakeStreamChat).not.toHaveBeenCalled();
+    expect(fakes.fakeConvertToModelMessages).not.toHaveBeenCalled();
+    const body: unknown = await response.json();
+    if (!isStreamBody(body)) throw new Error('expected deterministic stream chunks');
+    expect(
+      body.chunks.some(
+        (chunk) =>
+          chunk.type === 'tool-input-available' && chunk.toolName === 'list_workspace_state',
+      ),
+    ).toBe(true);
+    expect(
+      body.chunks.some((chunk) => {
+        if (chunk.type !== 'tool-output-available') return false;
+        const output = chunk.output as { count?: unknown } | undefined;
+        return output?.count === 3;
+      }),
+    ).toBe(true);
+    expect(
+      body.chunks.some(
+        (chunk) => chunk.type === 'text-delta' && String(chunk.delta).includes('Durable object'),
+      ),
+    ).toBe(true);
+    const appendCall = fakes.fakeAppendChatMessages.mock.calls.at(-1) as unknown as
+      | [
+          unknown,
+          unknown,
+          string,
+          [
+            { role: string; authorUserId?: string; content: unknown },
+            {
+              role: string;
+              content: {
+                text?: string;
+                tool_calls?: { toolName?: string; output?: { count?: number } }[];
+              };
+            },
+          ],
+        ]
+      | undefined;
+    expect(appendCall?.[2]).toBe(SESSION_ID);
+    expect(appendCall?.[3][0]).toEqual({
+      role: 'user',
+      authorUserId: USER_ID,
+      content: { ui_message: durableMessage },
+    });
+    expect(appendCall?.[3][1].role).toBe('assistant');
+    expect(appendCall?.[3][1].content.text).toContain('Durable calendar event');
+    expect(appendCall?.[3][1].content.tool_calls?.[0]?.toolName).toBe('list_workspace_state');
+    expect(appendCall?.[3][1].content.tool_calls?.[0]?.output?.count).toBe(3);
   });
 
   it('starts a new persisted session and returns its id header', async () => {

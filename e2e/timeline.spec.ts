@@ -93,6 +93,49 @@ async function processCapturedSuggestion(text: string): Promise<string> {
   return rawEventId;
 }
 
+async function processObjectUpdateSuggestion(input: {
+  text: string;
+  targetId: string;
+  title: string;
+  proposedPayload: Record<string, unknown>;
+}): Promise<string> {
+  const db = getDb();
+  const rawEventId = await waitForRawEventIdByText(input.text);
+  await processSuggestionJobForTests(
+    { db },
+    { rawEventId, teamId: e2eTeam.id },
+    {
+      getEnv: () => ({ OPENROUTER_API_KEY: 'e2e-test-key' }) as never,
+      chatStructured: async () =>
+        ({
+          object: {
+            bundles: [
+              {
+                title: `Object update: ${input.title}`,
+                summary: input.text,
+                reason: 'The source event describes a change to an existing object.',
+                confidence: 'high',
+                quote: input.text,
+                items: [
+                  {
+                    operation: 'update',
+                    targetKind: 'object',
+                    targetId: input.targetId,
+                    title: input.title,
+                    proposedPayload: input.proposedPayload,
+                  },
+                ],
+              },
+            ],
+          },
+          model: 'e2e-object-update',
+        }) as never,
+      modelId: 'e2e-object-update-model',
+    },
+  );
+  return rawEventId;
+}
+
 async function processTelegramVoiceSuggestion(transcript: string): Promise<string> {
   const db = getDb();
   const sql = getDbClient();
@@ -194,6 +237,18 @@ async function waitForRawEventIdByText(text: string): Promise<string> {
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   throw new Error(`Raw event not found for "${text}"`);
+}
+
+async function countObjectsByName(name: string): Promise<number> {
+  const sql = getDbClient();
+  const rows = await sql<{ count: string }[]>`
+    SELECT count(*)::text AS count
+    FROM entities
+    WHERE team_id = ${e2eTeam.id}
+      AND canonical_name = ${name}
+      AND merged_into_id IS NULL
+  `;
+  return Number(rows[0]?.count ?? '0');
 }
 
 test('seeded owner can sign in, switch teams, and sign out', async ({ page }) => {
@@ -312,6 +367,71 @@ test('Telegram voice approval journey creates durable task state', async ({ brow
   await ownerPage.context().close();
 });
 
+test('agentic core object update approval updates existing object', async ({ browser }) => {
+  const ownerPage = await newSignedInPage(browser, 'owner');
+  const memberPage = await newSignedInPage(browser, 'member');
+  const stamp = Date.now();
+  const objectName = `E2E update target ${stamp}`;
+  const sourceText = `The ${objectName} account moved to proposal and is now doing`;
+
+  await ownerPage.goto('/app/objects/new');
+  await ownerPage.getByLabel('Type').selectOption('project');
+  await ownerPage.getByLabel('Name').fill(objectName);
+  await ownerPage.getByRole('button', { name: 'Create object' }).click();
+  await expect(ownerPage).toHaveURL(/\/app\/objects\/[0-9a-f-]+/);
+  const objectId = new URL(ownerPage.url()).pathname.split('/').at(-1);
+  if (!objectId) throw new Error('created object id missing from URL');
+  await expect(ownerPage.getByRole('heading', { name: objectName })).toBeVisible();
+  await expect(ownerPage.getByLabel('Status')).toHaveValue('open');
+  await expect(ownerPage.getByLabel('Stage')).toHaveValue('');
+
+  await ownerPage.goto('/app');
+  const capture = ownerPage.getByRole('region', { name: 'Capture' });
+  await expect(capture.locator('form[data-capture-ready="true"]')).toBeVisible();
+  await capture.getByPlaceholder('What happened?').fill(sourceText);
+  await capture.getByRole('button', { name: 'Post' }).click();
+  await expect(ownerPage.getByText(sourceText).first()).toBeVisible();
+
+  await processObjectUpdateSuggestion({
+    text: sourceText,
+    targetId: objectId,
+    title: `Update ${objectName}`,
+    proposedPayload: { status: 'doing', stage: 'proposal' },
+  });
+
+  await ownerPage.goto('/app/approvals');
+  const approval = ownerPage.locator('article').filter({ hasText: objectName });
+  await expect(approval).toBeVisible();
+  await expect(approval.getByText(sourceText).first()).toBeVisible();
+  await expect(approval.getByText('status: doing')).toBeVisible();
+  await expect(approval.getByText('stage: proposal')).toBeVisible();
+  await approval.getByRole('button', { name: 'Accept' }).click();
+  await expect(approval).toHaveCount(0);
+
+  await ownerPage.goto(`/app/objects/${objectId}`);
+  await expect(ownerPage.getByRole('heading', { name: objectName })).toBeVisible();
+  await expect(ownerPage.getByLabel('Status')).toHaveValue('doing');
+  await expect(ownerPage.getByLabel('Stage')).toHaveValue('proposal');
+  const recentChanges = ownerPage.locator('section').filter({
+    has: ownerPage.getByRole('heading', { name: 'Recent changes' }),
+  });
+  await expect(
+    recentChanges.locator('li').filter({ hasText: 'status' }).filter({ hasText: 'open → doing' }),
+  ).toBeVisible();
+  await expect(
+    recentChanges.locator('li').filter({ hasText: 'stage' }).filter({ hasText: 'proposal' }),
+  ).toBeVisible();
+  await expect(await countObjectsByName(objectName)).toBe(1);
+
+  await memberPage.goto(`/app/objects/${objectId}`);
+  await expect(memberPage.getByRole('heading', { name: objectName })).toBeVisible();
+  await expect(memberPage.getByLabel('Status')).toHaveValue('doing');
+  await expect(memberPage.getByLabel('Stage')).toHaveValue('proposal');
+
+  await ownerPage.context().close();
+  await memberPage.context().close();
+});
+
 test('chat answers timeline questions with citations and reloadable tool history', async ({
   browser,
 }) => {
@@ -392,6 +512,81 @@ test('chat respects private and specific-user timeline visibility', async ({ bro
     ownerPage.getByText("I couldn't verify that from the accessible timeline."),
   ).toBeVisible();
   await expect(ownerPage.getByRole('link', { name: /Citation ev:/ })).toHaveCount(0);
+
+  await ownerPage.context().close();
+  await memberPage.context().close();
+});
+
+test('chat answers from accepted durable task calendar and object state', async ({ browser }) => {
+  const ownerPage = await newSignedInPage(browser, 'owner');
+  const memberPage = await newSignedInPage(browser, 'member');
+  const stamp = Date.now();
+  const commitment = `I'll prepare the durable state review ${stamp} next Tuesday`;
+  const expectedTask = `Prepare the durable state review ${stamp}`;
+  const objectName = `E2E durable object ${stamp}`;
+  const sourceText = `The ${objectName} workspace object is now in review`;
+
+  await ownerPage.goto('/app');
+  const capture = ownerPage.getByRole('region', { name: 'Capture' });
+  await expect(capture.locator('form[data-capture-ready="true"]')).toBeVisible();
+  await capture.getByPlaceholder('What happened?').fill(commitment);
+  await capture.getByRole('button', { name: 'Post' }).click();
+  await expect(ownerPage.getByText(commitment).first()).toBeVisible();
+  await processCapturedSuggestion(commitment);
+  await ownerPage.goto('/app/approvals');
+  await expect(ownerPage.getByText(expectedTask).first()).toBeVisible();
+  await ownerPage.getByRole('button', { name: 'Accept all' }).click();
+  await expect(ownerPage.getByText('No pending approvals')).toBeVisible();
+
+  await ownerPage.goto('/app/objects/new');
+  await ownerPage.getByLabel('Type').selectOption('project');
+  await ownerPage.getByLabel('Name').fill(objectName);
+  await ownerPage.getByRole('button', { name: 'Create object' }).click();
+  await expect(ownerPage).toHaveURL(/\/app\/objects\/[0-9a-f-]+/);
+  const objectId = new URL(ownerPage.url()).pathname.split('/').at(-1);
+  if (!objectId) throw new Error('created object id missing from URL');
+
+  await ownerPage.goto('/app');
+  await capture.getByPlaceholder('What happened?').fill(sourceText);
+  await capture.getByRole('button', { name: 'Post' }).click();
+  await expect(ownerPage.getByText(sourceText).first()).toBeVisible();
+  await processObjectUpdateSuggestion({
+    text: sourceText,
+    targetId: objectId,
+    title: `Move ${objectName} to review`,
+    proposedPayload: { stage: 'review' },
+  });
+  await ownerPage.goto('/app/approvals');
+  const objectApproval = ownerPage.locator('article').filter({ hasText: objectName });
+  await expect(objectApproval).toBeVisible();
+  await objectApproval.getByRole('button', { name: 'Accept' }).click();
+  await expect(objectApproval).toHaveCount(0);
+
+  await ownerPage.goto('/app/chat');
+  const question = `What durable task, calendar, and object state exists for ${stamp}?`;
+  await ownerPage.getByPlaceholder("Ask anything about your team's timeline…").fill(question);
+  await ownerPage.getByRole('button', { name: 'Send' }).click();
+  await expect(ownerPage.getByText(/Listed workspace state/)).toBeVisible();
+  await expect(ownerPage.getByText(expectedTask).last()).toBeVisible();
+  await expect(ownerPage.getByText(objectName).last()).toBeVisible();
+  await expect(ownerPage.getByText('Calendar:').last()).toBeVisible();
+  await expect(ownerPage.getByRole('link', { name: /Citation ent:/ }).first()).toBeVisible();
+
+  await expect(ownerPage).toHaveURL(/\/app\/chat\?session=/);
+  const sessionUrl = ownerPage.url();
+  await ownerPage.reload();
+  await expect(ownerPage).toHaveURL(sessionUrl);
+  await expect(ownerPage.getByText(question).first()).toBeVisible();
+  await expect(ownerPage.getByText(/Listed workspace state/)).toBeVisible();
+  await expect(ownerPage.getByText(expectedTask).last()).toBeVisible();
+  await expect(ownerPage.getByText(objectName).last()).toBeVisible();
+
+  await memberPage.goto('/app/chat');
+  await memberPage.getByPlaceholder("Ask anything about your team's timeline…").fill(question);
+  await memberPage.getByRole('button', { name: 'Send' }).click();
+  await expect(memberPage.getByText(/Listed workspace state/)).toBeVisible();
+  await expect(memberPage.getByText(expectedTask).last()).toBeVisible();
+  await expect(memberPage.getByText(objectName).last()).toBeVisible();
 
   await ownerPage.context().close();
   await memberPage.context().close();
@@ -504,7 +699,9 @@ test('owner can create an object, update it, add a note, and archive it', async 
 
   await page.getByLabel('Stage').fill('discovery');
   await page.getByLabel('Stage').blur();
-  await expect(page.getByText(/stage: null .* discovery/).first()).toBeVisible();
+  await expect(
+    page.locator('li').filter({ hasText: 'stage' }).filter({ hasText: 'discovery' }),
+  ).toBeVisible();
 
   await page.getByPlaceholder('Add a note. Each note also lands on the timeline.').fill(note);
   await page.getByRole('button', { name: 'Add note' }).click();

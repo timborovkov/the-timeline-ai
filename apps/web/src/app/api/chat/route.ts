@@ -103,6 +103,88 @@ function chooseDeterministicEvent(
   );
 }
 
+function chooseByQuestion<T>(question: string, items: T[], text: (item: T) => string): T[] {
+  const q = question.toLowerCase();
+  const tokens = q
+    .split(/[^a-z0-9]+/i)
+    .filter((token) => token.length >= 4 && !['what', 'does', 'from', 'state'].includes(token));
+  const matches = items.filter((item) => {
+    const value = text(item).toLowerCase();
+    return value.length > 0 && (q.includes(value) || tokens.some((token) => value.includes(token)));
+  });
+  return matches.length > 0 ? matches : items.slice(0, 3);
+}
+
+async function deterministicWorkspaceState(input: {
+  scope: ReturnType<typeof withTeam>;
+  question: string;
+}) {
+  const [tasks, objectsList, calendarEvents] = await Promise.all([
+    input.scope.objects.listObjects({ type: 'task', archived: false, limit: 50 }),
+    input.scope.objects.listObjects({ archived: false, limit: 50 }),
+    input.scope.calendar.listCalendarEvents({
+      from: new Date('2000-01-01T00:00:00.000Z'),
+      to: new Date('2100-01-01T00:00:00.000Z'),
+      limit: 50,
+    }),
+  ]);
+  const matchedTasks = chooseByQuestion(input.question, tasks, (task) =>
+    [task.canonicalName, task.status, task.stage ?? ''].join(' '),
+  );
+  const matchedObjects = chooseByQuestion(
+    input.question,
+    objectsList.filter((item) => item.type !== 'task'),
+    (item) => [item.canonicalName, item.status, item.stage ?? ''].join(' '),
+  );
+  const matchedCalendar = chooseByQuestion(input.question, calendarEvents, (event) =>
+    [event.title, event.description ?? '', event.location ?? ''].join(' '),
+  );
+  const results = {
+    tasks: matchedTasks.map((task) => ({
+      id: task.id,
+      name: task.canonicalName,
+      status: task.status,
+      stage: task.stage,
+      dueAt: task.dueAt?.toISOString() ?? null,
+    })),
+    objects: matchedObjects.map((item) => ({
+      id: item.id,
+      name: item.canonicalName,
+      type: item.type,
+      status: item.status,
+      stage: item.stage,
+    })),
+    calendar: matchedCalendar.map((event) => ({
+      id: event.id,
+      title: event.title,
+      startAt: event.startAt.toISOString(),
+      allDay: event.allDay,
+    })),
+  };
+  const lines: string[] = [];
+  for (const task of results.tasks) {
+    lines.push(`Task: ${task.name} (${task.status}) [ent:${task.id}]`);
+  }
+  for (const item of results.objects) {
+    lines.push(
+      `Object: ${item.name} (${item.status}${item.stage ? `, stage ${item.stage}` : ''}) [ent:${item.id}]`,
+    );
+  }
+  for (const event of results.calendar) {
+    lines.push(`Calendar: ${event.title} (${event.startAt.slice(0, 10)})`);
+  }
+  return {
+    output: {
+      count: results.tasks.length + results.objects.length + results.calendar.length,
+      ...results,
+    },
+    answer:
+      lines.length > 0
+        ? lines.join('\n')
+        : "I couldn't verify any durable workspace state for that question.",
+  };
+}
+
 async function deterministicChatResponse(input: {
   scope: ReturnType<typeof withTeam>;
   sessionId: string | undefined;
@@ -111,27 +193,39 @@ async function deterministicChatResponse(input: {
   userId: string;
 }): Promise<Response> {
   const question = messageText(input.latestUserMessage);
-  const toolCallId = 'deterministic-search';
+  const wantsWorkspaceState =
+    /\b(task|calendar|object|status|stage|durable|workspace state)\b/i.test(question) &&
+    !/\btimeline\b/i.test(question);
+  const toolCallId = wantsWorkspaceState ? 'deterministic-workspace-state' : 'deterministic-search';
   const textId = 'deterministic-answer';
-  const visibleEvents = await input.scope.timeline.listEvents({ limit: 50 });
-  const match = chooseDeterministicEvent(question, visibleEvents);
   const toolInput = { query: question };
-  const toolOutput = match
-    ? {
-        count: 1,
-        results: [
-          {
-            eventId: match.id,
-            event_id: match.id,
-            snippet: match.contentText ?? '',
-            source: match.source,
-          },
-        ],
-      }
-    : { count: 0, results: [] };
-  const answer = match
-    ? `${match.contentText ?? 'Found a matching timeline event.'} [ev:${match.id}]`
-    : "I couldn't verify that from the accessible timeline.";
+  const toolName = wantsWorkspaceState ? 'list_workspace_state' : 'search_timeline';
+  let toolOutput: Record<string, unknown>;
+  let answer: string;
+  if (wantsWorkspaceState) {
+    const state = await deterministicWorkspaceState({ scope: input.scope, question });
+    toolOutput = state.output;
+    answer = state.answer;
+  } else {
+    const visibleEvents = await input.scope.timeline.listEvents({ limit: 50 });
+    const match = chooseDeterministicEvent(question, visibleEvents);
+    toolOutput = match
+      ? {
+          count: 1,
+          results: [
+            {
+              eventId: match.id,
+              event_id: match.id,
+              snippet: match.contentText ?? '',
+              source: match.source,
+            },
+          ],
+        }
+      : { count: 0, results: [] };
+    answer = match
+      ? `${match.contentText ?? 'Found a matching timeline event.'} [ev:${match.id}]`
+      : "I couldn't verify that from the accessible timeline.";
+  }
 
   if (input.sessionId) {
     const turnsToPersist: objects.AppendChatMessageInput[] = [];
@@ -149,7 +243,7 @@ async function deterministicChatResponse(input: {
         tool_calls: [
           {
             toolCallId,
-            toolName: 'search_timeline',
+            toolName,
             input: toolInput,
             output: toolOutput,
           },
@@ -175,7 +269,7 @@ async function deterministicChatResponse(input: {
       writer.write({
         type: 'tool-input-available',
         toolCallId,
-        toolName: 'search_timeline',
+        toolName,
         input: toolInput,
       });
       writer.write({

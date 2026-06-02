@@ -397,9 +397,6 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
 
       <ObjectSectionFeed objectId={detail.id} section="events" title="Timeline events" />
       <ObjectSectionFeed objectId={detail.id} section="facts" title="Facts" />
-      <ObjectSectionFeed objectId={detail.id} section="tasks" title="Open tasks" />
-      <ObjectSectionFeed objectId={detail.id} section="relationships" title="Related" />
-      <ObjectSectionFeed objectId={detail.id} section="changes" title="Recent changes" />
 
       <section>
         <h2 className="mb-3 text-sm font-medium tracking-tight">Notes</h2>
