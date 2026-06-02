@@ -61,7 +61,14 @@ async function seed(pg: PGlite): Promise<void> {
 
 async function insertTelegramEvent(
   pg: PGlite,
-  input: { id: string; authorUserId: string | null; text: string; deleted?: boolean },
+  input: {
+    id: string;
+    authorUserId: string | null;
+    text: string;
+    deleted?: boolean;
+    username?: string;
+    tgUserId?: number;
+  },
 ): Promise<void> {
   const metadata = {
     tg_chat_id: 42,
@@ -69,6 +76,8 @@ async function insertTelegramEvent(
     tg_message_id: 10,
     tg_update_id: Number(input.id.slice(-6)),
     ...(input.deleted ? { deleted: true } : {}),
+    ...(input.username ? { tg_username: input.username } : {}),
+    ...(input.tgUserId ? { tg_user_id: input.tgUserId } : {}),
   };
   await pg.query(
     `INSERT INTO raw_events (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, source_metadata)
@@ -253,6 +262,25 @@ describe('withTeam namespaced port', () => {
     await expect(scope.timeline.getEventsByIds([visibleId, deletedId])).resolves.toMatchObject([
       { id: visibleId },
     ]);
+  });
+
+  it('fails closed for person sender filters when no approved identity facet exists', async () => {
+    const eventId = '00000000-0000-0000-0000-000000000106';
+    await insertTelegramEvent(pg, {
+      id: eventId,
+      authorUserId: null,
+      text: 'visible telegram from someone else',
+      username: 'someone',
+      tgUserId: 123,
+    });
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const person = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Mikael Rintala',
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    await expect(scope.timeline.listEvents({ personObjectId: person.id })).resolves.toEqual([]);
   });
 
   it('does not hydrate entity facts whose source event has been tombstoned', async () => {

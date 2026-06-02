@@ -208,6 +208,96 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.count).toBe('1');
   });
 
+  it('applies identity facet suggestions only after approval', async () => {
+    const creator = withTeam(db as never, TEAM_ID, USER_ID);
+    const reviewer = withTeam(db as never, TEAM_ID, REVIEWER_ID);
+    const person = await creator.objects.createObject({
+      type: 'person',
+      canonicalName: 'Mikael Rintala',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await creator.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember Telegram identity',
+      dedupeKey: 'identity-facet-telegram',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'identity_facet',
+          targetId: person.id,
+          title: 'Link @mikaelrintala to Mikael Rintala',
+          dedupeKey: 'identity-facet-telegram:item',
+          proposedPayload: {
+            entityId: person.id,
+            kind: 'telegram',
+            value: '@mikaelrintala',
+            linkedUserId: USER_ID,
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    const before = await pg.query<{ count: string }>(
+      `SELECT count(*)::text FROM object_identity_facets WHERE team_id = '${TEAM_ID}'`,
+    );
+    expect(before.rows[0]?.count).toBe('0');
+
+    await expect(reviewer.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const after = await pg.query<{
+      entity_id: string;
+      kind: string;
+      normalized_value: string;
+      linked_user_id: string;
+      status: string;
+    }>(
+      `SELECT entity_id, kind, normalized_value, linked_user_id, status
+       FROM object_identity_facets
+       WHERE team_id = '${TEAM_ID}'`,
+    );
+    expect(after.rows).toEqual([
+      {
+        entity_id: person.id,
+        kind: 'telegram',
+        normalized_value: 'mikaelrintala',
+        linked_user_id: USER_ID,
+        status: 'approved',
+      },
+    ]);
+  });
+
+  it('dedupes approved identity facets by external provider id', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const person = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Mikael Rintala',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    const first = await scope.objects.createIdentityFacet({
+      entityId: person.id,
+      kind: 'telegram',
+      value: '@mikaelrintala',
+      externalId: '12345',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const second = await scope.objects.createIdentityFacet({
+      entityId: person.id,
+      kind: 'telegram',
+      value: '@miku',
+      externalId: '12345',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    expect(second.id).toBe(first.id);
+    const result = await pg.query<{ count: string }>(
+      `SELECT count(*)::text FROM object_identity_facets WHERE team_id = '${TEAM_ID}'`,
+    );
+    expect(result.rows[0]?.count).toBe('1');
+  });
+
   it('does not recreate canonical records when retrying an item with a result id', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const existing = await scope.objects.createObject({

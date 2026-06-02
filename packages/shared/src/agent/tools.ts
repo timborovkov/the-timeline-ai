@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { childLogger } from '#src/logger.js';
 import { getMcpManager } from '#src/mcp/client.js';
 import * as objects from '#src/objects/index.js';
-import { suggestionDedupeKey } from '#src/suggestions/index.js';
+import { suggestionDedupeKey, type CreateSuggestionInput } from '#src/suggestions/index.js';
 import { type TeamScope } from '#src/team-scope.js';
 import {
   localDateFromInstant,
@@ -42,6 +42,9 @@ const eventSourceSchema = z.enum([
   'calendar',
   'slack',
 ]);
+const objectTypeSchema = z.enum(
+  objects.OBJECT_TYPES as [objects.ObjectType, ...objects.ObjectType[]],
+);
 
 const searchTimelineInput = z.object({
   query: z.string().trim().min(1).max(500),
@@ -56,6 +59,9 @@ const searchTimelineInput = z.object({
    * but currently surface via the entity / object tools, not this one.
    */
   sourceKind: z.union([sourceKindSchema, z.array(sourceKindSchema).max(7)]).optional(),
+  personObjectId: z.string().regex(UUID_RE).optional(),
+  senderHandle: z.string().trim().min(1).max(200).optional(),
+  senderSource: z.enum(['telegram', 'slack', 'email']).optional(),
   limit: z.number().int().min(1).max(20).optional(),
 });
 
@@ -67,8 +73,86 @@ const listEventsInput = z.object({
   from: z.iso.datetime().optional(),
   to: z.iso.datetime().optional(),
   authorUserId: z.string().regex(UUID_RE).optional(),
+  personObjectId: z.string().regex(UUID_RE).optional(),
+  senderHandle: z.string().trim().min(1).max(200).optional(),
+  senderSource: z.enum(['telegram', 'slack', 'email']).optional(),
   source: eventSourceSchema.optional(),
   limit: z.number().int().min(1).max(50).optional(),
+});
+
+const listPendingApprovalsInput = z.object({
+  status: z.enum(['pending', 'failed', 'all']).default('pending'),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+
+const objectMemoryItemSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('create_object'),
+    type: objectTypeSchema.default('other'),
+    canonicalName: z.string().trim().min(1).max(200),
+    aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+    status: z.string().trim().min(1).max(40).optional(),
+    ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
+    assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+    dueAt: z.iso.datetime().nullable().optional(),
+    sourceEventId: z.string().regex(UUID_RE).nullable().optional(),
+  }),
+  z.object({
+    kind: z.literal('update_object'),
+    entityId: z.string().regex(UUID_RE),
+    canonicalName: z.string().trim().min(1).max(200).optional(),
+    aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+    status: z.string().trim().min(1).max(40).optional(),
+    ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
+    assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+    dueAt: z.iso.datetime().nullable().optional(),
+  }),
+  z.object({
+    kind: z.literal('add_identity_facet'),
+    entityId: z.string().regex(UUID_RE),
+    facetKind: z.enum(['email', 'phone', 'telegram', 'slack', 'github', 'timeline_user', 'other']),
+    value: z.string().trim().min(1).max(300),
+    normalizedValue: z.string().trim().min(1).max(300).optional(),
+    provider: z.string().trim().min(1).max(80).nullable().optional(),
+    externalId: z.string().trim().min(1).max(200).nullable().optional(),
+    linkedUserId: z.string().regex(UUID_RE).nullable().optional(),
+  }),
+  z.object({
+    kind: z.literal('add_note'),
+    entityId: z.string().regex(UUID_RE),
+    body: z.string().trim().min(1).max(5000),
+  }),
+  z.object({
+    kind: z.literal('add_relationship'),
+    fromEntityId: z.string().regex(UUID_RE),
+    toEntityId: z.string().regex(UUID_RE),
+    relationshipKind: z.enum([
+      'parent',
+      'child',
+      'related',
+      'blocks',
+      'blocked_by',
+      'duplicate_of',
+      'linked',
+    ]),
+  }),
+]);
+
+const suggestObjectMemoryInput = z.object({
+  title: z.string().trim().min(1).max(200),
+  summary: z.string().trim().max(1000).nullable().optional(),
+  reason: z.string().trim().max(1000).nullable().optional(),
+  confidence: z.enum(['low', 'medium', 'high']).default('medium'),
+  evidence: z
+    .array(
+      z.object({
+        rawEventId: z.string().regex(UUID_RE),
+        quote: z.string().trim().max(1000).nullable().optional(),
+      }),
+    )
+    .max(10)
+    .optional(),
+  items: z.array(objectMemoryItemSchema).min(1).max(10),
 });
 
 const getEventInput = z.object({
@@ -236,6 +320,9 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           if (input.source) args.source = input.source;
           if (input.entityIds) args.entityIds = input.entityIds;
           if (input.sourceKind) args.sourceKind = input.sourceKind;
+          if (input.personObjectId) args.personObjectId = input.personObjectId;
+          if (input.senderHandle) args.senderHandle = input.senderHandle;
+          if (input.senderSource) args.senderSource = input.senderSource;
           if (input.limit) args.limit = input.limit;
           const results = await scope.timeline.searchEvents(args);
           // Fence the snippet so a malicious search hit cannot smuggle a
@@ -277,6 +364,9 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
               occurred_at: e.occurredAt.toISOString(),
               source: e.source,
               author_user_id: e.authorUserId,
+              sender: e.sender,
+              resolved_sender_object: e.resolvedSenderObject,
+              sender_resolution_status: e.senderResolutionStatus,
               content_text: fenceExternalContent(e.contentText, {
                 source: e.source,
                 eventId: e.id,
@@ -298,22 +388,32 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
           if (input.from) filters.from = new Date(input.from);
           if (input.to) filters.to = new Date(input.to);
           if (input.authorUserId) filters.authorUserId = input.authorUserId;
+          if (input.personObjectId) filters.personObjectId = input.personObjectId;
+          if (input.senderHandle) filters.senderHandle = input.senderHandle;
+          if (input.senderSource) filters.senderSource = input.senderSource;
           if (input.limit) filters.limit = input.limit;
           if (input.source) filters.source = input.source;
           const filtered = await scope.timeline.listEvents(filters);
+          const senderMap = await scope.timeline.resolveEventSenders(filtered);
           return {
             count: filtered.length,
-            events: filtered.map((e) => ({
-              event_id: e.id,
-              occurred_at: e.occurredAt.toISOString(),
-              source: e.source,
-              author_user_id: e.authorUserId,
-              content_text: fenceExternalContent(e.contentText, {
+            events: filtered.map((e) => {
+              const senderInfo = senderMap.get(e.id);
+              return {
+                event_id: e.id,
+                occurred_at: e.occurredAt.toISOString(),
                 source: e.source,
-                eventId: e.id,
-              }),
-              has_audio: Boolean(e.contentAudioUrl),
-            })),
+                author_user_id: e.authorUserId,
+                sender: senderInfo?.sender ?? null,
+                resolved_sender_object: senderInfo?.resolvedSenderObject ?? null,
+                sender_resolution_status: senderInfo?.senderResolutionStatus ?? 'unresolved',
+                content_text: fenceExternalContent(e.contentText, {
+                  source: e.source,
+                  eventId: e.id,
+                }),
+                has_audio: Boolean(e.contentAudioUrl),
+              };
+            }),
           };
         }),
     }),
@@ -448,7 +548,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
 
     recent_changes: tool({
       description:
-        "Recent applied or suggested changes to workspace objects. Use this for 'what changed today' or to find suggestions awaiting review. Filter by entityId, status, or since (ISO datetime).",
+        "Recent applied or legacy suggested object-change audit rows. Use this for 'what changed today' on object records. Use list_pending_approvals for bundled approval-queue proposals awaiting review.",
       inputSchema: z.object({
         entityId: z.string().regex(UUID_RE).optional(),
         status: z.enum(['applied', 'suggested', 'rejected']).optional(),
@@ -482,6 +582,53 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
               previous_value: c.previousValue,
               new_value: c.newValue,
               changed_at: c.changedAt.toISOString(),
+            })),
+          };
+        }),
+    }),
+
+    list_pending_approvals: tool({
+      description:
+        'List visible approval-backed proposals that are not canonical yet. Use this before claiming durable memory is approved, and when checking whether an alias, identity facet, object note, relationship, task, or calendar proposal is already pending.',
+      inputSchema: listPendingApprovalsInput,
+      execute: async (raw) =>
+        safe('list_pending_approvals', async () => {
+          const input = listPendingApprovalsInput.parse(raw);
+          const suggestions = await scope.suggestions.listSuggestions({
+            status: input.status,
+            limit: input.limit ?? 20,
+          });
+          return {
+            count: suggestions.length,
+            canonical: false,
+            note: 'These approval proposals are pending workspace state, not canonical truth until accepted.',
+            approvals: suggestions.map((suggestion) => ({
+              suggestion_id: suggestion.id,
+              status: suggestion.status,
+              title: suggestion.title,
+              summary: suggestion.summary,
+              reason: suggestion.reason,
+              confidence: suggestion.confidence,
+              created_at: suggestion.createdAt.toISOString(),
+              updated_at: suggestion.updatedAt.toISOString(),
+              evidence: suggestion.evidence.map((ev) => ({
+                raw_event_id: ev.rawEventId,
+                quote: ev.quote,
+                occurred_at: ev.occurredAt?.toISOString() ?? null,
+                source: ev.source,
+              })),
+              items: suggestion.items.map((item) => ({
+                item_id: item.id,
+                status: item.status,
+                operation: item.operation,
+                target_kind: item.targetKind,
+                target_id: item.targetId,
+                result_id: item.resultId,
+                title: item.title,
+                description: item.description,
+                proposed_payload: item.proposedPayload,
+                failure_reason: item.failureReason,
+              })),
             })),
           };
         }),
@@ -598,6 +745,145 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         }),
     }),
 
+    suggest_object_memory: tool({
+      description:
+        'Create an approval-backed proposal for durable object memory. Use when the user gives lasting information about people, companies, projects, tasks, deals, calendar commitments, aliases, identity facets, relationships, notes, or typo/name cleanup. This queues approval only; it does not make memory canonical until accepted.',
+      inputSchema: suggestObjectMemoryInput,
+      execute: async (raw) =>
+        safe('suggest_object_memory', async () => {
+          const input = suggestObjectMemoryInput.parse(raw);
+          const items = input.items.map((item) => {
+            if (item.kind === 'create_object') {
+              return {
+                operation: 'create' as const,
+                targetKind:
+                  item.type === 'task' || item.type === 'follow_up'
+                    ? ('task' as const)
+                    : ('object' as const),
+                title: `Create ${item.type}: ${item.canonicalName}`,
+                dedupeKey: suggestionDedupeKey([
+                  'object-memory',
+                  item.kind,
+                  item.type,
+                  item.canonicalName,
+                ]),
+                proposedPayload: {
+                  type: item.type,
+                  canonicalName: item.canonicalName,
+                  aliases: item.aliases,
+                  status: item.status,
+                  ownerUserId: item.ownerUserId,
+                  assigneeUserId: item.assigneeUserId,
+                  dueAt: item.dueAt,
+                  sourceEventId: item.sourceEventId,
+                  metadata: { object_memory: true },
+                },
+              };
+            }
+            if (item.kind === 'update_object') {
+              return {
+                operation: 'update' as const,
+                targetKind: 'object' as const,
+                targetId: item.entityId,
+                title: 'Update object memory',
+                dedupeKey: suggestionDedupeKey(['object-memory', item.kind, item.entityId, item]),
+                proposedPayload: {
+                  canonicalName: item.canonicalName,
+                  aliases: item.aliases,
+                  status: item.status,
+                  ownerUserId: item.ownerUserId,
+                  assigneeUserId: item.assigneeUserId,
+                  dueAt: item.dueAt,
+                },
+              };
+            }
+            if (item.kind === 'add_identity_facet') {
+              return {
+                operation: 'create' as const,
+                targetKind: 'identity_facet' as const,
+                targetId: item.entityId,
+                title: `Add ${item.facetKind} identity`,
+                dedupeKey: suggestionDedupeKey([
+                  'object-memory',
+                  item.kind,
+                  item.entityId,
+                  item.facetKind,
+                  item.normalizedValue ?? item.value,
+                ]),
+                proposedPayload: {
+                  entityId: item.entityId,
+                  kind: item.facetKind,
+                  value: item.value,
+                  normalizedValue: item.normalizedValue,
+                  provider: item.provider,
+                  externalId: item.externalId,
+                  linkedUserId: item.linkedUserId,
+                },
+              };
+            }
+            if (item.kind === 'add_note') {
+              return {
+                operation: 'create' as const,
+                targetKind: 'object_note' as const,
+                targetId: item.entityId,
+                title: 'Add object note',
+                dedupeKey: suggestionDedupeKey([
+                  'object-memory',
+                  item.kind,
+                  item.entityId,
+                  item.body,
+                ]),
+                proposedPayload: { entityId: item.entityId, body: item.body },
+              };
+            }
+            return {
+              operation: 'create' as const,
+              targetKind: 'object_relationship' as const,
+              title: `Add ${item.relationshipKind} relationship`,
+              dedupeKey: suggestionDedupeKey([
+                'object-memory',
+                item.kind,
+                item.fromEntityId,
+                item.toEntityId,
+                item.relationshipKind,
+              ]),
+              proposedPayload: {
+                fromEntityId: item.fromEntityId,
+                toEntityId: item.toEntityId,
+                kind: item.relationshipKind,
+              },
+            };
+          });
+          const createInput: CreateSuggestionInput = {
+            source: 'chat',
+            title: input.title,
+            summary: input.summary ?? null,
+            reason: input.reason ?? null,
+            confidence: input.confidence,
+            dedupeKey: suggestionDedupeKey(['object-memory-bundle', input.title, items]),
+            metadata: { tool: 'suggest_object_memory' },
+            items,
+          };
+          const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
+            ...createInput,
+            ...(input.evidence
+              ? {
+                  evidence: input.evidence.map((ev) => ({
+                    rawEventId: ev.rawEventId,
+                    quote: ev.quote ?? null,
+                  })),
+                }
+              : {}),
+          });
+          return {
+            ok: true,
+            suggestion_id: suggestion.id,
+            suggestion,
+            message: 'Object-memory proposal queued for approval.',
+          };
+        }),
+    }),
+
     get_event: tool({
       description:
         "Fetch one raw event by id, including its linked facts and entities. Use this to verify a citation or drill into a specific event_id you've already received from another tool. Returns null if the id isn't in this team or isn't visible to you.",
@@ -613,6 +899,9 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             occurred_at: result.event.occurredAt.toISOString(),
             source: result.event.source,
             author_user_id: result.event.authorUserId,
+            sender: result.event.sender,
+            resolved_sender_object: result.event.resolvedSenderObject,
+            sender_resolution_status: result.event.senderResolutionStatus,
             content_text: fenceExternalContent(result.event.contentText, {
               source: result.event.source,
               eventId: result.event.id,

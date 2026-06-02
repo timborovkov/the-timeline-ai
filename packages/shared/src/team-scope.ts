@@ -12,6 +12,7 @@ import {
   eventSource,
   factEntities,
   facts as factsTable,
+  objectIdentityFacets,
   objectChanges,
   rawEvents,
   teamMembers,
@@ -32,7 +33,7 @@ import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { createMcpScope } from '#src/mcp/scope.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
-import { createObjectScope } from '#src/objects/index.js';
+import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { createOnboardingScope } from '#src/onboarding/index.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import {
@@ -85,6 +86,9 @@ async function enqueueRawEventEmbed(input: { teamId: string; rawEventId: string 
 
 export interface EventListFilters {
   authorUserId?: string;
+  personObjectId?: string;
+  senderHandle?: string;
+  senderSource?: 'telegram' | 'slack' | 'email';
   /** Inclusive lower bound on `occurred_at`. */
   from?: Date;
   /** Exclusive upper bound on `occurred_at`. Callers wanting "include all of
@@ -187,6 +191,9 @@ export interface SearchEventsInput {
    * helper (out of scope for this pass).
    */
   sourceKind?: SourceKind | SourceKind[];
+  personObjectId?: string;
+  senderHandle?: string;
+  senderSource?: 'telegram' | 'slack' | 'email';
   limit?: number;
 }
 
@@ -202,9 +209,29 @@ export interface SearchEventResult {
   occurredAt: string;
   source: EventSource;
   authorUserId: string | null;
+  sender: SenderContext | null;
+  resolvedSenderObject: ResolvedSenderObject | null;
+  senderResolutionStatus: SenderResolutionStatus;
   entityIds: string[];
   snippet: string;
 }
+
+export interface SenderContext {
+  source: EventSource;
+  displayName: string | null;
+  handle: string | null;
+  externalId: string | null;
+  provider: string | null;
+}
+
+export interface ResolvedSenderObject {
+  id: string;
+  canonicalName: string;
+  aliases: string[];
+  linkedUserId: string | null;
+}
+
+export type SenderResolutionStatus = 'resolved' | 'unresolved' | 'ambiguous';
 
 export interface EntityFact {
   id: string;
@@ -251,6 +278,9 @@ export interface EntityProfile {
     authorUserId: string | null;
     authorName: string | null;
     authorEmail: string | null;
+    sender: SenderContext | null;
+    resolvedSenderObject: ResolvedSenderObject | null;
+    senderResolutionStatus: SenderResolutionStatus;
     contentText: string | null;
     contentAudioUrl: string | null;
   }[];
@@ -263,6 +293,9 @@ export interface EventWithFacts {
     occurredAt: Date;
     source: EventSource;
     authorUserId: string | null;
+    sender: SenderContext | null;
+    resolvedSenderObject: ResolvedSenderObject | null;
+    senderResolutionStatus: SenderResolutionStatus;
     contentText: string | null;
     contentAudioUrl: string | null;
     visibility: EventVisibility;
@@ -439,6 +472,323 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     if (!(await isTeamMember(otherUserId))) {
       throw new Error('Referenced user is not a member of this team');
     }
+  }
+
+  function metadataObject(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  function metadataString(meta: Record<string, unknown>, key: string): string | null {
+    const value = meta[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number') return String(value);
+    return null;
+  }
+
+  function emailFromMetadata(meta: Record<string, unknown>): string | null {
+    const from = meta.from;
+    if (from && typeof from === 'object' && !Array.isArray(from)) {
+      const email = (from as Record<string, unknown>).email;
+      if (typeof email === 'string' && email.trim()) return email.trim();
+    }
+    return metadataString(meta, 'from_email') ?? metadataString(meta, 'sender_email');
+  }
+
+  function senderContextForEvent(event: {
+    source: EventSource;
+    sourceMetadata: unknown;
+  }): SenderContext | null {
+    const meta = metadataObject(event.sourceMetadata);
+    if (event.source === 'telegram') {
+      const username = metadataString(meta, 'tg_username');
+      return {
+        source: event.source,
+        displayName: metadataString(meta, 'tg_sender_name'),
+        handle: username ? `@${username.replace(/^@/, '')}` : null,
+        externalId: metadataString(meta, 'tg_user_id'),
+        provider: 'telegram',
+      };
+    }
+    if (event.source === 'slack') {
+      return {
+        source: event.source,
+        displayName: metadataString(meta, 'slack_sender_name'),
+        handle: metadataString(meta, 'slack_sender_id'),
+        externalId: metadataString(meta, 'slack_sender_id'),
+        provider: metadataString(meta, 'slack_workspace_id'),
+      };
+    }
+    if (event.source === 'email') {
+      const email = emailFromMetadata(meta);
+      return {
+        source: event.source,
+        displayName: metadataString(meta, 'from_name') ?? email,
+        handle: email,
+        externalId: email,
+        provider: 'email',
+      };
+    }
+    return null;
+  }
+
+  interface SenderCandidate {
+    eventId: string;
+    kind: 'telegram' | 'slack' | 'email' | 'timeline_user';
+    normalizedValue?: string;
+    externalId?: string | null;
+    linkedUserId?: string | null;
+  }
+
+  function senderCandidatesForEvent(event: {
+    id: string;
+    source: EventSource;
+    authorUserId: string | null;
+    sourceMetadata: unknown;
+  }): SenderCandidate[] {
+    const meta = metadataObject(event.sourceMetadata);
+    const candidates: SenderCandidate[] = [];
+    if (event.authorUserId) {
+      candidates.push({
+        eventId: event.id,
+        kind: 'timeline_user',
+        normalizedValue: event.authorUserId.toLowerCase(),
+        linkedUserId: event.authorUserId,
+      });
+    }
+    if (event.source === 'telegram') {
+      const username = metadataString(meta, 'tg_username');
+      const tgUserId = metadataString(meta, 'tg_user_id');
+      if (username) {
+        candidates.push({
+          eventId: event.id,
+          kind: 'telegram',
+          normalizedValue: normalizeIdentityFacet('telegram', username),
+        });
+      }
+      if (tgUserId) candidates.push({ eventId: event.id, kind: 'telegram', externalId: tgUserId });
+    } else if (event.source === 'slack') {
+      const senderId = metadataString(meta, 'slack_sender_id');
+      if (senderId) {
+        candidates.push({
+          eventId: event.id,
+          kind: 'slack',
+          normalizedValue: senderId,
+          externalId: senderId,
+        });
+      }
+    } else if (event.source === 'email') {
+      const email = emailFromMetadata(meta);
+      if (email) {
+        candidates.push({
+          eventId: event.id,
+          kind: 'email',
+          normalizedValue: normalizeIdentityFacet('email', email),
+        });
+      }
+    }
+    return candidates;
+  }
+
+  async function resolveSenderContexts(
+    events: {
+      id: string;
+      source: EventSource;
+      authorUserId: string | null;
+      sourceMetadata: unknown;
+    }[],
+  ) {
+    const result = new Map<
+      string,
+      {
+        sender: SenderContext | null;
+        resolvedSenderObject: ResolvedSenderObject | null;
+        senderResolutionStatus: SenderResolutionStatus;
+      }
+    >();
+    for (const event of events) {
+      result.set(event.id, {
+        sender: senderContextForEvent(event),
+        resolvedSenderObject: null,
+        senderResolutionStatus: 'unresolved',
+      });
+    }
+    const candidates = events.flatMap(senderCandidatesForEvent);
+    if (candidates.length === 0) return result;
+
+    const facetConditions = candidates
+      .map((candidate) => {
+        if (candidate.kind === 'timeline_user' && candidate.linkedUserId) {
+          return and(
+            eq(objectIdentityFacets.kind, 'timeline_user'),
+            eq(objectIdentityFacets.linkedUserId, candidate.linkedUserId),
+          );
+        }
+        const alternatives = [];
+        if (candidate.normalizedValue) {
+          alternatives.push(eq(objectIdentityFacets.normalizedValue, candidate.normalizedValue));
+        }
+        if (candidate.externalId)
+          alternatives.push(eq(objectIdentityFacets.externalId, candidate.externalId));
+        if (alternatives.length === 0) return undefined;
+        return and(eq(objectIdentityFacets.kind, candidate.kind), or(...alternatives));
+      })
+      .filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+    if (facetConditions.length === 0) return result;
+
+    const rows = await db
+      .select({
+        kind: objectIdentityFacets.kind,
+        normalizedValue: objectIdentityFacets.normalizedValue,
+        externalId: objectIdentityFacets.externalId,
+        linkedUserId: objectIdentityFacets.linkedUserId,
+        entityId: entities.id,
+        canonicalName: entities.canonicalName,
+        aliases: entities.aliases,
+      })
+      .from(objectIdentityFacets)
+      .innerJoin(entities, eq(entities.id, objectIdentityFacets.entityId))
+      .where(
+        and(
+          eq(objectIdentityFacets.teamId, teamId),
+          eq(objectIdentityFacets.status, 'approved'),
+          eq(entities.teamId, teamId),
+          isNull(entities.mergedIntoId),
+          or(...facetConditions),
+        ),
+      );
+
+    for (const event of events) {
+      const eventCandidates = senderCandidatesForEvent(event);
+      const matches = rows.filter((row) =>
+        eventCandidates.some((candidate) => {
+          if (candidate.kind !== row.kind) return false;
+          if (candidate.kind === 'timeline_user')
+            return candidate.linkedUserId === row.linkedUserId;
+          const normalizedMatches =
+            candidate.normalizedValue !== undefined &&
+            candidate.normalizedValue === row.normalizedValue;
+          const externalMatches =
+            candidate.externalId !== undefined &&
+            candidate.externalId !== null &&
+            candidate.externalId === row.externalId;
+          return normalizedMatches || externalMatches;
+        }),
+      );
+      const byEntity = new Map<string, (typeof matches)[number]>();
+      for (const match of matches) byEntity.set(match.entityId, match);
+      const current = result.get(event.id);
+      if (!current) continue;
+      if (byEntity.size === 1) {
+        const match = byEntity.values().next().value;
+        if (!match) continue;
+        const aliases = Array.isArray(match.aliases)
+          ? (match.aliases as unknown[]).filter((v): v is string => typeof v === 'string')
+          : [];
+        result.set(event.id, {
+          ...current,
+          resolvedSenderObject: {
+            id: match.entityId,
+            canonicalName: match.canonicalName,
+            aliases,
+            linkedUserId: match.linkedUserId,
+          },
+          senderResolutionStatus: 'resolved',
+        });
+      } else if (byEntity.size > 1) {
+        result.set(event.id, { ...current, senderResolutionStatus: 'ambiguous' });
+      }
+    }
+    return result;
+  }
+
+  async function senderFilterCondition(filters: {
+    personObjectId?: string;
+    senderHandle?: string;
+    senderSource?: 'telegram' | 'slack' | 'email';
+  }) {
+    const filterGroups = [];
+    if (filters.senderHandle) {
+      const handle = filters.senderHandle.trim();
+      const source = filters.senderSource;
+      const handleConditions = [];
+      if (!source || source === 'telegram') {
+        handleConditions.push(
+          and(
+            eq(rawEvents.source, 'telegram'),
+            sql`lower(${rawEvents.sourceMetadata} ->> 'tg_username') = ${normalizeIdentityFacet('telegram', handle)}`,
+          ),
+        );
+      }
+      if (!source || source === 'slack') {
+        handleConditions.push(
+          and(
+            eq(rawEvents.source, 'slack'),
+            sql`${rawEvents.sourceMetadata} ->> 'slack_sender_id' = ${handle}`,
+          ),
+        );
+      }
+      if (!source || source === 'email') {
+        handleConditions.push(
+          and(
+            eq(rawEvents.source, 'email'),
+            sql`lower(${rawEvents.sourceMetadata} #>> '{from,email}') = ${normalizeIdentityFacet('email', handle)}`,
+          ),
+        );
+      }
+      filterGroups.push(handleConditions.length > 0 ? or(...handleConditions) : sql`false`);
+    }
+    if (filters.personObjectId) {
+      if (!UUID_RE.test(filters.personObjectId)) return sql`false`;
+      const personConditions = [];
+      const facets = await db
+        .select()
+        .from(objectIdentityFacets)
+        .where(
+          and(
+            eq(objectIdentityFacets.teamId, teamId),
+            eq(objectIdentityFacets.entityId, filters.personObjectId),
+            eq(objectIdentityFacets.status, 'approved'),
+          ),
+        );
+      for (const facet of facets) {
+        if (facet.kind === 'timeline_user' && facet.linkedUserId) {
+          personConditions.push(eq(rawEvents.authorUserId, facet.linkedUserId));
+        } else if (facet.kind === 'telegram') {
+          personConditions.push(
+            and(
+              eq(rawEvents.source, 'telegram'),
+              or(
+                sql`lower(${rawEvents.sourceMetadata} ->> 'tg_username') = ${facet.normalizedValue}`,
+                facet.externalId
+                  ? sql`${rawEvents.sourceMetadata} ->> 'tg_user_id' = ${facet.externalId}`
+                  : sql`false`,
+              ),
+            ),
+          );
+        } else if (facet.kind === 'slack') {
+          personConditions.push(
+            and(
+              eq(rawEvents.source, 'slack'),
+              sql`${rawEvents.sourceMetadata} ->> 'slack_sender_id' = ${facet.externalId ?? facet.normalizedValue}`,
+            ),
+          );
+        } else if (facet.kind === 'email') {
+          personConditions.push(
+            and(
+              eq(rawEvents.source, 'email'),
+              sql`lower(${rawEvents.sourceMetadata} #>> '{from,email}') = ${facet.normalizedValue}`,
+            ),
+          );
+        }
+      }
+      filterGroups.push(personConditions.length > 0 ? or(...personConditions) : sql`false`);
+    }
+    if (filters.senderSource && filters.personObjectId) {
+      filterGroups.push(eq(rawEvents.source, filters.senderSource));
+    }
+    return filterGroups.length > 0 ? and(...filterGroups) : null;
   }
 
   function sameVisibilityUsers(
@@ -618,6 +968,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     if (filters.authorUserId) {
       conditions.push(eq(rawEvents.authorUserId, filters.authorUserId));
     }
+    const senderCondition = await senderFilterCondition(filters);
+    if (senderCondition) conditions.push(senderCondition);
     if (filters.from) conditions.push(gte(rawEvents.occurredAt, filters.from));
     if (filters.to) conditions.push(lt(rawEvents.occurredAt, filters.to));
     if (filters.source) {
@@ -803,7 +1155,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       ]);
 
     for (const row of suggestionRows) {
-      const kind = row.targetKind === 'calendar_event' ? 'calendar' : row.targetKind;
+      const kind: TimelineImpactKind =
+        row.targetKind === 'calendar_event'
+          ? 'calendar'
+          : row.targetKind === 'identity_facet' ||
+              row.targetKind === 'object_note' ||
+              row.targetKind === 'object_relationship'
+            ? 'object'
+            : row.targetKind;
       const targetId = row.resultId ?? row.targetId;
       const href =
         kind === 'calendar'
@@ -1032,6 +1391,76 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       },
 
       listEvents,
+
+      async resolveEventSenders(
+        events: {
+          id: string;
+          source: EventSource;
+          authorUserId: string | null;
+          sourceMetadata: unknown;
+        }[],
+      ) {
+        return resolveSenderContexts(events);
+      },
+
+      async currentUserIdentityContext() {
+        const role = await ensureMember();
+        const userRows = await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+        const facetRows = await db
+          .select({
+            id: objectIdentityFacets.id,
+            kind: objectIdentityFacets.kind,
+            value: objectIdentityFacets.value,
+            normalizedValue: objectIdentityFacets.normalizedValue,
+            provider: objectIdentityFacets.provider,
+            externalId: objectIdentityFacets.externalId,
+            entityId: entities.id,
+            canonicalName: entities.canonicalName,
+            aliases: entities.aliases,
+          })
+          .from(objectIdentityFacets)
+          .innerJoin(entities, eq(entities.id, objectIdentityFacets.entityId))
+          .where(
+            and(
+              eq(objectIdentityFacets.teamId, teamId),
+              eq(objectIdentityFacets.linkedUserId, userId),
+              eq(objectIdentityFacets.status, 'approved'),
+              eq(entities.teamId, teamId),
+              isNull(entities.mergedIntoId),
+            ),
+          )
+          .orderBy(objectIdentityFacets.kind, objectIdentityFacets.value);
+        const person = facetRows[0]
+          ? {
+              id: facetRows[0].entityId,
+              canonicalName: facetRows[0].canonicalName,
+              aliases: Array.isArray(facetRows[0].aliases)
+                ? (facetRows[0].aliases as unknown[]).filter(
+                    (value): value is string => typeof value === 'string',
+                  )
+                : [],
+            }
+          : null;
+        return {
+          userId,
+          role,
+          name: userRows[0]?.name ?? null,
+          email: userRows[0]?.email ?? null,
+          person,
+          facets: facetRows.map((facet) => ({
+            id: facet.id,
+            kind: facet.kind,
+            value: facet.value,
+            normalizedValue: facet.normalizedValue,
+            provider: facet.provider,
+            externalId: facet.externalId,
+          })),
+        };
+      },
 
       listImpactItems: listTimelineImpactItems,
 
@@ -1402,6 +1831,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           .limit(1);
         const event = eventRows[0];
         if (!event) return null;
+        const senderMap = await resolveSenderContexts([event]);
+        const senderInfo = senderMap.get(event.id);
         if (event.visibility !== 'team') {
           await db.insert(auditLog).values({
             teamId,
@@ -1455,6 +1886,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             occurredAt: event.occurredAt,
             source: event.source,
             authorUserId: event.authorUserId,
+            sender: senderInfo?.sender ?? null,
+            resolvedSenderObject: senderInfo?.resolvedSenderObject ?? null,
+            senderResolutionStatus: senderInfo?.senderResolutionStatus ?? 'unresolved',
             contentText: event.contentText,
             contentAudioUrl: event.contentAudioUrl,
             visibility: event.visibility,
@@ -1551,6 +1985,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
                   occurredAt: rawEvents.occurredAt,
                   source: rawEvents.source,
                   authorUserId: rawEvents.authorUserId,
+                  sourceMetadata: rawEvents.sourceMetadata,
                   contentText: rawEvents.contentText,
                   contentAudioUrl: rawEvents.contentAudioUrl,
                   authorName: users.name,
@@ -1568,6 +2003,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
                 )
                 .orderBy(desc(rawEvents.occurredAt))
             : [];
+        const senderMap = await resolveSenderContexts(eventRows);
 
         const visibleEventIds = new Set(eventRows.map((e) => e.id));
         const visibleFacts = factRows.filter((f) => visibleEventIds.has(f.rawEventId));
@@ -1614,7 +2050,15 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             metadata,
           },
           facts: visibleFacts,
-          events: eventRows,
+          events: eventRows.map((event) => {
+            const senderInfo = senderMap.get(event.id);
+            return {
+              ...event,
+              sender: senderInfo?.sender ?? null,
+              resolvedSenderObject: senderInfo?.resolvedSenderObject ?? null,
+              senderResolutionStatus: senderInfo?.senderResolutionStatus ?? 'unresolved',
+            };
+          }),
           coOccurring: coRows,
         };
       },
@@ -1643,7 +2087,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
         const { vector } = await embedFn({ text: input.query });
 
-        const searchOpts: SearchOpts = { limit: input.limit ?? 20 };
+        const searchOpts: SearchOpts = {
+          limit:
+            input.personObjectId || input.senderHandle
+              ? (input.limit ?? 20) * 4
+              : (input.limit ?? 20),
+        };
         if (input.from) searchOpts.from = input.from;
         if (input.to) searchOpts.to = input.to;
         if (input.source) searchOpts.source = input.source;
@@ -1693,6 +2142,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             authorUserId: hit.payload.author_user_id,
             entityIds: [...entityIds],
             snippet: '',
+            sender: null,
+            resolvedSenderObject: null,
+            senderResolutionStatus: 'unresolved',
           });
         }
 
@@ -1705,6 +2157,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         // method runs, so the visibility filter can't drift across the two
         // call sites.
         const accessibleEvents = await getEventsByIdsImpl(orderedEventIds);
+        const senderMap = await resolveSenderContexts(accessibleEvents);
         const eventMap = new Map<string, (typeof accessibleEvents)[number]>();
         for (const ev of accessibleEvents) eventMap.set(ev.id, ev);
 
@@ -1731,6 +2184,22 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         for (const eventId of orderedEventIds) {
           const ev = eventMap.get(eventId);
           if (!ev) continue;
+          const senderInfo = senderMap.get(ev.id);
+          if (
+            input.personObjectId &&
+            senderInfo?.resolvedSenderObject?.id !== input.personObjectId
+          ) {
+            continue;
+          }
+          if (input.senderHandle) {
+            const needle = input.senderHandle.replace(/^@/, '').toLowerCase();
+            const senderHaystack = [
+              senderInfo?.sender?.handle?.replace(/^@/, '').toLowerCase(),
+              senderInfo?.sender?.externalId?.toLowerCase(),
+            ].filter(Boolean);
+            if (!senderHaystack.includes(needle)) continue;
+          }
+          if (input.senderSource && ev.source !== input.senderSource) continue;
           const row = dedup.get(eventId);
           if (!row) continue;
           const verifiedFactIds = row.factIds.filter((fid) => factMap.has(fid));
@@ -1748,9 +2217,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             occurredAt: ev.occurredAt.toISOString(),
             source: ev.source,
             authorUserId: ev.authorUserId,
+            sender: senderInfo?.sender ?? null,
+            resolvedSenderObject: senderInfo?.resolvedSenderObject ?? null,
+            senderResolutionStatus: senderInfo?.senderResolutionStatus ?? 'unresolved',
             entityIds: row.entityIds,
             snippet,
           });
+          if (results.length >= (input.limit ?? 20)) break;
         }
         return results;
       },
