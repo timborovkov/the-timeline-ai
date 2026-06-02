@@ -8,10 +8,10 @@ contracts, not private implementation structure.
 
 Last checked in this branch: `pnpm validate` passes. Current suite shape:
 
-- Web Vitest: 46 files / 260 tests.
-- Shared Vitest: 55 files / 436 tests, including PGlite integration/eval coverage.
-- Worker Vitest: 7 files / 53 tests.
-- Playwright: 10 local core E2E journeys plus 1 production-ish smoke journey.
+- Web Vitest: 46 files / 263 tests.
+- Shared Vitest: 55 files / 442 tests, including PGlite integration/eval coverage.
+- Worker Vitest: 8 files / 59 tests.
+- Playwright: 11 local core E2E journeys plus 1 production-ish smoke journey.
 - E2E CI is still manual and `continue-on-error: true`; it is not a merge
   gate yet.
 
@@ -37,7 +37,7 @@ Legend:
 | Calendar | Partial: browser all-day create/edit/delete plus team/private visibility | Missing calendar API routes, if any are added later | Strong calendar action tests | Strong PGlite calendar scope, queue degradation, and time helpers | Embed worker calendar plan covered | Missing calendar UI states | E2E specific-user/timed calendar behavior and richer calendar UI states |
 | Integrations: Drive, GitHub, Linear | Missing UI/E2E connect/manage flows | Partial: webhooks covered; OAuth/manage routes missing | Missing integration actions if/when added | Strong provider parsing and event writer coverage | Integration sync worker missing | Missing integrations UI | OAuth start/callback/manage routes, integration sync worker, UI connect/disconnect states |
 | Slack | Missing Slack settings E2E | Partial: events webhook covered; commands/install/user-link missing | Missing Slack action tests | Strong dispatcher/API/security coverage | Missing provider-specific worker coverage | Missing Slack settings UI | Slash command/install/user-link routes, settings UI, action coverage |
-| Telegram | Missing Telegram settings E2E | Partial: webhook covered | Missing Telegram action tests | Strong API/dispatcher coverage, including DM text raw-event capture and extract/embed/suggestion enqueue | Missing transcribe path for Telegram audio processor | Missing Telegram settings UI | Bind/unbind/settings actions and UI, transcribe worker |
+| Telegram | Partial: browser verifies deterministic Telegram voice transcript approval acceptance | Partial: webhook covered, including media env wiring | Missing Telegram action tests | Strong API/dispatcher coverage, including DM text, voice/audio, caption/photo, document routing, duplicate delivery, and media skip behavior | Partial: transcribe processor handoff from audio transcript to extract/embed/suggestions is covered | Missing Telegram settings UI | Bind/unbind/settings actions and UI, provider-backed Telegram/OpenRouter canary, richer image/OCR-to-approval behavior |
 | MCP inbound/outbound | Missing MCP settings/key E2E | Strong MCP OAuth/server/key/server/tool route contracts | Missing MCP-specific actions if/when added | Strong auth/OAuth state/tool namespace/server handler, tool namespace, and deterministic untrusted-output/failure/reauth evals | MCP health worker missing | Missing MCP UI | MCP health worker, private-vs-team E2E, UI management states, provider-backed MCP behavior |
 | Email inbound/outbound | Missing E2E inbound email journey | Partial: inbound webhook covered | Invite/support email action gaps remain | Strong parser/dispatcher/outbound/IP allowlist coverage | Missing extract processor coverage for email attachments | Missing UI | Support action, inbound attachment/document path E2E or integration |
 | Meeting bots and meetings | Missing E2E scheduling/finalization | Partial Recall status/transcript webhooks covered | Thin meetings action coverage | Strong meetings scope, Recall/Svix/url helpers | Strong meeting-finalize worker | Missing meeting UI states | Meeting action breadth, consent/failure E2E, meeting UI states |
@@ -60,10 +60,10 @@ Legend:
   tests. These are valuable for auth/status/validation/side-effect intent, but
   they are less likely to discover deep product bugs on their own.
 - Biggest remaining product-risk gaps: live-model chat eval coverage and
-  broader source-capture coverage from Slack, Telegram,
-  email, documents, and integrations; then E2E browser flows for document
+  broader source-capture coverage from Slack, email, documents,
+  and integrations; then E2E browser flows for document
   search/extraction, richer calendar, integrations, MCP settings, onboarding,
-  and job recovery; worker coverage for extract/transcribe/integration sync/
+  and job recovery; worker coverage for extract/integration sync/
   MCP health/team export; DB/queue/S3 contract tests; and component state tests.
 
 ## Current Test Surface
@@ -112,6 +112,9 @@ Current local coverage includes core product journeys:
   evidence, can retrieve specific-user evidence when allowed, owner cannot
   retrieve that member-only specific-user evidence, and degraded chat returns an
   honest unverified answer without invented citations.
+- Telegram voice approval journey: deterministic Telegram voice capture creates
+  an audio raw event, transcription backfills text, suggestion processing
+  creates an approval, owner accepts it, and durable task state appears.
 - Production-ish smoke verifies seeded owner login and timeline load.
 
 Current CI E2E workflow is manual and `continue-on-error: true`, so E2E does
@@ -204,8 +207,11 @@ Covered shared areas include:
 - Team exports.
 - Integrations provider parsing and event writer behavior.
 - Slack and Telegram API/dispatcher/security behavior.
-- Telegram DM text capture now has a regression proving captured conversations
-  enqueue extract, embed, and approval-suggestion jobs directly.
+- Telegram DM text and media capture now have regressions proving captured
+  conversations enqueue the right downstream work: text/captions enqueue
+  extract/embed/approval suggestions directly, voice/audio enqueues
+  transcription, and the transcribed media path hands off to
+  extract/embed/approval suggestions.
 - MCP auth, OAuth state, tool namespace, server handler behavior.
 - Agent tools structural behavior plus fast deterministic evals for timeline
   citations, durable task/calendar state, visibility fences, and failed-tool
@@ -329,6 +335,9 @@ tests and evals carry the branch coverage and model/tool behavior.
   - Web and Telegram text capture handoff tests prove captured source events
     enqueue approval suggestions directly, so approvals do not depend on
     structured fact extraction succeeding first.
+  - Telegram voice/audio capture has deterministic coverage from webhook-style
+    media ingest through transcription handoff, suggestion creation, browser
+    approval acceptance, and durable task state.
   - Suggestion worker processor seam with deterministic PGlite coverage for
     fallback task/calendar suggestions, model-backed object update suggestions,
     private/specific-user visibility, skip stamping, and idempotent reruns.
@@ -363,14 +372,22 @@ tests and evals carry the branch coverage and model/tool behavior.
   - Browser chat over accepted task/calendar state.
   - Live-model chat evals.
   - Provider-backed MCP behavior and richer MCP/chat UI reconnect states.
-  - Broader source-capture contracts for Slack, Telegram, email, documents,
-    and integrations.
+  - Broader source-capture contracts for Slack, email, documents, and
+    integrations.
+  - Provider-backed Telegram/OpenRouter canary coverage and richer image/OCR
+    to approval behavior.
 
 - P1 source capture contracts:
   - Web capture creates a raw timeline event with the expected author, source,
     visibility, object links where applicable, and follow-up jobs.
   - Telegram DM text capture creates a raw event and enqueues extract,
     suggestion, and embed jobs for the same source event.
+  - Telegram voice/audio capture creates an audio raw event, enqueues
+    transcription, backfills transcript text, and enqueues extract/suggestion/
+    embed work from the transcript.
+  - Telegram image/document messages route attachments to document extraction;
+    captions enqueue direct text follow-up work, while image-only messages do
+    not invent approvals before extraction/OCR.
   - Slack, email, document, and integration captures should each have
     deterministic route/integration tests proving source payloads become
     team-scoped raw events and enqueue extract/suggestion/embed work.
@@ -531,8 +548,7 @@ contracts and unit tests for pure branching.
   smoke coverage.
 - Extract: media/text extraction privacy, immutable raw events, idempotency,
   failure recovery, and queue handoff.
-- Transcribe: transcript-only persistence, no raw audio copy, handoff markers,
-  failure states, and retry behavior.
+- Transcribe: retry behavior and provider-backed transcription canary.
 - Integration sync: provider pagination, dedupe keys, visibility defaults,
   encrypted credential usage, and partial failures.
 - MCP health: SSRF-safe URLs, cache invalidation, failed server status, and

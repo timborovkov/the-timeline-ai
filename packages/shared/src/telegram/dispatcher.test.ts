@@ -86,6 +86,33 @@ async function allTelegramRows(pg: PGlite) {
   return result.rows;
 }
 
+function audioDeps(overrides: Partial<Parameters<typeof handleUpdate>[0]['audio']> = {}) {
+  return {
+    upload: vi.fn().mockResolvedValue(undefined),
+    enqueueTranscribe: vi.fn().mockResolvedValue(undefined),
+    buildAudioKey: ({ teamId, chatId, messageId, fileId, extension }) =>
+      `teams/${teamId}/telegram/${chatId}/${messageId}-${fileId}.${extension}`,
+    ...overrides,
+  } satisfies NonNullable<Parameters<typeof handleUpdate>[0]['audio']>;
+}
+
+async function audioRows(pg: PGlite) {
+  const result = await pg.query<{
+    id: string;
+    team_id: string;
+    author_user_id: string | null;
+    content_text: string | null;
+    content_audio_url: string | null;
+    metadata: Record<string, unknown>;
+  }>(
+    `SELECT id, team_id, author_user_id, content_text, content_audio_url, source_metadata AS metadata
+     FROM raw_events
+     WHERE content_audio_url IS NOT NULL
+     ORDER BY created_at ASC`,
+  );
+  return result.rows;
+}
+
 // These tests cover the pure pieces of the Telegram webhook flow:
 //  - webhook secret verification (the auth gate on the route handler)
 //  - command parsing edge cases (the routing primitive)
@@ -400,6 +427,257 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(enqueueExtract).not.toHaveBeenCalled();
     expect(enqueueEmbed).not.toHaveBeenCalled();
     expect(enqueueSuggestion).not.toHaveBeenCalled();
+  });
+
+  it('captures DM voice as an audio raw event and enqueues transcription', async () => {
+    const audio = audioDeps();
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: {
+          ...fakeTg,
+          getFile: () => Promise.resolve({ file_id: 'voice-file', file_path: 'voice.ogg' }),
+          downloadFile: () => Promise.resolve(Buffer.from('voice-bytes')),
+        },
+        audio,
+      },
+      {
+        update_id: 206,
+        message: {
+          message_id: 26,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          caption: 'lead chat',
+          voice: { file_id: 'voice-file', duration: 4, mime_type: 'audio/ogg', file_size: 128 },
+        },
+      },
+    );
+
+    const rows = await audioRows(pg);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      team_id: TEAM_ID,
+      author_user_id: USER_A,
+      content_text: null,
+    });
+    expect(rows[0]?.content_audio_url).toContain('voice-file.ogg');
+    expect(rows[0]?.metadata).toMatchObject({
+      audio_kind: 'voice',
+      audio_mime_type: 'audio/ogg',
+      tg_caption: 'lead chat',
+      tg_file_id: 'voice-file',
+    });
+    expect(audio.upload).toHaveBeenCalledWith(
+      expect.objectContaining({ body: Buffer.from('voice-bytes'), contentType: 'audio/ogg' }),
+    );
+    expect(audio.enqueueTranscribe).toHaveBeenCalledWith({
+      rawEventId: rows[0]?.id,
+      teamId: TEAM_ID,
+      audioKey: rows[0]?.content_audio_url,
+    });
+  });
+
+  it('captures bound group voice with group metadata and transcribe handoff', async () => {
+    await pg.exec(`
+      INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, bound_by_user_id, title)
+      VALUES (-100, '${TEAM_ID}', '${USER_A}', 'Sales');
+    `);
+    const audio = audioDeps();
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: {
+          ...fakeTg,
+          getFile: () => Promise.resolve({ file_id: 'group-voice', file_path: 'group.ogg' }),
+          downloadFile: () => Promise.resolve(Buffer.from('group-voice')),
+        },
+        audio,
+      },
+      {
+        update_id: 207,
+        message: {
+          message_id: 27,
+          date: 1700000000,
+          chat: { id: -100, type: 'supergroup', title: 'Sales' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          voice: { file_id: 'group-voice', duration: 3, mime_type: 'audio/ogg', file_size: 100 },
+        },
+      },
+    );
+
+    const rows = await audioRows(pg);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.metadata).toMatchObject({
+      tg_chat_id: -100,
+      tg_chat_title: 'Sales',
+      tg_chat_type: 'supergroup',
+      tg_file_id: 'group-voice',
+    });
+    expect(audio.enqueueTranscribe).toHaveBeenCalledWith({
+      rawEventId: rows[0]?.id,
+      teamId: TEAM_ID,
+      audioKey: rows[0]?.content_audio_url,
+    });
+  });
+
+  it('captures captions as text work while routing photos to document extraction', async () => {
+    const enqueueExtract = vi.fn().mockResolvedValue(undefined);
+    const enqueueEmbed = vi.fn().mockResolvedValue(undefined);
+    const enqueueSuggestion = vi.fn().mockResolvedValue(undefined);
+    const enqueueDocumentExtract = vi.fn().mockResolvedValue(undefined);
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: {
+          ...fakeTg,
+          getFile: () => Promise.resolve({ file_id: 'photo-large', file_path: 'photo.jpg' }),
+          downloadFile: () => Promise.resolve(Buffer.from('jpeg-bytes')),
+        },
+        extract: { enqueueExtract },
+        embed: { enqueueEmbed },
+        suggestions: { enqueueSuggestion },
+        documents: {
+          upload: vi.fn().mockResolvedValue(undefined),
+          enqueueExtract: enqueueDocumentExtract,
+        },
+      },
+      {
+        update_id: 208,
+        message: {
+          message_id: 28,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          caption: "I'll follow up with the photo lead next Monday",
+          photo: [
+            { file_id: 'photo-small', width: 64, height: 64, file_size: 64 },
+            { file_id: 'photo-large', width: 1024, height: 768, file_size: 1024 },
+          ],
+        },
+      },
+    );
+
+    const rows = await activeTelegramRows(pg);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.content_text).toBe("I'll follow up with the photo lead next Monday");
+    expect(enqueueExtract).toHaveBeenCalledWith({ rawEventId: rows[0]?.id, teamId: TEAM_ID });
+    expect(enqueueEmbed).toHaveBeenCalledWith({ rawEventId: rows[0]?.id, teamId: TEAM_ID });
+    expect(enqueueSuggestion).toHaveBeenCalledWith({ rawEventId: rows[0]?.id, teamId: TEAM_ID });
+    expect(enqueueDocumentExtract).toHaveBeenCalledOnce();
+  });
+
+  it('routes image-only messages to document extraction without direct approval enqueue', async () => {
+    const enqueueSuggestion = vi.fn();
+    const enqueueDocumentExtract = vi.fn().mockResolvedValue(undefined);
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: {
+          ...fakeTg,
+          getFile: () => Promise.resolve({ file_id: 'image-only', file_path: 'image.jpg' }),
+          downloadFile: () => Promise.resolve(Buffer.from('image-bytes')),
+        },
+        suggestions: { enqueueSuggestion },
+        documents: {
+          upload: vi.fn().mockResolvedValue(undefined),
+          enqueueExtract: enqueueDocumentExtract,
+        },
+      },
+      {
+        update_id: 209,
+        message: {
+          message_id: 29,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          photo: [{ file_id: 'image-only', width: 800, height: 600, file_size: 900 }],
+        },
+      },
+    );
+
+    expect(enqueueSuggestion).not.toHaveBeenCalled();
+    expect(enqueueDocumentExtract).toHaveBeenCalledOnce();
+  });
+
+  it('drops voice messages when audio ingest is not configured', async () => {
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: {
+          ...fakeTg,
+          getFile: vi.fn(),
+          downloadFile: vi.fn(),
+        },
+      },
+      {
+        update_id: 214,
+        message: {
+          message_id: 34,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          voice: { file_id: 'voice-no-config', duration: 2, mime_type: 'audio/ogg', file_size: 50 },
+        },
+      },
+    );
+
+    expect(await audioRows(pg)).toHaveLength(0);
+    expect(await allTelegramRows(pg)).toHaveLength(0);
+  });
+
+  it('does not duplicate a retried voice webhook and retries the transcribe handoff', async () => {
+    const enqueueTranscribe = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('redis down'))
+      .mockResolvedValue(undefined);
+    const audio = audioDeps({ enqueueTranscribe });
+    const payload = {
+      update_id: 215,
+      message: {
+        message_id: 35,
+        date: 1700000000,
+        chat: { id: 42, type: 'private' },
+        from: { id: TG_USER_ID, username: 'alice' },
+        voice: { file_id: 'voice-retry', duration: 2, mime_type: 'audio/ogg', file_size: 50 },
+      },
+    };
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: {
+          ...fakeTg,
+          getFile: () => Promise.resolve({ file_id: 'voice-retry', file_path: 'retry.ogg' }),
+          downloadFile: () => Promise.resolve(Buffer.from('retry')),
+        },
+        audio,
+      },
+      payload,
+    );
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: {
+          ...fakeTg,
+          getFile: () => Promise.resolve({ file_id: 'voice-retry', file_path: 'retry.ogg' }),
+          downloadFile: () => Promise.resolve(Buffer.from('retry')),
+        },
+        audio,
+      },
+      payload,
+    );
+
+    const rows = await audioRows(pg);
+    expect(rows).toHaveLength(1);
+    expect(enqueueTranscribe).toHaveBeenCalledTimes(2);
+    expect(rows[0]?.metadata).toMatchObject({
+      transcription_error: 'enqueue failed: redis down',
+    });
   });
 
   it('acks DM captures but not group captures', async () => {

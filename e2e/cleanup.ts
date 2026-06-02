@@ -29,6 +29,10 @@ export async function cleanupE2eData(): Promise<void> {
        OR slug LIKE ${`${E2E_PREFIX}%`}
   `;
   await sql`
+    DELETE FROM telegram_users
+    WHERE username LIKE ${`${E2E_PREFIX}%`}
+  `;
+  await sql`
     DELETE FROM users
     WHERE id IN (
       ${e2eUsers.owner.id},

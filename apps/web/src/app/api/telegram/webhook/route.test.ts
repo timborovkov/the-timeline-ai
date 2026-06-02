@@ -7,6 +7,25 @@ import type * as TelegramModule from '@timeline/shared/telegram';
 const ENV_BACKUP = { ...process.env };
 
 interface TelegramDispatcherDeps {
+  audio?: {
+    upload(input: { key: string; body: Buffer; contentType: string }): Promise<void>;
+    enqueueTranscribe(input: {
+      rawEventId: string;
+      teamId: string;
+      audioKey: string;
+    }): Promise<void>;
+    buildAudioKey(input: {
+      teamId: string;
+      chatId: number;
+      messageId: number;
+      fileId: string;
+      extension: string;
+    }): string;
+  };
+  documents?: {
+    upload(input: { key: string; body: Buffer; contentType: string }): Promise<void>;
+    enqueueExtract(input: { documentVersionId: string; teamId: string }): Promise<void>;
+  };
   extract?: { enqueueExtract(input: { rawEventId: string; teamId: string }): Promise<void> };
   embed?: { enqueueEmbed(input: { rawEventId: string; teamId: string }): Promise<void> };
   suggestions?: {
@@ -20,11 +39,22 @@ const fakes = vi.hoisted(() => ({
   enqueueExtractJob: vi.fn(),
   enqueueEmbedJob: vi.fn(),
   enqueueSuggestionJob: vi.fn(),
+  enqueueTranscribeJob: vi.fn(),
+  enqueueDocumentExtractJob: vi.fn(),
+  putObject: vi.fn(),
+  getS3Client: vi.fn(() => ({})),
 }));
 
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/lib/queue', () => ({
   requireRedisQueue: fakes.requireRedisQueue,
+}));
+
+vi.mock('@timeline/shared/s3', () => ({
+  getAudioBucket: () => 'audio-bucket',
+  getDocumentsBucket: () => 'documents-bucket',
+  getS3Client: fakes.getS3Client,
+  putObject: fakes.putObject,
 }));
 
 vi.mock('@timeline/shared/logger', () => ({
@@ -65,10 +95,15 @@ beforeEach(() => {
     enqueueExtractJob: fakes.enqueueExtractJob,
     enqueueEmbedJob: fakes.enqueueEmbedJob,
     enqueueSuggestionJob: fakes.enqueueSuggestionJob,
+    enqueueTranscribeJob: fakes.enqueueTranscribeJob,
+    enqueueDocumentExtractJob: fakes.enqueueDocumentExtractJob,
   });
   fakes.enqueueExtractJob.mockResolvedValue(undefined);
   fakes.enqueueEmbedJob.mockResolvedValue(undefined);
   fakes.enqueueSuggestionJob.mockResolvedValue(undefined);
+  fakes.enqueueTranscribeJob.mockResolvedValue(undefined);
+  fakes.enqueueDocumentExtractJob.mockResolvedValue(undefined);
+  fakes.putObject.mockResolvedValue(undefined);
   vi.clearAllMocks();
 });
 
@@ -112,6 +147,113 @@ describe('POST /api/telegram/webhook', () => {
     const response = await POST(telegramRequest());
 
     expect(response.status).toBe(200);
+    expect(fakes.enqueueExtractJob).toHaveBeenCalledWith({ rawEventId: 'raw-1', teamId: 'team-1' });
+    expect(fakes.enqueueEmbedJob).toHaveBeenCalledWith({ rawEventId: 'raw-1', teamId: 'team-1' });
+    expect(fakes.enqueueSuggestionJob).toHaveBeenCalledWith({
+      rawEventId: 'raw-1',
+      teamId: 'team-1',
+    });
+  });
+
+  it('passes audio deps when Redis and audio S3 env are configured', async () => {
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    process.env.S3_ENDPOINT = 'http://localhost:9000';
+    process.env.S3_REGION = 'us-east-1';
+    process.env.S3_ACCESS_KEY_ID = 'timeline';
+    process.env.S3_SECRET_ACCESS_KEY = 'secret';
+    process.env.S3_BUCKET_AUDIO = 'audio-bucket';
+    resetEnvForTests();
+    fakes.handleUpdate.mockImplementation(async (deps: TelegramDispatcherDeps) => {
+      const key = deps.audio?.buildAudioKey({
+        teamId: 'team-1',
+        chatId: 42,
+        messageId: 7,
+        fileId: 'voice-file',
+        extension: 'ogg',
+      });
+      await deps.audio?.upload({
+        key: key ?? 'missing',
+        body: Buffer.from('voice'),
+        contentType: 'audio/ogg',
+      });
+      await deps.audio?.enqueueTranscribe({
+        rawEventId: 'raw-voice',
+        teamId: 'team-1',
+        audioKey: key ?? 'missing',
+      });
+    });
+
+    const response = await POST(telegramRequest());
+
+    expect(response.status).toBe(200);
+    expect(fakes.putObject).toHaveBeenCalledWith(expect.anything(), {
+      bucket: 'audio-bucket',
+      key: 'teams/team-1/telegram/42/7-voice-file.ogg',
+      body: Buffer.from('voice'),
+      contentType: 'audio/ogg',
+    });
+    expect(fakes.enqueueTranscribeJob).toHaveBeenCalledWith({
+      rawEventId: 'raw-voice',
+      teamId: 'team-1',
+      audioKey: 'teams/team-1/telegram/42/7-voice-file.ogg',
+    });
+  });
+
+  it('passes document deps when Redis and document S3 env are configured', async () => {
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    process.env.S3_ENDPOINT = 'http://localhost:9000';
+    process.env.S3_REGION = 'us-east-1';
+    process.env.S3_ACCESS_KEY_ID = 'timeline';
+    process.env.S3_SECRET_ACCESS_KEY = 'secret';
+    process.env.S3_BUCKET_DOCUMENTS = 'documents-bucket';
+    resetEnvForTests();
+    fakes.handleUpdate.mockImplementation(async (deps: TelegramDispatcherDeps) => {
+      await deps.documents?.upload({
+        key: 'teams/team-1/documents/doc-1/v1/photo.jpg',
+        body: Buffer.from('jpg'),
+        contentType: 'image/jpeg',
+      });
+      await deps.documents?.enqueueExtract({
+        documentVersionId: 'version-1',
+        teamId: 'team-1',
+      });
+    });
+
+    const response = await POST(telegramRequest());
+
+    expect(response.status).toBe(200);
+    expect(fakes.putObject).toHaveBeenCalledWith(expect.anything(), {
+      bucket: 'documents-bucket',
+      key: 'teams/team-1/documents/doc-1/v1/photo.jpg',
+      body: Buffer.from('jpg'),
+      contentType: 'image/jpeg',
+    });
+    expect(fakes.enqueueDocumentExtractJob).toHaveBeenCalledWith({
+      documentVersionId: 'version-1',
+      teamId: 'team-1',
+    });
+  });
+
+  it('does not pass media deps for partial S3 env but keeps Redis text queues', async () => {
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    process.env.S3_ENDPOINT = 'http://localhost:9000';
+    process.env.S3_REGION = 'us-east-1';
+    process.env.S3_BUCKET_AUDIO = 'audio-bucket';
+    process.env.S3_BUCKET_DOCUMENTS = 'documents-bucket';
+    resetEnvForTests();
+    fakes.handleUpdate.mockImplementation(async (deps: TelegramDispatcherDeps) => {
+      expect(deps.audio).toBeUndefined();
+      expect(deps.documents).toBeUndefined();
+      await deps.extract?.enqueueExtract({ rawEventId: 'raw-1', teamId: 'team-1' });
+      await deps.embed?.enqueueEmbed({ rawEventId: 'raw-1', teamId: 'team-1' });
+      await deps.suggestions?.enqueueSuggestion({ rawEventId: 'raw-1', teamId: 'team-1' });
+    });
+
+    const response = await POST(telegramRequest());
+
+    expect(response.status).toBe(200);
+    expect(fakes.enqueueTranscribeJob).not.toHaveBeenCalled();
+    expect(fakes.enqueueDocumentExtractJob).not.toHaveBeenCalled();
     expect(fakes.enqueueExtractJob).toHaveBeenCalledWith({ rawEventId: 'raw-1', teamId: 'team-1' });
     expect(fakes.enqueueEmbedJob).toHaveBeenCalledWith({ rawEventId: 'raw-1', teamId: 'team-1' });
     expect(fakes.enqueueSuggestionJob).toHaveBeenCalledWith({

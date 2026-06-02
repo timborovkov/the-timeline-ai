@@ -41,6 +41,7 @@ export default defineConfig({
       S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID ?? 'timeline',
       S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY ?? 'timeline_dev_secret',
       S3_FORCE_PATH_STYLE: process.env.S3_FORCE_PATH_STYLE ?? 'true',
+      S3_BUCKET_AUDIO: process.env.S3_BUCKET_AUDIO ?? 'timeline-audio',
       S3_BUCKET_DOCUMENTS: process.env.S3_BUCKET_DOCUMENTS ?? 'timeline-documents',
       E2E_DETERMINISTIC_CHAT: process.env.E2E_DETERMINISTIC_CHAT ?? '1',
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ?? 'e2e-deterministic-chat',

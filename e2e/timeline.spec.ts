@@ -1,11 +1,14 @@
 import { Buffer } from 'node:buffer';
+import { randomUUID } from 'node:crypto';
 
 import { expect, type Page, test } from '@playwright/test';
 import { getDb, getDbClient } from '@timeline/db';
+import { handleUpdate, type TelegramApi } from '@timeline/shared/telegram';
 
 import { processSuggestionJobForTests } from '../apps/worker/src/workers/suggestions.js';
+import { processTranscribeJobForTests } from '../apps/worker/src/workers/transcribe.js';
 import { newSignedInPage, signIn, signInFromCurrentPage } from './helpers.js';
-import { e2eOtherTeam, e2eSeedEvents, e2eTeam, e2eUsers } from './test-data.js';
+import { E2E_PREFIX, e2eOtherTeam, e2eSeedEvents, e2eTeam, e2eUsers } from './test-data.js';
 
 /**
  * Core product E2E coverage. These tests intentionally cross the real browser,
@@ -88,6 +91,92 @@ async function processCapturedSuggestion(text: string): Promise<string> {
     },
   );
   return rawEventId;
+}
+
+async function processTelegramVoiceSuggestion(transcript: string): Promise<string> {
+  const db = getDb();
+  const sql = getDbClient();
+  const tgUserId = Number(String(Date.now()).slice(-9));
+  const tgUsername = `${E2E_PREFIX}-telegram-${tgUserId}`;
+  const tgRowId = randomUUID();
+  await sql`
+    INSERT INTO telegram_users (id, tg_user_id, username, user_id)
+    VALUES (${tgRowId}, ${tgUserId}, ${tgUsername}, ${e2eUsers.owner.id})
+    ON CONFLICT (tg_user_id)
+    DO UPDATE SET username = EXCLUDED.username, user_id = EXCLUDED.user_id, updated_at = NOW()
+  `;
+  await sql`
+    INSERT INTO telegram_user_teams (telegram_user_id, team_id, linked_by_user_id, is_active)
+    VALUES (${tgRowId}, ${e2eTeam.id}, ${e2eUsers.owner.id}, true)
+    ON CONFLICT (telegram_user_id, team_id)
+    DO UPDATE SET linked_by_user_id = EXCLUDED.linked_by_user_id, is_active = true
+  `;
+
+  const uploaded = new Map<string, Buffer>();
+  const transcribeJobs: Array<{ rawEventId: string; teamId: string; audioKey: string }> = [];
+  const tg: TelegramApi = {
+    sendMessage: () => Promise.resolve(),
+    getChatAdministrators: () => Promise.resolve([]),
+    answerCallbackQuery: () => Promise.resolve(),
+    editMessageText: () => Promise.resolve(),
+    getFile: () => Promise.resolve({ file_id: 'e2e-voice-file', file_path: 'voice.ogg' }),
+    downloadFile: () => Promise.resolve(Buffer.from('e2e-telegram-voice')),
+    setMessageReaction: () => Promise.resolve(),
+    sendChatAction: () => Promise.resolve(),
+  };
+
+  await handleUpdate(
+    {
+      db,
+      tg,
+      audio: {
+        async upload(input) {
+          uploaded.set(input.key, Buffer.from(input.body));
+        },
+        async enqueueTranscribe(input) {
+          transcribeJobs.push(input);
+        },
+        buildAudioKey: ({ teamId, chatId, messageId, fileId, extension }) =>
+          `teams/${teamId}/telegram/${chatId}/${messageId}-${fileId}.${extension}`,
+      },
+    },
+    {
+      update_id: tgUserId,
+      message: {
+        message_id: tgUserId,
+        date: Math.floor(Date.now() / 1000),
+        chat: { id: tgUserId, type: 'private' },
+        from: { id: tgUserId, username: tgUsername },
+        voice: {
+          file_id: 'e2e-voice-file',
+          duration: 5,
+          mime_type: 'audio/ogg',
+          file_size: 18,
+        },
+      },
+    },
+  );
+  const job = transcribeJobs[0];
+  if (!job) throw new Error('Telegram voice did not enqueue a transcribe job');
+
+  await processTranscribeJobForTests({ db }, job, {
+    headObject: async () => ({ contentLength: 18 }),
+    getObjectBuffer: async () => ({ body: uploaded.get(job.audioKey) ?? Buffer.from('missing') }),
+    transcribeAudio: async () => ({ text: transcript, model: 'e2e-whisper' }),
+    enqueueExtract: async () => undefined,
+    enqueueEmbed: async () => undefined,
+    enqueueSuggestion: async () => undefined,
+  });
+  await processSuggestionJobForTests(
+    { db },
+    { rawEventId: job.rawEventId, teamId: e2eTeam.id },
+    {
+      getEnv: () => ({ OPENROUTER_API_KEY: 'e2e-test-key' }) as never,
+      chatStructured: async () => ({ object: { bundles: [] }, model: 'e2e' }) as never,
+      modelId: 'e2e-telegram-suggestion-model',
+    },
+  );
+  return job.rawEventId;
 }
 
 async function waitForRawEventIdByText(text: string): Promise<string> {
@@ -200,6 +289,27 @@ test('agentic core capture-to-approval journey creates durable task state', asyn
 
   await ownerPage.context().close();
   await memberPage.context().close();
+});
+
+test('Telegram voice approval journey creates durable task state', async ({ browser }) => {
+  const ownerPage = await newSignedInPage(browser, 'owner');
+  const stamp = Date.now();
+  const transcript = `I'll schedule the Telegram lead meeting ${stamp} next Monday`;
+  const expectedTask = `Schedule the Telegram lead meeting ${stamp}`;
+
+  await processTelegramVoiceSuggestion(transcript);
+
+  await ownerPage.goto('/app/approvals');
+  await expect(ownerPage.getByRole('heading', { name: /Commitment:/ })).toBeVisible();
+  await expect(ownerPage.getByText(transcript).first()).toBeVisible();
+  await expect(ownerPage.getByText(expectedTask).first()).toBeVisible();
+  await ownerPage.getByRole('button', { name: 'Accept all' }).click();
+  await expect(ownerPage.getByText('No pending approvals')).toBeVisible();
+
+  await ownerPage.goto('/app/tasks');
+  await expect(ownerPage.getByText(expectedTask).first()).toBeVisible();
+
+  await ownerPage.context().close();
 });
 
 test('chat answers timeline questions with citations and reloadable tool history', async ({
