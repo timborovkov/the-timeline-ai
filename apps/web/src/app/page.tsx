@@ -110,17 +110,20 @@ function StructuredData() {
   const siteId = `${siteUrl}/#website`;
   const appId = `${siteUrl}/#software`;
   const pageId = `${siteUrl}/#webpage`;
+  const organization: Record<string, string> = {
+    '@type': 'Organization',
+    '@id': orgId,
+    name: SITE_NAME,
+    url: siteUrl,
+    logo: logoUrl,
+  };
+  if (legalContactEmail) {
+    organization.email = legalContactEmail;
+  }
   const graph = {
     '@context': 'https://schema.org',
     '@graph': [
-      {
-        '@type': 'Organization',
-        '@id': orgId,
-        name: SITE_NAME,
-        url: siteUrl,
-        logo: logoUrl,
-        email: legalContactEmail,
-      },
+      organization,
       {
         '@type': 'WebSite',
         '@id': siteId,

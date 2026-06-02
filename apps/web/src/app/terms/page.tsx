@@ -132,8 +132,13 @@ export default function TermsPage() {
 
       <h2>13. Contact</h2>
       <p>
-        Contact: <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>. Provider:{' '}
-        {LEGAL_PROVIDER}, {LEGAL_ADDRESS}.
+        Contact:{' '}
+        {legalContactEmail ? (
+          <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>
+        ) : (
+          'support email not configured'
+        )}
+        . Provider: {LEGAL_PROVIDER}, {LEGAL_ADDRESS}.
       </p>
     </LegalPage>
   );

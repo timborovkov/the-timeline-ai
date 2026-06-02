@@ -45,6 +45,16 @@ describe('canonicalHostRedirect', () => {
     expect(canonicalHostRedirect(request)).toBeNull();
   });
 
+  it('normalizes forwarded protocol casing before comparing origins', () => {
+    process.env.AUTH_URL = 'https://thetimeline.cc';
+    process.env.NEXTAUTH_URL = '';
+    const request = new NextRequest('https://thetimeline.cc/app', {
+      headers: { host: 'thetimeline.cc', 'x-forwarded-proto': 'HTTPS' },
+    });
+
+    expect(canonicalHostRedirect(request)).toBeNull();
+  });
+
   it('does not redirect when no canonical env is configured', () => {
     process.env.AUTH_URL = '';
     process.env.NEXTAUTH_URL = '';

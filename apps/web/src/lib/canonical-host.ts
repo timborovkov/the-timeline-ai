@@ -30,10 +30,11 @@ export function canonicalHostRedirect(request: NextRequest): NextResponse | null
   const currentProto =
     firstHeaderValue(request.headers.get('x-forwarded-proto')) ??
     request.nextUrl.protocol.replace(/:$/, '');
+  const normalizedCurrentProto = currentProto.toLowerCase();
 
   if (
     currentHost.toLowerCase() === canonical.host.toLowerCase() &&
-    `${currentProto}:` === canonical.protocol
+    `${normalizedCurrentProto}:` === canonical.protocol
   ) {
     return null;
   }
