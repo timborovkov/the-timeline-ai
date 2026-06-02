@@ -200,6 +200,9 @@ export async function POST(req: Request): Promise<Response> {
     if (env.REDIS_URL) {
       const queue = await requireRedisQueue();
       await queue.enqueueMeetingChunkEmbedJob(meeting.teamId, result.chunkId);
+      if (result.refreshedCalendarEventId) {
+        await queue.enqueueCalendarEventEmbedJob(meeting.teamId, result.refreshedCalendarEventId);
+      }
     }
     return Response.json({ ok: true, chunkId: result.chunkId }, { status: 200 });
   } catch (err) {

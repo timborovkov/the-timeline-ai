@@ -53,6 +53,7 @@ async function applyMigrations(pg: PGlite): Promise<void> {
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const MEETING_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const MEETING_CREATED_AT = new Date('2026-05-25T09:55:00Z');
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 't', 'Test');`);
@@ -85,6 +86,7 @@ async function seedMeeting(
     startedAt: 'startedAt' in opts ? opts.startedAt : new Date('2026-05-25T10:00:00Z'),
     endedAt: 'endedAt' in opts ? opts.endedAt : new Date('2026-05-25T10:30:00Z'),
     metadata: opts.metadata ?? {},
+    createdAt: MEETING_CREATED_AT,
   });
 }
 
@@ -217,6 +219,23 @@ describe('processMeetingFinalizeJob', () => {
         }),
       ]),
     );
+    const scheduledEvent = calendarTimelineRows.find(
+      (event) => (event.sourceMetadata as Record<string, unknown>).action === 'scheduled',
+    );
+    const startEvent = calendarTimelineRows.find(
+      (event) => (event.sourceMetadata as Record<string, unknown>).action === 'event',
+    );
+    expect(scheduledEvent?.occurredAt.toISOString()).toBe(MEETING_CREATED_AT.toISOString());
+    for (const event of calendarTimelineRows) {
+      const meta = event.sourceMetadata as Record<string, unknown>;
+      expect(meta.extracted_at).toBeTypeOf('string');
+      expect(meta.extraction_skipped_at).toBeTypeOf('string');
+      expect(meta.extraction_skipped_reason).toBe('generated_from_meeting_bot');
+      expect(meta.extraction_model_version).toBeTypeOf('string');
+    }
+    expect(startEvent?.contentText).toContain('Participants: Alice, Bob');
+    expect(startEvent?.contentText).not.toContain('Summary: Meeting summary here.');
+    expect(startEvent?.contentText).not.toContain('Bob owns the migration');
 
     const chunks = await db
       .select()

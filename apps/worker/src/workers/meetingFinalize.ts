@@ -7,6 +7,7 @@ import {
   rawEvents,
 } from '@timeline/db';
 import { childLogger, formatMeetingTranscript, getEnv, llm, queue } from '@timeline/shared';
+import { currentExtractionModelVersion } from '@timeline/shared/extraction-model-version';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -208,6 +209,33 @@ function buildMeetingCalendarDescription(args: {
   return parts.join('\n\n');
 }
 
+function buildMeetingCalendarRawText(args: {
+  meeting: MeetingRow;
+  title: string;
+  startAt: Date;
+  endAt: Date;
+}): string {
+  const parts = [
+    args.title,
+    `Meeting: /app/meetings/${args.meeting.id}`,
+    `Join URL: ${args.meeting.meetingUrl}`,
+  ];
+  const participants = participantNames(args.meeting);
+  if (participants.length > 0) parts.push(`Participants: ${participants.join(', ')}`);
+  parts.push(`${args.startAt.toISOString()} to ${args.endAt.toISOString()}`);
+  return parts.join(' | ');
+}
+
+function generatedCalendarExtractionSkipMetadata() {
+  const now = new Date().toISOString();
+  return {
+    extracted_at: now,
+    extraction_skipped_at: now,
+    extraction_skipped_reason: 'generated_from_meeting_bot',
+    extraction_model_version: currentExtractionModelVersion(),
+  };
+}
+
 async function createMeetingCalendarEvent(
   tx: Db,
   args: {
@@ -268,7 +296,7 @@ async function createMeetingCalendarEvent(
       authorUserId: args.meeting.createdByUserId,
       source: 'calendar',
       contentText: `Scheduled: ${title}`,
-      occurredAt: new Date(),
+      occurredAt: args.meeting.createdAt,
       visibility: args.meeting.defaultVisibility,
       visibilityUserIds: args.meeting.visibilityUserIds,
       visibilityOwnerUserId: args.meeting.createdByUserId,
@@ -277,6 +305,7 @@ async function createMeetingCalendarEvent(
         action: 'scheduled',
         meeting_id: args.meeting.id,
         source: 'meeting_bot',
+        ...generatedCalendarExtractionSkipMetadata(),
       },
     })
     .returning({ id: rawEvents.id });
@@ -287,12 +316,12 @@ async function createMeetingCalendarEvent(
       teamId: args.teamId,
       authorUserId: args.meeting.createdByUserId,
       source: 'calendar',
-      contentText: [
+      contentText: buildMeetingCalendarRawText({
+        meeting: args.meeting,
         title,
-        description,
-        `at ${args.meeting.meetingUrl}`,
-        `${args.startAt.toISOString()} to ${args.endAt.toISOString()}`,
-      ].join(' | '),
+        startAt: args.startAt,
+        endAt: args.endAt,
+      }),
       occurredAt: args.startAt,
       visibility: args.meeting.defaultVisibility,
       visibilityUserIds: args.meeting.visibilityUserIds,
@@ -302,6 +331,7 @@ async function createMeetingCalendarEvent(
         action: 'event',
         meeting_id: args.meeting.id,
         source: 'meeting_bot',
+        ...generatedCalendarExtractionSkipMetadata(),
       },
     })
     .returning({ id: rawEvents.id });
