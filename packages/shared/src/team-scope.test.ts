@@ -422,6 +422,68 @@ describe('withTeam namespaced port', () => {
     );
   });
 
+  it('uses qdrant source filtering instead of event-id prefilter for senderSource-only search', async () => {
+    const eventId = '00000000-0000-0000-0000-000000000113';
+    await insertTelegramEvent(pg, {
+      id: eventId,
+      authorUserId: null,
+      text: 'telegram source-only search event',
+      username: '@mikaelrintala',
+    });
+    const qdrantSearch = vi.fn().mockResolvedValue([
+      {
+        id: 'point-source-only',
+        score: 0.9,
+        payload: {
+          team_id: TEAM_A,
+          source_kind: 'raw_event',
+          event_id: eventId,
+          fact_id: null,
+          object_id: null,
+          note_id: null,
+          change_id: null,
+          entity_id: null,
+          entity_ids: [],
+          occurred_at: '2026-06-01T10:00:00.000Z',
+          author_user_id: null,
+          visibility_owner_user_id: null,
+          source: 'telegram',
+          visibility: 'team',
+          visibility_user_ids: null,
+          embedding_model: 'test',
+          document_id: null,
+          document_version_id: null,
+          document_chunk_id: null,
+          folder_id: null,
+          owner_user_id: null,
+          updated_at: null,
+          meeting_id: null,
+          meeting_chunk_id: null,
+          speaker: null,
+        },
+      },
+    ]);
+    const scope = withTeam(db as never, TEAM_A, USER_A, {
+      embed: () => Promise.resolve({ vector: [0.2], model: 'test' }),
+      qdrantSearch,
+    });
+
+    await expect(
+      scope.timeline.searchEvents({
+        query: 'telegram source only',
+        senderSource: 'telegram',
+      }),
+    ).resolves.toHaveLength(1);
+
+    expect(qdrantSearch).toHaveBeenCalledWith(
+      TEAM_A,
+      USER_A,
+      [0.2],
+      expect.objectContaining({ source: 'telegram' }),
+    );
+    expect(qdrantSearch.mock.calls[0]?.[3]).not.toHaveProperty('eventIds');
+  });
+
   it('does not hydrate entity facts whose source event has been tombstoned', async () => {
     const deletedId = '00000000-0000-0000-0000-000000000103';
     const entityId = '00000000-0000-0000-0000-000000000104';

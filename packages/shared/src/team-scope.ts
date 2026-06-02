@@ -792,9 +792,10 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   }
 
   async function senderFilteredEventIds(input: SearchEventsInput): Promise<string[] | null> {
-    if (!input.personObjectId && !input.senderHandle && !input.senderSource) return null;
+    if (!input.personObjectId && !input.senderHandle) return null;
     const senderCondition = await senderFilterCondition(input);
     if (!senderCondition) return null;
+    const candidateLimit = Math.min(Math.max((input.limit ?? 20) * 50, 200), 2000);
     const conditions = [
       eq(rawEvents.teamId, teamId),
       visibilityFilter,
@@ -809,7 +810,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     const rows = await db
       .select({ id: rawEvents.id })
       .from(rawEvents)
-      .where(and(...conditions));
+      .where(and(...conditions))
+      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+      .limit(candidateLimit);
     return rows.map((row) => row.id);
   }
 
@@ -2142,6 +2145,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           });
 
         const { vector } = await embedFn({ text: input.query });
+        if (input.source && input.senderSource && input.source !== input.senderSource) return [];
         const senderEventIds = await senderFilteredEventIds(input);
         if (senderEventIds?.length === 0) return [];
 
@@ -2150,7 +2154,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         };
         if (input.from) searchOpts.from = input.from;
         if (input.to) searchOpts.to = input.to;
-        if (input.source) searchOpts.source = input.source;
+        const sourceFilter = input.source ?? input.senderSource;
+        if (sourceFilter) searchOpts.source = sourceFilter;
         if (input.entityIds) searchOpts.entityIds = input.entityIds;
         if (senderEventIds) searchOpts.eventIds = senderEventIds;
         // Only pass through the kind filter when explicitly set. If we always
@@ -2242,12 +2247,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           if (!ev) continue;
           const senderInfo = senderMap.get(ev.id);
           if (
+            !senderEventIds &&
             input.personObjectId &&
             senderInfo?.resolvedSenderObject?.id !== input.personObjectId
           ) {
             continue;
           }
-          if (input.senderHandle) {
+          if (!senderEventIds && input.senderHandle) {
             const needle = input.senderHandle.replace(/^@/, '').toLowerCase();
             const senderHaystack = [
               senderInfo?.sender?.handle?.replace(/^@/, '').toLowerCase(),
