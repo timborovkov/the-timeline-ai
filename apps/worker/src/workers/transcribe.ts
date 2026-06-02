@@ -141,6 +141,29 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
             log.error({ err: markErr }, 'failed to mark embed failure');
           });
       }
+      try {
+        const row = update[0];
+        if (row) {
+          await queue.enqueueSuggestionJob({ rawEventId: row.id, teamId: row.teamId });
+        }
+      } catch (enqueueErr) {
+        log.error({ err: enqueueErr }, 'failed to enqueue suggestion job');
+        const failurePatch = JSON.stringify({
+          suggestions_failed_at: new Date().toISOString(),
+          suggestions_error: `enqueue failed: ${
+            enqueueErr instanceof Error ? enqueueErr.message.slice(0, 480) : 'unknown'
+          }`,
+        });
+        await deps.db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+          })
+          .where(eq(rawEvents.id, rawEventId))
+          .catch((markErr: unknown) => {
+            log.error({ err: markErr }, 'failed to mark suggestion failure');
+          });
+      }
       return { rawEventId, model: result.model };
     },
     {

@@ -1,7 +1,9 @@
 import { Buffer } from 'node:buffer';
 
 import { expect, type Page, test } from '@playwright/test';
+import { getDb, getDbClient } from '@timeline/db';
 
+import { processSuggestionJobForTests } from '../apps/worker/src/workers/suggestions.js';
 import { newSignedInPage, signIn, signInFromCurrentPage } from './helpers.js';
 import { e2eOtherTeam, e2eSeedEvents, e2eTeam, e2eUsers } from './test-data.js';
 
@@ -54,6 +56,55 @@ async function waitForTeamSettingsPost(page: Page, action: () => Promise<void>):
   );
   await action();
   await response;
+}
+
+async function processCapturedSuggestion(text: string): Promise<string> {
+  const db = getDb();
+  const sql = getDbClient();
+  const deadline = Date.now() + 10_000;
+  let rawEventId: string | undefined;
+  while (Date.now() < deadline) {
+    const rows = await sql<{ id: string }[]>`
+      SELECT id
+      FROM raw_events
+      WHERE team_id = ${e2eTeam.id}
+        AND content_text = ${text}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    rawEventId = rows[0]?.id;
+    if (rawEventId) break;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  if (!rawEventId) throw new Error(`Captured raw event not found for "${text}"`);
+
+  await processSuggestionJobForTests(
+    { db },
+    { rawEventId, teamId: e2eTeam.id },
+    {
+      getEnv: () => ({ OPENROUTER_API_KEY: 'e2e-test-key' }) as never,
+      chatStructured: async () => ({ object: { bundles: [] }, model: 'e2e' }) as never,
+      modelId: 'e2e-suggestion-model',
+    },
+  );
+  return rawEventId;
+}
+
+async function waitForRawEventIdByText(text: string): Promise<string> {
+  const sql = getDbClient();
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const rows = await sql<{ id: string }[]>`
+      SELECT id
+      FROM raw_events
+      WHERE content_text = ${text}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    if (rows[0]?.id) return rows[0].id;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error(`Raw event not found for "${text}"`);
 }
 
 test('seeded owner can sign in, switch teams, and sign out', async ({ page }) => {
@@ -113,6 +164,127 @@ test('timeline capture enforces team, private, specific-user, and cross-team vis
   await ownerPage.context().close();
   await memberPage.context().close();
   await nonMemberPage.context().close();
+});
+
+test('agentic core capture-to-approval journey creates durable task state', async ({ browser }) => {
+  const ownerPage = await newSignedInPage(browser, 'owner');
+  const memberPage = await newSignedInPage(browser, 'member');
+  const stamp = Date.now();
+  const commitment = `I'll send the agentic core proposal ${stamp} next Tuesday`;
+  const expectedTask = commitment
+    .replace(/^I'll\s+/i, '')
+    .replace(/\s+next Tuesday$/i, '')
+    .replace(/^./, (char) => char.toUpperCase());
+
+  await ownerPage.goto('/app');
+  const capture = ownerPage.getByRole('region', { name: 'Capture' });
+  await expect(capture.locator('form[data-capture-ready="true"]')).toBeVisible();
+  await capture.getByPlaceholder('What happened?').fill(commitment);
+  await capture.getByRole('button', { name: 'Post' }).click();
+  await expect(ownerPage.getByText(commitment).first()).toBeVisible();
+
+  await processCapturedSuggestion(commitment);
+
+  await ownerPage.goto('/app/approvals');
+  await expect(ownerPage.getByRole('heading', { name: /Commitment:/ })).toBeVisible();
+  await expect(ownerPage.getByText(commitment).first()).toBeVisible();
+  await expect(ownerPage.getByText(expectedTask).first()).toBeVisible();
+  await ownerPage.getByRole('button', { name: 'Accept all' }).click();
+  await expect(ownerPage.getByText('No pending approvals')).toBeVisible();
+
+  await ownerPage.goto('/app/tasks');
+  await expect(ownerPage.getByText(expectedTask).first()).toBeVisible();
+
+  await memberPage.goto('/app/tasks');
+  await expect(memberPage.getByText(expectedTask).first()).toBeVisible();
+
+  await ownerPage.context().close();
+  await memberPage.context().close();
+});
+
+test('chat answers timeline questions with citations and reloadable tool history', async ({
+  browser,
+}) => {
+  const ownerPage = await newSignedInPage(browser, 'owner');
+  const stamp = Date.now();
+  const chatFact = `E2E chat team fact ${stamp}`;
+
+  await ownerPage.goto('/app');
+  const capture = ownerPage.getByRole('region', { name: 'Capture' });
+  await expect(capture.locator('form[data-capture-ready="true"]')).toBeVisible();
+  await capture.getByPlaceholder('What happened?').fill(chatFact);
+  await capture.getByRole('button', { name: 'Post' }).click();
+  await expect(ownerPage.getByText(chatFact).first()).toBeVisible();
+  const rawEventId = await waitForRawEventIdByText(chatFact);
+
+  await ownerPage.goto('/app/chat');
+  const question = `What does the timeline say about ${chatFact}?`;
+  await ownerPage.getByPlaceholder("Ask anything about your team's timeline…").fill(question);
+  await ownerPage.getByRole('button', { name: 'Send' }).click();
+  await expect(ownerPage.getByText(`Searched timeline for "${question}" — 1 result`)).toBeVisible();
+  await expect(ownerPage.getByText(chatFact).last()).toBeVisible();
+  const citation = ownerPage.getByRole('link', {
+    name: `Citation ev:${rawEventId.slice(0, 8)}, source Event.`,
+  });
+  await expect(citation).toBeVisible();
+  await expect(citation).toHaveAttribute('href', `/app/timeline#ev-${rawEventId}`);
+
+  await expect(ownerPage).toHaveURL(/\/app\/chat\?session=/);
+  const sessionUrl = ownerPage.url();
+  await ownerPage.reload();
+  await expect(ownerPage).toHaveURL(sessionUrl);
+  await expect(ownerPage.getByText(question).first()).toBeVisible();
+  await expect(ownerPage.getByText(`Searched timeline for "${question}" — 1 result`)).toBeVisible();
+  await expect(ownerPage.getByText(chatFact).last()).toBeVisible();
+  await expect(citation).toBeVisible();
+
+  await ownerPage
+    .getByPlaceholder("Ask anything about your team's timeline…")
+    .fill('degraded chat check');
+  await ownerPage.getByRole('button', { name: 'Send' }).click();
+  await expect(
+    ownerPage.getByText("I couldn't verify that from the accessible timeline."),
+  ).toBeVisible();
+  await expect(ownerPage.getByRole('link', { name: /Citation ev:/ })).toHaveCount(1);
+
+  await ownerPage.context().close();
+});
+
+test('chat respects private and specific-user timeline visibility', async ({ browser }) => {
+  const ownerPage = await newSignedInPage(browser, 'owner');
+  const memberPage = await newSignedInPage(browser, 'member');
+
+  await memberPage.goto('/app/chat');
+  const privateQuestion = `What does the timeline say about ${e2eSeedEvents.privateForOwner}?`;
+  await memberPage
+    .getByPlaceholder("Ask anything about your team's timeline…")
+    .fill(privateQuestion);
+  await memberPage.getByRole('button', { name: 'Send' }).click();
+  await expect(
+    memberPage.getByText("I couldn't verify that from the accessible timeline."),
+  ).toBeVisible();
+  await expect(memberPage.getByRole('link', { name: /Citation ev:/ })).toHaveCount(0);
+
+  const specificQuestion = `What does the timeline say about ${e2eSeedEvents.specificForMember}?`;
+  await memberPage
+    .getByPlaceholder("Ask anything about your team's timeline…")
+    .fill(specificQuestion);
+  await memberPage.getByRole('button', { name: 'Send' }).click();
+  await expect(memberPage.getByText(e2eSeedEvents.specificForMember).last()).toBeVisible();
+  await expect(memberPage.getByRole('link', { name: /Citation ev:/ })).toBeVisible();
+
+  await ownerPage.goto('/app/chat');
+  await ownerPage
+    .getByPlaceholder("Ask anything about your team's timeline…")
+    .fill(specificQuestion);
+  await ownerPage.getByRole('button', { name: 'Send' }).click();
+  await expect(
+    ownerPage.getByText("I couldn't verify that from the accessible timeline."),
+  ).toBeVisible();
+  await expect(ownerPage.getByRole('link', { name: /Citation ev:/ })).toHaveCount(0);
+
+  await ownerPage.context().close();
+  await memberPage.context().close();
 });
 
 test('team admin invite, role, and removal journeys enforce permissions', async ({ browser }) => {

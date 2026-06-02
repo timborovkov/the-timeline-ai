@@ -6,11 +6,26 @@ import type * as TelegramModule from '@timeline/shared/telegram';
 
 const ENV_BACKUP = { ...process.env };
 
+interface TelegramDispatcherDeps {
+  extract?: { enqueueExtract(input: { rawEventId: string; teamId: string }): Promise<void> };
+  embed?: { enqueueEmbed(input: { rawEventId: string; teamId: string }): Promise<void> };
+  suggestions?: {
+    enqueueSuggestion(input: { rawEventId: string; teamId: string }): Promise<void>;
+  };
+}
+
 const fakes = vi.hoisted(() => ({
   handleUpdate: vi.fn(),
+  requireRedisQueue: vi.fn(),
+  enqueueExtractJob: vi.fn(),
+  enqueueEmbedJob: vi.fn(),
+  enqueueSuggestionJob: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/queue', () => ({
+  requireRedisQueue: fakes.requireRedisQueue,
+}));
 
 vi.mock('@timeline/shared/logger', () => ({
   childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
@@ -46,6 +61,14 @@ beforeEach(() => {
   process.env.TELEGRAM_WEBHOOK_SECRET = 'telegram-secret';
   resetEnvForTests();
   fakes.handleUpdate.mockResolvedValue(undefined);
+  fakes.requireRedisQueue.mockResolvedValue({
+    enqueueExtractJob: fakes.enqueueExtractJob,
+    enqueueEmbedJob: fakes.enqueueEmbedJob,
+    enqueueSuggestionJob: fakes.enqueueSuggestionJob,
+  });
+  fakes.enqueueExtractJob.mockResolvedValue(undefined);
+  fakes.enqueueEmbedJob.mockResolvedValue(undefined);
+  fakes.enqueueSuggestionJob.mockResolvedValue(undefined);
   vi.clearAllMocks();
 });
 
@@ -75,5 +98,25 @@ describe('POST /api/telegram/webhook', () => {
       expect.objectContaining({ db: {} }),
       expect.objectContaining({ update_id: 1 }),
     );
+  });
+
+  it('passes extract, embed, and suggestion queues to the dispatcher when Redis is configured', async () => {
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    resetEnvForTests();
+    fakes.handleUpdate.mockImplementation(async (deps: TelegramDispatcherDeps) => {
+      await deps.extract?.enqueueExtract({ rawEventId: 'raw-1', teamId: 'team-1' });
+      await deps.embed?.enqueueEmbed({ rawEventId: 'raw-1', teamId: 'team-1' });
+      await deps.suggestions?.enqueueSuggestion({ rawEventId: 'raw-1', teamId: 'team-1' });
+    });
+
+    const response = await POST(telegramRequest());
+
+    expect(response.status).toBe(200);
+    expect(fakes.enqueueExtractJob).toHaveBeenCalledWith({ rawEventId: 'raw-1', teamId: 'team-1' });
+    expect(fakes.enqueueEmbedJob).toHaveBeenCalledWith({ rawEventId: 'raw-1', teamId: 'team-1' });
+    expect(fakes.enqueueSuggestionJob).toHaveBeenCalledWith({
+      rawEventId: 'raw-1',
+      teamId: 'team-1',
+    });
   });
 });

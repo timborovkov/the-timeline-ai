@@ -134,12 +134,22 @@ export async function POST(req: Request): Promise<Response> {
       }
     : undefined;
 
+  const suggestionDeps: telegram.SuggestionEnqueueDeps | undefined = env.REDIS_URL
+    ? {
+        async enqueueSuggestion(input) {
+          const queue = await requireRedisQueue();
+          await queue.enqueueSuggestionJob(input);
+        },
+      }
+    : undefined;
+
   try {
     const deps: Parameters<typeof telegram.handleUpdate>[0] = { db, tg: api };
     if (audioDeps) deps.audio = audioDeps;
     if (documentDeps) deps.documents = documentDeps;
     if (extractDeps) deps.extract = extractDeps;
     if (embedDeps) deps.embed = embedDeps;
+    if (suggestionDeps) deps.suggestions = suggestionDeps;
     await telegram.handleUpdate(deps, payload);
   } catch (err) {
     // Swallow — Telegram retries non-2xx, and we never want infinite retries.

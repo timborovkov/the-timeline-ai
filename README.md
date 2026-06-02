@@ -101,6 +101,7 @@ For the full walkthrough, see
 pnpm dev                  # Next.js app + worker in watch mode
 pnpm validate             # format check, typecheck, lint, tests, knip
 pnpm test                 # unit and integration tests (package suites run sequentially)
+pnpm test:eval            # fast deterministic agent and retrieval evals
 pnpm e2e                  # Playwright core journey tests
 pnpm db:generate          # generate Drizzle migrations after schema changes
 pnpm db:migrate           # apply database migrations

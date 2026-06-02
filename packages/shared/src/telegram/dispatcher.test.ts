@@ -333,9 +333,10 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(all[0]?.content_text).toBe('one delivery');
   });
 
-  it('does not enqueue text workers for file-only document messages', async () => {
-    const enqueueExtract = vi.fn();
-    const enqueueEmbed = vi.fn();
+  it('enqueues extraction, embedding, and approval suggestions for captured DM text', async () => {
+    const enqueueExtract = vi.fn().mockResolvedValue(undefined);
+    const enqueueEmbed = vi.fn().mockResolvedValue(undefined);
+    const enqueueSuggestion = vi.fn().mockResolvedValue(undefined);
 
     await handleUpdate(
       {
@@ -343,6 +344,41 @@ describe('handleUpdate telegram edit visibility', () => {
         tg: fakeTg,
         extract: { enqueueExtract },
         embed: { enqueueEmbed },
+        suggestions: { enqueueSuggestion },
+      },
+      {
+        update_id: 204,
+        message: {
+          message_id: 24,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: "Let's meet on Monday and follow up with Acme and Globex.",
+        },
+      },
+    );
+
+    const rows = await activeTelegramRows(pg);
+    expect(rows).toHaveLength(1);
+    const rawEventId = rows[0]?.id;
+    expect(rawEventId).toBeTruthy();
+    expect(enqueueExtract).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
+    expect(enqueueEmbed).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
+    expect(enqueueSuggestion).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
+  });
+
+  it('does not enqueue text workers for file-only document messages', async () => {
+    const enqueueExtract = vi.fn();
+    const enqueueEmbed = vi.fn();
+    const enqueueSuggestion = vi.fn();
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: fakeTg,
+        extract: { enqueueExtract },
+        embed: { enqueueEmbed },
+        suggestions: { enqueueSuggestion },
       },
       {
         update_id: 205,
@@ -363,6 +399,7 @@ describe('handleUpdate telegram edit visibility', () => {
 
     expect(enqueueExtract).not.toHaveBeenCalled();
     expect(enqueueEmbed).not.toHaveBeenCalled();
+    expect(enqueueSuggestion).not.toHaveBeenCalled();
   });
 
   it('acks DM captures but not group captures', async () => {

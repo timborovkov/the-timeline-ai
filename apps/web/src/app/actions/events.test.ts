@@ -24,6 +24,7 @@ const fakes = vi.hoisted(() => ({
   fakeRevalidatePath: vi.fn(),
   fakeEnqueueExtractJob: vi.fn(),
   fakeEnqueueEmbedJob: vi.fn(),
+  fakeEnqueueSuggestionJob: vi.fn(),
   fakeEnqueueTranscribeJob: vi.fn(),
   fakeDbUpdate: vi.fn(),
 }));
@@ -35,6 +36,7 @@ vi.mock('@/lib/queue', () => ({
   requireRedisQueue: vi.fn().mockResolvedValue({
     enqueueExtractJob: fakes.fakeEnqueueExtractJob,
     enqueueEmbedJob: fakes.fakeEnqueueEmbedJob,
+    enqueueSuggestionJob: fakes.fakeEnqueueSuggestionJob,
     enqueueTranscribeJob: fakes.fakeEnqueueTranscribeJob,
   }),
 }));
@@ -91,6 +93,7 @@ beforeEach(() => {
   fakes.fakeGetSignedPutObjectUrl.mockResolvedValue('https://rustfs.test/signed-audio');
   fakes.fakeEnqueueExtractJob.mockResolvedValue(undefined);
   fakes.fakeEnqueueEmbedJob.mockResolvedValue(undefined);
+  fakes.fakeEnqueueSuggestionJob.mockResolvedValue(undefined);
   fakes.fakeEnqueueTranscribeJob.mockResolvedValue(undefined);
   fakes.fakeDeleteCacheKey.mockResolvedValue(undefined);
   fakes.fakeSafeMarkOnboardingStep.mockResolvedValue(undefined);
@@ -136,6 +139,10 @@ describe('createTextEventAction', () => {
       rawEventId: RAW_EVENT_ID,
       teamId: TEAM_ID,
     });
+    expect(fakes.fakeEnqueueSuggestionJob).toHaveBeenCalledWith({
+      rawEventId: RAW_EVENT_ID,
+      teamId: TEAM_ID,
+    });
     expect(fakes.fakeSafeMarkOnboardingStep).toHaveBeenCalledWith(expect.anything(), 'first_note');
     expect(fakes.fakeDeleteCacheKey).toHaveBeenCalledWith(`onboarding:${TEAM_ID}:${USER_ID}`);
   });
@@ -143,12 +150,15 @@ describe('createTextEventAction', () => {
   it('returns ok with a durable warning when queue handoff fails after the row commits', async () => {
     fakes.fakeEnqueueExtractJob.mockRejectedValue(new Error('redis down'));
     fakes.fakeEnqueueEmbedJob.mockRejectedValue(new Error('redis down'));
+    fakes.fakeEnqueueSuggestionJob.mockRejectedValue(new Error('redis down'));
 
     const result = await createTextEventAction({}, form({ text: 'Still save this' }));
 
     expect(result.ok).toBe(true);
-    expect(result.warning).toContain('structured extraction and semantic search');
-    expect(fakes.fakeDbUpdate).toHaveBeenCalledTimes(2);
+    expect(result.warning).toContain(
+      'structured extraction and semantic search and approval suggestions',
+    );
+    expect(fakes.fakeDbUpdate).toHaveBeenCalledTimes(3);
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/timeline');
   });
 });

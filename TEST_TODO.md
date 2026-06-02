@@ -8,10 +8,10 @@ contracts, not private implementation structure.
 
 Last checked in this branch: `pnpm validate` passes. Current suite shape:
 
-- Web Vitest: 45 files / 249 tests.
-- Shared Vitest: 51 files / 414 tests, including PGlite integration coverage.
-- Worker Vitest: 7 files / 45 tests.
-- Playwright: 7 local core E2E journeys plus 1 production-ish smoke journey.
+- Web Vitest: 46 files / 260 tests.
+- Shared Vitest: 55 files / 436 tests, including PGlite integration/eval coverage.
+- Worker Vitest: 7 files / 53 tests.
+- Playwright: 10 local core E2E journeys plus 1 production-ish smoke journey.
 - E2E CI is still manual and `continue-on-error: true`; it is not a merge
   gate yet.
 
@@ -33,18 +33,18 @@ Legend:
 | Timeline capture and visibility | Partial: create team event, private/team/specific-user/cross-team visibility | Strong for timeline list/search contracts and audio signing | Strong for capture and visibility actions | Strong PGlite team scope, visibility defaults, tombstones, embedding-source visibility | Missing old extract/transcribe processors | Thin timeline controls/page helpers | E2E timeline edit/delete/filtering, feed/list component states |
 | Objects, notes, and boards | Partial: object create/update/detail/archive, notes, board create/list/detail/filtering | Missing object sections route | Strong for objects and boards actions | Strong PGlite object CRUD, notes, chat sessions, suggestions, board views, isolation | Suggestions worker covered | Missing object/board UI components | E2E relationships, object sections route, object/board component states |
 | Documents and folders | Partial: folder create, upload/list/detail, rename/delete, team/private visibility | Strong list/search route contracts | Strong document actions | Strong PGlite document scope, object keys, folder ancestry, restore/delete semantics | Strong document-extract worker | Missing document UI components | Semantic search E2E, extracted chunk citations, worker-backed search, richer document UI states |
-| Chat and agent UI | Missing E2E chat question/citation flow | Strong chat route streaming/session/tool contract | Missing chat action tests | Thin structural agent tools only; LLM wrappers tested with injected models | Missing evals | Missing chat pane components | P1: agent evals for tool use, citation correctness, failed tool behavior, visibility fences, and chat UI states |
+| Chat and agent UI | Partial: browser timeline question, tool activity, Event citation, session reload, degraded answer, and visibility fences | Strong chat route streaming/session/tool contract, including deterministic E2E seam coverage | Missing chat action tests | Partial: deterministic agent tool evals, `askAgent` wrapper tests, MCP safety evals, structural tools, and LLM wrappers | Fast deterministic evals for timeline citation, task/calendar state, visibility fences, and tool failure honesty | Missing chat pane components | Remaining: live-model evals, broader chat UI states, browser chat over accepted tasks/calendar, and provider-backed retrieval |
 | Calendar | Partial: browser all-day create/edit/delete plus team/private visibility | Missing calendar API routes, if any are added later | Strong calendar action tests | Strong PGlite calendar scope, queue degradation, and time helpers | Embed worker calendar plan covered | Missing calendar UI states | E2E specific-user/timed calendar behavior and richer calendar UI states |
 | Integrations: Drive, GitHub, Linear | Missing UI/E2E connect/manage flows | Partial: webhooks covered; OAuth/manage routes missing | Missing integration actions if/when added | Strong provider parsing and event writer coverage | Integration sync worker missing | Missing integrations UI | OAuth start/callback/manage routes, integration sync worker, UI connect/disconnect states |
 | Slack | Missing Slack settings E2E | Partial: events webhook covered; commands/install/user-link missing | Missing Slack action tests | Strong dispatcher/API/security coverage | Missing provider-specific worker coverage | Missing Slack settings UI | Slash command/install/user-link routes, settings UI, action coverage |
-| Telegram | Missing Telegram settings E2E | Partial: webhook covered | Missing Telegram action tests | Strong API/dispatcher coverage | Missing transcribe path for Telegram audio processor | Missing Telegram settings UI | Bind/unbind/settings actions and UI, transcribe worker |
-| MCP inbound/outbound | Missing MCP settings/key E2E | Strong MCP OAuth/server/key/server/tool route contracts | Missing MCP-specific actions if/when added | Strong auth/OAuth state/tool namespace/server handler; agent tools structural only | MCP health worker missing | Missing MCP UI | MCP health worker, private-vs-team E2E, UI management states, agent evals for untrusted output |
+| Telegram | Missing Telegram settings E2E | Partial: webhook covered | Missing Telegram action tests | Strong API/dispatcher coverage, including DM text raw-event capture and extract/embed/suggestion enqueue | Missing transcribe path for Telegram audio processor | Missing Telegram settings UI | Bind/unbind/settings actions and UI, transcribe worker |
+| MCP inbound/outbound | Missing MCP settings/key E2E | Strong MCP OAuth/server/key/server/tool route contracts | Missing MCP-specific actions if/when added | Strong auth/OAuth state/tool namespace/server handler, tool namespace, and deterministic untrusted-output/failure/reauth evals | MCP health worker missing | Missing MCP UI | MCP health worker, private-vs-team E2E, UI management states, provider-backed MCP behavior |
 | Email inbound/outbound | Missing E2E inbound email journey | Partial: inbound webhook covered | Invite/support email action gaps remain | Strong parser/dispatcher/outbound/IP allowlist coverage | Missing extract processor coverage for email attachments | Missing UI | Support action, inbound attachment/document path E2E or integration |
 | Meeting bots and meetings | Missing E2E scheduling/finalization | Partial Recall status/transcript webhooks covered | Thin meetings action coverage | Strong meetings scope, Recall/Svix/url helpers | Strong meeting-finalize worker | Missing meeting UI states | Meeting action breadth, consent/failure E2E, meeting UI states |
 | Job recovery and failed work | Missing dashboard E2E | Partial retry/dismiss route coverage; dashboard route missing | N/A | Strong job-recovery PGlite coverage | Janitor worker covered | Partial job recovery list component | Jobs dashboard route, retry/dismiss E2E flow |
 | Onboarding | Missing E2E checklist/dismissal | Missing checklist route | Missing onboarding action tests | Thin onboarding shared behavior through implementation only | Missing | Missing onboarding UI components | Checklist route/action/component/E2E coverage |
-| Suggestions and background agent actions | Missing E2E capture-to-suggestion-to-acceptance flow | Missing route coverage if surfaced later | Missing suggestions action tests | Strong PGlite suggestions scope and dedupe/accept behavior | Thin suggestions worker fallback tests | Missing suggestions UI | P1: timeline event -> task/object/calendar suggestion -> acceptance -> durable state, with visibility and idempotency |
-| Embeddings and retrieval quality | Missing E2E semantic retrieval flow | Strong search/chat route contracts with mocked boundaries | N/A | Partial: embedding source planning, Qdrant point IDs, LLM wrapper behavior | Partial: embed worker coverage | Missing retrieval UI assertions | P1: rendered event text, Qdrant payload/team filters, deterministic retrieval, and chat retrieval against seeded facts |
+| Suggestions and background agent actions | Partial: capture-to-suggestion-to-acceptance creates durable task/calendar state | Missing route coverage if surfaced later | Strong suggestions action boundary tests | Strong PGlite suggestions scope, dedupe, accept/reject, task/object/calendar durability, and cross-team failure behavior | Partial: deterministic suggestion worker processor tests | Missing suggestions component tests | Remaining P1: object-update acceptance E2E, richer suggestions UI states, and live-model evals |
+| Embeddings and retrieval quality | Missing E2E semantic retrieval flow | Strong search/chat route contracts with mocked boundaries | N/A | Strong deterministic retrieval ranking, PGlite hydration, visibility/team filtering, embedding source planning, Qdrant point IDs, raw-event rendering, and LLM wrapper behavior | Partial: embed worker text/payload/skip coverage | Missing retrieval UI assertions | Remaining: source rendering breadth for more providers and browser semantic retrieval assertions |
 | Support and team exports | Missing E2E | Missing direct routes if exposed | Missing support and team-export actions | Strong team-export archive integration | Team-export worker missing | Missing UI | Support validation/email failure, export enqueue/idempotency, worker failure cleanup |
 | Platform contracts: DB, queue, S3, env, rate limits | N/A | Rate-limit behavior covered through routes and token bucket | Queue degradation covered in some actions | Partial: env, crypto, rate limit, Qdrant, pagination; no focused `packages/db`, queue, or S3 contract tests | Missing queue/S3 wrapper tests | N/A | DB migration/constraint tests, queue wrapper tests, S3 wrapper tests |
 | Frontend components and UI states | Partial only where E2E crosses real pages | N/A | N/A | N/A | N/A | Thin: nav, job recovery list, timeline controls/page helpers, hub/status/error helpers | Capture composer, feeds, documents, chat, objects, boards, team settings, integrations, MCP, onboarding, empty/error/loading states |
@@ -59,13 +59,12 @@ Legend:
 - Most contract-freezing coverage today: mocked server-action and API route
   tests. These are valuable for auth/status/validation/side-effect intent, but
   they are less likely to discover deep product bugs on their own.
-- Biggest remaining product-risk gaps: P1 agentic core coverage for source
-  capture, background suggestions, suggestion acceptance into durable
-  task/object/calendar state, chat agent behavior, and embedding/retrieval
-  correctness; then E2E browser flows for document search/extraction, richer
-  calendar, integrations, MCP settings, onboarding, and job recovery; worker
-  coverage for extract/transcribe/integration sync/MCP health/team export;
-  DB/queue/S3 contract tests; and component state tests.
+- Biggest remaining product-risk gaps: live-model chat eval coverage and
+  broader source-capture coverage from Slack, Telegram,
+  email, documents, and integrations; then E2E browser flows for document
+  search/extraction, richer calendar, integrations, MCP settings, onboarding,
+  and job recovery; worker coverage for extract/transcribe/integration sync/
+  MCP health/team export; DB/queue/S3 contract tests; and component state tests.
 
 ## Current Test Surface
 
@@ -73,6 +72,8 @@ Legend:
 
 - `pnpm test` runs package Vitest suites through Turbo with package-level
   concurrency set to `1`.
+- `pnpm test:eval` runs the fast deterministic shared agent/retrieval eval
+  slice.
 - `pnpm validate` runs format, typecheck, lint, tests, and knip.
 - `pnpm e2e` runs local Playwright E2E through `scripts/run-e2e-strict.ts`.
 - `pnpm e2e:prod-smoke` runs the production-ish Playwright smoke suite.
@@ -100,6 +101,17 @@ Current local coverage includes core product journeys:
 - Team admin visibility, member invite/resend/revoke, signed-out invite
   acceptance, role change, admin removal limits, owner removal, and removed-user
   access loss.
+- Agentic core capture-to-approval journey: owner captures a natural-language
+  commitment, deterministic background suggestion processing creates task and
+  calendar suggestions, owner accepts the approval bundle, and the durable task
+  is visible to another team member.
+- Browser chat journey: owner asks about a seeded team-visible timeline event,
+  sees deterministic `search_timeline` tool activity, an Event citation, and
+  the persisted answer after session reload.
+- Browser chat visibility journey: member cannot retrieve owner-private
+  evidence, can retrieve specific-user evidence when allowed, owner cannot
+  retrieve that member-only specific-user evidence, and degraded chat returns an
+  honest unverified answer without invented citations.
 - Production-ish smoke verifies seeded owner login and timeline load.
 
 Current CI E2E workflow is manual and `continue-on-error: true`, so E2E does
@@ -133,13 +145,15 @@ Covered action files:
 - `calendar.test.ts`: auth/no-team handling, invalid IDs/dates,
   create/update/delete, visibility payloads, not-found behavior, dependency
   failures, and revalidation behavior.
+- `suggestions.test.ts`: validation, scope failure, accept/reject item,
+  accept-all success and partial failure, no-longer-pending behavior, error
+  mapping, and approval-surface revalidation behavior.
 
 Important uncovered action files:
 
 - `chat.ts`
 - `onboarding.ts`
 - `slack.ts`
-- `suggestions.ts`
 - `support.ts`
 - `team-exports.ts`
 - `telegram.ts`
@@ -181,17 +195,28 @@ Covered shared areas include:
 - Documents scope and object key behavior.
 - Meetings scope and meeting-bot helpers.
 - Calendar scope.
+- Suggestions scope: create/merge, visibility, accept/reject, duplicate
+  acceptance, task/object/calendar mutations, rejection no-op behavior, and
+  cross-team target failure behavior.
 - Objects domain behavior: CRUD/update changes, notes, chat sessions, board
   views, suggested changes, archived filtering, and cross-team isolation.
 - Job recovery.
 - Team exports.
 - Integrations provider parsing and event writer behavior.
 - Slack and Telegram API/dispatcher/security behavior.
+- Telegram DM text capture now has a regression proving captured conversations
+  enqueue extract, embed, and approval-suggestion jobs directly.
 - MCP auth, OAuth state, tool namespace, server handler behavior.
-- Agent tools structural behavior.
+- Agent tools structural behavior plus fast deterministic evals for timeline
+  citations, durable task/calendar state, visibility fences, and failed-tool
+  honesty.
+- MCP tool safety evals for fenced custom-server output, nested
+  `<external_content>` neutralization, call failures, and `needs_reauth`
+  reconnect contracts.
 - LLM wrappers for chat, embed, transcribe, memory, and vision using injected
   models.
-- Qdrant client/point-id behavior.
+- Qdrant client/point-id behavior, deterministic timeline retrieval ranking,
+  and raw-event embedding source planning.
 - Email parser/dispatcher/outbound behavior.
 - Crypto secrets, rate limiting, citations, pagination, chunking, env reset,
   and embedding source planning.
@@ -201,7 +226,7 @@ Important uncovered shared/package areas:
 - Focused `packages/db` schema and migration assertions.
 - Queue wrappers and job option/dedupe behavior.
 - S3 wrapper env/bucket/presigned URL/object-size behavior.
-- Agent behavior/evals beyond structural tool tests.
+- Live-model agent evals and provider-backed MCP behavior.
 
 ### Worker Processors
 
@@ -270,7 +295,7 @@ the local E2E command reliable enough to gate CI.
   - Timeline edit/delete or equivalent lifecycle coverage and timeline
     filtering.
   - Object relationships in a real browser flow.
-  - Chat question against seeded timeline facts with visible citation behavior.
+  - Browser chat over accepted task/calendar state with citations.
   - Document semantic search, extracted chunk citations, and worker-backed
     extraction/search behavior.
   - Calendar specific-user visibility and timed event behavior.
@@ -298,10 +323,55 @@ This phase is P1 because it protects the main Timeline promise. Browser E2E
 should cover one or two representative user loops, while worker/integration
 tests and evals carry the branch coverage and model/tool behavior.
 
+- Completed:
+  - Web capture to approval E2E for a team-visible commitment that becomes
+    durable task/calendar state after owner acceptance.
+  - Web and Telegram text capture handoff tests prove captured source events
+    enqueue approval suggestions directly, so approvals do not depend on
+    structured fact extraction succeeding first.
+  - Suggestion worker processor seam with deterministic PGlite coverage for
+    fallback task/calendar suggestions, model-backed object update suggestions,
+    private/specific-user visibility, skip stamping, and idempotent reruns.
+  - Suggestion action tests for accept/reject/accept-all validation, scope
+    failures, no-longer-pending behavior, partial failures, errors, and
+    revalidation paths.
+  - Shared suggestion durability tests for task metadata, object update
+    isolation, calendar cancellation, rejection no-op behavior, and duplicate
+    acceptance safety.
+  - Embed worker processor seam with deterministic tests for rendered text,
+    Qdrant point payloads, stable point IDs, success stamping, and non-team
+    skip behavior.
+  - Deterministic retrieval ranking tests for query embedding, Qdrant option
+    forwarding, score ordering, duplicate hit merging, stale payload filtering,
+    cross-team fact dropping, and DB-backed visibility filtering.
+  - Fast deterministic chat-agent evals for seeded timeline citations,
+    durable task/calendar state after suggestion acceptance, private and
+    specific-user visibility fences, cross-team filtering, and honest failed
+    tool behavior.
+  - Focused `askAgent` wrapper tests for env/member gates, prompt/user/tool
+    wiring through an injected model, empty output, model failure, and Telegram
+    truncation.
+  - Browser chat E2E for seeded timeline retrieval, visible `search_timeline`
+    tool activity, Event citation chips, citation links, persisted session
+    reload, private/specific-user visibility, and degraded no-citation answers.
+  - Deterministic MCP safety evals for fenced untrusted output, nested
+    external-content tag neutralization, failed calls, and `needs_reauth`
+    output shape.
+
+- Remaining:
+  - Object-update suggestion acceptance in a browser flow.
+  - Browser chat over accepted task/calendar state.
+  - Live-model chat evals.
+  - Provider-backed MCP behavior and richer MCP/chat UI reconnect states.
+  - Broader source-capture contracts for Slack, Telegram, email, documents,
+    and integrations.
+
 - P1 source capture contracts:
   - Web capture creates a raw timeline event with the expected author, source,
     visibility, object links where applicable, and follow-up jobs.
-  - Slack, Telegram, email, document, and integration captures should each have
+  - Telegram DM text capture creates a raw event and enqueues extract,
+    suggestion, and embed jobs for the same source event.
+  - Slack, email, document, and integration captures should each have
     deterministic route/integration tests proving source payloads become
     team-scoped raw events and enqueue extract/suggestion/embed work.
   - Capture tests must assert private/team/specific-user visibility at the raw
@@ -359,12 +429,14 @@ tests and evals carry the branch coverage and model/tool behavior.
     author, visibility metadata, and stable point IDs.
   - Re-embedding updates the same point instead of creating duplicates.
   - Deterministic vector fixtures prove semantic retrieval returns the expected
-    event and filters by team/visibility.
-  - Chat eval fixtures include at least one case where a semantically relevant
-    timeline event must be retrieved and cited.
+    event, preserves ranking, merges duplicate hits, drops stale payloads, and
+    filters by team/visibility.
+  - Chat eval fixtures include timeline retrieval/citation, durable
+    task/calendar state, failed-tool honesty, and private/specific-user/team
+    fences.
 - Test command target:
-  - Add a fast deterministic eval/integration command, for example
-    `pnpm test:eval`, once the first eval suite exists.
+  - `pnpm test:eval` runs the fast deterministic shared agent/retrieval eval
+    slice.
   - Keep provider-backed/live-model evals manual or scheduled until they are
     stable, budgeted, and clearly reported.
 
@@ -496,7 +568,7 @@ Goal: protect low-level invariants that application tests rely on.
 Goal: prove agent workflows behave correctly with realistic tasks, not just
 that tool schemas are shaped correctly.
 
-- P1: Add fast deterministic evals for:
+- Completed fast deterministic evals for:
   - Chat answering seeded timeline questions using retrieval/tool context and
     correct citations.
   - Chat answering seeded object/task/calendar questions using the relevant
@@ -506,10 +578,7 @@ that tool schemas are shaped correctly.
   - Semantic retrieval of timeline events with deterministic embeddings and
     team/visibility filters.
 - Add additional deterministic evals for:
-  - Asking about seeded timeline facts with correct citations.
   - Refusing or fencing untrusted MCP/tool content.
-  - Handling failed tools without hallucinating success.
-  - Respecting team/private/specific-user visibility.
   - Summarizing document/meeting/integration facts with source attribution.
 - Store eval fixtures and expected success criteria in-repo.
 - Split eval commands into fast CI-safe evals and slower/manual/provider-backed

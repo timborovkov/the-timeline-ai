@@ -45,6 +45,9 @@ env.S3_ACCESS_KEY_ID ??= 'timeline';
 env.S3_SECRET_ACCESS_KEY ??= 'timeline_dev_secret';
 env.S3_FORCE_PATH_STYLE ??= 'true';
 env.S3_BUCKET_DOCUMENTS ??= 'timeline-documents';
+env.E2E_DETERMINISTIC_CHAT ??= '1';
+env.OPENROUTER_API_KEY ??= 'e2e-deterministic-chat';
+env.QDRANT_URL ??= 'http://qdrant.e2e.invalid';
 env.NODE_OPTIONS = [env.NODE_OPTIONS, '--conditions=development'].filter(Boolean).join(' ');
 
 const args = ['exec', 'playwright', 'test', ...process.argv.slice(2)];

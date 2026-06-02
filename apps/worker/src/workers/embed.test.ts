@@ -4,10 +4,12 @@ import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import { calendarEvents, rawEvents } from '@timeline/db';
+import { qdrant } from '@timeline/shared';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { buildPlanForTests } from '#src/workers/embed.js';
+import { buildPlanForTests, processEmbedJobForTests } from '#src/workers/embed.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../../../packages/db/drizzle');
@@ -102,5 +104,123 @@ describe('embed worker calendar plan', () => {
     expect(plan?.occurredAt.toISOString()).toBe('2026-05-27T09:00:00.000Z');
     expect(plan?.text).toContain('Final launch readiness pass');
     expect(plan?.text).toContain('Room 3');
+  });
+});
+
+describe('processEmbedJobForTests', () => {
+  let pg: PGlite;
+  let db: ReturnType<typeof drizzle>;
+
+  beforeEach(async () => {
+    pg = new PGlite();
+    await applyMigrations(pg);
+    await seed(pg);
+    db = drizzle(pg);
+  });
+
+  it('embeds rendered raw event text and upserts a stable Qdrant payload', async () => {
+    const rawEventId = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'slack',
+      contentText: 'Acme needs the proposal by Friday',
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {
+        slack_channel_type: 'channel',
+        slack_channel_name: 'sales',
+        slack_sender_name: 'Ada',
+      },
+    });
+    const embed = vi.fn<(input: { text: string }) => Promise<{ vector: number[]; model: string }>>(
+      () =>
+        Promise.resolve({
+          vector: [0.1, 0.2, 0.3, 0.4],
+          model: 'test-embed-model',
+        }),
+    );
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+
+    const result = await processEmbedJobForTests(
+      { db: db as never },
+      { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+      {
+        getEnv: () =>
+          ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+        embed,
+        getQdrantClient: vi.fn(() => ({ upsertVector }) as never),
+      },
+    );
+
+    const embedText = embed.mock.calls[0]?.[0].text;
+    expect(embedText).toContain(
+      'Source context: Slack | channel | sender Ada | conversation sales',
+    );
+    expect(embedText).toContain('Message:\nAcme needs the proposal by Friday');
+    const expectedPointId = qdrant.buildPointId('event', rawEventId, 'test-embed-model');
+    expect(result).toEqual({
+      scope: 'event',
+      sourceId: rawEventId,
+      model: 'test-embed-model',
+      pointId: expectedPointId,
+    });
+    expect(upsertVector).toHaveBeenCalledWith(
+      expectedPointId,
+      [0.1, 0.2, 0.3, 0.4],
+      expect.objectContaining({
+        team_id: TEAM_ID,
+        event_id: rawEventId,
+        source_kind: 'raw_event',
+        occurred_at: '2026-05-27T12:00:00.000Z',
+        author_user_id: USER_ID,
+        visibility_owner_user_id: USER_ID,
+        source: 'slack',
+        visibility: 'team',
+        embedding_model: 'test-embed-model',
+      }),
+    );
+    const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
+    expect(row?.sourceMetadata).toMatchObject({ embedding_model: 'test-embed-model' });
+    expect(row?.sourceMetadata).toHaveProperty('embedded_at');
+  });
+
+  it('skips non-team raw events without embedding or Qdrant writes', async () => {
+    const rawEventId = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Private thing',
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const embed = vi.fn();
+    const upsertVector = vi.fn();
+
+    await expect(
+      processEmbedJobForTests(
+        { db: db as never },
+        { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+        {
+          getEnv: () =>
+            ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+          embed,
+          getQdrantClient: vi.fn(() => ({ upsertVector }) as never),
+        },
+      ),
+    ).resolves.toEqual({ skipped: true });
+
+    expect(embed).not.toHaveBeenCalled();
+    expect(upsertVector).not.toHaveBeenCalled();
+    const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
+    expect(row?.sourceMetadata).toMatchObject({
+      embedding_skipped_reason: 'visibility=private',
+    });
   });
 });

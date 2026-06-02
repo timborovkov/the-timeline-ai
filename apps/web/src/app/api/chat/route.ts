@@ -6,7 +6,13 @@ import * as objects from '@timeline/shared/objects';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { withTeam } from '@timeline/shared/team-scope';
 import * as time from '@timeline/shared/time';
-import { convertToModelMessages, safeValidateUIMessages, type UIMessage } from 'ai';
+import {
+  convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  safeValidateUIMessages,
+  type UIMessage,
+} from 'ai';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -62,6 +68,130 @@ const chatRequestSchema = z.object({
   // pinnedEntityId stays authoritative.
   pinnedEntityId: z.string().regex(UUID_RE).optional(),
 });
+
+function deterministicChatEnabled(): boolean {
+  return process.env.NODE_ENV !== 'production' && process.env.E2E_DETERMINISTIC_CHAT === '1';
+}
+
+function messageText(message: UIMessage | null): string {
+  if (!message) return '';
+  return message.parts
+    .map((part) => (part.type === 'text' ? part.text : ''))
+    .join(' ')
+    .trim();
+}
+
+function chooseDeterministicEvent(
+  question: string,
+  events: Awaited<ReturnType<ReturnType<typeof withTeam>['timeline']['listEvents']>>,
+) {
+  const q = question.toLowerCase();
+  if (q.includes('degraded')) return null;
+  return (
+    events.find((event) => {
+      const text = event.contentText?.toLowerCase() ?? '';
+      return text.length > 0 && q.includes(text);
+    }) ??
+    events.find((event) => {
+      const text = event.contentText?.toLowerCase() ?? '';
+      if (q.includes('specific')) return text.includes('specific');
+      if (q.includes('private')) return text.includes('private');
+      return text.includes('chat') || text.includes('team');
+    }) ??
+    null
+  );
+}
+
+async function deterministicChatResponse(input: {
+  scope: ReturnType<typeof withTeam>;
+  sessionId: string | undefined;
+  latestUserMessage: UIMessage | null;
+  teamId: string;
+  userId: string;
+}): Promise<Response> {
+  const question = messageText(input.latestUserMessage);
+  const toolCallId = 'deterministic-search';
+  const textId = 'deterministic-answer';
+  const visibleEvents = await input.scope.timeline.listEvents({ limit: 50 });
+  const match = chooseDeterministicEvent(question, visibleEvents);
+  const toolInput = { query: question };
+  const toolOutput = match
+    ? {
+        count: 1,
+        results: [
+          {
+            eventId: match.id,
+            event_id: match.id,
+            snippet: match.contentText ?? '',
+            source: match.source,
+          },
+        ],
+      }
+    : { count: 0, results: [] };
+  const answer = match
+    ? `${match.contentText ?? 'Found a matching timeline event.'} [ev:${match.id}]`
+    : "I couldn't verify that from the accessible timeline.";
+
+  if (input.sessionId) {
+    const turnsToPersist: objects.AppendChatMessageInput[] = [];
+    if (input.latestUserMessage) {
+      turnsToPersist.push({
+        role: 'user',
+        authorUserId: input.userId,
+        content: { ui_message: input.latestUserMessage },
+      });
+    }
+    turnsToPersist.push({
+      role: 'assistant',
+      content: {
+        text: answer,
+        tool_calls: [
+          {
+            toolCallId,
+            toolName: 'search_timeline',
+            input: toolInput,
+            output: toolOutput,
+          },
+        ],
+        finish_reason: 'stop',
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        prompt_version: agent.AGENT_PROMPT_VERSION,
+      },
+    });
+    await objects
+      .appendChatMessages(db, input.scope, input.sessionId, turnsToPersist)
+      .catch((err: unknown) => {
+        log.warn(
+          { err, sessionId: input.sessionId, teamId: input.teamId, userId: input.userId },
+          'deterministic chat session append failed',
+        );
+      });
+  }
+
+  const stream = createUIMessageStream({
+    execute: ({ writer }) => {
+      writer.write({ type: 'start' });
+      writer.write({
+        type: 'tool-input-available',
+        toolCallId,
+        toolName: 'search_timeline',
+        input: toolInput,
+      });
+      writer.write({
+        type: 'tool-output-available',
+        toolCallId,
+        output: toolOutput,
+      });
+      writer.write({ type: 'text-start', id: textId });
+      writer.write({ type: 'text-delta', id: textId, delta: answer });
+      writer.write({ type: 'text-end', id: textId });
+      writer.write({ type: 'finish', finishReason: 'stop' });
+    },
+  });
+  const response = createUIMessageStreamResponse({ stream });
+  if (input.sessionId) response.headers.set('x-tl-session-id', input.sessionId);
+  return response;
+}
 
 export async function POST(req: Request): Promise<Response> {
   const session = await auth();
@@ -195,6 +325,18 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, error: 'invalid_messages' }, { status: 400 });
   }
   const uiMessages = validation.data;
+  const latestUserMessage = [...uiMessages].reverse().find((m) => m.role === 'user') ?? null;
+
+  if (deterministicChatEnabled()) {
+    return deterministicChatResponse({
+      scope,
+      sessionId,
+      latestUserMessage,
+      teamId: active.teamId,
+      userId: session.user.id,
+    });
+  }
+
   const messages = await convertToModelMessages(uiMessages);
   const modelId = llm.resolveAgentModelId();
   const memory = await llm.compressMessagesForContext({
@@ -223,8 +365,6 @@ export async function POST(req: Request): Promise<Response> {
   // persist only the delta (this user turn + the new assistant turn),
   // because useChat re-sends the full transcript every request and the
   // earlier user turns were persisted on their respective calls.
-  const latestUserMessage = [...uiMessages].reverse().find((m) => m.role === 'user') ?? null;
-
   const result = llm.streamChat({
     system,
     messages: memory.messages,

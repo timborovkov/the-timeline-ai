@@ -206,6 +206,10 @@ describe('suggestion scope', () => {
       `SELECT count(*)::text FROM entities WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Prepare launch plan'`,
     );
     expect(result.rows[0]?.count).toBe('1');
+    const marker = await pg.query<{ marker: string | null }>(
+      `SELECT metadata ->> 'agent_suggestion_item_id' AS marker FROM entities WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Prepare launch plan'`,
+    );
+    expect(marker.rows[0]?.marker).toBe(itemId);
   });
 
   it('does not recreate canonical records when retrying an item with a result id', async () => {
@@ -413,6 +417,109 @@ describe('suggestion scope', () => {
     );
     expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-02T15:00:00.000Z');
     expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-03T15:00:00.000Z');
+  });
+
+  it('rejecting a create suggestion leaves durable state unchanged', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Reject task create',
+      dedupeKey: 'reject-create-no-mutation',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Do not create this task',
+          dedupeKey: 'reject-create-no-mutation:item',
+          proposedPayload: { canonicalName: 'Do not create this task' },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.rejectSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ count: string }>(
+      `SELECT count(*)::text FROM entities WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Do not create this task'`,
+    );
+    expect(result.rows[0]?.count).toBe('0');
+  });
+
+  it('applies object updates only inside the scoped team', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const otherScope = withTeam(db as never, OTHER_TEAM_ID, OTHER_USER_ID);
+    const otherObject = await otherScope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Other team task',
+      status: 'open',
+      actor: { kind: 'user', userId: OTHER_USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Cross-team object update',
+      dedupeKey: 'cross-team-object-update',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: otherObject.id,
+          title: 'Should not update',
+          dedupeKey: 'cross-team-object-update:item',
+          proposedPayload: { status: 'done' },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).rejects.toThrow();
+
+    const result = await pg.query<{ status: string }>(
+      `SELECT status FROM entities WHERE id = '${otherObject.id}'`,
+    );
+    expect(result.rows[0]?.status).toBe('open');
+    const item = await pg.query<{ status: string; failure_reason: string | null }>(
+      `SELECT status, failure_reason FROM agent_suggestion_items WHERE id = '${itemId}'`,
+    );
+    expect(item.rows[0]?.status).toBe('failed');
+    expect(item.rows[0]?.failure_reason).toBeTruthy();
+  });
+
+  it('accepts calendar cancellation suggestions by soft-deleting the event', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const event = await scope.calendar.createCalendarEvent({
+      title: 'Cancel me',
+      startAt: new Date('2026-06-02T10:00:00.000Z'),
+      endAt: new Date('2026-06-02T11:00:00.000Z'),
+      timezone: 'UTC',
+      allDay: false,
+      visibility: 'team',
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Cancel calendar event',
+      dedupeKey: 'cancel-calendar-event',
+      items: [
+        {
+          operation: 'archive_or_cancel',
+          targetKind: 'calendar_event',
+          targetId: event.id,
+          title: 'Cancel event',
+          dedupeKey: 'cancel-calendar-event:item',
+          proposedPayload: {},
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ deleted_at: Date | null }>(
+      `SELECT deleted_at FROM calendar_events WHERE id = '${event.id}'`,
+    );
+    expect(result.rows[0]?.deleted_at).toBeInstanceOf(Date);
   });
 
   it('lists resolved suggestions when requested', async () => {

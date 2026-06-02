@@ -118,6 +118,26 @@ export async function createTextEventAction(
       });
     processingWarnings.push('semantic search');
   }
+  try {
+    const queue = await requireRedisQueue();
+    await queue.enqueueSuggestionJob({ rawEventId: event.id, teamId: event.teamId });
+  } catch (err) {
+    log.error({ err }, 'failed to enqueue suggestion job');
+    const failurePatch = JSON.stringify({
+      suggestions_failed_at: new Date().toISOString(),
+      suggestions_error: `enqueue failed: ${err instanceof Error ? err.message.slice(0, 480) : 'unknown'}`,
+    });
+    await db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, event.id))
+      .catch((markErr: unknown) => {
+        log.error({ err: markErr }, 'failed to mark suggestion failure');
+      });
+    processingWarnings.push('approval suggestions');
+  }
 
   revalidatePath('/app');
   revalidatePath('/app/timeline');

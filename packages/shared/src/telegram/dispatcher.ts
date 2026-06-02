@@ -79,6 +79,10 @@ export interface EmbedEnqueueDeps {
   enqueueEmbed(input: { rawEventId: string; teamId: string }): Promise<void>;
 }
 
+export interface SuggestionEnqueueDeps {
+  enqueueSuggestion(input: { rawEventId: string; teamId: string }): Promise<void>;
+}
+
 export interface DocumentAttachmentDeps {
   upload(input: { key: string; body: Buffer; contentType: string }): Promise<void>;
   enqueueExtract(input: { documentVersionId: string; teamId: string }): Promise<void>;
@@ -91,6 +95,7 @@ interface DispatcherDeps {
   documents?: DocumentAttachmentDeps;
   extract?: ExtractEnqueueDeps;
   embed?: EmbedEnqueueDeps;
+  suggestions?: SuggestionEnqueueDeps;
 }
 
 interface DmContext extends DispatcherDeps {
@@ -249,6 +254,7 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
     if (text.trim()) {
       await maybeEnqueueExtract(ctx, inserted);
       await maybeEnqueueEmbed(ctx, inserted);
+      await maybeEnqueueSuggestion(ctx, inserted);
     }
     await ingestTelegramDocumentAttachment(
       ctx,
@@ -870,6 +876,7 @@ async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Prom
   });
   await maybeEnqueueExtract(ctx, inserted);
   await maybeEnqueueEmbed(ctx, inserted);
+  await maybeEnqueueSuggestion(ctx, inserted);
   if (inserted && !isEdit) {
     await ackReaction(ctx.tg, ctx.message.chat.id, ctx.message.message_id);
   }
@@ -962,6 +969,33 @@ async function maybeEnqueueEmbed(
   }
 }
 
+async function maybeEnqueueSuggestion(
+  ctx: { db: Db; suggestions?: SuggestionEnqueueDeps },
+  inserted: { id: string; teamId: string } | null,
+): Promise<void> {
+  if (!inserted || !ctx.suggestions) return;
+  try {
+    await ctx.suggestions.enqueueSuggestion({ rawEventId: inserted.id, teamId: inserted.teamId });
+  } catch (err) {
+    log.error({ err }, 'suggestion enqueue failed');
+    const failurePatch = JSON.stringify({
+      suggestions_failed_at: new Date().toISOString(),
+      suggestions_error: `enqueue failed: ${
+        err instanceof Error ? err.message.slice(0, 480) : 'unknown'
+      }`,
+    });
+    await ctx.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, inserted.id))
+      .catch((markErr: unknown) => {
+        log.error({ err: markErr }, 'failed to mark suggestion failure');
+      });
+  }
+}
+
 // ---------- Group ----------
 
 async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
@@ -1013,6 +1047,7 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
     if (text.trim()) {
       await maybeEnqueueExtract(ctx, inserted);
       await maybeEnqueueEmbed(ctx, inserted);
+      await maybeEnqueueSuggestion(ctx, inserted);
     }
     await ingestTelegramDocumentAttachment(
       ctx,
@@ -1035,6 +1070,7 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
     });
     await maybeEnqueueExtract(ctx, inserted);
     await maybeEnqueueEmbed(ctx, inserted);
+    await maybeEnqueueSuggestion(ctx, inserted);
   }
 }
 

@@ -80,6 +80,8 @@ vi.mock('@timeline/shared/llm', () => ({
 }));
 vi.mock('ai', () => ({
   convertToModelMessages: fakes.fakeConvertToModelMessages,
+  createUIMessageStream: vi.fn(),
+  createUIMessageStreamResponse: vi.fn(),
   safeValidateUIMessages: fakes.fakeSafeValidateUIMessages,
 }));
 
