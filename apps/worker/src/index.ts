@@ -1,6 +1,7 @@
 import { closeDb, getDb } from '@timeline/db';
 import { waitForMigrations } from '@timeline/db/wait-for-migrations';
 import { childLogger, queue } from '@timeline/shared';
+import { shutdownPostHogNodeClients } from '@timeline/shared/analytics/posthog-node';
 
 import { captureWorkerException, flushWorkerSentry, initWorkerSentry } from '#src/monitoring.js';
 import { startDocumentExtractWorker } from '#src/workers/documentExtract.js';
@@ -84,6 +85,7 @@ async function main(): Promise<void> {
       log.error({ err }, 'shutdown error');
       captureWorkerException(err, { signal, component: 'worker_shutdown' });
     } finally {
+      await shutdownPostHogNodeClients().catch(() => undefined);
       await flushWorkerSentry().catch(() => false);
       await closeDb().catch(() => undefined);
       process.exit(0);
@@ -96,7 +98,10 @@ async function main(): Promise<void> {
 main().catch((err: unknown) => {
   log.fatal({ err }, 'fatal');
   captureWorkerException(err, { component: 'worker_startup' });
-  void flushWorkerSentry().finally(() => {
-    process.exit(1);
-  });
+  void shutdownPostHogNodeClients()
+    .catch(() => undefined)
+    .finally(() => flushWorkerSentry())
+    .finally(() => {
+      process.exit(1);
+    });
 });

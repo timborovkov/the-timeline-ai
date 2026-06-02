@@ -15,6 +15,7 @@ vi.mock('posthog-node', () => ({
 describe('PostHog Node analytics helper', () => {
   afterEach(() => {
     vi.clearAllMocks();
+    vi.resetModules();
   });
 
   it('no-ops without a project key', async () => {
@@ -31,7 +32,7 @@ describe('PostHog Node analytics helper', () => {
     expect(capture).not.toHaveBeenCalled();
   });
 
-  it('captures sanitized product events and flushes', async () => {
+  it('captures sanitized product events with a cached client', async () => {
     const analytics = await import('#src/analytics/posthog-node.js');
 
     await analytics.capturePostHogProductEvent(
@@ -46,7 +47,14 @@ describe('PostHog Node analytics helper', () => {
         visibility: 'team',
       },
     );
+    await analytics.capturePostHogProductEvent(
+      { key: 'ph-test', host: 'https://eu.i.posthog.com' },
+      'user-1',
+      'team_created',
+      { teamId: 'team-1', userId: 'user-1', source: 'signup' },
+    );
 
+    expect(ctor).toHaveBeenCalledOnce();
     expect(ctor).toHaveBeenCalledWith('ph-test', {
       flushAt: 1,
       flushInterval: 0,
@@ -65,10 +73,13 @@ describe('PostHog Node analytics helper', () => {
       },
       sendFeatureFlags: true,
     });
+    expect(capture).toHaveBeenCalledTimes(2);
+    expect(shutdown).not.toHaveBeenCalled();
+    await analytics.shutdownPostHogNodeClients();
     expect(shutdown).toHaveBeenCalledOnce();
   });
 
-  it('reads typed feature flags and flushes', async () => {
+  it('reads typed feature flags with the cached client', async () => {
     const getFlag = vi.fn().mockReturnValueOnce(true);
     evaluateFlags.mockResolvedValueOnce({ getFlag });
     const analytics = await import('#src/analytics/posthog-node.js');
@@ -84,6 +95,29 @@ describe('PostHog Node analytics helper', () => {
       flagKeys: ['onboarding-checklist-v2'],
     });
     expect(getFlag).toHaveBeenCalledWith('onboarding-checklist-v2');
+    expect(shutdown).not.toHaveBeenCalled();
+    await analytics.shutdownPostHogNodeClients();
     expect(shutdown).toHaveBeenCalledOnce();
+  });
+
+  it('creates a separate cached client when host or key changes', async () => {
+    const analytics = await import('#src/analytics/posthog-node.js');
+
+    await analytics.capturePostHogProductEvent(
+      { key: 'ph-test-a', host: 'https://eu.i.posthog.com' },
+      'user-1',
+      'team_created',
+      { teamId: 'team-1', userId: 'user-1', source: 'signup' },
+    );
+    await analytics.capturePostHogProductEvent(
+      { key: 'ph-test-b', host: 'https://eu.i.posthog.com' },
+      'user-1',
+      'team_created',
+      { teamId: 'team-1', userId: 'user-1', source: 'signup' },
+    );
+
+    expect(ctor).toHaveBeenCalledTimes(2);
+    await analytics.shutdownPostHogNodeClients();
+    expect(shutdown).toHaveBeenCalledTimes(2);
   });
 });
