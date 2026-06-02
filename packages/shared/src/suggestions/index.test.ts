@@ -298,6 +298,42 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.count).toBe('1');
   });
 
+  it('does not treat another person identity facet as a successful target match', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const existingPerson = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Existing Mikael',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const targetPerson = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Target Mikael',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    await scope.objects.createIdentityFacet({
+      entityId: existingPerson.id,
+      kind: 'telegram',
+      value: '@mikaelrintala',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    await expect(
+      scope.objects.createIdentityFacet({
+        entityId: targetPerson.id,
+        kind: 'telegram',
+        value: '@mikaelrintala',
+        actor: { kind: 'agent', userId: null },
+      }),
+    ).rejects.toThrow(/another person/);
+
+    const result = await pg.query<{ entity_id: string }>(
+      `SELECT entity_id
+       FROM object_identity_facets
+       WHERE team_id = '${TEAM_ID}' AND normalized_value = 'mikaelrintala'`,
+    );
+    expect(result.rows).toEqual([{ entity_id: existingPerson.id }]);
+  });
+
   it('does not recreate canonical records when retrying an item with a result id', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const existing = await scope.objects.createObject({
@@ -417,6 +453,48 @@ describe('suggestion scope', () => {
          AND body = 'Miku handles customer follow-up.'`,
     );
     expect(result.rows[0]?.count).toBe('1');
+  });
+
+  it('records accepted object note suggestions as agent audit changes', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const object = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Agent note audit project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember note',
+      dedupeKey: 'agent-note-audit',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: object.id,
+          title: 'Add note',
+          dedupeKey: 'agent-note-audit:item',
+          proposedPayload: {
+            entityId: object.id,
+            body: 'Agent discovered this durable note.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ actor_kind: string; actor_user_id: string | null }>(
+      `SELECT actor_kind, actor_user_id
+       FROM object_changes
+       WHERE team_id = '${TEAM_ID}'
+         AND entity_id = '${object.id}'
+         AND field = '__note_create__'
+       ORDER BY changed_at DESC
+       LIMIT 1`,
+    );
+    expect(result.rows[0]).toEqual({ actor_kind: 'agent', actor_user_id: null });
   });
 
   it('does not recreate object relationships when retrying after result bookkeeping was lost', async () => {

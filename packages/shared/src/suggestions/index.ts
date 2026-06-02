@@ -604,6 +604,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         body: parsed.body,
         authorUserId: userId,
         metadata: { agent_suggestion_item_id: item.id },
+        actor: { kind: 'agent', userId: null },
       });
       return created.id;
     }

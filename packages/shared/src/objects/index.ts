@@ -1316,6 +1316,7 @@ export async function createNote(
     body: string;
     authorUserId: string;
     metadata?: Record<string, unknown>;
+    actor?: UpdateActor;
   },
 ): Promise<{ id: string }> {
   await scope.requireMembership();
@@ -1370,8 +1371,8 @@ export async function createNote(
     await tx.insert(objectChanges).values({
       teamId: scope.teamId,
       entityId: input.entityId,
-      actorUserId: input.authorUserId,
-      actorKind: 'user',
+      actorUserId: input.actor ? (input.actor.userId ?? null) : input.authorUserId,
+      actorKind: input.actor?.kind ?? 'user',
       status: 'applied',
       field: '__note_create__',
       previousValue: null,
@@ -1509,7 +1510,7 @@ export async function createIdentityFacet(
     }
 
     const existing = await tx
-      .select({ id: objectIdentityFacets.id })
+      .select({ id: objectIdentityFacets.id, entityId: objectIdentityFacets.entityId })
       .from(objectIdentityFacets)
       .where(
         and(
@@ -1519,7 +1520,12 @@ export async function createIdentityFacet(
         ),
       )
       .limit(1);
-    if (existing[0]) return existing[0];
+    if (existing[0]) {
+      if (existing[0].entityId !== input.entityId) {
+        throw new Error('Identity facet already belongs to another person');
+      }
+      return { id: existing[0].id };
+    }
 
     const inserted = await tx
       .insert(objectIdentityFacets)
