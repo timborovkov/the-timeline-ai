@@ -15,6 +15,7 @@ const integrationTests = [
   'src/workers/embed.test.ts',
   'src/workers/janitor.test.ts',
   'src/workers/meetingFinalize.test.ts',
+  'src/workers/overdue.test.ts',
 ];
 
 export default defineConfig({

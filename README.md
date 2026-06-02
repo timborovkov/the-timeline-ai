@@ -99,15 +99,15 @@ For the full walkthrough, see
 
 ```bash
 pnpm dev                  # Next.js app + worker in watch mode
-pnpm validate             # format check, typecheck, lint, knip
-pnpm test                 # unit and integration tests
+pnpm validate             # format check, typecheck, lint, tests, knip
+pnpm test                 # unit and integration tests (package suites run sequentially)
 pnpm e2e                  # Playwright smoke tests
 pnpm db:generate          # generate Drizzle migrations after schema changes
 pnpm db:migrate           # apply database migrations
 pnpm check:web-bundle     # inspect built Next server chunks
 ```
 
-`pnpm validate` is the main pre-merge gate.
+`pnpm validate` is the main pre-merge gate and includes the unit/integration test suite.
 
 ## Documentation
 
