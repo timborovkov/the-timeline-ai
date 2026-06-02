@@ -142,6 +142,29 @@ describe('timeline moment grouping', () => {
     expect(moments).toHaveLength(1);
   });
 
+  it('groups Telegram private chats by numeric chat id when no title exists', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-private-1',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:01:00.000Z',
+          sourceMetadata: { tg_chat_id: 7503673734, tg_chat_type: 'private' },
+        }),
+        event({
+          id: 'tg-private-2',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:12:00.000Z',
+          sourceMetadata: { tg_chat_id: 7503673734, tg_chat_type: 'private' },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(1);
+  });
+
   it('keeps attachment document events with their parent Telegram message', () => {
     const moments = buildTimelineMoments(
       [
@@ -242,6 +265,112 @@ describe('timeline moment grouping', () => {
 
     expect(moments[0]?.actorLabel).toBe('Otto Silventola');
     expect(moments[0]?.contextLabel).toBe('AuditAI');
+  });
+
+  it('uses the best Telegram sender label for bundled moments', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-latest',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:03:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_user_id: 7503673734,
+          },
+          contentText: 'Ok',
+        }),
+        event({
+          id: 'tg-with-username',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:01:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_user_id: 7503673734,
+            tg_username: '@ottosilventola',
+          },
+          contentText: 'Leaving a little earlier',
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.actorLabel).toBe('@ottosilventola');
+  });
+
+  it('does not borrow a sender label from a different Telegram user in the bundle', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-latest',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:03:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_user_id: 7503673734,
+          },
+          contentText: 'Ok',
+        }),
+        event({
+          id: 'tg-older-different-user',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:01:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_user_id: 12345,
+            tg_username: 'mikaelrintala',
+          },
+          contentText: 'Confirmed',
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.actorLabel).toBe('Tim');
+  });
+
+  it('treats Telegram sender as a valid literal source sender name', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'tg-literal-sender-name',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:03:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_user_id: 7503673734,
+            tg_sender_name: 'Telegram sender',
+          },
+          contentText: 'Ok',
+        }),
+        event({
+          id: 'tg-same-user-username',
+          source: 'telegram',
+          occurredAt: '2026-05-28T10:01:00.000Z',
+          sourceMetadata: {
+            tg_chat_id: 'chat-1',
+            tg_chat_title: 'AuditAI',
+            tg_user_id: 7503673734,
+            tg_username: 'ottosilventola',
+          },
+          contentText: 'Earlier',
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    expect(moments).toHaveLength(1);
+    expect(moments[0]?.actorLabel).toBe('Telegram sender');
   });
 
   it('derives metadata-first impact context', () => {

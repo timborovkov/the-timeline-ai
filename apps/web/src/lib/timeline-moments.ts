@@ -83,6 +83,18 @@ function stringMeta(meta: Record<string, unknown>, key: string): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
+export function displayMeta(meta: Record<string, unknown>, key: string): string | null {
+  const value = meta[key];
+  if (typeof value === 'string') return value.trim().length > 0 ? value : null;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return null;
+}
+
+export function telegramUsernameLabel(meta: Record<string, unknown>): string | null {
+  const username = stringMeta(meta, 'tg_username');
+  return username ? `@${username.replace(/^@/, '')}` : null;
+}
+
 function formatAddress(value: unknown): string | null {
   if (typeof value !== 'object' || value === null) return null;
   const record = value as Record<string, unknown>;
@@ -152,7 +164,7 @@ export function timelineGroupKey(event: TimelineEvent): string {
     return channel && thread ? `slack:${channel}:${thread}` : `slack:${event.id}`;
   }
   if (event.source === 'telegram') {
-    const chat = stringMeta(meta, 'tg_chat_id') ?? stringMeta(meta, 'tg_chat_title');
+    const chat = displayMeta(meta, 'tg_chat_id') ?? stringMeta(meta, 'tg_chat_title');
     return chat
       ? `telegram:${chat}:${dateKey(event.occurredAt)}:${fifteenMinuteBucket(event.occurredAt)}`
       : `telegram:${event.id}`;
@@ -207,10 +219,9 @@ function actorLabel(event: TimelineEvent, authorMap: Map<string, TimelineAuthor>
     return stringMeta(meta, 'slack_sender_name') ?? authorName(event, authorMap) ?? 'Slack sender';
   }
   if (event.source === 'telegram') {
-    const username = stringMeta(meta, 'tg_username');
     return (
       stringMeta(meta, 'tg_sender_name') ??
-      (username ? `@${username}` : null) ??
+      telegramUsernameLabel(meta) ??
       authorName(event, authorMap) ??
       'Telegram sender'
     );
@@ -232,6 +243,44 @@ function actorLabel(event: TimelineEvent, authorMap: Map<string, TimelineAuthor>
     return typeof actor === 'string' ? actor : (authorName(event, authorMap) ?? 'Integration');
   }
   return authorName(event, authorMap) ?? SOURCE_LABEL[event.source];
+}
+
+function telegramSourceActorLabel(event: TimelineEvent): string | null {
+  if (event.source !== 'telegram') return null;
+  const meta = metaObject(event.sourceMetadata);
+  return stringMeta(meta, 'tg_sender_name') ?? telegramUsernameLabel(meta);
+}
+
+function displayLeadForGroup(sorted: TimelineEvent[], fallback: TimelineEvent): TimelineEvent {
+  return (
+    sorted.find((event) => event.source === 'telegram' || event.source === 'slack') ?? fallback
+  );
+}
+
+export function actorLabelsByTelegramUserId(events: TimelineEvent[]): Map<string, string> {
+  const labels = new Map<string, string>();
+  for (const event of events) {
+    if (event.source !== 'telegram') continue;
+    const meta = metaObject(event.sourceMetadata);
+    const userId = displayMeta(meta, 'tg_user_id');
+    const label = stringMeta(meta, 'tg_sender_name') ?? telegramUsernameLabel(meta);
+    if (userId && label && !labels.has(userId)) labels.set(userId, label);
+  }
+  return labels;
+}
+
+function actorLabelForGroup(
+  event: TimelineEvent,
+  group: TimelineEvent[],
+  authorMap: Map<string, TimelineAuthor>,
+): string {
+  if (event.source !== 'telegram') return actorLabel(event, authorMap);
+  const meta = metaObject(event.sourceMetadata);
+  const direct = telegramSourceActorLabel(event);
+  if (direct) return direct;
+  const userId = displayMeta(meta, 'tg_user_id');
+  const label = userId ? actorLabelsByTelegramUserId(group).get(userId) : null;
+  return label ?? actorLabel(event, authorMap);
 }
 
 function contextLabel(event: TimelineEvent): string {
@@ -393,8 +442,7 @@ export function buildTimelineMoments(
       );
       const lead = sorted[0];
       if (!lead) return [];
-      const displayLead =
-        sorted.find((event) => event.source === 'telegram' || event.source === 'slack') ?? lead;
+      const displayLead = displayLeadForGroup(sorted, lead);
       const summary =
         sorted.length === 1
           ? summaryForEvent(lead)
@@ -408,7 +456,7 @@ export function buildTimelineMoments(
           source: displayLead.source,
           sourceLabel: SOURCE_LABEL[displayLead.source],
           sourceIcon: SOURCE_ICON[displayLead.source],
-          actorLabel: actorLabel(displayLead, authorMap),
+          actorLabel: actorLabelForGroup(displayLead, sorted, authorMap),
           contextLabel: contextLabel(displayLead),
           summary: clipped(summary),
           rawEvents: sorted,

@@ -26,8 +26,11 @@ import { useInspector } from '@/components/inspector-context';
 import { Button } from '@/components/ui/button';
 import {
   buildTimelineMoments,
+  actorLabelsByTelegramUserId,
   filterTimelineMomentsByImpact,
   meetingDetailHrefForMoment,
+  displayMeta,
+  telegramUsernameLabel,
   type ImpactItem,
   type TimelineImpactFilter,
   type TimelineMoment,
@@ -76,7 +79,6 @@ const IMPACT_LABEL: Record<ImpactItem['kind'], string> = {
 };
 
 const INSPECTOR_RAW_EVENT_LIMIT = 8;
-const INSPECTOR_METADATA_LIMIT = 8;
 
 function eventDate(input: string): Date {
   return new Date(input);
@@ -90,7 +92,7 @@ function formatTimestamp(input: string): string {
 }
 
 function formatMetadataValue(value: unknown): string {
-  if (value === null || value === undefined) return 'null';
+  if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   try {
@@ -109,6 +111,11 @@ function stringMeta(meta: Record<string, unknown>, key: string): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
+function friendlyMeta(meta: Record<string, unknown>, key: string): string | null {
+  const value = formatMetadataValue(meta[key]).trim();
+  return value.length > 0 ? value : null;
+}
+
 function formatShortId(id: string): string {
   return id.length > 13 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
 }
@@ -125,16 +132,49 @@ function formatVisibilitySummary(events: TimelineEvent[]): string {
     .join(' · ');
 }
 
-function inspectorMetadataEntries(moment: TimelineMoment): [string, unknown][] {
-  const entries: [string, unknown][] = [];
+function addDetail(
+  entries: [string, string][],
+  seen: Set<string>,
+  label: string,
+  value: string | null,
+) {
+  if (!value || seen.has(label)) return;
+  seen.add(label);
+  entries.push([label, value]);
+}
+
+function inspectorSourceDetailEntries(moment: TimelineMoment): [string, string][] {
+  const entries: [string, string][] = [];
   const seen = new Set<string>();
+  const actorByTelegramUserId = actorLabelsByTelegramUserId(moment.rawEvents);
   for (const event of moment.rawEvents) {
     if (typeof event.sourceMetadata !== 'object' || event.sourceMetadata === null) continue;
-    for (const [key, value] of Object.entries(event.sourceMetadata as Record<string, unknown>)) {
-      if (seen.has(key)) continue;
-      seen.add(key);
-      entries.push([key, value]);
-      if (entries.length >= INSPECTOR_METADATA_LIMIT) return entries;
+    const meta = event.sourceMetadata as Record<string, unknown>;
+    if (event.source === 'telegram') {
+      addDetail(entries, seen, 'Sender', rawEventActorLabel(event, actorByTelegramUserId));
+      addDetail(entries, seen, 'Chat', stringMeta(meta, 'tg_chat_title'));
+      addDetail(entries, seen, 'Chat type', stringMeta(meta, 'tg_chat_type'));
+      addDetail(entries, seen, 'Caption', stringMeta(meta, 'tg_caption'));
+    } else if (event.source === 'slack') {
+      addDetail(entries, seen, 'Sender', stringMeta(meta, 'slack_sender_name'));
+      addDetail(entries, seen, 'Channel', stringMeta(meta, 'slack_channel_name'));
+    } else if (event.source === 'email') {
+      addDetail(entries, seen, 'Subject', stringMeta(meta, 'subject'));
+      addDetail(entries, seen, 'From', formatMetadataValue(meta.from).trim() || null);
+    } else if (event.source === 'document') {
+      addDetail(
+        entries,
+        seen,
+        'Document',
+        stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name'),
+      );
+      addDetail(entries, seen, 'Origin', stringMeta(meta, 'source'));
+    } else if (event.source === 'meeting' || event.source === 'calendar') {
+      addDetail(entries, seen, 'Title', stringMeta(meta, 'title'));
+    } else if (event.source === 'integration') {
+      addDetail(entries, seen, 'Provider', stringMeta(meta, 'provider'));
+      addDetail(entries, seen, 'Event', stringMeta(meta, 'event_type'));
+      addDetail(entries, seen, 'Actor', friendlyMeta(meta, 'actor'));
     }
   }
   return entries;
@@ -163,12 +203,17 @@ function canEditVisibility(event: TimelineEvent, currentUserId: string): boolean
   return event.visibilityOwnerUserId === currentUserId;
 }
 
-function rawEventActorLabel(event: TimelineEvent): string {
+function rawEventActorLabel(
+  event: TimelineEvent,
+  actorByTelegramUserId = new Map<string, string>(),
+): string {
   const meta = metaObject(event.sourceMetadata);
   if (event.source === 'telegram') {
+    const userId = displayMeta(meta, 'tg_user_id');
     return (
       stringMeta(meta, 'tg_sender_name') ??
-      (stringMeta(meta, 'tg_username') ? `@${stringMeta(meta, 'tg_username')}` : null) ??
+      telegramUsernameLabel(meta) ??
+      (userId ? (actorByTelegramUserId.get(userId) ?? null) : null) ??
       'Telegram sender'
     );
   }
@@ -217,7 +262,7 @@ function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] 
 }
 
 function InspectorBody({ moment }: { moment: TimelineMoment }) {
-  const metadata = inspectorMetadataEntries(moment);
+  const metadata = inspectorSourceDetailEntries(moment);
   const latestEvent = moment.rawEvents[0];
   const firstEvent = moment.rawEvents.at(-1);
   const visibleRawEvents = moment.rawEvents.slice(0, INSPECTOR_RAW_EVENT_LIMIT);
@@ -308,14 +353,14 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
       {metadata.length > 0 ? (
         <section>
           <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-            Source metadata
+            Source details
           </h3>
           <dl className="space-y-1.5">
             {metadata.map(([key, value]) => (
               <div key={key} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
                 <dt className="truncate text-fg-dim">{key}</dt>
-                <dd className="min-w-0 truncate text-fg-muted" title={formatMetadataValue(value)}>
-                  {formatMetadataValue(value)}
+                <dd className="min-w-0 truncate text-fg-muted" title={value}>
+                  {value}
                 </dd>
               </div>
             ))}
@@ -340,6 +385,7 @@ function RawEventExpansion({
   members: { id: string; label: string }[];
 }) {
   const conversationEvents = [...moment.rawEvents].reverse();
+  const actorByTelegramUserId = actorLabelsByTelegramUserId(moment.rawEvents);
   return (
     <details className="mt-3 border-t border-border pt-3" open={moment.rawEvents.length > 1}>
       <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim transition-colors hover:text-fg">
@@ -359,7 +405,7 @@ function RawEventExpansion({
                 <span>{index + 1}</span>
                 <span>{formatTimestamp(event.occurredAt)}</span>
                 <span>{event.source}</span>
-                <span>{rawEventActorLabel(event)}</span>
+                <span>{rawEventActorLabel(event, actorByTelegramUserId)}</span>
                 {context ? <span>{context}</span> : null}
                 <span>[{formatShortId(event.id)}]</span>
                 {event.visibility === 'private' ? <span>Private</span> : null}
