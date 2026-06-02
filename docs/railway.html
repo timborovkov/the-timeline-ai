@@ -284,11 +284,6 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
         <li>Postmark: <code>https://thetimeline.cc/api/email/inbound</code></li>
       </ul>
       <p>
-        The Cloudflare import template for the production web, email, and inbound DNS records lives
-        at <code>docs/setup/cloudflare-dns-template.txt</code>. Replace the Railway verification
-        placeholders with the full values from the Railway dashboard before importing.
-      </p>
-      <p>
         The Telegram webhook is registered automatically by the <code>web</code> service on startup.
         The Next.js instrumentation hook at <code>apps/web/src/instrumentation.ts</code> runs once
         per server process, reads <code>TELEGRAM_BOT_TOKEN</code>,
