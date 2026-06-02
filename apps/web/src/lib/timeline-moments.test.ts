@@ -289,7 +289,7 @@ describe('timeline moment grouping', () => {
             tg_chat_id: 'chat-1',
             tg_chat_title: 'AuditAI',
             tg_user_id: 7503673734,
-            tg_username: 'ottosilventola',
+            tg_username: '@ottosilventola',
           },
           contentText: 'Leaving a little earlier',
         }),

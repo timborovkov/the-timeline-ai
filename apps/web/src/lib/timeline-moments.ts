@@ -83,11 +83,16 @@ function stringMeta(meta: Record<string, unknown>, key: string): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
-function displayMeta(meta: Record<string, unknown>, key: string): string | null {
+export function displayMeta(meta: Record<string, unknown>, key: string): string | null {
   const value = meta[key];
   if (typeof value === 'string') return value.trim().length > 0 ? value : null;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return null;
+}
+
+export function telegramUsernameLabel(meta: Record<string, unknown>): string | null {
+  const username = stringMeta(meta, 'tg_username');
+  return username ? `@${username.replace(/^@/, '')}` : null;
 }
 
 function formatAddress(value: unknown): string | null {
@@ -214,10 +219,9 @@ function actorLabel(event: TimelineEvent, authorMap: Map<string, TimelineAuthor>
     return stringMeta(meta, 'slack_sender_name') ?? authorName(event, authorMap) ?? 'Slack sender';
   }
   if (event.source === 'telegram') {
-    const username = stringMeta(meta, 'tg_username');
     return (
       stringMeta(meta, 'tg_sender_name') ??
-      (username ? `@${username}` : null) ??
+      telegramUsernameLabel(meta) ??
       authorName(event, authorMap) ??
       'Telegram sender'
     );
@@ -247,14 +251,13 @@ function displayLeadForGroup(sorted: TimelineEvent[], fallback: TimelineEvent): 
   );
 }
 
-function actorLabelsByTelegramUserId(events: TimelineEvent[]): Map<string, string> {
+export function actorLabelsByTelegramUserId(events: TimelineEvent[]): Map<string, string> {
   const labels = new Map<string, string>();
   for (const event of events) {
     if (event.source !== 'telegram') continue;
     const meta = metaObject(event.sourceMetadata);
     const userId = displayMeta(meta, 'tg_user_id');
-    const username = stringMeta(meta, 'tg_username');
-    const label = stringMeta(meta, 'tg_sender_name') ?? (username ? `@${username}` : null);
+    const label = stringMeta(meta, 'tg_sender_name') ?? telegramUsernameLabel(meta);
     if (userId && label && !labels.has(userId)) labels.set(userId, label);
   }
   return labels;

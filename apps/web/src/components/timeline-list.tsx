@@ -26,8 +26,11 @@ import { useInspector } from '@/components/inspector-context';
 import { Button } from '@/components/ui/button';
 import {
   buildTimelineMoments,
+  actorLabelsByTelegramUserId,
   filterTimelineMomentsByImpact,
   meetingDetailHrefForMoment,
+  displayMeta,
+  telegramUsernameLabel,
   type ImpactItem,
   type TimelineImpactFilter,
   type TimelineMoment,
@@ -111,11 +114,6 @@ function stringMeta(meta: Record<string, unknown>, key: string): string | null {
 function friendlyMeta(meta: Record<string, unknown>, key: string): string | null {
   const value = formatMetadataValue(meta[key]).trim();
   return value.length > 0 ? value : null;
-}
-
-function telegramUsername(meta: Record<string, unknown>): string | null {
-  const username = stringMeta(meta, 'tg_username');
-  return username ? `@${username.replace(/^@/, '')}` : null;
 }
 
 function formatShortId(id: string): string {
@@ -211,10 +209,10 @@ function rawEventActorLabel(
 ): string {
   const meta = metaObject(event.sourceMetadata);
   if (event.source === 'telegram') {
-    const userId = friendlyMeta(meta, 'tg_user_id');
+    const userId = displayMeta(meta, 'tg_user_id');
     return (
       stringMeta(meta, 'tg_sender_name') ??
-      telegramUsername(meta) ??
+      telegramUsernameLabel(meta) ??
       (userId ? (actorByTelegramUserId.get(userId) ?? null) : null) ??
       'Telegram sender'
     );
@@ -251,18 +249,6 @@ function rawEventDocumentLink(event: TimelineEvent): { href: string; label: stri
     href: `/app/documents/${documentId}`,
     label: stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name') ?? 'Attachment',
   };
-}
-
-function actorLabelsByTelegramUserId(events: TimelineEvent[]): Map<string, string> {
-  const labels = new Map<string, string>();
-  for (const event of events) {
-    if (event.source !== 'telegram') continue;
-    const meta = metaObject(event.sourceMetadata);
-    const userId = friendlyMeta(meta, 'tg_user_id');
-    const label = stringMeta(meta, 'tg_sender_name') ?? telegramUsername(meta);
-    if (userId && label && !labels.has(userId)) labels.set(userId, label);
-  }
-  return labels;
 }
 
 function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] {
