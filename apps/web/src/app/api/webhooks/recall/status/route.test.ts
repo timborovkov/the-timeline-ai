@@ -280,6 +280,15 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
     });
   });
 
+  it('failed lifecycle codes do not enqueue finalize even on completion-shaped events', async () => {
+    const r = await POST(
+      signedRequest(recallStatusBody('bot.done', 'recording_permission_denied')),
+    );
+    expect(r.status).toBe(200);
+    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith('meeting-1', 'failed', expect.any(Object));
+    expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
+  });
+
   it('ignores backwards transition (active arriving after processing)', async () => {
     fakes.fakeLookup.mockResolvedValueOnce({
       id: 'meeting-1',

@@ -150,12 +150,15 @@ export async function POST(req: Request): Promise<Response> {
   // We also defensively enqueue finalize when we see `done`/`analysis_done`
   // via status_change in case the separate `bot.call_ended` event was
   // dropped (Recall has shipped both shapes historically).
+  const isFailureEvent =
+    parsed.event === 'bot.fatal' || parsed.event === 'bot.failed' || mappedStatus === 'failed';
   const shouldEnqueueFinalize =
-    parsed.event === 'bot.call_ended' ||
-    parsed.event === 'bot.done' ||
-    parsed.event === 'transcript.done' ||
-    ((parsed.event === 'bot.status_change' || parsed.event.startsWith('bot.')) &&
-      (code === 'done' || code === 'analysis_done' || mappedStatus === 'completed'));
+    !isFailureEvent &&
+    (parsed.event === 'bot.call_ended' ||
+      parsed.event === 'bot.done' ||
+      parsed.event === 'transcript.done' ||
+      ((parsed.event === 'bot.status_change' || parsed.event.startsWith('bot.')) &&
+        (code === 'done' || code === 'analysis_done' || mappedStatus === 'completed')));
 
   // Fail-fast Redis precheck. If we can't enqueue finalize, we must NOT
   // write `processing` to the DB and then return 503 — Recall will retry
@@ -170,11 +173,7 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
-    if (
-      parsed.event === 'bot.fatal' ||
-      parsed.event === 'bot.failed' ||
-      mappedStatus === 'failed'
-    ) {
+    if (isFailureEvent) {
       // `failed` is terminal — overrides any in-flight state including
       // `processing`. The terminal guard above only blocks transitions OUT
       // of failed/completed; transitioning INTO failed is always allowed.
