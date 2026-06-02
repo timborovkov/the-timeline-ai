@@ -14,6 +14,7 @@ import { readPendingInvite } from '@/lib/pending-invite';
 export const metadata: Metadata = {
   title: 'Sign in',
   description: 'Sign in to your Timeline AI workspace.',
+  robots: { index: false, follow: false },
 };
 
 interface Props {

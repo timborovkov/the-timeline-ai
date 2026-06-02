@@ -56,11 +56,63 @@ export const metadata: Metadata = {
   },
   description:
     'Voice-, chat-, and email-first capture, agentically compiled into a searchable team history with auditable citations on every answer.',
+  keywords: [
+    'AI CRM',
+    'team memory',
+    'operations log',
+    'AI knowledge base',
+    'meeting transcript search',
+    'Slack knowledge base',
+    'Telegram bot CRM',
+    'cited AI answers',
+  ],
   applicationName: 'The Timeline',
   authors: [{ name: 'The Timeline' }],
   creator: 'The Timeline',
   publisher: 'The Timeline',
+  category: 'Business software',
   formatDetection: { telephone: false, email: false, address: false },
+  alternates: { canonical: '/' },
+  manifest: '/manifest.webmanifest',
+  icons: {
+    icon: '/icon.svg',
+    apple: '/apple-icon',
+  },
+  openGraph: {
+    title: 'The Timeline — The operations log your team can talk to',
+    description:
+      'Capture voice notes, Slack threads, emails, meetings, documents, and calendar events into one searchable team history with cited AI answers.',
+    url: '/',
+    siteName: 'The Timeline',
+    images: [
+      {
+        url: '/opengraph-image',
+        width: 1200,
+        height: 630,
+        alt: 'The Timeline — the operations log your team can talk to',
+      },
+    ],
+    locale: 'en_US',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'The Timeline — The operations log your team can talk to',
+    description:
+      'Capture work as it happens; the agent files it into a cited, searchable team history.',
+    images: ['/twitter-image'],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

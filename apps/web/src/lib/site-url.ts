@@ -14,10 +14,14 @@ import { nonEmptyEnv } from '@/lib/safe-redirect';
  */
 export function getSiteUrl(): string {
   const authUrl = nonEmptyEnv(process.env.AUTH_URL);
-  if (authUrl) return authUrl;
+  if (authUrl) return canonicalOrigin(authUrl);
   const vercelUrl = nonEmptyEnv(process.env.VERCEL_URL);
-  if (vercelUrl) return `https://${vercelUrl}`;
+  if (vercelUrl) return canonicalOrigin(`https://${vercelUrl}`);
   const nextAuthUrl = nonEmptyEnv(process.env.NEXTAUTH_URL);
-  if (nextAuthUrl) return nextAuthUrl;
+  if (nextAuthUrl) return canonicalOrigin(nextAuthUrl);
   return 'http://localhost:3000';
+}
+
+function canonicalOrigin(url: string): string {
+  return new URL(url).origin;
 }

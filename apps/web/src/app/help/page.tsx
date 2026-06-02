@@ -3,12 +3,13 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import { HELP_INDEX_GROUPS, HELP_PAGES } from '@/lib/help-content';
+import { publicMetadata } from '@/lib/public-metadata';
 
-export const metadata: Metadata = {
+export const metadata: Metadata = publicMetadata({
   title: 'Help',
   description: 'Public help docs for The Timeline.',
-  alternates: { canonical: '/help' },
-};
+  path: '/help',
+});
 
 export default function HelpIndexPage() {
   return (

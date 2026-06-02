@@ -380,6 +380,11 @@ out of scope.
 - [x] Add public Terms of Use and Privacy Policy pages, link them from public
       footers and the sitemap, and require user-level acceptance of the current
       legal versions before entering the signed-in product.
+- [x] Include the landing page, public help index/topics, support, Terms, and
+      Privacy in the sitemap. Auth, invite, and signed-in app routes stay
+      noindexed.
+- [x] Serve `/llms.txt` and `/llms-full.txt` as AI-readable Markdown discovery
+      files for the public landing, help, support, legal, and sitemap surfaces.
 
 ### Slice 13.8 — Standardized abuse-control rate limits
 

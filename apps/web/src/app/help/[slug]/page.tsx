@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 import { HelpAppLink } from '@/components/help/app-link';
 import { auth } from '@/lib/auth';
 import { findHelpPage, HELP_PAGES } from '@/lib/help-content';
+import { publicMetadata } from '@/lib/public-metadata';
 
 interface HelpPageProps {
   params: Promise<{ slug: string }>;
@@ -19,11 +20,11 @@ export async function generateMetadata({ params }: HelpPageProps): Promise<Metad
   const { slug } = await params;
   const page = findHelpPage(slug);
   if (!page) return {};
-  return {
+  return publicMetadata({
     title: page.title,
     description: page.description,
-    alternates: { canonical: `/help/${page.slug}` },
-  };
+    path: `/help/${page.slug}`,
+  });
 }
 
 export default async function HelpTopicPage({ params }: HelpPageProps) {
