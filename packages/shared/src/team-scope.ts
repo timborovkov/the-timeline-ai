@@ -717,7 +717,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         handleConditions.push(
           and(
             eq(rawEvents.source, 'telegram'),
-            sql`lower(${rawEvents.sourceMetadata} ->> 'tg_username') = ${normalizeIdentityFacet('telegram', handle)}`,
+            sql`lower(regexp_replace(${rawEvents.sourceMetadata} ->> 'tg_username', '^@', '')) = ${normalizeIdentityFacet('telegram', handle)}`,
           ),
         );
       }
@@ -760,7 +760,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             and(
               eq(rawEvents.source, 'telegram'),
               or(
-                sql`lower(${rawEvents.sourceMetadata} ->> 'tg_username') = ${facet.normalizedValue}`,
+                sql`lower(regexp_replace(${rawEvents.sourceMetadata} ->> 'tg_username', '^@', '')) = ${facet.normalizedValue}`,
                 facet.externalId
                   ? sql`${rawEvents.sourceMetadata} ->> 'tg_user_id' = ${facet.externalId}`
                   : sql`false`,

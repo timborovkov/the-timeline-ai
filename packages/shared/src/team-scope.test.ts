@@ -284,6 +284,52 @@ describe('withTeam namespaced port', () => {
     await expect(scope.timeline.listEvents({ personObjectId: person.id })).resolves.toEqual([]);
   });
 
+  it('matches telegram senderHandle when raw username includes at-prefix', async () => {
+    const eventId = '00000000-0000-0000-0000-000000000107';
+    await insertTelegramEvent(pg, {
+      id: eventId,
+      authorUserId: null,
+      text: 'telegram from prefixed username',
+      username: '@mikaelrintala',
+      tgUserId: 12345,
+    });
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+
+    await expect(
+      scope.timeline.listEvents({ source: 'telegram', senderHandle: '@mikaelrintala' }),
+    ).resolves.toMatchObject([{ id: eventId }]);
+    await expect(
+      scope.timeline.listEvents({ source: 'telegram', senderHandle: 'mikaelrintala' }),
+    ).resolves.toMatchObject([{ id: eventId }]);
+  });
+
+  it('matches telegram person sender filters when raw username includes at-prefix', async () => {
+    const eventId = '00000000-0000-0000-0000-000000000108';
+    await insertTelegramEvent(pg, {
+      id: eventId,
+      authorUserId: null,
+      text: 'telegram from linked person',
+      username: '@mikaelrintala',
+      tgUserId: 12345,
+    });
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const person = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Mikael Rintala',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.objects.createIdentityFacet({
+      entityId: person.id,
+      kind: 'telegram',
+      value: '@mikaelrintala',
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    await expect(
+      scope.timeline.listEvents({ source: 'telegram', personObjectId: person.id }),
+    ).resolves.toMatchObject([{ id: eventId }]);
+  });
+
   it('does not hydrate entity facts whose source event has been tombstoned', async () => {
     const deletedId = '00000000-0000-0000-0000-000000000103';
     const entityId = '00000000-0000-0000-0000-000000000104';
