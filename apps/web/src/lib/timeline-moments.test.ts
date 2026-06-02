@@ -6,6 +6,7 @@ import {
   buildTimelineMoments,
   filterTimelineMomentsByImpact,
   formatDateSection,
+  meetingDetailHrefForMoment,
   timelineGroupKey,
   type TimelineAuthor,
 } from '@/lib/timeline-moments';
@@ -53,6 +54,46 @@ describe('timeline moment grouping', () => {
 
     expect(moments).toHaveLength(1);
     expect(moments[0]?.rawEvents.map((e) => e.id).sort()).toEqual(['a', 'b']);
+  });
+
+  it('links meeting moments to the meeting transcript detail', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'meeting-event',
+          source: 'meeting',
+          sourceMetadata: { meeting_id: 'eb5b3264-90cf-4f8a-b6ef-605fafb9583c' },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    const moment = moments[0];
+    expect(moment).toBeDefined();
+    if (!moment) throw new Error('expected one meeting moment');
+    expect(meetingDetailHrefForMoment(moment)).toBe(
+      '/app/meetings/eb5b3264-90cf-4f8a-b6ef-605fafb9583c',
+    );
+  });
+
+  it('does not link non-meeting moments to meeting transcripts', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'web-event',
+          source: 'web',
+          sourceMetadata: { meeting_id: 'eb5b3264-90cf-4f8a-b6ef-605fafb9583c' },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    const moment = moments[0];
+    expect(moment).toBeDefined();
+    if (!moment) throw new Error('expected one web moment');
+    expect(meetingDetailHrefForMoment(moment)).toBeNull();
   });
 
   it('groups email by thread root', () => {

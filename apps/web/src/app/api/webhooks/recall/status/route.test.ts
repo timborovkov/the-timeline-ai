@@ -100,6 +100,22 @@ function statusBody(event: string, code: string | undefined) {
   });
 }
 
+function recallStatusBody(event: string, code: string | undefined, updatedAt?: string) {
+  return JSON.stringify({
+    event,
+    data: {
+      data: code
+        ? {
+            code,
+            updated_at: updatedAt ?? '2026-06-02T12:00:00.000000+00:00',
+            sub_code: null,
+          }
+        : undefined,
+      bot: { id: BOT_ID, metadata: {} },
+    },
+  });
+}
+
 beforeEach(() => {
   setEnv();
   resetEnvForTests();
@@ -189,8 +205,43 @@ describe('POST /api/webhooks/recall/status — terminal-state guard', () => {
 });
 
 describe('POST /api/webhooks/recall/status — state transitions', () => {
+  it('handles documented bot.in_call_recording events as active', async () => {
+    fakes.fakeLookup.mockResolvedValueOnce({
+      id: 'meeting-1',
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      status: 'joining',
+      platform: 'meet',
+      provider: 'recall',
+    });
+    const r = await POST(
+      signedRequest(recallStatusBody('bot.in_call_recording', 'in_call_recording')),
+    );
+    expect(r.status).toBe(200);
+    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
+      'meeting-1',
+      'active',
+      expect.objectContaining({ startedAt: expect.any(Date) as Date }),
+    );
+    expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
+  });
+
   it('bot.call_ended flips processing + enqueues finalize', async () => {
     const r = await POST(signedRequest(statusBody('bot.call_ended', 'call_ended')));
+    expect(r.status).toBe(200);
+    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
+      'meeting-1',
+      'processing',
+      expect.objectContaining({ endedAt: expect.any(Date) as Date }),
+    );
+    expect(fakes.fakeEnqueueFinalize).toHaveBeenCalledWith({
+      meetingId: 'meeting-1',
+      teamId: TEAM_ID,
+    });
+  });
+
+  it('documented bot.call_ended events flip processing + enqueue finalize', async () => {
+    const r = await POST(signedRequest(recallStatusBody('bot.call_ended', 'call_ended')));
     expect(r.status).toBe(200);
     expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
       'meeting-1',
@@ -213,6 +264,20 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
       expect.any(Object),
     );
     expect(fakes.fakeEnqueueFinalize).toHaveBeenCalled();
+  });
+
+  it('documented bot.done events enqueue finalize without directly completing', async () => {
+    const r = await POST(signedRequest(recallStatusBody('bot.done', 'done')));
+    expect(r.status).toBe(200);
+    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
+      'meeting-1',
+      'processing',
+      expect.any(Object),
+    );
+    expect(fakes.fakeEnqueueFinalize).toHaveBeenCalledWith({
+      meetingId: 'meeting-1',
+      teamId: TEAM_ID,
+    });
   });
 
   it('ignores backwards transition (active arriving after processing)', async () => {

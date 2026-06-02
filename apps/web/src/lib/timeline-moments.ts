@@ -174,6 +174,18 @@ export function timelineGroupKey(event: TimelineEvent): string {
   return `${event.source}:${event.id}`;
 }
 
+export function meetingDetailHrefForMoment(
+  moment: Pick<TimelineMoment, 'source' | 'rawEvents'>,
+): string | null {
+  if (moment.source !== 'meeting') return null;
+  for (const event of moment.rawEvents) {
+    const meta = metaObject(event.sourceMetadata);
+    const meetingId = stringMeta(meta, 'meeting_id');
+    if (meetingId) return `/app/meetings/${meetingId}`;
+  }
+  return null;
+}
+
 function authorName(event: TimelineEvent, authorMap: Map<string, TimelineAuthor>): string | null {
   if (!event.authorUserId) return null;
   const author = authorMap.get(event.authorUserId);
