@@ -1,4 +1,4 @@
-import { generateText, type LanguageModel, type ModelMessage } from 'ai';
+import { type LanguageModel, type ModelMessage } from 'ai';
 
 import {
   DEFAULT_CHAT_MEMORY,
@@ -7,6 +7,7 @@ import {
   TIMELINE_MODELS,
   truncateTextToTokenBudget,
 } from '#src/llm/models.js';
+import { generateText, withLangSmithProviderOptions } from '#src/llm/tracing.js';
 
 export interface CompressMessagesInput {
   system: string;
@@ -173,6 +174,17 @@ export async function compressMessagesForContext(
     system: SUMMARY_SYSTEM_PROMPT,
     prompt: transcriptForSummaryWithinBudget(summarized),
     maxOutputTokens: DEFAULT_CHAT_MEMORY.summaryMaxOutputTokens,
+    providerOptions: withLangSmithProviderOptions(undefined, {
+      name: 'llm.compressMessagesForContext',
+      model: input.modelId ?? TIMELINE_MODELS.summarization.id,
+      metadata: {
+        operation: 'compress_messages_for_context',
+        estimated_tokens: estimatedTokens,
+        summarized_messages: summarized.length,
+        kept_messages: kept.length,
+        max_output_tokens: DEFAULT_CHAT_MEMORY.summaryMaxOutputTokens,
+      },
+    }),
   });
 
   const summaryMessage: ModelMessage = {

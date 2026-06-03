@@ -1,8 +1,13 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { generateText, type FilePart, type ImagePart, type LanguageModel } from 'ai';
+import { type FilePart, type ImagePart, type LanguageModel } from 'ai';
 
 import { getEnv } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import {
+  generateText,
+  sanitizeAiSdkInputs,
+  withLangSmithProviderOptions,
+} from '#src/llm/tracing.js';
 
 /**
  * Vision-based text extraction. One inference layer for OCR/transcription of
@@ -131,6 +136,19 @@ export async function extractTextFromMedia(
       },
     ],
     maxOutputTokens: input.maxOutputTokens ?? 8000,
+    providerOptions: withLangSmithProviderOptions(undefined, {
+      name: 'llm.extractTextFromMedia',
+      model: modelId,
+      processInputs: sanitizeAiSdkInputs,
+      processChildLLMRunInputs: sanitizeAiSdkInputs,
+      metadata: {
+        operation: 'extract_text_from_media',
+        media_type: mediaType,
+        input_bytes: input.body.byteLength,
+        has_filename: input.filename ? true : false,
+        max_output_tokens: input.maxOutputTokens ?? 8000,
+      },
+    }),
   });
 
   return { text: result.text, model: modelId };

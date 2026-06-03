@@ -143,6 +143,10 @@ S3_BUCKET_EXPORTS=timeline-exports
 AUTH_SECRET=&lt;32-byte random, generate per env&gt;
 AUTH_URL=https://thetimeline.cc
 OPENROUTER_API_KEY=&lt;openrouter key&gt;
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=&lt;langsmith key&gt;
+LANGSMITH_PROJECT=timeline-production
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
 TELEGRAM_BOT_TOKEN=&lt;botfather token&gt;
 TELEGRAM_WEBHOOK_SECRET=&lt;32-byte random&gt;
 POSTMARK_SERVER_TOKEN=&lt;postmark token&gt;
@@ -178,6 +182,13 @@ LOG_LEVEL=info
         Railway environments. Use Railway's environment name and <code>SENTRY_ENVIRONMENT</code> for
         labels such as <code>staging</code>; Node.js and the app env schema only accept
         <code>development</code>, <code>test</code>, or <code>production</code>.
+      </p>
+      <p>
+        LangSmith is opt-in via <code>LANGSMITH_TRACING=true</code>. Rich traces include the prompt
+        and output text sent through the shared LLM wrapper, including private timeline, document,
+        meeting, and integration content. Treat LangSmith project access as sensitive operational
+        access. Raw media/audio bytes and embedding vectors are redacted from traces. Set
+        <code>LANGSMITH_WORKSPACE_ID</code> too when using an org-scoped LangSmith API key.
       </p>
       <p>
         Use Railway's "shared variables" feature at the project level for anything used by 2+

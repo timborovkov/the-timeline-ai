@@ -1,8 +1,6 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import {
-  generateObject,
   stepCountIs,
-  streamText,
   type LanguageModel,
   type ModelMessage,
   type StreamTextResult,
@@ -12,6 +10,7 @@ import { type z } from 'zod';
 
 import { getEnv } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { generateObject, streamText, withLangSmithProviderOptions } from '#src/llm/tracing.js';
 
 export interface ChatStructuredInput<TSchema extends z.ZodType> {
   schema: TSchema;
@@ -91,6 +90,13 @@ export async function chatStructured<TSchema extends z.ZodType>(
     schema: input.schema,
     prompt: input.prompt,
     system: structuredOutputSystem(input.system),
+    providerOptions: withLangSmithProviderOptions(undefined, {
+      name: 'llm.chatStructured',
+      model: modelId,
+      metadata: {
+        operation: 'chat_structured',
+      },
+    }),
   });
   return { object: result.object as z.infer<TSchema>, model: modelId };
 }
@@ -140,6 +146,14 @@ export function streamChat<TTools extends ToolSet>(
     messages: input.messages,
     tools: input.tools,
     stopWhen: stepCountIs(input.maxSteps ?? 5),
+    providerOptions: withLangSmithProviderOptions(undefined, {
+      name: 'llm.streamChat',
+      model: modelId,
+      metadata: {
+        operation: 'stream_chat',
+        max_steps: input.maxSteps ?? 5,
+      },
+    }),
   };
   if (input.onFinish) args.onFinish = input.onFinish;
   if (input.onError) args.onError = input.onError;
