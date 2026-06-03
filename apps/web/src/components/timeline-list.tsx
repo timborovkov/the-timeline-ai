@@ -398,8 +398,8 @@ function RawEventExpansion({
           return (
             <li
               key={event.id}
-              id={`ev-${event.id}`}
-              className="scroll-mt-20 border-l border-border pl-3"
+              id={moment.rawEvents.length > 1 ? `ev-${event.id}` : undefined}
+              className="scroll-mt-24 border-l border-border pl-3 target:bg-signal-soft target:ring-1 target:ring-signal/40"
             >
               <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                 <span>{index + 1}</span>
@@ -534,10 +534,12 @@ function TimelineMomentRow({
   const Icon = SOURCE_ICON[moment.source];
   const selected = inspector.open && inspector.content?.id === moment.id;
   const meetingHref = meetingDetailHrefForMoment(moment);
+  const singleRawEventId = moment.rawEvents.length === 1 ? moment.rawEvents[0]?.id : null;
   return (
     <li
+      id={singleRawEventId ? `ev-${singleRawEventId}` : undefined}
       className={cn(
-        'grid grid-cols-[5.75rem_minmax(0,1fr)] border-b border-border transition-colors hover:bg-surface',
+        'grid scroll-mt-24 grid-cols-[5.75rem_minmax(0,1fr)] border-b border-border transition-colors hover:bg-surface target:bg-signal-soft target:ring-1 target:ring-signal/40',
         density === 'dense' && 'grid-cols-[4.75rem_minmax(0,1fr)]',
         selected && 'bg-surface',
       )}
