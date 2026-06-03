@@ -359,7 +359,91 @@ describe('processSuggestionJobForTests', () => {
 
     const [review] = await db.select().from(conversationReviews);
     expect(review?.lastRawEventId).toBe(newerId);
-    expect(enqueueSuggestionJob).toHaveBeenCalledTimes(1);
+    expect(enqueueSuggestionJob).toHaveBeenCalledTimes(2);
+    expect(enqueueSuggestionJob.mock.calls[1]?.[0]).toMatchObject({
+      scope: 'conversation_review',
+      conversationReviewId: review?.id,
+      teamId: TEAM_ID,
+    });
+  });
+
+  it('reenqueues an existing pending review when a stale retry cannot update the anchor', async () => {
+    const olderId = '10000000-0000-0000-0000-0000000000f1';
+    const newerId = '10000000-0000-0000-0000-0000000000f2';
+    const reviewId = '20000000-0000-0000-0000-0000000000f1';
+    const conversationKey = `telegram:${TEAM_ID}:chat:retry`;
+    const quietUntil = new Date(Date.now() + 10 * 60_000);
+    const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
+    await seedRawEvent(db as never, {
+      id: newerId,
+      source: 'telegram',
+      text: 'Newer anchor: send the deck.',
+      occurredAt: new Date('2026-05-27T10:05:00.000Z'),
+      sourceMetadata: { tg_chat_id: 'retry', tg_message_id: '2' },
+    });
+    await seedRawEvent(db as never, {
+      id: olderId,
+      source: 'telegram',
+      text: 'Older retry: send the deck.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      sourceMetadata: { tg_chat_id: 'retry', tg_message_id: '1' },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey,
+      lastRawEventId: newerId,
+      quietUntil,
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: olderId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID, enqueueSuggestionJob },
+    );
+
+    const [review] = await db.select().from(conversationReviews);
+    expect(review?.lastRawEventId).toBe(newerId);
+    expect(enqueueSuggestionJob).toHaveBeenCalledOnce();
+    const anyNumber: unknown = expect.any(Number);
+    expect(enqueueSuggestionJob).toHaveBeenCalledWith(
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      {
+        delayMs: anyNumber,
+        jobIdSuffix: quietUntil.toISOString(),
+      },
+    );
+  });
+
+  it('marks a pending conversation review complete when its anchor was deleted', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000d1';
+    const reviewId = '20000000-0000-0000-0000-0000000000d1';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'telegram',
+      text: 'Send the deck.',
+      sourceMetadata: { tg_chat_id: 'deleted', tg_message_id: '1' },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey: `telegram:${TEAM_ID}:chat:deleted`,
+      lastRawEventId: rawEventId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+    await db.delete(rawEvents).where(eq(rawEvents.id, rawEventId));
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID },
+    );
+
+    const [review] = await db
+      .select()
+      .from(conversationReviews)
+      .where(eq(conversationReviews.id, reviewId));
+    expect(review?.status).toBe('completed');
+    expect(review?.lastRawEventId).toBeNull();
+    expect(review?.metadata).toMatchObject({ review_outcome: 'anchor_missing' });
   });
 
   it('treats ambiguous contradicted conversation reviews as successful no_action', async () => {

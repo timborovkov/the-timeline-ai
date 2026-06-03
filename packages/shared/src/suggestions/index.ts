@@ -818,7 +818,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           ? correctionDedupeKey
           : input.dedupeKey;
 
-      const row = await db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         const suggestionValues = {
           teamId,
           source: input.source,
@@ -869,7 +869,22 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             })
             .returning();
         }
-        if (!inserted) throw new Error('Failed to create suggestion');
+        if (!inserted) {
+          const [resolvedDuplicate] = await tx
+            .select()
+            .from(agentSuggestions)
+            .where(
+              and(eq(agentSuggestions.teamId, teamId), eq(agentSuggestions.dedupeKey, dedupeKey)),
+            )
+            .limit(1);
+          if (
+            resolvedDuplicate?.status === 'accepted' ||
+            resolvedDuplicate?.status === 'rejected'
+          ) {
+            return { row: resolvedDuplicate, changed: false };
+          }
+          throw new Error('Failed to create suggestion');
+        }
 
         if (input.evidence?.length) {
           await tx
@@ -913,10 +928,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             },
           });
 
-        return inserted;
+        return { row: inserted, changed: true };
       });
-      await notifySuggestion(row);
-      const loaded = await loadBundle(row.id);
+      if (result.changed) await notifySuggestion(result.row);
+      const loaded = await loadBundle(result.row.id);
       if (!loaded) throw new Error('Suggestion was not visible after creation');
       return loaded;
     },

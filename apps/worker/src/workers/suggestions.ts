@@ -539,13 +539,52 @@ async function scheduleConversationReview(
           WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}
         ) < (${row.occurredAt.toISOString()}::timestamptz, ${row.id}::uuid)`,
     })
-    .returning({ id: conversationReviews.id, teamId: conversationReviews.teamId });
-  if (!review) return;
-  const delayMs = Math.max(0, quietUntil.getTime() - Date.now());
+    .returning({
+      id: conversationReviews.id,
+      teamId: conversationReviews.teamId,
+      status: conversationReviews.status,
+      quietUntil: conversationReviews.quietUntil,
+    });
+  const scheduledReview =
+    review ?? (await loadPendingConversationReview(deps.db, row.teamId, identity.key));
+  if (scheduledReview?.status !== 'pending') return;
+  const delayMs = Math.max(0, scheduledReview.quietUntil.getTime() - Date.now());
   await (io.enqueueSuggestionJob ?? queue.enqueueSuggestionJob)(
-    { scope: 'conversation_review', conversationReviewId: review.id, teamId: review.teamId },
-    { delayMs, jobIdSuffix: quietUntil.toISOString() },
+    {
+      scope: 'conversation_review',
+      conversationReviewId: scheduledReview.id,
+      teamId: scheduledReview.teamId,
+    },
+    { delayMs, jobIdSuffix: scheduledReview.quietUntil.toISOString() },
   );
+}
+
+async function loadPendingConversationReview(
+  db: Db,
+  teamId: string,
+  conversationKey: string,
+): Promise<{
+  id: string;
+  teamId: string;
+  status: string;
+  quietUntil: Date;
+} | null> {
+  const [review] = await db
+    .select({
+      id: conversationReviews.id,
+      teamId: conversationReviews.teamId,
+      status: conversationReviews.status,
+      quietUntil: conversationReviews.quietUntil,
+    })
+    .from(conversationReviews)
+    .where(
+      and(
+        eq(conversationReviews.teamId, teamId),
+        eq(conversationReviews.conversationKey, conversationKey),
+      ),
+    )
+    .limit(1);
+  return review ?? null;
 }
 
 async function processConversationReviewJob(
@@ -569,7 +608,10 @@ async function processConversationReviewJob(
   if (review.teamId !== data.teamId) {
     throw new UnrecoverableError(`conversation review ${data.conversationReviewId} team mismatch`);
   }
-  if (!last) return;
+  if (!last) {
+    await markReviewMissingAnchor(deps.db, review.id);
+    return;
+  }
   const now = new Date();
   if (review.quietUntil > now) {
     await (io.enqueueSuggestionJob ?? queue.enqueueSuggestionJob)(
@@ -614,6 +656,20 @@ async function processConversationReviewJob(
     last,
     proposalsCreated > 0 ? 'proposal' : 'no_action',
   );
+}
+
+async function markReviewMissingAnchor(db: Db, reviewId: string): Promise<void> {
+  await db
+    .update(conversationReviews)
+    .set({
+      status: 'completed',
+      metadata: sql`${conversationReviews.metadata} || ${JSON.stringify({
+        review_outcome: 'anchor_missing',
+        reviewed_at: new Date().toISOString(),
+      })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(eq(conversationReviews.id, reviewId));
 }
 
 async function markReviewComplete(

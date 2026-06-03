@@ -245,6 +245,64 @@ describe('suggestion scope', () => {
     );
   });
 
+  it('treats a repeated accepted correction proposal as already represented', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const original = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Send Acme deck',
+      summary: 'Sarah owns the deck.',
+      dedupeKey: 'conversation:accepted-correction',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send Acme deck',
+          dedupeKey: 'conversation:accepted-correction:item',
+          proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'Sarah' },
+        },
+      ],
+    });
+    await pg.exec(`
+      UPDATE agent_suggestions
+      SET status = 'accepted', resolved_at = '2026-05-27T10:00:00.000Z'
+      WHERE id = '${original.id}';
+    `);
+    const correctionInput = {
+      source: 'background' as const,
+      title: 'Send Acme deck',
+      summary: 'John owns the deck now.',
+      dedupeKey: 'conversation:accepted-correction',
+      visibility: 'team' as const,
+      items: [
+        {
+          operation: 'create' as const,
+          targetKind: 'task' as const,
+          title: 'Send Acme deck',
+          dedupeKey: 'conversation:accepted-correction:item',
+          proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'John' },
+        },
+      ],
+    };
+
+    const correction = await scope.suggestions.createOrMergeSuggestionBundle(correctionInput);
+    await pg.exec(`
+      UPDATE agent_suggestions
+      SET status = 'accepted', resolved_at = '2026-05-27T10:05:00.000Z'
+      WHERE id = '${correction.id}';
+    `);
+    const replay = await scope.suggestions.createOrMergeSuggestionBundle(correctionInput);
+
+    expect(replay.id).toBe(correction.id);
+    expect(replay.status).toBe('accepted');
+    const rows = await pg.query<{ count: string }>(`
+      SELECT count(*)::text
+      FROM agent_suggestions
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    expect(rows.rows[0]?.count).toBe('2');
+  });
+
   it('claims accept once before applying canonical changes', async () => {
     const creator = withTeam(db as never, TEAM_ID, USER_ID);
     const reviewer = withTeam(db as never, TEAM_ID, REVIEWER_ID);
