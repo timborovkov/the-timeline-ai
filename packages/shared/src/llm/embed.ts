@@ -1,8 +1,9 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { embed as aiEmbed, type EmbeddingModel } from 'ai';
+import { type EmbeddingModel } from 'ai';
 
 import { getEnv } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { embed as tracedEmbed } from '#src/llm/tracing.js';
 
 export interface EmbedInput {
   text: string;
@@ -48,6 +49,16 @@ function buildDefaultModel(modelId: string): EmbeddingModel {
 export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<EmbedResult> {
   const modelId = resolveModelId();
   const model = deps.model ?? buildDefaultModel(modelId);
-  const result = await aiEmbed({ model, value: input.text });
+  const result = await tracedEmbed(
+    { model, value: input.text },
+    {
+      name: 'llm.embed',
+      model: modelId,
+      metadata: {
+        operation: 'embed',
+        input_text_chars: input.text.length,
+      },
+    },
+  );
   return { vector: Array.from(result.embedding), model: modelId };
 }

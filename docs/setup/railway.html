@@ -116,6 +116,15 @@
         optional source-map upload variables <code>SENTRY_AUTH_TOKEN</code>,
         <code>SENTRY_ORG</code>, and <code>SENTRY_PROJECT</code>.
       </p>
+      <p>
+        For LLM observability, set <code>LANGSMITH_TRACING=true</code>,
+        <code>LANGSMITH_API_KEY</code>, and <code>LANGSMITH_PROJECT=timeline-production</code>. Keep
+        <code>LANGSMITH_ENDPOINT=https://api.smith.langchain.com</code> unless the workspace uses
+        another LangSmith region, and set <code>LANGSMITH_WORKSPACE_ID</code> when using an
+        org-scoped API key. Rich LangSmith traces include private prompt and output content from
+        timeline events, documents, meetings, and integrations, so treat LangSmith access as
+        sensitive operational access.
+      </p>
 
       <h2 id="healthchecks">6. Healthchecks</h2>
       <p>

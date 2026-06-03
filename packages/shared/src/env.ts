@@ -4,6 +4,13 @@ function nonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+function booleanString(value: unknown): boolean | undefined {
+  if (value === undefined || value === '') return undefined;
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  return value as boolean;
+}
+
 function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return {
     ...raw,
@@ -12,7 +19,7 @@ function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   };
 }
 
-const schema = z.object({
+const baseSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
 
@@ -64,6 +71,13 @@ const schema = z.object({
   // OpenRouter (Phase 3+)
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_BASE_URL: z.url().optional(),
+
+  // LangSmith LLM observability (optional)
+  LANGSMITH_TRACING: z.preprocess(booleanString, z.boolean().default(false)),
+  LANGSMITH_API_KEY: z.string().optional(),
+  LANGSMITH_PROJECT: z.string().optional(),
+  LANGSMITH_ENDPOINT: z.url().default('https://api.smith.langchain.com'),
+  LANGSMITH_WORKSPACE_ID: z.string().optional(),
 
   // Telegram (Phase 2+)
   TELEGRAM_BOT_TOKEN: z.string().optional(),
@@ -195,6 +209,21 @@ const schema = z.object({
   // integration UUID can trigger sync jobs for that team.
   GOOGLE_DRIVE_WEBHOOK_SECRET: z.string().optional(),
 });
+
+const schema = baseSchema
+  .superRefine((env, ctx) => {
+    if (env.LANGSMITH_TRACING && !env.LANGSMITH_API_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['LANGSMITH_API_KEY'],
+        message: 'LANGSMITH_API_KEY is required when LANGSMITH_TRACING=true',
+      });
+    }
+  })
+  .transform((env) => ({
+    ...env,
+    LANGSMITH_PROJECT: env.LANGSMITH_PROJECT ?? `timeline-${env.NODE_ENV}`,
+  }));
 
 export type Env = z.infer<typeof schema>;
 

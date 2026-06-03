@@ -56,4 +56,50 @@ describe('getEnv', () => {
     expect(getEnv().AUTH_SECRET).toBe('b'.repeat(32));
     expect(getEnv().AUTH_URL).toBe('https://timeline.example.com');
   });
+
+  it('defaults LangSmith tracing off with an environment-specific project', () => {
+    setBaseEnv({ NODE_ENV: 'test' });
+
+    expect(getEnv()).toMatchObject({
+      LANGSMITH_TRACING: false,
+      LANGSMITH_PROJECT: 'timeline-test',
+      LANGSMITH_ENDPOINT: 'https://api.smith.langchain.com',
+    });
+  });
+
+  it('requires a LangSmith API key when tracing is enabled', () => {
+    setBaseEnv({
+      LANGSMITH_TRACING: 'true',
+      LANGSMITH_API_KEY: undefined,
+    });
+
+    expect(() => getEnv()).toThrow(/LANGSMITH_API_KEY/);
+  });
+
+  it('accepts LangSmith production config', () => {
+    setBaseEnv({
+      NODE_ENV: 'production',
+      LANGSMITH_TRACING: 'true',
+      LANGSMITH_API_KEY: 'lsv2_test_key',
+      LANGSMITH_PROJECT: 'timeline-production',
+      LANGSMITH_ENDPOINT: 'https://eu.api.smith.langchain.com',
+      LANGSMITH_WORKSPACE_ID: 'workspace-id',
+    });
+
+    expect(getEnv()).toMatchObject({
+      LANGSMITH_TRACING: true,
+      LANGSMITH_API_KEY: 'lsv2_test_key',
+      LANGSMITH_PROJECT: 'timeline-production',
+      LANGSMITH_ENDPOINT: 'https://eu.api.smith.langchain.com',
+      LANGSMITH_WORKSPACE_ID: 'workspace-id',
+    });
+  });
+
+  it('rejects invalid LangSmith endpoint URLs', () => {
+    setBaseEnv({
+      LANGSMITH_ENDPOINT: 'not a url',
+    });
+
+    expect(() => getEnv()).toThrow(/LANGSMITH_ENDPOINT/);
+  });
 });
