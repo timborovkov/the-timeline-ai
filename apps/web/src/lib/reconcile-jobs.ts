@@ -165,7 +165,9 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
       .where(
         and(
           isNotNull(rawEvents.contentText),
+          eq(rawEvents.visibility, 'team'),
           lt(rawEvents.createdAt, staleCutoff),
+          sql`NOT (COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ? 'extraction_skipped_at')`,
           notExists(
             db
               .select({ one: sql`1` })
@@ -206,8 +208,10 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
       .where(
         and(
           isNotNull(rawEvents.contentText),
+          eq(rawEvents.visibility, 'team'),
           lt(rawEvents.createdAt, staleCutoff),
           sql`NOT (COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ? 'embedded_at')`,
+          sql`NOT (COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ? 'embedding_skipped_at')`,
           attemptsBelowCap('embed'),
         ),
       )

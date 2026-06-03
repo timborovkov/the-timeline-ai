@@ -323,6 +323,7 @@ export function DocumentDrive({
           New item visibility
         </span>
         <select
+          aria-label="New item visibility"
           value={visibility}
           onChange={(e) => {
             setVisibility(e.target.value as 'team' | 'private' | 'specific_users');

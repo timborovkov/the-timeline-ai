@@ -167,6 +167,15 @@ export async function POST(req: Request): Promise<Response> {
       }
     : undefined;
 
+  const suggestionDeps: email.SuggestionEnqueueDeps | undefined = env.REDIS_URL
+    ? {
+        async enqueueSuggestion(input) {
+          const queue = await requireRedisQueue();
+          await queue.enqueueSuggestionJob(input);
+        },
+      }
+    : undefined;
+
   try {
     const deps: email.DispatcherDeps = { db };
     if (env.INBOUND_EMAIL_DOMAIN) deps.inboundDomain = env.INBOUND_EMAIL_DOMAIN;
@@ -179,6 +188,7 @@ export async function POST(req: Request): Promise<Response> {
     if (attachmentsDeps) deps.attachments = attachmentsDeps;
     if (extractDeps) deps.extract = extractDeps;
     if (embedDeps) deps.embed = embedDeps;
+    if (suggestionDeps) deps.suggestions = suggestionDeps;
     const result = await email.handleInbound(deps, payload);
     // 503 when EVERY matched team's ingest threw — likely a DB / S3 / queue
     // outage that the original delivery never durably persisted. Returning

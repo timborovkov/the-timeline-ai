@@ -1,0 +1,163 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  acceptAllSuggestionAction,
+  acceptSuggestionItemAction,
+  rejectSuggestionItemAction,
+} from '@/app/actions/suggestions';
+
+/**
+ * Server-action tests for approval-queue suggestions. The shared suggestion
+ * scope owns durable DB behavior; these tests pin validation, auth/scope
+ * failures, action-to-scope calls, revalidation, and bounded error messages.
+ */
+
+const fakes = vi.hoisted(() => ({
+  fakeResolveScope: vi.fn(),
+  fakeRevalidatePath: vi.fn(),
+  fakeSuggestions: {
+    acceptSuggestionItem: vi.fn(),
+    rejectSuggestionItem: vi.fn(),
+    acceptAll: vi.fn(),
+  },
+}));
+
+vi.mock('@/lib/action-scope', async () => {
+  const { z } = await import('zod');
+  return {
+    resolveScope: fakes.fakeResolveScope,
+    uuidSchema: z.uuid(),
+  };
+});
+vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
+
+const ITEM_ID = '11111111-1111-4111-8111-111111111111';
+const SUGGESTION_ID = '22222222-2222-4222-8222-222222222222';
+
+const SURFACES = [
+  ['/app/approvals'],
+  ['/app/timeline'],
+  ['/app/objects', 'layout'],
+  ['/app/calendar'],
+  ['/app/tasks'],
+  ['/app/inbox'],
+] as const;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  fakes.fakeResolveScope.mockResolvedValue({
+    ok: true,
+    scope: { suggestions: fakes.fakeSuggestions },
+    userId: '33333333-3333-4333-8333-333333333333',
+  });
+  fakes.fakeSuggestions.acceptSuggestionItem.mockResolvedValue(true);
+  fakes.fakeSuggestions.rejectSuggestionItem.mockResolvedValue(true);
+  fakes.fakeSuggestions.acceptAll.mockResolvedValue({ accepted: 2, failed: 0 });
+});
+
+function expectSuggestionSurfacesRevalidated() {
+  for (const args of SURFACES) {
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(...args);
+  }
+}
+
+describe('suggestion action validation and scope', () => {
+  it('rejects malformed ids before resolving scope', async () => {
+    await expect(acceptSuggestionItemAction({ itemId: 'bad' })).resolves.toEqual({
+      error: 'Invalid suggestion item id',
+    });
+    await expect(rejectSuggestionItemAction({ itemId: 'bad' })).resolves.toEqual({
+      error: 'Invalid suggestion item id',
+    });
+    await expect(acceptAllSuggestionAction({ suggestionId: 'bad' })).resolves.toEqual({
+      error: 'Invalid suggestion id',
+    });
+
+    expect(fakes.fakeResolveScope).not.toHaveBeenCalled();
+  });
+
+  it('returns scope errors without touching the suggestion scope', async () => {
+    fakes.fakeResolveScope.mockResolvedValue({ ok: false, error: 'No active team' });
+
+    await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
+      error: 'No active team',
+    });
+
+    expect(fakes.fakeSuggestions.acceptSuggestionItem).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+describe('suggestion item actions', () => {
+  it('accepts an item and revalidates every approval-dependent surface', async () => {
+    await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeSuggestions.acceptSuggestionItem).toHaveBeenCalledWith(ITEM_ID);
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('rejects an item and revalidates every approval-dependent surface', async () => {
+    await expect(rejectSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeSuggestions.rejectSuggestionItem).toHaveBeenCalledWith(ITEM_ID);
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('returns no-longer-pending errors for already resolved items', async () => {
+    fakes.fakeSuggestions.acceptSuggestionItem.mockResolvedValue(false);
+    fakes.fakeSuggestions.rejectSuggestionItem.mockResolvedValue(false);
+
+    await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
+      error: 'Suggestion item no longer pending',
+    });
+    await expect(rejectSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
+      error: 'Suggestion item no longer pending',
+    });
+  });
+
+  it('maps accept failures and refreshes stale approval surfaces', async () => {
+    fakes.fakeSuggestions.acceptSuggestionItem.mockRejectedValue(new Error('apply failed'));
+
+    await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
+      error: 'apply failed',
+    });
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('maps reject failures without claiming success', async () => {
+    fakes.fakeSuggestions.rejectSuggestionItem.mockRejectedValue(new Error('reject failed'));
+
+    await expect(rejectSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
+      error: 'reject failed',
+    });
+  });
+});
+
+describe('accept-all suggestion action', () => {
+  it('accepts all items and revalidates every approval-dependent surface', async () => {
+    await expect(acceptAllSuggestionAction({ suggestionId: SUGGESTION_ID })).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(fakes.fakeSuggestions.acceptAll).toHaveBeenCalledWith(SUGGESTION_ID);
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('surfaces partial failure count after revalidation', async () => {
+    fakes.fakeSuggestions.acceptAll.mockResolvedValue({ accepted: 1, failed: 2 });
+
+    await expect(acceptAllSuggestionAction({ suggestionId: SUGGESTION_ID })).resolves.toEqual({
+      error: '2 item(s) failed to apply',
+    });
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('maps accept-all failures and refreshes stale approval surfaces', async () => {
+    fakes.fakeSuggestions.acceptAll.mockRejectedValue(new Error('bundle failed'));
+
+    await expect(acceptAllSuggestionAction({ suggestionId: SUGGESTION_ID })).resolves.toEqual({
+      error: 'bundle failed',
+    });
+    expectSuggestionSurfacesRevalidated();
+  });
+});

@@ -189,6 +189,7 @@ export default async function TeamSettingsPage() {
           <ul className="divide-y">
             {memberRows.map((m) => {
               const u = userMap.get(m.userId);
+              const memberLabel = u?.email ?? u?.name ?? m.userId;
               return (
                 <li key={m.userId} className="flex items-center justify-between py-3">
                   <div className="flex flex-col">
@@ -200,6 +201,7 @@ export default async function TeamSettingsPage() {
                       <form action={changeMemberRoleAction} className="flex items-center gap-2">
                         <input type="hidden" name="userId" value={m.userId} />
                         <select
+                          aria-label={`Role for ${memberLabel}`}
                           name="role"
                           defaultValue={m.role}
                           className="h-9 rounded-md border border-input bg-background px-2 text-sm"
@@ -218,7 +220,12 @@ export default async function TeamSettingsPage() {
                     {isAdmin && m.userId !== session.user.id && (isOwner || m.role === 'member') ? (
                       <form action={removeMemberAction}>
                         <input type="hidden" name="userId" value={m.userId} />
-                        <Button type="submit" variant="ghost" size="sm">
+                        <Button
+                          type="submit"
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Remove ${memberLabel}`}
+                        >
                           Remove
                         </Button>
                       </form>
@@ -281,13 +288,23 @@ export default async function TeamSettingsPage() {
                         <div className="flex items-center gap-2">
                           <form action={resendInviteAction}>
                             <input type="hidden" name="inviteId" value={invite.id} />
-                            <Button type="submit" variant="outline" size="sm">
+                            <Button
+                              type="submit"
+                              variant="outline"
+                              size="sm"
+                              aria-label={`Resend invite to ${invite.email}`}
+                            >
                               Resend
                             </Button>
                           </form>
                           <form action={revokeInviteAction}>
                             <input type="hidden" name="inviteId" value={invite.id} />
-                            <Button type="submit" variant="ghost" size="sm">
+                            <Button
+                              type="submit"
+                              variant="ghost"
+                              size="sm"
+                              aria-label={`Revoke invite to ${invite.email}`}
+                            >
                               Revoke
                             </Button>
                           </form>

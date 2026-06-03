@@ -43,6 +43,13 @@ function summarize(name: string, input: unknown, output: unknown): string {
     const count = out?.count;
     return count === undefined ? 'Listed events' : `Listed events — ${String(count)} found`;
   }
+  if (name === 'list_workspace_state') {
+    const out = output as { count?: number } | undefined;
+    const count = out?.count;
+    return count === undefined
+      ? 'Listed workspace state'
+      : `Listed workspace state — ${String(count)} result${count === 1 ? '' : 's'}`;
+  }
   if (name === 'get_event') {
     const id = typeof inp.id === 'string' ? inp.id.slice(0, 8) : '';
     return `Fetched event ${id}…`;

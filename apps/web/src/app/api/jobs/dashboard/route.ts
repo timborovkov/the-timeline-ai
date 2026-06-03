@@ -30,7 +30,11 @@ export async function GET(): Promise<Response> {
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) return Response.json({ error: 'no_active_team' }, { status: 400 });
   const scope = withTeam(db, active.teamId, session.user.id);
-  await scope.requireMembership('admin');
+  try {
+    await scope.requireMembership('admin');
+  } catch {
+    return Response.json({ error: 'forbidden' }, { status: 403 });
+  }
   const staleCutoff = new Date(Date.now() - 15 * 60 * 1000);
   const key = cacheKey(['job-dashboard', active.teamId, session.user.id]);
   const data = await cachedJson(key, 15, async () => {
@@ -69,9 +73,11 @@ export async function GET(): Promise<Response> {
         .where(
           and(
             eq(rawEvents.teamId, active.teamId),
+            eq(rawEvents.visibility, 'team'),
             isNotNull(rawEvents.contentText),
             lt(rawEvents.createdAt, staleCutoff),
             sql`NOT (COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ? 'extracted_at')`,
+            sql`NOT (COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ? 'extraction_skipped_at')`,
             notExists(
               db
                 .select({ one: sql`1` })
@@ -86,8 +92,10 @@ export async function GET(): Promise<Response> {
         .where(
           and(
             eq(rawEvents.teamId, active.teamId),
+            eq(rawEvents.visibility, 'team'),
             isNotNull(rawEvents.contentText),
             sql`NOT (COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ? 'embedded_at')`,
+            sql`NOT (COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ? 'embedding_skipped_at')`,
           ),
         ),
       db
@@ -164,7 +172,11 @@ export async function POST(req: Request): Promise<Response> {
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) return Response.json({ error: 'no_active_team' }, { status: 400 });
   const scope = withTeam(db, active.teamId, session.user.id);
-  await scope.requireMembership('admin');
+  try {
+    await scope.requireMembership('admin');
+  } catch {
+    return Response.json({ error: 'forbidden' }, { status: 403 });
+  }
   const parsed = retrySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: 'invalid_input' }, { status: 400 });
   const queue = await requireRedisQueue();

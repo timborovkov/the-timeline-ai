@@ -6,7 +6,13 @@ import * as objects from '@timeline/shared/objects';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { withTeam } from '@timeline/shared/team-scope';
 import * as time from '@timeline/shared/time';
-import { convertToModelMessages, safeValidateUIMessages, type UIMessage } from 'ai';
+import {
+  convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  safeValidateUIMessages,
+  type UIMessage,
+} from 'ai';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -64,6 +70,224 @@ const chatRequestSchema = z.object({
   // pinnedEntityId stays authoritative.
   pinnedEntityId: z.string().regex(UUID_RE).optional(),
 });
+
+function deterministicChatEnabled(): boolean {
+  return process.env.NODE_ENV !== 'production' && process.env.E2E_DETERMINISTIC_CHAT === '1';
+}
+
+function messageText(message: UIMessage | null): string {
+  if (!message) return '';
+  return message.parts
+    .map((part) => (part.type === 'text' ? part.text : ''))
+    .join(' ')
+    .trim();
+}
+
+function chooseDeterministicEvent(
+  question: string,
+  events: Awaited<ReturnType<ReturnType<typeof withTeam>['timeline']['listEvents']>>,
+) {
+  const q = question.toLowerCase();
+  if (q.includes('degraded')) return null;
+  return (
+    events.find((event) => {
+      const text = event.contentText?.toLowerCase() ?? '';
+      return text.length > 0 && q.includes(text);
+    }) ??
+    events.find((event) => {
+      const text = event.contentText?.toLowerCase() ?? '';
+      if (q.includes('specific')) return text.includes('specific');
+      if (q.includes('private')) return text.includes('private');
+      return text.includes('chat') || text.includes('team');
+    }) ??
+    null
+  );
+}
+
+function chooseByQuestion<T>(question: string, items: T[], text: (item: T) => string): T[] {
+  const q = question.toLowerCase();
+  const tokens = q
+    .split(/[^a-z0-9]+/i)
+    .filter((token) => token.length >= 4 && !['what', 'does', 'from', 'state'].includes(token));
+  const matches = items.filter((item) => {
+    const value = text(item).toLowerCase();
+    return value.length > 0 && (q.includes(value) || tokens.some((token) => value.includes(token)));
+  });
+  return matches.length > 0 ? matches : items.slice(0, 3);
+}
+
+async function deterministicWorkspaceState(input: {
+  scope: ReturnType<typeof withTeam>;
+  question: string;
+}) {
+  const [tasks, objectsList, calendarEvents] = await Promise.all([
+    input.scope.objects.listObjects({ type: 'task', archived: false, limit: 50 }),
+    input.scope.objects.listObjects({ archived: false, limit: 50 }),
+    input.scope.calendar.listCalendarEvents({
+      from: new Date('2000-01-01T00:00:00.000Z'),
+      to: new Date('2100-01-01T00:00:00.000Z'),
+      limit: 50,
+    }),
+  ]);
+  const matchedTasks = chooseByQuestion(input.question, tasks, (task) =>
+    [task.canonicalName, task.status, task.stage ?? ''].join(' '),
+  );
+  const matchedObjects = chooseByQuestion(
+    input.question,
+    objectsList.filter((item) => item.type !== 'task'),
+    (item) => [item.canonicalName, item.status, item.stage ?? ''].join(' '),
+  );
+  const matchedCalendar = chooseByQuestion(input.question, calendarEvents, (event) =>
+    [event.title, event.description ?? '', event.location ?? ''].join(' '),
+  );
+  const results = {
+    tasks: matchedTasks.map((task) => ({
+      id: task.id,
+      name: task.canonicalName,
+      status: task.status,
+      stage: task.stage,
+      dueAt: task.dueAt?.toISOString() ?? null,
+    })),
+    objects: matchedObjects.map((item) => ({
+      id: item.id,
+      name: item.canonicalName,
+      type: item.type,
+      status: item.status,
+      stage: item.stage,
+    })),
+    calendar: matchedCalendar.map((event) => ({
+      id: event.id,
+      title: event.title,
+      startAt: event.startAt.toISOString(),
+      allDay: event.allDay,
+    })),
+  };
+  const lines: string[] = [];
+  for (const task of results.tasks) {
+    lines.push(`Task: ${task.name} (${task.status}) [ent:${task.id}]`);
+  }
+  for (const item of results.objects) {
+    lines.push(
+      `Object: ${item.name} (${item.status}${item.stage ? `, stage ${item.stage}` : ''}) [ent:${item.id}]`,
+    );
+  }
+  for (const event of results.calendar) {
+    lines.push(`Calendar: ${event.title} (${event.startAt.slice(0, 10)})`);
+  }
+  return {
+    output: {
+      count: results.tasks.length + results.objects.length + results.calendar.length,
+      ...results,
+    },
+    answer:
+      lines.length > 0
+        ? lines.join('\n')
+        : "I couldn't verify any durable workspace state for that question.",
+  };
+}
+
+async function deterministicChatResponse(input: {
+  scope: ReturnType<typeof withTeam>;
+  sessionId: string | undefined;
+  latestUserMessage: UIMessage | null;
+  teamId: string;
+  userId: string;
+}): Promise<Response> {
+  const question = messageText(input.latestUserMessage);
+  const wantsWorkspaceState =
+    /\b(task|calendar|object|status|stage|durable|workspace state)\b/i.test(question) &&
+    !/\btimeline\b/i.test(question);
+  const toolCallId = wantsWorkspaceState ? 'deterministic-workspace-state' : 'deterministic-search';
+  const textId = 'deterministic-answer';
+  const toolInput = { query: question };
+  const toolName = wantsWorkspaceState ? 'list_workspace_state' : 'search_timeline';
+  let toolOutput: Record<string, unknown>;
+  let answer: string;
+  if (wantsWorkspaceState) {
+    const state = await deterministicWorkspaceState({ scope: input.scope, question });
+    toolOutput = state.output;
+    answer = state.answer;
+  } else {
+    const visibleEvents = await input.scope.timeline.listEvents({ limit: 50 });
+    const match = chooseDeterministicEvent(question, visibleEvents);
+    toolOutput = match
+      ? {
+          count: 1,
+          results: [
+            {
+              eventId: match.id,
+              event_id: match.id,
+              snippet: match.contentText ?? '',
+              source: match.source,
+            },
+          ],
+        }
+      : { count: 0, results: [] };
+    answer = match
+      ? `${match.contentText ?? 'Found a matching timeline event.'} [ev:${match.id}]`
+      : "I couldn't verify that from the accessible timeline.";
+  }
+
+  if (input.sessionId) {
+    const turnsToPersist: objects.AppendChatMessageInput[] = [];
+    if (input.latestUserMessage) {
+      turnsToPersist.push({
+        role: 'user',
+        authorUserId: input.userId,
+        content: { ui_message: input.latestUserMessage },
+      });
+    }
+    turnsToPersist.push({
+      role: 'assistant',
+      content: {
+        text: answer,
+        tool_calls: [
+          {
+            toolCallId,
+            toolName,
+            input: toolInput,
+            output: toolOutput,
+          },
+        ],
+        finish_reason: 'stop',
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        prompt_version: agent.AGENT_PROMPT_VERSION,
+      },
+    });
+    await objects
+      .appendChatMessages(db, input.scope, input.sessionId, turnsToPersist)
+      .catch((err: unknown) => {
+        log.warn(
+          { err, sessionId: input.sessionId, teamId: input.teamId, userId: input.userId },
+          'deterministic chat session append failed',
+        );
+      });
+  }
+
+  const stream = createUIMessageStream({
+    execute: ({ writer }) => {
+      writer.write({ type: 'start' });
+      writer.write({
+        type: 'tool-input-available',
+        toolCallId,
+        toolName,
+        input: toolInput,
+      });
+      writer.write({
+        type: 'tool-output-available',
+        toolCallId,
+        output: toolOutput,
+      });
+      writer.write({ type: 'text-start', id: textId });
+      writer.write({ type: 'text-delta', id: textId, delta: answer });
+      writer.write({ type: 'text-end', id: textId });
+      writer.write({ type: 'finish', finishReason: 'stop' });
+    },
+  });
+  const response = createUIMessageStreamResponse({ stream });
+  if (input.sessionId) response.headers.set('x-tl-session-id', input.sessionId);
+  return response;
+}
 
 function tokenUsage(usage: unknown): {
   inputTokens?: number;
@@ -233,6 +457,18 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, error: 'invalid_messages' }, { status: 400 });
   }
   const uiMessages = validation.data;
+  const latestUserMessage = [...uiMessages].reverse().find((m) => m.role === 'user') ?? null;
+
+  if (deterministicChatEnabled()) {
+    return deterministicChatResponse({
+      scope,
+      sessionId,
+      latestUserMessage,
+      teamId: active.teamId,
+      userId: session.user.id,
+    });
+  }
+
   const messages = await convertToModelMessages(uiMessages);
   const modelId = llm.resolveAgentModelId();
   const memory = await llm.compressMessagesForContext({
@@ -261,7 +497,6 @@ export async function POST(req: Request): Promise<Response> {
   // persist only the delta (this user turn + the new assistant turn),
   // because useChat re-sends the full transcript every request and the
   // earlier user turns were persisted on their respective calls.
-  const latestUserMessage = [...uiMessages].reverse().find((m) => m.role === 'user') ?? null;
   trackProductEventBestEffort(session.user.id, 'chat_message_sent', {
     teamId: active.teamId,
     userId: session.user.id,
