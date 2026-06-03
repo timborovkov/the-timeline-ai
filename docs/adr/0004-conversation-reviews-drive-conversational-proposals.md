@@ -20,6 +20,12 @@ team-visible conversation reviews; they are skipped before the proposal LLM
 boundary. Review scheduling is debounced per conversation key and only advances
 to newer raw events, so duplicate or delayed source jobs cannot move the review
 anchor backward.
+For Slack, thread reviews use the Slack thread timestamp as the conversation
+key, include the root message as evidence even when the original root event was
+captured before Slack supplied thread metadata, and keep unthreaded channel
+reviews from absorbing replies from unrelated threads. When a reply arrives for
+an initially unthreaded root, the pending channel review for that root is
+superseded by the thread review.
 
 The first implementation should prioritize proposal quality over retrieval
 enrichment, while keeping the evidence-window helper reusable by retrieval.

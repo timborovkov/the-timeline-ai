@@ -559,6 +559,7 @@ async function scheduleConversationReview(
     },
     { delayMs, jobIdSuffix: scheduledReview.quietUntil.toISOString() },
   );
+  await supersedePendingSlackChannelReviewForThreadReply(deps.db, row);
 }
 
 async function loadPendingConversationReview(
@@ -610,6 +611,7 @@ async function processConversationReviewJob(
   if (review.teamId !== data.teamId) {
     throw new UnrecoverableError(`conversation review ${data.conversationReviewId} team mismatch`);
   }
+  if (review.status !== 'pending') return;
   if (!last) {
     await markReviewMissingAnchor(deps.db, review.id);
     return;
@@ -658,6 +660,49 @@ async function processConversationReviewJob(
     last,
     proposalsCreated > 0 ? 'proposal' : 'no_action',
   );
+}
+
+async function supersedePendingSlackChannelReviewForThreadReply(
+  db: Db,
+  row: typeof rawEvents.$inferSelect,
+): Promise<void> {
+  const thread = conversationReview.slackThreadInfoForRawEvent(row);
+  if (!thread) return;
+
+  const channelKey = conversationReview.slackChannelConversationKey({
+    teamId: row.teamId,
+    workspaceId: thread.workspaceId,
+    channelId: thread.channelId,
+  });
+  const threadKey = `slack:${row.teamId}:${thread.workspaceId}:${thread.channelId}:thread:${thread.threadTs}`;
+
+  await db
+    .update(conversationReviews)
+    .set({
+      status: 'completed',
+      metadata: sql`${conversationReviews.metadata} || ${JSON.stringify({
+        review_outcome: 'superseded_by_thread_review',
+        superseded_by_conversation_key: threadKey,
+        reviewed_at: new Date().toISOString(),
+      })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(conversationReviews.teamId, row.teamId),
+        eq(conversationReviews.conversationKey, channelKey),
+        eq(conversationReviews.status, 'pending'),
+        sql`${conversationReviews.lastRawEventId} IN (
+          SELECT ${rawEvents.id}
+          FROM ${rawEvents}
+          WHERE ${rawEvents.teamId} = ${row.teamId}
+            AND ${rawEvents.source} = 'slack'
+            AND ${rawEvents.sourceMetadata} ->> 'slack_workspace_id' = ${thread.workspaceId}
+            AND ${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${thread.channelId}
+            AND ${rawEvents.sourceMetadata} ->> 'slack_message_ts' = ${thread.threadTs}
+        )`,
+      ),
+    );
 }
 
 async function markReviewMissingAnchor(db: Db, reviewId: string): Promise<void> {

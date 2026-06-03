@@ -38,6 +38,12 @@ export interface ConversationLinkedContextEvent extends ConversationEvidenceEven
   linkedObjects: { id: string; name: string; type: string }[];
 }
 
+export interface SlackThreadInfo {
+  workspaceId: string;
+  channelId: string;
+  threadTs: string;
+}
+
 function metadataObject(value: unknown): Metadata {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Metadata) : {};
 }
@@ -67,8 +73,7 @@ export function conversationIdentityForRawEvent(
     const channelId = metadataString(meta, 'slack_channel_id');
     if (!workspaceId || !channelId) return null;
     const threadTs = metadataString(meta, 'slack_thread_ts');
-    const messageTs = metadataString(meta, 'slack_message_ts');
-    if (threadTs && threadTs !== messageTs) {
+    if (threadTs) {
       return {
         key: `slack:${row.teamId}:${workspaceId}:${channelId}:thread:${threadTs}`,
         source: 'slack',
@@ -82,6 +87,27 @@ export function conversationIdentityForRawEvent(
     };
   }
   return null;
+}
+
+export function slackThreadInfoForRawEvent(
+  row: Pick<ConversationRawEvent, 'source' | 'sourceMetadata'>,
+): SlackThreadInfo | null {
+  if (row.source !== 'slack') return null;
+  const meta = metadataObject(row.sourceMetadata);
+  const workspaceId = metadataString(meta, 'slack_workspace_id');
+  const channelId = metadataString(meta, 'slack_channel_id');
+  const threadTs = metadataString(meta, 'slack_thread_ts');
+  const messageTs = metadataString(meta, 'slack_message_ts');
+  if (!workspaceId || !channelId || !threadTs || threadTs === messageTs) return null;
+  return { workspaceId, channelId, threadTs };
+}
+
+export function slackChannelConversationKey(args: {
+  teamId: string;
+  workspaceId: string;
+  channelId: string;
+}): string {
+  return `slack:${args.teamId}:${args.workspaceId}:${args.channelId}`;
 }
 
 function conversationCondition(identity: ConversationIdentity) {
@@ -109,6 +135,8 @@ function conversationCondition(identity: ConversationIdentity) {
       sql`${rawEvents.sourceMetadata} ->> 'slack_message_ts' = ${threadTs}`,
     );
     if (threadCondition) base.push(threadCondition);
+  } else {
+    base.push(sql`${rawEvents.sourceMetadata} ->> 'slack_thread_ts' IS NULL`);
   }
   return and(...base);
 }
