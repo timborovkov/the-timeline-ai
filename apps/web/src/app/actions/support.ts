@@ -11,6 +11,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { clientIpFromHeaders } from '@/lib/request-ip';
+import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { turnstileHostnameFromHeaders, verifyTurnstileToken } from '@/lib/turnstile';
 
@@ -34,58 +35,99 @@ export async function submitSupportRequestAction(
   _prev: SupportFormState,
   formData: FormData,
 ): Promise<SupportFormState> {
-  const parsed = supportSchema.safeParse({
-    requestType: formData.get('requestType'),
-    name: formData.get('name'),
-    email: formData.get('email'),
-    message: formData.get('message'),
-    currentPage: formData.get('currentPage') ?? undefined,
-    company: formData.get('company') ?? '',
-  });
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? 'Check the form and try again.' };
-  }
+  return runSentryServerAction('submit_support_request', async () => {
+    const parsed = supportSchema.safeParse({
+      requestType: formData.get('requestType'),
+      name: formData.get('name'),
+      email: formData.get('email'),
+      message: formData.get('message'),
+      currentPage: formData.get('currentPage') ?? undefined,
+      company: formData.get('company') ?? '',
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? 'Check the form and try again.' };
+    }
 
-  const h = await headers();
-  const ip = clientIpFromHeaders(h);
-  const ipKey = ip ?? 'unknown';
-  const ipLimited = await rateLimit.checkRateLimit({
-    key: rateLimit.rateLimitKey('support', 'ip', ipKey),
-    ...rateLimit.RATE_LIMITS.supportForm,
-  });
-  if (!ipLimited.ok) {
-    return {
-      error: `Too many requests. Try again in ${Math.ceil(ipLimited.retryAfterMs / 1000)}s.`,
-    };
-  }
+    const h = await headers();
+    const ip = clientIpFromHeaders(h);
+    const ipKey = ip ?? 'unknown';
+    const ipLimited = await rateLimit.checkRateLimit({
+      key: rateLimit.rateLimitKey('support', 'ip', ipKey),
+      ...rateLimit.RATE_LIMITS.supportForm,
+    });
+    if (!ipLimited.ok) {
+      return {
+        error: `Too many requests. Try again in ${Math.ceil(ipLimited.retryAfterMs / 1000)}s.`,
+      };
+    }
 
-  const turnstileOk = await verifyTurnstileToken({
-    token: formData.get('cf-turnstile-response'),
-    remoteIp: ip,
-    expectedAction: 'support',
-    expectedHostname: turnstileHostnameFromHeaders(h),
-  });
-  if (!turnstileOk) return { error: 'Verification failed. Refresh and try again.' };
+    const turnstileOk = await verifyTurnstileToken({
+      token: formData.get('cf-turnstile-response'),
+      remoteIp: ip,
+      expectedAction: 'support',
+      expectedHostname: turnstileHostnameFromHeaders(h),
+    });
+    if (!turnstileOk) return { error: 'Verification failed. Refresh and try again.' };
 
-  const session = await auth();
-  const userId = session ? session.user.id : null;
-  const active = userId ? (await resolveActiveTeam(userId)).active : null;
-  const identity = userId ?? parsed.data.email;
-  const currentPage = parsed.data.currentPage === '' ? null : (parsed.data.currentPage ?? null);
-  const identityLimited = await rateLimit.checkRateLimit({
-    key: rateLimit.rateLimitKey('support', 'identity', identity),
-    ...rateLimit.RATE_LIMITS.supportForm,
-  });
-  if (!identityLimited.ok) {
-    return {
-      error: `Too many requests. Try again in ${Math.ceil(identityLimited.retryAfterMs / 1000)}s.`,
-    };
-  }
+    const session = await auth();
+    const userId = session ? session.user.id : null;
+    const active = userId ? (await resolveActiveTeam(userId)).active : null;
+    const identity = userId ?? parsed.data.email;
+    const currentPage = parsed.data.currentPage === '' ? null : (parsed.data.currentPage ?? null);
+    const identityLimited = await rateLimit.checkRateLimit({
+      key: rateLimit.rateLimitKey('support', 'identity', identity),
+      ...rateLimit.RATE_LIMITS.supportForm,
+    });
+    if (!identityLimited.ok) {
+      return {
+        error: `Too many requests. Try again in ${Math.ceil(identityLimited.retryAfterMs / 1000)}s.`,
+      };
+    }
 
-  const env = getEnv();
-  const row = await db
-    .insert(supportRequests)
-    .values({
+    const env = getEnv();
+    const row = await db
+      .insert(supportRequests)
+      .values({
+        requestType: parsed.data.requestType,
+        name: parsed.data.name,
+        email: parsed.data.email,
+        message: parsed.data.message,
+        currentPage,
+        userId,
+        teamId: active?.teamId ?? null,
+        context: {
+          userEmail: session ? session.user.email : null,
+          userName: session ? session.user.name : null,
+          teamName: active?.teamName ?? null,
+          teamSlug: active?.teamSlug ?? null,
+          teamRole: active?.role ?? null,
+          ip: ipKey,
+          userAgent: h.get('user-agent'),
+          referer: h.get('referer'),
+        },
+      })
+      .returning({ id: supportRequests.id });
+
+    const requestId = row[0]?.id;
+    if (!requestId) return { error: 'Could not save support request. Please try again.' };
+
+    const fromEmail = env.TRANSACTIONAL_EMAIL_FROM ?? env.INVITE_EMAIL_FROM;
+    if (!env.SUPPORT_EMAIL || !env.POSTMARK_SERVER_TOKEN || !fromEmail) {
+      await db
+        .update(supportRequests)
+        .set({ emailError: 'Support delivery is not configured.' })
+        .where(eq(supportRequests.id, requestId));
+      return {
+        error:
+          'We saved your request, but support email delivery is not configured. The team can inspect it in the database.',
+      };
+    }
+
+    const sent = await sendPostmarkSupportEmail({
+      token: env.POSTMARK_SERVER_TOKEN,
+      fromEmail,
+      supportEmail: env.SUPPORT_EMAIL,
+      requestId,
       requestType: parsed.data.requestType,
       name: parsed.data.name,
       email: parsed.data.email,
@@ -93,66 +135,27 @@ export async function submitSupportRequestAction(
       currentPage,
       userId,
       teamId: active?.teamId ?? null,
-      context: {
-        userEmail: session ? session.user.email : null,
-        userName: session ? session.user.name : null,
-        teamName: active?.teamName ?? null,
-        teamSlug: active?.teamSlug ?? null,
-        teamRole: active?.role ?? null,
-        ip: ipKey,
-        userAgent: h.get('user-agent'),
-        referer: h.get('referer'),
-      },
-    })
-    .returning({ id: supportRequests.id });
+      teamName: active?.teamName ?? null,
+    });
 
-  const requestId = row[0]?.id;
-  if (!requestId) return { error: 'Could not save support request. Please try again.' };
+    if (!sent.ok) {
+      await db
+        .update(supportRequests)
+        .set({ emailError: sent.error })
+        .where(eq(supportRequests.id, requestId));
+      return {
+        error:
+          'We saved your request, but email delivery failed. The team can still inspect it in the database.',
+      };
+    }
 
-  const fromEmail = env.TRANSACTIONAL_EMAIL_FROM ?? env.INVITE_EMAIL_FROM;
-  if (!env.SUPPORT_EMAIL || !env.POSTMARK_SERVER_TOKEN || !fromEmail) {
     await db
       .update(supportRequests)
-      .set({ emailError: 'Support delivery is not configured.' })
+      .set({ emailSentAt: new Date(), emailError: null })
       .where(eq(supportRequests.id, requestId));
-    return {
-      error:
-        'We saved your request, but support email delivery is not configured. The team can inspect it in the database.',
-    };
-  }
 
-  const sent = await sendPostmarkSupportEmail({
-    token: env.POSTMARK_SERVER_TOKEN,
-    fromEmail,
-    supportEmail: env.SUPPORT_EMAIL,
-    requestId,
-    requestType: parsed.data.requestType,
-    name: parsed.data.name,
-    email: parsed.data.email,
-    message: parsed.data.message,
-    currentPage,
-    userId,
-    teamId: active?.teamId ?? null,
-    teamName: active?.teamName ?? null,
+    return { ok: true };
   });
-
-  if (!sent.ok) {
-    await db
-      .update(supportRequests)
-      .set({ emailError: sent.error })
-      .where(eq(supportRequests.id, requestId));
-    return {
-      error:
-        'We saved your request, but email delivery failed. The team can still inspect it in the database.',
-    };
-  }
-
-  await db
-    .update(supportRequests)
-    .set({ emailSentAt: new Date(), emailError: null })
-    .where(eq(supportRequests.id, requestId));
-
-  return { ok: true };
 }
 
 async function sendPostmarkSupportEmail(input: {

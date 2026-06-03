@@ -7,17 +7,17 @@ contracts, not private implementation structure.
 ## Test Status Overview
 
 Last checked in this branch: full `pnpm validate` passes after syncing the
-React Doctor cleanup with the Sentry and LangSmith coverage branches. Current
-suite shape:
+React Doctor cleanup with the latest onboarding and Sentry coverage from
+`main`. Current suite shape:
 
 - DB Vitest: 1 file / 5 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 63 files / 518 tests plus 1 skipped, including PGlite
+- Shared Vitest: 63 files / 519 tests plus 1 skipped, including PGlite
   integration/eval coverage plus queue, S3, and onboarding contracts.
-- Web Vitest: 68 files / 344 tests, including route/action/component coverage
+- Web Vitest: 69 files / 346 tests, including route/action/component coverage
   for core recovery, onboarding, object sections, and first high-value UI
   states.
-- Worker Vitest: 10 files / 74 tests, including extract, transcribe,
+- Worker Vitest: 10 files / 75 tests, including extract, transcribe,
   suggestions, embed, document extract, meeting finalize, janitor, and overdue
   processors.
 - Playwright: 13 local core E2E journeys plus 1 production-ish smoke journey.

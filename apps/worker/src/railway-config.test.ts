@@ -18,4 +18,19 @@ describe('Railway worker config', () => {
     expect(config.deploy?.startCommand).not.toContain('pnpm');
     expect(config.deploy?.startCommand).not.toContain('NODE_ENV=staging');
   });
+
+  it('passes Sentry runtime and build variables through Docker app profile', () => {
+    const compose = readFileSync(new URL('../../../docker-compose.yml', import.meta.url), 'utf8');
+    const dockerfile = readFileSync(
+      new URL('../../../docker/worker.Dockerfile', import.meta.url),
+      'utf8',
+    );
+
+    expect(compose).toContain('dockerfile: docker/worker.Dockerfile');
+    expect(compose).toContain('SENTRY_DSN: ${SENTRY_DSN:-}');
+    expect(compose).toContain('SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}');
+    expect(compose).toContain('SENTRY_RELEASE: ${SENTRY_RELEASE:-}');
+    expect(dockerfile).toContain('ARG SENTRY_AUTH_TOKEN');
+    expect(dockerfile).toContain('ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN');
+  });
 });

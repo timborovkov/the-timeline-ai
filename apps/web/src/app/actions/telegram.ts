@@ -11,6 +11,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
+import { runSentryServerAction } from '@/lib/sentry-action';
 
 const LINK_TOKEN_TTL_MS = 15 * 60 * 1000;
 
@@ -85,52 +86,60 @@ export async function generatePersonalLinkTokenAction(
   prev: GenerateLinkTokenState,
   formData: FormData,
 ): Promise<GenerateLinkTokenState> {
-  return generateLinkTokenAction('personal', prev, formData);
+  return runSentryServerAction('generate_personal_link_token', async () => {
+    return generateLinkTokenAction('personal', prev, formData);
+  });
 }
 
 export async function generateGroupLinkTokenAction(
   prev: GenerateLinkTokenState,
   formData: FormData,
 ): Promise<GenerateLinkTokenState> {
-  return generateLinkTokenAction('group', prev, formData);
+  return runSentryServerAction('generate_group_link_token', async () => {
+    return generateLinkTokenAction('group', prev, formData);
+  });
 }
 
 export async function revokeLinkTokenAction(formData: FormData): Promise<void> {
-  const session = await auth();
-  if (!session?.user) return;
-  const { active } = await resolveActiveTeam(session.user.id);
-  if (!active) return;
-  const id = formData.get('id');
-  if (typeof id !== 'string') return;
+  return runSentryServerAction('revoke_link_token', async () => {
+    const session = await auth();
+    if (!session?.user) return;
+    const { active } = await resolveActiveTeam(session.user.id);
+    if (!active) return;
+    const id = formData.get('id');
+    if (typeof id !== 'string') return;
 
-  const scope = withTeam(db, active.teamId, session.user.id);
-  try {
-    await scope.requireMembership('admin');
-  } catch {
-    return;
-  }
-  await db
-    .delete(telegramLinkTokens)
-    .where(and(eq(telegramLinkTokens.id, id), eq(telegramLinkTokens.teamId, active.teamId)));
-  revalidatePath('/app/team/telegram');
+    const scope = withTeam(db, active.teamId, session.user.id);
+    try {
+      await scope.requireMembership('admin');
+    } catch {
+      return;
+    }
+    await db
+      .delete(telegramLinkTokens)
+      .where(and(eq(telegramLinkTokens.id, id), eq(telegramLinkTokens.teamId, active.teamId)));
+    revalidatePath('/app/team/telegram');
+  });
 }
 
 export async function unbindChatAction(formData: FormData): Promise<void> {
-  const session = await auth();
-  if (!session?.user) return;
-  const { active } = await resolveActiveTeam(session.user.id);
-  if (!active) return;
-  const id = formData.get('id');
-  if (typeof id !== 'string') return;
+  return runSentryServerAction('unbind_chat', async () => {
+    const session = await auth();
+    if (!session?.user) return;
+    const { active } = await resolveActiveTeam(session.user.id);
+    if (!active) return;
+    const id = formData.get('id');
+    if (typeof id !== 'string') return;
 
-  const scope = withTeam(db, active.teamId, session.user.id);
-  try {
-    await scope.requireMembership('admin');
-  } catch {
-    return;
-  }
-  await db
-    .delete(telegramChatBindings)
-    .where(and(eq(telegramChatBindings.id, id), eq(telegramChatBindings.teamId, active.teamId)));
-  revalidatePath('/app/team/telegram');
+    const scope = withTeam(db, active.teamId, session.user.id);
+    try {
+      await scope.requireMembership('admin');
+    } catch {
+      return;
+    }
+    await db
+      .delete(telegramChatBindings)
+      .where(and(eq(telegramChatBindings.id, id), eq(telegramChatBindings.teamId, active.teamId)));
+    revalidatePath('/app/team/telegram');
+  });
 }

@@ -22,6 +22,14 @@ COPY --from=deps /app/ .
 COPY --from=pruner /app/out/full/ .
 # turbo prune excludes root-level config; copy it explicitly
 COPY --from=pruner /app/tsconfig.base.json ./tsconfig.base.json
+ARG SENTRY_AUTH_TOKEN
+ARG SENTRY_ORG
+ARG SENTRY_PROJECT
+ARG SENTRY_RELEASE
+ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN
+ENV SENTRY_ORG=$SENTRY_ORG
+ENV SENTRY_PROJECT=$SENTRY_PROJECT
+ENV SENTRY_RELEASE=$SENTRY_RELEASE
 RUN pnpm --filter @timeline/db build
 RUN pnpm --filter @timeline/shared build
 RUN pnpm --filter @timeline/worker build

@@ -13,7 +13,7 @@ import {
   telegramUserTeams,
   userOnboardingDismissals,
 } from '@timeline/db';
-import { and, count, eq, isNull } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull } from 'drizzle-orm';
 
 import type { TeamRole } from '#src/team-scope.js';
 
@@ -27,6 +27,16 @@ export const ONBOARDING_STEPS = [
 ] as const;
 
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
+
+const CAPTURE_EVENT_SOURCES = [
+  'web',
+  'telegram',
+  'email',
+  'meeting',
+  'integration',
+  'calendar',
+  'slack',
+] as const;
 
 export interface OnboardingStepState {
   step: OnboardingStep;
@@ -78,7 +88,7 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
       const [
         completions,
         dismissals,
-        webEvents,
+        capturedEvents,
         emailEvents,
         telegramLinks,
         telegramBindings,
@@ -107,7 +117,9 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
         db
           .select({ total: count() })
           .from(rawEvents)
-          .where(and(eq(rawEvents.teamId, teamId), eq(rawEvents.source, 'web'))),
+          .where(
+            and(eq(rawEvents.teamId, teamId), inArray(rawEvents.source, CAPTURE_EVENT_SOURCES)),
+          ),
         db
           .select({ total: count() })
           .from(rawEvents)
@@ -163,7 +175,7 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
         teamMcpServers: firstCount(teamMcpServers),
       };
       const inferred = new Set<OnboardingStep>();
-      if (firstCount(webEvents) > 0) inferred.add('first_note');
+      if (firstCount(capturedEvents) > 0) inferred.add('first_note');
       if (
         connectionCounts.telegramLinkTokens +
           connectionCounts.telegramChatBindings +
