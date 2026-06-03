@@ -3,6 +3,7 @@ import { type ModelMessage } from 'ai';
 
 import { AGENT_PROMPT_VERSION, buildSystemPrompt } from '#src/agent/system-prompt.js';
 import { buildAgentTools, type AgentToolErrorReporter } from '#src/agent/tools.js';
+import { parseCitations } from '#src/citation.js';
 import { getEnv } from '#src/env.js';
 import { streamChat, type ChatDeps } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
@@ -35,10 +36,37 @@ export interface AskAgentDeps extends ChatDeps {
   onAgentError?: ((err: unknown) => void) | undefined;
 }
 
+export function formatBotPlainTextAnswer(text: string): string {
+  const withoutCitations = parseCitations(text)
+    .flatMap((part) => (part.type === 'text' ? [part.value] : []))
+    .join('');
+
+  return withoutCitations
+    .replace(/\r\n?/g, '\n')
+    .replace(/^```[^\n]*\n?/gm, '')
+    .replace(/^```$/gm, '')
+    .replace(/`([^`\n]+)`/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)')
+    .replace(/<([^>|]+)\|([^>]+)>/g, '$2 ($1)')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^>\s?/gm, '')
+    .replace(/(^|\s)\*\*\*([^*\n][\s\S]*?[^*\n])\*\*\*(?=\s|$|[.,!?;:])/g, '$1$2')
+    .replace(/(^|\s)\*\*([^*\n][\s\S]*?[^*\n])\*\*(?=\s|$|[.,!?;:])/g, '$1$2')
+    .replace(/(^|\s)__([^_\n][\s\S]*?[^_\n])__(?=\s|$|[.,!?;:])/g, '$1$2')
+    .replace(/(^|\s)\*([^*\n][^*\n]*?[^*\n])\*(?=\s|$|[.,!?;:])/g, '$1$2')
+    .replace(/(^|\s)_([^_\n][^_\n]*?[^_\n])_(?=\s|$|[.,!?;:])/g, '$1$2')
+    .replace(/[ \t]+([.,!?;:])/g, '$1')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 /**
  * Non-streaming wrapper around the same agent pipeline `/api/chat` uses.
- * Built for surfaces that can't pipe an AI-SDK stream (Telegram, email, cron) —
- * collects the full text and returns it, truncated to Telegram's 4096-char
+ * Built for surfaces that can't pipe an AI-SDK stream (Telegram, Slack, email,
+ * cron) — collects the full text, strips web-chat citation/Markdown affordances
+ * for plain bot messages, and returns it truncated to Telegram's 4096-char
  * message limit.
  *
  * Team isolation is enforced by the TeamScope (the agent tools never see a
@@ -106,14 +134,18 @@ export async function askAgent(
     if (trimmed.length === 0) {
       return { ok: false, error: 'failed' };
     }
-    if (trimmed.length > TELEGRAM_MAX) {
+    const plainAnswer = formatBotPlainTextAnswer(trimmed);
+    if (plainAnswer.length === 0) {
+      return { ok: false, error: 'failed' };
+    }
+    if (plainAnswer.length > TELEGRAM_MAX) {
       return {
         ok: true,
-        answer: trimmed.slice(0, TELEGRAM_MAX - 1) + '…',
+        answer: plainAnswer.slice(0, TELEGRAM_MAX - 1) + '…',
         truncated: true,
       };
     }
-    return { ok: true, answer: trimmed, truncated: false };
+    return { ok: true, answer: plainAnswer, truncated: false };
   } catch (err) {
     log.error({ err, teamId: input.teamId }, 'askAgent failed');
     deps.onAgentError?.(err);

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { LanguageModel } from 'ai';
 
-import { askAgent } from '#src/agent/ask.js';
+import { askAgent, formatBotPlainTextAnswer } from '#src/agent/ask.js';
 import { resetEnvForTests } from '#src/env.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -18,6 +18,8 @@ const ENV_BACKUP = { ...process.env };
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const OUTSIDER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const EVENT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const ENTITY_ID = '99999999-9999-4999-8999-999999999999';
 
 type Db = ReturnType<typeof drizzle>;
 
@@ -62,6 +64,36 @@ function makeFailingModel(): LanguageModel {
     doStream: (() => Promise.reject(new Error('model down'))) as never,
   });
 }
+
+describe('formatBotPlainTextAnswer', () => {
+  it('removes chat citations and Markdown emphasis for bot delivery', () => {
+    expect(
+      formatBotPlainTextAnswer(
+        `Telegram-keskustelun perusteella ensi maanantaina on palaveri **DFK:n** kanssa - klo 10 Bulevardilla [ev:${EVENT_ID}] [ent:${ENTITY_ID}].`,
+      ),
+    ).toBe(
+      'Telegram-keskustelun perusteella ensi maanantaina on palaveri DFK:n kanssa - klo 10 Bulevardilla.',
+    );
+  });
+
+  it('keeps useful plain text from code, links, and simple lists', () => {
+    expect(
+      formatBotPlainTextAnswer(
+        [
+          '### Summary',
+          '- `Acme` needs the _SOC2_ packet: [folder](https://example.com/docs).',
+          `- Owner is **Ada** [ev:${EVENT_ID}].`,
+        ].join('\n'),
+      ),
+    ).toBe(
+      [
+        'Summary',
+        '- Acme needs the SOC2 packet: folder (https://example.com/docs).',
+        '- Owner is Ada.',
+      ].join('\n'),
+    );
+  });
+});
 
 describe('askAgent', () => {
   let pg: PGlite;
@@ -194,5 +226,27 @@ describe('askAgent', () => {
       expect(result.answer).toHaveLength(4096);
       expect(result.answer.endsWith('…')).toBe(true);
     }
+  });
+
+  it('returns plain bot text instead of web-chat citations and Markdown', async () => {
+    const result = await askAgent(
+      {
+        db: db as never,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        question: 'meeting?',
+      },
+      {
+        model: makeStreamModel(
+          `You have a meeting with **DFK:n** at 10 on Monday [ev:${EVENT_ID}].`,
+        ),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      answer: 'You have a meeting with DFK:n at 10 on Monday.',
+      truncated: false,
+    });
   });
 });
