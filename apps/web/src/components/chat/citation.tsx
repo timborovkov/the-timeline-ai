@@ -42,7 +42,7 @@ export function CitationText({ text }: Props) {
         switch (block.type) {
           case 'ul':
             return (
-              <ul key={key} className="ml-5 list-outside space-y-1 marker:text-fg-dim">
+              <ul key={key} className="ml-5 list-disc space-y-1 marker:text-fg-dim">
                 {block.items.map((item, itemIndex) => (
                   <li key={`${key}-${String(itemIndex)}`}>
                     {renderInline(item, `${key}-${String(itemIndex)}`)}
@@ -52,10 +52,14 @@ export function CitationText({ text }: Props) {
             );
           case 'ol':
             return (
-              <ol key={key} className="ml-5 list-outside space-y-1 marker:text-fg-dim">
+              <ol
+                key={key}
+                start={block.items[0]?.value}
+                className="ml-5 list-decimal space-y-1 marker:text-fg-dim"
+              >
                 {block.items.map((item, itemIndex) => (
-                  <li key={`${key}-${String(itemIndex)}`}>
-                    {renderInline(item, `${key}-${String(itemIndex)}`)}
+                  <li key={`${key}-${String(itemIndex)}`} value={item.value}>
+                    {renderInline(item.text, `${key}-${String(itemIndex)}`)}
                   </li>
                 ))}
               </ol>
@@ -77,7 +81,8 @@ export function CitationText({ text }: Props) {
 type MarkdownBlock =
   | { type: 'paragraph'; text: string }
   | { type: 'heading'; text: string }
-  | { type: 'ul' | 'ol'; items: string[] };
+  | { type: 'ul'; items: string[] }
+  | { type: 'ol'; items: { value: number; text: string }[] };
 
 function parseMarkdownBlocks(text: string): MarkdownBlock[] {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
@@ -98,20 +103,23 @@ function parseMarkdownBlocks(text: string): MarkdownBlock[] {
       continue;
     }
 
-    if (/^\s*[-*]\s+/.test(line)) {
+    if (/^[-*]\s+/.test(line)) {
       const items: string[] = [];
-      while (index < lines.length && /^\s*[-*]\s+/.test(lines[index] ?? '')) {
-        items.push((lines[index] ?? '').replace(/^\s*[-*]\s+/, '').trim());
+      while (index < lines.length && /^[-*]\s+/.test(lines[index] ?? '')) {
+        items.push((lines[index] ?? '').replace(/^[-*]\s+/, '').trim());
         index += 1;
       }
       blocks.push({ type: 'ul', items });
       continue;
     }
 
-    if (/^\s*\d+[.)]\s+/.test(line)) {
-      const items: string[] = [];
-      while (index < lines.length && /^\s*\d+[.)]\s+/.test(lines[index] ?? '')) {
-        items.push((lines[index] ?? '').replace(/^\s*\d+[.)]\s+/, '').trim());
+    if (/^1[.)]\s+/.test(line)) {
+      const items: { value: number; text: string }[] = [];
+      while (index < lines.length && /^\d+[.)]\s+/.test(lines[index] ?? '')) {
+        const item = /^(\d+)[.)]\s+(.+)$/.exec(lines[index] ?? '');
+        if (item?.[1] && item[2]) {
+          items.push({ value: Number(item[1]), text: item[2].trim() });
+        }
         index += 1;
       }
       blocks.push({ type: 'ol', items });
@@ -123,13 +131,13 @@ function parseMarkdownBlocks(text: string): MarkdownBlock[] {
       index < lines.length &&
       (lines[index] ?? '').trim().length > 0 &&
       !/^(#{1,4})\s+/.test(lines[index] ?? '') &&
-      !/^\s*[-*]\s+/.test(lines[index] ?? '') &&
-      !/^\s*\d+[.)]\s+/.test(lines[index] ?? '')
+      !/^[-*]\s+/.test(lines[index] ?? '') &&
+      !/^1[.)]\s+/.test(lines[index] ?? '')
     ) {
-      paragraph.push((lines[index] ?? '').trim());
+      paragraph.push(lines[index] ?? '');
       index += 1;
     }
-    blocks.push({ type: 'paragraph', text: paragraph.join(' ') });
+    blocks.push({ type: 'paragraph', text: paragraph.join('\n') });
   }
 
   return blocks;
