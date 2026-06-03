@@ -150,14 +150,15 @@ export async function processExtractJobForTests(
     system: extract.EXTRACTION_SYSTEM_PROMPT,
     model: modelId,
   });
+  const extractionResult = extract.normalizeExtractionResult(result.object);
 
   const resolvedFacts: {
     statement: string;
     confidence: number;
     entityIds: string[];
-    mentions: (typeof result.object.facts)[number]['mentions'];
+    mentions: (typeof extractionResult.facts)[number]['mentions'];
   }[] = [];
-  for (const fact of result.object.facts) {
+  for (const fact of extractionResult.facts) {
     const entityIds = await extract.resolveMentions(deps.db, teamId, fact.mentions, fact.statement);
     resolvedFacts.push({
       statement: fact.statement,

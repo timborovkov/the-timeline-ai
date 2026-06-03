@@ -114,7 +114,7 @@ describe('worker Sentry monitoring', () => {
     expect(event?.request?.url).toBe('https://app.timeline.test/accept-invite/[redacted]');
   });
 
-  it('captures terminal worker job failures only', async () => {
+  it('captures retrying and terminal worker job failures', async () => {
     process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
     const monitoring = await import('#src/monitoring.js');
     const err = new Error('job failed');
@@ -126,7 +126,8 @@ describe('worker Sentry monitoring', () => {
       attemptsMade: 1,
       opts: { attempts: 3 },
     });
-    expect(captureException).not.toHaveBeenCalled();
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(setScopeTag).toHaveBeenCalledWith('terminal', 'false');
 
     monitoring.captureWorkerJobFailure(err, {
       id: 'job-1',
@@ -136,10 +137,11 @@ describe('worker Sentry monitoring', () => {
       opts: { attempts: 3 },
     });
 
-    expect(captureException).toHaveBeenCalledOnce();
+    expect(captureException).toHaveBeenCalledTimes(2);
     expect(setScopeTag).toHaveBeenCalledWith('component', 'worker_job');
     expect(setScopeTag).toHaveBeenCalledWith('queueName', 'transcribe');
     expect(setScopeTag).toHaveBeenCalledWith('attemptsMade', '3');
+    expect(setScopeTag).toHaveBeenCalledWith('terminal', 'true');
     expect(setScopeTag).not.toHaveBeenCalledWith('rawEventId', expect.any(String));
   });
 

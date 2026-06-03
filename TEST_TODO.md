@@ -17,7 +17,7 @@ from `main`. Current suite shape:
 - Web Vitest: 71 files / 360 tests, including route/action/component coverage
   for core recovery, onboarding, object sections, and first high-value UI
   states.
-- Worker Vitest: 10 files / 75 tests, including extract, transcribe,
+- Worker Vitest: 10 files / 94 tests, including extract, transcribe,
   suggestions, embed, document extract, meeting finalize, janitor, and overdue
   processors.
 - Playwright: 13 local core E2E journeys plus 1 production-ish smoke journey.
@@ -265,6 +265,7 @@ Important uncovered shared/package areas:
 
 Covered worker areas include:
 
+- Extract worker.
 - Embed worker.
 - Document extract worker.
 - Meeting finalize worker.
@@ -275,7 +276,6 @@ Covered worker areas include:
 
 Important uncovered worker processors:
 
-- `extract`
 - `integrationSync`
 - `mcpHealth`
 - `teamExport`
@@ -685,7 +685,7 @@ Once the suite is mature, split commands by layer:
    `boards.ts`, and `calendar.ts`.
 4. Add remaining route suites for integrations, Slack command/OAuth,
    onboarding, object sections, cron reconcile, and jobs dashboard flows.
-5. Finish worker processor coverage for extract, transcribe, integration sync,
-   MCP health, and team export.
+5. Finish worker processor coverage for integration sync, MCP health, and team
+   export.
 6. Add database, queue, and S3 contract tests.
 7. Add component tests for high-value UI states.

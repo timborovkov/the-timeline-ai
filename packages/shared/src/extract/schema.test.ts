@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractionResultSchema } from '#src/extract/schema.js';
+import { extractionResultSchema, normalizeExtractionResult } from '#src/extract/schema.js';
 
 describe('extractionResultSchema', () => {
   it('accepts a well-formed extraction payload', () => {
@@ -19,6 +19,30 @@ describe('extractionResultSchema', () => {
       ],
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it('normalizes legacy text/entities fact payloads', () => {
+    const parsed = normalizeExtractionResult({
+      facts: [
+        {
+          text: 'AuditAI has a meeting scheduled for Monday.',
+          confidence: 0.7,
+          entities: [
+            { name: 'AuditAI', type: 'project', role: 'subject' },
+            { name: 'Monday meeting', type: 'topic', role: 'topic' },
+          ],
+        },
+      ],
+    });
+
+    expect(parsed.facts[0]).toEqual({
+      statement: 'AuditAI has a meeting scheduled for Monday.',
+      confidence: 0.7,
+      mentions: [
+        { name: 'AuditAI', type: 'project', role: 'subject' },
+        { name: 'Monday meeting', type: 'topic', role: 'topic' },
+      ],
+    });
   });
 
   it('rejects unknown entity types', () => {

@@ -145,6 +145,33 @@ describe('processExtractJobForTests', () => {
     });
   });
 
+  it('normalizes legacy text/entities model output before writing facts', async () => {
+    const rawEventId = '34343434-3434-4434-8434-343434343434';
+    await seedEvent(db, {
+      id: rawEventId,
+      text: 'The AuditAI team has a meeting scheduled for Monday.',
+    });
+    const testIO = io({
+      chatStructured: modelWithFacts([
+        {
+          text: 'The AuditAI team has a meeting scheduled for Monday.',
+          confidence: 0.7,
+          entities: [
+            { name: 'AuditAI', type: 'project', role: 'subject' },
+            { name: 'Monday meeting', type: 'topic', role: 'topic' },
+          ],
+        },
+      ]),
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({ rawEventId, factsInserted: 1, modelVersion: MODEL_VERSION });
+
+    const factRows = await db.select().from(facts).where(eq(facts.rawEventId, rawEventId));
+    expect(factRows[0]?.statement).toBe('The AuditAI team has a meeting scheduled for Monday.');
+  });
+
   it('stamps zero-fact extraction and skips idempotent reruns without calling the model again', async () => {
     const rawEventId = '44444444-4444-4444-8444-444444444444';
     await seedEvent(db, { id: rawEventId, text: 'Heading out for lunch.' });
