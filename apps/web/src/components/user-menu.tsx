@@ -23,7 +23,7 @@ export function UserMenu({ user }: Props) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" aria-label="Account">
-          <User className="h-4 w-4" />
+          <User className="size-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
@@ -37,7 +37,7 @@ export function UserMenu({ user }: Props) {
         <form action={reopenOnboardingChecklistAction}>
           <DropdownMenuItem asChild>
             <button type="submit" className="flex w-full items-center gap-2">
-              <LifeBuoy className="h-4 w-4" />
+              <LifeBuoy className="size-4" />
               Setup checklist
             </button>
           </DropdownMenuItem>
@@ -49,7 +49,7 @@ export function UserMenu({ user }: Props) {
             onClick={() => void signOut({ redirectTo: '/sign-in' })}
             className="flex w-full items-center gap-2"
           >
-            <LogOut className="h-4 w-4" />
+            <LogOut className="size-4" />
             Sign out
           </button>
         </DropdownMenuItem>

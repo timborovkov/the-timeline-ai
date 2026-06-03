@@ -9,17 +9,15 @@ const objectTypeSchema = z.enum(objects.OBJECT_TYPES);
 
 // Mirrors ObjectListFilter at packages/shared/src/objects/index.ts:60. Kept
 // loose (everything optional) so callers can save partial filters.
-const filterSchema = z
-  .object({
-    type: z.union([objectTypeSchema, z.array(objectTypeSchema)]).optional(),
-    status: z.union([z.string(), z.array(z.string())]).optional(),
-    stage: z.union([z.string(), z.array(z.string())]).optional(),
-    ownerUserId: uuidSchema.nullable().optional(),
-    assigneeUserId: uuidSchema.nullable().optional(),
-    archived: z.boolean().optional(),
-    limit: z.number().int().min(1).max(500).optional(),
-  })
-  .strict();
+const filterSchema = z.strictObject({
+  type: z.union([objectTypeSchema, z.array(objectTypeSchema)]).optional(),
+  status: z.union([z.string(), z.array(z.string())]).optional(),
+  stage: z.union([z.string(), z.array(z.string())]).optional(),
+  ownerUserId: uuidSchema.nullable().optional(),
+  assigneeUserId: uuidSchema.nullable().optional(),
+  archived: z.boolean().optional(),
+  limit: z.number().int().min(1).max(500).optional(),
+});
 
 const boardKindSchema = z.enum(['kanban', 'table', 'list']);
 

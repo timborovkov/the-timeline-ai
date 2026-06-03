@@ -96,11 +96,13 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
   if (typeof exportId !== 'string') redirect('/app/team');
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  let hasAdminAccess = true;
   try {
     await scope.requireMembership('admin');
   } catch {
-    redirect('/app/team');
+    hasAdminAccess = false;
   }
+  if (!hasAdminAccess) redirect('/app/team');
 
   await db
     .update(teamExports)

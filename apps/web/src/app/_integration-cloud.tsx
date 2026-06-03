@@ -12,18 +12,18 @@ import { cn } from '@/lib/utils';
 
 export function IntegrationCloud() {
   const featured = integrationsLib.listFeaturedCatalog();
-  const prompts = featured
-    .map((c) => c.examplePrompt)
-    .filter((p, i, all) => all.indexOf(p) === i)
-    .slice(0, 4);
+  const prompts: string[] = [];
+  for (const connector of featured) {
+    if (!prompts.includes(connector.examplePrompt)) {
+      prompts.push(connector.examplePrompt);
+      if (prompts.length === 4) break;
+    }
+  }
 
   return (
     <div className="space-y-12">
       {/* Logo cloud */}
-      <ul
-        role="list"
-        className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
-      >
+      <ul className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
         {featured.map((c) => (
           <li
             key={c.id}
@@ -58,7 +58,7 @@ export function IntegrationCloud() {
         <div className="mb-3 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-fg-muted">
           Questions the agent answers once connected
         </div>
-        <ul role="list" className="space-y-2">
+        <ul className="space-y-2">
           {prompts.map((p) => (
             <li
               key={p}
@@ -77,8 +77,8 @@ export function IntegrationCloud() {
           className="underline-offset-4 hover:text-fg hover:underline"
         >
           team settings
-        </Link>{' '}
-        — bring your own auth.
+        </Link>
+        , bring your own auth.
       </p>
     </div>
   );

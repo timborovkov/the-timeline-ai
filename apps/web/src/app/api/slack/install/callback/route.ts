@@ -14,13 +14,13 @@ export async function GET(req: Request): Promise<Response> {
   const code = url.searchParams.get('code');
   const rawState = url.searchParams.get('state');
   if (!code || !rawState) redirect('/app/team/slack?error=missing_oauth');
-  let state: slack.SlackOAuthState;
+  let state: slack.SlackOAuthState | null = null;
   try {
     state = slack.verifySlackOAuthState(rawState);
   } catch {
-    redirect('/app/team/slack?error=invalid_state');
+    state = null;
   }
-  if (state.kind !== 'install' || state.userId !== session.user.id) {
+  if (state?.kind !== 'install' || state.userId !== session.user.id) {
     redirect('/app/team/slack?error=invalid_state');
   }
   const scope = withTeam(db, state.teamId, session.user.id);

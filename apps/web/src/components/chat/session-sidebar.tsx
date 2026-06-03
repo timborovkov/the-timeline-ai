@@ -3,7 +3,7 @@
 import { Plus, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useTransition } from 'react';
+import { Suspense, useTransition } from 'react';
 
 import { archiveChatSessionAction } from '@/app/actions/chat';
 import { cn } from '@/lib/utils';
@@ -15,7 +15,18 @@ interface SessionEntry {
   pinnedEntityName: string | null;
 }
 
-export function SessionSidebar({
+export function SessionSidebar(props: {
+  sessions: SessionEntry[];
+  activeSessionId: string | null;
+}) {
+  return (
+    <Suspense fallback={null}>
+      <SessionSidebarContent {...props} />
+    </Suspense>
+  );
+}
+
+function SessionSidebarContent({
   sessions,
   activeSessionId,
 }: {
@@ -41,7 +52,7 @@ export function SessionSidebar({
         onClick={newChat}
         className="mb-3 flex items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary/20"
       >
-        <Plus className="h-3.5 w-3.5" /> New chat
+        <Plus className="size-3.5" /> New chat
       </button>
       {sessions.length === 0 ? (
         <p className="px-1 text-xs text-muted-foreground">No chats yet.</p>
@@ -90,7 +101,7 @@ export function SessionSidebar({
                   }}
                   className="absolute right-1 top-1.5 hidden rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:block"
                 >
-                  <Trash2 className="h-3 w-3" />
+                  <Trash2 className="size-3" />
                 </button>
               </li>
             );

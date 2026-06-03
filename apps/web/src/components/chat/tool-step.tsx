@@ -102,31 +102,35 @@ function suggestionFromOutput(output: unknown): SuggestionBundle | null {
   if (!suggestion || typeof suggestion !== 'object') return null;
   const record = suggestion as Record<string, unknown>;
   if (typeof record.id !== 'string' || typeof record.title !== 'string') return null;
-  const items = Array.isArray(record.items)
-    ? record.items
-        .filter(
-          (item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object',
-        )
-        .map((item) => ({
-          id: typeof item.id === 'string' ? item.id : '',
-          status: typeof item.status === 'string' ? item.status : 'pending',
-          title: typeof item.title === 'string' ? item.title : 'Approval item',
-          description: typeof item.description === 'string' ? item.description : null,
-        }))
-        .filter((item) => item.id)
-    : [];
-  const evidence = Array.isArray(record.evidence)
-    ? record.evidence
-        .filter(
-          (item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object',
-        )
-        .map((item) => ({
-          rawEventId: typeof item.rawEventId === 'string' ? item.rawEventId : '',
-          quote: typeof item.quote === 'string' ? item.quote : null,
-          source: typeof item.source === 'string' ? item.source : null,
-        }))
-        .filter((item) => item.rawEventId)
-    : [];
+  const items: SuggestionItem[] = [];
+  if (Array.isArray(record.items)) {
+    for (const item of record.items) {
+      if (!item || typeof item !== 'object') continue;
+      const itemRecord = item as Record<string, unknown>;
+      const id = typeof itemRecord.id === 'string' ? itemRecord.id : '';
+      if (!id) continue;
+      items.push({
+        id,
+        status: typeof itemRecord.status === 'string' ? itemRecord.status : 'pending',
+        title: typeof itemRecord.title === 'string' ? itemRecord.title : 'Approval item',
+        description: typeof itemRecord.description === 'string' ? itemRecord.description : null,
+      });
+    }
+  }
+  const evidence: SuggestionEvidence[] = [];
+  if (Array.isArray(record.evidence)) {
+    for (const item of record.evidence) {
+      if (!item || typeof item !== 'object') continue;
+      const itemRecord = item as Record<string, unknown>;
+      const rawEventId = typeof itemRecord.rawEventId === 'string' ? itemRecord.rawEventId : '';
+      if (!rawEventId) continue;
+      evidence.push({
+        rawEventId,
+        quote: typeof itemRecord.quote === 'string' ? itemRecord.quote : null,
+        source: typeof itemRecord.source === 'string' ? itemRecord.source : null,
+      });
+    }
+  }
   return {
     id: record.id,
     title: record.title,
@@ -202,7 +206,7 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
                     }}
                     aria-label={`Accept ${item.title}`}
                   >
-                    <Check className="h-3.5 w-3.5" />
+                    <Check className="size-3.5" />
                   </button>
                   <button
                     type="button"
@@ -215,7 +219,7 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
                     }}
                     aria-label={`Reject ${item.title}`}
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <X className="size-3.5" />
                   </button>
                 </div>
               ) : null}
@@ -242,7 +246,7 @@ function ReconnectButton({ serverId, serverName }: { serverId: string; serverNam
   if (forbidden) {
     return (
       <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">
-        {serverName} needs reconnecting — ask a team admin to visit /app/team/mcp-servers
+        {serverName} needs reconnecting. Ask a team admin to visit /app/team/mcp-servers
       </p>
     );
   }

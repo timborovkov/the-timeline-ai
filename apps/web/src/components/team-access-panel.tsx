@@ -38,13 +38,13 @@ export function TeamAccessPanel({
       <CardContent className="space-y-4">
         {ingestEmail ? (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <code className="min-w-0 flex-1 select-all break-all rounded-sm border border-border bg-surface-2 px-2 py-2 font-mono text-xs text-fg">
+            <code className="min-w-0 flex-1 select-all break-all rounded-sm border border-border bg-surface-2 p-2 font-mono text-xs text-fg">
               {ingestEmail}
             </code>
             <CopyButton value={ingestEmail} />
           </div>
         ) : (
-          <p className="rounded-sm border border-border bg-surface-2 px-2 py-2 text-sm text-fg-muted">
+          <p className="rounded-sm border border-border bg-surface-2 p-2 text-sm text-fg-muted">
             Email ingest is not configured for this team yet.
           </p>
         )}

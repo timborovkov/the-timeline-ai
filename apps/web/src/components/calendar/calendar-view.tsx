@@ -18,7 +18,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 
 import type { SaveState } from '@/lib/utils';
 
@@ -205,7 +205,15 @@ function draftFromEvent(event: CalendarEvent, timezone: string): Draft {
   };
 }
 
-export function CalendarView({
+export function CalendarView(props: CalendarViewProps) {
+  return (
+    <Suspense fallback={null}>
+      <CalendarViewContent {...props} />
+    </Suspense>
+  );
+}
+
+function CalendarViewContent({
   events,
   timezone,
   defaultVisibility = 'team',

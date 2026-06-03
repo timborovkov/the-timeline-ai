@@ -5,7 +5,7 @@ import { DefaultChatTransport, type UIMessage } from 'ai';
 import { Send, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import { unpinChatSessionAction } from '@/app/actions/chat';
 import { CitationText } from '@/components/chat/citation';
@@ -28,7 +28,15 @@ const SUGGESTIONS = [
   "What's outstanding right now?",
 ] as const;
 
-export function ChatPane({
+export function ChatPane(props: Props) {
+  return (
+    <Suspense fallback={null}>
+      <ChatPaneContent {...props} />
+    </Suspense>
+  );
+}
+
+function ChatPaneContent({
   teamName,
   sessionId: initialSessionId,
   initialMessages,
@@ -181,9 +189,9 @@ export function ChatPane({
                   router.refresh();
                 });
               }}
-              className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"
+              className="flex size-5 items-center justify-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"
             >
-              <X className="h-3 w-3" />
+              <X className="size-3" />
             </button>
           )}
         </div>

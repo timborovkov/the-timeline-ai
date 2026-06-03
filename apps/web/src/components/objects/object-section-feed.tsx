@@ -15,7 +15,7 @@ export function ObjectSectionFeed({ objectId, section, title }: Props) {
     <section>
       <h2 className="mb-3 text-sm font-medium tracking-tight">{title}</h2>
       {items.length === 0 && query.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading...</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : items.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nothing here yet.</p>
       ) : (

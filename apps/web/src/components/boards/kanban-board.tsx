@@ -177,15 +177,14 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
       onDragEnd={onDragEnd}
     >
       {saveState !== 'idle' && (
-        <div
+        <output
           className="mb-2 text-right font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-          role="status"
           aria-live="polite"
         >
           {saveState === 'saving'
-            ? `Saving${savingCount > 1 ? ` ${savingCount} moves` : ''}...`
+            ? `Saving${savingCount > 1 ? ` ${savingCount} moves` : ''}…`
             : 'Saved'}
-        </div>
+        </output>
       )}
       {/* Flex row with FIXED column widths. The previous
           `grid auto-cols-[minmax(240px,1fr)]` made each column compete for

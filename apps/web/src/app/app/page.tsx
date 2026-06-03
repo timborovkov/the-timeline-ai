@@ -238,7 +238,10 @@ export default async function HomeDashboardPage() {
 }
 
 function countFirstRunGuideCompleted(steps: { step: string; completed: boolean }[]): number {
-  const completed = new Set(steps.filter((step) => step.completed).map((step) => step.step));
+  const completed = new Set<string>();
+  for (const step of steps) {
+    if (step.completed) completed.add(step.step);
+  }
   return [
     completed.has('first_note'),
     completed.has('email_forwarding'),

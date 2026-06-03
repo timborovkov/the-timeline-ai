@@ -25,6 +25,7 @@ export function DocumentSearch() {
         <input
           type="search"
           value={draft}
+          aria-label="Search document chunks"
           onChange={(e) => {
             setDraft(e.target.value);
           }}
@@ -64,7 +65,7 @@ export function DocumentSearch() {
             }}
             className="rounded-sm border border-border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:bg-surface disabled:opacity-40"
           >
-            {search.isFetchingNextPage ? 'Loading...' : search.hasNextPage ? 'Load more' : 'End'}
+            {search.isFetchingNextPage ? 'Loading…' : search.hasNextPage ? 'Load more' : 'End'}
           </button>
         </div>
       )}

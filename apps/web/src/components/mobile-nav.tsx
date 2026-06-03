@@ -92,11 +92,13 @@ export function MobileNav({ active, memberships, recipientInvites, badges = {} }
           aria-modal="true"
           aria-label="Navigation"
         >
-          <div
+          <button
+            type="button"
             className="absolute inset-0 bg-bg/70 backdrop-blur-sm"
             onClick={() => {
               setOpen(false);
             }}
+            aria-label="Close navigation"
           />
           <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-border bg-bg px-4 py-5">
             <div className="flex items-center justify-between px-2">

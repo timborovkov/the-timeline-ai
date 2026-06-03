@@ -67,6 +67,10 @@ function statusOptions(type: string): string[] {
   return STATUS_BY_TYPE[type] ?? ['open', 'active', 'archived'];
 }
 
+function isDraftField(field: EditableField): field is DraftField {
+  return field === 'stage' || field === 'dueAt';
+}
+
 export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -105,10 +109,6 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
     const next = updater(localDetailRef.current);
     localDetailRef.current = next;
     setLocalDetail(next);
-  }
-
-  function isDraftField(field: EditableField): field is DraftField {
-    return field === 'stage' || field === 'dueAt';
   }
 
   function draftIsProtected(field: DraftField): boolean {
@@ -269,13 +269,10 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
           </p>
         )}
         {detail.newSinceLastVisit > 0 && (
-          <div
-            role="status"
-            className="mt-4 rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal"
-          >
+          <output className="mt-4 rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
             {detail.newSinceLastVisit} new change
             {detail.newSinceLastVisit === 1 ? '' : 's'} since your last visit
-          </div>
+          </output>
         )}
         {(() => {
           // Local name avoids shadowing the outer `pending` from
@@ -285,13 +282,10 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
           const pendingCount = detail.recentChanges.filter((c) => c.status === 'suggested').length;
           if (pendingCount === 0) return null;
           return (
-            <div
-              role="status"
-              className="mt-3 rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal"
-            >
+            <output className="mt-3 rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
               {pendingCount} agent suggestion
               {pendingCount === 1 ? '' : 's'} awaiting review below
-            </div>
+            </output>
           );
         })()}
         {error && (
@@ -303,15 +297,14 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
           </div>
         )}
         {saveState !== 'idle' && (
-          <div
-            role="status"
+          <output
             aria-live="polite"
             className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
           >
             {saveState === 'saving'
-              ? `Saving${savingCount > 1 ? ` ${savingCount} changes` : ''}...`
+              ? `Saving${savingCount > 1 ? ` ${savingCount} changes` : ''}…`
               : 'Saved'}
-          </div>
+          </output>
         )}
       </header>
 
@@ -368,7 +361,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
             }}
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           >
-            <option value="">—</option>
+            <option value="">None</option>
             <option value="1">1 (urgent)</option>
             <option value="2">2 (high)</option>
             <option value="3">3 (normal)</option>

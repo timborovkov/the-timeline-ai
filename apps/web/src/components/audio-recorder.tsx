@@ -186,11 +186,17 @@ export function AudioRecorder({ onClipChange, disabled = false }: AudioRecorderP
           </Button>
         ) : null}
         {phase === 'review' ? (
-          <span className="text-xs text-muted-foreground">Ready — press Post to send.</span>
+          <span className="text-xs text-muted-foreground">Ready. Press Post to send.</span>
         ) : null}
       </div>
       {clip ? (
-        <audio src={clip.url} controls preload="metadata" className="w-full" />
+        <audio
+          src={clip.url}
+          controls
+          preload="metadata"
+          className="w-full"
+          aria-label="Recorded voice note preview"
+        />
       ) : phase === 'recording' ? (
         <p className="text-xs text-muted-foreground">Recording… press Stop when finished.</p>
       ) : null}

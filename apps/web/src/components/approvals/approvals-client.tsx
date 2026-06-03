@@ -123,7 +123,7 @@ export function ApprovalsClient({ suggestions }: Props) {
                     run(() => acceptAllSuggestionAction({ suggestionId: bundle.id }));
                   }}
                 >
-                  <CheckCheck className="h-4 w-4" />
+                  <CheckCheck className="size-4" />
                   Accept all
                 </Button>
               ) : null}
@@ -131,7 +131,7 @@ export function ApprovalsClient({ suggestions }: Props) {
 
             <ul className="mt-4 divide-y divide-border border border-border">
               {bundle.items.map((item) => (
-                <li key={item.id} className="grid gap-3 bg-bg px-3 py-3 md:grid-cols-[1fr_auto]">
+                <li key={item.id} className="grid gap-3 bg-bg p-3 md:grid-cols-[1fr_auto]">
                   <div className="min-w-0">
                     <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
                       {item.operation.replace(/_/g, ' ')} · {item.targetKind.replace(/_/g, ' ')} ·{' '}
@@ -158,7 +158,7 @@ export function ApprovalsClient({ suggestions }: Props) {
                           run(() => acceptSuggestionItemAction({ itemId: item.id }));
                         }}
                       >
-                        <Check className="h-4 w-4" />
+                        <Check className="size-4" />
                         Accept
                       </Button>
                       <Button
@@ -170,7 +170,7 @@ export function ApprovalsClient({ suggestions }: Props) {
                           run(() => rejectSuggestionItemAction({ itemId: item.id }));
                         }}
                       >
-                        <X className="h-4 w-4" />
+                        <X className="size-4" />
                         Reject
                       </Button>
                     </div>

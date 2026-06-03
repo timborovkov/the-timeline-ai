@@ -282,7 +282,7 @@ export function DocumentDrive({
         </nav>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={onNewFolder} disabled={pending}>
-            <FolderPlus className="mr-2 h-4 w-4" />
+            <FolderPlus className="mr-2 size-4" />
             New folder
           </Button>
           <Button
@@ -290,14 +290,20 @@ export function DocumentDrive({
             onClick={() => fileInputRef.current?.click()}
             disabled={activeUploads.length > 0}
           >
-            <Upload className="mr-2 h-4 w-4" />
+            <Upload className="mr-2 size-4" />
             {activeUploads.length === 0
               ? 'Upload'
               : activeUploads.length === 1
                 ? `${activeUpload ? uploadPhaseLabel(activeUpload) : 'Uploading'}…`
                 : `Uploading ${String(activeUploads.length)} files…`}
           </Button>
-          <input ref={fileInputRef} type="file" className="hidden" onChange={onFileChange} />
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={onFileChange}
+            aria-label="Upload document"
+          />
         </div>
       </header>
       {uploads.length > 0 ? (
@@ -395,7 +401,7 @@ export function DocumentDrive({
                         href={`/app/documents?folder=${f.id}`}
                         className="flex items-center gap-2 text-sm font-medium"
                       >
-                        <FolderIcon className="h-4 w-4 text-muted-foreground" />
+                        <FolderIcon className="size-4 text-muted-foreground" />
                         <span>{f.name}</span>
                       </Link>
                       <button

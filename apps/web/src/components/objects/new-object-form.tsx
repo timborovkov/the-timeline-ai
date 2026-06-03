@@ -65,7 +65,6 @@ export function NewObjectForm() {
           }}
           className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           placeholder="e.g. Acme deal, Q2 OKRs, post-mortem 2026-05-15"
-          autoFocus
         />
       </label>
       <label className="block">

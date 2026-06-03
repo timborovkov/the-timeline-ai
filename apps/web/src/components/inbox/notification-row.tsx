@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { Suspense, useEffect, useRef, useState, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
 import { cn } from '@/lib/utils';
@@ -28,7 +28,15 @@ function formatTs(ts: string): string {
   return `${date} ${time}`;
 }
 
-export function NotificationRow({
+export function NotificationRow(props: Props) {
+  return (
+    <Suspense fallback={null}>
+      <NotificationRowContent {...props} />
+    </Suspense>
+  );
+}
+
+function NotificationRowContent({
   id,
   kind,
   summary,

@@ -2,8 +2,8 @@
 
 import {
   createContext,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useState,
@@ -68,7 +68,7 @@ export function InspectorProvider({ children }: { children: ReactNode }) {
 }
 
 export function useInspector() {
-  const ctx = useContext(InspectorContext);
+  const ctx = use(InspectorContext);
   if (!ctx) {
     throw new Error('useInspector must be used inside <InspectorProvider>');
   }

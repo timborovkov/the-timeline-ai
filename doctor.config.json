@@ -1,0 +1,20 @@
+{
+  "$schema": "https://react.doctor/schema/config.json",
+  "rootDir": "apps/web",
+  "ignore": {
+    "overrides": [
+      {
+        "files": ["src/app/actions/**/*.ts", "src/app/actions/*.ts"],
+        "rules": ["react-doctor/server-auth-actions"]
+      },
+      {
+        "files": ["src/app/opengraph-image.tsx"],
+        "rules": [
+          "react-doctor/only-export-components",
+          "react-doctor/no-inline-style",
+          "react-doctor/no-inline-exhaustive-style"
+        ]
+      }
+    ]
+  }
+}

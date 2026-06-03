@@ -129,7 +129,7 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
           <li className="px-3 py-4 text-sm text-fg-muted">No recoverable jobs in this view.</li>
         ) : (
           filtered.map((item) => (
-            <li key={item.id} className="flex flex-col gap-3 px-3 py-3 md:flex-row md:items-center">
+            <li key={item.id} className="flex flex-col gap-3 p-3 md:flex-row md:items-center">
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant={item.status === 'failed' ? 'destructive' : 'outline'}>

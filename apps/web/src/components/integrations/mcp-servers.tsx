@@ -319,7 +319,7 @@ export function McpServersUi({
       ) : (
         <ul className="divide-y divide-border rounded-sm border border-border bg-surface">
           {servers.map((s) => (
-            <li key={s.id} className="space-y-2 px-3 py-3">
+            <li key={s.id} className="space-y-2 p-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">{s.name}</span>
                 <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
@@ -377,7 +377,7 @@ export function McpServersUi({
                         <div>
                           <span className="font-mono">{t.name}</span>
                           {t.description ? (
-                            <span className="ml-2 text-fg-muted">— {t.description}</span>
+                            <span className="ml-2 text-fg-muted">: {t.description}</span>
                           ) : null}
                         </div>
                         <Button

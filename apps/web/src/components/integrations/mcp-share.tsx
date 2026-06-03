@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useReducer } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,13 +16,55 @@ interface KeyRow {
   createdAt: string;
 }
 
+function copyToClipboard(text: string): void {
+  void navigator.clipboard.writeText(text).catch(() => undefined);
+}
+
+interface MintedKey {
+  name: string;
+  plaintext: string;
+}
+interface McpShareState {
+  showCreate: boolean;
+  name: string;
+  busy: boolean;
+  mintedKey: MintedKey | null;
+  mcpUrl: string;
+}
+type McpShareAction =
+  | { type: 'showCreate'; showCreate: boolean }
+  | { type: 'name'; name: string }
+  | { type: 'busy'; busy: boolean }
+  | { type: 'mintedKey'; mintedKey: MintedKey | null }
+  | { type: 'mcpUrl'; mcpUrl: string }
+  | { type: 'created'; mintedKey: MintedKey };
+
+function mcpShareReducer(state: McpShareState, action: McpShareAction): McpShareState {
+  switch (action.type) {
+    case 'showCreate':
+      return { ...state, showCreate: action.showCreate };
+    case 'name':
+      return { ...state, name: action.name };
+    case 'busy':
+      return { ...state, busy: action.busy };
+    case 'mintedKey':
+      return { ...state, mintedKey: action.mintedKey };
+    case 'mcpUrl':
+      return { ...state, mcpUrl: action.mcpUrl };
+    case 'created':
+      return { ...state, mintedKey: action.mintedKey, name: '', showCreate: false };
+  }
+}
+
 export function McpShareUi({ keys }: { keys: KeyRow[] }) {
   const router = useRouter();
-  const [showCreate, setShowCreate] = useState(false);
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [mintedKey, setMintedKey] = useState<{ name: string; plaintext: string } | null>(null);
-  const [mcpUrl, setMcpUrl] = useState('');
+  const [{ showCreate, name, busy, mintedKey, mcpUrl }, dispatch] = useReducer(mcpShareReducer, {
+    showCreate: false,
+    name: '',
+    busy: false,
+    mintedKey: null,
+    mcpUrl: '',
+  });
 
   useEffect(() => {
     // Compute the absolute MCP endpoint URL on the client so it matches
@@ -30,11 +72,11 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
     // prod). Server-side rendering doesn't know about origin without
     // forwarding headers, and getting that wrong gives the user a
     // copy-paste URL that doesn't work.
-    setMcpUrl(`${window.location.origin}/api/mcp/server`);
+    dispatch({ type: 'mcpUrl', mcpUrl: `${window.location.origin}/api/mcp/server` });
   }, []);
 
   async function create() {
-    setBusy(true);
+    dispatch({ type: 'busy', busy: true });
     try {
       const res = await fetch('/api/team/mcp-keys', {
         method: 'POST',
@@ -46,12 +88,10 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
         return;
       }
       const data = (await res.json()) as { name: string; plaintext: string };
-      setMintedKey({ name: data.name, plaintext: data.plaintext });
-      setName('');
-      setShowCreate(false);
+      dispatch({ type: 'created', mintedKey: { name: data.name, plaintext: data.plaintext } });
       router.refresh();
     } finally {
-      setBusy(false);
+      dispatch({ type: 'busy', busy: false });
     }
   }
 
@@ -61,10 +101,6 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
     }
     await fetch(`/api/team/mcp-keys/${id}`, { method: 'DELETE' });
     router.refresh();
-  }
-
-  function copy(text: string) {
-    void navigator.clipboard.writeText(text).catch(() => undefined);
   }
 
   return (
@@ -88,7 +124,7 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
               variant="ghost"
               disabled={!mcpUrl}
               onClick={() => {
-                copy(mcpUrl);
+                copyToClipboard(mcpUrl);
               }}
             >
               Copy
@@ -101,7 +137,7 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
         <Card className="border-signal/40">
           <CardHeader>
             <CardTitle className="text-sm">
-              New key — copy now, you won&apos;t see it again
+              New key: copy now, you won&apos;t see it again
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -116,7 +152,7 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
               <Button
                 size="sm"
                 onClick={() => {
-                  copy(mintedKey.plaintext);
+                  copyToClipboard(mintedKey.plaintext);
                 }}
               >
                 Copy
@@ -126,7 +162,7 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
               size="sm"
               variant="ghost"
               onClick={() => {
-                setMintedKey(null);
+                dispatch({ type: 'mintedKey', mintedKey: null });
               }}
             >
               I&apos;ve copied it, dismiss
@@ -142,7 +178,7 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
         <Button
           size="sm"
           onClick={() => {
-            setShowCreate((v) => !v);
+            dispatch({ type: 'showCreate', showCreate: !showCreate });
           }}
         >
           {showCreate ? 'Cancel' : 'New key'}
@@ -157,7 +193,7 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
               <Input
                 value={name}
                 onChange={(e) => {
-                  setName(e.target.value);
+                  dispatch({ type: 'name', name: e.target.value });
                 }}
                 placeholder="Claude Desktop · personal mac"
               />

@@ -276,7 +276,7 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
           )}
           aria-pressed={isPrivate}
         >
-          {isPrivate ? <Lock className="h-3 w-3" /> : <Users className="h-3 w-3" />}
+          {isPrivate ? <Lock className="size-3" /> : <Users className="size-3" />}
           {isPrivate ? 'Private (only me)' : 'Visible to team'}
         </button>
         <div className="flex items-center gap-3">
@@ -290,7 +290,7 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
               )
             ) : (
               <>
-                <Send className="h-3.5 w-3.5" />
+                <Send className="size-3.5" />
                 Post
               </>
             )}

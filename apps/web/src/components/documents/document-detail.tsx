@@ -131,13 +131,13 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
           }
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+          <ArrowLeft className="mr-1 size-3.5" />
           Back to {currentDocument.folderPath}
         </Link>
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div className="space-y-1">
             <CardTitle className="text-2xl">{currentDocument.name}</CardTitle>
             <p className="text-sm text-muted-foreground">
@@ -153,7 +153,7 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
               Rename
             </Button>
             <Button size="sm" variant="destructive" onClick={onDelete} disabled={pending}>
-              <Trash2 className="mr-1 h-3.5 w-3.5" />
+              <Trash2 className="mr-1 size-3.5" />
               Delete
             </Button>
           </div>
@@ -210,7 +210,7 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
                     }}
                     disabled={downloading.includes(v.id)}
                   >
-                    <Download className="mr-1 h-3.5 w-3.5" />
+                    <Download className="mr-1 size-3.5" />
                     {downloading.includes(v.id) ? 'Opening…' : 'Download'}
                   </Button>
                 </li>
