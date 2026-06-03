@@ -799,6 +799,23 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       for (const uid of input.visibilityUserIds ?? []) await deps.requireTeamMember(uid);
       const metadata = input.metadata ?? {};
       await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
+      const existingRows = await db
+        .select({ id: agentSuggestions.id, status: agentSuggestions.status })
+        .from(agentSuggestions)
+        .where(
+          and(eq(agentSuggestions.teamId, teamId), eq(agentSuggestions.dedupeKey, input.dedupeKey)),
+        )
+        .limit(1);
+      const existing = existingRows[0];
+      const dedupeKey =
+        existing && (existing.status === 'accepted' || existing.status === 'rejected')
+          ? `${input.dedupeKey}:correction:${suggestionDedupeKey({
+              title: input.title,
+              summary: input.summary ?? null,
+              items: input.items,
+              evidence: input.evidence?.map((ev) => ev.rawEventId) ?? [],
+            })}`
+          : input.dedupeKey;
 
       const row = await db.transaction(async (tx) => {
         const [inserted] = await tx
@@ -810,7 +827,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             summary: input.summary ?? null,
             reason: input.reason ?? null,
             confidence: input.confidence ?? 'medium',
-            dedupeKey: input.dedupeKey,
+            dedupeKey,
             visibility,
             visibilityOwnerUserId,
             visibilityUserIds: input.visibilityUserIds ?? null,
@@ -861,7 +878,16 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               proposedPayload: item.proposedPayload,
             })),
           )
-          .onConflictDoNothing();
+          .onConflictDoUpdate({
+            target: [agentSuggestionItems.suggestionId, agentSuggestionItems.dedupeKey],
+            set: {
+              title: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.title ELSE ${agentSuggestionItems.title} END`,
+              description: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.description ELSE ${agentSuggestionItems.description} END`,
+              targetId: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.target_id ELSE ${agentSuggestionItems.targetId} END`,
+              proposedPayload: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.proposed_payload ELSE ${agentSuggestionItems.proposedPayload} END`,
+              updatedAt: new Date(),
+            },
+          });
 
         return inserted;
       });

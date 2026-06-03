@@ -3,7 +3,16 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import { agentSuggestionItems, entities, facts, rawEvents, type Db } from '@timeline/db';
+import {
+  agentSuggestionItems,
+  agentSuggestions,
+  conversationReviews,
+  entities,
+  factEntities,
+  facts,
+  rawEvents,
+  type Db,
+} from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -69,10 +78,11 @@ async function seedRawEvent(
     id: string;
     text: string;
     authorUserId?: string | null;
-    source?: 'web' | 'telegram';
+    source?: 'web' | 'telegram' | 'slack' | 'email';
     visibility?: 'team' | 'private' | 'specific_users';
     visibilityUserIds?: string[] | null;
     sourceMetadata?: Record<string, unknown>;
+    occurredAt?: Date;
   },
 ): Promise<void> {
   await db.insert(rawEvents).values({
@@ -81,7 +91,7 @@ async function seedRawEvent(
     authorUserId: args.authorUserId ?? OWNER_ID,
     source: args.source ?? 'web',
     contentText: args.text,
-    occurredAt: REFERENCE_DATE,
+    occurredAt: args.occurredAt ?? REFERENCE_DATE,
     visibility: args.visibility ?? 'team',
     visibilityOwnerUserId: args.visibility === 'private' ? (args.authorUserId ?? OWNER_ID) : null,
     visibilityUserIds: args.visibilityUserIds,
@@ -108,6 +118,27 @@ async function suggestionCounts(pg: PGlite) {
     suggestions: Number(suggestions.rows[0]?.count ?? 0),
     items: Number(items.rows[0]?.count ?? 0),
   };
+}
+
+async function seedConversationReview(
+  db: Db,
+  args: {
+    id: string;
+    conversationKey: string;
+    lastRawEventId: string;
+    quietUntil?: Date;
+  },
+): Promise<void> {
+  await db.insert(conversationReviews).values({
+    id: args.id,
+    teamId: TEAM_ID,
+    conversationKey: args.conversationKey,
+    source: args.conversationKey.startsWith('slack:') ? 'slack' : 'telegram',
+    status: 'pending',
+    lastRawEventId: args.lastRawEventId,
+    quietUntil: args.quietUntil ?? new Date('2026-05-27T10:20:00.000Z'),
+    metadata: {},
+  });
 }
 
 describe('fallbackBundles', () => {
@@ -196,12 +227,16 @@ describe('processSuggestionJobForTests', () => {
       rawEventId,
       quote: "I'll send the proposal next Tuesday",
     });
-    expect(bundles[0]?.items.map((item) => item.targetKind)).toEqual(['task', 'calendar_event']);
-    expect(bundles[0]?.items[0]?.proposedPayload).toMatchObject({
+    expect(bundles[0]?.items.map((item) => item.targetKind)).toEqual(
+      expect.arrayContaining(['task', 'calendar_event']),
+    );
+    const task = bundles[0]?.items.find((item) => item.targetKind === 'task');
+    const calendar = bundles[0]?.items.find((item) => item.targetKind === 'calendar_event');
+    expect(task?.proposedPayload).toMatchObject({
       canonicalName: 'Send the proposal',
       ownerUserId: OWNER_ID,
     });
-    expect(bundles[0]?.items[1]?.proposedPayload).toMatchObject({
+    expect(calendar?.proposedPayload).toMatchObject({
       title: 'Send the proposal',
       startDate: '2026-06-02',
       endDate: '2026-06-03',
@@ -216,31 +251,351 @@ describe('processSuggestionJobForTests', () => {
     expect(event?.sourceMetadata).toHaveProperty('suggestions_pre_extracted_at');
   });
 
-  it('turns Telegram conversation commitments into approval suggestions', async () => {
+  it('schedules Telegram commitments for debounced conversation review', async () => {
     const rawEventId = '10000000-0000-0000-0000-00000000000a';
+    const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
     await seedRawEvent(db as never, {
       id: rawEventId,
       source: 'telegram',
       text: "I'll schedule a meeting with the lead next Monday",
+      sourceMetadata: { tg_chat_id: '123', tg_message_id: '10' },
     });
 
     await processSuggestionJobForTests(
       { db: db as never },
       { rawEventId, teamId: TEAM_ID },
-      { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID },
+      {
+        getEnv: env,
+        chatStructured: emptyModel(),
+        modelId: MODEL_ID,
+        enqueueSuggestionJob,
+      },
     );
 
-    const bundles = await withTeam(
-      db as never,
-      TEAM_ID,
-      OWNER_ID,
-    ).suggestions.listPendingSuggestions();
-    expect(bundles).toHaveLength(1);
-    expect(bundles[0]?.evidence[0]).toMatchObject({
-      rawEventId,
-      quote: "I'll schedule a meeting with the lead next Monday",
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
+    const [review] = await db.select().from(conversationReviews);
+    expect(review).toMatchObject({
+      teamId: TEAM_ID,
+      conversationKey: `telegram:${TEAM_ID}:chat:123`,
+      source: 'telegram',
+      status: 'pending',
+      lastRawEventId: rawEventId,
     });
-    expect(bundles[0]?.items.map((item) => item.targetKind)).toEqual(['task', 'calendar_event']);
+    expect(enqueueSuggestionJob).toHaveBeenCalledWith(
+      {
+        scope: 'conversation_review',
+        conversationReviewId: review?.id,
+        teamId: TEAM_ID,
+      },
+      expect.objectContaining({
+        delayMs: expect.any(Number) as unknown,
+        jobIdSuffix: expect.any(String) as unknown,
+      }),
+    );
+  });
+
+  it('treats ambiguous contradicted conversation reviews as successful no_action', async () => {
+    const chat = emptyModel();
+    const firstId = '10000000-0000-0000-0000-0000000000a1';
+    const lastId = '10000000-0000-0000-0000-0000000000a2';
+    const reviewId = '20000000-0000-0000-0000-0000000000a1';
+    const conversationKey = `telegram:${TEAM_ID}:chat:456`;
+    await seedRawEvent(db as never, {
+      id: firstId,
+      source: 'telegram',
+      text: 'Sarah can send the Acme deck Friday.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      sourceMetadata: { tg_chat_id: '456', tg_message_id: '1' },
+    });
+    await seedRawEvent(db as never, {
+      id: lastId,
+      source: 'telegram',
+      text: 'Actually wait for legal before sending anything.',
+      occurredAt: new Date('2026-05-27T10:02:00.000Z'),
+      sourceMetadata: { tg_chat_id: '456', tg_message_id: '2' },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey,
+      lastRawEventId: lastId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(chat).toHaveBeenCalledOnce();
+    expect((chat.mock.calls[0]?.[0] as { prompt: string }).prompt).toContain(
+      '# Conversation evidence window',
+    );
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
+    const [review] = await db
+      .select()
+      .from(conversationReviews)
+      .where(eq(conversationReviews.id, reviewId));
+    expect(review?.status).toBe('completed');
+    expect(review?.reviewedThroughRawEventId).toBe(lastId);
+    expect(review?.metadata).toMatchObject({ review_outcome: 'no_action' });
+  });
+
+  it('revises a pending conversation proposal when a follow-up changes the owner', async () => {
+    const firstId = '10000000-0000-0000-0000-0000000000b1';
+    const secondId = '10000000-0000-0000-0000-0000000000b2';
+    const reviewId = '20000000-0000-0000-0000-0000000000b1';
+    const conversationKey = `telegram:${TEAM_ID}:chat:789`;
+    await seedRawEvent(db as never, {
+      id: firstId,
+      source: 'telegram',
+      text: 'Sarah will send the Acme deck Friday.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      sourceMetadata: { tg_chat_id: '789', tg_message_id: '1' },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey,
+      lastRawEventId: firstId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+    const chat = vi
+      .fn()
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: 'Send Acme deck',
+              summary: 'Sarah owns sending the Acme deck.',
+              reason: 'The conversation assigns the work.',
+              confidence: 'high',
+              quote: 'Sarah will send the Acme deck Friday.',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Send Acme deck',
+                  proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'Sarah' },
+                },
+              ],
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: 'Send Acme deck',
+              summary: 'John now owns sending the Acme deck.',
+              reason: 'A follow-up changes the owner.',
+              confidence: 'high',
+              quote: 'John will take this instead.',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Send Acme deck',
+                  proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'John' },
+                },
+              ],
+            },
+          ],
+        },
+      });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    await seedRawEvent(db as never, {
+      id: secondId,
+      source: 'telegram',
+      text: 'John will take this instead.',
+      occurredAt: new Date('2026-05-27T10:05:00.000Z'),
+      sourceMetadata: { tg_chat_id: '789', tg_message_id: '2' },
+    });
+    await db
+      .update(conversationReviews)
+      .set({
+        status: 'pending',
+        lastRawEventId: secondId,
+        quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+      })
+      .where(eq(conversationReviews.id, reviewId));
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 1 });
+    const [item] = await db.select().from(agentSuggestionItems);
+    expect(item?.proposedPayload).toMatchObject({ ownerName: 'John' });
+  });
+
+  it('includes only explicit object-backed cross-source context in conversation reviews', async () => {
+    const telegramId = '10000000-0000-0000-0000-0000000000d1';
+    const linkedEmailId = '10000000-0000-0000-0000-0000000000d2';
+    const unlinkedEmailId = '10000000-0000-0000-0000-0000000000d3';
+    const privateEmailId = '10000000-0000-0000-0000-0000000000d4';
+    const reviewId = '20000000-0000-0000-0000-0000000000d1';
+    const conversationKey = `telegram:${TEAM_ID}:chat:222`;
+    await db.insert(entities).values({
+      id: OBJECT_ID,
+      teamId: TEAM_ID,
+      type: 'deal',
+      canonicalName: 'Acme renewal',
+      status: 'open',
+      metadata: {},
+    });
+    await seedRawEvent(db as never, {
+      id: telegramId,
+      source: 'telegram',
+      text: 'Please update the Acme renewal from the email.',
+      sourceMetadata: { tg_chat_id: '222', tg_message_id: '1' },
+    });
+    await seedRawEvent(db as never, {
+      id: linkedEmailId,
+      source: 'email',
+      text: 'Email from Acme: procurement approved the renewal.',
+    });
+    await seedRawEvent(db as never, {
+      id: unlinkedEmailId,
+      source: 'email',
+      text: 'Unrelated email: legal approved a different thing.',
+    });
+    await seedRawEvent(db as never, {
+      id: privateEmailId,
+      source: 'email',
+      text: 'Private email: Acme is cancelling.',
+      visibility: 'private',
+    });
+    const insertedFacts = await db
+      .insert(facts)
+      .values([
+        {
+          teamId: TEAM_ID,
+          rawEventId: telegramId,
+          statement: 'The Telegram message references Acme renewal.',
+          confidence: 0.9,
+          modelVersion: 'test',
+        },
+        {
+          teamId: TEAM_ID,
+          rawEventId: linkedEmailId,
+          statement: 'Acme procurement approved the renewal.',
+          confidence: 0.9,
+          modelVersion: 'test',
+        },
+        {
+          teamId: TEAM_ID,
+          rawEventId: privateEmailId,
+          statement: 'Acme is cancelling.',
+          confidence: 0.9,
+          modelVersion: 'test',
+        },
+      ])
+      .returning({ id: facts.id, rawEventId: facts.rawEventId });
+    await db.insert(factEntities).values(
+      insertedFacts.map((fact) => ({
+        factId: fact.id,
+        entityId: OBJECT_ID,
+        role: 'subject' as const,
+      })),
+    );
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey,
+      lastRawEventId: telegramId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const prompt = (chat.mock.calls[0]?.[0] as { prompt: string }).prompt;
+    expect(prompt).toContain('# Explicit linked context');
+    expect(prompt).toContain('Email from Acme: procurement approved the renewal.');
+    expect(prompt).not.toContain('Unrelated email: legal approved a different thing.');
+    expect(prompt).not.toContain('Private email: Acme is cancelling.');
+  });
+
+  it('creates a correction proposal instead of mutating accepted conversation suggestions', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000c1';
+    const reviewId = '20000000-0000-0000-0000-0000000000c1';
+    const conversationKey = `telegram:${TEAM_ID}:chat:999`;
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'telegram',
+      text: 'John owns the Acme deck now.',
+      sourceMetadata: { tg_chat_id: '999', tg_message_id: '1' },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey,
+      lastRawEventId: rawEventId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Send Acme deck',
+            summary: 'John owns sending the Acme deck.',
+            reason: 'The conversation assigns the work.',
+            confidence: 'high',
+            quote: 'John owns the Acme deck now.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Send Acme deck',
+                proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'John' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    const [existing] = await db.select().from(agentSuggestions);
+    await db
+      .update(agentSuggestions)
+      .set({ status: 'accepted', resolvedAt: new Date(), resolvedByUserId: OWNER_ID })
+      .where(eq(agentSuggestions.id, existing?.id ?? '00000000-0000-0000-0000-000000000000'));
+    await db
+      .update(conversationReviews)
+      .set({
+        status: 'pending',
+        reviewedThroughRawEventId: null,
+        quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+      })
+      .where(eq(conversationReviews.id, reviewId));
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const rows = await db.select().from(agentSuggestions);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.status).sort()).toEqual(['accepted', 'pending']);
   });
 
   it('stores model-backed object update suggestions with existing context in the prompt', async () => {
