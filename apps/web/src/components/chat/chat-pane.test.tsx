@@ -17,6 +17,9 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock('@/app/actions/chat', () => ({ unpinChatSessionAction: vi.fn() }));
+vi.mock('@/components/chat/tool-step', () => ({
+  ToolStep: ({ name }: { name: string }) => createElement('span', null, name),
+}));
 
 const { ChatPane } = await import('./chat-pane.js');
 

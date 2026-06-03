@@ -14,6 +14,7 @@ const fakes = vi.hoisted(() => ({
   fakeRequireMembership: vi.fn(),
   fakeCheckRateLimit: vi.fn(),
   fakeTeam: vi.fn(),
+  fakeCurrentUserIdentityContext: vi.fn(),
   fakeChatSessionExists: vi.fn(),
   fakeCreateChatSession: vi.fn(),
   fakeListObjects: vi.fn(),
@@ -51,7 +52,10 @@ vi.mock('@timeline/shared/rate-limit', () => ({
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
-    timeline: { team: fakes.fakeTeam },
+    timeline: {
+      team: fakes.fakeTeam,
+      currentUserIdentityContext: fakes.fakeCurrentUserIdentityContext,
+    },
     objects: {
       chatSessionExists: fakes.fakeChatSessionExists,
       createChatSession: fakes.fakeCreateChatSession,
@@ -151,6 +155,14 @@ beforeEach(() => {
   fakes.fakeRequireMembership.mockResolvedValue('member');
   fakes.fakeCheckRateLimit.mockResolvedValue({ ok: true, remaining: 4, retryAfterMs: 0 });
   fakes.fakeTeam.mockResolvedValue({ name: 'Team From Scope' });
+  fakes.fakeCurrentUserIdentityContext.mockResolvedValue({
+    userId: USER_ID,
+    role: 'member',
+    name: 'Tim',
+    email: 'tim@example.test',
+    person: null,
+    facets: [],
+  });
   fakes.fakeChatSessionExists.mockResolvedValue(true);
   fakes.fakeCreateChatSession.mockResolvedValue({ id: SESSION_ID });
   fakes.fakeListObjects.mockImplementation((filter?: { type?: string }) =>
@@ -317,6 +329,14 @@ describe('POST /api/chat', () => {
       expect.objectContaining({
         teamName: 'Team From Scope',
         userName: 'Tim',
+        currentUser: {
+          userId: USER_ID,
+          role: 'member',
+          name: 'Tim',
+          email: 'tim@example.test',
+          person: null,
+          facets: [],
+        },
         workspaceTime: 'Tallinn time',
       }),
     );
