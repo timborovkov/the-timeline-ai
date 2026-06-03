@@ -15,6 +15,11 @@ arrives; accepted object memory remains canonical until a new correction
 proposal is accepted. Retrieval can use the same evidence-window concept for
 context enrichment, while durable proposals require the stricter evidence
 threshold and must cite only events visible to the proposal audience.
+Private or specific-user conversational raw events do not schedule
+team-visible conversation reviews; they are skipped before the proposal LLM
+boundary. Review scheduling is debounced per conversation key and only advances
+to newer raw events, so duplicate or delayed source jobs cannot move the review
+anchor backward.
 
 The first implementation should prioritize proposal quality over retrieval
 enrichment, while keeping the evidence-window helper reusable by retrieval.

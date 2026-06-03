@@ -799,6 +799,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       for (const uid of input.visibilityUserIds ?? []) await deps.requireTeamMember(uid);
       const metadata = input.metadata ?? {};
       await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
+      const correctionDedupeKey = `${input.dedupeKey}:correction:${suggestionDedupeKey({
+        title: input.title,
+        summary: input.summary ?? null,
+        items: input.items,
+        evidence: input.evidence?.map((ev) => ev.rawEventId) ?? [],
+      })}`;
       const existingRows = await db
         .select({ id: agentSuggestions.id, status: agentSuggestions.status })
         .from(agentSuggestions)
@@ -809,30 +815,26 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const existing = existingRows[0];
       const dedupeKey =
         existing && (existing.status === 'accepted' || existing.status === 'rejected')
-          ? `${input.dedupeKey}:correction:${suggestionDedupeKey({
-              title: input.title,
-              summary: input.summary ?? null,
-              items: input.items,
-              evidence: input.evidence?.map((ev) => ev.rawEventId) ?? [],
-            })}`
+          ? correctionDedupeKey
           : input.dedupeKey;
 
       const row = await db.transaction(async (tx) => {
-        const [inserted] = await tx
+        const suggestionValues = {
+          teamId,
+          source: input.source,
+          title: input.title,
+          summary: input.summary ?? null,
+          reason: input.reason ?? null,
+          confidence: input.confidence ?? 'medium',
+          dedupeKey,
+          visibility,
+          visibilityOwnerUserId,
+          visibilityUserIds: input.visibilityUserIds ?? null,
+          metadata,
+        };
+        let [inserted] = await tx
           .insert(agentSuggestions)
-          .values({
-            teamId,
-            source: input.source,
-            title: input.title,
-            summary: input.summary ?? null,
-            reason: input.reason ?? null,
-            confidence: input.confidence ?? 'medium',
-            dedupeKey,
-            visibility,
-            visibilityOwnerUserId,
-            visibilityUserIds: input.visibilityUserIds ?? null,
-            metadata,
-          })
+          .values(suggestionValues)
           .onConflictDoUpdate({
             target: [agentSuggestions.teamId, agentSuggestions.dedupeKey],
             set: {
@@ -843,8 +845,30 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               metadata: sql`${agentSuggestions.metadata} || ${JSON.stringify(metadata)}::jsonb`,
               updatedAt: new Date(),
             },
+            where: sql`${agentSuggestions.status} NOT IN ('accepted', 'rejected')`,
           })
           .returning();
+        if (!inserted && dedupeKey === input.dedupeKey) {
+          [inserted] = await tx
+            .insert(agentSuggestions)
+            .values({
+              ...suggestionValues,
+              dedupeKey: correctionDedupeKey,
+            })
+            .onConflictDoUpdate({
+              target: [agentSuggestions.teamId, agentSuggestions.dedupeKey],
+              set: {
+                title: input.title,
+                summary: input.summary ?? null,
+                reason: input.reason ?? null,
+                confidence: input.confidence ?? 'medium',
+                metadata: sql`${agentSuggestions.metadata} || ${JSON.stringify(metadata)}::jsonb`,
+                updatedAt: new Date(),
+              },
+              where: sql`${agentSuggestions.status} NOT IN ('accepted', 'rejected')`,
+            })
+            .returning();
+        }
         if (!inserted) throw new Error('Failed to create suggestion');
 
         if (input.evidence?.length) {

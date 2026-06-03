@@ -294,6 +294,74 @@ describe('processSuggestionJobForTests', () => {
     );
   });
 
+  it('skips private conversational events without scheduling a review', async () => {
+    const rawEventId = '10000000-0000-0000-0000-00000000000b';
+    const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
+    const chat = emptyModel();
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'telegram',
+      text: "I'll handle private paperwork tomorrow",
+      visibility: 'private',
+      sourceMetadata: { tg_chat_id: '123', tg_message_id: '11' },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      {
+        getEnv: env,
+        chatStructured: chat,
+        modelId: MODEL_ID,
+        enqueueSuggestionJob,
+      },
+    );
+
+    expect(chat).not.toHaveBeenCalled();
+    expect(enqueueSuggestionJob).not.toHaveBeenCalled();
+    expect(await db.select().from(conversationReviews)).toHaveLength(0);
+    const [event] = await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId));
+    expect(event?.sourceMetadata).toMatchObject({
+      suggestions_skipped_reason: 'visibility=private',
+      suggestion_model_version: `${MODEL_ID}@2026-05-a`,
+    });
+  });
+
+  it('does not let out-of-order raw event jobs move a conversation review anchor backward', async () => {
+    const olderId = '10000000-0000-0000-0000-0000000000e1';
+    const newerId = '10000000-0000-0000-0000-0000000000e2';
+    const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
+    await seedRawEvent(db as never, {
+      id: newerId,
+      source: 'telegram',
+      text: 'Newer clarification: do not send the deck.',
+      occurredAt: new Date('2026-05-27T10:05:00.000Z'),
+      sourceMetadata: { tg_chat_id: 'rewind', tg_message_id: '2' },
+    });
+    await seedRawEvent(db as never, {
+      id: olderId,
+      source: 'telegram',
+      text: 'Older message: Sarah can send the deck.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      sourceMetadata: { tg_chat_id: 'rewind', tg_message_id: '1' },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: newerId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID, enqueueSuggestionJob },
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: olderId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID, enqueueSuggestionJob },
+    );
+
+    const [review] = await db.select().from(conversationReviews);
+    expect(review?.lastRawEventId).toBe(newerId);
+    expect(enqueueSuggestionJob).toHaveBeenCalledTimes(1);
+  });
+
   it('treats ambiguous contradicted conversation reviews as successful no_action', async () => {
     const chat = emptyModel();
     const firstId = '10000000-0000-0000-0000-0000000000a1';

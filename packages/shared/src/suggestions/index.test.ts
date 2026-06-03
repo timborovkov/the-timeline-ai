@@ -179,6 +179,72 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.count).toBe('2');
   });
 
+  it('keeps accepted suggestion rows immutable and creates a correction bundle', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const original = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Send Acme deck',
+      summary: 'Sarah owns the deck.',
+      dedupeKey: 'conversation:acme-deck',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send Acme deck',
+          dedupeKey: 'conversation:acme-deck:item',
+          proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'Sarah' },
+        },
+      ],
+    });
+    await pg.exec(`
+      UPDATE agent_suggestions
+      SET status = 'accepted', resolved_at = '2026-05-27T10:00:00.000Z'
+      WHERE id = '${original.id}';
+    `);
+
+    const correction = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Send Acme deck',
+      summary: 'John owns the deck now.',
+      dedupeKey: 'conversation:acme-deck',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send Acme deck',
+          dedupeKey: 'conversation:acme-deck:item',
+          proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'John' },
+        },
+      ],
+    });
+
+    expect(correction.id).not.toBe(original.id);
+    const rows = await pg.query<{
+      id: string;
+      title: string;
+      summary: string | null;
+      status: string;
+      dedupe_key: string;
+    }>(`
+      SELECT id, title, summary, status, dedupe_key
+      FROM agent_suggestions
+      WHERE team_id = '${TEAM_ID}'
+      ORDER BY created_at, id;
+    `);
+    expect(rows.rows).toHaveLength(2);
+    expect(rows.rows.find((row) => row.id === original.id)).toMatchObject({
+      title: 'Send Acme deck',
+      summary: 'Sarah owns the deck.',
+      status: 'accepted',
+      dedupe_key: 'conversation:acme-deck',
+    });
+    expect(rows.rows.find((row) => row.id === correction.id)?.dedupe_key).toContain(
+      'conversation:acme-deck:correction:',
+    );
+  });
+
   it('claims accept once before applying canonical changes', async () => {
     const creator = withTeam(db as never, TEAM_ID, USER_ID);
     const reviewer = withTeam(db as never, TEAM_ID, REVIEWER_ID);

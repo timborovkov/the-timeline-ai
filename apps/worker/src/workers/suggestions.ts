@@ -259,6 +259,14 @@ export async function processSuggestionJobForTests(
   if (row.teamId !== teamId) throw new UnrecoverableError(`raw event ${rawEventId} team mismatch`);
   const identity = conversationReview.conversationIdentityForRawEvent(row);
   if (identity) {
+    if (row.visibility !== 'team') {
+      await stampSuggestionMetadata(deps.db, rawEventId, {
+        suggestions_skipped_at: new Date().toISOString(),
+        suggestions_skipped_reason: `visibility=${row.visibility}`,
+        suggestion_model_version: modelVersion,
+      });
+      return;
+    }
     await scheduleConversationReview(deps, row, identity, io);
     return;
   }
@@ -525,9 +533,14 @@ async function scheduleConversationReview(
         metadata: sql`${conversationReviews.metadata} || ${JSON.stringify({ kind: identity.kind })}::jsonb`,
         updatedAt: new Date(),
       },
+      where: sql`${conversationReviews.lastRawEventId} IS NULL OR (
+          SELECT (${rawEvents.occurredAt}, ${rawEvents.id})
+          FROM ${rawEvents}
+          WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}
+        ) < (${row.occurredAt.toISOString()}::timestamptz, ${row.id}::uuid)`,
     })
     .returning({ id: conversationReviews.id, teamId: conversationReviews.teamId });
-  if (!review) throw new Error('failed to schedule conversation review');
+  if (!review) return;
   const delayMs = Math.max(0, quietUntil.getTime() - Date.now());
   await (io.enqueueSuggestionJob ?? queue.enqueueSuggestionJob)(
     { scope: 'conversation_review', conversationReviewId: review.id, teamId: review.teamId },
