@@ -8,7 +8,7 @@ import {
   objectNotes,
   rawEvents,
 } from '@timeline/db';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -248,13 +248,27 @@ describe('object scope — chat session isolation', () => {
       canonicalName: 'Internal AI thread',
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    const session = await ownerScope.createChatSession({ title: 'Private scratchpad' });
+    const session = await ownerScope.createChatSession();
+    await expect(ownerScope.chatSessionTitleStatus(session.id)).resolves.toEqual({
+      exists: true,
+      needsTitle: true,
+    });
 
     await ownerScope.appendChatMessages(session.id, [
       { role: 'user', authorUserId: USER_OWNER, content: 'Summarize the rollout' },
     ]);
+    const afterAppend = await db.select().from(chatSessions).where(eq(chatSessions.id, session.id));
+    await ownerScope.setChatSessionTitle(session.id, 'Rollout summary', { touchUpdatedAt: false });
+    await expect(ownerScope.chatSessionTitleStatus(session.id)).resolves.toEqual({
+      exists: true,
+      needsTitle: false,
+    });
 
     await expect(memberScope.getChatSession(session.id)).resolves.toBeNull();
+    await expect(memberScope.chatSessionTitleStatus(session.id)).resolves.toEqual({
+      exists: false,
+      needsTitle: false,
+    });
     await expect(
       memberScope.appendChatMessages(session.id, [
         { role: 'user', authorUserId: USER_MEMBER, content: 'Intrude' },
@@ -262,21 +276,27 @@ describe('object scope — chat session isolation', () => {
     ).rejects.toThrow('Session not found');
 
     await memberScope.setChatSessionTitle(session.id, 'Renamed by teammate');
+    await memberScope.setUniqueChatSessionTitle(session.id, 'Uniquely renamed by teammate');
     await memberScope.archiveChatSession(session.id);
     await memberScope.linkChatSessionToObject(session.id, object.id);
 
     const rows = await db.select().from(chatSessions).where(eq(chatSessions.id, session.id));
     expect(rows[0]).toMatchObject({
-      title: 'Private scratchpad',
+      title: 'Rollout summary',
       pinnedEntityId: null,
       createdBy: USER_OWNER,
     });
+    expect(rows[0]?.updatedAt.getTime()).toBe(afterAppend[0]?.updatedAt.getTime());
     expect(rows[0]?.archivedAt).toBeNull();
 
     await ownerScope.linkChatSessionToObject(session.id, object.id);
     await ownerScope.archiveChatSession(session.id);
 
     await expect(ownerScope.chatSessionExists(session.id)).resolves.toBe(false);
+    await expect(ownerScope.chatSessionTitleStatus(session.id)).resolves.toEqual({
+      exists: false,
+      needsTitle: false,
+    });
     await expect(ownerScope.getChatSession(session.id)).resolves.toBeNull();
 
     const messages = await db
@@ -288,6 +308,55 @@ describe('object scope — chat session isolation', () => {
     const archived = await db.select().from(chatSessions).where(eq(chatSessions.id, session.id));
     expect(archived[0]?.pinnedEntityId).toBe(object.id);
     expect(archived[0]?.archivedAt).toBeInstanceOf(Date);
+  });
+
+  it('assigns unique chat titles within the creator sidebar', async () => {
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const first = await ownerScope.createChatSession();
+    const second = await ownerScope.createChatSession();
+    const otherUserScope = withTeam(db, TEAM_A, USER_MEMBER).objects;
+    const otherUserSession = await otherUserScope.createChatSession();
+
+    await ownerScope.setUniqueChatSessionTitle(first.id, 'Rollout summary', {
+      touchUpdatedAt: false,
+    });
+    const beforeSecondTitle = await db
+      .select()
+      .from(chatSessions)
+      .where(eq(chatSessions.id, second.id));
+    await ownerScope.setUniqueChatSessionTitle(second.id, 'Rollout summary', {
+      touchUpdatedAt: false,
+    });
+    await otherUserScope.setUniqueChatSessionTitle(otherUserSession.id, 'Rollout summary');
+
+    const rows = await db
+      .select({ id: chatSessions.id, title: chatSessions.title, updatedAt: chatSessions.updatedAt })
+      .from(chatSessions)
+      .where(inArray(chatSessions.id, [first.id, second.id, otherUserSession.id]));
+    const titles = new Map(rows.map((row) => [row.id, row.title]));
+    expect(titles.get(first.id)).toBe('Rollout summary');
+    expect(titles.get(second.id)).toBe('Rollout summary 2');
+    expect(titles.get(otherUserSession.id)).toBe('Rollout summary');
+    expect(rows.find((row) => row.id === second.id)?.updatedAt.getTime()).toBe(
+      beforeSecondTitle[0]?.updatedAt.getTime(),
+    );
+  });
+
+  it('does not replace an existing title through the unique auto-title helper', async () => {
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const session = await ownerScope.createChatSession({ title: 'Original title' });
+    const beforeAutoTitle = await db
+      .select()
+      .from(chatSessions)
+      .where(eq(chatSessions.id, session.id));
+
+    await ownerScope.setUniqueChatSessionTitle(session.id, 'Late generated title', {
+      touchUpdatedAt: false,
+    });
+
+    const rows = await db.select().from(chatSessions).where(eq(chatSessions.id, session.id));
+    expect(rows[0]?.title).toBe('Original title');
+    expect(rows[0]?.updatedAt.getTime()).toBe(beforeAutoTitle[0]?.updatedAt.getTime());
   });
 
   it('rejects pinning a chat session to an object from another team', async () => {

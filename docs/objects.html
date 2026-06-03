@@ -297,6 +297,14 @@
         <code>useChat</code> re-sends the whole transcript on every request.
       </p>
       <p>
+        Sessions without a title get a short title from the first user turn on stream finalize,
+        including retry attempts on later turns if the first title write failed. The title generator
+        uses the shared LLM wrapper, falls back to a sanitized first-message snippet if the model
+        call fails, and appends a numeric suffix under the chat-session write lock when another
+        visible session already has the same title. Automatic title writes do not bump the session's
+        activity timestamp; only persisted turns should affect sidebar recency.
+      </p>
+      <p>
         Persistence failures are warn-logged, not surfaced to the user — the assistant reply has
         already streamed by the time the write attempts.
       </p>
@@ -473,7 +481,8 @@
           archive, pinned-object chip; <code>/api/chat</code> accepts
           <code>?session=&lt;uuid&gt;</code>
           query-string fallback and returns auto-created session ids via
-          <code>x-tl-session-id</code>.
+          <code>x-tl-session-id</code>. New sessions are titled from the first user turn after the
+          stream finishes.
         </li>
         <li>
           <strong>Agent write-side tools</strong> — <code>get_object</code>,
