@@ -147,7 +147,8 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
         </li>
         <li>
           <code>/ask &lt;question&gt;</code> queries the team's timeline through the same agent
-          pipeline as <code>/app/chat</code>. Plain (non-command) messages are still captured as
+          pipeline as <code>/app/chat</code>, then replies with plain text so Telegram does not show
+          raw citation ids or Markdown markers. Plain (non-command) messages are still captured as
           notes. DM captures are acknowledged with a <code>👀</code> reaction so it's obvious they
           landed; group captures stay quiet to avoid channel noise. Rate-limited per Telegram user
           (10/min) because each <code>/ask</code> runs the agent against OpenRouter.

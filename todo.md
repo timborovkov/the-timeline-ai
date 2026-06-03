@@ -23,7 +23,7 @@ Open PRs not counted here yet:
 - [x] **Voice and workers:** BullMQ queues, transcribe/extract/embed worker entry points, RustFS/S3 wrapper, Telegram audio ingest, web audio recording, transcription worker, timeline audio playback.
 - [x] **Extraction and entities:** `entities`, `facts`, `fact_entities`, structured LLM extraction, entity resolution, merge UI, entity profile pages, re-extraction script.
 - [x] **Embeddings and search:** Qdrant wrapper, event/fact embeddings, team/visibility-scoped vector queries, semantic search API/UI, re-embed script.
-- [x] **Agent chat:** streaming chat UI, scoped tools, cited answers, shared `withTeam` data access, prompt/tool guardrails, hard tool-call cap. Also exposed in Telegram via `/ask` (non-streaming wrapper at `packages/shared/src/agent/ask.ts` reuses the same system prompt + tool set).
+- [x] **Agent chat:** streaming chat UI, scoped tools, cited answers, shared `withTeam` data access, prompt/tool guardrails, hard tool-call cap. Also exposed in Telegram and Slack via bot asks (non-streaming wrapper at `packages/shared/src/agent/ask.ts` reuses the same system prompt + tool set, then strips citation ids/Markdown for plain chat replies).
 - [x] **Email ingest:** per-team inbound addresses, Postmark webhook, sender verification, parsing, attachment storage, audio attachment routing, CC/BCC forwarding, forwarded-header parsing, thread linking, retryable infra failures.
 - [x] **Observability baseline:** structured pino logging across web, worker, and shared packages.
 
