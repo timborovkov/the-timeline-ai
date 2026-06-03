@@ -241,8 +241,9 @@ out of scope.
 - [x] Treat onboarding as a tutorial, not a proof-of-ingest flow. Configuring
       or opening the relevant surface is enough; do not require first
       successful external data arrival.
-- [x] Checklist steps: capture first note, connect Telegram, connect Slack, set
-      up email forwarding, upload first document, connect first integration.
+- [x] Checklist steps: capture one timeline event, connect Telegram, connect
+      Slack, set up email forwarding, upload first document, connect first
+      integration.
 - [x] Keep the checklist reopenable from a setup/help affordance in the app.
 
 ### Slice 13.2 — Visibility defaults and one-off edits
