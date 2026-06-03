@@ -99,15 +99,16 @@ For the full walkthrough, see
 
 ```bash
 pnpm dev                  # Next.js app + worker in watch mode
-pnpm validate             # format check, typecheck, lint, knip
-pnpm test                 # unit and integration tests
-pnpm e2e                  # Playwright smoke tests
+pnpm validate             # format check, typecheck, lint, tests, knip
+pnpm test                 # unit and integration tests (package suites run sequentially)
+pnpm test:eval            # fast deterministic agent and retrieval evals
+pnpm e2e                  # Playwright core journey tests
 pnpm db:generate          # generate Drizzle migrations after schema changes
 pnpm db:migrate           # apply database migrations
 pnpm check:web-bundle     # inspect built Next server chunks
 ```
 
-`pnpm validate` is the main pre-merge gate.
+`pnpm validate` is the main pre-merge gate and includes the unit/integration test suite.
 
 ## Documentation
 
@@ -117,6 +118,7 @@ pnpm check:web-bundle     # inspect built Next server chunks
 - [`docs/index.html`](./docs/index.html) — documentation index.
 - [`design.md`](./design.md) — UI design system and product interaction model.
 - [`todo.md`](./todo.md) — phased build plan and remaining work.
+- [`TEST_TODO.md`](./TEST_TODO.md) — current test coverage map and expansion plan.
 - [`docs/adr/`](./docs/adr/) — durable architecture decisions.
 
 Setup guides for external services live under [`docs/setup`](./docs/setup/):

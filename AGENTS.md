@@ -74,7 +74,7 @@ tool. When in doubt, invoke the skill.
   rather than deep relative paths; root scripts should also consume exported
   `@timeline/*` subpaths instead of reaching into `packages/*/src`.
 - **Run `pnpm validate` before declaring work complete.** Runs
-  `format:check`, `typecheck`, `lint`, and `knip` in sequence — the same
+  `format:check`, `typecheck`, `lint`, `test`, and `knip` in sequence — the same
   gates CI enforces. Fix failures at the root cause; do not skip.
 - **Meeting bots are silent + consent-gated.** Phase 10 ships transcript
   capture only — no voice/agent mode. `team_meeting_settings

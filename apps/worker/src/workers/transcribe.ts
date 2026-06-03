@@ -24,6 +24,171 @@ interface TranscribeWorkerDeps {
   db: Db;
 }
 
+export interface TranscribeWorkerIO {
+  headObject(input: { audioKey: string }): Promise<{ contentLength?: number | undefined }>;
+  getObjectBuffer(input: { audioKey: string; maxBytes: number }): Promise<{ body: Buffer }>;
+  transcribeAudio(input: { audio: Buffer }): Promise<{ text: string; model: string }>;
+  enqueueExtract(input: queue.ExtractJobData): Promise<void>;
+  enqueueEmbed(input: queue.EmbedRawEventJobData): Promise<void>;
+  enqueueSuggestion(input: queue.SuggestionJobData): Promise<void>;
+}
+
+function defaultIO(): TranscribeWorkerIO {
+  const s3 = getS3Client();
+  const bucket = getAudioBucket();
+  return {
+    async headObject(input) {
+      return headObject(s3, bucket, input.audioKey);
+    },
+    async getObjectBuffer(input) {
+      return getObjectBuffer(s3, bucket, input.audioKey, input.maxBytes);
+    },
+    async transcribeAudio(input) {
+      return llm.transcribeAudio(input);
+    },
+    async enqueueExtract(input) {
+      await queue.enqueueExtractJob(input);
+    },
+    async enqueueEmbed(input) {
+      await queue.enqueueEmbedJob(input);
+    },
+    async enqueueSuggestion(input) {
+      await queue.enqueueSuggestionJob(input);
+    },
+  };
+}
+
+export async function processTranscribeJobForTests(
+  deps: TranscribeWorkerDeps,
+  data: queue.TranscribeJobData,
+  io: TranscribeWorkerIO = defaultIO(),
+): Promise<{ rawEventId: string; model?: string }> {
+  const { rawEventId, audioKey } = data;
+  const head = await io.headObject({ audioKey });
+  if (head.contentLength === undefined) {
+    throw new UnrecoverableError(
+      `Audio object ${audioKey} has no Content-Length; cannot bounds-check`,
+    );
+  }
+  if (head.contentLength > MAX_AUDIO_BYTES) {
+    throw new UnrecoverableError(
+      `Audio object ${audioKey} is ${head.contentLength} bytes; max is ${MAX_AUDIO_BYTES}`,
+    );
+  }
+  const { body } = await io.getObjectBuffer({ audioKey, maxBytes: MAX_AUDIO_BYTES });
+  const result = await io.transcribeAudio({ audio: body });
+
+  const patch = JSON.stringify({
+    transcription_model: result.model,
+    transcribed_at: new Date().toISOString(),
+  });
+  // Clear stale failure markers on success. A row that previously failed
+  // (Redis outage, enqueue-failed) then succeeds via retry must not
+  // continue to read as failed in the timeline UI.
+  const update = await deps.db
+    .update(rawEvents)
+    .set({
+      contentText: result.text,
+      sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'transcription_failed_at' - 'transcription_error') || ${patch}::jsonb`,
+    })
+    .where(eq(rawEvents.id, rawEventId))
+    .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
+  if (update.length === 0) {
+    log.warn({ rawEventId }, 'raw event not found at update');
+    return { rawEventId, model: result.model };
+  }
+
+  try {
+    const row = update[0];
+    if (row) {
+      await io.enqueueExtract({ rawEventId: row.id, teamId: row.teamId });
+    }
+  } catch (enqueueErr) {
+    log.error({ err: enqueueErr }, 'failed to enqueue extract job');
+    const failurePatch = JSON.stringify({
+      extraction_failed_at: new Date().toISOString(),
+      extraction_error: `enqueue failed: ${
+        enqueueErr instanceof Error ? enqueueErr.message.slice(0, 480) : 'unknown'
+      }`,
+    });
+    await deps.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, rawEventId))
+      .catch((markErr: unknown) => {
+        log.error({ err: markErr }, 'failed to mark extract failure');
+      });
+  }
+
+  try {
+    const row = update[0];
+    if (row) {
+      await io.enqueueEmbed({ rawEventId: row.id, teamId: row.teamId });
+    }
+  } catch (enqueueErr) {
+    log.error({ err: enqueueErr }, 'failed to enqueue embed job');
+    const failurePatch = JSON.stringify({
+      embedding_failed_at: new Date().toISOString(),
+      embedding_error: `enqueue failed: ${
+        enqueueErr instanceof Error ? enqueueErr.message.slice(0, 480) : 'unknown'
+      }`,
+    });
+    await deps.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, rawEventId))
+      .catch((markErr: unknown) => {
+        log.error({ err: markErr }, 'failed to mark embed failure');
+      });
+  }
+
+  try {
+    const row = update[0];
+    if (row) {
+      await io.enqueueSuggestion({ rawEventId: row.id, teamId: row.teamId });
+    }
+  } catch (enqueueErr) {
+    log.error({ err: enqueueErr }, 'failed to enqueue suggestion job');
+    const failurePatch = JSON.stringify({
+      suggestions_failed_at: new Date().toISOString(),
+      suggestions_error: `enqueue failed: ${
+        enqueueErr instanceof Error ? enqueueErr.message.slice(0, 480) : 'unknown'
+      }`,
+    });
+    await deps.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, rawEventId))
+      .catch((markErr: unknown) => {
+        log.error({ err: markErr }, 'failed to mark suggestion failure');
+      });
+  }
+  return { rawEventId, model: result.model };
+}
+
+export async function markTranscribeFailureForTests(
+  deps: TranscribeWorkerDeps,
+  data: Pick<queue.TranscribeJobData, 'rawEventId'>,
+  err: Error,
+): Promise<void> {
+  const patch = JSON.stringify({
+    transcription_failed_at: new Date().toISOString(),
+    transcription_error: err.message.slice(0, 500),
+  });
+  await deps.db
+    .update(rawEvents)
+    .set({
+      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+    })
+    .where(eq(rawEvents.id, data.rawEventId));
+}
+
 /**
  * Transcribe worker: pulls audio from S3, runs OpenRouter transcription,
  * writes the result back onto the raw event.
@@ -38,111 +203,7 @@ interface TranscribeWorkerDeps {
 export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.TranscribeJobData> {
   const worker = new Worker<queue.TranscribeJobData>(
     queue.QUEUE_NAMES.transcribe,
-    async (job: Job<queue.TranscribeJobData>) => {
-      const { rawEventId, audioKey } = job.data;
-      const s3 = getS3Client();
-      const bucket = getAudioBucket();
-      // Bounds-check before reading the body into memory. UnrecoverableError
-      // tells BullMQ to skip retries — an oversize object will be just as
-      // oversize on the next attempt, and we don't want to repeatedly OOM
-      // the worker. A missing Content-Length is also unrecoverable: we
-      // cannot trust an unbounded body to fit. The mid-stream cap in
-      // getObjectBuffer is defense in depth against a server that hides
-      // the header or a body that exceeds its advertised length.
-      const head = await headObject(s3, bucket, audioKey);
-      if (head.contentLength === undefined) {
-        throw new UnrecoverableError(
-          `Audio object ${audioKey} has no Content-Length; cannot bounds-check`,
-        );
-      }
-      if (head.contentLength > MAX_AUDIO_BYTES) {
-        throw new UnrecoverableError(
-          `Audio object ${audioKey} is ${head.contentLength} bytes; max is ${MAX_AUDIO_BYTES}`,
-        );
-      }
-      const { body } = await getObjectBuffer(s3, bucket, audioKey, MAX_AUDIO_BYTES);
-      const result = await llm.transcribeAudio({ audio: body });
-
-      const patch = JSON.stringify({
-        transcription_model: result.model,
-        transcribed_at: new Date().toISOString(),
-      });
-      // Clear stale failure markers on success. A row that previously failed
-      // (Redis outage, enqueue-failed) then succeeds via retry must not
-      // continue to read as failed in the timeline UI.
-      const update = await deps.db
-        .update(rawEvents)
-        .set({
-          contentText: result.text,
-          sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'transcription_failed_at' - 'transcription_error') || ${patch}::jsonb`,
-        })
-        .where(eq(rawEvents.id, rawEventId))
-        .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
-      if (update.length === 0) {
-        log.warn({ rawEventId }, 'raw event not found at update');
-        return { rawEventId, model: result.model };
-      }
-      // Hand off to extraction now that text is available. A failed enqueue
-      // here is logged but does not fail the transcribe job — the transcript
-      // is the durable artifact; extraction can be replayed via reextract.
-      // Mirror the web action's pattern: mark the row so the timeline UI can
-      // surface "extraction unavailable" instead of leaving the user with no
-      // signal. Without this marker, a Redis outage at handoff produces a
-      // transcribed row that silently never gets facts.
-      try {
-        const row = update[0];
-        if (row) {
-          await queue.enqueueExtractJob({ rawEventId: row.id, teamId: row.teamId });
-        }
-      } catch (enqueueErr) {
-        log.error({ err: enqueueErr }, 'failed to enqueue extract job');
-        const failurePatch = JSON.stringify({
-          extraction_failed_at: new Date().toISOString(),
-          extraction_error: `enqueue failed: ${
-            enqueueErr instanceof Error ? enqueueErr.message.slice(0, 480) : 'unknown'
-          }`,
-        });
-        await deps.db
-          .update(rawEvents)
-          .set({
-            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
-          })
-          .where(eq(rawEvents.id, rawEventId))
-          .catch((markErr: unknown) => {
-            log.error({ err: markErr }, 'failed to mark extract failure');
-          });
-      }
-      // Independently enqueue an event-level embed job. This covers events
-      // that produce zero facts (which would otherwise never land in Qdrant)
-      // and races safely with the extract worker's own enqueue path —
-      // deterministic point ids mean duplicate writes are no-ops. A failure
-      // here gets its own marker so the UI can distinguish "no facts" from
-      // "no embedding".
-      try {
-        const row = update[0];
-        if (row) {
-          await queue.enqueueEmbedJob({ rawEventId: row.id, teamId: row.teamId });
-        }
-      } catch (enqueueErr) {
-        log.error({ err: enqueueErr }, 'failed to enqueue embed job');
-        const failurePatch = JSON.stringify({
-          embedding_failed_at: new Date().toISOString(),
-          embedding_error: `enqueue failed: ${
-            enqueueErr instanceof Error ? enqueueErr.message.slice(0, 480) : 'unknown'
-          }`,
-        });
-        await deps.db
-          .update(rawEvents)
-          .set({
-            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
-          })
-          .where(eq(rawEvents.id, rawEventId))
-          .catch((markErr: unknown) => {
-            log.error({ err: markErr }, 'failed to mark embed failure');
-          });
-      }
-      return { rawEventId, model: result.model };
-    },
+    async (job: Job<queue.TranscribeJobData>) => processTranscribeJobForTests(deps, job.data),
     {
       connection: queue.getRedisConnection(),
       // Phase 3: one in-flight transcription per worker process. Bump once
@@ -163,19 +224,9 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
     const maxAttempts = job.opts.attempts ?? 1;
     const unrecoverable = err instanceof UnrecoverableError;
     if (!unrecoverable && job.attemptsMade < maxAttempts) return;
-    const patch = JSON.stringify({
-      transcription_failed_at: new Date().toISOString(),
-      transcription_error: err.message.slice(0, 500),
+    void markTranscribeFailureForTests(deps, job.data, err).catch((updateErr: unknown) => {
+      log.error({ err: updateErr }, 'failed to mark row failure');
     });
-    void deps.db
-      .update(rawEvents)
-      .set({
-        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
-      })
-      .where(eq(rawEvents.id, job.data.rawEventId))
-      .catch((updateErr: unknown) => {
-        log.error({ err: updateErr }, 'failed to mark row failure');
-      });
   });
   worker.on('completed', (job) => {
     log.info({ jobId: job.id }, 'job completed');

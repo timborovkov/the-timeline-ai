@@ -1,8 +1,8 @@
 'use client';
 
 import { LifeBuoy, LogOut, User } from 'lucide-react';
+import { signOut } from 'next-auth/react';
 
-import { signOutAction } from '@/app/actions/auth';
 import { reopenOnboardingChecklistAction } from '@/app/actions/onboarding';
 import { Button } from '@/components/ui/button';
 import {
@@ -43,14 +43,16 @@ export function UserMenu({ user }: Props) {
           </DropdownMenuItem>
         </form>
         <DropdownMenuSeparator />
-        <form action={signOutAction}>
-          <DropdownMenuItem asChild>
-            <button type="submit" className="flex w-full items-center gap-2">
-              <LogOut className="h-4 w-4" />
-              Sign out
-            </button>
-          </DropdownMenuItem>
-        </form>
+        <DropdownMenuItem asChild>
+          <button
+            type="button"
+            onClick={() => void signOut({ redirectTo: '/sign-in' })}
+            className="flex w-full items-center gap-2"
+          >
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </button>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

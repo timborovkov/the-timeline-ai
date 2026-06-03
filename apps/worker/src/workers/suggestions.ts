@@ -27,6 +27,12 @@ interface SuggestionWorkerDeps {
   db: Db;
 }
 
+interface SuggestionWorkerIO {
+  getEnv?: typeof getEnv;
+  chatStructured?: typeof llm.chatStructured;
+  modelId?: string;
+}
+
 const suggestionItemSchema = z.object({
   operation: z.enum(['create', 'update', 'archive_or_cancel']),
   targetKind: z.enum(['task', 'object', 'calendar_event']),
@@ -57,6 +63,30 @@ function makeModelVersion(modelId: string): string {
 
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
+}
+
+function extractionSettled(meta: Record<string, unknown>): boolean {
+  return (
+    typeof meta.extraction_model_version === 'string' ||
+    typeof meta.extracted_at === 'string' ||
+    typeof meta.extraction_skipped_at === 'string' ||
+    typeof meta.extraction_failed_at === 'string'
+  );
+}
+
+async function stampSuggestionMetadata(
+  db: Db,
+  rawEventId: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  await db
+    .update(rawEvents)
+    .set({
+      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${JSON.stringify(
+        patch,
+      )}::jsonb`,
+    })
+    .where(eq(rawEvents.id, rawEventId));
 }
 
 function commitmentActionBeforeTimePhrase(s: string): string {
@@ -139,6 +169,191 @@ export function fallbackBundles(args: {
   ];
 }
 
+export async function processSuggestionJobForTests(
+  deps: SuggestionWorkerDeps,
+  data: queue.SuggestionJobData,
+  io: SuggestionWorkerIO = {},
+): Promise<void> {
+  const { rawEventId, teamId } = data;
+  const env = (io.getEnv ?? getEnv)();
+  if (!env.OPENROUTER_API_KEY) {
+    throw new UnrecoverableError('suggestions: OPENROUTER_API_KEY not configured');
+  }
+  const modelId = io.modelId ?? llm.TIMELINE_MODELS.extraction.id;
+  const modelVersion = makeModelVersion(modelId);
+
+  const rows = await deps.db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)).limit(1);
+  const row = rows[0];
+  if (!row) throw new UnrecoverableError(`raw event ${rawEventId} not found`);
+  if (row.teamId !== teamId) throw new UnrecoverableError(`raw event ${rawEventId} team mismatch`);
+  const text = row.contentText?.trim();
+  if (!text) throw new UnrecoverableError(`raw event ${rawEventId} has no content_text`);
+
+  const meta =
+    row.sourceMetadata && typeof row.sourceMetadata === 'object'
+      ? (row.sourceMetadata as Record<string, unknown>)
+      : {};
+  if (row.visibility !== 'team') {
+    await stampSuggestionMetadata(deps.db, rawEventId, {
+      suggestions_skipped_at: new Date().toISOString(),
+      suggestions_skipped_reason: `visibility=${row.visibility}`,
+      suggestion_model_version: modelVersion,
+    });
+    return;
+  }
+  if (meta.suggestion_model_version === modelVersion) return;
+
+  const hasSettledExtraction = extractionSettled(meta);
+  if (!hasSettledExtraction && meta.suggestion_pre_extract_model_version === modelVersion) return;
+
+  const factRows = await deps.db
+    .select({ statement: factsTable.statement })
+    .from(factsTable)
+    .where(eq(factsTable.rawEventId, rawEventId))
+    .limit(20);
+
+  const entityRows = await deps.db
+    .select({
+      id: entities.id,
+      type: entities.type,
+      name: entities.canonicalName,
+      status: entities.status,
+    })
+    .from(entities)
+    .where(and(eq(entities.teamId, teamId), isNull(entities.mergedIntoId)))
+    .orderBy(desc(entities.updatedAt))
+    .limit(40);
+
+  const memberRows = await deps.db
+    .select({ userId: teamMembers.userId, name: users.name, email: users.email })
+    .from(teamMembers)
+    .innerJoin(users, eq(users.id, teamMembers.userId))
+    .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)))
+    .limit(50);
+  const activeAuthorUserId = memberRows.some((member) => member.userId === row.authorUserId)
+    ? row.authorUserId
+    : null;
+
+  const scope = withTeam(deps.db, teamId, PSEUDO_USER, {
+    skipMembershipCheck: true,
+  });
+  const settings = await scope.calendar.getCalendarSettings();
+  const workspaceTime = time.workspaceTimeContext(settings.defaultTimezone, row.occurredAt);
+
+  const recentRows = await deps.db
+    .select({ occurredAt: rawEvents.occurredAt, text: rawEvents.contentText })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, teamId),
+        lt(rawEvents.occurredAt, row.occurredAt),
+        eq(rawEvents.visibility, 'team'),
+      ),
+    )
+    .orderBy(desc(rawEvents.occurredAt))
+    .limit(RECENT_CONTEXT_LIMIT);
+
+  const calendarRows = await scope.calendar.listCalendarEvents({
+    ...calendarContextRange(row.occurredAt),
+    limit: 40,
+  });
+
+  const prompt = llm.truncateTextToTokenBudget(
+    buildPrompt({
+      text,
+      occurredAt: row.occurredAt,
+      workspaceTime,
+      facts: factRows.map((f) => f.statement),
+      members: memberRows,
+      objects: entityRows.map((e) => ({
+        id: e.id,
+        type: e.type,
+        name: e.name,
+        status: e.status,
+      })),
+      calendar: calendarRows
+        .filter((ev) => ev.visibility === 'team')
+        .map((ev) => ({
+          id: ev.id,
+          title: ev.title,
+          startAt: ev.startAt.toISOString(),
+          allDay: ev.allDay,
+        })),
+      recent: recentRows,
+    }),
+    llm.inputTokenBudgetFor(llm.TIMELINE_MODELS.extraction),
+  );
+
+  const chatStructured = io.chatStructured ?? llm.chatStructured;
+  const result = await chatStructured({
+    schema: suggestionExtractionSchema,
+    model: modelId,
+    system:
+      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, object updates, or calendar refinements. Do not invent. Use proposal rows only; never claim changes are applied. For date-only scheduled commitments, create all-day calendar_event items. Use UUIDs only from the prompt when targeting existing records.',
+    prompt,
+  });
+
+  const bundles =
+    result.object.bundles.length > 0
+      ? result.object.bundles
+      : fallbackBundles({
+          text,
+          timezone: settings.defaultTimezone,
+          occurredAt: row.occurredAt,
+          authorUserId: activeAuthorUserId,
+        });
+
+  for (const bundle of bundles) {
+    if (bundle.items.length === 0) continue;
+    const bundleDedupe = suggestions.suggestionDedupeKey({
+      rawEventId,
+      title: bundle.title,
+      items: bundle.items,
+    });
+    await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: bundle.title,
+      summary: bundle.summary ?? null,
+      reason: bundle.reason ?? null,
+      confidence: bundle.confidence,
+      dedupeKey: bundleDedupe,
+      visibility: row.visibility,
+      visibilityOwnerUserId: null,
+      visibilityUserIds: null,
+      evidence: [{ rawEventId, quote: bundle.quote ?? truncate(text, 500) }],
+      metadata: { suggestion_model_version: modelVersion },
+      items: bundle.items.map((item, index) => ({
+        operation: item.operation,
+        targetKind: item.targetKind,
+        targetId: item.targetId ?? null,
+        title: item.title,
+        description: item.description ?? null,
+        dedupeKey: suggestions.suggestionDedupeKey({
+          rawEventId,
+          bundleDedupe,
+          index,
+          item,
+        }),
+        proposedPayload: item.proposedPayload,
+      })),
+    });
+  }
+
+  await stampSuggestionMetadata(
+    deps.db,
+    rawEventId,
+    hasSettledExtraction
+      ? {
+          suggestion_model_version: modelVersion,
+          suggestions_extracted_at: new Date().toISOString(),
+        }
+      : {
+          suggestion_pre_extract_model_version: modelVersion,
+          suggestions_pre_extracted_at: new Date().toISOString(),
+        },
+  );
+}
+
 function buildPrompt(args: {
   text: string;
   occurredAt: Date;
@@ -179,223 +394,7 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
   return new Worker<queue.SuggestionJobData>(
     queue.QUEUE_NAMES.suggestions,
     async (job: Job<queue.SuggestionJobData>) => {
-      const { rawEventId, teamId } = job.data;
-      const env = getEnv();
-      if (!env.OPENROUTER_API_KEY) {
-        throw new UnrecoverableError('suggestions: OPENROUTER_API_KEY not configured');
-      }
-      const modelId = llm.TIMELINE_MODELS.extraction.id;
-      const modelVersion = makeModelVersion(modelId);
-
-      const rows = await deps.db
-        .select()
-        .from(rawEvents)
-        .where(eq(rawEvents.id, rawEventId))
-        .limit(1);
-      const row = rows[0];
-      if (!row) throw new UnrecoverableError(`raw event ${rawEventId} not found`);
-      if (row.teamId !== teamId)
-        throw new UnrecoverableError(`raw event ${rawEventId} team mismatch`);
-      const text = row.contentText?.trim();
-      if (!text) throw new UnrecoverableError(`raw event ${rawEventId} has no content_text`);
-
-      const meta =
-        row.sourceMetadata && typeof row.sourceMetadata === 'object'
-          ? (row.sourceMetadata as Record<string, unknown>)
-          : {};
-      if (meta.suggestion_model_version === modelVersion) return;
-
-      const factRows = await deps.db
-        .select({ statement: factsTable.statement })
-        .from(factsTable)
-        .where(eq(factsTable.rawEventId, rawEventId))
-        .limit(20);
-
-      const entityRows = await deps.db
-        .select({
-          id: entities.id,
-          type: entities.type,
-          name: entities.canonicalName,
-          status: entities.status,
-        })
-        .from(entities)
-        .where(and(eq(entities.teamId, teamId), isNull(entities.mergedIntoId)))
-        .orderBy(desc(entities.updatedAt))
-        .limit(40);
-
-      const memberRows = await deps.db
-        .select({ userId: teamMembers.userId, name: users.name, email: users.email })
-        .from(teamMembers)
-        .innerJoin(users, eq(users.id, teamMembers.userId))
-        .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)))
-        .limit(50);
-      const activeAuthorUserId = memberRows.some((member) => member.userId === row.authorUserId)
-        ? row.authorUserId
-        : null;
-      const activeMemberIds = new Set(memberRows.map((member) => member.userId));
-      const activeVisibilityUserIds = (row.visibilityUserIds ?? []).filter((uid) =>
-        activeMemberIds.has(uid),
-      );
-      let scopeUserId = PSEUDO_USER;
-      let visibilityOwnerUserId: string | null = null;
-      let visibilityUserIds: string[] | null = null;
-
-      if (row.visibility === 'private') {
-        if (!activeAuthorUserId) {
-          await deps.db
-            .update(rawEvents)
-            .set({
-              sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${JSON.stringify(
-                {
-                  suggestions_skipped_at: new Date().toISOString(),
-                  suggestions_skipped_reason: 'private_author_not_active',
-                  suggestion_model_version: modelVersion,
-                },
-              )}::jsonb`,
-            })
-            .where(eq(rawEvents.id, rawEventId));
-          return;
-        }
-        scopeUserId = activeAuthorUserId;
-        visibilityOwnerUserId = activeAuthorUserId;
-      } else if (row.visibility === 'specific_users') {
-        if (activeVisibilityUserIds.length === 0) {
-          await deps.db
-            .update(rawEvents)
-            .set({
-              sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${JSON.stringify(
-                {
-                  suggestions_skipped_at: new Date().toISOString(),
-                  suggestions_skipped_reason: 'specific_users_empty',
-                  suggestion_model_version: modelVersion,
-                },
-              )}::jsonb`,
-            })
-            .where(eq(rawEvents.id, rawEventId));
-          return;
-        }
-        scopeUserId =
-          activeAuthorUserId && activeVisibilityUserIds.includes(activeAuthorUserId)
-            ? activeAuthorUserId
-            : (activeVisibilityUserIds[0] ?? PSEUDO_USER);
-        visibilityUserIds = activeVisibilityUserIds;
-      }
-
-      const scope = withTeam(deps.db, teamId, scopeUserId, {
-        skipMembershipCheck: true,
-      });
-      const settings = await scope.calendar.getCalendarSettings();
-      const workspaceTime = time.workspaceTimeContext(settings.defaultTimezone, row.occurredAt);
-
-      const recentRows = await deps.db
-        .select({ occurredAt: rawEvents.occurredAt, text: rawEvents.contentText })
-        .from(rawEvents)
-        .where(
-          and(
-            eq(rawEvents.teamId, teamId),
-            lt(rawEvents.occurredAt, row.occurredAt),
-            eq(rawEvents.visibility, 'team'),
-          ),
-        )
-        .orderBy(desc(rawEvents.occurredAt))
-        .limit(RECENT_CONTEXT_LIMIT);
-
-      const calendarRows = await scope.calendar.listCalendarEvents({
-        ...calendarContextRange(row.occurredAt),
-        limit: 40,
-      });
-
-      const prompt = llm.truncateTextToTokenBudget(
-        buildPrompt({
-          text,
-          occurredAt: row.occurredAt,
-          workspaceTime,
-          facts: factRows.map((f) => f.statement),
-          members: memberRows,
-          objects: entityRows.map((e) => ({
-            id: e.id,
-            type: e.type,
-            name: e.name,
-            status: e.status,
-          })),
-          calendar: calendarRows
-            .filter((ev) => ev.visibility === 'team')
-            .map((ev) => ({
-              id: ev.id,
-              title: ev.title,
-              startAt: ev.startAt.toISOString(),
-              allDay: ev.allDay,
-            })),
-          recent: recentRows,
-        }),
-        llm.inputTokenBudgetFor(llm.TIMELINE_MODELS.extraction),
-      );
-
-      const result = await llm.chatStructured({
-        schema: suggestionExtractionSchema,
-        model: modelId,
-        system:
-          'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, object updates, or calendar refinements. Do not invent. Use proposal rows only; never claim changes are applied. For date-only scheduled commitments, create all-day calendar_event items. Use UUIDs only from the prompt when targeting existing records.',
-        prompt,
-      });
-
-      const bundles =
-        result.object.bundles.length > 0
-          ? result.object.bundles
-          : fallbackBundles({
-              text,
-              timezone: settings.defaultTimezone,
-              occurredAt: row.occurredAt,
-              authorUserId: activeAuthorUserId,
-            });
-
-      for (const bundle of bundles) {
-        if (bundle.items.length === 0) continue;
-        const bundleDedupe = suggestions.suggestionDedupeKey({
-          rawEventId,
-          title: bundle.title,
-          items: bundle.items,
-        });
-        await scope.suggestions.createOrMergeSuggestionBundle({
-          source: 'background',
-          title: bundle.title,
-          summary: bundle.summary ?? null,
-          reason: bundle.reason ?? null,
-          confidence: bundle.confidence,
-          dedupeKey: bundleDedupe,
-          visibility: row.visibility,
-          visibilityOwnerUserId,
-          visibilityUserIds,
-          evidence: [{ rawEventId, quote: bundle.quote ?? truncate(text, 500) }],
-          metadata: { suggestion_model_version: modelVersion },
-          items: bundle.items.map((item, index) => ({
-            operation: item.operation,
-            targetKind: item.targetKind,
-            targetId: item.targetId ?? null,
-            title: item.title,
-            description: item.description ?? null,
-            dedupeKey: suggestions.suggestionDedupeKey({
-              rawEventId,
-              bundleDedupe,
-              index,
-              item,
-            }),
-            proposedPayload: item.proposedPayload,
-          })),
-        });
-      }
-
-      await deps.db
-        .update(rawEvents)
-        .set({
-          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${JSON.stringify(
-            {
-              suggestion_model_version: modelVersion,
-              suggestions_extracted_at: new Date().toISOString(),
-            },
-          )}::jsonb`,
-        })
-        .where(eq(rawEvents.id, rawEventId));
+      await processSuggestionJobForTests(deps, job.data);
     },
     { connection: queue.getRedisConnection(), concurrency: 1 },
   );

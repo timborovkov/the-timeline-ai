@@ -12,7 +12,7 @@ import {
 } from '@dnd-kit/core';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useOptimistic, useRef, useState, useTransition } from 'react';
+import { useEffect, useId, useOptimistic, useRef, useState, useTransition } from 'react';
 
 import type { SaveState } from '@/lib/utils';
 import type * as objects from '@timeline/shared/objects';
@@ -40,6 +40,7 @@ function colValue(row: objects.ObjectRow, key: GroupKey): string {
 }
 
 export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
+  const dndContextId = useId();
   // Only apply DEFAULT_STATUS_COLS when actually grouping by status — for
   // `stage` or `priority` the default would render four empty
   // todo/doing/done/blocked columns next to the real ones. When no
@@ -169,7 +170,12 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+    <DndContext
+      id={dndContextId}
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={onDragEnd}
+    >
       {saveState !== 'idle' && (
         <div
           className="mb-2 text-right font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"

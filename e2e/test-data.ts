@@ -25,15 +25,48 @@ export const e2eTeam = {
   inboundEmail: `${E2E_PREFIX}@e2e.localhost`,
 };
 
+export const e2eOtherTeam = {
+  id: uuidFrom('other-team'),
+  slug: `${E2E_PREFIX}-other`,
+  name: `Timeline E2E Other ${E2E_RUN_ID}`,
+  inboundEmail: `${E2E_PREFIX}-other@e2e.localhost`,
+};
+
 export const e2eUsers = {
   owner: {
     id: uuidFrom('owner'),
     name: 'Timeline E2E Owner',
     email: `${E2E_PREFIX}-owner@example.test`,
   },
+  admin: {
+    id: uuidFrom('admin'),
+    name: 'Timeline E2E Admin',
+    email: `${E2E_PREFIX}-admin@example.test`,
+  },
   member: {
     id: uuidFrom('member'),
     name: 'Timeline E2E Member',
     email: `${E2E_PREFIX}-member@example.test`,
   },
+  nonMember: {
+    id: uuidFrom('non-member'),
+    name: 'Timeline E2E Non Member',
+    email: `${E2E_PREFIX}-non-member@example.test`,
+  },
+  invitee: {
+    id: uuidFrom('invitee'),
+    name: 'Timeline E2E Invitee',
+    email: `${E2E_PREFIX}-invitee@example.test`,
+  },
+  pendingInvitee: {
+    id: uuidFrom('pending-invitee'),
+    name: 'Timeline E2E Pending Invitee',
+    email: `${E2E_PREFIX}-pending-invitee@example.test`,
+  },
+};
+
+export const e2eSeedEvents = {
+  privateForOwner: `E2E private owner note ${E2E_RUN_ID}`,
+  specificForMember: `E2E specific member note ${E2E_RUN_ID}`,
+  otherTeam: `E2E other team note ${E2E_RUN_ID}`,
 };

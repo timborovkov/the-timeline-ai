@@ -1,0 +1,287 @@
+import { PGlite } from '@electric-sql/pglite';
+import { calendarEvents, entities } from '@timeline/db';
+import { drizzle } from 'drizzle-orm/pglite';
+import { beforeEach, describe, expect, it } from 'vitest';
+
+import type { EmbedResult } from '#src/llm/embed.js';
+import type { SearchHit } from '#src/qdrant/client.js';
+
+import { buildAgentTools } from '#src/agent/tools.js';
+import { withTeam } from '#src/team-scope.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
+
+// Fast agent evals: these run the real Timeline agent tools against seeded
+// workspace state with deterministic retrieval. Success means the tool trace
+// and synthesized answer have the right evidence and no cross-team/private
+// leakage. Live model quality belongs in a separate, explicit eval suite.
+
+const TEAM_A = '11111111-1111-1111-1111-111111111111';
+const TEAM_B = '22222222-2222-2222-2222-222222222222';
+const OWNER = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const MEMBER = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const OTHER_USER = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+
+const TEAM_EVENT = '00000000-0000-0000-0000-000000000401';
+const PRIVATE_EVENT = '00000000-0000-0000-0000-000000000402';
+const SPECIFIC_EVENT = '00000000-0000-0000-0000-000000000403';
+const OTHER_TEAM_EVENT = '00000000-0000-0000-0000-000000000404';
+const FACT_ID = '10000000-0000-0000-0000-000000000401';
+const TASK_ID = '20000000-0000-0000-0000-000000000401';
+const OBJECT_ID = '20000000-0000-0000-0000-000000000402';
+const CALENDAR_ID = '30000000-0000-0000-0000-000000000401';
+
+type Db = ReturnType<typeof drizzle>;
+type ToolName = 'search_timeline' | 'list_tasks' | 'list_objects' | 'list_calendar_events';
+
+async function seed(pg: PGlite): Promise<void> {
+  await pg.exec(`
+    INSERT INTO teams (id, slug, name)
+    VALUES
+      ('${TEAM_A}', 'eval-team-a', 'Eval Team A'),
+      ('${TEAM_B}', 'eval-team-b', 'Eval Team B');
+
+    INSERT INTO users (id, email, name)
+    VALUES
+      ('${OWNER}', 'eval-owner@example.com', 'Eval Owner'),
+      ('${MEMBER}', 'eval-member@example.com', 'Eval Member'),
+      ('${OTHER_USER}', 'eval-other@example.com', 'Eval Other');
+
+    INSERT INTO team_members (team_id, user_id, role)
+    VALUES
+      ('${TEAM_A}', '${OWNER}', 'owner'),
+      ('${TEAM_A}', '${MEMBER}', 'member'),
+      ('${TEAM_B}', '${OTHER_USER}', 'owner');
+
+    INSERT INTO raw_events
+      (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, visibility, visibility_user_ids, source_metadata)
+    VALUES
+      ('${TEAM_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'web', 'Acme renewal needs a pricing proposal by Friday.', '2026-06-01T09:00:00Z', 'team', NULL, '{}'::jsonb),
+      ('${PRIVATE_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'web', 'Owner private Acme compensation detail.', '2026-06-01T10:00:00Z', 'private', NULL, '{}'::jsonb),
+      ('${SPECIFIC_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'slack', 'Member-only Acme escalation.', '2026-06-01T11:00:00Z', 'specific_users', ARRAY['${MEMBER}'::uuid], '{}'::jsonb),
+      ('${OTHER_TEAM_EVENT}', '${TEAM_B}', '${OTHER_USER}', '${OTHER_USER}', 'web', 'Other-team Acme secret.', '2026-06-01T12:00:00Z', 'team', NULL, '{}'::jsonb);
+
+    INSERT INTO facts (id, team_id, raw_event_id, statement, confidence, model_version)
+    VALUES ('${FACT_ID}', '${TEAM_A}', '${TEAM_EVENT}', 'Acme renewal needs pricing by Friday.', 0.96, 'eval-model');
+  `);
+}
+
+function hit(
+  eventId: string,
+  score: number,
+  overrides: Partial<SearchHit['payload']> = {},
+): SearchHit {
+  return {
+    id: eventId,
+    score,
+    payload: {
+      team_id: TEAM_A,
+      source_kind: 'raw_event',
+      event_id: eventId,
+      fact_id: eventId === TEAM_EVENT ? FACT_ID : null,
+      object_id: null,
+      note_id: null,
+      change_id: null,
+      entity_id: null,
+      entity_ids: [],
+      source: eventId === SPECIFIC_EVENT ? 'slack' : 'web',
+      occurred_at: '2026-06-01T09:00:00.000Z',
+      author_user_id: OWNER,
+      visibility: 'team',
+      visibility_user_ids: null,
+      visibility_owner_user_id: OWNER,
+      embedding_model: 'eval-embedding-model',
+      document_id: null,
+      document_version_id: null,
+      document_chunk_id: null,
+      folder_id: null,
+      owner_user_id: null,
+      updated_at: null,
+      meeting_id: null,
+      meeting_chunk_id: null,
+      speaker: null,
+      ...overrides,
+    },
+  };
+}
+
+function answerFromTimeline(result: unknown): string {
+  const rows = (result as { results?: { eventId: string; snippet: string }[] }).results ?? [];
+  if (rows.length === 0) return "I couldn't verify that from the accessible timeline.";
+  return rows.map((row) => `${row.snippet} [event:${row.eventId}]`).join('\n');
+}
+
+async function runToolEval(
+  db: Db,
+  userId: string,
+  name: ToolName,
+  input: unknown,
+  hits: SearchHit[],
+) {
+  const trace: { tool: ToolName; input: unknown; output: unknown }[] = [];
+  const scope = withTeam(db as never, TEAM_A, userId, {
+    embed: ({ text }): Promise<EmbedResult> =>
+      Promise.resolve({
+        vector: text.includes('Acme') ? [0.9, 0.1, 0.1] : [0.1, 0.1, 0.1],
+        model: 'eval-embed',
+      }),
+    qdrantSearch: () => Promise.resolve(hits),
+  });
+  const tools = buildAgentTools(scope);
+  const exec = tools[name]?.execute as (raw: unknown, opts: unknown) => Promise<unknown>;
+  const output = await exec(input, {});
+  trace.push({ tool: name, input, output });
+  return { output, trace, answer: name === 'search_timeline' ? answerFromTimeline(output) : '' };
+}
+
+describe('agent tool evals', () => {
+  let pg: PGlite;
+  let db: Db;
+
+  beforeEach(async () => {
+    pg = new PGlite();
+    await applyDbMigrations(pg);
+    await seed(pg);
+    db = drizzle(pg);
+
+    await db.insert(entities).values({
+      id: TASK_ID,
+      teamId: TEAM_A,
+      type: 'task',
+      canonicalName: 'Send Acme pricing proposal',
+      status: 'todo',
+      dueAt: new Date('2026-06-05T17:00:00Z'),
+      sourceEventId: TEAM_EVENT,
+    });
+    await db.insert(entities).values({
+      id: OBJECT_ID,
+      teamId: TEAM_A,
+      type: 'company',
+      canonicalName: 'Acme',
+      status: 'active',
+    });
+    await db.insert(calendarEvents).values({
+      id: CALENDAR_ID,
+      teamId: TEAM_A,
+      createdByUserId: OWNER,
+      title: 'Acme renewal review',
+      startAt: new Date('2026-06-04T15:00:00Z'),
+      endAt: new Date('2026-06-04T15:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      agentSuggested: true,
+    });
+  });
+
+  it('answers a timeline question with cited evidence from accessible events', async () => {
+    // Product behavior: chat should ground factual timeline answers in source
+    // events, not naked memory or invented claims.
+    const evalRun = await runToolEval(db, OWNER, 'search_timeline', { query: 'Acme proposal' }, [
+      hit(TEAM_EVENT, 0.95),
+    ]);
+
+    expect(evalRun.trace).toEqual([
+      expect.objectContaining({ tool: 'search_timeline', input: { query: 'Acme proposal' } }),
+    ]);
+    expect(evalRun.answer).toContain('Acme renewal needs pricing by Friday.');
+    expect(evalRun.answer).toContain(`[event:${TEAM_EVENT}]`);
+  });
+
+  it('surfaces accepted task and calendar state through durable workspace tools', async () => {
+    // Product behavior: once a human accepts an agent suggestion, chat should
+    // see canonical task/calendar rows rather than only approval metadata.
+    const taskEval = await runToolEval(db, OWNER, 'list_tasks', {}, []);
+    const calendarEval = await runToolEval(
+      db,
+      OWNER,
+      'list_calendar_events',
+      {
+        from: '2026-06-04T00:00:00.000Z',
+        to: '2026-06-05T00:00:00.000Z',
+      },
+      [],
+    );
+
+    expect(taskEval.output).toMatchObject({
+      tasks: [expect.objectContaining({ name: 'Send Acme pricing proposal' })],
+    });
+    expect(calendarEval.output).toMatchObject({
+      events: [expect.objectContaining({ id: CALENDAR_ID, title: 'Acme renewal review' })],
+    });
+  });
+
+  it('does not leak owner-private evidence to a member', async () => {
+    // Product behavior: private capture is useful to its owner but must not
+    // become retrievable evidence for teammates through chat.
+    const evalRun = await runToolEval(db, MEMBER, 'search_timeline', { query: 'Acme private' }, [
+      hit(PRIVATE_EVENT, 0.95, { visibility: 'private' }),
+      hit(TEAM_EVENT, 0.8),
+    ]);
+
+    expect(evalRun.answer).not.toContain(PRIVATE_EVENT);
+    expect(evalRun.answer).not.toContain('compensation');
+    expect(evalRun.answer).toContain(TEAM_EVENT);
+  });
+
+  it('allows specific-user evidence only for the included teammate', async () => {
+    // Product behavior: specific-user visibility should behave like an
+    // allow-list even when vector search returns the same candidate hit.
+    const hits = [
+      hit(SPECIFIC_EVENT, 0.95, {
+        visibility: 'specific_users',
+        visibility_user_ids: [MEMBER],
+      }),
+    ];
+
+    const ownerEval = await runToolEval(
+      db,
+      OWNER,
+      'search_timeline',
+      { query: 'Acme escalation' },
+      hits,
+    );
+    const memberEval = await runToolEval(
+      db,
+      MEMBER,
+      'search_timeline',
+      { query: 'Acme escalation' },
+      hits,
+    );
+
+    expect(ownerEval.answer).toBe("I couldn't verify that from the accessible timeline.");
+    expect(memberEval.answer).toContain(SPECIFIC_EVENT);
+    expect(memberEval.answer).toContain('Member-only Acme escalation');
+  });
+
+  it('drops cross-team similarly named evidence before answer synthesis', async () => {
+    // Product behavior: an Acme result from another team must not become a
+    // plausible-looking citation merely because names and vectors match.
+    const evalRun = await runToolEval(db, OWNER, 'search_timeline', { query: 'Acme secret' }, [
+      hit(OTHER_TEAM_EVENT, 0.99, { team_id: TEAM_B }),
+    ]);
+
+    expect(evalRun.answer).toBe("I couldn't verify that from the accessible timeline.");
+    expect(evalRun.answer).not.toContain('Other-team Acme secret');
+  });
+
+  it('keeps tool failures honest instead of inventing a cited answer', async () => {
+    // Product behavior: degraded retrieval should produce a bounded failure,
+    // giving the model a safe path to say it could not verify the answer.
+    const scope = withTeam(db as never, TEAM_A, OWNER, {
+      embed: () => Promise.reject(new Error('embedding service down')),
+    });
+    const tools = buildAgentTools(scope);
+    const exec = tools.search_timeline?.execute as (
+      raw: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+    const output = await exec({ query: 'Acme proposal' }, {});
+
+    const answer =
+      'error' in (output as Record<string, unknown>)
+        ? "I couldn't verify that because timeline search failed."
+        : answerFromTimeline(output);
+    expect(output).toEqual({ error: 'tool_failed' });
+    expect(answer).toContain("couldn't verify");
+    expect(answer).not.toContain('[event:');
+  });
+});

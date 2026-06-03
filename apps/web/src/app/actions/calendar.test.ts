@@ -1,0 +1,163 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  createCalendarEventAction,
+  deleteCalendarEventAction,
+  updateCalendarEventAction,
+} from '@/app/actions/calendar';
+
+/**
+ * Server-action tests for calendar events. The calendar scope owns real DB
+ * persistence; these tests pin auth/no-team handling, date validation,
+ * visibility payloads, not-found behavior, dependency failures, and
+ * revalidation.
+ */
+
+const fakes = vi.hoisted(() => ({
+  fakeAuth: vi.fn(),
+  fakeResolveActiveTeam: vi.fn(),
+  fakeRevalidatePath: vi.fn(),
+  fakeCalendar: {
+    createCalendarEvent: vi.fn(),
+    updateCalendarEvent: vi.fn(),
+    deleteCalendarEvent: vi.fn(),
+  },
+}));
+
+vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
+vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
+vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
+vi.mock('@timeline/shared/team-scope', () => ({
+  withTeam: () => ({ calendar: fakes.fakeCalendar }),
+}));
+vi.mock('@timeline/shared/logger', () => ({
+  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+}));
+
+const TEAM_ID = '11111111-1111-4111-8111-111111111111';
+const USER_ID = '22222222-2222-4222-8222-222222222222';
+const MEMBER_ID = '33333333-3333-4333-8333-333333333333';
+const EVENT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  fakes.fakeAuth.mockResolvedValue({ user: { id: USER_ID } });
+  fakes.fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
+  fakes.fakeCalendar.createCalendarEvent.mockResolvedValue({ id: EVENT_ID });
+  fakes.fakeCalendar.updateCalendarEvent.mockResolvedValue({ id: EVENT_ID });
+  fakes.fakeCalendar.deleteCalendarEvent.mockResolvedValue(true);
+});
+
+describe('calendar action auth and validation', () => {
+  it('requires a signed-in user and active team', async () => {
+    fakes.fakeAuth.mockResolvedValue(null);
+
+    await expect(
+      createCalendarEventAction({
+        title: 'Planning',
+        startAt: '2026-06-03T10:00:00.000Z',
+        endAt: '2026-06-03T11:00:00.000Z',
+      }),
+    ).resolves.toEqual({ ok: false, error: 'Not signed in' });
+
+    fakes.fakeAuth.mockResolvedValue({ user: { id: USER_ID } });
+    fakes.fakeResolveActiveTeam.mockResolvedValue({ active: null });
+    await expect(deleteCalendarEventAction(EVENT_ID)).resolves.toEqual({
+      ok: false,
+      error: 'No active team',
+    });
+  });
+
+  it('rejects invalid ids and end times before touching the calendar scope', async () => {
+    await expect(deleteCalendarEventAction('not-a-uuid')).resolves.toEqual({
+      ok: false,
+      error: 'Invalid event id',
+    });
+    await expect(
+      createCalendarEventAction({
+        title: 'Backwards',
+        startAt: '2026-06-03T11:00:00.000Z',
+        endAt: '2026-06-03T10:00:00.000Z',
+      }),
+    ).resolves.toEqual({ ok: false, error: 'End time must be after start time' });
+    expect(fakes.fakeCalendar.createCalendarEvent).not.toHaveBeenCalled();
+    expect(fakes.fakeCalendar.deleteCalendarEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('calendar create/update/delete behavior', () => {
+  it('creates an event with specific-user visibility and revalidates the calendar', async () => {
+    const result = await createCalendarEventAction({
+      title: 'Restricted planning',
+      description: 'Private-ish',
+      startAt: '2026-06-03T10:00:00.000Z',
+      endAt: '2026-06-03T11:00:00.000Z',
+      visibility: 'specific_users',
+      visibilityUserIds: [MEMBER_ID],
+      linkedEntityIds: [EVENT_ID],
+      reminderMinutes: 15,
+    });
+
+    expect(result).toEqual({ ok: true, id: EVENT_ID });
+    expect(fakes.fakeCalendar.createCalendarEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Restricted planning',
+        description: 'Private-ish',
+        startAt: new Date('2026-06-03T10:00:00.000Z'),
+        endAt: new Date('2026-06-03T11:00:00.000Z'),
+        timezone: 'UTC',
+        allDay: false,
+        visibility: 'specific_users',
+        visibilityUserIds: [MEMBER_ID],
+        linkedEntityIds: [EVENT_ID],
+        reminderMinutes: 15,
+      }),
+    );
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/calendar');
+  });
+
+  it('updates only provided fields and revalidates index plus detail', async () => {
+    const result = await updateCalendarEventAction({
+      id: EVENT_ID,
+      title: 'Updated',
+      startAt: '2026-06-03T12:00:00.000Z',
+      visibility: 'private',
+    });
+
+    expect(result).toEqual({ ok: true, id: EVENT_ID });
+    expect(fakes.fakeCalendar.updateCalendarEvent).toHaveBeenCalledWith(EVENT_ID, {
+      title: 'Updated',
+      startAt: new Date('2026-06-03T12:00:00.000Z'),
+      visibility: 'private',
+    });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/calendar');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/calendar/${EVENT_ID}`);
+  });
+
+  it('returns not-found when update or delete misses', async () => {
+    fakes.fakeCalendar.updateCalendarEvent.mockResolvedValue(null);
+    await expect(updateCalendarEventAction({ id: EVENT_ID, title: 'Missing' })).resolves.toEqual({
+      ok: false,
+      error: 'Event not found',
+    });
+
+    fakes.fakeCalendar.deleteCalendarEvent.mockResolvedValue(false);
+    await expect(deleteCalendarEventAction(EVENT_ID)).resolves.toEqual({
+      ok: false,
+      error: 'Event not found',
+    });
+  });
+
+  it('maps dependency failures to action errors', async () => {
+    fakes.fakeCalendar.createCalendarEvent.mockRejectedValue(new Error('db down'));
+
+    await expect(
+      createCalendarEventAction({
+        title: 'Planning',
+        startAt: '2026-06-03T10:00:00.000Z',
+        endAt: '2026-06-03T11:00:00.000Z',
+      }),
+    ).resolves.toEqual({ ok: false, error: 'db down' });
+  });
+});

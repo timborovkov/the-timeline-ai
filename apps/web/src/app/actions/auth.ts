@@ -272,12 +272,6 @@ export async function signInAction(_prev: SignInState, formData: FormData): Prom
   return { error: 'Invalid email or password.' };
 }
 
-export async function signOutAction(): Promise<void> {
-  const { signOut } = await import('@/lib/auth');
-  await signOut({ redirect: false });
-  redirect('/');
-}
-
 export async function signInWithGitHubAction(formData: FormData): Promise<void> {
   const callbackUrl = safeCallbackUrl(
     typeof formData.get('callbackUrl') === 'string'

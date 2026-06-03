@@ -1,0 +1,194 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { PGlite } from '@electric-sql/pglite';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+/**
+ * Database contract tests. These protect schema-level invariants that the app
+ * and worker tests rely on: migrations boot, tenant rows cascade correctly,
+ * partial unique indexes dedupe provider retries, and key enum/default
+ * constraints fail before bad state reaches product code.
+ */
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_DIR = join(__dirname, '../drizzle');
+
+const TEAM_ID = '11111111-1111-4111-8111-111111111111';
+const OTHER_TEAM_ID = '22222222-2222-4222-8222-222222222222';
+const OWNER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const MEMBER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const ENTITY_A = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const ENTITY_B = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+
+async function applyMigrations(pg: PGlite): Promise<void> {
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((file) => file.endsWith('.sql'))
+    .sort();
+  for (const file of files) {
+    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
+    const statements = sql
+      .split('--> statement-breakpoint')
+      .map((statement) => statement.trim())
+      .filter((statement) => statement.length > 0 && statement !== 'SELECT 1;');
+    for (const statement of statements) await pg.exec(statement);
+  }
+}
+
+async function seedBase(pg: PGlite): Promise<void> {
+  await pg.exec(`
+    INSERT INTO teams (id, slug, name, inbound_email)
+    VALUES
+      ('${TEAM_ID}', 'core-db', 'Core DB', 'core-db@example.test'),
+      ('${OTHER_TEAM_ID}', 'other-db', 'Other DB', 'other-db@example.test');
+    INSERT INTO users (id, email, name)
+    VALUES
+      ('${OWNER_ID}', 'owner@example.test', 'Owner'),
+      ('${MEMBER_ID}', 'member@example.test', 'Member');
+    INSERT INTO team_members (team_id, user_id, role)
+    VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner');
+  `);
+}
+
+let pg: PGlite;
+
+beforeEach(async () => {
+  pg = new PGlite();
+  await applyMigrations(pg);
+  await seedBase(pg);
+});
+
+afterEach(async () => {
+  await pg.close();
+});
+
+describe('database schema contracts', () => {
+  it('applies every migration to an empty database and exposes critical tables', async () => {
+    const tables = await pg.query<{ tablename: string }>(`
+      SELECT tablename
+      FROM pg_tables
+      WHERE schemaname = 'public'
+        AND tablename IN ('teams', 'raw_events', 'entities', 'agent_suggestions')
+      ORDER BY tablename
+    `);
+
+    expect(tables.rows.map((row) => row.tablename)).toEqual([
+      'agent_suggestions',
+      'entities',
+      'raw_events',
+      'teams',
+    ]);
+  });
+
+  it('enforces member, invite, visibility-default, and enum invariants', async () => {
+    await expect(
+      pg.exec(`INSERT INTO team_members (team_id, user_id, role)
+               VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner')`),
+    ).rejects.toThrow();
+
+    await pg.exec(`
+      INSERT INTO team_invites (team_id, email, role, token, invited_by_user_id, expires_at)
+      VALUES ('${TEAM_ID}', 'new@example.test', 'member', 'tok-1', '${OWNER_ID}', now() + interval '1 day')
+    `);
+    await expect(
+      pg.exec(`INSERT INTO team_invites (team_id, email, role, token, invited_by_user_id, expires_at)
+               VALUES ('${OTHER_TEAM_ID}', 'new@example.test', 'member', 'tok-1', '${OWNER_ID}', now() + interval '1 day')`),
+    ).rejects.toThrow();
+
+    await pg.exec(`
+      INSERT INTO team_visibility_defaults (team_id, source, visibility, updated_by_user_id)
+      VALUES ('${TEAM_ID}', 'web', 'private', '${OWNER_ID}')
+    `);
+    await expect(
+      pg.exec(`INSERT INTO team_visibility_defaults (team_id, source, visibility, updated_by_user_id)
+               VALUES ('${TEAM_ID}', 'web', 'team', '${OWNER_ID}')`),
+    ).rejects.toThrow();
+    await expect(
+      pg.exec(`INSERT INTO team_visibility_defaults (team_id, source, visibility)
+               VALUES ('${TEAM_ID}', 'web', 'workspace')`),
+    ).rejects.toThrow();
+  });
+
+  it('dedupes provider retries through partial raw-event unique indexes scoped as designed', async () => {
+    await pg.query(
+      `INSERT INTO raw_events (team_id, author_user_id, source, content_text, source_metadata)
+       VALUES ($1, $2, 'telegram', 'hello', $3::jsonb)`,
+      [TEAM_ID, OWNER_ID, JSON.stringify({ tg_update_id: 42 })],
+    );
+    await expect(
+      pg.query(
+        `INSERT INTO raw_events (team_id, author_user_id, source, content_text, source_metadata)
+         VALUES ($1, $2, 'telegram', 'retry', $3::jsonb)`,
+        [TEAM_ID, OWNER_ID, JSON.stringify({ tg_update_id: 42 })],
+      ),
+    ).rejects.toThrow();
+
+    await pg.query(
+      `INSERT INTO raw_events (team_id, author_user_id, source, content_text, source_metadata)
+       VALUES ($1, $2, 'email', 'email one', $3::jsonb)`,
+      [TEAM_ID, OWNER_ID, JSON.stringify({ message_id: 'same-message' })],
+    );
+    await expect(
+      pg.query(
+        `INSERT INTO raw_events (team_id, author_user_id, source, content_text, source_metadata)
+         VALUES ($1, $2, 'email', 'email retry', $3::jsonb)`,
+        [TEAM_ID, OWNER_ID, JSON.stringify({ message_id: 'same-message' })],
+      ),
+    ).rejects.toThrow();
+    await pg.query(
+      `INSERT INTO raw_events (team_id, author_user_id, source, content_text, source_metadata)
+       VALUES ($1, $2, 'email', 'other team same provider id', $3::jsonb)`,
+      [OTHER_TEAM_ID, OWNER_ID, JSON.stringify({ message_id: 'same-message' })],
+    );
+  });
+
+  it('keeps object names and relationship edges unique only where product logic needs it', async () => {
+    await pg.exec(`
+      INSERT INTO entities (id, team_id, type, canonical_name)
+      VALUES
+        ('${ENTITY_A}', '${TEAM_ID}', 'task', 'Prepare proposal'),
+        ('${ENTITY_B}', '${TEAM_ID}', 'task', 'Review proposal')
+    `);
+    await expect(
+      pg.exec(`INSERT INTO entities (team_id, type, canonical_name)
+               VALUES ('${TEAM_ID}', 'task', 'prepare proposal')`),
+    ).rejects.toThrow();
+    await pg.exec(`UPDATE entities SET merged_into_id = '${ENTITY_B}' WHERE id = '${ENTITY_A}'`);
+    await pg.exec(`INSERT INTO entities (team_id, type, canonical_name)
+                   VALUES ('${TEAM_ID}', 'task', 'Prepare proposal')`);
+
+    await pg.exec(`
+      INSERT INTO entity_relationships (team_id, from_entity_id, to_entity_id, kind, created_by)
+      VALUES ('${TEAM_ID}', '${ENTITY_A}', '${ENTITY_B}', 'related', '${OWNER_ID}')
+    `);
+    await expect(
+      pg.exec(`INSERT INTO entity_relationships (team_id, from_entity_id, to_entity_id, kind, created_by)
+               VALUES ('${TEAM_ID}', '${ENTITY_A}', '${ENTITY_B}', 'related', '${OWNER_ID}')`),
+    ).rejects.toThrow();
+  });
+
+  it('cascades team deletion across source events and pending suggestions', async () => {
+    const eventId = '99999999-9999-4999-8999-999999999999';
+    const suggestionId = '77777777-7777-4777-8777-777777777777';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text)
+      VALUES ('${eventId}', '${TEAM_ID}', '${OWNER_ID}', 'web', 'Need a proposal task');
+      INSERT INTO agent_suggestions (id, team_id, source, title, dedupe_key)
+      VALUES ('${suggestionId}', '${TEAM_ID}', 'background', 'Proposal task', 'proposal-task');
+      INSERT INTO agent_suggestion_items
+        (suggestion_id, team_id, operation, target_kind, title, dedupe_key, proposed_payload)
+      VALUES
+        ('${suggestionId}', '${TEAM_ID}', 'create', 'task', 'Send proposal', 'item-1', '{"canonicalName":"Send proposal"}'::jsonb);
+    `);
+
+    await pg.exec(`DELETE FROM teams WHERE id = '${TEAM_ID}'`);
+    const remaining = await pg.query<{ raw_count: string; suggestion_count: string }>(`
+      SELECT
+        (SELECT count(*)::text FROM raw_events WHERE team_id = '${TEAM_ID}') AS raw_count,
+        (SELECT count(*)::text FROM agent_suggestions WHERE team_id = '${TEAM_ID}') AS suggestion_count
+    `);
+
+    expect(remaining.rows[0]).toEqual({ raw_count: '0', suggestion_count: '0' });
+  });
+});

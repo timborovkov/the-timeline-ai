@@ -172,6 +172,14 @@ function fetchBodyContaining(fetchMock: ReturnType<typeof vi.fn>, needle: string
   return null;
 }
 
+function textQueueDeps() {
+  return {
+    extract: { enqueueExtract: vi.fn().mockResolvedValue(undefined) },
+    embed: { enqueueEmbed: vi.fn().mockResolvedValue(undefined) },
+    suggestions: { enqueueSuggestion: vi.fn().mockResolvedValue(undefined) },
+  };
+}
+
 describe('Slack dispatcher routing', () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
@@ -397,6 +405,140 @@ describe('Slack dispatcher routing', () => {
     expect(rows[0]).toMatchObject({ name: null, realName: 'Alice Slack' });
   });
 
+  it('captures bound channel text with linked sender attribution, visibility, and text queues', async () => {
+    await seedBoundSlackUser(db);
+    const queues = textQueueDeps();
+
+    await handleSlackEnvelope(
+      { db: db as never, ...queues },
+      slackEnvelope('EvChannelText', {
+        type: 'message',
+        channel: 'C_DOCS',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: 'Slack capture should become approval work',
+        ts: '1700000000.000500',
+      }),
+    );
+
+    const rows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'slack'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      teamId: TEAM_A,
+      authorUserId: USER_A,
+      contentText: 'Slack capture should become approval work',
+      visibility: 'team',
+    });
+    expect(rows[0]?.sourceMetadata).toMatchObject({
+      slack_event_id: 'EvChannelText',
+      slack_channel_id: 'C_DOCS',
+      slack_sender_id: 'U_SLACK',
+      slack_sender_name: 'Alice Slack',
+      slack_sender_timeline_user_id: USER_A,
+      source_unverified: false,
+    });
+    expect(queues.extract.enqueueExtract).toHaveBeenCalledWith({
+      rawEventId: rows[0]?.id,
+      teamId: TEAM_A,
+    });
+    expect(queues.embed.enqueueEmbed).toHaveBeenCalledWith({
+      rawEventId: rows[0]?.id,
+      teamId: TEAM_A,
+    });
+    expect(queues.suggestions.enqueueSuggestion).toHaveBeenCalledWith({
+      rawEventId: rows[0]?.id,
+      teamId: TEAM_A,
+    });
+  });
+
+  it('captures linked Slack DM text and enqueues text work', async () => {
+    await seedWorkspace(db, TEAM_A);
+    await db.insert(slackUsers).values({
+      id: SLACK_USER_ROW_ID,
+      workspaceId: WORKSPACE_ID,
+      slackUserId: 'U_SLACK',
+      realName: 'Alice Slack',
+    });
+    await db.insert(slackUserTeams).values({
+      slackUserId: SLACK_USER_ROW_ID,
+      teamId: TEAM_A,
+      userId: USER_A,
+      linkedByUserId: USER_A,
+      isActive: true,
+    });
+    const queues = textQueueDeps();
+
+    await handleSlackEnvelope(
+      { db: db as never, ...queues },
+      slackEnvelope('EvDmText', {
+        type: 'message',
+        channel: 'D_SLACK',
+        channel_type: 'im',
+        user: 'U_SLACK',
+        text: 'DM follow up with Ada next week',
+        ts: '1700000000.000600',
+      }),
+    );
+
+    const rows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'slack'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ teamId: TEAM_A, authorUserId: USER_A, visibility: 'team' });
+    expect(rows[0]?.sourceMetadata).toMatchObject({
+      slack_channel_id: 'D_SLACK',
+      slack_channel_type: 'im',
+      source_owner_user_id: USER_A,
+      source_unverified: false,
+    });
+    expect(queues.extract.enqueueExtract).toHaveBeenCalledOnce();
+    expect(queues.embed.enqueueEmbed).toHaveBeenCalledOnce();
+    expect(queues.suggestions.enqueueSuggestion).toHaveBeenCalledOnce();
+  });
+
+  it('does not capture or enqueue work for unbound channel messages', async () => {
+    await seedWorkspace(db, TEAM_A);
+    const queues = textQueueDeps();
+
+    await handleSlackEnvelope(
+      { db: db as never, ...queues },
+      slackEnvelope('EvUnboundText', {
+        type: 'message',
+        channel: 'C_UNBOUND',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: 'should not land',
+        ts: '1700000000.000700',
+      }),
+    );
+
+    const rows = await db.select().from(rawEvents);
+    expect(rows).toHaveLength(0);
+    expect(queues.extract.enqueueExtract).not.toHaveBeenCalled();
+    expect(queues.embed.enqueueEmbed).not.toHaveBeenCalled();
+    expect(queues.suggestions.enqueueSuggestion).not.toHaveBeenCalled();
+  });
+
+  it('answers app mentions without recording them as capture events', async () => {
+    await seedBoundSlackUser(db, 'C_MENTIONS');
+    const queues = textQueueDeps();
+
+    await handleSlackEnvelope(
+      { db: db as never, ...queues },
+      slackEnvelope('EvMentionQuestion', {
+        type: 'app_mention',
+        channel: 'C_MENTIONS',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: '<@U_BOT> what changed?',
+        ts: '1700000000.000800',
+      }),
+    );
+
+    expect(askAgentMock).toHaveBeenCalledOnce();
+    const rows = await db.select().from(rawEvents);
+    expect(rows).toHaveLength(0);
+    expect(queues.suggestions.enqueueSuggestion).not.toHaveBeenCalled();
+  });
+
   it('captures Slack file_share messages and enqueues document extraction', async () => {
     await seedWorkspace(db, TEAM_A);
     await db.insert(slackConversationBindings).values({
@@ -423,10 +565,12 @@ describe('Slack dispatcher routing', () => {
     });
     const upload = vi.fn().mockResolvedValue(undefined);
     const enqueueExtract = vi.fn().mockResolvedValue(undefined);
+    const queues = textQueueDeps();
 
     await handleSlackEnvelope(
       {
         db: db as never,
+        ...queues,
         documents: { upload, enqueueExtract },
       },
       slackEnvelope('EvFile', {
@@ -451,6 +595,9 @@ describe('Slack dispatcher routing', () => {
 
     expect(upload).toHaveBeenCalledOnce();
     expect(enqueueExtract).toHaveBeenCalledOnce();
+    expect(queues.extract.enqueueExtract).not.toHaveBeenCalled();
+    expect(queues.embed.enqueueEmbed).not.toHaveBeenCalled();
+    expect(queues.suggestions.enqueueSuggestion).not.toHaveBeenCalled();
     const rows = await pg.query<{ metadata: Record<string, unknown> }>(
       `SELECT source_metadata AS metadata
        FROM raw_events
@@ -461,6 +608,57 @@ describe('Slack dispatcher routing', () => {
       document_name: 'plan.pdf',
       source: 'slack',
       slack_file_id: 'F1',
+    });
+  });
+
+  it('captures Slack file captions as text work while routing the file to extraction', async () => {
+    await seedBoundSlackUser(db);
+    const upload = vi.fn().mockResolvedValue(undefined);
+    const enqueueDocumentExtract = vi.fn().mockResolvedValue(undefined);
+    const queues = textQueueDeps();
+
+    await handleSlackEnvelope(
+      {
+        db: db as never,
+        ...queues,
+        documents: { upload, enqueueExtract: enqueueDocumentExtract },
+      },
+      slackEnvelope('EvFileCaption', {
+        type: 'message',
+        subtype: 'file_share',
+        channel: 'C_DOCS',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: 'Please review this proposal by Friday',
+        ts: '1700000001.000200',
+        files: [
+          {
+            id: 'F_CAPTION',
+            name: 'caption-plan.pdf',
+            mimetype: 'application/pdf',
+            size: 8,
+            url_private_download: 'https://files.example/caption-plan.pdf',
+          },
+        ],
+      }),
+    );
+
+    const slackRows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'slack'));
+    expect(slackRows).toHaveLength(1);
+    expect(slackRows[0]?.contentText).toBe('Please review this proposal by Friday');
+    expect(upload).toHaveBeenCalledOnce();
+    expect(enqueueDocumentExtract).toHaveBeenCalledOnce();
+    expect(queues.extract.enqueueExtract).toHaveBeenCalledWith({
+      rawEventId: slackRows[0]?.id,
+      teamId: TEAM_A,
+    });
+    expect(queues.embed.enqueueEmbed).toHaveBeenCalledWith({
+      rawEventId: slackRows[0]?.id,
+      teamId: TEAM_A,
+    });
+    expect(queues.suggestions.enqueueSuggestion).toHaveBeenCalledWith({
+      rawEventId: slackRows[0]?.id,
+      teamId: TEAM_A,
     });
   });
 

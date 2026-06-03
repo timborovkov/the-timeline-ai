@@ -107,4 +107,3 @@ const nextAuth = NextAuth({
 export const handlers = nextAuth.handlers;
 export const auth = nextAuth.auth;
 export const signIn = nextAuth.signIn;
-export const signOut = nextAuth.signOut;

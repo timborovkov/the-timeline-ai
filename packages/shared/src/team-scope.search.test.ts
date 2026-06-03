@@ -1,0 +1,244 @@
+import { PGlite } from '@electric-sql/pglite';
+import { drizzle } from 'drizzle-orm/pglite';
+import { beforeEach, describe, expect, it } from 'vitest';
+
+import type { EmbedResult } from '#src/llm/embed.js';
+import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
+
+import { withTeam } from '#src/team-scope.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
+
+// These tests protect the semantic retrieval contract the agent depends on:
+// query text is embedded once, vector hits are only a first pass, and Postgres
+// hydration still enforces team/visibility boundaries before evidence reaches
+// chat, search, or outbound MCP callers.
+
+const TEAM_A = '11111111-1111-1111-1111-111111111111';
+const TEAM_B = '22222222-2222-2222-2222-222222222222';
+const OWNER = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const MEMBER = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const OUTSIDER = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+
+const TEAM_EVENT = '00000000-0000-0000-0000-000000000101';
+const PRIVATE_EVENT = '00000000-0000-0000-0000-000000000102';
+const SPECIFIC_EVENT = '00000000-0000-0000-0000-000000000103';
+const OTHER_TEAM_EVENT = '00000000-0000-0000-0000-000000000201';
+const NULL_ANCHORED_ID = '00000000-0000-0000-0000-000000000301';
+
+const TEAM_FACT = '10000000-0000-0000-0000-000000000101';
+const OTHER_TEAM_FACT = '10000000-0000-0000-0000-000000000201';
+const ENTITY_ID = '20000000-0000-0000-0000-000000000101';
+
+type Db = ReturnType<typeof drizzle>;
+
+async function seed(pg: PGlite): Promise<void> {
+  await pg.exec(`
+    INSERT INTO teams (id, slug, name)
+    VALUES
+      ('${TEAM_A}', 'search-team-a', 'Search Team A'),
+      ('${TEAM_B}', 'search-team-b', 'Search Team B');
+
+    INSERT INTO users (id, email, name)
+    VALUES
+      ('${OWNER}', 'search-owner@example.com', 'Search Owner'),
+      ('${MEMBER}', 'search-member@example.com', 'Search Member'),
+      ('${OUTSIDER}', 'search-outsider@example.com', 'Search Outsider');
+
+    INSERT INTO team_members (team_id, user_id, role)
+    VALUES
+      ('${TEAM_A}', '${OWNER}', 'owner'),
+      ('${TEAM_A}', '${MEMBER}', 'member'),
+      ('${TEAM_B}', '${OUTSIDER}', 'owner');
+
+    INSERT INTO raw_events
+      (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, visibility, visibility_user_ids, source_metadata)
+    VALUES
+      ('${TEAM_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'web', 'Acme renewal needs a pricing proposal by Friday.', '2026-06-01T09:00:00Z', 'team', NULL, '{"kind":"team"}'::jsonb),
+      ('${PRIVATE_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'web', 'Owner private compensation note for Acme.', '2026-06-01T10:00:00Z', 'private', NULL, '{"kind":"private"}'::jsonb),
+      ('${SPECIFIC_EVENT}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'slack', 'Specific-users Acme escalation for the member.', '2026-06-01T11:00:00Z', 'specific_users', ARRAY['${MEMBER}'::uuid], '{"kind":"specific"}'::jsonb),
+      ('${OTHER_TEAM_EVENT}', '${TEAM_B}', '${OUTSIDER}', '${OUTSIDER}', 'web', 'Other team Acme proposal should never hydrate.', '2026-06-01T12:00:00Z', 'team', NULL, '{"kind":"other-team"}'::jsonb);
+
+    INSERT INTO entities (id, team_id, type, canonical_name)
+    VALUES ('${ENTITY_ID}', '${TEAM_A}', 'company', 'Acme');
+
+    INSERT INTO facts (id, team_id, raw_event_id, statement, confidence, model_version)
+    VALUES
+      ('${TEAM_FACT}', '${TEAM_A}', '${TEAM_EVENT}', 'Acme renewal needs pricing by Friday.', 0.95, 'test-model'),
+      ('${OTHER_TEAM_FACT}', '${TEAM_B}', '${OTHER_TEAM_EVENT}', 'Other team Acme fact.', 0.95, 'test-model');
+  `);
+}
+
+function hit(
+  eventId: string | null,
+  score: number,
+  overrides: Partial<SearchHit['payload']> = {},
+): SearchHit {
+  return {
+    id: eventId ?? NULL_ANCHORED_ID,
+    score,
+    payload: {
+      team_id: TEAM_A,
+      source_kind: 'raw_event',
+      event_id: eventId,
+      fact_id: null,
+      object_id: null,
+      note_id: null,
+      change_id: null,
+      entity_id: null,
+      entity_ids: [],
+      source: 'web',
+      occurred_at: '2026-06-01T09:00:00.000Z',
+      author_user_id: OWNER,
+      visibility: 'team',
+      visibility_user_ids: null,
+      visibility_owner_user_id: OWNER,
+      embedding_model: 'test-embedding-model',
+      document_id: null,
+      document_version_id: null,
+      document_chunk_id: null,
+      folder_id: null,
+      owner_user_id: null,
+      updated_at: null,
+      meeting_id: null,
+      meeting_chunk_id: null,
+      speaker: null,
+      ...overrides,
+    },
+  };
+}
+
+describe('withTeam timeline semantic search', () => {
+  let pg: PGlite;
+  let db: Db;
+  let embeddedTexts: string[];
+  let qdrantCalls: { teamId: string; userId: string; vector: number[]; opts: SearchOpts }[];
+  let hits: SearchHit[];
+
+  beforeEach(async () => {
+    pg = new PGlite();
+    await applyDbMigrations(pg);
+    await seed(pg);
+    db = drizzle(pg);
+    embeddedTexts = [];
+    qdrantCalls = [];
+    hits = [];
+  });
+
+  function qdrantSearch(
+    teamId: string,
+    userId: string,
+    vector: number[],
+    opts: SearchOpts,
+  ): Promise<SearchHit[]> {
+    qdrantCalls.push({ teamId, userId, vector, opts });
+    return Promise.resolve(hits);
+  }
+
+  function scopeFor(userId: string) {
+    return withTeam(db as never, TEAM_A, userId, {
+      embed: ({ text }): Promise<EmbedResult> => {
+        embeddedTexts.push(text);
+        return Promise.resolve({ vector: [0.11, 0.22, 0.33], model: 'fake-embedding-model' });
+      },
+      qdrantSearch,
+    });
+  }
+
+  it('embeds the query, forwards search filters, and hydrates ranked deduped events', async () => {
+    hits = [
+      hit(TEAM_EVENT, 0.7, {
+        source_kind: 'raw_event',
+        entity_ids: [ENTITY_ID],
+      }),
+      hit(TEAM_EVENT, 0.92, {
+        source_kind: 'fact',
+        fact_id: TEAM_FACT,
+        entity_ids: [ENTITY_ID],
+      }),
+      hit(null, 0.99, { source_kind: 'object', event_id: null }),
+      hit(OTHER_TEAM_EVENT, 0.98, { team_id: TEAM_B, fact_id: OTHER_TEAM_FACT }),
+    ];
+
+    const results = await scopeFor(OWNER).timeline.searchEvents({
+      query: 'Acme proposal',
+      limit: 5,
+      from: new Date('2026-06-01T00:00:00Z'),
+      to: new Date('2026-06-02T00:00:00Z'),
+      source: 'web',
+      entityIds: [ENTITY_ID],
+      sourceKind: ['raw_event', 'fact'],
+    });
+
+    expect(embeddedTexts).toEqual(['Acme proposal']);
+    expect(qdrantCalls).toEqual([
+      {
+        teamId: TEAM_A,
+        userId: OWNER,
+        vector: [0.11, 0.22, 0.33],
+        opts: {
+          limit: 5,
+          from: new Date('2026-06-01T00:00:00Z'),
+          to: new Date('2026-06-02T00:00:00Z'),
+          source: 'web',
+          entityIds: [ENTITY_ID],
+          sourceKind: ['raw_event', 'fact'],
+        },
+      },
+    ]);
+    expect(results).toEqual([
+      expect.objectContaining({
+        eventId: TEAM_EVENT,
+        score: 0.92,
+        factIds: [TEAM_FACT],
+        entityIds: [ENTITY_ID],
+        snippet: 'Acme renewal needs pricing by Friday.',
+      }),
+    ]);
+  });
+
+  it('uses Postgres hydration as a second visibility filter for private and specific-user hits', async () => {
+    hits = [
+      hit(PRIVATE_EVENT, 0.9, { visibility: 'private', visibility_owner_user_id: OWNER }),
+      hit(SPECIFIC_EVENT, 0.8, {
+        source: 'slack',
+        visibility: 'specific_users',
+        visibility_user_ids: [MEMBER],
+      }),
+      hit(TEAM_EVENT, 0.7),
+    ];
+
+    await expect(scopeFor(OWNER).timeline.searchEvents({ query: 'Acme' })).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ eventId: PRIVATE_EVENT }),
+        expect.objectContaining({ eventId: TEAM_EVENT }),
+      ]),
+    );
+
+    await expect(scopeFor(MEMBER).timeline.searchEvents({ query: 'Acme' })).resolves.toEqual([
+      expect.objectContaining({ eventId: SPECIFIC_EVENT }),
+      expect.objectContaining({ eventId: TEAM_EVENT }),
+    ]);
+  });
+
+  it('drops cross-team fact ids even when a stale Qdrant payload points at a visible event', async () => {
+    hits = [hit(TEAM_EVENT, 0.8, { fact_id: OTHER_TEAM_FACT })];
+
+    const results = await scopeFor(OWNER).timeline.searchEvents({ query: 'Acme' });
+
+    expect(results).toEqual([
+      expect.objectContaining({
+        eventId: TEAM_EVENT,
+        factIds: [],
+        snippet: 'Acme renewal needs a pricing proposal by Friday.',
+      }),
+    ]);
+  });
+
+  it('requires membership before embedding or searching', async () => {
+    await expect(scopeFor(OUTSIDER).timeline.searchEvents({ query: 'Acme' })).rejects.toThrow(
+      /not a member/i,
+    );
+    expect(embeddedTexts).toEqual([]);
+    expect(qdrantCalls).toEqual([]);
+  });
+});

@@ -6,9 +6,17 @@ import { PGlite } from '@electric-sql/pglite';
 import { calendarEventEntities, calendarEvents, entities, rawEvents } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withTeam } from '#src/team-scope.js';
+
+const fakes = vi.hoisted(() => ({
+  enqueueCalendarEventEmbedJob: vi.fn(),
+}));
+
+vi.mock('#src/queue/queues.js', () => ({
+  enqueueCalendarEventEmbedJob: fakes.enqueueCalendarEventEmbedJob,
+}));
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
@@ -58,6 +66,8 @@ describe('calendar scope', () => {
     await applyMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
+    fakes.enqueueCalendarEventEmbedJob.mockReset();
+    fakes.enqueueCalendarEventEmbedJob.mockResolvedValue(undefined);
   });
 
   it('keeps the occurrence timeline row rich enough for search hydration', async () => {
@@ -90,6 +100,31 @@ describe('calendar scope', () => {
     expect(occurrence?.contentText).toBe(
       'Launch review | Updated readiness pass | at Room 4 | 2026-05-27T09:00:00.000Z to 2026-05-27T10:30:00.000Z | (Europe/Tallinn)',
     );
+  });
+
+  it('persists team-visible creates and updates when embedding enqueue is unavailable', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    fakes.enqueueCalendarEventEmbedJob.mockRejectedValue(new Error('redis down'));
+
+    const event = await scope.calendar.createCalendarEvent({
+      title: 'Queue-degraded planning',
+      startAt: new Date('2026-05-27T09:00:00Z'),
+      endAt: new Date('2026-05-27T10:00:00Z'),
+      visibility: 'team',
+    });
+
+    expect(event.id).toBeTruthy();
+    expect(fakes.enqueueCalendarEventEmbedJob).toHaveBeenCalledWith(TEAM_ID, event.id);
+
+    const updated = await scope.calendar.updateCalendarEvent(event.id, {
+      title: 'Queue-degraded planning updated',
+    });
+
+    expect(updated?.title).toBe('Queue-degraded planning updated');
+    expect(fakes.enqueueCalendarEventEmbedJob).toHaveBeenCalledTimes(2);
+
+    const rows = await db.select().from(calendarEvents).where(eq(calendarEvents.id, event.id));
+    expect(rows[0]?.title).toBe('Queue-degraded planning updated');
   });
 
   it('deleteCalendarEvent tombstones both linked timeline rows', async () => {
