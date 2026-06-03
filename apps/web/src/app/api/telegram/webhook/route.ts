@@ -136,7 +136,20 @@ export async function POST(req: Request): Promise<Response> {
     : undefined;
 
   try {
-    const deps: Parameters<typeof telegram.handleUpdate>[0] = { db, tg: api };
+    const deps: Parameters<typeof telegram.handleUpdate>[0] = {
+      db,
+      tg: api,
+      onAgentToolError(err, context) {
+        reportCaughtError(err, {
+          surface: 'background',
+          operation: 'telegram_agent_tool_call',
+          tags: { tool: context.tool },
+        });
+      },
+      onAgentError(err) {
+        reportCaughtError(err, { surface: 'background', operation: 'telegram_agent_run' });
+      },
+    };
     if (audioDeps) deps.audio = audioDeps;
     if (documentDeps) deps.documents = documentDeps;
     if (extractDeps) deps.extract = extractDeps;

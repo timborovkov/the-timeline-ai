@@ -198,20 +198,29 @@ export async function POST(req: Request): Promise<Response> {
     currentDate,
     workspaceTime: time.workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });
+  const onAgentToolError: agent.AgentToolErrorReporter = (err, context) => {
+    reportCaughtError(err, {
+      surface: 'api',
+      operation: 'chat_agent_tool_call',
+      tags: { tool: context.tool },
+    });
+  };
   // Phase 11 — merge any custom MCP tools the team has connected. The
   // MCP manager caches per-team for 5 min so this is cheap on hot paths.
   // Failures here (discovery failed, OAuth expired, server down) MUST
   // NOT crash the chat — but we log them so they show up in observability
   // instead of silently disappearing.
-  const mcpTools = await agent.buildMcpTools(scope).catch((err: unknown) => {
-    log.warn(
-      { err, teamId: active.teamId },
-      'mcp tool discovery failed; chat continues with native tools only',
-    );
-    reportCaughtError(err, { surface: 'api', operation: 'chat_mcp_tool_discovery' });
-    return {};
-  });
-  const tools = { ...agent.buildAgentTools(scope), ...mcpTools };
+  const mcpTools = await agent
+    .buildMcpTools(scope, { onToolError: onAgentToolError })
+    .catch((err: unknown) => {
+      log.warn(
+        { err, teamId: active.teamId },
+        'mcp tool discovery failed; chat continues with native tools only',
+      );
+      reportCaughtError(err, { surface: 'api', operation: 'chat_mcp_tool_discovery' });
+      return {};
+    });
+  const tools = { ...agent.buildAgentTools(scope, { onToolError: onAgentToolError }), ...mcpTools };
 
   // Validate UIMessages BEFORE convertToModelMessages so a malformed client
   // (or attacker poking the endpoint) gets a clean 400 instead of an
@@ -271,6 +280,13 @@ export async function POST(req: Request): Promise<Response> {
     // tokens nobody will see. Without this, a user navigating away mid-
     // stream still runs the model to completion.
     abortSignal: req.signal,
+    onError: (e) => {
+      reportCaughtError(e.error, {
+        surface: 'api',
+        operation: 'chat_stream',
+        tags: { model: modelId },
+      });
+    },
     onFinish: (e) => {
       log.info(
         {

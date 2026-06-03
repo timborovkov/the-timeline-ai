@@ -14,6 +14,7 @@ import {
 import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { askAgent } from '#src/agent/ask.js';
+import { type AgentToolErrorReporter } from '#src/agent/tools.js';
 import {
   classifyConversationalAttachment,
   CONVERSATIONAL_ATTACHMENT_LIMITS,
@@ -92,6 +93,8 @@ export interface DocumentAttachmentDeps {
 interface DispatcherDeps {
   db: Db;
   tg: TelegramApi;
+  onAgentToolError?: AgentToolErrorReporter | undefined;
+  onAgentError?: ((err: unknown) => void) | undefined;
   audio?: AudioIngestDeps;
   documents?: DocumentAttachmentDeps;
   extract?: ExtractEnqueueDeps;
@@ -600,6 +603,8 @@ async function cmdAskDm(ctx: DmContext, arg: string): Promise<void> {
     userId: ctx.tgUserRow.userId,
     userName: tgDisplayName(ctx.tgUser),
     question: arg,
+    onAgentToolError: ctx.onAgentToolError,
+    onAgentError: ctx.onAgentError,
   });
 }
 
@@ -633,6 +638,8 @@ interface RunAskInput {
   userId: string | null;
   userName: string;
   question: string;
+  onAgentToolError?: AgentToolErrorReporter | undefined;
+  onAgentError?: ((err: unknown) => void) | undefined;
 }
 
 async function runAsk(input: RunAskInput): Promise<void> {
@@ -747,13 +754,16 @@ async function runAskInner(input: RunAskInput): Promise<void> {
   void input.tg.sendChatAction({ chat_id: input.chatId, action: 'typing' }).catch(() => {
     /* ignore */
   });
-  const result = await askAgent({
-    db: input.db,
-    teamId: input.teamId,
-    userId: input.userId,
-    userName: input.userName,
-    question,
-  });
+  const result = await askAgent(
+    {
+      db: input.db,
+      teamId: input.teamId,
+      userId: input.userId,
+      userName: input.userName,
+      question,
+    },
+    { onToolError: input.onAgentToolError, onAgentError: input.onAgentError },
+  );
   if (!result.ok) {
     const text =
       result.error === 'unconfigured'
@@ -1126,6 +1136,8 @@ async function dispatchGroupCommand(
         userId: ctx.tgUserRow.userId,
         userName: tgDisplayName(ctx.tgUser),
         question: command.arg,
+        onAgentToolError: ctx.onAgentToolError,
+        onAgentError: ctx.onAgentError,
       });
       return;
     case '/team':

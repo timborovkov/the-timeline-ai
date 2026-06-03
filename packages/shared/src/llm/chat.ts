@@ -106,6 +106,8 @@ export interface StreamChatInput<TTools extends ToolSet> {
   maxSteps?: number;
   /** Forwarded to streamText.onFinish for usage/audit logging. */
   onFinish?: Parameters<typeof streamText>[0]['onFinish'];
+  /** Forwarded to streamText.onError for provider/stream failures. */
+  onError?: Parameters<typeof streamText>[0]['onError'];
   /**
    * AbortSignal wired to the request lifecycle. The AI SDK propagates it to
    * the underlying OpenRouter fetch, so a client disconnect stops billing
@@ -140,6 +142,7 @@ export function streamChat<TTools extends ToolSet>(
     stopWhen: stepCountIs(input.maxSteps ?? 5),
   };
   if (input.onFinish) args.onFinish = input.onFinish;
+  if (input.onError) args.onError = input.onError;
   if (input.abortSignal) args.abortSignal = input.abortSignal;
   return streamText(args) as unknown as StreamTextResult<TTools, never>;
 }

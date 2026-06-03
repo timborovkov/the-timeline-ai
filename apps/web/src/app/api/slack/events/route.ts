@@ -69,7 +69,20 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, reason: 'invalid_challenge' }, { status: 200 });
   }
 
-  const deps = { db, ...slackIngestDeps() };
+  const deps = {
+    db,
+    ...slackIngestDeps(),
+    onAgentToolError(err: unknown, context: { tool: string }) {
+      reportCaughtError(err, {
+        surface: 'background',
+        operation: 'slack_agent_tool_call',
+        tags: { tool: context.tool },
+      });
+    },
+    onAgentError(err: unknown) {
+      reportCaughtError(err, { surface: 'background', operation: 'slack_agent_run' });
+    },
+  };
   void Promise.resolve()
     .then(() => slack.handleSlackEnvelope(deps, payload))
     .catch((err: unknown) => {

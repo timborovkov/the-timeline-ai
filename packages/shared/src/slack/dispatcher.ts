@@ -13,6 +13,7 @@ import {
 import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { askAgent } from '#src/agent/ask.js';
+import { type AgentToolErrorReporter } from '#src/agent/tools.js';
 import {
   classifyConversationalAttachment,
   CONVERSATIONAL_ATTACHMENT_LIMITS,
@@ -37,6 +38,8 @@ type DbOrTx = Db | DbTx;
 
 export interface SlackIngestDeps {
   db: Db;
+  onAgentToolError?: AgentToolErrorReporter | undefined;
+  onAgentError?: ((err: unknown) => void) | undefined;
   audio?: {
     upload(input: { key: string; body: Buffer; contentType: string }): Promise<void>;
     enqueueTranscribe(input: {
@@ -120,7 +123,11 @@ export interface SlackSlashCommandInput {
 }
 
 export async function handleSlackSlashCommand(
-  deps: { db: Db },
+  deps: {
+    db: Db;
+    onAgentToolError?: AgentToolErrorReporter | undefined;
+    onAgentError?: ((err: unknown) => void) | undefined;
+  },
   input: SlackSlashCommandInput,
 ): Promise<void> {
   if (input.command !== '/ask') return;
@@ -150,13 +157,16 @@ export async function handleSlackSlashCommand(
   );
   if (!claim) return;
   try {
-    const result = await askAgent({
-      db: deps.db,
-      teamId: linked.teamId,
-      userId: linked.userId,
-      userName: linked.displayName ?? 'a teammate',
-      question,
-    });
+    const result = await askAgent(
+      {
+        db: deps.db,
+        teamId: linked.teamId,
+        userId: linked.userId,
+        userName: linked.displayName ?? 'a teammate',
+        question,
+      },
+      { onToolError: deps.onAgentToolError, onAgentError: deps.onAgentError },
+    );
     await api.postMessage({
       channel: input.channel_id,
       response_url: input.response_url,
@@ -393,13 +403,16 @@ async function handleAppMention(
     return;
   }
   try {
-    const result = await askAgent({
-      db: deps.db,
-      teamId: route.teamId,
-      userId: route.linkedUserId,
-      userName: route.linkedUserName ?? 'a teammate',
-      question,
-    });
+    const result = await askAgent(
+      {
+        db: deps.db,
+        teamId: route.teamId,
+        userId: route.linkedUserId,
+        userName: route.linkedUserName ?? 'a teammate',
+        question,
+      },
+      { onToolError: deps.onAgentToolError, onAgentError: deps.onAgentError },
+    );
     await api.postMessage({
       channel: event.channel,
       thread_ts: event.thread_ts ?? event.ts,
