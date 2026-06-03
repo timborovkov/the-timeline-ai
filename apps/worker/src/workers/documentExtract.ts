@@ -13,6 +13,8 @@ import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 import mammoth from 'mammoth';
 
+import { captureWorkerJobFailure } from '#src/monitoring.js';
+
 const log = childLogger('worker:document-extract');
 
 interface DocumentExtractWorkerDeps {
@@ -373,6 +375,7 @@ export function startDocumentExtractWorker(
 
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'job failed');
+    captureWorkerJobFailure(err, job);
   });
   worker.on('completed', (job) => {
     log.info({ jobId: job.id }, 'job completed');

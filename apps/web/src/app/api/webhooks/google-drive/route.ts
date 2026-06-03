@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -84,7 +85,12 @@ export async function POST(req: Request): Promise<Response> {
       teamId: integration.teamId,
       triggeredBy: 'webhook',
     });
-  } catch {
+  } catch (err) {
+    reportCaughtError(err, {
+      surface: 'background',
+      operation: 'google_drive_webhook_enqueue_sync',
+      tags: { provider: 'google_drive' },
+    });
     return NextResponse.json({ ok: true, reason: 'enqueue_failed' }, { status: 200 });
   }
   return NextResponse.json({ ok: true });

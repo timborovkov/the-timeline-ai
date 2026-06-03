@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -136,6 +137,7 @@ export async function POST(req: Request): Promise<Response> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'mcp_oauth_start_failed';
     log.warn({ err, mcpServerId: parsed.data.mcpServerId }, 'mcp oauth start failed');
+    reportCaughtError(err, { surface: 'api', operation: 'mcp_oauth_start' });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

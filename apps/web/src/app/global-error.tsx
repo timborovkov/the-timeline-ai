@@ -1,5 +1,9 @@
 'use client';
 
+import { useEffect } from 'react';
+
+import { reportCaughtError } from '@/lib/sentry-report';
+
 export default function GlobalError({
   error,
   reset,
@@ -7,6 +11,15 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    reportCaughtError(error, {
+      surface: 'render',
+      operation: 'global_error_boundary',
+      level: 'fatal',
+      tags: { digest: error.digest },
+    });
+  }, [error]);
+
   return (
     <html lang="en">
       <body

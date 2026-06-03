@@ -13,6 +13,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getNavAttentionSummary } from '@/lib/hub-status';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
@@ -74,6 +75,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const badges = await getNavAttentionSummary(active.teamId, session.user.id).catch(
     (err: unknown) => {
       console.error('[app-shell] failed to load navigation attention badges', err);
+      reportCaughtError(err, { surface: 'layout', operation: 'nav_attention_summary' });
       return {};
     },
   );

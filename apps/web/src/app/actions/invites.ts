@@ -13,6 +13,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { ensureSoloTeam } from '@/lib/default-team';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 const log = childLogger('web:actions:invites');
 
@@ -121,6 +122,10 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
         { err: (fallbackErr as Error).message, userId, reason },
         'invite_fallback_solo_team_failed',
       );
+      reportCaughtError(fallbackErr, {
+        surface: 'server_action',
+        operation: 'restore_solo_team_after_invite_failure',
+      });
     }
     redirect(`/accept-invite/${encodeURIComponent(token)}?error=${encodeURIComponent(reason)}`);
   }

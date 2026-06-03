@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -207,6 +208,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: true, chunkId: result.chunkId }, { status: 200 });
   } catch (err) {
     log.error({ err, botId: chunk.botId }, 'transcript_handler_error');
+    reportCaughtError(err, { surface: 'api', operation: 'recall_transcript_handler' });
     return Response.json({ ok: false, reason: 'handler_error' }, { status: 503 });
   }
 }

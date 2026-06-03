@@ -13,6 +13,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 /**
  * Phase 6 — agent chat endpoint. Phase 8 wires session persistence on top.
@@ -183,6 +184,7 @@ export async function POST(req: Request): Promise<Response> {
       // Pinned object not in this team / bad uuid. Fall back to no
       // persistence rather than refuse the chat.
       log.warn({ err }, 'chat session create failed');
+      reportCaughtError(err, { surface: 'api', operation: 'chat_session_create' });
     }
   }
 
@@ -206,6 +208,7 @@ export async function POST(req: Request): Promise<Response> {
       { err, teamId: active.teamId },
       'mcp tool discovery failed; chat continues with native tools only',
     );
+    reportCaughtError(err, { surface: 'api', operation: 'chat_mcp_tool_discovery' });
     return {};
   });
   const tools = { ...agent.buildAgentTools(scope), ...mcpTools };
@@ -319,6 +322,7 @@ export async function POST(req: Request): Promise<Response> {
             { err, sessionId, teamId: active.teamId, userId: session.user.id },
             'chat session append failed',
           );
+          reportCaughtError(err, { surface: 'background', operation: 'chat_session_append' });
         });
     },
   });

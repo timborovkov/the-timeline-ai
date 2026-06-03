@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Sentry setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-22</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-03</span></div>
       <blockquote><p>Optional locally. Strongly recommended before production.</p></blockquote>
       <p class="tldr">
         Hook the web and worker services into Sentry for error tracking. The integration is wired in
@@ -40,7 +40,14 @@ SENTRY_PROFILES_SAMPLE_RATE=0
       <p>
         The web service initializes Sentry from the Next.js instrumentation files and routes browser
         events through <code>/sentry-tunnel</code>. The worker initializes <code>@sentry/node</code>
-        on startup, captures fatal startup/shutdown errors, and flushes before exit.
+        on startup, captures fatal startup/shutdown errors, captures terminal BullMQ job failures
+        after retries are exhausted, and flushes before exit.
+      </p>
+      <p>
+        App Router render boundaries, API route handlers, server actions, webhook background
+        handlers, queue handoffs, and other caught-but-unexpected operational failures report to
+        Sentry explicitly before returning graceful responses. Expected validation, authentication,
+        not-found, rate-limit, and provider-noise outcomes stay out of Sentry.
       </p>
       <p>
         Keep <code>sendDefaultPii</code> disabled. Do not attach cookies, auth headers, prompts,
@@ -53,6 +60,25 @@ SENTRY_PROFILES_SAMPLE_RATE=0
 SENTRY_ORG=
 SENTRY_PROJECT=
 </code></pre>
+      <h2 id="alerts">4. Production alerting checklist</h2>
+      <ul>
+        <li>
+          Set <code>SENTRY_DSN</code> on the web and worker services, and
+          <code>NEXT_PUBLIC_SENTRY_DSN</code> on the web service for browser errors.
+        </li>
+        <li>
+          Set <code>SENTRY_ENVIRONMENT</code> to the deployment label you want alerts grouped by,
+          such as <code>production</code>.
+        </li>
+        <li>
+          Configure issue alerts and notification destinations in the Sentry project UI. The repo
+          sends events; Sentry decides whether they page, email, or post to Slack.
+        </li>
+        <li>
+          Set <code>SENTRY_AUTH_TOKEN</code>, <code>SENTRY_ORG</code>, and
+          <code>SENTRY_PROJECT</code> in CI/deploy environments that should upload source maps.
+        </li>
+      </ul>
     </main>
   </body>
 </html>

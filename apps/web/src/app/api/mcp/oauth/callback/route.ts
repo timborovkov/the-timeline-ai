@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -129,6 +130,7 @@ export async function GET(req: Request): Promise<Response> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'mcp_oauth_callback_failed';
     log.warn({ err, mcpServerId: verified.mcpServerId }, 'mcp oauth callback failed');
+    reportCaughtError(err, { surface: 'api', operation: 'mcp_oauth_callback' });
     return NextResponse.redirect(
       new URL(`/app/team/integrations?error=${encodeURIComponent(msg)}`, req.url),
     );

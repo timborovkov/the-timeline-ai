@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 
+import { reportCaughtError } from '@/lib/sentry-report';
+
 const log = childLogger('web:turnstile');
 
 interface SiteverifyResponse {
@@ -58,6 +60,7 @@ export async function verifyTurnstileToken(input: {
     return true;
   } catch (err) {
     log.warn({ err }, 'turnstile verification request failed');
+    reportCaughtError(err, { surface: 'server_action', operation: 'turnstile_verify' });
     return false;
   }
 }

@@ -14,6 +14,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { trackProductEventBestEffort } from '#src/analytics.js';
+import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:meeting-finalize');
 
@@ -638,6 +639,7 @@ export function startMeetingFinalizeWorker(
 
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'meeting_finalize_failed');
+    captureWorkerJobFailure(err, job);
   });
   worker.on('completed', (job) => {
     log.info({ jobId: job.id }, 'meeting_finalize_completed');

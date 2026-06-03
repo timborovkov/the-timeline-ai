@@ -11,6 +11,8 @@ import {
 import { Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
+import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
+
 // Phase 11 — Integration sync worker.
 //
 // Two job kinds:
@@ -232,6 +234,10 @@ async function runOneIntegration(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log.warn({ err, integrationId }, 'integration sync failed');
+      captureWorkerException(err, {
+        component: 'worker_integration_sync',
+        operation: 'run_one_integration',
+      });
       await integrationsLib.adminRecordError(db, integrationId, msg);
       await integrationsLib.adminRecordAudit(
         db,
@@ -268,6 +274,11 @@ async function handleTick(db: Db): Promise<void> {
       });
     } catch (err) {
       log.warn({ err, integrationId: i.id }, 'failed to enqueue per-integration tick');
+      captureWorkerException(err, {
+        component: 'worker_handoff',
+        queueName: queue.QUEUE_NAMES.integrationSync,
+        operation: 'enqueue_incremental_sync_tick',
+      });
     }
   }
 }
@@ -298,6 +309,7 @@ export function startIntegrationSyncWorker(
   );
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'integration sync failed');
+    captureWorkerJobFailure(err, job);
   });
   return worker;
 }

@@ -3,6 +3,8 @@ import { childLogger, mcp, queue } from '@timeline/shared';
 import { Worker, type Job } from 'bullmq';
 import { eq } from 'drizzle-orm';
 
+import { captureWorkerJobFailure } from '#src/monitoring.js';
+
 const log = childLogger('worker:mcp-health');
 
 interface HealthDeps {
@@ -85,6 +87,7 @@ export function startMcpHealthWorker(deps: { db: Db }): Worker<queue.McpHealthJo
   );
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'mcp health tick failed');
+    captureWorkerJobFailure(err, job);
   });
   return worker;
 }

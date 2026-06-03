@@ -6,6 +6,7 @@ import { getAttachmentsBucket, getAudioBucket, getS3Client, putObject } from '@t
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -196,6 +197,7 @@ export async function POST(req: Request): Promise<Response> {
     // theory that retries are our problem — but without a reconciler we'd
     // silently lose the message.
     log.error({ err }, 'handler crash');
+    reportCaughtError(err, { surface: 'api', operation: 'email_inbound_handler' });
     return Response.json({ ok: false, reason: 'handler_error' }, { status: 503 });
   }
 }

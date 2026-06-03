@@ -3,6 +3,8 @@ import { childLogger, embedding, getEnv, llm, qdrant, queue } from '@timeline/sh
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 
+import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
+
 const log = childLogger('worker:embed');
 
 interface EmbedWorkerDeps {
@@ -99,6 +101,7 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
 
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'job failed');
+    captureWorkerJobFailure(err, job);
     if (!job) return;
     const maxAttempts = job.opts.attempts ?? 1;
     const unrecoverable = err instanceof UnrecoverableError;
@@ -124,6 +127,10 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
       )
       .catch((updateErr: unknown) => {
         log.error({ err: updateErr }, 'failed to mark row failure');
+        captureWorkerException(updateErr, {
+          component: 'worker_failure_marker',
+          operation: 'mark_embedding_failure',
+        });
       });
   });
   worker.on('completed', (job) => {

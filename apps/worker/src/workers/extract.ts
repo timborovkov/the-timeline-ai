@@ -4,6 +4,8 @@ import { makeExtractionModelVersion } from '@timeline/shared/extraction-model-ve
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
 
+import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
+
 const log = childLogger('worker:extract');
 
 interface ExtractWorkerDeps {
@@ -289,6 +291,11 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
         await queue.enqueueSuggestionJob({ rawEventId, teamId });
       } catch (err) {
         log.error({ err, rawEventId }, 'failed to enqueue suggestion job');
+        captureWorkerException(err, {
+          component: 'worker_handoff',
+          queueName: queue.QUEUE_NAMES.suggestions,
+          operation: 'enqueue_suggestion_after_extract',
+        });
       }
 
       // Enqueue embed jobs AFTER the transaction commits. One job for the
@@ -318,6 +325,12 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
       if (enqueueFailures.length > 0) {
         for (const f of enqueueFailures) {
           log.error({ factId: f.factId ?? 'event', err: f.err }, 'embed enqueue failed');
+          captureWorkerException(f.err, {
+            component: 'worker_handoff',
+            queueName: queue.QUEUE_NAMES.embed,
+            operation: 'enqueue_embed_after_extract',
+            target: f.factId ? 'fact' : 'event',
+          });
         }
         const firstErr = enqueueFailures[0]?.err;
         const failurePatch = JSON.stringify({
@@ -334,6 +347,10 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
           .where(eq(rawEvents.id, rawEventId))
           .catch((markErr: unknown) => {
             log.error({ err: markErr }, 'failed to mark embed failure');
+            captureWorkerException(markErr, {
+              component: 'worker_failure_marker',
+              operation: 'mark_embed_enqueue_failure',
+            });
           });
       }
 
@@ -349,6 +366,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
 
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'job failed');
+    captureWorkerJobFailure(err, job);
     if (!job) return;
     const maxAttempts = job.opts.attempts ?? 1;
     const unrecoverable = err instanceof UnrecoverableError;
@@ -365,6 +383,10 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
       .where(eq(rawEvents.id, job.data.rawEventId))
       .catch((updateErr: unknown) => {
         log.error({ err: updateErr }, 'failed to mark row failure');
+        captureWorkerException(updateErr, {
+          component: 'worker_failure_marker',
+          operation: 'mark_extraction_failure',
+        });
       });
   });
   worker.on('completed', (job) => {

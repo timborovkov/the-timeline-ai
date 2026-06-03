@@ -16,6 +16,8 @@ import {
 import { Worker } from 'bullmq';
 import { and, eq } from 'drizzle-orm';
 
+import { captureWorkerJobFailure } from '#src/monitoring.js';
+
 const log = childLogger('worker:team-export');
 
 interface TeamExportWorkerDeps {
@@ -113,9 +115,14 @@ async function processTeamExportJob(
 }
 
 export function startTeamExportWorker(deps: TeamExportWorkerDeps): Worker<queue.TeamExportJobData> {
-  return new Worker<queue.TeamExportJobData>(
+  const worker = new Worker<queue.TeamExportJobData>(
     queue.QUEUE_NAMES.teamExport,
     async (job) => processTeamExportJob(deps, job.data),
     { connection: queue.getRedisConnection(), concurrency: 1 },
   );
+  worker.on('failed', (job, err) => {
+    log.error({ jobId: job?.id, err }, 'team export job failed');
+    captureWorkerJobFailure(err, job);
+  });
+  return worker;
 }

@@ -11,6 +11,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { clientIpFromHeaders } from '@/lib/request-ip';
+import { reportCaughtError } from '@/lib/sentry-report';
 import { turnstileHostnameFromHeaders, verifyTurnstileToken } from '@/lib/turnstile';
 
 export interface SupportFormState {
@@ -204,6 +205,9 @@ async function sendPostmarkSupportEmail(input: {
   });
 
   if (res.ok) return { ok: true };
-  const body = await res.text().catch(() => '');
+  const body = await res.text().catch((err: unknown) => {
+    reportCaughtError(err, { surface: 'server_action', operation: 'support_postmark_error_body' });
+    return '';
+  });
   return { ok: false, error: `Postmark ${res.status}: ${body.slice(0, 500)}` };
 }

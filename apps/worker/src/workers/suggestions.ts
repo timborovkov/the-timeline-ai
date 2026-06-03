@@ -11,6 +11,8 @@ import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
+import { captureWorkerJobFailure } from '#src/monitoring.js';
+
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const SUGGESTION_CODE_VERSION = '2026-05-a';
 const RECENT_CONTEXT_LIMIT = 5;
@@ -176,7 +178,7 @@ function buildPrompt(args: {
 }
 
 export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.SuggestionJobData> {
-  return new Worker<queue.SuggestionJobData>(
+  const worker = new Worker<queue.SuggestionJobData>(
     queue.QUEUE_NAMES.suggestions,
     async (job: Job<queue.SuggestionJobData>) => {
       const { rawEventId, teamId } = job.data;
@@ -399,4 +401,8 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
     },
     { connection: queue.getRedisConnection(), concurrency: 1 },
   );
+  worker.on('failed', (job, err) => {
+    captureWorkerJobFailure(err, job);
+  });
+  return worker;
 }

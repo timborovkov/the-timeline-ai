@@ -3,6 +3,8 @@ import { childLogger, queue } from '@timeline/shared';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 
+import { captureWorkerJobFailure } from '#src/monitoring.js';
+
 // Page the overdue scan by entity id so a tenant with thousands of
 // overdue tasks can't blow memory on a single SELECT, and the bulk
 // INSERT after stays bounded too. UUIDs sort lexicographically which is
@@ -178,6 +180,7 @@ export function startOverdueWorker(deps: OverdueWorkerDeps): Worker<queue.Overdu
 
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'overdue scan failed');
+    captureWorkerJobFailure(err, job);
   });
 
   return worker;

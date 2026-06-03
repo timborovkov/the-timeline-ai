@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 // Pull the Linear team id out of a webhook payload. The schema varies by
 // entity type — Linear puts it at different paths for Issue vs Comment
@@ -141,8 +142,13 @@ export async function POST(req: Request): Promise<Response> {
         teamId: integration.teamId,
         triggeredBy: 'webhook',
       });
-    } catch {
+    } catch (err) {
       // continue
+      reportCaughtError(err, {
+        surface: 'background',
+        operation: 'linear_webhook_process',
+        tags: { provider: 'linear' },
+      });
     }
   }
   return NextResponse.json({ ok: true });
