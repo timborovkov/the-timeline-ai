@@ -4,7 +4,17 @@ import { type InfiniteData, useQueryClient } from '@tanstack/react-query';
 import { Folder as FolderIcon, FolderPlus, Upload } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useRef, useState, useTransition } from 'react';
+import {
+  type ChangeEvent,
+  type Dispatch,
+  type DragEvent,
+  type RefObject,
+  type SetStateAction,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 import { toast } from 'sonner';
 
 import {
@@ -101,6 +111,12 @@ export function DocumentDrive({
   const visibleDocuments = documentQuery.data.pages.flatMap((page) => page.items);
   const activeUploads = uploads.filter((upload) => upload.phase !== 'failed');
   const activeUpload = activeUploads[0];
+  const uploadButtonLabel =
+    activeUploads.length === 0
+      ? 'Upload'
+      : activeUploads.length === 1
+        ? `${activeUpload ? uploadPhaseLabel(activeUpload) : 'Uploading'}...`
+        : `Uploading ${String(activeUploads.length)} files...`;
 
   function updateUpload(id: string, patch: Partial<UploadState>): void {
     setUploads((prev) =>
@@ -224,7 +240,7 @@ export function DocumentDrive({
     }
   }
 
-  function onFileChange(e: React.ChangeEvent<HTMLInputElement>): void {
+  function onFileChange(e: ChangeEvent<HTMLInputElement>): void {
     const file = e.target.files?.[0];
     if (file) void handleUploadFile(file);
     e.target.value = '';
@@ -254,7 +270,7 @@ export function DocumentDrive({
     });
   }
 
-  function onDrop(e: React.DragEvent<HTMLDivElement>): void {
+  function onDrop(e: DragEvent<HTMLDivElement>): void {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files);
     for (const file of files) void handleUploadFile(file);
@@ -262,219 +278,336 @@ export function DocumentDrive({
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <nav className="text-sm">
-          {breadcrumbs.map((c, i) => (
-            <span key={`${c.id ?? 'root'}-${String(i)}`}>
-              {i > 0 && <span className="mx-1 text-muted-foreground">/</span>}
-              {i === breadcrumbs.length - 1 ? (
-                <span className="font-semibold text-foreground">{c.name}</span>
-              ) : (
-                <Link
-                  href={c.id ? `/app/documents?folder=${c.id}` : '/app/documents'}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  {c.name}
-                </Link>
-              )}
-            </span>
-          ))}
-        </nav>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onNewFolder} disabled={pending}>
-            <FolderPlus className="mr-2 h-4 w-4" />
-            New folder
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={activeUploads.length > 0}
-          >
-            <Upload className="mr-2 h-4 w-4" />
-            {activeUploads.length === 0
-              ? 'Upload'
-              : activeUploads.length === 1
-                ? `${activeUpload ? uploadPhaseLabel(activeUpload) : 'Uploading'}…`
-                : `Uploading ${String(activeUploads.length)} files…`}
-          </Button>
-          <input ref={fileInputRef} type="file" className="hidden" onChange={onFileChange} />
-        </div>
-      </header>
-      {uploads.length > 0 ? (
-        <div className="space-y-2 rounded-sm border border-border bg-card/40 p-3" role="status">
-          {uploads.map((upload) => (
-            <div key={upload.id} className="flex items-center justify-between gap-3 text-sm">
-              <span className="truncate font-medium">{upload.name}</span>
-              <span
-                className={
-                  upload.phase === 'failed'
-                    ? 'shrink-0 text-xs text-destructive'
-                    : 'shrink-0 text-xs text-muted-foreground'
-                }
-              >
-                {uploadPhaseLabel(upload)}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-3 rounded-sm border border-border p-3 text-sm">
-        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-          New item visibility
-        </span>
-        <select
-          aria-label="New item visibility"
-          value={visibility}
-          onChange={(e) => {
-            setVisibility(e.target.value as 'team' | 'private' | 'specific_users');
-          }}
-          className="h-8 rounded-sm border border-border bg-bg px-2 text-sm"
-        >
-          <option value="team">Team</option>
-          <option value="private">Private</option>
-          <option value="specific_users">Specific users</option>
-        </select>
-        {visibility === 'specific_users'
-          ? members.map((m) => (
-              <label key={m.id} className="flex items-center gap-1 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={visibilityUserIds.includes(m.id)}
-                  onChange={(e) => {
-                    setVisibilityUserIds((prev) =>
-                      e.target.checked
-                        ? [...new Set([...prev, m.id])]
-                        : prev.filter((id) => id !== m.id),
-                    );
-                  }}
-                />
-                {m.label}
-              </label>
-            ))
-          : null}
-      </div>
-
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-        }}
+      <DocumentDriveHeader
+        breadcrumbs={breadcrumbs}
+        pending={pending}
+        uploadButtonLabel={uploadButtonLabel}
+        uploadDisabled={activeUploads.length > 0}
+        fileInputRef={fileInputRef}
+        onNewFolder={onNewFolder}
+        onFileChange={onFileChange}
+      />
+      <UploadStatusList uploads={uploads} />
+      <NewItemVisibilityPicker
+        visibility={visibility}
+        visibilityUserIds={visibilityUserIds}
+        members={members}
+        onVisibilityChange={setVisibility}
+        onVisibilityUserIdsChange={setVisibilityUserIds}
+      />
+      <DocumentDropZone
+        folders={folders}
+        documents={visibleDocuments}
+        query={documentQuery}
+        fileInputRef={fileInputRef}
         onDrop={onDrop}
-        className="rounded-sm border border-dashed border-border bg-card/30 p-6"
+        onDeleteFolder={onDeleteFolder}
+      />
+    </div>
+  );
+}
+
+function DocumentDriveHeader({
+  breadcrumbs,
+  pending,
+  uploadButtonLabel,
+  uploadDisabled,
+  fileInputRef,
+  onNewFolder,
+  onFileChange,
+}: {
+  breadcrumbs: Crumb[];
+  pending: boolean;
+  uploadButtonLabel: string;
+  uploadDisabled: boolean;
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  onNewFolder: () => void;
+  onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <header className="flex flex-wrap items-center justify-between gap-4">
+      <Breadcrumbs breadcrumbs={breadcrumbs} />
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={onNewFolder} disabled={pending}>
+          <FolderPlus className="mr-2 size-4" />
+          New folder
+        </Button>
+        <Button size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploadDisabled}>
+          <Upload className="mr-2 size-4" />
+          {uploadButtonLabel}
+        </Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={onFileChange}
+          aria-label="Upload document"
+        />
+      </div>
+    </header>
+  );
+}
+
+function Breadcrumbs({ breadcrumbs }: { breadcrumbs: Crumb[] }) {
+  return (
+    <nav className="text-sm">
+      {breadcrumbs.map((c, i) => (
+        <span key={`${c.id ?? 'root'}-${String(i)}`}>
+          {i > 0 && <span className="mx-1 text-muted-foreground">/</span>}
+          {i === breadcrumbs.length - 1 ? (
+            <span className="font-semibold text-foreground">{c.name}</span>
+          ) : (
+            <Link
+              href={c.id ? `/app/documents?folder=${c.id}` : '/app/documents'}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              {c.name}
+            </Link>
+          )}
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+function UploadStatusList({ uploads }: { uploads: readonly UploadState[] }) {
+  if (uploads.length === 0) return null;
+  return (
+    <output className="space-y-2 rounded-sm border border-border bg-card/40 p-3" aria-live="polite">
+      {uploads.map((upload) => (
+        <div key={upload.id} className="flex items-center justify-between gap-3 text-sm">
+          <span className="truncate font-medium">{upload.name}</span>
+          <span
+            className={
+              upload.phase === 'failed'
+                ? 'shrink-0 text-xs text-destructive'
+                : 'shrink-0 text-xs text-muted-foreground'
+            }
+          >
+            {uploadPhaseLabel(upload)}
+          </span>
+        </div>
+      ))}
+    </output>
+  );
+}
+
+function NewItemVisibilityPicker({
+  visibility,
+  visibilityUserIds,
+  members,
+  onVisibilityChange,
+  onVisibilityUserIdsChange,
+}: {
+  visibility: Props['defaultVisibility'];
+  visibilityUserIds: string[];
+  members: Props['members'];
+  onVisibilityChange: (visibility: Props['defaultVisibility']) => void;
+  onVisibilityUserIdsChange: Dispatch<SetStateAction<string[]>>;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-sm border border-border p-3 text-sm">
+      <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+        New item visibility
+      </span>
+      <select
+        aria-label="New item visibility"
+        value={visibility}
+        onChange={(e) => {
+          onVisibilityChange(e.target.value as Props['defaultVisibility']);
+        }}
+        className="h-8 rounded-sm border border-border bg-bg px-2 text-sm"
       >
-        {folders.length === 0 && visibleDocuments.length === 0 ? (
-          <div className="py-8 text-center">
-            <p className="font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
-              No documents yet
-            </p>
-            <p className="mx-auto mt-2 max-w-md text-sm text-fg-muted">
-              Upload a document to make contracts, policies, notes, and customer files searchable
-              and citeable.
-            </p>
+        <option value="team">Team</option>
+        <option value="private">Private</option>
+        <option value="specific_users">Specific users</option>
+      </select>
+      {visibility === 'specific_users'
+        ? members.map((m) => (
+            <label key={m.id} className="flex items-center gap-1 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={visibilityUserIds.includes(m.id)}
+                onChange={(e) => {
+                  onVisibilityUserIdsChange((prev) =>
+                    e.target.checked
+                      ? [...new Set([...prev, m.id])]
+                      : prev.filter((id) => id !== m.id),
+                  );
+                }}
+              />
+              {m.label}
+            </label>
+          ))
+        : null}
+    </div>
+  );
+}
+
+function DocumentDropZone({
+  folders,
+  documents,
+  query,
+  fileInputRef,
+  onDrop,
+  onDeleteFolder,
+}: {
+  folders: FolderItem[];
+  documents: DocumentItem[];
+  query: ReturnType<typeof useDocumentListQuery>;
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  onDrop: (e: DragEvent<HTMLDivElement>) => void;
+  onDeleteFolder: (id: string) => void;
+}) {
+  const isEmpty = folders.length === 0 && documents.length === 0;
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+      }}
+      onDrop={onDrop}
+      className="rounded-sm border border-dashed border-border bg-card/30 p-6"
+    >
+      {isEmpty ? (
+        <EmptyDocumentDrive fileInputRef={fileInputRef} />
+      ) : (
+        <div className="space-y-6">
+          <FolderList folders={folders} onDeleteFolder={onDeleteFolder} />
+          <DocumentList documents={documents} query={query} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmptyDocumentDrive({
+  fileInputRef,
+}: {
+  fileInputRef: RefObject<HTMLInputElement | null>;
+}) {
+  return (
+    <div className="py-8 text-center">
+      <p className="font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">No documents yet</p>
+      <p className="mx-auto mt-2 max-w-md text-sm text-fg-muted">
+        Upload a document to make contracts, policies, notes, and customer files searchable and
+        citeable.
+      </p>
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        className="mt-4 inline-flex min-h-9 items-center rounded-sm border border-signal/40 bg-signal-soft px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-signal transition-colors hover:bg-signal/20"
+      >
+        Upload first document
+      </button>
+    </div>
+  );
+}
+
+function FolderList({
+  folders,
+  onDeleteFolder,
+}: {
+  folders: FolderItem[];
+  onDeleteFolder: (id: string) => void;
+}) {
+  if (folders.length === 0) return null;
+  return (
+    <section>
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Folders
+      </h2>
+      <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {folders.map((f) => (
+          <li
+            key={f.id}
+            className="group flex items-center justify-between rounded-sm border border-border bg-card p-3 hover:border-fg/20"
+          >
+            <Link
+              href={`/app/documents?folder=${f.id}`}
+              className="flex items-center gap-2 text-sm font-medium"
+            >
+              <FolderIcon className="size-4 text-muted-foreground" />
+              <span>{f.name}</span>
+            </Link>
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="mt-4 inline-flex min-h-9 items-center rounded-sm border border-signal/40 bg-signal-soft px-3 font-mono text-[11px] uppercase tracking-[0.12em] text-signal transition-colors hover:bg-signal/20"
+              onClick={() => {
+                onDeleteFolder(f.id);
+              }}
+              className="text-xs text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-foreground"
             >
-              Upload first document
+              Delete
             </button>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {folders.length > 0 && (
-              <section>
-                <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Folders
-                </h2>
-                <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {folders.map((f) => (
-                    <li
-                      key={f.id}
-                      className="group flex items-center justify-between rounded-sm border border-border bg-card p-3 hover:border-fg/20"
-                    >
-                      <Link
-                        href={`/app/documents?folder=${f.id}`}
-                        className="flex items-center gap-2 text-sm font-medium"
-                      >
-                        <FolderIcon className="h-4 w-4 text-muted-foreground" />
-                        <span>{f.name}</span>
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onDeleteFolder(f.id);
-                        }}
-                        className="text-xs text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-foreground"
-                      >
-                        Delete
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-            {visibleDocuments.length > 0 && (
-              <section>
-                <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Documents
-                </h2>
-                <ul className="space-y-2">
-                  {visibleDocuments.map((d) => (
-                    <li
-                      key={d.id}
-                      className="flex items-center justify-between rounded-sm border border-border bg-card p-3 hover:border-fg/20"
-                    >
-                      {d.optimistic ? (
-                        <span className="flex items-center gap-3 text-sm">
-                          <span className="font-medium">{d.name}</span>
-                          <Badge variant="outline" className="text-[10px]">
-                            uploading
-                          </Badge>
-                          {d.visibility !== 'team' && (
-                            <Badge variant="outline" className="text-[10px]">
-                              {d.visibility}
-                            </Badge>
-                          )}
-                        </span>
-                      ) : (
-                        <Link
-                          href={`/app/documents/${d.id}`}
-                          className="flex items-center gap-3 text-sm"
-                        >
-                          <span className="font-medium">{d.name}</span>
-                          {d.visibility !== 'team' && (
-                            <Badge variant="outline" className="text-[10px]">
-                              {d.visibility}
-                            </Badge>
-                          )}
-                        </Link>
-                      )}
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(d.updatedAt).toLocaleDateString()}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-3"
-                  disabled={!documentQuery.hasNextPage || documentQuery.isFetchingNextPage}
-                  onClick={() => {
-                    void documentQuery.fetchNextPage();
-                  }}
-                >
-                  {documentQuery.isFetchingNextPage
-                    ? 'Loading...'
-                    : documentQuery.hasNextPage
-                      ? 'Load more'
-                      : 'End'}
-                </Button>
-              </section>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function DocumentList({
+  documents,
+  query,
+}: {
+  documents: DocumentItem[];
+  query: ReturnType<typeof useDocumentListQuery>;
+}) {
+  if (documents.length === 0) return null;
+  return (
+    <section>
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Documents
+      </h2>
+      <ul className="space-y-2">
+        {documents.map((d) => (
+          <DocumentListItem key={d.id} document={d} />
+        ))}
+      </ul>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="mt-3"
+        disabled={!query.hasNextPage || query.isFetchingNextPage}
+        onClick={() => {
+          void query.fetchNextPage();
+        }}
+      >
+        {query.isFetchingNextPage ? 'Loading...' : query.hasNextPage ? 'Load more' : 'End'}
+      </Button>
+    </section>
+  );
+}
+
+function DocumentListItem({ document }: { document: DocumentItem }) {
+  return (
+    <li className="flex items-center justify-between rounded-sm border border-border bg-card p-3 hover:border-fg/20">
+      {document.optimistic ? (
+        <span className="flex items-center gap-3 text-sm">
+          <span className="font-medium">{document.name}</span>
+          <Badge variant="outline" className="text-[10px]">
+            uploading
+          </Badge>
+          <VisibilityBadge visibility={document.visibility} />
+        </span>
+      ) : (
+        <Link href={`/app/documents/${document.id}`} className="flex items-center gap-3 text-sm">
+          <span className="font-medium">{document.name}</span>
+          <VisibilityBadge visibility={document.visibility} />
+        </Link>
+      )}
+      <span className="text-xs text-muted-foreground">
+        {new Date(document.updatedAt).toLocaleDateString()}
+      </span>
+    </li>
+  );
+}
+
+function VisibilityBadge({ visibility }: { visibility: string }) {
+  if (visibility === 'team') return null;
+  return (
+    <Badge variant="outline" className="text-[10px]">
+      {visibility}
+    </Badge>
   );
 }

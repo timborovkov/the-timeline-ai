@@ -1,4 +1,5 @@
 import * as integrationsLib from '@timeline/shared/integrations/registry';
+import Image from 'next/image';
 import Link from 'next/link';
 
 import { cn } from '@/lib/utils';
@@ -12,18 +13,20 @@ import { cn } from '@/lib/utils';
 
 export function IntegrationCloud() {
   const featured = integrationsLib.listFeaturedCatalog();
-  const prompts = featured
-    .map((c) => c.examplePrompt)
-    .filter((p, i, all) => all.indexOf(p) === i)
-    .slice(0, 4);
+  const prompts: string[] = [];
+  const seenPrompts = new Set<string>();
+  for (const connector of featured) {
+    if (!seenPrompts.has(connector.examplePrompt)) {
+      seenPrompts.add(connector.examplePrompt);
+      prompts.push(connector.examplePrompt);
+      if (prompts.length === 4) break;
+    }
+  }
 
   return (
     <div className="space-y-12">
       {/* Logo cloud */}
-      <ul
-        role="list"
-        className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6"
-      >
+      <ul className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
         {featured.map((c) => (
           <li
             key={c.id}
@@ -34,7 +37,7 @@ export function IntegrationCloud() {
                   Plain <img> is fine — connector marks are small, eagerly
                   visible inside the cloud, and need no Next/Image
                   optimization pipeline. */}
-              <img src={c.logo} alt="" width={28} height={28} className="size-7" />
+              <Image src={c.logo} alt="" width={28} height={28} className="size-7" />
             </span>
             <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
               {c.label}
@@ -58,7 +61,7 @@ export function IntegrationCloud() {
         <div className="mb-3 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-fg-muted">
           Questions the agent answers once connected
         </div>
-        <ul role="list" className="space-y-2">
+        <ul className="space-y-2">
           {prompts.map((p) => (
             <li
               key={p}
@@ -77,8 +80,8 @@ export function IntegrationCloud() {
           className="underline-offset-4 hover:text-fg hover:underline"
         >
           team settings
-        </Link>{' '}
-        — bring your own auth.
+        </Link>
+        , bring your own auth.
       </p>
     </div>
   );

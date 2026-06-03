@@ -64,10 +64,17 @@ export function useTimelineInfiniteQuery(
 ) {
   const queryClient = useQueryClient();
   const mounted = useRef(false);
-  const queryKey = useMemo(
-    () => queryKeys.timeline(filters),
+  const stableFilters = useMemo(
+    () => ({
+      author: filters.author,
+      from: filters.from,
+      to: filters.to,
+      source: filters.source,
+      impact: filters.impact,
+    }),
     [filters.author, filters.from, filters.to, filters.source, filters.impact],
   );
+  const queryKey = useMemo(() => queryKeys.timeline(stableFilters), [stableFilters]);
   useEffect(() => {
     if (!mounted.current) {
       mounted.current = true;
@@ -85,11 +92,11 @@ export function useTimelineInfiniteQuery(
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams();
-      if (filters.author) params.set('author', filters.author);
-      if (filters.from) params.set('from', filters.from);
-      if (filters.to) params.set('to', filters.to);
-      if (filters.source) params.set('source', filters.source);
-      if (filters.impact) params.set('impact', filters.impact);
+      if (stableFilters.author) params.set('author', stableFilters.author);
+      if (stableFilters.from) params.set('from', stableFilters.from);
+      if (stableFilters.to) params.set('to', stableFilters.to);
+      if (stableFilters.source) params.set('source', stableFilters.source);
+      if (stableFilters.impact) params.set('impact', stableFilters.impact);
       if (pageParam) params.set('cursor', pageParam);
       return readJson<{
         items: TimelineEvent[];

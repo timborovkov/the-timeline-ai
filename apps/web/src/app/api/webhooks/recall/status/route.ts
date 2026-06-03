@@ -13,6 +13,14 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const log = childLogger('web:api:recall:status');
+const MEETING_STATUS_RANK: Record<string, number> = {
+  pending: 0,
+  joining: 1,
+  active: 2,
+  processing: 3,
+  completed: 4,
+  failed: 4,
+};
 
 // Svix-signed bot lifecycle webhook from Recall.ai. We flip the
 // meeting's status on each transition; on `bot.call_ended` /
@@ -194,18 +202,10 @@ export async function POST(req: Request): Promise<Response> {
       // arriving below the current state is informational only.
       // Linear status rank used only to detect backwards transitions.
       // `completed` and `failed` are unreachable here (the terminal guard
-      // at the top of the handler short-circuits), but included for
-      // completeness so the lookup is total.
-      const rank: Record<string, number> = {
-        pending: 0,
-        joining: 1,
-        active: 2,
-        processing: 3,
-        completed: 4,
-        failed: 4,
-      };
-      const currentRank = rank[meeting.status] ?? 0;
-      const nextRank = rank[cappedStatus] ?? 0;
+      // at the top of the handler short-circuits), but included in
+      // MEETING_STATUS_RANK so the lookup is total.
+      const currentRank = MEETING_STATUS_RANK[meeting.status] ?? 0;
+      const nextRank = MEETING_STATUS_RANK[cappedStatus] ?? 0;
       if (nextRank >= currentRank) {
         const patch: Parameters<typeof scope.meetings.updateMeetingStatus>[2] = {
           metadata: { last_status: code, last_status_at: createdAt ?? new Date().toISOString() },

@@ -103,6 +103,7 @@ pnpm validate             # format check, typecheck, lint, tests, knip
 pnpm test                 # unit and integration tests (package suites run sequentially)
 pnpm test:eval            # fast deterministic agent and retrieval evals
 pnpm e2e                  # Playwright core journey tests
+pnpm run doctor           # React Doctor scan for React/Next health regressions
 pnpm db:generate          # generate Drizzle migrations after schema changes
 pnpm db:migrate           # apply database migrations
 pnpm check:web-bundle     # inspect built Next server chunks

@@ -14,31 +14,33 @@ export function DocumentSearch() {
 
   return (
     <section className="space-y-3">
-      <form
-        className="relative"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setQuery(draft.trim());
-        }}
-      >
+      <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <input
           type="search"
           value={draft}
+          aria-label="Search document chunks"
           onChange={(e) => {
             setDraft(e.target.value);
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            setQuery(draft.trim());
           }}
           placeholder="Search document chunks"
           className="h-10 w-full rounded-sm border border-border bg-surface pl-9 pr-24 text-sm focus:border-border-strong focus:outline-none"
         />
         <button
-          type="submit"
+          type="button"
+          onClick={() => {
+            setQuery(draft.trim());
+          }}
           disabled={!draft.trim() || search.isFetching}
           className="absolute right-2 top-1/2 h-7 -translate-y-1/2 rounded-sm px-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:bg-surface-2 disabled:opacity-40"
         >
           {search.isFetching ? 'Searching' : 'Search'}
         </button>
-      </form>
+      </div>
       {query && (
         <div className="space-y-2">
           {hits.map((hit) => (
@@ -64,7 +66,7 @@ export function DocumentSearch() {
             }}
             className="rounded-sm border border-border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:bg-surface disabled:opacity-40"
           >
-            {search.isFetchingNextPage ? 'Loading...' : search.hasNextPage ? 'Load more' : 'End'}
+            {search.isFetchingNextPage ? 'Loading…' : search.hasNextPage ? 'Load more' : 'End'}
           </button>
         </div>
       )}

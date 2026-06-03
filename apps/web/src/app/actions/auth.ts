@@ -222,6 +222,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     // if signIn throws for any reason (Auth.js misconfig, transient adapter
     // failure), send the user to /sign-in instead of surfacing a confusing
     // "could not create account" while the account actually exists.
+    let signInFailed = false;
     try {
       await signIn('credentials', {
         email,
@@ -230,10 +231,12 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
       });
     } catch (e) {
       if (e instanceof AuthError) {
-        redirect('/sign-in');
+        signInFailed = true;
+      } else {
+        throw e;
       }
-      throw e;
     }
+    if (signInFailed) redirect('/sign-in');
 
     redirect('/app');
   });

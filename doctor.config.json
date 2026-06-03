@@ -1,0 +1,86 @@
+{
+  "$schema": "https://react.doctor/schema/config.json",
+  "rootDir": "apps/web",
+  "ignore": {
+    "overrides": [
+      {
+        "files": ["src/app/actions/**/*.ts", "src/app/actions/*.ts"],
+        "rules": ["react-doctor/server-auth-actions"]
+      },
+      {
+        "files": ["src/app/opengraph-image.tsx"],
+        "rules": [
+          "react-doctor/only-export-components",
+          "react-doctor/no-inline-style",
+          "react-doctor/no-inline-exhaustive-style"
+        ]
+      },
+      {
+        "files": [
+          "src/app/actions/auth.ts",
+          "src/app/actions/documents.ts",
+          "src/app/actions/events.ts",
+          "src/app/actions/invites.ts",
+          "src/app/actions/slack.ts",
+          "src/app/actions/teams.ts",
+          "src/app/api/slack/user-link/callback/route.ts"
+        ],
+        "rules": ["react-doctor/async-parallel", "react-doctor/server-sequential-independent-await"]
+      },
+      {
+        "files": ["src/app/actions/teams.ts", "src/lib/reconcile-jobs.ts"],
+        "rules": ["react-doctor/async-await-in-loop"]
+      },
+      {
+        "files": [
+          "src/components/audio-recorder.tsx",
+          "src/components/boards/kanban-board.tsx",
+          "src/components/calendar/calendar-view.tsx",
+          "src/components/objects/object-detail-client.tsx",
+          "src/components/turnstile-widget.tsx"
+        ],
+        "rules": ["react-doctor/exhaustive-deps"]
+      },
+      {
+        "files": ["src/components/search-bar.tsx"],
+        "rules": ["react-doctor/async-defer-await"]
+      },
+      {
+        "files": ["src/lib/use-paginated-queries.ts"],
+        "rules": ["react-doctor/query-no-usequery-for-mutation"]
+      },
+      {
+        "files": [
+          "src/components/event-visibility-form.tsx",
+          "src/components/integrations/connected.tsx",
+          "src/components/visibility-default-settings.tsx"
+        ],
+        "rules": ["react-doctor/no-derived-useState"]
+      },
+      {
+        "files": ["src/components/inbox/notification-row.tsx"],
+        "rules": [
+          "react-doctor/no-derived-useState",
+          "react-doctor/no-derived-state",
+          "react-doctor/no-event-handler"
+        ]
+      },
+      {
+        "files": ["src/components/mobile-nav.tsx"],
+        "rules": ["react-doctor/no-derived-state-effect"]
+      },
+      {
+        "files": ["src/components/theme-toggle.tsx"],
+        "rules": ["react-doctor/no-initialize-state", "react-doctor/rendering-hydration-no-flicker"]
+      },
+      {
+        "files": ["src/lib/timeline-moments.ts", "src/lib/timeline-page.ts"],
+        "rules": ["react-doctor/js-tosorted-immutable"]
+      },
+      {
+        "files": ["src/components/objects/object-detail-client.tsx"],
+        "rules": ["react-doctor/no-multi-comp"]
+      }
+    ]
+  }
+}

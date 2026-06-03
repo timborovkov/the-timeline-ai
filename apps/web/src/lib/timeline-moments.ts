@@ -134,7 +134,8 @@ function formatTime(input: Date | string): string {
 
 function timeLabel(events: TimelineEvent[]): string {
   const sorted = [...events].sort(
-    (a, b) => eventDate(a.occurredAt).getTime() - eventDate(b.occurredAt).getTime(),
+    (a: TimelineEvent, b: TimelineEvent) =>
+      eventDate(a.occurredAt).getTime() - eventDate(b.occurredAt).getTime(),
   );
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
@@ -438,7 +439,8 @@ export function buildTimelineMoments(
   return Array.from(groups.entries())
     .flatMap(([key, group]) => {
       const sorted = [...group].sort(
-        (a, b) => eventDate(b.occurredAt).getTime() - eventDate(a.occurredAt).getTime(),
+        (a: TimelineEvent, b: TimelineEvent) =>
+          eventDate(b.occurredAt).getTime() - eventDate(a.occurredAt).getTime(),
       );
       const lead = sorted[0];
       if (!lead) return [];

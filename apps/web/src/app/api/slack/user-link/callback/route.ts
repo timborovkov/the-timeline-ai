@@ -14,13 +14,13 @@ export async function GET(req: Request): Promise<Response> {
   const code = url.searchParams.get('code');
   const rawState = url.searchParams.get('state');
   if (!code || !rawState) redirect('/app/team/slack?error=missing_oauth');
-  let state: slack.SlackOAuthState;
+  let state: slack.SlackOAuthState | null = null;
   try {
     state = slack.verifySlackOAuthState(rawState);
   } catch {
-    redirect('/app/team/slack?error=invalid_state');
+    state = null;
   }
-  if (state.kind !== 'user_link' || state.userId !== session.user.id) {
+  if (state?.kind !== 'user_link' || state.userId !== session.user.id) {
     redirect('/app/team/slack?error=invalid_state');
   }
   const scope = withTeam(db, state.teamId, session.user.id);
@@ -42,14 +42,16 @@ export async function GET(req: Request): Promise<Response> {
     userId: session.user.id,
     teamId: state.teamId,
   });
-  await scope.audit.record({
-    action: 'slack.connect',
-    targetType: 'slack_user_link',
-    metadata: {
-      slack_team_id: oauth.team?.id ?? null,
-      slack_user_id: oauth.authed_user?.id ?? null,
-    },
-  });
-  await safeMarkOnboardingStep(scope, 'slack');
+  await Promise.all([
+    scope.audit.record({
+      action: 'slack.connect',
+      targetType: 'slack_user_link',
+      metadata: {
+        slack_team_id: oauth.team?.id ?? null,
+        slack_user_id: oauth.authed_user?.id ?? null,
+      },
+    }),
+    safeMarkOnboardingStep(scope, 'slack'),
+  ]);
   redirect('/app/team/slack?linked=1');
 }

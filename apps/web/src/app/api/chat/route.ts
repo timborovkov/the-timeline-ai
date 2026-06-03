@@ -51,6 +51,14 @@ const chatTitleSchema = z.object({
   title: z.string().min(1).max(CHAT_TITLE_MAX_LENGTH),
 });
 
+const reportChatAgentToolError: agent.AgentToolErrorReporter = (err, context) => {
+  reportCaughtError(err, {
+    surface: 'api',
+    operation: 'chat_agent_tool_call',
+    tags: { tool: context.tool },
+  });
+};
+
 const chatRequestSchema = z.object({
   // Accept the structurally-validated UI messages from @ai-sdk/react useChat.
   // We re-validate before forwarding to the model.
@@ -530,8 +538,10 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  const calendarSettings = await scope.calendar.getCalendarSettings();
-  const currentUser = await scope.timeline.currentUserIdentityContext();
+  const [calendarSettings, currentUser] = await Promise.all([
+    scope.calendar.getCalendarSettings(),
+    scope.timeline.currentUserIdentityContext(),
+  ]);
   const currentDate = new Date();
   const system = agent.buildSystemPrompt({
     teamName,
@@ -540,20 +550,13 @@ export async function POST(req: Request): Promise<Response> {
     currentDate,
     workspaceTime: time.workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });
-  const onAgentToolError: agent.AgentToolErrorReporter = (err, context) => {
-    reportCaughtError(err, {
-      surface: 'api',
-      operation: 'chat_agent_tool_call',
-      tags: { tool: context.tool },
-    });
-  };
   // Phase 11 — merge any custom MCP tools the team has connected. The
   // MCP manager caches per-team for 5 min so this is cheap on hot paths.
   // Failures here (discovery failed, OAuth expired, server down) MUST
   // NOT crash the chat — but we log them so they show up in observability
   // instead of silently disappearing.
   const mcpTools = await agent
-    .buildMcpTools(scope, { onToolError: onAgentToolError })
+    .buildMcpTools(scope, { onToolError: reportChatAgentToolError })
     .catch((err: unknown) => {
       log.warn(
         { err, teamId: active.teamId },
@@ -562,7 +565,10 @@ export async function POST(req: Request): Promise<Response> {
       reportCaughtError(err, { surface: 'api', operation: 'chat_mcp_tool_discovery' });
       return {};
     });
-  const tools = { ...agent.buildAgentTools(scope, { onToolError: onAgentToolError }), ...mcpTools };
+  const tools = {
+    ...agent.buildAgentTools(scope, { onToolError: reportChatAgentToolError }),
+    ...mcpTools,
+  };
 
   // Validate UIMessages BEFORE convertToModelMessages so a malformed client
   // (or attacker poking the endpoint) gets a clean 400 instead of an

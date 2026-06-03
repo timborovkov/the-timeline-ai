@@ -6,7 +6,7 @@ import { useJobDashboardQuery } from '@/lib/use-paginated-queries';
 
 export function JobDashboard() {
   const query = useJobDashboardQuery();
-  if (query.isPending) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (query.isPending) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (query.isError) return <p className="text-sm text-destructive">{query.error.message}</p>;
   return (
     <div className="space-y-4">

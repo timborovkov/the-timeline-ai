@@ -36,7 +36,8 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
     const userId = session.user.id;
     const sessionEmail = session.user.email?.toLowerCase();
 
-    let accepted: { teamId: string; role: 'admin' | 'member' };
+    let accepted: { teamId: string; role: 'admin' | 'member' } | null = null;
+    let failedInviteRedirect: string | null = null;
     try {
       accepted = await db.transaction(async (tx) => {
         const invites = await tx
@@ -129,8 +130,12 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
           operation: 'restore_solo_team_after_invite_failure',
         });
       }
-      redirect(`/accept-invite/${encodeURIComponent(token)}?error=${encodeURIComponent(reason)}`);
+      failedInviteRedirect = `/accept-invite/${encodeURIComponent(token)}?error=${encodeURIComponent(
+        reason,
+      )}`;
     }
+    if (failedInviteRedirect) redirect(failedInviteRedirect);
+    if (!accepted) redirect('/app/timeline');
 
     // Drop the OAuth pending-invite breadcrumb now that we've consumed it.
     const { clearPendingInvite } = await import('@/lib/pending-invite');

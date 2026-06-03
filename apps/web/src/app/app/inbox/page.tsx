@@ -46,8 +46,9 @@ export default async function InboxPage({
           { label: 'total', value: rows.length },
           { label: 'unread', value: unreadCount, signal: unreadCount > 0 },
         ]}
-        trailing={<MarkAllReadButton hasUnread={unreadCount > 0} />}
-      />
+      >
+        <MarkAllReadButton hasUnread={unreadCount > 0} />
+      </IndexStrip>
 
       <nav
         aria-label="Filter notifications"

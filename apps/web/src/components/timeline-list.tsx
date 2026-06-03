@@ -49,7 +49,6 @@ interface Props {
   maxMoments?: number;
   emptyLabel?: string;
   emptyAction?: { href: string; label: string; body: string };
-  density?: 'comfortable' | 'dense';
   impactFilter?: TimelineImpactFilter;
   impactItemsByEventId?: Record<string, ImpactItem[]>;
 }
@@ -116,10 +115,6 @@ function friendlyMeta(meta: Record<string, unknown>, key: string): string | null
   return value.length > 0 ? value : null;
 }
 
-function formatShortId(id: string): string {
-  return id.length > 13 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
-}
-
 function formatVisibilitySummary(events: TimelineEvent[]): string {
   const counts = new Map<string, number>();
   for (const event of events) {
@@ -130,6 +125,53 @@ function formatVisibilitySummary(events: TimelineEvent[]): string {
       count === events.length ? visibility : `${visibility} x ${count}`,
     )
     .join(' · ');
+}
+
+function uniqueLabels(labels: (string | null | undefined)[]): string[] {
+  return [...new Set(labels.filter((label): label is string => Boolean(label)))];
+}
+
+function inspectorTitle(moment: TimelineMoment): string {
+  const contexts = uniqueLabels(moment.rawEvents.map(rawEventContextLabel));
+  const context = contexts[0];
+  if (context) return `${moment.sourceLabel} · ${context}`;
+  return moment.sourceLabel;
+}
+
+function sourceTruthSummary(moment: TimelineMoment): { title: string; body: string | null } {
+  const actorByTelegramUserId = actorLabelsByTelegramUserId(moment.rawEvents);
+  const actors = uniqueLabels(
+    moment.rawEvents.map((event) => rawEventActorLabel(event, actorByTelegramUserId)),
+  );
+  const contexts = uniqueLabels(moment.rawEvents.map(rawEventContextLabel));
+  const parts = [
+    moment.rawEvents.length === 1
+      ? '1 source event'
+      : `${String(moment.rawEvents.length)} source events`,
+    contexts.length === 1
+      ? contexts[0]
+      : contexts.length > 1
+        ? `${String(contexts.length)} places`
+        : null,
+    actors.length === 1 ? actors[0] : actors.length > 1 ? `${String(actors.length)} senders` : null,
+  ].filter((part): part is string => Boolean(part));
+  return {
+    title: inspectorTitle(moment),
+    body: parts.length > 0 ? parts.join(' · ') : null,
+  };
+}
+
+function rawEventBody(event: TimelineEvent): string {
+  const meta = metaObject(event.sourceMetadata);
+  const content = event.contentText?.trim();
+  if (content) return content;
+  const caption = stringMeta(meta, 'tg_caption');
+  if (caption) return caption;
+  if (event.contentAudioUrl)
+    return transcribeFailed(event.sourceMetadata)
+      ? 'Voice memo captured; transcription failed.'
+      : 'Voice memo captured; transcription pending.';
+  return 'Source event captured.';
 }
 
 function addDetail(
@@ -263,10 +305,10 @@ function groupedByDate(moments: TimelineMoment[]): [string, TimelineMoment[]][] 
 
 function InspectorBody({ moment }: { moment: TimelineMoment }) {
   const metadata = inspectorSourceDetailEntries(moment);
-  const latestEvent = moment.rawEvents[0];
-  const firstEvent = moment.rawEvents.at(-1);
-  const visibleRawEvents = moment.rawEvents.slice(0, INSPECTOR_RAW_EVENT_LIMIT);
+  const summary = sourceTruthSummary(moment);
+  const visibleRawEvents = [...moment.rawEvents].reverse().slice(0, INSPECTOR_RAW_EVENT_LIMIT);
   const hiddenRawEventCount = moment.rawEvents.length - visibleRawEvents.length;
+  const actorByTelegramUserId = actorLabelsByTelegramUserId(moment.rawEvents);
 
   return (
     <div className="space-y-5">
@@ -274,30 +316,13 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
         <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
           Source truth
         </h3>
-        <p className="text-sm leading-6 text-fg-muted">
-          {moment.actorLabel} · {moment.contextLabel} · {moment.sourceLabel}
+        <p className="text-sm font-medium leading-6 text-fg">{summary.title}</p>
+        {summary.body ? (
+          <p className="mt-1 text-sm leading-6 text-fg-muted">{summary.body}</p>
+        ) : null}
+        <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          Visibility · {formatVisibilitySummary(moment.rawEvents)}
         </p>
-      </section>
-      <section>
-        <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-          Timeline control
-        </h3>
-        <dl className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-2">
-          <dt className="text-fg-dim">visibility</dt>
-          <dd className="min-w-0 break-words text-fg-muted">
-            {formatVisibilitySummary(moment.rawEvents)}
-          </dd>
-          <dt className="text-fg-dim">events</dt>
-          <dd>{moment.rawEvents.length}</dd>
-          <dt className="text-fg-dim">first</dt>
-          <dd className="min-w-0 break-all" title={firstEvent?.id}>
-            {firstEvent ? formatShortId(firstEvent.id) : 'unknown'}
-          </dd>
-          <dt className="text-fg-dim">latest</dt>
-          <dd className="min-w-0 break-all" title={latestEvent?.id}>
-            {latestEvent ? formatShortId(latestEvent.id) : 'unknown'}
-          </dd>
-        </dl>
       </section>
       {moment.impactItems.length > 0 ? (
         <section>
@@ -327,20 +352,21 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
       ) : null}
       <section>
         <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-          Raw events
+          Source events
         </h3>
-        <ol className="space-y-1.5">
+        <ol className="space-y-2">
           {visibleRawEvents.map((event) => (
-            <li
-              key={event.id}
-              className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-sm border border-border bg-bg px-2 py-1.5"
-            >
-              <span className="min-w-0 break-all text-fg-muted" title={event.id}>
-                [{formatShortId(event.id)}]
-              </span>
-              <time className="text-right text-fg-dim" dateTime={event.occurredAt}>
-                {formatTimestamp(event.occurredAt)}
-              </time>
+            <li key={event.id} className="rounded-sm border border-border bg-bg px-2.5 py-2">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                <span className="text-fg-muted">
+                  {rawEventActorLabel(event, actorByTelegramUserId)}
+                </span>
+                {rawEventContextLabel(event) ? <span>{rawEventContextLabel(event)}</span> : null}
+                <time dateTime={event.occurredAt}>{formatTimestamp(event.occurredAt)}</time>
+              </div>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
+                {rawEventBody(event)}
+              </p>
             </li>
           ))}
         </ol>
@@ -398,8 +424,8 @@ function RawEventExpansion({
           return (
             <li
               key={event.id}
-              id={`ev-${event.id}`}
-              className="scroll-mt-20 border-l border-border pl-3"
+              id={moment.rawEvents.length > 1 ? `ev-${event.id}` : undefined}
+              className="scroll-mt-24 border-l border-border pl-3 target:bg-signal-soft target:ring-1 target:ring-signal/40"
             >
               <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                 <span>{index + 1}</span>
@@ -407,7 +433,6 @@ function RawEventExpansion({
                 <span>{event.source}</span>
                 <span>{rawEventActorLabel(event, actorByTelegramUserId)}</span>
                 {context ? <span>{context}</span> : null}
-                <span>[{formatShortId(event.id)}]</span>
                 {event.visibility === 'private' ? <span>Private</span> : null}
               </div>
               {documentLink ? (
@@ -426,7 +451,14 @@ function RawEventExpansion({
                     aria-label="Voice memo"
                     preload="metadata"
                     className="mt-2 w-full max-w-md"
-                  />
+                  >
+                    <track
+                      kind="captions"
+                      src="data:text/vtt,WEBVTT"
+                      srcLang="en"
+                      label="Captions"
+                    />
+                  </audio>
                 ) : (
                   <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                     [audio unavailable]
@@ -513,7 +545,6 @@ function TimelineMomentRow({
   isAdmin,
   members,
   compact,
-  density,
 }: {
   moment: TimelineMoment;
   audioUrlMap?: Map<string, string>;
@@ -521,44 +552,35 @@ function TimelineMomentRow({
   isAdmin: boolean;
   members: { id: string; label: string }[];
   compact: boolean;
-  density: 'comfortable' | 'dense';
 }) {
   const inspector = useInspector();
   const Icon = SOURCE_ICON[moment.source];
   const selected = inspector.open && inspector.content?.id === moment.id;
   const meetingHref = meetingDetailHrefForMoment(moment);
+  const singleRawEventId = moment.rawEvents.length === 1 ? moment.rawEvents[0]?.id : null;
   return (
     <li
+      id={singleRawEventId ? `ev-${singleRawEventId}` : undefined}
       className={cn(
-        'grid grid-cols-[5.75rem_minmax(0,1fr)] border-b border-border transition-colors hover:bg-surface',
-        density === 'dense' && 'grid-cols-[4.75rem_minmax(0,1fr)]',
+        'grid scroll-mt-24 grid-cols-[5.75rem_minmax(0,1fr)] border-b border-border transition-colors hover:bg-surface target:bg-signal-soft target:ring-1 target:ring-signal/40',
         selected && 'bg-surface',
       )}
     >
-      <div
-        className={cn(
-          'relative py-4 pr-4 font-mono text-xs text-fg-dim',
-          density === 'dense' && 'py-3 text-[11px]',
-        )}
-      >
+      <div className="relative py-4 pr-4 font-mono text-xs text-fg-dim">
         <span>{moment.timeLabel}</span>
         <span aria-hidden="true" className="absolute right-1 top-0 h-full w-px bg-border" />
-        <span
-          className={cn(
-            'absolute right-[-5px] top-5 grid size-3 place-items-center border border-border-strong bg-bg text-signal',
-            density === 'dense' && 'top-4',
-          )}
-        >
+        <span className="absolute right-[-5px] top-5 grid size-3 place-items-center border border-border-strong bg-bg text-signal">
           <Icon className="size-2.5" aria-hidden="true" />
         </span>
       </div>
-      <div className={cn('min-w-0 py-4 pl-4', density === 'dense' && 'py-3')}>
+      <div className="min-w-0 py-4 pl-4">
         <button
           type="button"
           onClick={() => {
             inspector.show({
               id: moment.id,
               kind: moment.sourceLabel.toUpperCase(),
+              title: inspectorTitle(moment),
               render: () => <InspectorBody moment={moment} />,
             });
           }}
@@ -573,11 +595,7 @@ function TimelineMomentRow({
             </span>
           </div>
           <p
-            className={cn(
-              'mt-2 text-sm leading-relaxed text-fg-muted',
-              (compact || density === 'dense') && 'line-clamp-2',
-              density === 'dense' && 'mt-1 text-[13px] leading-6',
-            )}
+            className={cn('mt-2 text-sm leading-relaxed text-fg-muted', compact && 'line-clamp-2')}
           >
             {moment.summary}
           </p>
@@ -617,7 +635,6 @@ export function TimelineList({
   maxMoments,
   emptyLabel = 'NO EVENTS YET',
   emptyAction,
-  density = 'comfortable',
   impactFilter = 'all',
   impactItemsByEventId,
 }: Props) {
@@ -674,7 +691,6 @@ export function TimelineList({
                 isAdmin={isAdmin}
                 members={members}
                 compact={compact}
-                density={density}
               />
             ))}
           </ol>

@@ -4,6 +4,7 @@ import { and, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
+import type { ComponentProps } from 'react';
 
 import {
   changeMemberRoleAction,
@@ -27,6 +28,37 @@ export const metadata: Metadata = {
   title: 'Team settings',
   description: 'Manage team members, defaults, and access.',
 };
+
+interface UserInfo {
+  id: string;
+  name: string | null;
+  email: string | null;
+}
+type UserMap = Map<string, UserInfo>;
+interface MemberRow {
+  userId: string;
+  role: string;
+}
+interface InviteRow {
+  id: string;
+  email: string;
+  role: string;
+  token: string;
+  expiresAt: Date;
+  createdAt: Date;
+  lastSentAt: Date | null;
+  sendStatus: string;
+  sendError: string | null;
+  invitedByUserId: string;
+}
+interface RemovedMemberRow {
+  userId: string;
+  role: string;
+  removedAt: Date | null;
+}
+type TeamExportRows = ComponentProps<typeof TeamExportPanel>['exports'];
+type VisibilityDefaults = ComponentProps<typeof VisibilityDefaultSettings>['defaults'];
+type VisibilityMembers = ComponentProps<typeof VisibilityDefaultSettings>['members'];
 
 export default async function TeamSettingsPage() {
   const session = await auth();
@@ -141,212 +173,325 @@ export default async function TeamSettingsPage() {
         ]}
       />
 
-      {isAdmin ? (
-        <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
-          <ActionChip href="/app/team/jobs" label="Job recovery →" />
-          <ActionChip href="/app/team/integrations/audit" label="Integration audit →" />
-        </div>
-      ) : null}
+      <AdminShortcuts isAdmin={isAdmin} />
+      <AdminSettingsCards
+        isAdmin={isAdmin}
+        teamName={active.teamName}
+        teamId={active.teamId}
+        exportRows={exportRows}
+        visibilityDefaults={visibilityDefaults}
+        visibilityMembers={visibilityMembers}
+      />
+      <MembersCard
+        members={memberRows}
+        userMap={userMap}
+        isAdmin={isAdmin}
+        isOwner={isOwner}
+        currentUserId={session.user.id}
+      />
+      <InviteCards
+        isAdmin={isAdmin}
+        isOwner={isOwner}
+        invites={inviteRows}
+        removedMembers={removedRows}
+        userMap={userMap}
+      />
+    </div>
+  );
+}
 
-      {isAdmin ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Team identity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
-          </CardContent>
-        </Card>
-      ) : null}
+function AdminShortcuts({ isAdmin }: { isAdmin: boolean }) {
+  if (!isAdmin) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
+      <ActionChip href="/app/team/jobs" label="Job recovery →" />
+      <ActionChip href="/app/team/integrations/audit" label="Integration audit →" />
+    </div>
+  );
+}
 
-      {isAdmin ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Team export</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <TeamExportPanel exports={exportRows} />
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {isAdmin ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Visibility defaults</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <VisibilityDefaultSettings defaults={visibilityDefaults} members={visibilityMembers} />
-          </CardContent>
-        </Card>
-      ) : null}
-
+function AdminSettingsCards({
+  isAdmin,
+  teamName,
+  teamId,
+  exportRows,
+  visibilityDefaults,
+  visibilityMembers,
+}: {
+  isAdmin: boolean;
+  teamName: string;
+  teamId: string;
+  exportRows: TeamExportRows;
+  visibilityDefaults: VisibilityDefaults;
+  visibilityMembers: VisibilityMembers;
+}) {
+  if (!isAdmin) return null;
+  return (
+    <>
       <Card>
         <CardHeader>
-          <CardTitle>Members</CardTitle>
+          <CardTitle>Team identity</CardTitle>
         </CardHeader>
         <CardContent>
-          <ul className="divide-y">
-            {memberRows.map((m) => {
-              const u = userMap.get(m.userId);
-              const memberLabel = u?.email ?? u?.name ?? m.userId;
-              return (
-                <li key={m.userId} className="flex items-center justify-between py-3">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium">{u?.name ?? u?.email ?? m.userId}</span>
-                    <span className="text-xs text-muted-foreground">{u?.email}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {isOwner && m.userId !== session.user.id ? (
-                      <form action={changeMemberRoleAction} className="flex items-center gap-2">
-                        <input type="hidden" name="userId" value={m.userId} />
-                        <select
-                          aria-label={`Role for ${memberLabel}`}
-                          name="role"
-                          defaultValue={m.role}
-                          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                        >
-                          <option value="member">Member</option>
-                          <option value="admin">Admin</option>
-                          <option value="owner">Owner</option>
-                        </select>
-                        <Button type="submit" variant="outline" size="sm">
-                          Save
-                        </Button>
-                      </form>
-                    ) : (
-                      <Badge variant="outline">{m.role}</Badge>
-                    )}
-                    {isAdmin && m.userId !== session.user.id && (isOwner || m.role === 'member') ? (
-                      <form action={removeMemberAction}>
-                        <input type="hidden" name="userId" value={m.userId} />
-                        <Button
-                          type="submit"
-                          variant="ghost"
-                          size="sm"
-                          aria-label={`Remove ${memberLabel}`}
-                        >
-                          Remove
-                        </Button>
-                      </form>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          <RenameTeamForm currentName={teamName} teamId={teamId} />
         </CardContent>
       </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Team export</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <TeamExportPanel exports={exportRows} />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Visibility defaults</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <VisibilityDefaultSettings defaults={visibilityDefaults} members={visibilityMembers} />
+        </CardContent>
+      </Card>
+    </>
+  );
+}
 
-      {isAdmin ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Invite a teammate</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <InviteMemberForm canInviteAdmin={isOwner} />
-          </CardContent>
-        </Card>
-      ) : null}
+function MembersCard({
+  members,
+  userMap,
+  isAdmin,
+  isOwner,
+  currentUserId,
+}: {
+  members: MemberRow[];
+  userMap: UserMap;
+  isAdmin: boolean;
+  isOwner: boolean;
+  currentUserId: string;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Members</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ul className="divide-y">
+          {members.map((member) => (
+            <MemberListItem
+              key={member.userId}
+              member={member}
+              user={userMap.get(member.userId)}
+              isAdmin={isAdmin}
+              isOwner={isOwner}
+              currentUserId={currentUserId}
+            />
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
 
-      {isAdmin ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Pending invites</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {inviteRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No pending invites.</p>
-            ) : (
-              <ul className="divide-y">
-                {inviteRows.map((invite) => {
-                  const inviter = userMap.get(invite.invitedByUserId);
-                  const url = `${getSiteUrl()}/accept-invite/${invite.token}`;
-                  return (
-                    <li key={invite.id} className="space-y-2 py-3">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium">{invite.email}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {invite.role} · invited by{' '}
-                            {inviter?.name ?? inviter?.email ?? 'Unknown'} · expires{' '}
-                            {invite.expiresAt.toLocaleDateString()}
-                          </p>
-                          {invite.sendStatus === 'failed' ? (
-                            <p className="text-xs text-destructive">
-                              Email failed: {invite.sendError ?? 'unknown error'}
-                            </p>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">
-                              Email {invite.sendStatus}
-                              {invite.lastSentAt
-                                ? ` · sent ${invite.lastSentAt.toLocaleDateString()}`
-                                : ''}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <form action={resendInviteAction}>
-                            <input type="hidden" name="inviteId" value={invite.id} />
-                            <Button
-                              type="submit"
-                              variant="outline"
-                              size="sm"
-                              aria-label={`Resend invite to ${invite.email}`}
-                            >
-                              Resend
-                            </Button>
-                          </form>
-                          <form action={revokeInviteAction}>
-                            <input type="hidden" name="inviteId" value={invite.id} />
-                            <Button
-                              type="submit"
-                              variant="ghost"
-                              size="sm"
-                              aria-label={`Revoke invite to ${invite.email}`}
-                            >
-                              Revoke
-                            </Button>
-                          </form>
-                        </div>
-                      </div>
-                      <code className="block break-all rounded-md bg-muted px-3 py-2 text-[12px]">
-                        {url}
-                      </code>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
+function MemberListItem({
+  member,
+  user,
+  isAdmin,
+  isOwner,
+  currentUserId,
+}: {
+  member: MemberRow;
+  user: UserInfo | undefined;
+  isAdmin: boolean;
+  isOwner: boolean;
+  currentUserId: string;
+}) {
+  const memberLabel = user?.email ?? user?.name ?? member.userId;
+  return (
+    <li className="flex items-center justify-between py-3">
+      <div className="flex flex-col">
+        <span className="text-sm font-medium">{user?.name ?? user?.email ?? member.userId}</span>
+        <span className="text-xs text-muted-foreground">{user?.email}</span>
+      </div>
+      <div className="flex items-center gap-3">
+        {isOwner && member.userId !== currentUserId ? (
+          <form action={changeMemberRoleAction} className="flex items-center gap-2">
+            <input type="hidden" name="userId" value={member.userId} />
+            <select
+              aria-label={`Role for ${memberLabel}`}
+              name="role"
+              defaultValue={member.role}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            >
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+              <option value="owner">Owner</option>
+            </select>
+            <Button type="submit" variant="outline" size="sm">
+              Save
+            </Button>
+          </form>
+        ) : (
+          <Badge variant="outline">{member.role}</Badge>
+        )}
+        {isAdmin && member.userId !== currentUserId && (isOwner || member.role === 'member') ? (
+          <form action={removeMemberAction}>
+            <input type="hidden" name="userId" value={member.userId} />
+            <Button type="submit" variant="ghost" size="sm" aria-label={`Remove ${memberLabel}`}>
+              Remove
+            </Button>
+          </form>
+        ) : null}
+      </div>
+    </li>
+  );
+}
 
-      {isAdmin && removedRows.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Removed members</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="divide-y">
-              {removedRows.map((m) => {
-                const u = userMap.get(m.userId);
-                return (
-                  <li key={m.userId} className="flex items-center justify-between py-3">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium">{u?.name ?? u?.email ?? m.userId}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {u?.email} · removed {m.removedAt?.toLocaleDateString()}
-                      </span>
-                    </div>
-                    <Badge variant="outline">{m.role}</Badge>
-                  </li>
-                );
-              })}
-            </ul>
-          </CardContent>
-        </Card>
-      ) : null}
-    </div>
+function InviteCards({
+  isAdmin,
+  isOwner,
+  invites,
+  removedMembers,
+  userMap,
+}: {
+  isAdmin: boolean;
+  isOwner: boolean;
+  invites: InviteRow[];
+  removedMembers: RemovedMemberRow[];
+  userMap: UserMap;
+}) {
+  if (!isAdmin) return null;
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>Invite a teammate</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <InviteMemberForm canInviteAdmin={isOwner} />
+        </CardContent>
+      </Card>
+      <PendingInvitesCard invites={invites} userMap={userMap} />
+      <RemovedMembersCard removedMembers={removedMembers} userMap={userMap} />
+    </>
+  );
+}
+
+function PendingInvitesCard({ invites, userMap }: { invites: InviteRow[]; userMap: UserMap }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Pending invites</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {invites.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No pending invites.</p>
+        ) : (
+          <ul className="divide-y">
+            {invites.map((invite) => (
+              <PendingInviteItem
+                key={invite.id}
+                invite={invite}
+                inviter={userMap.get(invite.invitedByUserId)}
+              />
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PendingInviteItem({
+  invite,
+  inviter,
+}: {
+  invite: InviteRow;
+  inviter: UserInfo | undefined;
+}) {
+  const url = `${getSiteUrl()}/accept-invite/${invite.token}`;
+  return (
+    <li className="space-y-2 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">{invite.email}</p>
+          <p className="text-xs text-muted-foreground">
+            {invite.role} · invited by {inviter?.name ?? inviter?.email ?? 'Unknown'} · expires{' '}
+            {invite.expiresAt.toLocaleDateString()}
+          </p>
+          {invite.sendStatus === 'failed' ? (
+            <p className="text-xs text-destructive">
+              Email failed: {invite.sendError ?? 'unknown error'}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Email {invite.sendStatus}
+              {invite.lastSentAt ? ` · sent ${invite.lastSentAt.toLocaleDateString()}` : ''}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <form action={resendInviteAction}>
+            <input type="hidden" name="inviteId" value={invite.id} />
+            <Button
+              type="submit"
+              variant="outline"
+              size="sm"
+              aria-label={`Resend invite to ${invite.email}`}
+            >
+              Resend
+            </Button>
+          </form>
+          <form action={revokeInviteAction}>
+            <input type="hidden" name="inviteId" value={invite.id} />
+            <Button
+              type="submit"
+              variant="ghost"
+              size="sm"
+              aria-label={`Revoke invite to ${invite.email}`}
+            >
+              Revoke
+            </Button>
+          </form>
+        </div>
+      </div>
+      <code className="block break-all rounded-md bg-muted px-3 py-2 text-[12px]">{url}</code>
+    </li>
+  );
+}
+
+function RemovedMembersCard({
+  removedMembers,
+  userMap,
+}: {
+  removedMembers: RemovedMemberRow[];
+  userMap: UserMap;
+}) {
+  if (removedMembers.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Removed members</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ul className="divide-y">
+          {removedMembers.map((member) => {
+            const user = userMap.get(member.userId);
+            return (
+              <li key={member.userId} className="flex items-center justify-between py-3">
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium">
+                    {user?.name ?? user?.email ?? member.userId}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {user?.email} · removed {member.removedAt?.toLocaleDateString()}
+                  </span>
+                </div>
+                <Badge variant="outline">{member.role}</Badge>
+              </li>
+            );
+          })}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }

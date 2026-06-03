@@ -24,7 +24,9 @@ interface Props {
   badges?: NavBadgeMap;
 }
 
-export function MobileNav({ active, memberships, recipientInvites, badges = {} }: Props) {
+const EMPTY_BADGES: NavBadgeMap = {};
+
+export function MobileNav({ active, memberships, recipientInvites, badges = EMPTY_BADGES }: Props) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -86,17 +88,18 @@ export function MobileNav({ active, memberships, recipientInvites, badges = {} }
       </button>
 
       {open ? (
-        <div
-          className="fixed inset-0 z-50 md:hidden"
-          role="dialog"
-          aria-modal="true"
+        <dialog
+          open
+          className="fixed inset-0 z-50 m-0 h-screen max-h-none w-screen max-w-none bg-transparent p-0 md:hidden"
           aria-label="Navigation"
         >
-          <div
+          <button
+            type="button"
             className="absolute inset-0 bg-bg/70 backdrop-blur-sm"
             onClick={() => {
               setOpen(false);
             }}
+            aria-label="Close navigation"
           />
           <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-border bg-bg px-4 py-5">
             <div className="flex items-center justify-between px-2">
@@ -161,7 +164,7 @@ export function MobileNav({ active, memberships, recipientInvites, badges = {} }
               />
             </div>
           </aside>
-        </div>
+        </dialog>
       ) : null}
     </>
   );

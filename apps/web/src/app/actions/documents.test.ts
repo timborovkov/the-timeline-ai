@@ -57,6 +57,7 @@ const fakes = vi.hoisted(() => ({
   fakeGetSignedPutUrl: vi.fn(),
   fakeHeadObject: vi.fn(),
   fakeCheckRateLimit: vi.fn(),
+  fakeSafeMarkOnboardingStep: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -66,6 +67,9 @@ vi.mock('@/lib/queue', () => ({
   requireRedisQueue: vi.fn().mockResolvedValue({
     enqueueDocumentExtractJob: fakes.fakeEnqueueDocExtract,
   }),
+}));
+vi.mock('@/lib/onboarding', () => ({
+  safeMarkOnboardingStep: fakes.fakeSafeMarkOnboardingStep,
 }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
@@ -97,6 +101,7 @@ const {
   fakeGetSignedPutUrl,
   fakeHeadObject,
   fakeCheckRateLimit,
+  fakeSafeMarkOnboardingStep,
 } = fakes;
 
 const DOC_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -112,6 +117,7 @@ beforeEach(() => {
   fakeAuth.mockResolvedValue({ user: { id: USER_ID } });
   fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakeCheckRateLimit.mockResolvedValue({ ok: true, remaining: 10 });
+  fakeSafeMarkOnboardingStep.mockResolvedValue(false);
 });
 
 // ---------------------------------------------------------------------------
@@ -333,6 +339,26 @@ describe('finalizeDocumentVersionAction', () => {
       documentVersionId: VERSION_ID,
       teamId: TEAM_ID,
     });
+    expect(fakeSafeMarkOnboardingStep).toHaveBeenCalledWith(expect.anything(), 'first_document');
+  });
+
+  it('does not mark onboarding complete when extraction enqueue fails', async () => {
+    fakeHeadObject.mockResolvedValue({ contentLength: 4096, contentType: 'text/plain' });
+    fakeScope.finalizeDocumentVersion.mockResolvedValue({
+      document: { id: DOC_ID },
+      version: { id: VERSION_ID, processingStatus: 'pending' },
+    });
+    fakeEnqueueDocExtract.mockRejectedValue(new Error('redis down'));
+
+    const r = await finalizeDocumentVersionAction({ versionId: VERSION_ID });
+
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('redis down');
+    expect(fakeEnqueueDocExtract).toHaveBeenCalledWith({
+      documentVersionId: VERSION_ID,
+      teamId: TEAM_ID,
+    });
+    expect(fakeSafeMarkOnboardingStep).not.toHaveBeenCalled();
   });
 
   it('rejects malformed versionId via schema (HEAD never called)', async () => {

@@ -25,6 +25,11 @@ interface ApiResponse {
   count?: number;
 }
 
+const RESULT_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
 /**
  * Phase 5 semantic search bar. Mounted above the timeline filter form;
  * empty query renders nothing (the existing reverse-chron timeline shows
@@ -55,13 +60,13 @@ export function SearchBar({ initialQuery = '' }: Props) {
 
   async function runSearch(raw: string): Promise<void> {
     const q = raw.trim();
-    const myRequestId = ++requestIdRef.current;
     if (!q) {
       setResults(null);
       setError(null);
       setLoading(false);
       return;
     }
+    const myRequestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -127,11 +132,12 @@ export function SearchBar({ initialQuery = '' }: Props) {
   return (
     <section className="space-y-3">
       <form onSubmit={onSubmit} className="relative">
-        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <input
           type="search"
           placeholder='Semantic search — e.g. "licensing discussion with Apple"'
           value={query}
+          aria-label="Semantic search"
           onChange={(e) => {
             setQuery(e.target.value);
           }}
@@ -145,7 +151,7 @@ export function SearchBar({ initialQuery = '' }: Props) {
               aria-label="Clear search"
               className="grid size-8 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
             >
-              <X className="h-4 w-4" />
+              <X className="size-4" />
             </button>
           )}
           <button
@@ -174,7 +180,7 @@ export function SearchBar({ initialQuery = '' }: Props) {
           {results.length === 0 ? (
             <Card>
               <CardContent className="py-4 text-sm text-muted-foreground">
-                No matches. Try a different phrasing — semantic search finds events by meaning, not
+                No matches. Try a different phrasing; semantic search finds events by meaning, not
                 exact words.
               </CardContent>
             </Card>
@@ -184,11 +190,7 @@ export function SearchBar({ initialQuery = '' }: Props) {
                 <CardContent className="space-y-1 py-3 text-sm">
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>
-                      {new Intl.DateTimeFormat(undefined, {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      }).format(new Date(r.occurredAt))}{' '}
-                      · {r.source}
+                      {RESULT_DATE_FORMAT.format(new Date(r.occurredAt))} · {r.source}
                     </span>
                     <span>score {r.score.toFixed(3)}</span>
                   </div>

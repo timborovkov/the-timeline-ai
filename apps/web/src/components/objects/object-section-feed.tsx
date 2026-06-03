@@ -15,7 +15,7 @@ export function ObjectSectionFeed({ objectId, section, title }: Props) {
     <section>
       <h2 className="mb-3 text-sm font-medium tracking-tight">{title}</h2>
       {items.length === 0 && query.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading...</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : items.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nothing here yet.</p>
       ) : (
@@ -25,7 +25,7 @@ export function ObjectSectionFeed({ objectId, section, title }: Props) {
               key={String((item as { id?: unknown }).id)}
               className="rounded-sm border border-border bg-surface px-4 py-2"
             >
-              {renderItem(section, item)}
+              <ObjectSectionItem section={section} item={item} />
             </li>
           ))}
         </ul>
@@ -44,7 +44,7 @@ export function ObjectSectionFeed({ objectId, section, title }: Props) {
   );
 }
 
-function renderItem(section: Props['section'], item: unknown) {
+function ObjectSectionItem({ section, item }: { section: Props['section']; item: unknown }) {
   const row = item as Record<string, unknown>;
   if (section === 'tasks') {
     return (

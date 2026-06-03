@@ -7,8 +7,8 @@ export default function NotFound() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center px-6 py-16">
       <div className="flex max-w-md flex-col items-center gap-4 text-center">
-        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent text-muted-foreground">
-          <Compass className="h-5 w-5" />
+        <span className="flex size-12 items-center justify-center rounded-full bg-accent text-muted-foreground">
+          <Compass className="size-5" />
         </span>
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">Page not found</h1>

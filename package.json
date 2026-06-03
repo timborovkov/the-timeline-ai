@@ -24,7 +24,8 @@
     "dev:wipe": "NODE_OPTIONS=--conditions=development node --import tsx scripts/env-reset.ts",
     "db:migrate": "pnpm --filter @timeline/db migrate",
     "db:generate": "pnpm --filter @timeline/db generate",
-    "db:studio": "pnpm --filter @timeline/db studio"
+    "db:studio": "pnpm --filter @timeline/db studio",
+    "doctor": "react-doctor"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
@@ -38,6 +39,7 @@
     "eslint-plugin-unused-imports": "^4.4.1",
     "knip": "^6.15.0",
     "prettier": "^3.8.3",
+    "react-doctor": "^0.2.16",
     "tsx": "^4.22.4",
     "turbo": "^2.9.16",
     "typescript": "^5.9.3",

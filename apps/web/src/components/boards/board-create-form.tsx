@@ -1,26 +1,58 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useReducer, useTransition } from 'react';
 
 import { saveBoardAction } from '@/app/actions/boards';
 import { OBJECT_TYPES } from '@/lib/object-types';
 
 const KINDS = ['kanban', 'table', 'list'] as const;
 const GROUP_BY_OPTIONS = ['status', 'stage', 'priority', 'type'] as const;
+type BoardKind = (typeof KINDS)[number];
+type BoardGroupBy = (typeof GROUP_BY_OPTIONS)[number];
+interface BoardFormState {
+  error: string | null;
+  name: string;
+  kind: BoardKind;
+  filterType: string;
+  groupBy: BoardGroupBy;
+}
+type BoardFormAction =
+  | { type: 'error'; error: string | null }
+  | { type: 'name'; name: string }
+  | { type: 'kind'; kind: BoardKind }
+  | { type: 'filterType'; filterType: string }
+  | { type: 'groupBy'; groupBy: BoardGroupBy };
+
+function boardFormReducer(state: BoardFormState, action: BoardFormAction): BoardFormState {
+  switch (action.type) {
+    case 'error':
+      return { ...state, error: action.error };
+    case 'name':
+      return { ...state, name: action.name };
+    case 'kind':
+      return { ...state, kind: action.kind };
+    case 'filterType':
+      return { ...state, filterType: action.filterType };
+    case 'groupBy':
+      return { ...state, groupBy: action.groupBy };
+  }
+}
 
 export function BoardCreateForm() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [name, setName] = useState('');
-  const [kind, setKind] = useState<(typeof KINDS)[number]>('kanban');
-  const [filterType, setFilterType] = useState<string>('');
-  const [groupBy, setGroupBy] = useState<(typeof GROUP_BY_OPTIONS)[number]>('status');
+  const [{ error, name, kind, filterType, groupBy }, dispatch] = useReducer(boardFormReducer, {
+    error: null,
+    name: '',
+    kind: 'kanban',
+    filterType: '',
+    groupBy: 'status',
+  });
 
   function submit(): void {
     if (!name.trim()) return;
-    setError(null);
+    dispatch({ type: 'error', error: null });
     startTransition(async () => {
       const filter: Record<string, unknown> = { archived: false };
       if (filterType) filter.type = filterType;
@@ -31,7 +63,7 @@ export function BoardCreateForm() {
         groupBy: kind === 'table' ? null : groupBy,
       });
       if ('error' in result && result.error) {
-        setError(result.error);
+        dispatch({ type: 'error', error: result.error });
         return;
       }
       if ('id' in result && result.id) router.push(`/app/boards/${result.id}`);
@@ -51,7 +83,7 @@ export function BoardCreateForm() {
           <input
             value={name}
             onChange={(e) => {
-              setName(e.target.value);
+              dispatch({ type: 'name', name: e.target.value });
             }}
             placeholder="e.g. Active deals"
             className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
@@ -64,7 +96,7 @@ export function BoardCreateForm() {
           <select
             value={kind}
             onChange={(e) => {
-              setKind(e.target.value as (typeof KINDS)[number]);
+              dispatch({ type: 'kind', kind: e.target.value as BoardKind });
             }}
             className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
           >
@@ -82,7 +114,7 @@ export function BoardCreateForm() {
           <select
             value={filterType}
             onChange={(e) => {
-              setFilterType(e.target.value);
+              dispatch({ type: 'filterType', filterType: e.target.value });
             }}
             className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
           >
@@ -102,7 +134,7 @@ export function BoardCreateForm() {
             <select
               value={groupBy}
               onChange={(e) => {
-                setGroupBy(e.target.value as (typeof GROUP_BY_OPTIONS)[number]);
+                dispatch({ type: 'groupBy', groupBy: e.target.value as BoardGroupBy });
               }}
               className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
             >

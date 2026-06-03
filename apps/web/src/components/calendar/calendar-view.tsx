@@ -18,15 +18,23 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { Suspense, useEffect, useMemo, useReducer, useRef, useTransition } from 'react';
 
+import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
 import type { SaveState } from '@/lib/utils';
+import type { Dispatch, SetStateAction } from 'react';
 
 import {
   createCalendarEventAction,
   deleteCalendarEventAction,
   updateCalendarEventAction,
 } from '@/app/actions/calendar';
+import {
+  EMPTY_CALENDAR_OVERLAY,
+  calendarEventsSignature,
+  calendarOverlayReducer,
+  mergeCalendarEvents,
+} from '@/components/calendar/calendar-overlay';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -42,20 +50,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { errorMessage } from '@/lib/utils';
 
 type CalendarViewMode = 'month' | 'week' | 'day';
-
-interface CalendarEvent {
-  id: string;
-  title: string;
-  description: string | null;
-  startAt: string;
-  endAt: string;
-  timezone: string;
-  allDay: boolean;
-  location: string | null;
-  redacted: boolean;
-  visibility: string;
-  visibilityUserIds: string[] | null;
-}
 
 interface CalendarViewProps {
   events: CalendarEvent[];
@@ -81,7 +75,43 @@ interface Draft {
   endDateTime: string;
 }
 
+interface CalendarUiState {
+  editing: CalendarEvent | null;
+  draft: Draft;
+  open: boolean;
+  error: string | null;
+  surfaceError: string | null;
+  saveState: SaveState;
+}
+
+type CalendarUiAction = Partial<CalendarUiState> | ((state: CalendarUiState) => CalendarUiState);
+
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function initCalendarUiState({
+  anchor,
+  timezone,
+  defaultVisibility,
+  defaultVisibilityUserIds,
+}: {
+  anchor: Temporal.PlainDate;
+  timezone: string;
+  defaultVisibility: Draft['visibility'];
+  defaultVisibilityUserIds: string[] | null;
+}): CalendarUiState {
+  return {
+    editing: null,
+    draft: blankDraft(anchor, timezone, defaultVisibility, defaultVisibilityUserIds),
+    open: false,
+    error: null,
+    surfaceError: null,
+    saveState: 'idle',
+  };
+}
+
+function calendarUiReducer(state: CalendarUiState, action: CalendarUiAction): CalendarUiState {
+  return typeof action === 'function' ? action(state) : { ...state, ...action };
+}
 
 function today(timezone: string): Temporal.PlainDate {
   return Temporal.Now.zonedDateTimeISO(timezone).toPlainDate();
@@ -205,7 +235,15 @@ function draftFromEvent(event: CalendarEvent, timezone: string): Draft {
   };
 }
 
-export function CalendarView({
+export function CalendarView(props: CalendarViewProps) {
+  return (
+    <Suspense fallback={null}>
+      <CalendarViewContent {...props} />
+    </Suspense>
+  );
+}
+
+function CalendarViewContent({
   events,
   timezone,
   defaultVisibility = 'team',
@@ -227,22 +265,22 @@ export function CalendarView({
         : [stableAnchor];
   }, [anchorKey, safeMode]);
   const currentToday = today(timezone);
-  const [localEvents, setLocalEvents] = useState(events);
-  const [editing, setEditing] = useState<CalendarEvent | null>(null);
-  const [draft, setDraft] = useState<Draft>(() =>
-    blankDraft(anchor, timezone, defaultVisibility, defaultVisibilityUserIds),
+  const [eventOverlay, dispatchEventOverlay] = useReducer(
+    calendarOverlayReducer,
+    EMPTY_CALENDAR_OVERLAY,
   );
-  const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [surfaceError, setSurfaceError] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [{ editing, draft, open, error, surfaceError, saveState }, dispatchCalendarUi] = useReducer(
+    calendarUiReducer,
+    { anchor, timezone, defaultVisibility, defaultVisibilityUserIds },
+    initCalendarUiState,
+  );
   const [pending, startTransition] = useTransition();
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialogContextRef = useRef(0);
-
-  useEffect(() => {
-    setLocalEvents(events);
-  }, [events]);
+  const serverEventsSnapshotRef = useRef<{
+    signature: string;
+    ids: string[];
+  } | null>(null);
 
   useEffect(() => {
     return () => {
@@ -250,16 +288,34 @@ export function CalendarView({
     };
   }, []);
 
+  useEffect(() => {
+    const signature = calendarEventsSignature(events);
+    const ids = events.map((event) => event.id);
+    const previous = serverEventsSnapshotRef.current;
+    if (!previous) {
+      serverEventsSnapshotRef.current = { signature, ids };
+      return;
+    }
+    if (previous.signature === signature || pending) return;
+    serverEventsSnapshotRef.current = { signature, ids };
+    dispatchEventOverlay({
+      type: 'reconcile-server-events',
+      currentIds: ids,
+      previousIds: previous.ids,
+    });
+  }, [events, pending]);
+
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
+    const displayEvents = mergeCalendarEvents(events, eventOverlay);
     for (const day of visibleDays) {
-      const matches = localEvents
+      const matches = displayEvents
         .filter((event) => eventTouchesDate(event, day, timezone))
         .sort((a, b) => a.startAt.localeCompare(b.startAt));
       map.set(day.toString(), matches);
     }
     return map;
-  }, [localEvents, timezone, visibleDays]);
+  }, [events, eventOverlay, timezone, visibleDays]);
 
   function push(nextMode: CalendarViewMode, nextDate: Temporal.PlainDate) {
     router.push(`/app/calendar?view=${nextMode}&date=${nextDate.toString()}`);
@@ -275,28 +331,32 @@ export function CalendarView({
 
   function openCreate(day = anchor) {
     dialogContextRef.current += 1;
-    setEditing(null);
-    setDraft(blankDraft(day, timezone, defaultVisibility, defaultVisibilityUserIds));
-    setError(null);
-    setSurfaceError(null);
-    setOpen(true);
+    dispatchCalendarUi({
+      editing: null,
+      draft: blankDraft(day, timezone, defaultVisibility, defaultVisibilityUserIds),
+      error: null,
+      surfaceError: null,
+      open: true,
+    });
   }
 
   function openEdit(event: CalendarEvent) {
     if (event.redacted) return;
     dialogContextRef.current += 1;
-    setEditing(event);
-    setDraft(draftFromEvent(event, timezone));
-    setError(null);
-    setSurfaceError(null);
-    setOpen(true);
+    dispatchCalendarUi({
+      editing: event,
+      draft: draftFromEvent(event, timezone),
+      error: null,
+      surfaceError: null,
+      open: true,
+    });
   }
 
   function save() {
-    setError(null);
+    dispatchCalendarUi({ error: null });
     const title = draft.title.trim();
     if (!title) {
-      setError('Title is required.');
+      dispatchCalendarUi({ error: 'Title is required.' });
       return;
     }
     let times: { start: string; end: string };
@@ -308,11 +368,11 @@ export function CalendarView({
             end: localDateTime(draft.endDateTime, draft.timezone),
           };
     } catch {
-      setError(
-        draft.allDay
+      dispatchCalendarUi({
+        error: draft.allDay
           ? 'Enter valid start and exclusive end dates.'
           : 'Enter valid start and end times.',
-      );
+      });
       return;
     }
     if (
@@ -321,9 +381,11 @@ export function CalendarView({
         Temporal.Instant.from(times.start),
       ) <= 0
     ) {
-      setError(
-        draft.allDay ? 'Exclusive end date must be after start date.' : 'End must be after start.',
-      );
+      dispatchCalendarUi({
+        error: draft.allDay
+          ? 'Exclusive end date must be after start date.'
+          : 'End must be after start.',
+      });
       return;
     }
     startTransition(async () => {
@@ -343,7 +405,8 @@ export function CalendarView({
       };
       const optimisticId = editing?.id ?? `optimistic-${crypto.randomUUID()}`;
       const originalEvent = editing
-        ? (localEvents.find((event) => event.id === editing.id) ?? null)
+        ? (mergeCalendarEvents(events, eventOverlay).find((event) => event.id === editing.id) ??
+          null)
         : null;
       const optimisticEvent: CalendarEvent = {
         id: optimisticId,
@@ -358,15 +421,10 @@ export function CalendarView({
         visibility: draft.visibility,
         visibilityUserIds: draft.visibility === 'specific_users' ? draft.visibilityUserIds : null,
       };
-      setSurfaceError(null);
+      dispatchCalendarUi({ surfaceError: null });
       if (savedTimer.current) clearTimeout(savedTimer.current);
-      setSaveState('saving');
-      setOpen(false);
-      setLocalEvents((current) =>
-        editing
-          ? current.map((event) => (event.id === editing.id ? optimisticEvent : event))
-          : [optimisticEvent, ...current],
-      );
+      dispatchCalendarUi({ saveState: 'saving', open: false });
+      dispatchEventOverlay({ type: 'upsert', event: optimisticEvent });
       try {
         const result = editing
           ? await updateCalendarEventAction({ id: editing.id, ...input })
@@ -376,31 +434,27 @@ export function CalendarView({
         }
         const savedId = result.id;
         if (!editing && typeof savedId === 'string') {
-          setLocalEvents((current) =>
-            current.map((event) => (event.id === optimisticId ? { ...event, id: savedId } : event)),
-          );
+          dispatchEventOverlay({
+            type: 'replace-id',
+            previousId: optimisticId,
+            event: { ...optimisticEvent, id: savedId },
+          });
         }
-        setSaveState('saved');
+        dispatchCalendarUi({ saveState: 'saved' });
         router.refresh();
         savedTimer.current = setTimeout(() => {
-          setSaveState('idle');
+          dispatchCalendarUi({ saveState: 'idle' });
         }, 1600);
       } catch (err) {
         const message = errorMessage(err, 'Failed to save event.');
-        setLocalEvents((current) =>
-          editing
-            ? current.map((event) =>
-                (event === optimisticEvent || event.id === optimisticId) && originalEvent
-                  ? originalEvent
-                  : event,
-              )
-            : current.filter((event) => event !== optimisticEvent && event.id !== optimisticId),
-        );
-        setSaveState('idle');
-        setSurfaceError(message);
+        if (editing && originalEvent) {
+          dispatchEventOverlay({ type: 'restore', event: originalEvent });
+        } else {
+          dispatchEventOverlay({ type: 'discard', id: optimisticId });
+        }
+        dispatchCalendarUi({ saveState: 'idle', surfaceError: message });
         if (dialogContextRef.current === saveDialogContext) {
-          setOpen(true);
-          setError(message);
+          dispatchCalendarUi({ open: true, error: message });
         }
         router.refresh();
       }
@@ -412,10 +466,11 @@ export function CalendarView({
     startTransition(async () => {
       const result = await deleteCalendarEventAction(editing.id);
       if (!result.ok) {
-        setError(result.error ?? 'Failed to delete event.');
+        dispatchCalendarUi({ error: result.error ?? 'Failed to delete event.' });
         return;
       }
-      setOpen(false);
+      dispatchEventOverlay({ type: 'remove', id: editing.id });
+      dispatchCalendarUi({ open: false });
       router.refresh();
     });
   }
@@ -424,295 +479,462 @@ export function CalendarView({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <CalendarDays className="size-5 text-muted-foreground" />
-          <div>
-            <h2 className="text-lg font-semibold">{titleFor(safeMode, anchor)}</h2>
-            <p className="text-xs text-muted-foreground">{timezone} · ISO weeks</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-1">
-          {(['month', 'week', 'day'] as const).map((view) => (
-            <Button
-              key={view}
-              variant={safeMode === view ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                push(view, anchor);
-              }}
-            >
-              {view}
-            </Button>
-          ))}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              move(-1);
-            }}
-            aria-label="Previous"
-          >
-            <ChevronLeft className="size-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              push(safeMode, currentToday);
-            }}
-          >
-            Today
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              move(1);
-            }}
-            aria-label="Next"
-          >
-            <ChevronRight className="size-4" />
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => {
-              openCreate();
-            }}
-          >
-            <Plus className="mr-1 size-4" />
-            New
-          </Button>
+      <CalendarToolbar
+        mode={safeMode}
+        anchor={anchor}
+        timezone={timezone}
+        title={titleFor(safeMode, anchor)}
+        today={currentToday}
+        onPush={push}
+        onMove={move}
+        onCreate={() => {
+          openCreate();
+        }}
+      />
+      <CalendarSaveStatus saveState={saveState} surfaceError={surfaceError} />
+      <CalendarBody
+        mode={safeMode}
+        gridCols={gridCols}
+        anchor={anchor}
+        visibleDays={visibleDays}
+        eventsByDay={eventsByDay}
+        timezone={timezone}
+        today={currentToday}
+        onCreate={openCreate}
+        onEdit={openEdit}
+      />
+      <CalendarEventDialog
+        open={open}
+        editing={editing}
+        draft={draft}
+        error={error}
+        pending={pending}
+        timezone={timezone}
+        members={members}
+        onOpenChange={(nextOpen) => {
+          dispatchCalendarUi({ open: nextOpen });
+        }}
+        onDraftChange={(action) => {
+          dispatchCalendarUi((current) => ({
+            ...current,
+            draft: typeof action === 'function' ? action(current.draft) : action,
+          }));
+        }}
+        onSave={save}
+        onRemove={remove}
+      />
+    </div>
+  );
+}
+
+function CalendarToolbar({
+  mode,
+  anchor,
+  timezone,
+  title,
+  today,
+  onPush,
+  onMove,
+  onCreate,
+}: {
+  mode: CalendarViewMode;
+  anchor: Temporal.PlainDate;
+  timezone: string;
+  title: string;
+  today: Temporal.PlainDate;
+  onPush: (mode: CalendarViewMode, date: Temporal.PlainDate) => void;
+  onMove: (direction: -1 | 1) => void;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
+        <CalendarDays className="size-5 text-muted-foreground" />
+        <div>
+          <h2 className="text-lg font-semibold">{title}</h2>
+          <p className="text-xs text-muted-foreground">{timezone} · ISO weeks</p>
         </div>
       </div>
-      {saveState !== 'idle' || surfaceError ? (
-        <div
-          role={surfaceError ? 'alert' : 'status'}
-          aria-live="polite"
-          className={`font-mono text-[11px] uppercase tracking-[0.12em] ${
-            surfaceError ? 'text-danger' : 'text-fg-dim'
-          }`}
+      <div className="flex flex-wrap items-center gap-1">
+        {(['month', 'week', 'day'] as const).map((view) => (
+          <Button
+            key={view}
+            variant={mode === view ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => {
+              onPush(view, anchor);
+            }}
+          >
+            {view}
+          </Button>
+        ))}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            onMove(-1);
+          }}
+          aria-label="Previous"
         >
-          {surfaceError ?? (saveState === 'saving' ? 'Saving...' : 'Saved')}
+          <ChevronLeft className="size-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            onPush(mode, today);
+          }}
+        >
+          Today
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            onMove(1);
+          }}
+          aria-label="Next"
+        >
+          <ChevronRight className="size-4" />
+        </Button>
+        <Button size="sm" onClick={onCreate}>
+          <Plus className="mr-1 size-4" />
+          New
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CalendarSaveStatus({
+  saveState,
+  surfaceError,
+}: {
+  saveState: SaveState;
+  surfaceError: string | null;
+}) {
+  if (saveState === 'idle' && !surfaceError) return null;
+  return (
+    <div
+      role={surfaceError ? 'alert' : 'status'}
+      aria-live="polite"
+      className={`font-mono text-[11px] uppercase tracking-[0.12em] ${
+        surfaceError ? 'text-danger' : 'text-fg-dim'
+      }`}
+    >
+      {surfaceError ?? (saveState === 'saving' ? 'Saving...' : 'Saved')}
+    </div>
+  );
+}
+
+function CalendarBody({
+  mode,
+  gridCols,
+  anchor,
+  visibleDays,
+  eventsByDay,
+  timezone,
+  today,
+  onCreate,
+  onEdit,
+}: {
+  mode: CalendarViewMode;
+  gridCols: string;
+  anchor: Temporal.PlainDate;
+  visibleDays: Temporal.PlainDate[];
+  eventsByDay: Map<string, CalendarEvent[]>;
+  timezone: string;
+  today: Temporal.PlainDate;
+  onCreate: (day: Temporal.PlainDate) => void;
+  onEdit: (event: CalendarEvent) => void;
+}) {
+  if (mode === 'day') {
+    return (
+      <div className="rounded-lg border bg-background">
+        <DayCell
+          day={anchor}
+          anchor={anchor}
+          mode="day"
+          events={eventsByDay.get(anchor.toString()) ?? []}
+          timezone={timezone}
+          today={today}
+          onCreate={onCreate}
+          onEdit={onEdit}
+        />
+      </div>
+    );
+  }
+  return (
+    <div className={`grid ${gridCols} gap-px rounded-lg border bg-border`}>
+      <div className="bg-muted/40 p-2 text-center text-xs font-medium text-muted-foreground">
+        Wk
+      </div>
+      {WEEKDAYS.map((day) => (
+        <div
+          key={day}
+          className="bg-muted/40 p-2 text-center text-xs font-medium text-muted-foreground"
+        >
+          {day}
+        </div>
+      ))}
+      {Array.from({ length: Math.ceil(visibleDays.length / 7) }, (_, weekIndex) => {
+        const week = visibleDays.slice(weekIndex * 7, weekIndex * 7 + 7);
+        return [
+          <div
+            key={`week-${week[0]?.toString() ?? weekIndex}`}
+            className="min-h-28 bg-background p-2 text-center text-xs font-medium text-muted-foreground"
+          >
+            {week[0]?.weekOfYear}
+          </div>,
+          ...week.map((day) => (
+            <DayCell
+              key={day.toString()}
+              day={day}
+              anchor={anchor}
+              mode={mode}
+              events={eventsByDay.get(day.toString()) ?? []}
+              timezone={timezone}
+              today={today}
+              onCreate={onCreate}
+              onEdit={onEdit}
+            />
+          )),
+        ];
+      })}
+    </div>
+  );
+}
+
+function CalendarEventDialog({
+  open,
+  editing,
+  draft,
+  error,
+  pending,
+  timezone,
+  members,
+  onOpenChange,
+  onDraftChange,
+  onSave,
+  onRemove,
+}: {
+  open: boolean;
+  editing: CalendarEvent | null;
+  draft: Draft;
+  error: string | null;
+  pending: boolean;
+  timezone: string;
+  members: NonNullable<CalendarViewProps['members']>;
+  onOpenChange: (open: boolean) => void;
+  onDraftChange: Dispatch<SetStateAction<Draft>>;
+  onSave: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{editing ? 'Edit event' : 'New event'}</DialogTitle>
+          <DialogDescription>
+            Times are saved in {timezone}. All-day events use an exclusive end date.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          <CalendarDraftFields draft={draft} members={members} onDraftChange={onDraftChange} />
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        </div>
+        <DialogFooter className="gap-2 sm:justify-between">
+          <div>
+            {editing ? (
+              <Button type="button" variant="outline" onClick={onRemove} disabled={pending}>
+                <Trash2 className="mr-1 size-4" />
+                Delete
+              </Button>
+            ) : null}
+          </div>
+          <Button type="button" onClick={onSave} disabled={pending}>
+            <Check className="mr-1 size-4" />
+            {pending ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CalendarDraftFields({
+  draft,
+  members,
+  onDraftChange,
+}: {
+  draft: Draft;
+  members: NonNullable<CalendarViewProps['members']>;
+  onDraftChange: Dispatch<SetStateAction<Draft>>;
+}) {
+  return (
+    <>
+      <div className="space-y-2">
+        <Label htmlFor="calendar-title">Title</Label>
+        <Input
+          id="calendar-title"
+          value={draft.title}
+          onChange={(e) => {
+            onDraftChange((d) => ({ ...d, title: e.target.value }));
+          }}
+          maxLength={200}
+        />
+      </div>
+      <CalendarDraftOptions draft={draft} members={members} onDraftChange={onDraftChange} />
+      <CalendarDraftTimes draft={draft} onDraftChange={onDraftChange} />
+      <div className="space-y-2">
+        <Label htmlFor="calendar-location">Location</Label>
+        <Input
+          id="calendar-location"
+          value={draft.location}
+          onChange={(e) => {
+            onDraftChange((d) => ({ ...d, location: e.target.value }));
+          }}
+          maxLength={500}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="calendar-description">Description</Label>
+        <Textarea
+          id="calendar-description"
+          value={draft.description}
+          onChange={(e) => {
+            onDraftChange((d) => ({ ...d, description: e.target.value }));
+          }}
+          rows={3}
+          maxLength={2000}
+        />
+      </div>
+    </>
+  );
+}
+
+function CalendarDraftOptions({
+  draft,
+  members,
+  onDraftChange,
+}: {
+  draft: Draft;
+  members: NonNullable<CalendarViewProps['members']>;
+  onDraftChange: Dispatch<SetStateAction<Draft>>;
+}) {
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+          <input
+            type="checkbox"
+            checked={draft.allDay}
+            onChange={(e) => {
+              onDraftChange((d) => ({ ...d, allDay: e.target.checked }));
+            }}
+          />
+          All day
+        </label>
+        <div className="space-y-1">
+          <Label htmlFor="calendar-visibility">Visibility</Label>
+          <select
+            id="calendar-visibility"
+            value={draft.visibility}
+            onChange={(e) => {
+              onDraftChange((d) => ({ ...d, visibility: e.target.value as Draft['visibility'] }));
+            }}
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          >
+            <option value="team">Team</option>
+            <option value="private">Private</option>
+            <option value="specific_users">Specific users</option>
+          </select>
+        </div>
+      </div>
+      {draft.visibility === 'specific_users' ? (
+        <div className="flex flex-wrap gap-3">
+          {members.map((m) => (
+            <label key={m.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={draft.visibilityUserIds.includes(m.id)}
+                onChange={(e) => {
+                  onDraftChange((d) => ({
+                    ...d,
+                    visibilityUserIds: e.target.checked
+                      ? Array.from(new Set([...d.visibilityUserIds, m.id]))
+                      : d.visibilityUserIds.filter((id) => id !== m.id),
+                  }));
+                }}
+              />
+              {m.label}
+            </label>
+          ))}
         </div>
       ) : null}
+    </>
+  );
+}
 
-      {safeMode !== 'day' ? (
-        <div className={`grid ${gridCols} gap-px rounded-lg border bg-border`}>
-          <div className="bg-muted/40 p-2 text-center text-xs font-medium text-muted-foreground">
-            Wk
-          </div>
-          {WEEKDAYS.map((day) => (
-            <div
-              key={day}
-              className="bg-muted/40 p-2 text-center text-xs font-medium text-muted-foreground"
-            >
-              {day}
-            </div>
-          ))}
-          {Array.from({ length: Math.ceil(visibleDays.length / 7) }, (_, weekIndex) => {
-            const week = visibleDays.slice(weekIndex * 7, weekIndex * 7 + 7);
-            return [
-              <div
-                key={`week-${week[0]?.toString() ?? weekIndex}`}
-                className="min-h-28 bg-background p-2 text-center text-xs font-medium text-muted-foreground"
-              >
-                {week[0]?.weekOfYear}
-              </div>,
-              ...week.map((day) => (
-                <DayCell
-                  key={day.toString()}
-                  day={day}
-                  anchor={anchor}
-                  mode={safeMode}
-                  events={eventsByDay.get(day.toString()) ?? []}
-                  timezone={timezone}
-                  today={currentToday}
-                  onCreate={openCreate}
-                  onEdit={openEdit}
-                />
-              )),
-            ];
-          })}
-        </div>
-      ) : (
-        <div className="rounded-lg border bg-background">
-          <DayCell
-            day={anchor}
-            anchor={anchor}
-            mode="day"
-            events={eventsByDay.get(anchor.toString()) ?? []}
-            timezone={timezone}
-            today={currentToday}
-            onCreate={openCreate}
-            onEdit={openEdit}
+function CalendarDraftTimes({
+  draft,
+  onDraftChange,
+}: {
+  draft: Draft;
+  onDraftChange: Dispatch<SetStateAction<Draft>>;
+}) {
+  if (draft.allDay) {
+    return (
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="calendar-start-date">Start date</Label>
+          <Input
+            id="calendar-start-date"
+            type="date"
+            value={draft.startDate}
+            onChange={(e) => {
+              onDraftChange((d) => ({ ...d, startDate: e.target.value }));
+            }}
           />
         </div>
-      )}
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{editing ? 'Edit event' : 'New event'}</DialogTitle>
-            <DialogDescription>
-              Times are saved in {timezone}. All-day events use an exclusive end date.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="calendar-title">Title</Label>
-              <Input
-                id="calendar-title"
-                value={draft.title}
-                onChange={(e) => {
-                  setDraft((d) => ({ ...d, title: e.target.value }));
-                }}
-                maxLength={200}
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={draft.allDay}
-                  onChange={(e) => {
-                    setDraft((d) => ({ ...d, allDay: e.target.checked }));
-                  }}
-                />
-                All day
-              </label>
-              <div className="space-y-1">
-                <Label htmlFor="calendar-visibility">Visibility</Label>
-                <select
-                  id="calendar-visibility"
-                  value={draft.visibility}
-                  onChange={(e) => {
-                    setDraft((d) => ({ ...d, visibility: e.target.value as Draft['visibility'] }));
-                  }}
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                >
-                  <option value="team">Team</option>
-                  <option value="private">Private</option>
-                  <option value="specific_users">Specific users</option>
-                </select>
-              </div>
-            </div>
-            {draft.visibility === 'specific_users' ? (
-              <div className="flex flex-wrap gap-3">
-                {members.map((m) => (
-                  <label
-                    key={m.id}
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={draft.visibilityUserIds.includes(m.id)}
-                      onChange={(e) => {
-                        setDraft((d) => ({
-                          ...d,
-                          visibilityUserIds: e.target.checked
-                            ? Array.from(new Set([...d.visibilityUserIds, m.id]))
-                            : d.visibilityUserIds.filter((id) => id !== m.id),
-                        }));
-                      }}
-                    />
-                    {m.label}
-                  </label>
-                ))}
-              </div>
-            ) : null}
-            {draft.allDay ? (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="calendar-start-date">Start date</Label>
-                  <Input
-                    id="calendar-start-date"
-                    type="date"
-                    value={draft.startDate}
-                    onChange={(e) => {
-                      setDraft((d) => ({ ...d, startDate: e.target.value }));
-                    }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="calendar-end-date">End date (exclusive)</Label>
-                  <Input
-                    id="calendar-end-date"
-                    type="date"
-                    value={draft.endDate}
-                    onChange={(e) => {
-                      setDraft((d) => ({ ...d, endDate: e.target.value }));
-                    }}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="calendar-start-time">Start</Label>
-                  <Input
-                    id="calendar-start-time"
-                    type="datetime-local"
-                    value={draft.startDateTime}
-                    onChange={(e) => {
-                      setDraft((d) => ({ ...d, startDateTime: e.target.value }));
-                    }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="calendar-end-time">End</Label>
-                  <Input
-                    id="calendar-end-time"
-                    type="datetime-local"
-                    value={draft.endDateTime}
-                    onChange={(e) => {
-                      setDraft((d) => ({ ...d, endDateTime: e.target.value }));
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="calendar-location">Location</Label>
-              <Input
-                id="calendar-location"
-                value={draft.location}
-                onChange={(e) => {
-                  setDraft((d) => ({ ...d, location: e.target.value }));
-                }}
-                maxLength={500}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="calendar-description">Description</Label>
-              <Textarea
-                id="calendar-description"
-                value={draft.description}
-                onChange={(e) => {
-                  setDraft((d) => ({ ...d, description: e.target.value }));
-                }}
-                rows={3}
-                maxLength={2000}
-              />
-            </div>
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          </div>
-          <DialogFooter className="gap-2 sm:justify-between">
-            <div>
-              {editing ? (
-                <Button type="button" variant="outline" onClick={remove} disabled={pending}>
-                  <Trash2 className="mr-1 size-4" />
-                  Delete
-                </Button>
-              ) : null}
-            </div>
-            <Button type="button" onClick={save} disabled={pending}>
-              <Check className="mr-1 size-4" />
-              {pending ? 'Saving...' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <div className="space-y-2">
+          <Label htmlFor="calendar-end-date">End date (exclusive)</Label>
+          <Input
+            id="calendar-end-date"
+            type="date"
+            value={draft.endDate}
+            onChange={(e) => {
+              onDraftChange((d) => ({ ...d, endDate: e.target.value }));
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <div className="space-y-2">
+        <Label htmlFor="calendar-start-time">Start</Label>
+        <Input
+          id="calendar-start-time"
+          type="datetime-local"
+          value={draft.startDateTime}
+          onChange={(e) => {
+            onDraftChange((d) => ({ ...d, startDateTime: e.target.value }));
+          }}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="calendar-end-time">End</Label>
+        <Input
+          id="calendar-end-time"
+          type="datetime-local"
+          value={draft.endDateTime}
+          onChange={(e) => {
+            onDraftChange((d) => ({ ...d, endDateTime: e.target.value }));
+          }}
+        />
+      </div>
     </div>
   );
 }

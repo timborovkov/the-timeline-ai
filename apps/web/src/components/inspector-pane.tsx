@@ -21,12 +21,11 @@ export function InspectorPane() {
 
   if (!inspector.open || !inspector.content) return null;
 
-  const { id, kind, render } = inspector.content;
+  const { id, kind, title, render } = inspector.content;
 
   return (
     <aside
       id="inspector-pane"
-      role="dialog"
       aria-label={`Inspector for ${id}`}
       aria-labelledby="inspector-title"
       className={cn(
@@ -37,8 +36,8 @@ export function InspectorPane() {
         <div className="flex min-w-0 items-baseline gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
           <span className="shrink-0">{kind}</span>
           <span className="shrink-0 text-fg-dim">·</span>
-          <span id="inspector-title" title={id} className="min-w-0 truncate text-signal">
-            [{id}]
+          <span id="inspector-title" title={title ?? id} className="min-w-0 truncate text-signal">
+            {title ?? id}
           </span>
         </div>
         <Button

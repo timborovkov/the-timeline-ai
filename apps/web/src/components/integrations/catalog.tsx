@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useState } from 'react';
 
 import type * as integrationsLib from '@timeline/shared/integrations';
@@ -38,7 +39,7 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
         <Card key={c.id} className="flex h-full flex-col">
           <CardHeader className="flex flex-row items-center gap-3">
             {/* Logo via /public/connectors/<id>.svg. Falls back gracefully if missing. */}
-            <img
+            <Image
               src={c.logo}
               alt=""
               width={28}

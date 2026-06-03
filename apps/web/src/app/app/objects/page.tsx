@@ -82,15 +82,14 @@ export default async function ObjectsIndexPage({
             ? ([{ label: 'type', value: TYPE_LABEL[type] ?? type, signal: true }] as const)
             : ([] as const)),
         ]}
-        trailing={
-          <Link
-            href="/app/objects/new"
-            className="font-mono text-[11px] uppercase tracking-[0.12em] text-signal hover:underline"
-          >
-            new →
-          </Link>
-        }
-      />
+      >
+        <Link
+          href="/app/objects/new"
+          className="font-mono text-[11px] uppercase tracking-[0.12em] text-signal hover:underline"
+        >
+          new →
+        </Link>
+      </IndexStrip>
 
       <nav
         aria-label="Filter by type"

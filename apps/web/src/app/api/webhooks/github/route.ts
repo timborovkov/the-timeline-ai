@@ -98,42 +98,53 @@ export async function POST(req: Request): Promise<Response> {
   if (rows.length === 0) {
     return NextResponse.json({ ok: true, reason: 'no_matching_tenant' }, { status: 200 });
   }
-  for (const integration of rows) {
-    try {
-      const provider = integrationsLib.getProvider('github');
-      const events = (await provider.handleWebhook?.({ integration, payload })) ?? [];
-      if (events.length > 0) {
-        await integrationsLib.writeIntegrationEvents({ db, integration, events });
+  const provider = integrationsLib.getProvider('github');
+  await Promise.all(
+    rows.map(async (integration) => {
+      try {
+        const events = (await provider.handleWebhook?.({ integration, payload })) ?? [];
+        if (events.length > 0) {
+          await integrationsLib.writeIntegrationEvents({ db, integration, events });
+        }
+      } catch (err) {
+        // continue — one broken integration doesn't fail the whole webhook
+        reportCaughtError(err, {
+          surface: 'background',
+          operation: 'github_webhook_write_events',
+          tags: { provider: 'github' },
+        });
       }
-    } catch (err) {
-      // continue — one broken integration doesn't fail the whole webhook
-      reportCaughtError(err, {
-        surface: 'background',
-        operation: 'github_webhook_write_events',
-        tags: { provider: 'github' },
-      });
-    }
-  }
+    }),
+  );
   // Side benefit: kick an incremental sync so any missed events get
   // back-filled from the cursor. incrementalSync internally walks the
   // selections, so this is safe — unselected repos won't generate events.
-  for (const integration of rows) {
-    try {
-      const queue = await requireRedisQueue();
-      await queue.enqueueIntegrationSyncJob({
-        kind: 'incremental',
-        integrationId: integration.id,
-        teamId: integration.teamId,
-        triggeredBy: 'webhook',
-      });
-    } catch (err) {
-      // ignore
-      reportCaughtError(err, {
-        surface: 'background',
-        operation: 'github_webhook_enqueue_sync',
-        tags: { provider: 'github' },
-      });
-    }
+  try {
+    const queue = await requireRedisQueue();
+    await Promise.all(
+      rows.map(async (integration) => {
+        try {
+          await queue.enqueueIntegrationSyncJob({
+            kind: 'incremental',
+            integrationId: integration.id,
+            teamId: integration.teamId,
+            triggeredBy: 'webhook',
+          });
+        } catch (err) {
+          reportCaughtError(err, {
+            surface: 'background',
+            operation: 'github_webhook_enqueue_sync',
+            tags: { provider: 'github' },
+          });
+        }
+      }),
+    );
+  } catch (err) {
+    reportCaughtError(err, {
+      surface: 'background',
+      operation: 'github_webhook_enqueue_sync',
+      tags: { provider: 'github' },
+    });
   }
   return NextResponse.json({ ok: true });
 }

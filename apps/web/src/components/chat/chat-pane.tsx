@@ -5,7 +5,7 @@ import { DefaultChatTransport, type UIMessage } from 'ai';
 import { Send, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import { unpinChatSessionAction } from '@/app/actions/chat';
 import { CitationText } from '@/components/chat/citation';
@@ -28,7 +28,15 @@ const SUGGESTIONS = [
   "What's outstanding right now?",
 ] as const;
 
-export function ChatPane({
+export function ChatPane(props: Props) {
+  return (
+    <Suspense fallback={null}>
+      <ChatPaneContent {...props} />
+    </Suspense>
+  );
+}
+
+function ChatPaneContent({
   teamName,
   sessionId: initialSessionId,
   initialMessages,
@@ -181,9 +189,9 @@ export function ChatPane({
                   router.refresh();
                 });
               }}
-              className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"
+              className="flex size-5 items-center justify-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"
             >
-              <X className="h-3 w-3" />
+              <X className="size-3" />
             </button>
           )}
         </div>
@@ -224,7 +232,7 @@ export function ChatPane({
                   className={cn('flex flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}
                 >
                   <span className="px-1 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-                    {isUser ? 'You' : teamName}
+                    {isUser ? 'You' : 'Agent'}
                   </span>
                   <div
                     className={cn(
@@ -288,13 +296,7 @@ export function ChatPane({
         </div>
       )}
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit(input);
-        }}
-        className="shrink-0"
-      >
+      <div className="shrink-0">
         <div className="relative rounded-sm border border-border bg-surface focus-within:border-border-strong">
           <label htmlFor="chat-composer" className="sr-only">
             Ask the timeline
@@ -306,12 +308,19 @@ export function ChatPane({
             onChange={(e) => {
               setInput(e.target.value);
             }}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              submit(input);
+            }}
             placeholder="Ask anything about your team's timeline…"
             disabled={isStreaming}
             className="h-12 w-full rounded-sm bg-transparent pl-4 pr-12 text-sm focus:outline-none"
           />
           <button
-            type="submit"
+            type="button"
+            onClick={() => {
+              submit(input);
+            }}
             disabled={isStreaming || !input.trim()}
             aria-label="Send"
             className="absolute right-1.5 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 disabled:opacity-30"
@@ -319,7 +328,7 @@ export function ChatPane({
             <Send className="size-4" />
           </button>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

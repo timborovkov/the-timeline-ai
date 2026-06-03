@@ -93,7 +93,7 @@ export default async function LandingPage() {
         <Integrations />
         <Receipts />
         <Principles />
-        <FAQ />
+        <Faq />
         <FinalCTA isSignedIn={isSignedIn} />
       </main>
       <Footer isSignedIn={isSignedIn} />
@@ -182,6 +182,7 @@ function StructuredData() {
     ],
   };
   return (
+    // react-doctor-disable-next-line react-doctor/no-danger
     <script
       type="application/ld+json"
       dangerouslySetInnerHTML={{ __html: JSON.stringify(graph) }}
@@ -352,7 +353,7 @@ function Hero({ isSignedIn }: { isSignedIn: boolean }) {
             </h1>
             <p className="mt-8 max-w-prose text-lg leading-relaxed text-fg-muted">
               Voice-note the call in Telegram. Capture the Slack thread. Forward the email. Drop a
-              Meet, Teams, or Zoom link. The agent extracts who, what, and when — reconciled against
+              Meet, Teams, or Zoom link. The agent extracts who, what, and when, reconciled against
               everything your team has ever said. Ask anything; every answer cites its source.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
@@ -416,7 +417,7 @@ function HeroMock() {
         <li className="grid grid-cols-[88px_1fr] gap-4 px-4 py-3 font-mono text-xs">
           <span className="text-fg-dim">14:02 · VOICE</span>
           <span className="font-sans text-sm text-fg">
-            Tim → John Ternus (Apple) — agreed on revised SaaS licensing terms; deck by Friday.
+            Tim → John Ternus (Apple), agreed on revised SaaS licensing terms; deck by Friday.
           </span>
         </li>
         <li className="grid grid-cols-[88px_1fr] gap-4 px-4 py-3 font-mono text-xs">
@@ -428,7 +429,7 @@ function HeroMock() {
         <li className="grid grid-cols-[88px_1fr] gap-4 px-4 py-3 font-mono text-xs">
           <span className="text-fg-dim">09:15 · TELEGRAM</span>
           <span className="font-sans text-sm text-fg">
-            Otto uploaded <em>Office Rules v3.pdf</em> — TikTok section added.
+            Otto uploaded <em>Office Rules v3.pdf</em>; TikTok section added.
           </span>
         </li>
       </ol>
@@ -501,7 +502,7 @@ function Solution() {
       <div className="mt-10 max-w-3xl border-l-2 border-signal pl-5">
         <Mono className="text-signal">THE PAYOFF</Mono>
         <p className="mt-4 text-lg leading-snug text-fg">
-          The output looks like a CRM, a project tracker, and a doc index — current, queryable,
+          The output looks like a CRM, a project tracker, and a doc index: current, queryable,
           cited. You just never had to update it.
         </p>
       </div>
@@ -569,11 +570,11 @@ function ConceptDiagram() {
                 className="flex items-center justify-between gap-3 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-muted"
               >
                 <span className="flex items-center gap-2">
-                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-fg-dim" />
+                  <span className="inline-block size-1.5 rounded-full bg-fg-dim" />
                   {label}
                 </span>
                 <span
-                  className="cdg-pulse inline-block h-1.5 w-1.5 rounded-full bg-signal"
+                  className="cdg-pulse inline-block size-1.5 rounded-full bg-signal"
                   style={{ animationDelay: `${i * 0.45}s` }}
                 />
               </li>
@@ -806,7 +807,7 @@ function Integrations() {
             >
               MCP server
             </a>{' '}
-            — Notion, Slack, Jira, Figma, Sentry, Stripe, your internal tool, anything that speaks
+            : Notion, Slack, Jira, Figma, Sentry, Stripe, your internal tool, anything that speaks
             the protocol. The agent gets the tools; you don&apos;t write a connector.
           </p>
         </div>
@@ -826,8 +827,8 @@ function Receipts() {
             Ask. See the receipts.
           </h2>
           <p className="mt-6 max-w-prose text-base leading-[1.65] text-fg-muted">
-            Every fact resolves to a raw event — voice memo, Slack or Telegram message, email,
-            document version — with author, timestamp, and source. Click the chip; the inspector
+            Every fact resolves to a raw event: voice memo, Slack or Telegram message, email,
+            document version, with author, timestamp, and source. Click the chip; the inspector
             shows exactly what was said.
           </p>
           <blockquote className="mt-8 max-w-prose border-l-2 border-signal pl-5 text-lg italic leading-snug text-fg">
@@ -900,7 +901,7 @@ function PrincipleRow({ term, desc }: { term: string; desc: string }) {
   );
 }
 
-function FAQ() {
+function Faq() {
   return (
     <Section id="faq">
       <IndexStrip>FAQ</IndexStrip>
@@ -955,7 +956,7 @@ function Footer({ isSignedIn }: { isSignedIn: boolean }) {
     <footer className="border-t border-border px-6 py-10">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
         <span className="inline-flex items-center gap-2 text-fg-dim">
-          <Logo ariaHidden className="h-4 w-4" />
+          <Logo ariaHidden className="size-4" />
           THE TIMELINE · v1 · 2026
         </span>
         <nav className="flex flex-wrap items-center gap-5">

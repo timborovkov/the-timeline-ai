@@ -33,7 +33,6 @@ export const TIMELINE_PRESETS = [
   { label: 'Decisions', impact: 'decision' },
 ] as const;
 
-type TimelineDensity = 'comfortable' | 'dense';
 type TimelineSource = (typeof TIMELINE_SOURCES)[number][0];
 
 export function parseTimelineSource(input: string | undefined): TimelineSource | undefined {
@@ -48,10 +47,6 @@ export function parseTimelineImpact(input: string | undefined): ImpactKind | und
   return TIMELINE_IMPACT_FILTERS.some((value) => value === input)
     ? (input as ImpactKind)
     : undefined;
-}
-
-export function parseTimelineDensity(input: string | undefined): TimelineDensity {
-  return input === 'dense' ? 'dense' : 'comfortable';
 }
 
 export function timelineHref(

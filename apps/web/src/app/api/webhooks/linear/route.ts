@@ -115,41 +115,62 @@ export async function POST(req: Request): Promise<Response> {
     }
     set.add(r.externalId);
   }
-  for (const integration of rows) {
-    try {
-      const selectedTeams = teamsByIntegration.get(integration.id);
-      const matches =
-        // If selections exist for this integration: payload team id must
-        // be present AND must be one of the selected teams. If we can't
-        // resolve a team id from the payload, drop (conservative).
-        selectedTeams && selectedTeams.size > 0
-          ? payloadTeamId !== null && selectedTeams.has(payloadTeamId)
-          : // No selections recorded: drop everything for this integration,
-            // matching github.repo's "explicit opt-in required" posture.
-            false;
-      if (!matches) {
-        continue;
-      }
-      const provider = integrationsLib.getProvider('linear');
-      const events = (await provider.handleWebhook?.({ integration, payload })) ?? [];
-      if (events.length > 0) {
-        await integrationsLib.writeIntegrationEvents({ db, integration, events });
-      }
-      const queue = await requireRedisQueue();
-      await queue.enqueueIntegrationSyncJob({
-        kind: 'incremental',
-        integrationId: integration.id,
-        teamId: integration.teamId,
-        triggeredBy: 'webhook',
-      });
-    } catch (err) {
-      // continue
-      reportCaughtError(err, {
-        surface: 'background',
-        operation: 'linear_webhook_process',
-        tags: { provider: 'linear' },
-      });
-    }
+  const matchingRows = rows.filter((integration) => {
+    const selectedTeams = teamsByIntegration.get(integration.id);
+    return selectedTeams && selectedTeams.size > 0
+      ? payloadTeamId !== null && selectedTeams.has(payloadTeamId)
+      : false;
+  });
+  if (matchingRows.length === 0) {
+    return NextResponse.json({ ok: true });
   }
+  const provider = integrationsLib.getProvider('linear');
+  const syncJobs = matchingRows.map((integration) => ({
+    kind: 'incremental' as const,
+    integrationId: integration.id,
+    teamId: integration.teamId,
+    triggeredBy: 'webhook' as const,
+  }));
+  await Promise.all(
+    matchingRows.map(async (integration) => {
+      try {
+        const events = (await provider.handleWebhook?.({ integration, payload })) ?? [];
+        if (events.length > 0) {
+          await integrationsLib.writeIntegrationEvents({ db, integration, events });
+        }
+      } catch (err) {
+        // continue
+        reportCaughtError(err, {
+          surface: 'background',
+          operation: 'linear_webhook_process',
+          tags: { provider: 'linear' },
+        });
+      }
+    }),
+  );
+  let queue: Awaited<ReturnType<typeof requireRedisQueue>>;
+  try {
+    queue = await requireRedisQueue();
+  } catch (err) {
+    reportCaughtError(err, {
+      surface: 'background',
+      operation: 'linear_webhook_enqueue_sync',
+      tags: { provider: 'linear' },
+    });
+    return NextResponse.json({ ok: true });
+  }
+  await Promise.all(
+    syncJobs.map(async (job) => {
+      try {
+        await queue.enqueueIntegrationSyncJob(job);
+      } catch (err) {
+        reportCaughtError(err, {
+          surface: 'background',
+          operation: 'linear_webhook_enqueue_sync',
+          tags: { provider: 'linear' },
+        });
+      }
+    }),
+  );
   return NextResponse.json({ ok: true });
 }

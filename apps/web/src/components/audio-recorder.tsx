@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { Button } from '@/components/ui/button';
 
@@ -22,6 +22,22 @@ function pickSupportedMimeType(): string | undefined {
   return undefined;
 }
 
+function subscribeMediaRecorderSupport(): () => void {
+  return noopMediaRecorderSupportUnsubscribe;
+}
+
+function noopMediaRecorderSupportUnsubscribe(): void {
+  return undefined;
+}
+
+function getMediaRecorderSupportSnapshot(): boolean {
+  return typeof MediaRecorder !== 'undefined';
+}
+
+function getServerMediaRecorderSupportSnapshot(): boolean {
+  return true;
+}
+
 interface AudioRecorderProps {
   /**
    * Reports the current clip to the parent. Parent owns submission (the
@@ -34,7 +50,11 @@ interface AudioRecorderProps {
 }
 
 export function AudioRecorder({ onClipChange, disabled = false }: AudioRecorderProps = {}) {
-  const [supported, setSupported] = useState(true);
+  const supported = useSyncExternalStore(
+    subscribeMediaRecorderSupport,
+    getMediaRecorderSupportSnapshot,
+    getServerMediaRecorderSupportSnapshot,
+  );
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [clip, setClip] = useState<RecordedClip | null>(null);
@@ -43,10 +63,6 @@ export function AudioRecorder({ onClipChange, disabled = false }: AudioRecorderP
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
-
-  useEffect(() => {
-    setSupported(typeof MediaRecorder !== 'undefined');
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -186,11 +202,19 @@ export function AudioRecorder({ onClipChange, disabled = false }: AudioRecorderP
           </Button>
         ) : null}
         {phase === 'review' ? (
-          <span className="text-xs text-muted-foreground">Ready — press Post to send.</span>
+          <span className="text-xs text-muted-foreground">Ready. Press Post to send.</span>
         ) : null}
       </div>
       {clip ? (
-        <audio src={clip.url} controls preload="metadata" className="w-full" />
+        <audio
+          src={clip.url}
+          controls
+          preload="metadata"
+          className="w-full"
+          aria-label="Recorded voice note preview"
+        >
+          <track kind="captions" src="data:text/vtt,WEBVTT" srcLang="en" label="Captions" />
+        </audio>
       ) : phase === 'recording' ? (
         <p className="text-xs text-muted-foreground">Recording… press Stop when finished.</p>
       ) : null}

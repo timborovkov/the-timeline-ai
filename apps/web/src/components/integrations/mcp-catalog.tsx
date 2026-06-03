@@ -1,7 +1,8 @@
 'use client';
 
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useMemo, useReducer, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,6 +21,29 @@ interface CatalogEntryProps {
 }
 
 const FILTER_THRESHOLD = 4;
+
+interface CatalogCardState {
+  open: boolean;
+  bearer: string;
+  headerName: string;
+  headerValue: string;
+  busy: boolean;
+}
+
+const INITIAL_CARD_STATE: CatalogCardState = {
+  open: false,
+  bearer: '',
+  headerName: '',
+  headerValue: '',
+  busy: false,
+};
+
+function patchCardState(
+  state: CatalogCardState,
+  patch: Partial<CatalogCardState>,
+): CatalogCardState {
+  return { ...state, ...patch };
+}
 
 /**
  * One-click connect catalog for curated MCP servers. Each card knows its
@@ -126,14 +150,13 @@ export function McpCatalog({ entries }: { entries: CatalogEntryProps[] }) {
 
 function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [bearer, setBearer] = useState('');
-  const [headerName, setHeaderName] = useState('');
-  const [headerValue, setHeaderValue] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [{ open, bearer, headerName, headerValue, busy }, setCardState] = useReducer(
+    patchCardState,
+    INITIAL_CARD_STATE,
+  );
 
   async function connect(body: Record<string, unknown>) {
-    setBusy(true);
+    setCardState({ busy: true });
     try {
       const res = await fetch('/api/team/mcp-servers', {
         method: 'POST',
@@ -165,7 +188,7 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
       }
       router.refresh();
     } finally {
-      setBusy(false);
+      setCardState({ busy: false });
     }
   }
 
@@ -174,7 +197,7 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
       await connect({});
       return;
     }
-    setOpen((v) => !v);
+    setCardState({ open: !open });
   }
 
   async function submitToken() {
@@ -191,13 +214,13 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
       }
       await connect({ header: { name: headerName, value: headerValue } });
     }
-    setOpen(false);
+    setCardState({ open: false });
   }
 
   return (
     <Card className="flex h-full flex-col">
       <CardHeader className="flex flex-row items-center gap-3">
-        <img
+        <Image
           src={entry.logo}
           alt=""
           width={28}
@@ -221,7 +244,7 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
               type="password"
               value={bearer}
               onChange={(e) => {
-                setBearer(e.target.value);
+                setCardState({ bearer: e.target.value });
               }}
             />
           </div>
@@ -234,7 +257,7 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
                 id={`hn-${entry.id}`}
                 value={headerName}
                 onChange={(e) => {
-                  setHeaderName(e.target.value);
+                  setCardState({ headerName: e.target.value });
                 }}
               />
             </div>
@@ -245,7 +268,7 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
                 type="password"
                 value={headerValue}
                 onChange={(e) => {
-                  setHeaderValue(e.target.value);
+                  setCardState({ headerValue: e.target.value });
                 }}
               />
             </div>
@@ -268,7 +291,7 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
                 size="sm"
                 variant="ghost"
                 onClick={() => {
-                  setOpen(false);
+                  setCardState({ open: false });
                 }}
               >
                 Cancel

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useReducer, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +22,68 @@ interface McpServerRow {
 
 type AuthType = 'none' | 'bearer' | 'header' | 'basic' | 'url_key' | 'oauth';
 
+interface AddServerState {
+  name: string;
+  url: string;
+  authType: AuthType;
+  token: string;
+  headerName: string;
+  headerValue: string;
+  busy: boolean;
+}
+
+const INITIAL_ADD_SERVER_STATE: AddServerState = {
+  name: '',
+  url: '',
+  authType: 'none',
+  token: '',
+  headerName: '',
+  headerValue: '',
+  busy: false,
+};
+
+function patchAddServerState(
+  state: AddServerState,
+  patch: Partial<AddServerState>,
+): AddServerState {
+  return { ...state, ...patch };
+}
+
+async function startOAuth(server: McpServerRow): Promise<void> {
+  const res = await fetch('/api/mcp/oauth/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ mcpServerId: server.id }),
+  });
+  if (!res.ok) {
+    alert(`OAuth start failed: ${await res.text()}`);
+    return;
+  }
+  const data = (await res.json()) as { url?: string; error?: string };
+  if (data.url) window.location.href = data.url;
+  else alert(`OAuth start failed: ${data.error ?? 'unknown'}`);
+}
+
+async function testCall(server: McpServerRow, toolName: string): Promise<void> {
+  const namespaced = `mcp__${server.id.replace(/-/g, '')}__${toolName}`;
+  const argsRaw = prompt(`Args (JSON) for ${toolName}:`, '{}');
+  if (argsRaw === null) return;
+  let args: Record<string, unknown> = {};
+  try {
+    args = JSON.parse(argsRaw) as Record<string, unknown>;
+  } catch {
+    alert('Invalid JSON');
+    return;
+  }
+  const res = await fetch(`/api/team/mcp-servers/${server.id}/tools`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ tool: namespaced, args }),
+  });
+  const text = await res.text();
+  alert(text);
+}
+
 /**
  * Standalone add-server form. Mounted by either:
  *   - <McpServersUi> on the personal MCP page (toggle button just above
@@ -39,16 +101,13 @@ function AddCustomMcpServerForm({
   onCancel?: () => void;
 }) {
   const router = useRouter();
-  const [name, setName] = useState('');
-  const [url, setUrl] = useState('');
-  const [authType, setAuthType] = useState<AuthType>('none');
-  const [token, setToken] = useState('');
-  const [headerName, setHeaderName] = useState('');
-  const [headerValue, setHeaderValue] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [{ name, url, authType, token, headerName, headerValue, busy }, setFormState] = useReducer(
+    patchAddServerState,
+    INITIAL_ADD_SERVER_STATE,
+  );
 
   async function submit() {
-    setBusy(true);
+    setFormState({ busy: true });
     try {
       const body: Record<string, unknown> = { name, url, authType };
       if (ownership === 'personal') body.ownership = 'personal';
@@ -94,7 +153,7 @@ function AddCustomMcpServerForm({
       router.refresh();
       if (onDone) onDone();
     } finally {
-      setBusy(false);
+      setFormState({ busy: false });
     }
   }
 
@@ -110,7 +169,7 @@ function AddCustomMcpServerForm({
             <Input
               value={name}
               onChange={(e) => {
-                setName(e.target.value);
+                setFormState({ name: e.target.value });
               }}
               placeholder="Context7"
             />
@@ -120,7 +179,7 @@ function AddCustomMcpServerForm({
             <Input
               value={url}
               onChange={(e) => {
-                setUrl(e.target.value);
+                setFormState({ url: e.target.value });
               }}
               placeholder="https://mcp.example.com/mcp"
             />
@@ -131,7 +190,7 @@ function AddCustomMcpServerForm({
               className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-sm"
               value={authType}
               onChange={(e) => {
-                setAuthType(e.target.value as AuthType);
+                setFormState({ authType: e.target.value as AuthType });
               }}
             >
               <option value="none">None</option>
@@ -147,7 +206,7 @@ function AddCustomMcpServerForm({
                 type="password"
                 value={token}
                 onChange={(e) => {
-                  setToken(e.target.value);
+                  setFormState({ token: e.target.value });
                 }}
               />
             </div>
@@ -159,7 +218,7 @@ function AddCustomMcpServerForm({
                 <Input
                   value={headerName}
                   onChange={(e) => {
-                    setHeaderName(e.target.value);
+                    setFormState({ headerName: e.target.value });
                   }}
                 />
               </div>
@@ -169,7 +228,7 @@ function AddCustomMcpServerForm({
                   type="password"
                   value={headerValue}
                   onChange={(e) => {
-                    setHeaderValue(e.target.value);
+                    setFormState({ headerValue: e.target.value });
                   }}
                 />
               </div>
@@ -252,41 +311,6 @@ export function McpServersUi({
     router.refresh();
   }
 
-  async function startOAuth(server: McpServerRow) {
-    const res = await fetch('/api/mcp/oauth/start', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ mcpServerId: server.id }),
-    });
-    if (!res.ok) {
-      alert(`OAuth start failed: ${await res.text()}`);
-      return;
-    }
-    const data = (await res.json()) as { url?: string; error?: string };
-    if (data.url) window.location.href = data.url;
-    else alert(`OAuth start failed: ${data.error ?? 'unknown'}`);
-  }
-
-  async function testCall(server: McpServerRow, toolName: string) {
-    const namespaced = `mcp__${server.id.replace(/-/g, '')}__${toolName}`;
-    const argsRaw = prompt(`Args (JSON) for ${toolName}:`, '{}');
-    if (argsRaw === null) return;
-    let args: Record<string, unknown> = {};
-    try {
-      args = JSON.parse(argsRaw) as Record<string, unknown>;
-    } catch {
-      alert('Invalid JSON');
-      return;
-    }
-    const res = await fetch(`/api/team/mcp-servers/${server.id}/tools`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ tool: namespaced, args }),
-    });
-    const text = await res.text();
-    alert(text);
-  }
-
   return (
     <div className="space-y-3">
       {hideAddButton ? null : (
@@ -319,7 +343,7 @@ export function McpServersUi({
       ) : (
         <ul className="divide-y divide-border rounded-sm border border-border bg-surface">
           {servers.map((s) => (
-            <li key={s.id} className="space-y-2 px-3 py-3">
+            <li key={s.id} className="space-y-2 p-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">{s.name}</span>
                 <span className="font-mono text-xs uppercase tracking-[0.14em] text-fg-muted">
@@ -377,7 +401,7 @@ export function McpServersUi({
                         <div>
                           <span className="font-mono">{t.name}</span>
                           {t.description ? (
-                            <span className="ml-2 text-fg-muted">— {t.description}</span>
+                            <span className="ml-2 text-fg-muted">: {t.description}</span>
                           ) : null}
                         </div>
                         <Button

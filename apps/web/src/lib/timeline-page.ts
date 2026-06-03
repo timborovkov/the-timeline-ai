@@ -97,8 +97,9 @@ export async function collectTimelinePage({
   }
 
   return {
-    items: [...collected.values()].sort(
-      (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+    items: Array.from(collected.values()).sort(
+      (a: TimelineEvent, b: TimelineEvent) =>
+        new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
     ),
     nextCursor,
     impactItems,

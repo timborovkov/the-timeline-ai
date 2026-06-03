@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useReducer, useState } from 'react';
 
 import { cancelMeetingBotAction, scheduleMeetingBotAction } from '@/app/actions/meetings';
 import { Button } from '@/components/ui/button';
@@ -9,31 +9,64 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
+type Visibility = 'team' | 'private' | 'specific_users';
+interface ScheduleMeetingState {
+  pending: boolean;
+  error: string | null;
+  visibility: Visibility;
+  visibilityUserIds: string[];
+  consent: boolean;
+}
+type ScheduleMeetingAction =
+  | { type: 'pending'; pending: boolean }
+  | { type: 'error'; error: string | null }
+  | { type: 'visibility'; visibility: Visibility }
+  | { type: 'visibilityUserIds'; visibilityUserIds: string[] }
+  | { type: 'consent'; consent: boolean };
+
+function scheduleMeetingReducer(
+  state: ScheduleMeetingState,
+  action: ScheduleMeetingAction,
+): ScheduleMeetingState {
+  switch (action.type) {
+    case 'pending':
+      return { ...state, pending: action.pending };
+    case 'error':
+      return { ...state, error: action.error };
+    case 'visibility':
+      return { ...state, visibility: action.visibility };
+    case 'visibilityUserIds':
+      return { ...state, visibilityUserIds: action.visibilityUserIds };
+    case 'consent':
+      return { ...state, consent: action.consent };
+  }
+}
 
 export function ScheduleMeetingBotForm({
   defaultVisibility = 'team',
   defaultVisibilityUserIds = null,
   members = EMPTY_MEMBERS,
 }: {
-  defaultVisibility?: 'team' | 'private' | 'specific_users';
+  defaultVisibility?: Visibility;
   defaultVisibilityUserIds?: string[] | null;
   members?: { id: string; label: string }[];
 }) {
   const router = useRouter();
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [visibility, setVisibility] = useState<'team' | 'private' | 'specific_users'>(
-    defaultVisibility,
+  const [{ pending, error, visibility, visibilityUserIds, consent }, dispatch] = useReducer(
+    scheduleMeetingReducer,
+    {
+      pending: false,
+      error: null,
+      visibility: defaultVisibility,
+      visibilityUserIds: defaultVisibilityUserIds ?? [],
+      consent: false,
+    },
   );
-  const [visibilityUserIds, setVisibilityUserIds] = useState<string[]>(
-    defaultVisibilityUserIds ?? [],
-  );
-  const [consent, setConsent] = useState(false);
 
   async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
-    setError(null);
-    setPending(true);
+    dispatch({ type: 'error', error: null });
+    dispatch({ type: 'pending', pending: true });
     const form = new FormData(e.currentTarget);
     const rawUrl = form.get('meetingUrl');
     const rawTitle = form.get('title');
@@ -48,7 +81,7 @@ export function ScheduleMeetingBotForm({
         consentGiven: consent,
       });
       if (!res.ok) {
-        setError(res.error ?? 'Failed to invite notetaker');
+        dispatch({ type: 'error', error: res.error ?? 'Failed to invite notetaker' });
         return;
       }
       if (res.meetingId) {
@@ -57,7 +90,7 @@ export function ScheduleMeetingBotForm({
         router.refresh();
       }
     } finally {
-      setPending(false);
+      dispatch({ type: 'pending', pending: false });
     }
   }
 
@@ -89,7 +122,7 @@ export function ScheduleMeetingBotForm({
             variant={visibility === 'team' ? 'default' : 'outline'}
             size="sm"
             onClick={() => {
-              setVisibility('team');
+              dispatch({ type: 'visibility', visibility: 'team' });
             }}
           >
             Team
@@ -99,7 +132,7 @@ export function ScheduleMeetingBotForm({
             variant={visibility === 'private' ? 'default' : 'outline'}
             size="sm"
             onClick={() => {
-              setVisibility('private');
+              dispatch({ type: 'visibility', visibility: 'private' });
             }}
           >
             Private
@@ -109,7 +142,7 @@ export function ScheduleMeetingBotForm({
             variant={visibility === 'specific_users' ? 'default' : 'outline'}
             size="sm"
             onClick={() => {
-              setVisibility('specific_users');
+              dispatch({ type: 'visibility', visibility: 'specific_users' });
             }}
           >
             Specific users
@@ -123,11 +156,10 @@ export function ScheduleMeetingBotForm({
                   type="checkbox"
                   checked={visibilityUserIds.includes(m.id)}
                   onChange={(e) => {
-                    setVisibilityUserIds((prev) =>
-                      e.target.checked
-                        ? [...new Set([...prev, m.id])]
-                        : prev.filter((id) => id !== m.id),
-                    );
+                    const next = e.target.checked
+                      ? [...new Set([...visibilityUserIds, m.id])]
+                      : visibilityUserIds.filter((id) => id !== m.id);
+                    dispatch({ type: 'visibilityUserIds', visibilityUserIds: next });
                   }}
                 />
                 {m.label}
@@ -141,7 +173,7 @@ export function ScheduleMeetingBotForm({
           type="checkbox"
           checked={consent}
           onChange={(e) => {
-            setConsent(e.target.checked);
+            dispatch({ type: 'consent', consent: e.target.checked });
           }}
           className="mt-1"
         />

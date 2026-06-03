@@ -2,7 +2,7 @@ import { users } from '@timeline/db';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
-import { CircleCheckBig, Mail, Video } from 'lucide-react';
+import { ArrowRight, CircleCheckBig, FileText, Mail, Plug, Send, Video } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -23,6 +23,8 @@ export const metadata: Metadata = {
   title: 'Dashboard',
   description: 'Capture events and review the latest timeline activity.',
 };
+
+const FIRST_RUN_GUIDE_TOTAL = 4;
 
 async function signAudio(events: { id: string; contentAudioUrl: string | null }[]) {
   const audioEvents = events.filter((event) => event.contentAudioUrl);
@@ -81,6 +83,10 @@ export default async function HomeDashboardPage() {
     onboardingState.connectionCounts.teamMcpServers;
   const quickCaptureVisibility = webDefault.visibility === 'private' ? 'private' : 'team';
   const events = eventPage.items;
+  const completedSetupCount = onboardingState.steps.filter((step) => step.completed).length;
+  const completedGuideCount = countFirstRunGuideCompleted(onboardingState.steps);
+  const showFirstRunGuide =
+    !onboardingState.dismissed && (events.length === 0 || completedSetupCount < 2);
   const [impactItems, audioUrlMap] = await Promise.all([
     scope.timeline.listImpactItems(events.map((event) => event.id)),
     signAudio(events),
@@ -114,6 +120,14 @@ export default async function HomeDashboardPage() {
             : []),
         ]}
       />
+
+      {showFirstRunGuide ? (
+        <FirstRunGuide
+          completed={completedGuideCount}
+          total={FIRST_RUN_GUIDE_TOTAL}
+          inboundEmail={team?.inboundEmail ?? null}
+        />
+      ) : null}
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.65fr)]">
         <section
@@ -220,6 +234,101 @@ export default async function HomeDashboardPage() {
         />
       </section>
     </div>
+  );
+}
+
+function countFirstRunGuideCompleted(steps: { step: string; completed: boolean }[]): number {
+  const completed = new Set<string>();
+  for (const step of steps) {
+    if (step.completed) completed.add(step.step);
+  }
+  return [
+    completed.has('first_note'),
+    completed.has('email_forwarding'),
+    completed.has('first_document'),
+    completed.has('first_integration') || completed.has('telegram') || completed.has('slack'),
+  ].filter(Boolean).length;
+}
+
+function FirstRunGuide({
+  completed,
+  total,
+  inboundEmail,
+}: {
+  completed: number;
+  total: number;
+  inboundEmail: string | null;
+}) {
+  const steps = [
+    {
+      href: '#capture',
+      label: 'Capture first event',
+      detail: 'Start with one raw note. Timeline will file it into the log.',
+      icon: <Send className="size-4" aria-hidden="true" />,
+      primary: true,
+    },
+    {
+      href: inboundEmail ? '#email-ingest' : '/app/team',
+      label: 'Forward email',
+      detail: inboundEmail ?? 'Open team settings to finish email ingest.',
+      icon: <Mail className="size-4" aria-hidden="true" />,
+    },
+    {
+      href: '/app/documents',
+      label: 'Upload a document',
+      detail: 'Add source material the agent can cite later.',
+      icon: <FileText className="size-4" aria-hidden="true" />,
+    },
+    {
+      href: '/app/team/integrations',
+      label: 'Connect sources',
+      detail: 'Slack, Telegram, MCP servers, and native integrations.',
+      icon: <Plug className="size-4" aria-hidden="true" />,
+    },
+  ];
+
+  return (
+    <section className="border border-border bg-surface">
+      <div className="flex flex-col gap-3 border-b border-border px-4 py-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+            Start here · {completed}/{total} complete
+          </p>
+          <h1 className="mt-1 text-xl font-semibold tracking-tight text-fg">
+            Build the first useful timeline in minutes.
+          </h1>
+        </div>
+        <Button asChild size="sm">
+          <Link href="#capture">
+            <Send aria-hidden="true" className="size-4" />
+            Capture first event
+          </Link>
+        </Button>
+      </div>
+      <div className="grid gap-px bg-border sm:grid-cols-2 xl:grid-cols-4">
+        {steps.map((step) => (
+          <Link
+            key={step.label}
+            href={step.href}
+            className={`group flex min-h-24 flex-col justify-between bg-bg p-3 transition-colors hover:bg-surface-2 ${
+              step.primary ? 'text-fg' : 'text-fg-muted'
+            }`}
+          >
+            <span className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-sm font-medium">
+                {step.icon}
+                {step.label}
+              </span>
+              <ArrowRight
+                aria-hidden="true"
+                className="size-3.5 text-fg-dim transition-transform group-hover:translate-x-0.5 group-hover:text-fg"
+              />
+            </span>
+            <span className="mt-3 text-xs leading-5 text-fg-muted">{step.detail}</span>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }
 
