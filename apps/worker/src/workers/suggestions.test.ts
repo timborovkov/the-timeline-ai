@@ -748,6 +748,34 @@ describe('processSuggestionJobForTests', () => {
     const rows = await db.select().from(agentSuggestions);
     expect(rows).toHaveLength(2);
     expect(rows.map((row) => row.status).sort()).toEqual(['accepted', 'pending']);
+    const correction = rows.find((row) => row.status === 'pending');
+    await db
+      .update(agentSuggestions)
+      .set({ status: 'accepted', resolvedAt: new Date(), resolvedByUserId: OWNER_ID })
+      .where(eq(agentSuggestions.id, correction?.id ?? '00000000-0000-0000-0000-000000000000'));
+    await db
+      .update(conversationReviews)
+      .set({
+        status: 'pending',
+        reviewedThroughRawEventId: null,
+        quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+      })
+      .where(eq(conversationReviews.id, reviewId));
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const replayedRows = await db.select().from(agentSuggestions);
+    expect(replayedRows).toHaveLength(2);
+    expect(replayedRows.map((row) => row.status)).toEqual(['accepted', 'accepted']);
+    const [review] = await db
+      .select()
+      .from(conversationReviews)
+      .where(eq(conversationReviews.id, reviewId));
+    expect(review?.metadata).toMatchObject({ review_outcome: 'no_action' });
   });
 
   it('stores model-backed object update suggestions with existing context in the prompt', async () => {

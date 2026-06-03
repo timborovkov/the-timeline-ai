@@ -437,7 +437,7 @@ async function runSuggestionExtraction(
       fallbackText: text,
       window: args.conversation?.window ?? null,
     });
-    await scope.suggestions.createOrMergeSuggestionBundle({
+    const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
       title: bundle.title,
       summary: bundle.summary ?? null,
@@ -480,7 +480,9 @@ async function runSuggestionExtraction(
         proposedPayload: item.proposedPayload,
       })),
     });
-    proposalsCreated += 1;
+    if (suggestion.status === 'pending' || suggestion.status === 'partially_resolved') {
+      proposalsCreated += 1;
+    }
   }
 
   await stampSuggestionMetadata(
