@@ -414,6 +414,51 @@ describe('processSuggestionJobForTests', () => {
     );
   });
 
+  it('does not move a review anchor backward after the current anchor is deleted', async () => {
+    const olderId = '10000000-0000-0000-0000-0000000000f9';
+    const newerId = '10000000-0000-0000-0000-0000000000fa';
+    const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
+    await seedRawEvent(db as never, {
+      id: newerId,
+      source: 'telegram',
+      text: 'Newer anchor: wait before sending the deck.',
+      occurredAt: new Date('2026-05-27T10:05:00.000Z'),
+      sourceMetadata: { tg_chat_id: 'deleted-retry', tg_message_id: '2' },
+    });
+    await seedRawEvent(db as never, {
+      id: olderId,
+      source: 'telegram',
+      text: 'Older retry: send the deck.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      sourceMetadata: { tg_chat_id: 'deleted-retry', tg_message_id: '1' },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: newerId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID, enqueueSuggestionJob },
+    );
+    await db.delete(rawEvents).where(eq(rawEvents.id, newerId));
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: olderId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID, enqueueSuggestionJob },
+    );
+
+    const [review] = await db.select().from(conversationReviews);
+    expect(review?.lastRawEventId).toBeNull();
+    expect(review?.metadata).toMatchObject({
+      last_anchor_raw_event_id: newerId,
+      last_anchor_occurred_at: '2026-05-27T10:05:00.000Z',
+    });
+    expect(enqueueSuggestionJob).toHaveBeenCalledTimes(2);
+    expect(enqueueSuggestionJob.mock.calls[1]?.[0]).toMatchObject({
+      scope: 'conversation_review',
+      conversationReviewId: review?.id,
+      teamId: TEAM_ID,
+    });
+  });
+
   it('supersedes a pending Slack channel review when a reply starts a thread review', async () => {
     const rootId = '10000000-0000-0000-0000-0000000000f3';
     const replyId = '10000000-0000-0000-0000-0000000000f4';
@@ -538,6 +583,39 @@ describe('processSuggestionJobForTests', () => {
     expect(review?.status).toBe('completed');
     expect(review?.lastRawEventId).toBeNull();
     expect(review?.metadata).toMatchObject({ review_outcome: 'anchor_missing' });
+  });
+
+  it('marks a conversation review complete when the anchor no longer has a conversation identity', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000fb';
+    const reviewId = '20000000-0000-0000-0000-0000000000fb';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'telegram',
+      text: 'Send the deck.',
+      sourceMetadata: {},
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey: `telegram:${TEAM_ID}:chat:missing`,
+      lastRawEventId: rawEventId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(chat).not.toHaveBeenCalled();
+    const [review] = await db
+      .select()
+      .from(conversationReviews)
+      .where(eq(conversationReviews.id, reviewId));
+    expect(review?.status).toBe('completed');
+    expect(review?.reviewedThroughRawEventId).toBe(rawEventId);
+    expect(review?.metadata).toMatchObject({ review_outcome: 'identity_missing' });
   });
 
   it('includes the Slack thread root and follow-up in the thread evidence window', async () => {

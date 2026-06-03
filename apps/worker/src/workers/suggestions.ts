@@ -515,6 +515,11 @@ async function scheduleConversationReview(
   io: SuggestionWorkerIO,
 ): Promise<void> {
   const quietUntil = conversationReview.quietUntilFor();
+  const anchorMetadata = {
+    kind: identity.kind,
+    last_anchor_raw_event_id: row.id,
+    last_anchor_occurred_at: row.occurredAt.toISOString(),
+  };
   const [review] = await deps.db
     .insert(conversationReviews)
     .values({
@@ -524,7 +529,7 @@ async function scheduleConversationReview(
       status: 'pending',
       lastRawEventId: row.id,
       quietUntil,
-      metadata: { kind: identity.kind },
+      metadata: anchorMetadata,
     })
     .onConflictDoUpdate({
       target: [conversationReviews.teamId, conversationReviews.conversationKey],
@@ -532,13 +537,21 @@ async function scheduleConversationReview(
         status: 'pending',
         lastRawEventId: row.id,
         quietUntil,
-        metadata: sql`${conversationReviews.metadata} || ${JSON.stringify({ kind: identity.kind })}::jsonb`,
+        metadata: sql`${conversationReviews.metadata} || ${JSON.stringify(anchorMetadata)}::jsonb`,
         updatedAt: new Date(),
       },
-      where: sql`${conversationReviews.lastRawEventId} IS NULL OR (
-          SELECT (${rawEvents.occurredAt}, ${rawEvents.id})
-          FROM ${rawEvents}
-          WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}
+      where: sql`COALESCE(
+          (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
+          (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
+        ) IS NULL OR (
+          COALESCE(
+            (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
+            (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
+          ),
+          COALESCE(
+            ${conversationReviews.lastRawEventId},
+            (${conversationReviews.metadata} ->> 'last_anchor_raw_event_id')::uuid
+          )
         ) < (${row.occurredAt.toISOString()}::timestamptz, ${row.id}::uuid)`,
     })
     .returning({
@@ -630,7 +643,10 @@ async function processConversationReviewJob(
   if (review.reviewedThroughRawEventId === last.id) return;
 
   const identity = conversationReview.conversationIdentityForRawEvent(last);
-  if (!identity) return;
+  if (!identity) {
+    await markReviewComplete(deps.db, review.id, last, 'identity_missing');
+    return;
+  }
   const window = await conversationReview.buildConversationEvidenceWindow(deps.db, {
     teamId: review.teamId,
     identity,
