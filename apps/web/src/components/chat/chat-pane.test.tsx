@@ -76,6 +76,8 @@ describe('ChatPane', () => {
     expect(html).toContain('Proposal');
     expect(html).toContain('What is due?');
     expect(html).toContain('Send proposal');
+    expect(html).toContain('Agent');
+    expect(html).not.toContain('>Acme</span>');
   });
 
   it('renders assistant markdown text parts with citation chips', () => {

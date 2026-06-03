@@ -232,7 +232,7 @@ function ChatPaneContent({
                   className={cn('flex flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}
                 >
                   <span className="px-1 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-                    {isUser ? 'You' : teamName}
+                    {isUser ? 'You' : 'Agent'}
                   </span>
                   <div
                     className={cn(
