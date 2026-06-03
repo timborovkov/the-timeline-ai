@@ -116,6 +116,14 @@ services:
     build:
       context: .
       dockerfile: docker/web.Dockerfile
+      args:
+        SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}
+        SENTRY_ORG: ${SENTRY_ORG:-}
+        SENTRY_PROJECT: ${SENTRY_PROJECT:-}
+        SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+        NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE: ${NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE:-0}
+        NEXT_PUBLIC_SENTRY_PROFILES_SAMPLE_RATE: ${NEXT_PUBLIC_SENTRY_PROFILES_SAMPLE_RATE:-0}
     restart: unless-stopped
     ports:
       - '3000:3000'
@@ -136,6 +144,14 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET}
       POSTMARK_WEBHOOK_SECRET: ${POSTMARK_WEBHOOK_SECRET}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+      NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE: ${NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE:-0}
+      NEXT_PUBLIC_SENTRY_PROFILES_SAMPLE_RATE: ${NEXT_PUBLIC_SENTRY_PROFILES_SAMPLE_RATE:-0}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
+      SENTRY_PROFILES_SAMPLE_RATE: ${SENTRY_PROFILES_SAMPLE_RATE:-0}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -151,6 +167,11 @@ services:
     build:
       context: .
       dockerfile: docker/worker.Dockerfile
+      args:
+        SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}
+        SENTRY_ORG: ${SENTRY_ORG:-}
+        SENTRY_PROJECT: ${SENTRY_PROJECT:-}
+        SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -164,6 +185,11 @@ services:
       S3_SECRET_ACCESS_KEY: timeline_dev_secret
       S3_FORCE_PATH_STYLE: 'true'
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
+      SENTRY_PROFILES_SAMPLE_RATE: ${SENTRY_PROFILES_SAMPLE_RATE:-0}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     depends_on:
       postgres:
         condition: service_healthy

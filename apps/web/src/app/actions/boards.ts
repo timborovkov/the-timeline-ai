@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 
 const objectTypeSchema = z.enum(objects.OBJECT_TYPES);
@@ -34,39 +35,43 @@ const saveBoardSchema = z.object({
 });
 
 export async function saveBoardAction(input: unknown): Promise<ActionState> {
-  const parsed = saveBoardSchema.safeParse(input);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
-  const r = await resolveScope();
-  if (!r.ok) return { error: r.error };
-  try {
-    const row = await r.scope.objects.saveBoardView({
-      id: parsed.data.id,
-      name: parsed.data.name,
-      kind: parsed.data.kind,
-      filter: parsed.data.filter,
-      groupBy: parsed.data.groupBy ?? null,
-      isShared: parsed.data.isShared,
-    });
-    revalidatePath('/app/boards');
-    if (parsed.data.id) revalidatePath(`/app/boards/${parsed.data.id}`);
-    return { ok: true, id: row.id };
-  } catch (err) {
-    reportCaughtError(err, { surface: 'server_action', operation: 'save_board' });
-    return { error: err instanceof Error ? err.message : 'Failed to save board' };
-  }
+  return runSentryServerAction('save_board', async () => {
+    const parsed = saveBoardSchema.safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const row = await r.scope.objects.saveBoardView({
+        id: parsed.data.id,
+        name: parsed.data.name,
+        kind: parsed.data.kind,
+        filter: parsed.data.filter,
+        groupBy: parsed.data.groupBy ?? null,
+        isShared: parsed.data.isShared,
+      });
+      revalidatePath('/app/boards');
+      if (parsed.data.id) revalidatePath(`/app/boards/${parsed.data.id}`);
+      return { ok: true, id: row.id };
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'save_board' });
+      return { error: err instanceof Error ? err.message : 'Failed to save board' };
+    }
+  });
 }
 
 export async function deleteBoardAction(input: unknown): Promise<ActionState> {
-  const parsed = z.object({ id: uuidSchema }).safeParse(input);
-  if (!parsed.success) return { error: 'Invalid id' };
-  const r = await resolveScope();
-  if (!r.ok) return { error: r.error };
-  try {
-    const ok = await r.scope.objects.deleteBoardView(parsed.data.id);
-    revalidatePath('/app/boards');
-    return ok ? { ok: true } : { error: 'Board not found' };
-  } catch (err) {
-    reportCaughtError(err, { surface: 'server_action', operation: 'delete_board' });
-    return { error: err instanceof Error ? err.message : 'Failed to delete board' };
-  }
+  return runSentryServerAction('delete_board', async () => {
+    const parsed = z.object({ id: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const ok = await r.scope.objects.deleteBoardView(parsed.data.id);
+      revalidatePath('/app/boards');
+      return ok ? { ok: true } : { error: 'Board not found' };
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'delete_board' });
+      return { error: err instanceof Error ? err.message : 'Failed to delete board' };
+    }
+  });
 }

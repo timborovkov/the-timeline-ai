@@ -10,6 +10,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 
 const log = childLogger('web:actions:meetings');
@@ -57,155 +58,159 @@ async function withScopeOrError() {
 export async function scheduleMeetingBotAction(
   input: z.input<typeof scheduleSchema>,
 ): Promise<Result> {
-  if (!meetingBots.isMeetingBotConfigured()) {
-    return { ok: false, error: 'Meeting notetakers are not configured for this environment.' };
-  }
-  const transcriptWebhookUrl = meetingBots.resolveTranscriptWebhookUrl();
-  const parsed = scheduleSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
-  }
-  const platform = detectPlatform(parsed.data.meetingUrl);
-  if (!platform) {
-    return { ok: false, error: 'Unsupported meeting URL — use Google Meet, Teams, or Zoom.' };
-  }
+  return runSentryServerAction('schedule_meeting_bot', async () => {
+    if (!meetingBots.isMeetingBotConfigured()) {
+      return { ok: false, error: 'Meeting notetakers are not configured for this environment.' };
+    }
+    const transcriptWebhookUrl = meetingBots.resolveTranscriptWebhookUrl();
+    const parsed = scheduleSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    }
+    const platform = detectPlatform(parsed.data.meetingUrl);
+    if (!platform) {
+      return { ok: false, error: 'Unsupported meeting URL — use Google Meet, Teams, or Zoom.' };
+    }
 
-  const got = await withScopeOrError();
-  if ('error' in got) return { ok: false, error: got.error };
-  const { scope, teamId, userId } = got;
-  const rl = await rateLimit.checkRateLimit({
-    key: rateLimit.rateLimitKey('meeting_scheduling', 'user', userId),
-    ...rateLimit.RATE_LIMITS.meetingScheduling,
-  });
-  if (!rl.ok) {
-    return {
-      ok: false,
-      error: `Too many meeting scheduling attempts. Try again in ${Math.ceil(
-        rl.retryAfterMs / 1000,
-      )} seconds.`,
-    };
-  }
-
-  // Consent gate. Defaults to required; admins can toggle the team
-  // setting if they have legal cover.
-  const settings = await scope.meetings.getMeetingSettings();
-  if (settings.requireHostConsent && !parsed.data.consentGiven) {
-    return {
-      ok: false,
-      error:
-        'You must confirm that meeting participants will be informed the notetaker is recording before scheduling.',
-    };
-  }
-
-  // Per-team monthly minute cap. 0 means disabled; null means unlimited.
-  const cap = settings.meetingMinutesCap;
-  if (cap !== null && cap === 0 && !settings.meetingMinutesAdminOverride) {
-    return { ok: false, error: 'Meeting notetakers are disabled for this team.' };
-  }
-  if (cap !== null && cap > 0 && !settings.meetingMinutesAdminOverride) {
-    const used = await scope.meetings.getCurrentMonthMinutes();
-    if (used >= cap) {
+    const got = await withScopeOrError();
+    if ('error' in got) return { ok: false, error: got.error };
+    const { scope, teamId, userId } = got;
+    const rl = await rateLimit.checkRateLimit({
+      key: rateLimit.rateLimitKey('meeting_scheduling', 'user', userId),
+      ...rateLimit.RATE_LIMITS.meetingScheduling,
+    });
+    if (!rl.ok) {
       return {
         ok: false,
-        error: `Monthly meeting cap reached (${String(used)} / ${String(cap)} minutes). Ask an admin to raise the cap.`,
+        error: `Too many meeting scheduling attempts. Try again in ${Math.ceil(
+          rl.retryAfterMs / 1000,
+        )} seconds.`,
       };
     }
-  }
 
-  // 1. Create meeting row in `pending` status so we have an id to round
-  //    through provider metadata.
-  const meeting = await scope.meetings.createMeeting({
-    platform,
-    meetingUrl: parsed.data.meetingUrl,
-    title: parsed.data.title ?? null,
-    defaultVisibility: parsed.data.visibility,
-    visibilityUserIds: parsed.data.visibilityUserIds ?? null,
-    metadata: {
-      silent: true,
-      consent_given_at: parsed.data.consentGiven ? new Date().toISOString() : null,
-    },
-  });
+    // Consent gate. Defaults to required; admins can toggle the team
+    // setting if they have legal cover.
+    const settings = await scope.meetings.getMeetingSettings();
+    if (settings.requireHostConsent && !parsed.data.consentGiven) {
+      return {
+        ok: false,
+        error:
+          'You must confirm that meeting participants will be informed the notetaker is recording before scheduling.',
+      };
+    }
 
-  // 2. Call the provider. If it throws we mark the meeting failed and
-  //    bubble the error.
-  try {
-    const provider = meetingBots.getMeetingBotProvider('recall');
-    const join = await provider.joinMeeting({
-      meetingId: meeting.id,
-      teamId,
-      meetingUrl: parsed.data.meetingUrl,
+    // Per-team monthly minute cap. 0 means disabled; null means unlimited.
+    const cap = settings.meetingMinutesCap;
+    if (cap !== null && cap === 0 && !settings.meetingMinutesAdminOverride) {
+      return { ok: false, error: 'Meeting notetakers are disabled for this team.' };
+    }
+    if (cap !== null && cap > 0 && !settings.meetingMinutesAdminOverride) {
+      const used = await scope.meetings.getCurrentMonthMinutes();
+      if (used >= cap) {
+        return {
+          ok: false,
+          error: `Monthly meeting cap reached (${String(used)} / ${String(cap)} minutes). Ask an admin to raise the cap.`,
+        };
+      }
+    }
+
+    // 1. Create meeting row in `pending` status so we have an id to round
+    //    through provider metadata.
+    const meeting = await scope.meetings.createMeeting({
       platform,
-      transcriptWebhookUrl,
-    });
-    await scope.meetings.updateMeetingStatus(meeting.id, 'joining', {
-      providerBotId: join.botId,
-      metadata: { provider_join_result: join.raw ?? {} },
-    });
-  } catch (err) {
-    log.error({ err, meetingId: meeting.id }, 'recall_join_failed');
-    reportCaughtError(err, { surface: 'server_action', operation: 'recall_join_meeting' });
-    await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
+      meetingUrl: parsed.data.meetingUrl,
+      title: parsed.data.title ?? null,
+      defaultVisibility: parsed.data.visibility,
+      visibilityUserIds: parsed.data.visibilityUserIds ?? null,
       metadata: {
-        join_failed_at: new Date().toISOString(),
-        join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
+        silent: true,
+        consent_given_at: parsed.data.consentGiven ? new Date().toISOString() : null,
       },
     });
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'Failed to invite notetaker',
-    };
-  }
 
-  trackProductEventBestEffort(userId, 'meeting_bot_scheduled', {
-    teamId,
-    userId,
-    meetingId: meeting.id,
-    platform,
-    visibility: parsed.data.visibility,
+    // 2. Call the provider. If it throws we mark the meeting failed and
+    //    bubble the error.
+    try {
+      const provider = meetingBots.getMeetingBotProvider('recall');
+      const join = await provider.joinMeeting({
+        meetingId: meeting.id,
+        teamId,
+        meetingUrl: parsed.data.meetingUrl,
+        platform,
+        transcriptWebhookUrl,
+      });
+      await scope.meetings.updateMeetingStatus(meeting.id, 'joining', {
+        providerBotId: join.botId,
+        metadata: { provider_join_result: join.raw ?? {} },
+      });
+    } catch (err) {
+      log.error({ err, meetingId: meeting.id }, 'recall_join_failed');
+      reportCaughtError(err, { surface: 'server_action', operation: 'recall_join_meeting' });
+      await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
+        metadata: {
+          join_failed_at: new Date().toISOString(),
+          join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
+        },
+      });
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Failed to invite notetaker',
+      };
+    }
+
+    trackProductEventBestEffort(userId, 'meeting_bot_scheduled', {
+      teamId,
+      userId,
+      meetingId: meeting.id,
+      platform,
+      visibility: parsed.data.visibility,
+    });
+
+    revalidatePath('/app/meetings');
+    return { ok: true, meetingId: meeting.id };
   });
-
-  revalidatePath('/app/meetings');
-  return { ok: true, meetingId: meeting.id };
 }
 
 export async function cancelMeetingBotAction(meetingId: string): Promise<Result> {
-  if (!UUID_RE.test(meetingId)) return { ok: false, error: 'Invalid meeting id' };
-  const got = await withScopeOrError();
-  if ('error' in got) return { ok: false, error: got.error };
-  const { scope } = got;
+  return runSentryServerAction('cancel_meeting_bot', async () => {
+    if (!UUID_RE.test(meetingId)) return { ok: false, error: 'Invalid meeting id' };
+    const got = await withScopeOrError();
+    if ('error' in got) return { ok: false, error: got.error };
+    const { scope } = got;
 
-  const meeting = await scope.meetings.getMeeting(meetingId);
-  if (!meeting) return { ok: false, error: 'Meeting not found' };
+    const meeting = await scope.meetings.getMeeting(meetingId);
+    if (!meeting) return { ok: false, error: 'Meeting not found' };
 
-  // Only meetings that have not yet finished can be cancelled. `processing`
-  // is excluded because the finalize worker is mid-flight — cancelling
-  // there would race the worker and stamp `failed` on top of `completed`
-  // a moment later. `completed` and `failed` are terminal.
-  const cancellable: (typeof meeting.status)[] = ['pending', 'joining', 'active'];
-  if (!cancellable.includes(meeting.status)) {
-    return {
-      ok: false,
-      error: `Cannot cancel a meeting in status '${meeting.status}'.`,
-    };
-  }
-
-  if (meeting.providerBotId) {
-    try {
-      const provider = meetingBots.getMeetingBotProvider(meeting.provider);
-      await provider.leaveMeeting(meeting.providerBotId);
-    } catch (err) {
-      // Log but continue — we still want the local row marked failed so
-      // the user isn't blocked on a provider-side hiccup.
-      log.warn({ err, meetingId }, 'recall_leave_failed');
-      reportCaughtError(err, { surface: 'server_action', operation: 'recall_leave_meeting' });
+    // Only meetings that have not yet finished can be cancelled. `processing`
+    // is excluded because the finalize worker is mid-flight — cancelling
+    // there would race the worker and stamp `failed` on top of `completed`
+    // a moment later. `completed` and `failed` are terminal.
+    const cancellable: (typeof meeting.status)[] = ['pending', 'joining', 'active'];
+    if (!cancellable.includes(meeting.status)) {
+      return {
+        ok: false,
+        error: `Cannot cancel a meeting in status '${meeting.status}'.`,
+      };
     }
-  }
-  await scope.meetings.updateMeetingStatus(meetingId, 'failed', {
-    metadata: { cancelled_at: new Date().toISOString() },
+
+    if (meeting.providerBotId) {
+      try {
+        const provider = meetingBots.getMeetingBotProvider(meeting.provider);
+        await provider.leaveMeeting(meeting.providerBotId);
+      } catch (err) {
+        // Log but continue — we still want the local row marked failed so
+        // the user isn't blocked on a provider-side hiccup.
+        log.warn({ err, meetingId }, 'recall_leave_failed');
+        reportCaughtError(err, { surface: 'server_action', operation: 'recall_leave_meeting' });
+      }
+    }
+    await scope.meetings.updateMeetingStatus(meetingId, 'failed', {
+      metadata: { cancelled_at: new Date().toISOString() },
+    });
+    revalidatePath('/app/meetings');
+    revalidatePath(`/app/meetings/${meetingId}`);
+    return { ok: true, meetingId };
   });
-  revalidatePath('/app/meetings');
-  revalidatePath(`/app/meetings/${meetingId}`);
-  return { ok: true, meetingId };
 }
 
 // Note: meeting settings management (cap, consent, admin override) is

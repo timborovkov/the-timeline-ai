@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { runSentryServerAction } from '@/lib/sentry-action';
 
 const stepSchema = z.enum(onboarding.ONBOARDING_STEPS);
 const redirectSchema = z
@@ -25,28 +26,34 @@ async function getOnboardingScope() {
 }
 
 export async function dismissOnboardingChecklistAction(): Promise<void> {
-  const scope = await getOnboardingScope();
-  if (!scope) return;
-  await scope.dismissChecklist();
-  revalidatePath('/app');
+  return runSentryServerAction('dismiss_onboarding_checklist', async () => {
+    const scope = await getOnboardingScope();
+    if (!scope) return;
+    await scope.dismissChecklist();
+    revalidatePath('/app');
+  });
 }
 
 export async function reopenOnboardingChecklistAction(): Promise<void> {
-  const scope = await getOnboardingScope();
-  if (!scope) redirect('/sign-in');
-  await scope.reopenChecklist();
-  revalidatePath('/app');
-  redirect('/app');
+  return runSentryServerAction('reopen_onboarding_checklist', async () => {
+    const scope = await getOnboardingScope();
+    if (!scope) redirect('/sign-in');
+    await scope.reopenChecklist();
+    revalidatePath('/app');
+    redirect('/app');
+  });
 }
 
 export async function openOnboardingStepAction(formData: FormData): Promise<void> {
-  const scope = await getOnboardingScope();
-  if (!scope) redirect('/sign-in');
-  const step = stepSchema.safeParse(formData.get('step'));
-  const href = redirectSchema.safeParse(formData.get('href'));
-  if (step.success) {
-    await scope.markStepComplete(step.data);
-    revalidatePath('/app');
-  }
-  redirect(href.success ? href.data : '/app');
+  return runSentryServerAction('open_onboarding_step', async () => {
+    const scope = await getOnboardingScope();
+    if (!scope) redirect('/sign-in');
+    const step = stepSchema.safeParse(formData.get('step'));
+    const href = redirectSchema.safeParse(formData.get('href'));
+    if (step.success) {
+      await scope.markStepComplete(step.data);
+      revalidatePath('/app');
+    }
+    redirect(href.success ? href.data : '/app');
+  });
 }
