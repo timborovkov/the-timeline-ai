@@ -318,7 +318,10 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
 
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'job failed');
-    captureWorkerJobFailure(err, job);
+    captureWorkerJobFailure(err, job, {
+      rawEventId: job?.data.rawEventId,
+      teamId: job?.data.teamId,
+    });
     if (!job) return;
     const maxAttempts = job.opts.attempts ?? 1;
     const unrecoverable = err instanceof UnrecoverableError;

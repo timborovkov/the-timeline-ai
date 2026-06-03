@@ -115,7 +115,12 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
 
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'job failed');
-    captureWorkerJobFailure(err, job);
+    captureWorkerJobFailure(err, job, {
+      scope: job ? embedding.resolveEmbeddingScope(job.data) : undefined,
+      rawEventId: job?.data && 'rawEventId' in job.data ? job.data.rawEventId : undefined,
+      factId: job?.data && 'factId' in job.data ? job.data.factId : undefined,
+      teamId: job?.data.teamId,
+    });
     if (!job) return;
     const maxAttempts = job.opts.attempts ?? 1;
     const unrecoverable = err instanceof UnrecoverableError;

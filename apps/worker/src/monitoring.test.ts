@@ -114,35 +114,44 @@ describe('worker Sentry monitoring', () => {
     expect(event?.request?.url).toBe('https://app.timeline.test/accept-invite/[redacted]');
   });
 
-  it('captures retrying and terminal worker job failures', async () => {
+  it('captures retrying and terminal worker job failures with artifact tags', async () => {
     process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
     const monitoring = await import('#src/monitoring.js');
     const err = new Error('job failed');
 
-    monitoring.captureWorkerJobFailure(err, {
-      id: 'job-1',
-      name: 'transcribe',
-      queueName: 'transcribe',
-      attemptsMade: 1,
-      opts: { attempts: 3 },
-    });
+    monitoring.captureWorkerJobFailure(
+      err,
+      {
+        id: 'job-1',
+        name: 'transcribe',
+        queueName: 'transcribe',
+        attemptsMade: 1,
+        opts: { attempts: 3 },
+      },
+      { rawEventId: 'raw-1', teamId: 'team-1' },
+    );
     expect(captureException).toHaveBeenCalledOnce();
     expect(setScopeTag).toHaveBeenCalledWith('terminal', 'false');
 
-    monitoring.captureWorkerJobFailure(err, {
-      id: 'job-1',
-      name: 'transcribe',
-      queueName: 'transcribe',
-      attemptsMade: 3,
-      opts: { attempts: 3 },
-    });
+    monitoring.captureWorkerJobFailure(
+      err,
+      {
+        id: 'job-1',
+        name: 'transcribe',
+        queueName: 'transcribe',
+        attemptsMade: 3,
+        opts: { attempts: 3 },
+      },
+      { rawEventId: 'raw-1', teamId: 'team-1' },
+    );
 
     expect(captureException).toHaveBeenCalledTimes(2);
     expect(setScopeTag).toHaveBeenCalledWith('component', 'worker_job');
     expect(setScopeTag).toHaveBeenCalledWith('queueName', 'transcribe');
     expect(setScopeTag).toHaveBeenCalledWith('attemptsMade', '3');
     expect(setScopeTag).toHaveBeenCalledWith('terminal', 'true');
-    expect(setScopeTag).not.toHaveBeenCalledWith('rawEventId', expect.any(String));
+    expect(setScopeTag).toHaveBeenCalledWith('rawEventId', 'raw-1');
+    expect(setScopeTag).toHaveBeenCalledWith('teamId', 'team-1');
   });
 
   it('captures unrecoverable worker job failures immediately', async () => {

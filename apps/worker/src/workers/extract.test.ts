@@ -4,11 +4,13 @@ import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import { facts, factEntities, rawEvents, type Db } from '@timeline/db';
+import { type queue } from '@timeline/shared';
 import { makeExtractionModelVersion } from '@timeline/shared/extraction-model-version';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { processEmbedJobForTests } from '#src/workers/embed.js';
 import { processExtractJobForTests } from '#src/workers/extract.js';
 
 /**
@@ -170,6 +172,98 @@ describe('processExtractJobForTests', () => {
 
     const factRows = await db.select().from(facts).where(eq(facts.rawEventId, rawEventId));
     expect(factRows[0]?.statement).toBe('The AuditAI team has a meeting scheduled for Monday.');
+  });
+
+  it('carries a retried legacy extraction through embed jobs into Qdrant upserts', async () => {
+    const rawEventId = '35353535-3535-4535-8535-353535353535';
+    await seedEvent(db, {
+      id: rawEventId,
+      text: 'The AuditAI team has a meeting scheduled for Monday.',
+    });
+    const embedJobs: { rawEventId: string; teamId: string; factId?: string }[] = [];
+    const enqueueEmbedJob = vi.fn((job: queue.EmbedJobData): Promise<void> => {
+      if (!('rawEventId' in job)) throw new Error(`unexpected embed job scope: ${job.scope}`);
+      embedJobs.push({
+        rawEventId: job.rawEventId,
+        teamId: job.teamId,
+        ...('factId' in job && job.factId ? { factId: job.factId } : {}),
+      });
+      return Promise.resolve();
+    });
+    const testIO = io({
+      chatStructured: modelWithFacts([
+        {
+          text: 'The AuditAI team has a meeting scheduled for Monday.',
+          confidence: 0.7,
+          entities: [
+            { name: 'AuditAI', type: 'project', role: 'subject' },
+            { name: 'Monday meeting', type: 'topic', role: 'topic' },
+          ],
+        },
+      ]),
+      enqueueEmbedJob,
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({ rawEventId, factsInserted: 1, modelVersion: MODEL_VERSION });
+
+    const factRows = await db.select().from(facts).where(eq(facts.rawEventId, rawEventId));
+    const factId = factRows[0]?.id;
+    expect(factId).toBeTypeOf('string');
+    expect(embedJobs).toEqual([
+      { rawEventId, teamId: TEAM_ID },
+      { rawEventId, teamId: TEAM_ID, factId },
+    ]);
+
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    for (const job of embedJobs) {
+      const embedJob = job.factId
+        ? {
+            scope: 'fact' as const,
+            rawEventId: job.rawEventId,
+            teamId: job.teamId,
+            factId: job.factId,
+          }
+        : { scope: 'raw_event' as const, rawEventId: job.rawEventId, teamId: job.teamId };
+      await processEmbedJobForTests({ db }, embedJob, {
+        getEnv: () =>
+          ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+        embed: vi.fn().mockResolvedValue({ vector: [0.1, 0.2, 0.3, 0.4], model: 'test-embed' }),
+        getQdrantClient: vi.fn(() => ({ upsertVector }) as never),
+      });
+    }
+
+    expect(upsertVector).toHaveBeenCalledTimes(2);
+    expect(upsertVector).toHaveBeenCalledWith(
+      expect.any(String),
+      [0.1, 0.2, 0.3, 0.4],
+      expect.objectContaining({
+        team_id: TEAM_ID,
+        event_id: rawEventId,
+        source_kind: 'raw_event',
+      }),
+    );
+    expect(upsertVector).toHaveBeenCalledWith(
+      expect.any(String),
+      [0.1, 0.2, 0.3, 0.4],
+      expect.objectContaining({
+        team_id: TEAM_ID,
+        event_id: rawEventId,
+        fact_id: factId,
+        source_kind: 'fact',
+      }),
+    );
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, rawEventId));
+    expect(row?.sourceMetadata).toMatchObject({
+      extraction_model_version: MODEL_VERSION,
+      embedding_model: 'test-embed',
+    });
+    expect(row?.sourceMetadata).toHaveProperty('extracted_at');
+    expect(row?.sourceMetadata).toHaveProperty('embedded_at');
   });
 
   it('stamps zero-fact extraction and skips idempotent reruns without calling the model again', async () => {
