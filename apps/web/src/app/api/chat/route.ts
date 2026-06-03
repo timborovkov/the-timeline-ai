@@ -87,6 +87,12 @@ function messageText(message: UIMessage | null): string {
     .trim();
 }
 
+function firstUserMessageWithText(messages: UIMessage[]): UIMessage | null {
+  return (
+    messages.find((message) => message.role === 'user' && messageText(message).length > 0) ?? null
+  );
+}
+
 function fallbackChatTitle(question: string): string {
   const compact = question
     .replace(/\s+/g, ' ')
@@ -97,7 +103,8 @@ function fallbackChatTitle(question: string): string {
   const candidate = withoutPunctuation || compact;
   if (candidate.length <= CHAT_TITLE_MAX_LENGTH) return candidate;
   const sliced = candidate.slice(0, CHAT_TITLE_MAX_LENGTH + 1);
-  const atWord = sliced.slice(0, Math.max(1, sliced.lastIndexOf(' '))).trim();
+  const wordBoundary = sliced.lastIndexOf(' ');
+  const atWord = wordBoundary > 0 ? sliced.slice(0, wordBoundary).trim() : '';
   return (atWord || candidate.slice(0, CHAT_TITLE_MAX_LENGTH)).trim();
 }
 
@@ -108,18 +115,6 @@ function normalizeChatTitle(title: string, question: string): string {
     .replace(/[?.!,;:]+$/g, '')
     .trim();
   return fallbackChatTitle(compact || question);
-}
-
-function dedupeChatTitle(title: string, existingTitles: string[]): string {
-  const seen = new Set(existingTitles.map((value) => value.toLowerCase()));
-  if (!seen.has(title.toLowerCase())) return title;
-  for (let n = 2; n < 100; n += 1) {
-    const suffix = ` ${n}`;
-    const base = title.slice(0, CHAT_TITLE_MAX_LENGTH - suffix.length).trim();
-    const candidate = `${base}${suffix}`;
-    if (!seen.has(candidate.toLowerCase())) return candidate;
-  }
-  return `${title.slice(0, CHAT_TITLE_MAX_LENGTH - 4).trim()} ${Date.now().toString().slice(-3)}`;
 }
 
 async function generateChatTitle(input: {
@@ -141,11 +136,7 @@ async function generateChatTitle(input: {
       reportCaughtError(err, { surface: 'background', operation: 'chat_title_generate' });
       return fallback;
     });
-  const existingSessions = await input.scope.objects.listChatSessions({ limit: 200 });
-  return dedupeChatTitle(
-    generated,
-    existingSessions.map((session) => session.title).filter((title): title is string => !!title),
-  );
+  return generated;
 }
 
 async function titleChatSession(input: {
@@ -157,14 +148,11 @@ async function titleChatSession(input: {
   const question = messageText(input.titleSourceMessage);
   if (!question) return;
   const title = deterministicChatEnabled()
-    ? dedupeChatTitle(
-        fallbackChatTitle(question),
-        (await input.scope.objects.listChatSessions({ limit: 200 }))
-          .map((session) => session.title)
-          .filter((existing): existing is string => !!existing),
-      )
+    ? fallbackChatTitle(question)
     : await generateChatTitle({ scope: input.scope, question });
-  await input.scope.objects.setChatSessionTitle(input.sessionId, title, { touchUpdatedAt: false });
+  await input.scope.objects.setUniqueChatSessionTitle(input.sessionId, title, {
+    touchUpdatedAt: false,
+  });
 }
 
 function chooseDeterministicEvent(
@@ -587,7 +575,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, error: 'invalid_messages' }, { status: 400 });
   }
   const uiMessages = validation.data;
-  const firstUserMessage = uiMessages.find((m) => m.role === 'user') ?? null;
+  const titleSourceMessage = firstUserMessageWithText(uiMessages);
   const latestUserMessage = [...uiMessages].reverse().find((m) => m.role === 'user') ?? null;
 
   if (deterministicChatEnabled()) {
@@ -595,7 +583,7 @@ export async function POST(req: Request): Promise<Response> {
       scope,
       sessionId,
       latestUserMessage,
-      titleSourceMessage: firstUserMessage,
+      titleSourceMessage,
       teamId: active.teamId,
       userId: session.user.id,
       shouldTitleSession,
@@ -712,7 +700,7 @@ export async function POST(req: Request): Promise<Response> {
         }
         if (!shouldTitleSession) return;
         try {
-          await titleChatSession({ scope, sessionId, titleSourceMessage: firstUserMessage });
+          await titleChatSession({ scope, sessionId, titleSourceMessage });
         } catch (err) {
           log.warn(
             { err, sessionId, teamId: active.teamId, userId: session.user.id },

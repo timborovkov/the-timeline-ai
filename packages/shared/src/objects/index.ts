@@ -1955,6 +1955,28 @@ export interface ChatMessageRow {
   createdAt: Date;
 }
 
+const CHAT_TITLE_MAX_LENGTH = 48;
+
+function normalizeStoredChatTitle(title: string): string {
+  const compact = title.replace(/\s+/g, ' ').trim();
+  return (compact || 'New chat').slice(0, CHAT_TITLE_MAX_LENGTH).trim() || 'New chat';
+}
+
+function dedupeStoredChatTitle(title: string, existingTitles: string[]): string {
+  const baseTitle = normalizeStoredChatTitle(title);
+  const seen = new Set(existingTitles.map((value) => value.toLowerCase()));
+  if (!seen.has(baseTitle.toLowerCase())) return baseTitle;
+  for (let n = 2; n < 100; n += 1) {
+    const suffix = ` ${n}`;
+    const base = baseTitle.slice(0, CHAT_TITLE_MAX_LENGTH - suffix.length).trim();
+    const candidate = `${base}${suffix}`;
+    if (!seen.has(candidate.toLowerCase())) return candidate;
+  }
+  return `${baseTitle.slice(0, CHAT_TITLE_MAX_LENGTH - 4).trim()} ${Date.now()
+    .toString()
+    .slice(-3)}`;
+}
+
 export async function listChatSessions(
   db: Db,
   scope: TeamScopeCore,
@@ -2202,6 +2224,61 @@ export async function setChatSessionTitle(
         eq(chatSessions.createdBy, scope.userId),
       ),
     );
+}
+
+export async function setUniqueChatSessionTitle(
+  db: Db,
+  scope: TeamScopeCore,
+  sessionId: string,
+  title: string,
+  options: { touchUpdatedAt?: boolean } = {},
+): Promise<void> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(sessionId)) return;
+  await db.transaction(async (tx) => {
+    const lockKey = `${scope.teamId}:${scope.userId}:chat-title`;
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+
+    const targetRows = await tx
+      .select({ id: chatSessions.id, title: chatSessions.title })
+      .from(chatSessions)
+      .where(
+        and(
+          eq(chatSessions.id, sessionId),
+          eq(chatSessions.teamId, scope.teamId),
+          eq(chatSessions.createdBy, scope.userId),
+          isNull(chatSessions.archivedAt),
+        ),
+      )
+      .limit(1);
+    const target = targetRows[0];
+    if (target?.title !== null) return;
+
+    const existingRows = await tx
+      .select({ title: chatSessions.title })
+      .from(chatSessions)
+      .where(
+        and(
+          eq(chatSessions.teamId, scope.teamId),
+          eq(chatSessions.createdBy, scope.userId),
+          ne(chatSessions.id, sessionId),
+          isNull(chatSessions.archivedAt),
+          isNotNull(chatSessions.title),
+        ),
+      );
+    const uniqueTitle = dedupeStoredChatTitle(
+      title,
+      existingRows.map((row) => row.title).filter((value): value is string => value !== null),
+    );
+    await tx
+      .update(chatSessions)
+      .set(
+        options.touchUpdatedAt === false
+          ? { title: uniqueTitle }
+          : { title: uniqueTitle, updatedAt: new Date() },
+      )
+      .where(eq(chatSessions.id, sessionId));
+  });
 }
 
 export async function linkChatSessionToObject(
@@ -2806,6 +2883,11 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
       title: string,
       options?: Parameters<typeof setChatSessionTitle>[4],
     ) => setChatSessionTitle(db, scope, sessionId, title, options),
+    setUniqueChatSessionTitle: (
+      sessionId: string,
+      title: string,
+      options?: Parameters<typeof setUniqueChatSessionTitle>[4],
+    ) => setUniqueChatSessionTitle(db, scope, sessionId, title, options),
     linkChatSessionToObject: (sessionId: string, entityId: string | null) =>
       linkChatSessionToObject(db, scope, sessionId, entityId),
     archiveChatSession: (sessionId: string) => archiveChatSession(db, scope, sessionId),

@@ -20,6 +20,7 @@ const fakes = vi.hoisted(() => ({
   fakeCreateChatSession: vi.fn(),
   fakeListChatSessions: vi.fn(),
   fakeSetChatSessionTitle: vi.fn(),
+  fakeSetUniqueChatSessionTitle: vi.fn(),
   fakeListObjects: vi.fn(),
   fakeGetCalendarSettings: vi.fn(),
   fakeListCalendarEvents: vi.fn(),
@@ -66,6 +67,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
       createChatSession: fakes.fakeCreateChatSession,
       listChatSessions: fakes.fakeListChatSessions,
       setChatSessionTitle: fakes.fakeSetChatSessionTitle,
+      setUniqueChatSessionTitle: fakes.fakeSetUniqueChatSessionTitle,
       listObjects: fakes.fakeListObjects,
     },
     calendar: {
@@ -181,6 +183,7 @@ beforeEach(() => {
   fakes.fakeCreateChatSession.mockResolvedValue({ id: SESSION_ID, title: null });
   fakes.fakeListChatSessions.mockResolvedValue([]);
   fakes.fakeSetChatSessionTitle.mockResolvedValue(undefined);
+  fakes.fakeSetUniqueChatSessionTitle.mockResolvedValue(undefined);
   fakes.fakeListObjects.mockImplementation((filter?: { type?: string }) =>
     filter?.type === 'task'
       ? Promise.resolve([
@@ -465,7 +468,6 @@ describe('POST /api/chat', () => {
   });
 
   it('titles a newly-created session from the first user turn without renaming existing sessions', async () => {
-    fakes.fakeListChatSessions.mockResolvedValue([{ id: 'old', title: 'Generated chat title' }]);
     const response = await POST(request(validBody({ startNewSession: true })));
 
     expect(response.status).toBe(200);
@@ -476,7 +478,7 @@ describe('POST /api/chat', () => {
       usage: { inputTokens: 10, outputTokens: 5 },
     });
     await vi.waitFor(() => {
-      expect(fakes.fakeSetChatSessionTitle).toHaveBeenCalled();
+      expect(fakes.fakeSetUniqueChatSessionTitle).toHaveBeenCalled();
     });
 
     const titleCall = fakes.fakeChatStructured.mock.calls.at(0) as unknown as
@@ -485,13 +487,13 @@ describe('POST /api/chat', () => {
     expect(titleCall?.[0].schema).toBeDefined();
     expect(titleCall?.[0].model).toBeTypeOf('string');
     expect(titleCall?.[0].prompt).toEqual(expect.stringContaining('What happened?'));
-    expect(fakes.fakeSetChatSessionTitle).toHaveBeenCalledWith(
+    expect(fakes.fakeSetUniqueChatSessionTitle).toHaveBeenCalledWith(
       SESSION_ID,
-      'Generated chat title 2',
+      'Generated chat title',
       { touchUpdatedAt: false },
     );
 
-    fakes.fakeSetChatSessionTitle.mockClear();
+    fakes.fakeSetUniqueChatSessionTitle.mockClear();
     await POST(request(validBody({ sessionId: SESSION_ID })));
     capturedOnFinish?.({
       text: 'Answer',
@@ -500,7 +502,7 @@ describe('POST /api/chat', () => {
       usage: { inputTokens: 10, outputTokens: 5 },
     });
     await Promise.resolve();
-    expect(fakes.fakeSetChatSessionTitle).not.toHaveBeenCalled();
+    expect(fakes.fakeSetUniqueChatSessionTitle).not.toHaveBeenCalled();
   });
 
   it('retries titling an existing persisted session that still has no title', async () => {
@@ -522,7 +524,7 @@ describe('POST /api/chat', () => {
       usage: { inputTokens: 10, outputTokens: 5 },
     });
     await vi.waitFor(() => {
-      expect(fakes.fakeSetChatSessionTitle).toHaveBeenCalledWith(
+      expect(fakes.fakeSetUniqueChatSessionTitle).toHaveBeenCalledWith(
         SESSION_ID,
         'Generated chat title',
         { touchUpdatedAt: false },
@@ -533,6 +535,42 @@ describe('POST /api/chat', () => {
       | undefined;
     expect(titleCall?.[0].prompt).toEqual(expect.stringContaining('What happened?'));
     expect(titleCall?.[0].prompt).not.toEqual(expect.stringContaining('What changed since then?'));
+  });
+
+  it('titles from the first user message with text when an earlier user message has no text', async () => {
+    const nonTextMessage = {
+      id: 'image-only',
+      role: 'user',
+      parts: [{ type: 'file', mediaType: 'image/png', url: 'https://example.test/image.png' }],
+    };
+    fakes.fakeChatSessionTitleStatus.mockResolvedValue({ exists: true, needsTitle: true });
+    fakes.fakeSafeValidateUIMessages.mockResolvedValue({
+      success: true,
+      data: [nonTextMessage, followUpMessage],
+    });
+
+    const response = await POST(
+      request(validBody({ messages: [nonTextMessage, followUpMessage], sessionId: SESSION_ID })),
+    );
+
+    expect(response.status).toBe(200);
+    capturedOnFinish?.({
+      text: 'Answer',
+      toolCalls: [],
+      finishReason: 'stop',
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+    await vi.waitFor(() => {
+      expect(fakes.fakeSetUniqueChatSessionTitle).toHaveBeenCalledWith(
+        SESSION_ID,
+        'Generated chat title',
+        { touchUpdatedAt: false },
+      );
+    });
+    const titleCall = fakes.fakeChatStructured.mock.calls.at(0) as unknown as
+      | [{ prompt?: unknown }]
+      | undefined;
+    expect(titleCall?.[0].prompt).toEqual(expect.stringContaining('What changed since then?'));
   });
 
   it('falls back to a sanitized first-message title when title generation fails', async () => {
@@ -546,16 +584,44 @@ describe('POST /api/chat', () => {
       usage: { inputTokens: 10, outputTokens: 5 },
     });
     await vi.waitFor(() => {
-      expect(fakes.fakeSetChatSessionTitle).toHaveBeenCalled();
+      expect(fakes.fakeSetUniqueChatSessionTitle).toHaveBeenCalled();
     });
 
-    expect(fakes.fakeSetChatSessionTitle).toHaveBeenCalledWith(SESSION_ID, 'What happened', {
+    expect(fakes.fakeSetUniqueChatSessionTitle).toHaveBeenCalledWith(SESSION_ID, 'What happened', {
       touchUpdatedAt: false,
     });
     const warnCall = fakes.fakeLoggerWarn.mock.calls.find(
       (call) => call[1] === 'chat title generation failed; using fallback',
     ) as unknown as [{ err?: unknown }, string] | undefined;
     expect(warnCall?.[0].err).toBeInstanceOf(Error);
+  });
+
+  it('truncates long unbroken fallback titles to the maximum length', async () => {
+    const longText = 'x'.repeat(80);
+    const longMessage = {
+      id: 'long',
+      role: 'user',
+      parts: [{ type: 'text', text: longText }],
+    };
+    fakes.fakeSafeValidateUIMessages.mockResolvedValue({
+      success: true,
+      data: [longMessage],
+    });
+    fakes.fakeChatStructured.mockRejectedValue(new Error('title model down'));
+
+    await POST(request(validBody({ messages: [longMessage], startNewSession: true })));
+    capturedOnFinish?.({
+      text: 'Answer',
+      toolCalls: [],
+      finishReason: 'stop',
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+
+    await vi.waitFor(() => {
+      expect(fakes.fakeSetUniqueChatSessionTitle).toHaveBeenCalledWith(SESSION_ID, 'x'.repeat(48), {
+        touchUpdatedAt: false,
+      });
+    });
   });
 
   it('does not title a new session when persisting the first turn fails', async () => {
@@ -577,7 +643,7 @@ describe('POST /api/chat', () => {
       );
     });
 
-    expect(fakes.fakeSetChatSessionTitle).not.toHaveBeenCalled();
+    expect(fakes.fakeSetUniqueChatSessionTitle).not.toHaveBeenCalled();
   });
 
   it('tolerates new-session creation and MCP discovery failures by streaming without persistence', async () => {

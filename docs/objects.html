@@ -297,11 +297,12 @@
         <code>useChat</code> re-sends the whole transcript on every request.
       </p>
       <p>
-        Newly-created sessions also get a short title from the first user turn on stream finalize.
-        The title generator uses the shared LLM wrapper, falls back to a sanitized first-message
-        snippet if the model call fails, and appends a numeric suffix when another visible session
-        already has the same title. Automatic title writes do not bump the session's activity
-        timestamp; only persisted turns should affect sidebar recency.
+        Sessions without a title get a short title from the first user turn on stream finalize,
+        including retry attempts on later turns if the first title write failed. The title generator
+        uses the shared LLM wrapper, falls back to a sanitized first-message snippet if the model
+        call fails, and appends a numeric suffix under the chat-session write lock when another
+        visible session already has the same title. Automatic title writes do not bump the session's
+        activity timestamp; only persisted turns should affect sidebar recency.
       </p>
       <p>
         Persistence failures are warn-logged, not surfaced to the user — the assistant reply has
