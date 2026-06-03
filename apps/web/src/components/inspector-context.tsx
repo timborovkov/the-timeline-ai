@@ -1,5 +1,6 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import {
   createContext,
   use,
@@ -16,6 +17,8 @@ interface InspectorContent {
   id: string;
   /** Short uppercase label shown in the inspector head. */
   kind: string;
+  /** Human-readable title shown in the inspector head. */
+  title?: string;
   /** Optional content body. If absent, the pane renders a generic "no detail" message. */
   render: () => ReactNode;
 }
@@ -28,25 +31,43 @@ interface InspectorContextValue {
   toggle: () => void;
 }
 
+interface InspectorState {
+  open: boolean;
+  content: InspectorContent | null;
+  pathname: string | null;
+}
+
 const InspectorContext = createContext<InspectorContextValue | null>(null);
 
 export function InspectorProvider({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const [content, setContent] = useState<InspectorContent | null>(null);
+  const pathname = usePathname();
+  const [state, setState] = useState<InspectorState>({
+    open: false,
+    content: null,
+    pathname: null,
+  });
+  const content = state.pathname === pathname ? state.content : null;
+  const open = Boolean(content && state.open);
 
-  const show = useCallback((next: InspectorContent) => {
-    setContent(next);
-    setOpen(true);
-  }, []);
+  const show = useCallback(
+    (next: InspectorContent) => {
+      setState({ open: true, content: next, pathname });
+    },
+    [pathname],
+  );
   const hide = useCallback(() => {
-    setOpen(false);
+    setState((current) => ({ ...current, open: false }));
   }, []);
   const hideOnEscape = useEffectEvent(() => {
     hide();
   });
   const toggle = useCallback(() => {
-    setOpen((o) => !o);
-  }, []);
+    setState((current) =>
+      current.content && current.pathname === pathname
+        ? { ...current, open: !current.open }
+        : current,
+    );
+  }, [pathname]);
 
   // Close on Escape when the inspector is open
   useEffect(() => {

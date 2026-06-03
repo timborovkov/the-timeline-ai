@@ -18,7 +18,6 @@ import {
   TIMELINE_IMPACT_FILTERS,
   TIMELINE_PRESETS,
   TIMELINE_SOURCES,
-  parseTimelineDensity,
   parseTimelineImpact,
   parseTimelineSource,
   timelineHref,
@@ -37,7 +36,6 @@ interface Props {
     to?: string;
     source?: string;
     impact?: string;
-    density?: string;
     /** Prefilled by the ⌘K command bar. SearchBar reads it and auto-runs. */
     q?: string;
   }>;
@@ -55,7 +53,6 @@ interface TimelineBaseParams extends Record<string, string | null | undefined> {
   author: string | null;
   from: string | null;
   to: string | null;
-  density: 'dense' | null;
 }
 
 function parseDate(input: string | undefined): Date | undefined {
@@ -94,7 +91,6 @@ export default async function TimelinePage({ searchParams }: Props) {
   const authorFilter = parseUuid(sp.author);
   const sourceFilter = parseTimelineSource(sp.source);
   const impactFilter = parseTimelineImpact(sp.impact);
-  const density = parseTimelineDensity(sp.density);
   const fromFilter = parseDate(sp.from);
   const toFilter = parseDate(sp.to);
   const toQueryFilter = parseEndOfDay(sp.to);
@@ -172,7 +168,6 @@ export default async function TimelinePage({ searchParams }: Props) {
     author: authorFilter ?? null,
     from: sp.from ?? null,
     to: sp.to ?? null,
-    density: density === 'dense' ? ('dense' as const) : null,
   };
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -209,7 +204,6 @@ export default async function TimelinePage({ searchParams }: Props) {
         authorFilter={authorFilter}
         fromFilter={fromFilter}
         toFilter={toFilter}
-        density={density}
         events={events}
         nextCursor={timelinePage.nextCursor}
         userRows={userRows}
@@ -234,7 +228,6 @@ function TimelineBrowserSection({
   authorFilter,
   fromFilter,
   toFilter,
-  density,
   events,
   nextCursor,
   userRows,
@@ -254,7 +247,6 @@ function TimelineBrowserSection({
   authorFilter: string | undefined;
   fromFilter: Date | undefined;
   toFilter: Date | undefined;
-  density: ReturnType<typeof parseTimelineDensity>;
   events: TimelineFeedProps['initialPage']['items'];
   nextCursor: TimelineFeedProps['initialPage']['nextCursor'];
   userRows: { id: string; name: string | null; email: string }[];
@@ -277,13 +269,11 @@ function TimelineBrowserSection({
         authorFilter={authorFilter}
         fromFilter={fromFilter}
         toFilter={toFilter}
-        density={density}
       />
       <TimelinePresetControls
         baseParams={baseParams}
         sourceFilter={sourceFilter}
         impactFilter={impactFilter}
-        density={density}
       />
       <TimelineFeed
         initialPage={{
@@ -306,7 +296,6 @@ function TimelineBrowserSection({
           const user = userMap.get(member.userId);
           return { id: member.userId, label: user?.name ?? user?.email ?? member.userId };
         })}
-        density={density}
         impactFilter={impactFilter ?? 'all'}
         emptyLabel={hasFilters ? 'NO EVENTS MATCH THIS VIEW' : 'NO EVENTS YET'}
         emptyAction={{
@@ -333,7 +322,6 @@ function TimelineFilterPanel({
   authorFilter,
   fromFilter,
   toFilter,
-  density,
 }: {
   sp: SearchParams;
   members: TimelineMember[];
@@ -346,7 +334,6 @@ function TimelineFilterPanel({
   authorFilter: string | undefined;
   fromFilter: Date | undefined;
   toFilter: Date | undefined;
-  density: ReturnType<typeof parseTimelineDensity>;
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
@@ -397,11 +384,10 @@ function TimelineFilterPanel({
           >
             Apply
           </button>
-          <input type="hidden" name="density" value={density} />
           {hasPanelFilters ? (
             <Link
               href={timelineHref(
-                { q: baseParams.q, density: baseParams.density },
+                { q: baseParams.q },
                 { author: null, from: null, to: null, source: null, impact: null },
               )}
               className="inline-flex h-9 items-center rounded-sm border border-border px-3 text-sm transition-colors hover:bg-surface-2"
@@ -458,15 +444,13 @@ function TimelinePresetControls({
   baseParams,
   sourceFilter,
   impactFilter,
-  density,
 }: {
   baseParams: TimelineBaseParams;
   sourceFilter: ReturnType<typeof parseTimelineSource>;
   impactFilter: ReturnType<typeof parseTimelineImpact>;
-  density: ReturnType<typeof parseTimelineDensity>;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border py-2">
+    <div className="flex flex-wrap items-center gap-1.5 border-y border-border py-2">
       <nav aria-label="Timeline presets" className="flex flex-wrap gap-1.5">
         {TIMELINE_PRESETS.map((preset) => {
           const href =
@@ -496,46 +480,6 @@ function TimelinePresetControls({
           );
         })}
       </nav>
-      <TimelineDensityToggle
-        baseParams={baseParams}
-        sourceFilter={sourceFilter}
-        impactFilter={impactFilter}
-        density={density}
-      />
-    </div>
-  );
-}
-
-function TimelineDensityToggle({
-  baseParams,
-  sourceFilter,
-  impactFilter,
-  density,
-}: {
-  baseParams: TimelineBaseParams;
-  sourceFilter: ReturnType<typeof parseTimelineSource>;
-  impactFilter: ReturnType<typeof parseTimelineImpact>;
-  density: ReturnType<typeof parseTimelineDensity>;
-}) {
-  return (
-    <div className="flex items-center gap-1 rounded-sm border border-border p-1">
-      {(['comfortable', 'dense'] as const).map((value) => (
-        <Link
-          key={value}
-          href={timelineHref(
-            { ...baseParams, source: sourceFilter ?? null, impact: impactFilter ?? null },
-            { density: value === 'dense' ? 'dense' : null },
-          )}
-          aria-current={density === value ? 'page' : undefined}
-          className={`inline-flex h-7 items-center rounded-sm px-2 font-mono text-[10px] uppercase tracking-[0.12em] transition-colors ${
-            density === value
-              ? 'bg-surface-2 text-fg'
-              : 'text-fg-dim hover:bg-surface hover:text-fg'
-          }`}
-        >
-          {value}
-        </Link>
-      ))}
     </div>
   );
 }
