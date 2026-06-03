@@ -248,15 +248,27 @@ describe('object scope — chat session isolation', () => {
       canonicalName: 'Internal AI thread',
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    const session = await ownerScope.createChatSession({ title: 'Private scratchpad' });
+    const session = await ownerScope.createChatSession();
+    await expect(ownerScope.chatSessionTitleStatus(session.id)).resolves.toEqual({
+      exists: true,
+      needsTitle: true,
+    });
 
     await ownerScope.appendChatMessages(session.id, [
       { role: 'user', authorUserId: USER_OWNER, content: 'Summarize the rollout' },
     ]);
     const afterAppend = await db.select().from(chatSessions).where(eq(chatSessions.id, session.id));
     await ownerScope.setChatSessionTitle(session.id, 'Rollout summary', { touchUpdatedAt: false });
+    await expect(ownerScope.chatSessionTitleStatus(session.id)).resolves.toEqual({
+      exists: true,
+      needsTitle: false,
+    });
 
     await expect(memberScope.getChatSession(session.id)).resolves.toBeNull();
+    await expect(memberScope.chatSessionTitleStatus(session.id)).resolves.toEqual({
+      exists: false,
+      needsTitle: false,
+    });
     await expect(
       memberScope.appendChatMessages(session.id, [
         { role: 'user', authorUserId: USER_MEMBER, content: 'Intrude' },
@@ -280,6 +292,10 @@ describe('object scope — chat session isolation', () => {
     await ownerScope.archiveChatSession(session.id);
 
     await expect(ownerScope.chatSessionExists(session.id)).resolves.toBe(false);
+    await expect(ownerScope.chatSessionTitleStatus(session.id)).resolves.toEqual({
+      exists: false,
+      needsTitle: false,
+    });
     await expect(ownerScope.getChatSession(session.id)).resolves.toBeNull();
 
     const messages = await db

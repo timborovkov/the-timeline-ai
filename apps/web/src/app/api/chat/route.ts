@@ -518,13 +518,14 @@ export async function POST(req: Request): Promise<Response> {
     // Validate the session belongs to this team. 404 (not 403) is the
     // canonical "no resource here" — it doesn't distinguish "wrong team"
     // from "no such id," so cross-team session-id probing reveals nothing.
-    // Cheap existence check — we only need to confirm team ownership here,
-    // not load every prior message. `getChatSession` would pull the full
+    // Cheap metadata check — confirm team ownership and whether a prior
+    // failed title attempt needs retrying, without loading the full
     // `chat_messages` list on every turn.
-    const exists = await scope.objects.chatSessionExists(sessionId);
-    if (!exists) {
+    const titleStatus = await scope.objects.chatSessionTitleStatus(sessionId);
+    if (!titleStatus.exists) {
       return Response.json({ ok: false, error: 'session_not_found' }, { status: 404 });
     }
+    shouldTitleSession = titleStatus.needsTitle;
   } else if (parsed.data.startNewSession) {
     try {
       const created = await scope.objects.createChatSession({

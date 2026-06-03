@@ -2057,6 +2057,29 @@ export async function chatSessionExists(
   return rows.length > 0;
 }
 
+export async function chatSessionTitleStatus(
+  db: Db,
+  scope: TeamScopeCore,
+  sessionId: string,
+): Promise<{ exists: boolean; needsTitle: boolean }> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(sessionId)) return { exists: false, needsTitle: false };
+  const rows = await db
+    .select({ title: chatSessions.title })
+    .from(chatSessions)
+    .where(
+      and(
+        eq(chatSessions.id, sessionId),
+        eq(chatSessions.teamId, scope.teamId),
+        eq(chatSessions.createdBy, scope.userId),
+        isNull(chatSessions.archivedAt),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  return { exists: Boolean(row), needsTitle: row?.title === null };
+}
+
 export async function getChatSession(
   db: Db,
   scope: TeamScopeCore,
@@ -2774,6 +2797,7 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     createChatSession: (input?: Parameters<typeof createChatSession>[2]) =>
       createChatSession(db, scope, input),
     chatSessionExists: (sessionId: string) => chatSessionExists(db, scope, sessionId),
+    chatSessionTitleStatus: (sessionId: string) => chatSessionTitleStatus(db, scope, sessionId),
     getChatSession: (sessionId: string) => getChatSession(db, scope, sessionId),
     appendChatMessages: (sessionId: string, messages: AppendChatMessageInput[]) =>
       appendChatMessages(db, scope, sessionId, messages),

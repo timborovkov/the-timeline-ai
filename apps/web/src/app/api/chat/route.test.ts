@@ -16,6 +16,7 @@ const fakes = vi.hoisted(() => ({
   fakeTeam: vi.fn(),
   fakeCurrentUserIdentityContext: vi.fn(),
   fakeChatSessionExists: vi.fn(),
+  fakeChatSessionTitleStatus: vi.fn(),
   fakeCreateChatSession: vi.fn(),
   fakeListChatSessions: vi.fn(),
   fakeSetChatSessionTitle: vi.fn(),
@@ -61,6 +62,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     },
     objects: {
       chatSessionExists: fakes.fakeChatSessionExists,
+      chatSessionTitleStatus: fakes.fakeChatSessionTitleStatus,
       createChatSession: fakes.fakeCreateChatSession,
       listChatSessions: fakes.fakeListChatSessions,
       setChatSessionTitle: fakes.fakeSetChatSessionTitle,
@@ -170,6 +172,7 @@ beforeEach(() => {
     facets: [],
   });
   fakes.fakeChatSessionExists.mockResolvedValue(true);
+  fakes.fakeChatSessionTitleStatus.mockResolvedValue({ exists: true, needsTitle: false });
   fakes.fakeCreateChatSession.mockResolvedValue({ id: SESSION_ID, title: null });
   fakes.fakeListChatSessions.mockResolvedValue([]);
   fakes.fakeSetChatSessionTitle.mockResolvedValue(undefined);
@@ -315,7 +318,7 @@ describe('POST /api/chat', () => {
   });
 
   it('requires an existing persisted session when sessionId is provided', async () => {
-    fakes.fakeChatSessionExists.mockResolvedValue(false);
+    fakes.fakeChatSessionTitleStatus.mockResolvedValue({ exists: false, needsTitle: false });
 
     const response = await POST(request(validBody({ sessionId: SESSION_ID })));
 
@@ -332,7 +335,7 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('x-tl-session-id')).toBe(SESSION_ID);
     await expect(response.text()).resolves.toBe('chat stream');
-    expect(fakes.fakeChatSessionExists).toHaveBeenCalledWith(SESSION_ID);
+    expect(fakes.fakeChatSessionTitleStatus).toHaveBeenCalledWith(SESSION_ID);
     expect(fakes.fakeWorkspaceTimeContext).toHaveBeenCalledWith('Europe/Tallinn', expect.any(Date));
     expect(fakes.fakeBuildSystemPrompt).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -382,7 +385,7 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('x-tl-session-id')).toBe(SESSION_ID);
     expect(fakes.fakeRequireMembership).toHaveBeenCalled();
-    expect(fakes.fakeChatSessionExists).toHaveBeenCalledWith(SESSION_ID);
+    expect(fakes.fakeChatSessionTitleStatus).toHaveBeenCalledWith(SESSION_ID);
     expect(fakes.fakeListObjects).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'task', archived: false, limit: 50 }),
     );
@@ -493,6 +496,27 @@ describe('POST /api/chat', () => {
     });
     await Promise.resolve();
     expect(fakes.fakeSetChatSessionTitle).not.toHaveBeenCalled();
+  });
+
+  it('retries titling an existing persisted session that still has no title', async () => {
+    fakes.fakeChatSessionTitleStatus.mockResolvedValue({ exists: true, needsTitle: true });
+
+    const response = await POST(request(validBody({ sessionId: SESSION_ID })));
+
+    expect(response.status).toBe(200);
+    capturedOnFinish?.({
+      text: 'Answer',
+      toolCalls: [],
+      finishReason: 'stop',
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+    await vi.waitFor(() => {
+      expect(fakes.fakeSetChatSessionTitle).toHaveBeenCalledWith(
+        SESSION_ID,
+        'Generated chat title',
+        { touchUpdatedAt: false },
+      );
+    });
   });
 
   it('falls back to a sanitized first-message title when title generation fails', async () => {
