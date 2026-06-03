@@ -32,6 +32,15 @@ interface RawEventRow {
   sourceMetadata: unknown;
 }
 
+function extractFailureTags(job: Pick<Job<queue.ExtractJobData>, 'data'> | undefined) {
+  const data = job?.data;
+  if (!data || typeof data !== 'object') return {};
+  return {
+    rawEventId: typeof data.rawEventId === 'string' ? data.rawEventId : undefined,
+    teamId: typeof data.teamId === 'string' ? data.teamId : undefined,
+  };
+}
+
 export async function processExtractJobForTests(
   deps: ExtractWorkerDeps,
   jobData: queue.ExtractJobData,
@@ -318,10 +327,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
 
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'job failed');
-    captureWorkerJobFailure(err, job, {
-      rawEventId: job?.data.rawEventId,
-      teamId: job?.data.teamId,
-    });
+    captureWorkerJobFailure(err, job, extractFailureTags(job));
     if (!job) return;
     const maxAttempts = job.opts.attempts ?? 1;
     const unrecoverable = err instanceof UnrecoverableError;
@@ -350,3 +356,5 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
 
   return worker;
 }
+
+export const extractWorkerInternals = { extractFailureTags };

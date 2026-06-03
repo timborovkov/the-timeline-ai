@@ -9,7 +9,11 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { buildPlanForTests, processEmbedJobForTests } from '#src/workers/embed.js';
+import {
+  buildPlanForTests,
+  embedWorkerInternals,
+  processEmbedJobForTests,
+} from '#src/workers/embed.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../../../../packages/db/drizzle');
@@ -116,6 +120,19 @@ describe('processEmbedJobForTests', () => {
     await applyMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
+  });
+
+  it('builds failure tags defensively for malformed job payloads', () => {
+    expect(
+      embedWorkerInternals.embedFailureTags({
+        data: null as never,
+      }),
+    ).toEqual({});
+    expect(
+      embedWorkerInternals.embedFailureTags({
+        data: { scope: 'fact', rawEventId: 'raw-1', factId: 'fact-1', teamId: TEAM_ID },
+      }),
+    ).toEqual({ scope: 'fact', rawEventId: 'raw-1', factId: 'fact-1', teamId: TEAM_ID });
   });
 
   it('embeds rendered raw event text and upserts a stable Qdrant payload', async () => {

@@ -11,7 +11,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { processEmbedJobForTests } from '#src/workers/embed.js';
-import { processExtractJobForTests } from '#src/workers/extract.js';
+import { extractWorkerInternals, processExtractJobForTests } from '#src/workers/extract.js';
 
 /**
  * Extract worker contract tests. These run the processor against a migrated
@@ -110,6 +110,19 @@ afterEach(async () => {
 });
 
 describe('processExtractJobForTests', () => {
+  it('builds failure tags defensively for malformed job payloads', () => {
+    expect(
+      extractWorkerInternals.extractFailureTags({
+        data: null as never,
+      }),
+    ).toEqual({});
+    expect(
+      extractWorkerInternals.extractFailureTags({
+        data: { rawEventId: 'raw-1', teamId: 'team-1' },
+      }),
+    ).toEqual({ rawEventId: 'raw-1', teamId: 'team-1' });
+  });
+
   it('extracts team-visible raw events into facts, entities, suggestion work, and embed fanout', async () => {
     const rawEventId = '33333333-3333-4333-8333-333333333333';
     await seedEvent(db, { id: rawEventId, text: 'Acme is evaluating Timeline for Q4.' });
