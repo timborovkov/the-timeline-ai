@@ -77,4 +77,108 @@ describe('ChatPane', () => {
     expect(html).toContain('What is due?');
     expect(html).toContain('Send proposal');
   });
+
+  it('renders assistant markdown text parts with citation chips', () => {
+    const eventId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    fakes.useChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'text',
+              text: `**Sales & outreach:**\n- Follow-up scheduled [ev:${eventId}].`,
+            },
+          ],
+        },
+      ],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(ChatPane, {
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    expect(html).toContain('<strong');
+    expect(html).toContain('Sales &amp; outreach:');
+    expect(html).toContain('<ul');
+    expect(html).toContain('list-disc');
+    expect(html).toContain('<li');
+    expect(html).toContain('[ev:aaaaaaaa]');
+    expect(html).not.toContain('**Sales');
+    expect(html).not.toContain('- Follow-up');
+  });
+
+  it('preserves numeric labels and paragraph newlines in assistant text parts', () => {
+    fakes.useChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'text',
+              text: '2024. Signed pilot\n2026. Expansion pending\n\nCall notes:\n  - indented note',
+            },
+          ],
+        },
+      ],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(ChatPane, {
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    expect(html).not.toContain('list-decimal');
+    expect(html).not.toContain('start="2024"');
+    expect(html).toContain('2024. Signed pilot\n2026. Expansion pending');
+    expect(html).toContain('Call notes:\n  - indented note');
+  });
+
+  it('renders ordered markdown lists that start at one', () => {
+    fakes.useChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: '1. First step\n2. Second step' }],
+        },
+      ],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(ChatPane, {
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    expect(html).toContain('<ol');
+    expect(html).toContain('list-decimal');
+    expect(html).toContain('Second step');
+  });
 });
