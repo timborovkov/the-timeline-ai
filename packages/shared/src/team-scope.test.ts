@@ -17,6 +17,8 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
+
 import { withTeam } from '#src/team-scope.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -85,6 +87,44 @@ async function insertTelegramEvent(
      VALUES ($1, $2, $3, $3, 'telegram', $4, now(), $5::jsonb)`,
     [input.id, TEAM_A, input.authorUserId, input.text, JSON.stringify(metadata)],
   );
+}
+
+function qdrantRawEventHit(input: {
+  id: string;
+  score?: number;
+  source?: 'telegram' | 'slack' | 'email';
+}): SearchHit {
+  return {
+    id: `point-${input.id}`,
+    score: input.score ?? 0.9,
+    payload: {
+      team_id: TEAM_A,
+      source_kind: 'raw_event',
+      event_id: input.id,
+      fact_id: null,
+      object_id: null,
+      note_id: null,
+      change_id: null,
+      entity_id: null,
+      entity_ids: [],
+      occurred_at: '2026-06-01T10:00:00.000Z',
+      author_user_id: null,
+      visibility_owner_user_id: null,
+      source: input.source ?? 'telegram',
+      visibility: 'team',
+      visibility_user_ids: null,
+      embedding_model: 'test',
+      document_id: null,
+      document_version_id: null,
+      document_chunk_id: null,
+      folder_id: null,
+      owner_user_id: null,
+      updated_at: null,
+      meeting_id: null,
+      meeting_chunk_id: null,
+      speaker: null,
+    },
+  };
 }
 
 describe('withTeam namespaced port', () => {
@@ -330,6 +370,43 @@ describe('withTeam namespaced port', () => {
     ).resolves.toMatchObject([{ id: eventId }]);
   });
 
+  it('matches email sender filters across nested and flat metadata shapes', async () => {
+    const fromEmailId = '00000000-0000-0000-0000-000000000120';
+    const senderEmailId = '00000000-0000-0000-0000-000000000121';
+    await pg.query(
+      `INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, occurred_at, source_metadata)
+       VALUES
+         ($1, $2, NULL, 'email', 'flat from_email event', now(), $3::jsonb),
+         ($4, $2, NULL, 'email', 'flat sender_email event', now(), $5::jsonb)`,
+      [
+        fromEmailId,
+        TEAM_A,
+        JSON.stringify({ from_email: 'Mikael@Example.com' }),
+        senderEmailId,
+        JSON.stringify({ sender_email: 'mikael@example.com' }),
+      ],
+    );
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const person = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Mikael Rintala',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.objects.createIdentityFacet({
+      entityId: person.id,
+      kind: 'email',
+      value: 'mikael@example.com',
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    await expect(
+      scope.timeline.listEvents({ senderSource: 'email', senderHandle: 'mikael@example.com' }),
+    ).resolves.toMatchObject([{ id: senderEmailId }, { id: fromEmailId }]);
+    await expect(
+      scope.timeline.listEvents({ senderSource: 'email', personObjectId: person.id }),
+    ).resolves.toMatchObject([{ id: senderEmailId }, { id: fromEmailId }]);
+  });
+
   it('limits listEvents by senderSource even without handle or person filters', async () => {
     const telegramId = '00000000-0000-0000-0000-000000000109';
     const emailId = '00000000-0000-0000-0000-000000000110';
@@ -419,6 +496,55 @@ describe('withTeam namespaced port', () => {
       USER_A,
       [0.1],
       expect.objectContaining({ eventIds: [matchingId] }),
+    );
+  });
+
+  it('searches every SQL sender-filtered event id batch before ranking semantic results', async () => {
+    const firstId = '00000000-0000-0000-0000-000000000122';
+    const secondId = '00000000-0000-0000-0000-000000000123';
+    const thirdId = '00000000-0000-0000-0000-000000000124';
+    for (const id of [firstId, secondId, thirdId]) {
+      await insertTelegramEvent(pg, {
+        id,
+        authorUserId: null,
+        text: `batched sender search ${id}`,
+        username: '@mikaelrintala',
+      });
+    }
+    const qdrantSearch = vi.fn(
+      (
+        _teamId: string,
+        _userId: string,
+        _vector: number[],
+        opts: SearchOpts,
+      ): Promise<SearchHit[]> => {
+        if (opts.eventIds?.includes(firstId))
+          return Promise.resolve([qdrantRawEventHit({ id: firstId, score: 0.4 })]);
+        if (opts.eventIds?.includes(thirdId))
+          return Promise.resolve([qdrantRawEventHit({ id: thirdId, score: 0.95 })]);
+        return Promise.resolve([]);
+      },
+    );
+    const scope = withTeam(db as never, TEAM_A, USER_A, {
+      embed: () => Promise.resolve({ vector: [0.3], model: 'test' }),
+      qdrantSearch,
+      senderSearchEventIdBatchSize: 2,
+    });
+
+    await expect(
+      scope.timeline.searchEvents({
+        query: 'sender search all batches',
+        senderHandle: '@mikaelrintala',
+        limit: 1,
+      }),
+    ).resolves.toMatchObject([{ eventId: thirdId }]);
+
+    expect(qdrantSearch).toHaveBeenCalledTimes(2);
+    expect(qdrantSearch.mock.calls.map(([, , , opts]) => opts.eventIds)).toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining([thirdId, secondId]),
+        expect.arrayContaining([firstId]),
+      ]),
     );
   });
 

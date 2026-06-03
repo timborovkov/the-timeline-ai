@@ -602,7 +602,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const created = await objects.createNote({
         entityId: parsed.entityId,
         body: parsed.body,
-        authorUserId: userId,
+        authorUserId: null,
         metadata: { agent_suggestion_item_id: item.id },
         actor: { kind: 'agent', userId: null },
       });

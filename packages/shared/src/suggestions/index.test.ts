@@ -497,16 +497,32 @@ describe('suggestion scope', () => {
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
 
-    const result = await pg.query<{ actor_kind: string; actor_user_id: string | null }>(
-      `SELECT actor_kind, actor_user_id
-       FROM object_changes
-       WHERE team_id = '${TEAM_ID}'
-         AND entity_id = '${object.id}'
-         AND field = '__note_create__'
-       ORDER BY changed_at DESC
+    const result = await pg.query<{
+      actor_kind: string;
+      actor_user_id: string | null;
+      note_author_user_id: string | null;
+      event_author_user_id: string | null;
+    }>(
+      `SELECT
+         oc.actor_kind,
+         oc.actor_user_id,
+         n.author_user_id AS note_author_user_id,
+         re.author_user_id AS event_author_user_id
+       FROM object_changes oc
+       JOIN object_notes n ON n.entity_id = oc.entity_id
+       LEFT JOIN raw_events re ON re.id = oc.source_event_id
+       WHERE oc.team_id = '${TEAM_ID}'
+         AND oc.entity_id = '${object.id}'
+         AND oc.field = '__note_create__'
+       ORDER BY oc.changed_at DESC
        LIMIT 1`,
     );
-    expect(result.rows[0]).toEqual({ actor_kind: 'agent', actor_user_id: null });
+    expect(result.rows[0]).toEqual({
+      actor_kind: 'agent',
+      actor_user_id: null,
+      note_author_user_id: null,
+      event_author_user_id: null,
+    });
   });
 
   it('does not recreate object relationships when retrying after result bookkeeping was lost', async () => {

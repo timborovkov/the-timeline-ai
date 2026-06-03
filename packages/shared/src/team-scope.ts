@@ -78,6 +78,7 @@ const SPECIFIC_USERS_DEFAULT_SOURCES = new Set<VisibilityDefaultSource>([
   'integration',
   'calendar',
 ]);
+const DEFAULT_SENDER_SEARCH_EVENT_ID_BATCH_SIZE = 1000;
 
 async function enqueueRawEventEmbed(input: { teamId: string; rawEventId: string }): Promise<void> {
   const { enqueueEmbedJob } = await import(/* webpackIgnore: true */ '#src/queue/queues.js');
@@ -339,6 +340,8 @@ export interface TeamScopeDeps {
     vector: number[],
     opts: SearchOpts,
   ) => Promise<SearchHit[]>;
+  /** Test seam for sender-scoped semantic search batching. */
+  senderSearchEventIdBatchSize?: number;
   /** Inject raw-event embedding enqueue. Keeping this dependency lazy avoids
    *  pulling BullMQ worker internals into read-only web server bundles. */
   enqueueRawEventEmbed?: (input: { teamId: string; rawEventId: string }) => Promise<void>;
@@ -494,6 +497,10 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       if (typeof email === 'string' && email.trim()) return email.trim();
     }
     return metadataString(meta, 'from_email') ?? metadataString(meta, 'sender_email');
+  }
+
+  function emailMetadataSql() {
+    return sql`lower(coalesce(${rawEvents.sourceMetadata} #>> '{from,email}', ${rawEvents.sourceMetadata} ->> 'from_email', ${rawEvents.sourceMetadata} ->> 'sender_email'))`;
   }
 
   function senderContextForEvent(event: {
@@ -733,7 +740,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         handleConditions.push(
           and(
             eq(rawEvents.source, 'email'),
-            sql`lower(${rawEvents.sourceMetadata} #>> '{from,email}') = ${normalizeIdentityFacet('email', handle)}`,
+            sql`${emailMetadataSql()} = ${normalizeIdentityFacet('email', handle)}`,
           ),
         );
       }
@@ -778,7 +785,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           personConditions.push(
             and(
               eq(rawEvents.source, 'email'),
-              sql`lower(${rawEvents.sourceMetadata} #>> '{from,email}') = ${facet.normalizedValue}`,
+              sql`${emailMetadataSql()} = ${facet.normalizedValue}`,
             ),
           );
         }
@@ -791,29 +798,74 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     return filterGroups.length > 0 ? and(...filterGroups) : null;
   }
 
-  async function senderFilteredEventIds(input: SearchEventsInput): Promise<string[] | null> {
-    if (!input.personObjectId && !input.senderHandle) return null;
-    const senderCondition = await senderFilterCondition(input);
-    if (!senderCondition) return null;
-    const candidateLimit = Math.min(Math.max((input.limit ?? 20) * 50, 200), 2000);
+  async function searchSenderFilteredHits(input: {
+    searchInput: SearchEventsInput;
+    vector: number[];
+    searchOpts: SearchOpts;
+    searchFn: (
+      teamId: string,
+      userId: string,
+      vector: number[],
+      opts: SearchOpts,
+    ) => Promise<SearchHit[]>;
+  }): Promise<{ hits: SearchHit[]; usedSqlSenderFilter: boolean }> {
+    const { searchInput, vector, searchOpts, searchFn } = input;
+    if (!searchInput.personObjectId && !searchInput.senderHandle) {
+      return {
+        hits: await searchFn(teamId, userId, vector, searchOpts),
+        usedSqlSenderFilter: false,
+      };
+    }
+
+    const senderCondition = await senderFilterCondition(searchInput);
+    if (!senderCondition) return { hits: [], usedSqlSenderFilter: true };
+    const batchSize =
+      deps.senderSearchEventIdBatchSize ?? DEFAULT_SENDER_SEARCH_EVENT_ID_BATCH_SIZE;
     const conditions = [
       eq(rawEvents.teamId, teamId),
       visibilityFilter,
       activeRawEventFilter,
       senderCondition,
     ];
-    if (input.from) conditions.push(gte(rawEvents.occurredAt, input.from));
-    if (input.to) conditions.push(lt(rawEvents.occurredAt, input.to));
-    if (input.source) {
-      conditions.push(eq(rawEvents.source, input.source));
+    if (searchInput.from) conditions.push(gte(rawEvents.occurredAt, searchInput.from));
+    if (searchInput.to) conditions.push(lt(rawEvents.occurredAt, searchInput.to));
+    if (searchInput.source) {
+      conditions.push(eq(rawEvents.source, searchInput.source));
     }
-    const rows = await db
-      .select({ id: rawEvents.id })
-      .from(rawEvents)
-      .where(and(...conditions))
-      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
-      .limit(candidateLimit);
-    return rows.map((row) => row.id);
+
+    const hits: SearchHit[] = [];
+    let cursor: { occurredAt: Date; id: string } | null = null;
+    for (;;) {
+      const pageConditions = [...conditions];
+      if (cursor) {
+        pageConditions.push(
+          or(
+            lt(rawEvents.occurredAt, cursor.occurredAt),
+            and(eq(rawEvents.occurredAt, cursor.occurredAt), lt(rawEvents.id, cursor.id)),
+          ),
+        );
+      }
+      const rows = await db
+        .select({ id: rawEvents.id, occurredAt: rawEvents.occurredAt })
+        .from(rawEvents)
+        .where(and(...pageConditions))
+        .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+        .limit(batchSize);
+      if (rows.length === 0) break;
+
+      hits.push(
+        ...(await searchFn(teamId, userId, vector, {
+          ...searchOpts,
+          eventIds: rows.map((row) => row.id),
+        })),
+      );
+
+      if (rows.length < batchSize) break;
+      const last = rows[rows.length - 1];
+      if (!last) break;
+      cursor = { occurredAt: last.occurredAt, id: last.id };
+    }
+    return { hits, usedSqlSenderFilter: true };
   }
 
   function sameVisibilityUsers(
@@ -2146,8 +2198,6 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
         const { vector } = await embedFn({ text: input.query });
         if (input.source && input.senderSource && input.source !== input.senderSource) return [];
-        const senderEventIds = await senderFilteredEventIds(input);
-        if (senderEventIds?.length === 0) return [];
 
         const searchOpts: SearchOpts = {
           limit: input.limit ?? 20,
@@ -2157,7 +2207,6 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         const sourceFilter = input.source ?? input.senderSource;
         if (sourceFilter) searchOpts.source = sourceFilter;
         if (input.entityIds) searchOpts.entityIds = input.entityIds;
-        if (senderEventIds) searchOpts.eventIds = senderEventIds;
         // Only pass through the kind filter when explicitly set. If we always
         // defaulted to ['raw_event', 'fact'] we'd silently drop Phase 5 points
         // that pre-date the `source_kind` payload field (Qdrant's match-any
@@ -2165,7 +2214,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         // event_id step below naturally drops non-event-anchored Phase 8 hits.
         if (input.sourceKind) searchOpts.sourceKind = input.sourceKind;
 
-        const hits = await searchFn(teamId, userId, vector, searchOpts);
+        const { hits, usedSqlSenderFilter } = await searchSenderFilteredHits({
+          searchInput: input,
+          vector,
+          searchOpts,
+          searchFn,
+        });
 
         // Dedupe by event_id. Keep highest score; collect fact_ids; merge
         // entity_ids across event-level + fact-level points on the same event.
@@ -2247,13 +2301,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           if (!ev) continue;
           const senderInfo = senderMap.get(ev.id);
           if (
-            !senderEventIds &&
+            !usedSqlSenderFilter &&
             input.personObjectId &&
             senderInfo?.resolvedSenderObject?.id !== input.personObjectId
           ) {
             continue;
           }
-          if (!senderEventIds && input.senderHandle) {
+          if (!usedSqlSenderFilter && input.senderHandle) {
             const needle = input.senderHandle.replace(/^@/, '').toLowerCase();
             const senderHaystack = [
               senderInfo?.sender?.handle?.replace(/^@/, '').toLowerCase(),

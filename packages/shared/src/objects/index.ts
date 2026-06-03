@@ -1328,7 +1328,7 @@ export async function createNote(
   input: {
     entityId: string;
     body: string;
-    authorUserId: string;
+    authorUserId: string | null;
     metadata?: Record<string, unknown>;
     actor?: UpdateActor;
   },
