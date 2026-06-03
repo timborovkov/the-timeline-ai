@@ -27,4 +27,5 @@ export * from '#src/schema/audit-log.js';
 export * from '#src/schema/team-exports.js';
 export * from '#src/schema/onboarding.js';
 export * from '#src/schema/agent-suggestions.js';
+export * from '#src/schema/conversation-reviews.js';
 export * from '#src/schema/support.js';

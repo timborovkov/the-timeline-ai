@@ -234,9 +234,9 @@ Covered shared areas include:
   media/document routing, and idempotent retries/edits.
 - Telegram DM text and media capture now have regressions proving captured
   conversations enqueue the right downstream work: text/captions enqueue
-  extract/embed/approval suggestions directly, voice/audio enqueues
-  transcription, and the transcribed media path hands off to
-  extract/embed/approval suggestions.
+  extract/embed plus debounced conversation-review suggestions, voice/audio
+  enqueues transcription, and the transcribed media path hands off to
+  extract/embed plus conversation-review suggestions.
 - MCP auth, OAuth state, tool namespace, server handler behavior.
 - Agent tools structural behavior plus fast deterministic evals for timeline
   citations, durable task/calendar state, visibility fences, and failed-tool
@@ -357,9 +357,10 @@ tests and evals carry the branch coverage and model/tool behavior.
 - Completed:
   - Web capture to approval E2E for a team-visible commitment that becomes
     durable task/calendar state after owner acceptance.
-  - Web and Telegram text capture handoff tests prove captured source events
-    enqueue approval suggestions directly, so approvals do not depend on
-    structured fact extraction succeeding first.
+  - Web capture handoff tests prove captured source events can enqueue approval
+    suggestions directly. Telegram text capture now schedules debounced
+    conversation-review suggestions, so conversational approvals are based on
+    the bounded evidence window rather than a single source event.
   - Telegram voice/audio capture has deterministic coverage from webhook-style
     media ingest through transcription handoff, suggestion creation, browser
     approval acceptance, and durable task state.
@@ -409,17 +410,19 @@ tests and evals carry the branch coverage and model/tool behavior.
 - P1 source capture contracts:
   - Web capture creates a raw timeline event with the expected author, source,
     visibility, object links where applicable, and follow-up jobs.
-  - Telegram DM text capture creates a raw event and enqueues extract,
-    suggestion, and embed jobs for the same source event.
+  - Telegram DM text capture creates a raw event and enqueues extract, embed,
+    and debounced conversation-review suggestion work for the source
+    conversation.
   - Telegram voice/audio capture creates an audio raw event, enqueues
-    transcription, backfills transcript text, and enqueues extract/suggestion/
-    embed work from the transcript.
+    transcription, backfills transcript text, and enqueues extract/embed plus
+    conversation-review suggestion work from the transcript.
   - Telegram image/document messages route attachments to document extraction;
     captions enqueue direct text follow-up work, while image-only messages do
     not invent approvals before extraction/OCR.
   - Slack and email captures have deterministic dispatcher/route tests proving
-    source payloads become team-scoped raw events and enqueue extract/
-    suggestion/embed work.
+    source payloads become team-scoped raw events. Slack suggestion work now
+    runs through debounced conversation reviews, while email remains
+    raw-event anchored.
   - Document and integration captures should each have deterministic route/
     integration tests proving source payloads become team-scoped raw events and
     enqueue extract/suggestion/embed work.
@@ -429,6 +432,9 @@ tests and evals carry the branch coverage and model/tool behavior.
   - Raw event text such as "I'll send the proposal next Tuesday" produces task
     and calendar-event suggestion items with evidence linked to the source
     event.
+  - Slack/Telegram raw events schedule conversation-review jobs, and the review
+    worker handles contradiction, pending proposal revision, accepted-proposal
+    correction proposals, and minimal visible evidence citations.
   - Raw event text about an existing account/project produces an object update
     suggestion instead of a duplicate object where the fixture makes the target
     unambiguous.

@@ -141,8 +141,16 @@ export async function closeExtractQueue(): Promise<void> {
   await q.close().catch(() => undefined);
 }
 
-export interface SuggestionJobData {
+export type SuggestionJobData = SuggestionRawEventJobData | SuggestionConversationReviewJobData;
+
+export interface SuggestionRawEventJobData {
   rawEventId: string;
+  teamId: string;
+}
+
+export interface SuggestionConversationReviewJobData {
+  scope: 'conversation_review';
+  conversationReviewId: string;
   teamId: string;
 }
 
@@ -169,8 +177,18 @@ export function getSuggestionQueue(): TimelineQueue<SuggestionJobData> {
   return _suggestionQueue;
 }
 
-export async function enqueueSuggestionJob(data: SuggestionJobData): Promise<void> {
-  await getSuggestionQueue().add('suggestions', data);
+export async function enqueueSuggestionJob(
+  data: SuggestionJobData,
+  opts: { delayMs?: number; jobIdSuffix?: string } = {},
+): Promise<void> {
+  const jobId =
+    'scope' in data
+      ? `conversation-review:${data.conversationReviewId}${opts.jobIdSuffix ? `:${opts.jobIdSuffix}` : ''}`
+      : undefined;
+  await getSuggestionQueue().add('suggestions', data, {
+    ...(jobId ? { jobId } : {}),
+    ...(opts.delayMs ? { delay: opts.delayMs } : {}),
+  });
 }
 
 export async function closeSuggestionQueue(): Promise<void> {
