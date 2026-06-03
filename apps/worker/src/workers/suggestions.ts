@@ -432,6 +432,12 @@ async function runSuggestionExtraction(
   let proposalsCreated = 0;
   for (const bundle of bundles) {
     if (bundle.items.length === 0) continue;
+    if (
+      args.conversation &&
+      !(await isConversationReviewCurrent(deps.db, args.conversation.reviewId, rawEventId))
+    ) {
+      return proposalsCreated;
+    }
     const bundleDedupe = suggestions.suggestionDedupeKey({
       rawEventId: args.conversation ? null : rawEventId,
       conversationKey: args.conversation?.key ?? null,
@@ -547,19 +553,22 @@ async function scheduleConversationReview(
         metadata: sql`${conversationReviews.metadata} || ${JSON.stringify(anchorMetadata)}::jsonb`,
         updatedAt: new Date(),
       },
-      where: sql`COALESCE(
-          (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
-          (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
-        ) IS NULL OR (
+      where: sql`COALESCE(${conversationReviews.metadata} ->> 'review_outcome', '') <> 'superseded_by_thread_review'
+        AND (
           COALESCE(
             (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
             (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
-          ),
-          COALESCE(
-            ${conversationReviews.lastRawEventId},
-            (${conversationReviews.metadata} ->> 'last_anchor_raw_event_id')::uuid
-          )
-        ) < (${row.occurredAt.toISOString()}::timestamptz, ${row.id}::uuid)`,
+          ) IS NULL OR (
+            COALESCE(
+              (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
+              (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
+            ),
+            COALESCE(
+              ${conversationReviews.lastRawEventId},
+              (${conversationReviews.metadata} ->> 'last_anchor_raw_event_id')::uuid
+            )
+          ) < (${row.occurredAt.toISOString()}::timestamptz, ${row.id}::uuid)
+        )`,
     })
     .returning({
       id: conversationReviews.id,

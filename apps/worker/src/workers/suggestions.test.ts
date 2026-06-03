@@ -127,6 +127,8 @@ async function seedConversationReview(
     conversationKey: string;
     lastRawEventId: string;
     quietUntil?: Date;
+    status?: 'pending' | 'completed';
+    metadata?: Record<string, unknown>;
   },
 ): Promise<void> {
   await db.insert(conversationReviews).values({
@@ -134,10 +136,10 @@ async function seedConversationReview(
     teamId: TEAM_ID,
     conversationKey: args.conversationKey,
     source: args.conversationKey.startsWith('slack:') ? 'slack' : 'telegram',
-    status: 'pending',
+    status: args.status ?? 'pending',
     lastRawEventId: args.lastRawEventId,
     quietUntil: args.quietUntil ?? new Date('2026-05-27T10:20:00.000Z'),
-    metadata: {},
+    metadata: args.metadata ?? {},
   });
 }
 
@@ -712,6 +714,67 @@ describe('processSuggestionJobForTests', () => {
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
   });
 
+  it('does not reopen a Slack channel review after a thread review superseded it', async () => {
+    const rootId = '10000000-0000-0000-0000-0000000001b1';
+    const laterId = '10000000-0000-0000-0000-0000000001b2';
+    const reviewId = '20000000-0000-0000-0000-0000000001b1';
+    const channelKey = `slack:${TEAM_ID}:T1:C6`;
+    const threadKey = `slack:${TEAM_ID}:T1:C6:thread:1716810000.000100`;
+    const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
+    await seedRawEvent(db as never, {
+      id: rootId,
+      source: 'slack',
+      text: 'Sarah can send the Acme deck Friday.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      sourceMetadata: {
+        slack_workspace_id: 'T1',
+        slack_channel_id: 'C6',
+        slack_message_ts: '1716810000.000100',
+      },
+    });
+    await seedRawEvent(db as never, {
+      id: laterId,
+      source: 'slack',
+      text: 'Separate channel note after the thread moved proposal review.',
+      occurredAt: new Date('2026-05-27T10:05:00.000Z'),
+      sourceMetadata: {
+        slack_workspace_id: 'T1',
+        slack_channel_id: 'C6',
+        slack_message_ts: '1716810300.000200',
+      },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey: channelKey,
+      lastRawEventId: rootId,
+      status: 'completed',
+      metadata: {
+        review_outcome: 'superseded_by_thread_review',
+        superseded_by_conversation_key: threadKey,
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: laterId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID, enqueueSuggestionJob },
+    );
+
+    const [review] = await db
+      .select()
+      .from(conversationReviews)
+      .where(eq(conversationReviews.id, reviewId));
+    expect(review).toMatchObject({
+      status: 'completed',
+      lastRawEventId: rootId,
+    });
+    expect(review?.metadata).toMatchObject({
+      review_outcome: 'superseded_by_thread_review',
+      superseded_by_conversation_key: threadKey,
+    });
+    expect(enqueueSuggestionJob).not.toHaveBeenCalled();
+  });
+
   it('drops model results when a Slack channel review is superseded in flight', async () => {
     const rootId = '10000000-0000-0000-0000-0000000000fe';
     const reviewId = '20000000-0000-0000-0000-0000000000fe';
@@ -784,6 +847,104 @@ describe('processSuggestionJobForTests', () => {
       review_outcome: 'superseded_by_thread_review',
     });
     expect(review?.reviewedThroughRawEventId).toBeNull();
+  });
+
+  it('stops persisting conversation proposals when the anchor advances mid-run', async () => {
+    const anchorId = '10000000-0000-0000-0000-0000000001c1';
+    const newerId = '10000000-0000-0000-0000-0000000001c2';
+    const reviewId = '20000000-0000-0000-0000-0000000001c1';
+    await seedRawEvent(db as never, {
+      id: anchorId,
+      source: 'telegram',
+      text: 'Sarah will send the Acme deck Friday.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      sourceMetadata: { tg_chat_id: 'mid-run-chat' },
+    });
+    await seedRawEvent(db as never, {
+      id: newerId,
+      source: 'telegram',
+      text: 'Actually wait for legal before sending the deck.',
+      occurredAt: new Date('2026-05-27T10:03:00.000Z'),
+      sourceMetadata: { tg_chat_id: 'mid-run-chat' },
+    });
+    await seedConversationReview(db as never, {
+      id: reviewId,
+      conversationKey: `telegram:${TEAM_ID}:chat:mid-run-chat`,
+      lastRawEventId: anchorId,
+      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+    });
+    await pg.exec(`
+      CREATE FUNCTION advance_review_anchor_during_suggestion_insert()
+      RETURNS trigger AS $$
+      BEGIN
+        UPDATE conversation_reviews
+        SET last_raw_event_id = '${newerId}',
+            metadata = metadata || '{"last_anchor_raw_event_id":"${newerId}","last_anchor_occurred_at":"2026-05-27T10:03:00.000Z"}'::jsonb,
+            updated_at = now()
+        WHERE id = '${reviewId}';
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      CREATE TRIGGER advance_review_anchor_during_suggestion_insert
+      BEFORE INSERT ON agent_suggestions
+      FOR EACH ROW
+      EXECUTE FUNCTION advance_review_anchor_during_suggestion_insert();
+    `);
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Send Acme deck',
+            summary: 'Sarah owns sending the deck.',
+            reason: 'The conversation looked actionable before newer evidence arrived.',
+            confidence: 'high',
+            quote: 'Sarah will send the Acme deck Friday.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Send Acme deck',
+                proposedPayload: { canonicalName: 'Send Acme deck' },
+              },
+            ],
+          },
+          {
+            title: 'Prepare Acme follow-up',
+            summary: 'This stale second bundle should not be written.',
+            reason: 'The anchor moved before this bundle was persisted.',
+            confidence: 'medium',
+            quote: 'Sarah will send the Acme deck Friday.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Prepare Acme follow-up',
+                proposedPayload: { canonicalName: 'Prepare Acme follow-up' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 1 });
+    const [review] = await db
+      .select()
+      .from(conversationReviews)
+      .where(eq(conversationReviews.id, reviewId));
+    expect(review).toMatchObject({
+      status: 'pending',
+      lastRawEventId: newerId,
+      reviewedThroughRawEventId: null,
+    });
   });
 
   it('marks a pending conversation review complete when its anchor was deleted', async () => {
