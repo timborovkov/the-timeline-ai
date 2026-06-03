@@ -18,6 +18,7 @@
       {
         "files": [
           "src/app/actions/auth.ts",
+          "src/app/actions/documents.ts",
           "src/app/actions/events.ts",
           "src/app/actions/invites.ts",
           "src/app/actions/slack.ts",

@@ -256,13 +256,13 @@ export async function finalizeDocumentVersionAction(
         }),
         requireRedisQueue(),
       ]);
-      const [, completedFirstDocument] = await Promise.all([
-        queue.enqueueDocumentExtractJob({
-          documentVersionId: finalized.version.id,
-          teamId: got.teamId,
-        }),
-        safeMarkOnboardingStep(got.scope, 'first_document'),
-      ]);
+      await queue.enqueueDocumentExtractJob({
+        documentVersionId: finalized.version.id,
+        teamId: got.teamId,
+      });
+      // Do not parallelize with enqueue: the checklist advances only after
+      // the extraction job is safely queued.
+      const completedFirstDocument = await safeMarkOnboardingStep(got.scope, 'first_document');
       trackProductEventBestEffort(got.userId, 'document_uploaded', {
         teamId: got.teamId,
         userId: got.userId,
