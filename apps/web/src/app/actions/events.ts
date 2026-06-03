@@ -35,6 +35,23 @@ export interface CreateEventState {
   at?: number;
 }
 
+function formatProcessingWarning(warnings: string[]): string | undefined {
+  if (warnings.length === 0) return undefined;
+
+  const indexingWarnings = warnings.filter((warning) => warning !== 'approval suggestions');
+  const parts: string[] = [];
+  if (indexingWarnings.length > 0) {
+    parts.push(
+      `${indexingWarnings.join(' and ')} need attention before structured facts and search are fully available.`,
+    );
+  }
+  if (warnings.includes('approval suggestions')) {
+    parts.push('Approval suggestions need attention before approvals can be proposed.');
+  }
+
+  return `Saved. ${parts.join(' ')}`;
+}
+
 export async function createTextEventAction(
   _prev: CreateEventState,
   formData: FormData,
@@ -160,10 +177,7 @@ export async function createTextEventAction(
   return {
     ok: true,
     at: Date.now(),
-    warning:
-      processingWarnings.length > 0
-        ? `Saved. ${processingWarnings.join(' and ')} need attention before this is fully searchable.`
-        : undefined,
+    warning: formatProcessingWarning(processingWarnings),
   };
 }
 

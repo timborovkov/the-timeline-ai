@@ -156,7 +156,13 @@ describe('createTextEventAction', () => {
 
     expect(result.ok).toBe(true);
     expect(result.warning).toContain(
-      'structured extraction and semantic search and approval suggestions',
+      'structured extraction and semantic search need attention before structured facts and search are fully available.',
+    );
+    expect(result.warning).toContain(
+      'Approval suggestions need attention before approvals can be proposed.',
+    );
+    expect(result.warning).not.toContain(
+      'approval suggestions need attention before this is fully searchable',
     );
     expect(fakes.fakeDbUpdate).toHaveBeenCalledTimes(3);
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/timeline');

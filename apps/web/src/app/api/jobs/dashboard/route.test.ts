@@ -13,6 +13,7 @@ const fakes = vi.hoisted(() => ({
     enqueueEmbedJob: vi.fn(),
   },
   countRows: [] as number[],
+  whereArgs: [] as unknown[],
 }));
 
 vi.mock('@timeline/db', () => ({
@@ -31,6 +32,7 @@ vi.mock('@timeline/db', () => ({
     contentText: 'content_text',
     createdAt: 'created_at',
     sourceMetadata: 'source_metadata',
+    visibility: 'visibility',
   },
 }));
 vi.mock('drizzle-orm', () => ({
@@ -60,7 +62,8 @@ vi.mock('@/lib/db', () => ({
   db: {
     select: () => ({
       from: () => ({
-        where: () => {
+        where: (arg: unknown) => {
+          fakes.whereArgs.push(arg);
           const count = fakes.countRows.shift() ?? 0;
           return Promise.resolve([{ count }]);
         },
@@ -91,6 +94,7 @@ beforeEach(() => {
   fakes.getDocumentVersion.mockResolvedValue({ id: VERSION_ID });
   fakes.getEvent.mockResolvedValue({ id: EVENT_ID, contentAudioUrl: 'audio/key.webm' });
   fakes.countRows = [1, 2, 999, 3, 4, 5, 6, 7, 8];
+  fakes.whereArgs = [];
 });
 
 describe('/api/jobs/dashboard', () => {
@@ -102,7 +106,7 @@ describe('/api/jobs/dashboard', () => {
     expect((await POST(post({ kind: 'embedding', id: EVENT_ID }))).status).toBe(400);
 
     fakes.requireMembership.mockRejectedValueOnce(new Error('member'));
-    await expect(GET()).rejects.toThrow('member');
+    expect((await GET()).status).toBe(403);
   });
 
   it('serializes dashboard summary counts from scoped queries', async () => {
@@ -122,6 +126,10 @@ describe('/api/jobs/dashboard', () => {
       ['integration_sync', 8],
       ['dead_lettered', 1],
     ]);
+    const serializedWheres = JSON.stringify(fakes.whereArgs);
+    expect(serializedWheres).toContain('extraction_skipped_at');
+    expect(serializedWheres).toContain('embedding_skipped_at');
+    expect(serializedWheres).toContain('visibility');
   });
 
   it('retries document, transcription, extraction, and embedding jobs through queue wrappers', async () => {
