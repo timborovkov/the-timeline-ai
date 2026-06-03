@@ -120,6 +120,24 @@ message. Sender context belongs in source metadata and must be available to
 retrieval and extraction, not only to timeline display.
 _Avoid_: Display-only metadata
 
+**Conversation Evidence Window**:
+A small set of raw events around a conversational anchor event that the agent
+uses to decide whether a task, calendar change, or object memory proposal is
+actually supported by the surrounding exchange. The window starts with the
+same source conversation and may include cross-source linked context only when
+there is a strong relationship signal; every cited event must be visible to
+the audience that receives the answer or proposal.
+_Avoid_: Single-message evidence, chat history dump
+
+**Conversation Review**:
+An ongoing review of a source conversation that re-evaluates durable
+information as new raw events arrive, including follow-up events that clarify
+or contradict an earlier anchor. A conversation review can create, merge, or
+supersede pending proposals, but accepted object memory changes require a new
+proposal; durable decisions inside the review cluster by work item rather than
+treating the whole source conversation as one topic.
+_Avoid_: One-shot message processing, chat summarization
+
 **Sender Resolution**:
 The derived association between a captured sender and a person object. Sender
 resolution may be recorded when a message is ingested and re-evaluated when the

@@ -130,6 +130,27 @@ describe('queue wrappers', () => {
     });
   });
 
+  it('dedupes delayed conversation review suggestion jobs by review id and suffix', async () => {
+    const queues = await importQueues();
+
+    await queues.enqueueSuggestionJob(
+      {
+        scope: 'conversation_review',
+        conversationReviewId: '66666666-6666-4666-8666-666666666666',
+        teamId: '22222222-2222-4222-8222-222222222222',
+      },
+      { delayMs: 600_000, jobIdSuffix: '2026-05-27T10:10:00.000Z' },
+    );
+
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'suggestions',
+      opts: {
+        delay: 600_000,
+        jobId: 'conversation-review:66666666-6666-4666-8666-666666666666:2026-05-27T10:10:00.000Z',
+      },
+    });
+  });
+
   it('registers repeatable jobs with stable job ids and closes singleton queues', async () => {
     const queues = await importQueues();
 

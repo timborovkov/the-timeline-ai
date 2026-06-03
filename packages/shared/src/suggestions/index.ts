@@ -799,36 +799,103 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       for (const uid of input.visibilityUserIds ?? []) await deps.requireTeamMember(uid);
       const metadata = input.metadata ?? {};
       await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
+      const correctionDedupeKey = `${input.dedupeKey}:correction:${suggestionDedupeKey({
+        title: input.title,
+        summary: input.summary ?? null,
+        items: input.items,
+        evidence: input.evidence?.map((ev) => ev.rawEventId) ?? [],
+      })}`;
+      const existingRows = await db
+        .select({ id: agentSuggestions.id, status: agentSuggestions.status })
+        .from(agentSuggestions)
+        .where(
+          and(eq(agentSuggestions.teamId, teamId), eq(agentSuggestions.dedupeKey, input.dedupeKey)),
+        )
+        .limit(1);
+      const existing = existingRows[0];
+      const dedupeKey =
+        existing && (existing.status === 'accepted' || existing.status === 'rejected')
+          ? correctionDedupeKey
+          : input.dedupeKey;
 
-      const row = await db.transaction(async (tx) => {
-        const [inserted] = await tx
-          .insert(agentSuggestions)
-          .values({
-            teamId,
-            source: input.source,
-            title: input.title,
-            summary: input.summary ?? null,
-            reason: input.reason ?? null,
-            confidence: input.confidence ?? 'medium',
-            dedupeKey: input.dedupeKey,
-            visibility,
-            visibilityOwnerUserId,
-            visibilityUserIds: input.visibilityUserIds ?? null,
-            metadata,
-          })
-          .onConflictDoUpdate({
-            target: [agentSuggestions.teamId, agentSuggestions.dedupeKey],
-            set: {
-              title: input.title,
-              summary: input.summary ?? null,
-              reason: input.reason ?? null,
-              confidence: input.confidence ?? 'medium',
-              metadata: sql`${agentSuggestions.metadata} || ${JSON.stringify(metadata)}::jsonb`,
-              updatedAt: new Date(),
-            },
-          })
-          .returning();
-        if (!inserted) throw new Error('Failed to create suggestion');
+      const result = await db.transaction(async (tx) => {
+        const suggestionValues = {
+          teamId,
+          source: input.source,
+          title: input.title,
+          summary: input.summary ?? null,
+          reason: input.reason ?? null,
+          confidence: input.confidence ?? 'medium',
+          dedupeKey,
+          visibility,
+          visibilityOwnerUserId,
+          visibilityUserIds: input.visibilityUserIds ?? null,
+          metadata,
+        };
+        const insertSuggestion = async (candidateDedupeKey: string) => {
+          const [row] = await tx
+            .insert(agentSuggestions)
+            .values({
+              ...suggestionValues,
+              dedupeKey: candidateDedupeKey,
+            })
+            .onConflictDoUpdate({
+              target: [agentSuggestions.teamId, agentSuggestions.dedupeKey],
+              set: {
+                title: input.title,
+                summary: input.summary ?? null,
+                reason: input.reason ?? null,
+                confidence: input.confidence ?? 'medium',
+                metadata: sql`${agentSuggestions.metadata} || ${JSON.stringify(metadata)}::jsonb`,
+                updatedAt: new Date(),
+              },
+              where: sql`${agentSuggestions.status} NOT IN ('accepted', 'rejected')`,
+            })
+            .returning();
+          return row;
+        };
+
+        let inserted = await insertSuggestion(dedupeKey);
+        if (!inserted && dedupeKey === input.dedupeKey) {
+          inserted = await insertSuggestion(correctionDedupeKey);
+        }
+        if (!inserted) {
+          const [resolvedDuplicate] = await tx
+            .select()
+            .from(agentSuggestions)
+            .where(
+              and(eq(agentSuggestions.teamId, teamId), eq(agentSuggestions.dedupeKey, dedupeKey)),
+            )
+            .limit(1);
+          if (resolvedDuplicate?.status === 'accepted') {
+            return { row: resolvedDuplicate, changed: false };
+          }
+          if (resolvedDuplicate?.status === 'rejected') {
+            for (let attempt = 1; attempt <= 10; attempt += 1) {
+              const reofferDedupeKey = `${dedupeKey}:reoffer:${attempt}`;
+              inserted = await insertSuggestion(reofferDedupeKey);
+              if (inserted) break;
+
+              const [reofferDuplicate] = await tx
+                .select()
+                .from(agentSuggestions)
+                .where(
+                  and(
+                    eq(agentSuggestions.teamId, teamId),
+                    eq(agentSuggestions.dedupeKey, reofferDedupeKey),
+                  ),
+                )
+                .limit(1);
+              if (reofferDuplicate?.status === 'accepted') {
+                return { row: reofferDuplicate, changed: false };
+              }
+              if (reofferDuplicate?.status !== 'rejected') break;
+            }
+          }
+        }
+        if (!inserted) {
+          throw new Error('Failed to create suggestion');
+        }
 
         if (input.evidence?.length) {
           await tx
@@ -861,12 +928,21 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               proposedPayload: item.proposedPayload,
             })),
           )
-          .onConflictDoNothing();
+          .onConflictDoUpdate({
+            target: [agentSuggestionItems.suggestionId, agentSuggestionItems.dedupeKey],
+            set: {
+              title: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.title ELSE ${agentSuggestionItems.title} END`,
+              description: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.description ELSE ${agentSuggestionItems.description} END`,
+              targetId: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.target_id ELSE ${agentSuggestionItems.targetId} END`,
+              proposedPayload: sql`CASE WHEN ${agentSuggestionItems.status} = 'pending' THEN excluded.proposed_payload ELSE ${agentSuggestionItems.proposedPayload} END`,
+              updatedAt: new Date(),
+            },
+          });
 
-        return inserted;
+        return { row: inserted, changed: true };
       });
-      await notifySuggestion(row);
-      const loaded = await loadBundle(row.id);
+      if (result.changed) await notifySuggestion(result.row);
+      const loaded = await loadBundle(result.row.id);
       if (!loaded) throw new Error('Suggestion was not visible after creation');
       return loaded;
     },

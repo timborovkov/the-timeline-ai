@@ -1,4 +1,5 @@
 import {
+  conversationReviews,
   entities,
   facts as factsTable,
   rawEvents,
@@ -6,7 +7,15 @@ import {
   users,
   type Db,
 } from '@timeline/db';
-import { getEnv, llm, queue, suggestions, time, withTeam } from '@timeline/shared';
+import {
+  conversationReview,
+  getEnv,
+  llm,
+  queue,
+  suggestions,
+  time,
+  withTeam,
+} from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -33,6 +42,7 @@ interface SuggestionWorkerIO {
   getEnv?: typeof getEnv;
   chatStructured?: typeof llm.chatStructured;
   modelId?: string;
+  enqueueSuggestionJob?: typeof queue.enqueueSuggestionJob;
 }
 
 const suggestionItemSchema = z.object({
@@ -58,6 +68,61 @@ const suggestionExtractionSchema = z.object({
 });
 
 type SuggestionBundleOutput = z.infer<typeof suggestionBundleSchema>;
+
+function tokenizeEvidence(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length >= 4);
+}
+
+function minimalEvidenceForBundle(args: {
+  bundle: SuggestionBundleOutput;
+  fallbackRawEventId: string;
+  fallbackText: string;
+  window: conversationReview.ConversationEvidenceEvent[] | null;
+}): suggestions.SuggestionEvidenceInput[] {
+  if (!args.window || args.window.length === 0) {
+    return [
+      {
+        rawEventId: args.fallbackRawEventId,
+        quote: args.bundle.quote ?? truncate(args.fallbackText, 500),
+      },
+    ];
+  }
+  const haystack = [
+    args.bundle.title,
+    args.bundle.summary ?? '',
+    args.bundle.reason ?? '',
+    args.bundle.quote ?? '',
+    ...args.bundle.items.map((item) => `${item.title} ${JSON.stringify(item.proposedPayload)}`),
+  ].join(' ');
+  const tokens = new Set(tokenizeEvidence(haystack));
+  const scored = args.window
+    .map((event) => {
+      const eventTokens = new Set(tokenizeEvidence(event.contentText));
+      let score = 0;
+      for (const token of tokens) if (eventTokens.has(token)) score += 1;
+      return { event, score };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort(
+      (a, b) => b.score - a.score || a.event.occurredAt.getTime() - b.event.occurredAt.getTime(),
+    )
+    .slice(0, 4);
+  const fallbackEvent = args.window.at(-1);
+  if (!fallbackEvent) return [];
+  const picked = scored.length > 0 ? scored.map((entry) => entry.event) : [fallbackEvent];
+  return picked.map((event) => ({
+    rawEventId: event.id,
+    quote:
+      args.bundle.quote && event.contentText.includes(args.bundle.quote)
+        ? args.bundle.quote
+        : truncate(event.contentText, 500),
+    metadata: { conversation_evidence: true },
+  }));
+}
 
 function makeModelVersion(modelId: string): string {
   return `${modelId}@${SUGGESTION_CODE_VERSION}`;
@@ -176,7 +241,6 @@ export async function processSuggestionJobForTests(
   data: queue.SuggestionJobData,
   io: SuggestionWorkerIO = {},
 ): Promise<void> {
-  const { rawEventId, teamId } = data;
   const env = (io.getEnv ?? getEnv)();
   if (!env.OPENROUTER_API_KEY) {
     throw new UnrecoverableError('suggestions: OPENROUTER_API_KEY not configured');
@@ -184,13 +248,59 @@ export async function processSuggestionJobForTests(
   const modelId = io.modelId ?? llm.TIMELINE_MODELS.extraction.id;
   const modelVersion = makeModelVersion(modelId);
 
+  if ('scope' in data) {
+    await processConversationReviewJob(deps, data, { ...io, modelId }, modelVersion);
+    return;
+  }
+
+  const { rawEventId, teamId } = data;
+
   const rows = await deps.db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)).limit(1);
   const row = rows[0];
   if (!row) throw new UnrecoverableError(`raw event ${rawEventId} not found`);
   if (row.teamId !== teamId) throw new UnrecoverableError(`raw event ${rawEventId} team mismatch`);
+  const identity = conversationReview.conversationIdentityForRawEvent(row);
+  if (identity) {
+    if (row.visibility !== 'team') {
+      await stampSuggestionMetadata(deps.db, rawEventId, {
+        suggestions_skipped_at: new Date().toISOString(),
+        suggestions_skipped_reason: `visibility=${row.visibility}`,
+        suggestion_model_version: modelVersion,
+      });
+      return;
+    }
+    await scheduleConversationReview(deps, row, identity, io);
+    return;
+  }
+  await runSuggestionExtraction(deps, {
+    anchor: row,
+    teamId,
+    modelVersion,
+    modelId,
+    io,
+  });
+}
+
+async function runSuggestionExtraction(
+  deps: SuggestionWorkerDeps,
+  args: {
+    anchor: typeof rawEvents.$inferSelect;
+    teamId: string;
+    modelVersion: string;
+    modelId: string;
+    io: SuggestionWorkerIO;
+    conversation?: {
+      reviewId: string;
+      key: string;
+      window: conversationReview.ConversationEvidenceEvent[];
+      linkedContext: conversationReview.ConversationLinkedContextEvent[];
+    };
+  },
+): Promise<number> {
+  const { anchor: row, teamId, modelVersion, modelId, io } = args;
+  const rawEventId = row.id;
   const text = row.contentText?.trim();
   if (!text) throw new UnrecoverableError(`raw event ${rawEventId} has no content_text`);
-
   const meta =
     row.sourceMetadata && typeof row.sourceMetadata === 'object'
       ? (row.sourceMetadata as Record<string, unknown>)
@@ -201,13 +311,18 @@ export async function processSuggestionJobForTests(
       suggestions_skipped_reason: `visibility=${row.visibility}`,
       suggestion_model_version: modelVersion,
     });
-    return;
+    return 0;
   }
-  if (meta.suggestion_model_version === modelVersion) return;
+  if (!args.conversation && meta.suggestion_model_version === modelVersion) return 0;
 
   const hasSettledExtraction = extractionSettled(meta);
-  if (!hasSettledExtraction && meta.suggestion_pre_extract_model_version === modelVersion) return;
-
+  if (
+    !args.conversation &&
+    !hasSettledExtraction &&
+    meta.suggestion_pre_extract_model_version === modelVersion
+  ) {
+    return 0;
+  }
   const factRows = await deps.db
     .select({ statement: factsTable.statement })
     .from(factsTable)
@@ -282,6 +397,8 @@ export async function processSuggestionJobForTests(
           allDay: ev.allDay,
         })),
       recent: recentRows,
+      conversationWindow: args.conversation?.window ?? null,
+      linkedContext: args.conversation?.linkedContext ?? [],
     }),
     llm.inputTokenBudgetFor(llm.TIMELINE_MODELS.extraction),
   );
@@ -291,28 +408,51 @@ export async function processSuggestionJobForTests(
     schema: suggestionExtractionSchema,
     model: modelId,
     system:
-      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, object updates, or calendar refinements. Do not invent. Use proposal rows only; never claim changes are applied. For date-only scheduled commitments, create all-day calendar_event items. Use UUIDs only from the prompt when targeting existing records.',
+      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, object updates, or calendar refinements. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, or merely conversational. For date-only scheduled commitments, create all-day calendar_event items. Use UUIDs only from the prompt when targeting existing records.',
     prompt,
   });
+
+  if (
+    args.conversation &&
+    !(await isConversationReviewCurrent(deps.db, args.conversation.reviewId, rawEventId))
+  ) {
+    return 0;
+  }
 
   const bundles =
     result.object.bundles.length > 0
       ? result.object.bundles
-      : fallbackBundles({
-          text,
-          timezone: settings.defaultTimezone,
-          occurredAt: row.occurredAt,
-          authorUserId: activeAuthorUserId,
-        });
+      : args.conversation
+        ? []
+        : fallbackBundles({
+            text,
+            timezone: settings.defaultTimezone,
+            occurredAt: row.occurredAt,
+            authorUserId: activeAuthorUserId,
+          });
 
+  let proposalsCreated = 0;
   for (const bundle of bundles) {
     if (bundle.items.length === 0) continue;
+    if (
+      args.conversation &&
+      !(await isConversationReviewCurrent(deps.db, args.conversation.reviewId, rawEventId))
+    ) {
+      return proposalsCreated;
+    }
     const bundleDedupe = suggestions.suggestionDedupeKey({
-      rawEventId,
+      rawEventId: args.conversation ? null : rawEventId,
+      conversationKey: args.conversation?.key ?? null,
       title: bundle.title,
-      items: bundle.items,
+      items: args.conversation ? null : bundle.items,
     });
-    await scope.suggestions.createOrMergeSuggestionBundle({
+    const evidence = minimalEvidenceForBundle({
+      bundle,
+      fallbackRawEventId: rawEventId,
+      fallbackText: text,
+      window: args.conversation?.window ?? null,
+    });
+    const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
       title: bundle.title,
       summary: bundle.summary ?? null,
@@ -322,8 +462,20 @@ export async function processSuggestionJobForTests(
       visibility: row.visibility,
       visibilityOwnerUserId: null,
       visibilityUserIds: null,
-      evidence: [{ rawEventId, quote: bundle.quote ?? truncate(text, 500) }],
-      metadata: { suggestion_model_version: modelVersion },
+      evidence,
+      metadata: {
+        suggestion_model_version: modelVersion,
+        ...(args.conversation
+          ? {
+              conversation_review_id: args.conversation.reviewId,
+              conversation_key: args.conversation.key,
+              evidence_window_hash: suggestions.suggestionDedupeKey(
+                args.conversation.window.map((ev) => ev.id),
+              ),
+              review_outcome: 'proposal',
+            }
+          : {}),
+      },
       items: bundle.items.map((item, index) => ({
         operation: item.operation,
         targetKind: item.targetKind,
@@ -331,29 +483,328 @@ export async function processSuggestionJobForTests(
         title: item.title,
         description: item.description ?? null,
         dedupeKey: suggestions.suggestionDedupeKey({
-          rawEventId,
+          rawEventId: args.conversation ? null : rawEventId,
           bundleDedupe,
           index,
-          item,
+          operation: item.operation,
+          targetKind: item.targetKind,
+          targetId: item.targetId ?? null,
+          title: item.title,
+          item: args.conversation ? null : item,
         }),
         proposedPayload: item.proposedPayload,
       })),
     });
+    if (suggestion.status === 'pending' || suggestion.status === 'partially_resolved') {
+      proposalsCreated += 1;
+    }
   }
 
   await stampSuggestionMetadata(
     deps.db,
     rawEventId,
-    hasSettledExtraction
+    args.conversation
       ? {
+          conversation_reviewed_at: new Date().toISOString(),
+          conversation_review_id: args.conversation.reviewId,
+          conversation_key: args.conversation.key,
           suggestion_model_version: modelVersion,
-          suggestions_extracted_at: new Date().toISOString(),
         }
-      : {
-          suggestion_pre_extract_model_version: modelVersion,
-          suggestions_pre_extracted_at: new Date().toISOString(),
-        },
+      : hasSettledExtraction
+        ? {
+            suggestion_model_version: modelVersion,
+            suggestions_extracted_at: new Date().toISOString(),
+          }
+        : {
+            suggestion_pre_extract_model_version: modelVersion,
+            suggestions_pre_extracted_at: new Date().toISOString(),
+          },
   );
+  return proposalsCreated;
+}
+
+async function scheduleConversationReview(
+  deps: SuggestionWorkerDeps,
+  row: typeof rawEvents.$inferSelect,
+  identity: conversationReview.ConversationIdentity,
+  io: SuggestionWorkerIO,
+): Promise<void> {
+  const quietUntil = conversationReview.quietUntilFor();
+  const anchorMetadata = {
+    kind: identity.kind,
+    last_anchor_raw_event_id: row.id,
+    last_anchor_occurred_at: row.occurredAt.toISOString(),
+  };
+  const [review] = await deps.db
+    .insert(conversationReviews)
+    .values({
+      teamId: row.teamId,
+      conversationKey: identity.key,
+      source: identity.source,
+      status: 'pending',
+      lastRawEventId: row.id,
+      quietUntil,
+      metadata: anchorMetadata,
+    })
+    .onConflictDoUpdate({
+      target: [conversationReviews.teamId, conversationReviews.conversationKey],
+      set: {
+        status: 'pending',
+        lastRawEventId: row.id,
+        quietUntil,
+        metadata: sql`${conversationReviews.metadata} || ${JSON.stringify(anchorMetadata)}::jsonb`,
+        updatedAt: new Date(),
+      },
+      where: sql`COALESCE(${conversationReviews.metadata} ->> 'review_outcome', '') <> 'superseded_by_thread_review'
+        AND (
+          COALESCE(
+            (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
+            (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
+          ) IS NULL OR (
+            COALESCE(
+              (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
+              (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
+            ),
+            COALESCE(
+              ${conversationReviews.lastRawEventId},
+              (${conversationReviews.metadata} ->> 'last_anchor_raw_event_id')::uuid
+            )
+          ) < (${row.occurredAt.toISOString()}::timestamptz, ${row.id}::uuid)
+        )`,
+    })
+    .returning({
+      id: conversationReviews.id,
+      teamId: conversationReviews.teamId,
+      status: conversationReviews.status,
+      quietUntil: conversationReviews.quietUntil,
+    });
+  const scheduledReview =
+    review ?? (await loadPendingConversationReview(deps.db, row.teamId, identity.key));
+  if (scheduledReview?.status !== 'pending') return;
+  const delayMs = Math.max(0, scheduledReview.quietUntil.getTime() - Date.now());
+  await (io.enqueueSuggestionJob ?? queue.enqueueSuggestionJob)(
+    {
+      scope: 'conversation_review',
+      conversationReviewId: scheduledReview.id,
+      teamId: scheduledReview.teamId,
+    },
+    { delayMs, jobIdSuffix: scheduledReview.quietUntil.toISOString() },
+  );
+  await supersedePendingSlackChannelReviewForThreadReply(deps.db, row);
+}
+
+async function loadPendingConversationReview(
+  db: Db,
+  teamId: string,
+  conversationKey: string,
+): Promise<{
+  id: string;
+  teamId: string;
+  status: string;
+  quietUntil: Date;
+} | null> {
+  const [review] = await db
+    .select({
+      id: conversationReviews.id,
+      teamId: conversationReviews.teamId,
+      status: conversationReviews.status,
+      quietUntil: conversationReviews.quietUntil,
+    })
+    .from(conversationReviews)
+    .where(
+      and(
+        eq(conversationReviews.teamId, teamId),
+        eq(conversationReviews.conversationKey, conversationKey),
+      ),
+    )
+    .limit(1);
+  return review ?? null;
+}
+
+async function processConversationReviewJob(
+  deps: SuggestionWorkerDeps,
+  data: queue.SuggestionConversationReviewJobData,
+  io: SuggestionWorkerIO,
+  modelVersion: string,
+): Promise<void> {
+  const rows = await deps.db
+    .select({ review: conversationReviews, last: rawEvents })
+    .from(conversationReviews)
+    .leftJoin(rawEvents, eq(rawEvents.id, conversationReviews.lastRawEventId))
+    .where(eq(conversationReviews.id, data.conversationReviewId))
+    .limit(1);
+  const hit = rows[0];
+  if (!hit) {
+    throw new UnrecoverableError(`conversation review ${data.conversationReviewId} not found`);
+  }
+  const review = hit.review;
+  const last = hit.last;
+  if (review.teamId !== data.teamId) {
+    throw new UnrecoverableError(`conversation review ${data.conversationReviewId} team mismatch`);
+  }
+  if (review.status !== 'pending') return;
+  if (!last) {
+    await markReviewMissingAnchor(deps.db, review.id);
+    return;
+  }
+  const now = new Date();
+  if (review.quietUntil > now) {
+    await (io.enqueueSuggestionJob ?? queue.enqueueSuggestionJob)(
+      { scope: 'conversation_review', conversationReviewId: review.id, teamId: review.teamId },
+      {
+        delayMs: review.quietUntil.getTime() - now.getTime(),
+        jobIdSuffix: review.quietUntil.toISOString(),
+      },
+    );
+    return;
+  }
+  if (review.reviewedThroughRawEventId === last.id) return;
+
+  const identity = conversationReview.conversationIdentityForRawEvent(last);
+  if (!identity) {
+    await markReviewComplete(deps.db, review.id, last, 'identity_missing');
+    return;
+  }
+  const window = await conversationReview.buildConversationEvidenceWindow(deps.db, {
+    teamId: review.teamId,
+    identity,
+    anchorOccurredAt: last.occurredAt,
+  });
+  if (window.length === 0) {
+    await markReviewComplete(deps.db, review.id, last);
+    return;
+  }
+  const linkedContext = await conversationReview.buildLinkedContextWindow(deps.db, {
+    teamId: review.teamId,
+    identity,
+    evidenceWindow: window,
+  });
+  if (!(await isConversationReviewCurrent(deps.db, review.id, last.id))) return;
+
+  const proposalsCreated = await runSuggestionExtraction(deps, {
+    anchor: last,
+    teamId: review.teamId,
+    modelVersion,
+    modelId: io.modelId ?? llm.TIMELINE_MODELS.extraction.id,
+    io,
+    conversation: { reviewId: review.id, key: review.conversationKey, window, linkedContext },
+  });
+  await markReviewComplete(
+    deps.db,
+    review.id,
+    last,
+    proposalsCreated > 0 ? 'proposal' : 'no_action',
+  );
+}
+
+async function supersedePendingSlackChannelReviewForThreadReply(
+  db: Db,
+  row: typeof rawEvents.$inferSelect,
+): Promise<void> {
+  const thread = conversationReview.slackThreadInfoForRawEvent(row);
+  if (!thread) return;
+
+  const channelKey = conversationReview.slackChannelConversationKey({
+    teamId: row.teamId,
+    workspaceId: thread.workspaceId,
+    channelId: thread.channelId,
+  });
+  const threadKey = `slack:${row.teamId}:${thread.workspaceId}:${thread.channelId}:thread:${thread.threadTs}`;
+
+  await db
+    .update(conversationReviews)
+    .set({
+      status: 'completed',
+      metadata: sql`${conversationReviews.metadata} || ${JSON.stringify({
+        review_outcome: 'superseded_by_thread_review',
+        superseded_by_conversation_key: threadKey,
+        reviewed_at: new Date().toISOString(),
+      })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(conversationReviews.teamId, row.teamId),
+        eq(conversationReviews.conversationKey, channelKey),
+        eq(conversationReviews.status, 'pending'),
+        sql`${conversationReviews.lastRawEventId} IN (
+          SELECT ${rawEvents.id}
+          FROM ${rawEvents}
+          WHERE ${rawEvents.teamId} = ${row.teamId}
+            AND ${rawEvents.source} = 'slack'
+            AND ${rawEvents.sourceMetadata} ->> 'slack_workspace_id' = ${thread.workspaceId}
+            AND ${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${thread.channelId}
+            AND ${rawEvents.sourceMetadata} ->> 'slack_thread_ts' IS NULL
+            AND (${rawEvents.occurredAt}, ${rawEvents.id}) <= (${row.occurredAt.toISOString()}::timestamptz, ${row.id}::uuid)
+        )`,
+      ),
+    );
+}
+
+async function isConversationReviewCurrent(
+  db: Db,
+  reviewId: string,
+  lastRawEventId: string,
+): Promise<boolean> {
+  const [review] = await db
+    .select({ id: conversationReviews.id })
+    .from(conversationReviews)
+    .where(
+      and(
+        eq(conversationReviews.id, reviewId),
+        eq(conversationReviews.status, 'pending'),
+        eq(conversationReviews.lastRawEventId, lastRawEventId),
+      ),
+    )
+    .limit(1);
+  return Boolean(review);
+}
+
+async function markReviewMissingAnchor(db: Db, reviewId: string): Promise<void> {
+  await db
+    .update(conversationReviews)
+    .set({
+      status: 'completed',
+      metadata: sql`${conversationReviews.metadata} || ${JSON.stringify({
+        review_outcome: 'anchor_missing',
+        reviewed_at: new Date().toISOString(),
+      })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(conversationReviews.id, reviewId),
+        eq(conversationReviews.status, 'pending'),
+        isNull(conversationReviews.lastRawEventId),
+      ),
+    );
+}
+
+async function markReviewComplete(
+  db: Db,
+  reviewId: string,
+  last: typeof rawEvents.$inferSelect,
+  outcome = 'no_action',
+): Promise<void> {
+  await db
+    .update(conversationReviews)
+    .set({
+      status: 'completed',
+      reviewedThroughRawEventId: last.id,
+      reviewedThroughOccurredAt: last.occurredAt,
+      metadata: sql`${conversationReviews.metadata} || ${JSON.stringify({
+        review_outcome: outcome,
+        reviewed_at: new Date().toISOString(),
+      })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(conversationReviews.id, reviewId),
+        eq(conversationReviews.status, 'pending'),
+        eq(conversationReviews.lastRawEventId, last.id),
+      ),
+    );
 }
 
 function buildPrompt(args: {
@@ -365,6 +816,8 @@ function buildPrompt(args: {
   objects: { id: string; type: string; name: string; status: string }[];
   calendar: { id: string; title: string; startAt: string; allDay: boolean }[];
   recent: { occurredAt: Date; text: string | null }[];
+  conversationWindow: conversationReview.ConversationEvidenceEvent[] | null;
+  linkedContext: conversationReview.ConversationLinkedContextEvent[];
 }): string {
   return [
     `Workspace timezone: ${args.workspaceTime.timezone}`,
@@ -384,10 +837,27 @@ function buildPrompt(args: {
     '# Existing facts from this event',
     ...args.facts.map((f) => `- ${f}`),
     '',
-    '# Recent context',
-    ...args.recent.map((r) => `- [${r.occurredAt.toISOString()}] ${truncate(r.text ?? '', 500)}`),
+    args.conversationWindow ? '# Conversation evidence window' : '# Recent context',
+    ...(args.conversationWindow
+      ? args.conversationWindow.map(
+          (r) => `- [${r.id} ${r.occurredAt.toISOString()}] ${truncate(r.contentText, 700)}`,
+        )
+      : args.recent.map((r) => `- [${r.occurredAt.toISOString()}] ${truncate(r.text ?? '', 500)}`)),
+    ...(args.conversationWindow
+      ? [
+          '',
+          '# Explicit linked context',
+          'Use only for disambiguating object-backed references. Do not create or update proposals from this section unless the conversation evidence window itself supports the proposal.',
+          ...args.linkedContext.map(
+            (r) =>
+              `- [${r.id} ${r.source} ${r.occurredAt.toISOString()} objects=${r.linkedObjects
+                .map((object) => `${object.type}:${object.name}`)
+                .join(', ')}] ${truncate(r.contentText, 500)}`,
+          ),
+        ]
+      : []),
     '',
-    '# Current raw event',
+    args.conversationWindow ? '# Anchor raw event' : '# Current raw event',
     args.text,
   ].join('\n');
 }

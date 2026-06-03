@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import { rawEvents, type Db } from '@timeline/db';
+import { conversationReviews, rawEvents, type Db } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
 import { handleUpdate, type TelegramApi } from '@timeline/shared/telegram';
 import { UnrecoverableError } from 'bullmq';
@@ -323,12 +323,71 @@ describe('processTranscribeJobForTests', () => {
       teamId: TEAM_ID,
     });
 
+    const enqueueConversationReview = vi.fn().mockResolvedValue(undefined);
     await processSuggestionJobForTests(
       { db: db as never },
       { rawEventId: job.rawEventId, teamId: TEAM_ID },
       {
         getEnv: () => ({ OPENROUTER_API_KEY: 'test-key' }) as never,
         chatStructured: vi.fn().mockResolvedValue({ object: { bundles: [] }, model: 'e2e' }),
+        modelId: 'telegram-media-test',
+        enqueueSuggestionJob: enqueueConversationReview,
+      },
+    );
+    const [review] = await db.select().from(conversationReviews);
+    expect(review?.lastRawEventId).toBe(job.rawEventId);
+    const reviewId = review?.id;
+    if (!reviewId) throw new Error('expected conversation review');
+    await db
+      .update(conversationReviews)
+      .set({ quietUntil: new Date('2026-05-27T09:00:00.000Z') })
+      .where(eq(conversationReviews.id, reviewId));
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      {
+        getEnv: () => ({ OPENROUTER_API_KEY: 'test-key' }) as never,
+        chatStructured: vi.fn().mockResolvedValue({
+          object: {
+            bundles: [
+              {
+                title: 'Schedule lead meeting',
+                summary: 'The voice memo commits to scheduling the lead meeting.',
+                reason: 'The conversation evidence contains an explicit commitment.',
+                confidence: 'medium',
+                quote: "I'll schedule the lead meeting next Monday",
+                items: [
+                  {
+                    operation: 'create',
+                    targetKind: 'task',
+                    title: 'Schedule lead meeting',
+                    proposedPayload: {
+                      canonicalName: 'Schedule lead meeting',
+                      dueAt: '2026-06-01T00:00:00.000Z',
+                    },
+                  },
+                  {
+                    operation: 'create',
+                    targetKind: 'calendar_event',
+                    title: 'Schedule lead meeting',
+                    proposedPayload: {
+                      title: 'Schedule lead meeting',
+                      startAt: '2026-06-01T00:00:00.000Z',
+                      endAt: '2026-06-02T00:00:00.000Z',
+                      startDate: '2026-06-01',
+                      endDate: '2026-06-02',
+                      timezone: 'UTC',
+                      allDay: true,
+                      visibility: 'team',
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+          model: 'e2e',
+        }),
         modelId: 'telegram-media-test',
       },
     );

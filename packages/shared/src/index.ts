@@ -37,4 +37,5 @@ export * as audit from '#src/audit/index.js';
 export * as onboarding from '#src/onboarding/index.js';
 export * as time from '#src/time/index.js';
 export * as suggestions from '#src/suggestions/index.js';
+export * as conversationReview from '#src/conversation-review/index.js';
 export * as analytics from '#src/analytics/events.js';
