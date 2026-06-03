@@ -151,10 +151,10 @@ async function generateChatTitle(input: {
 async function titleChatSession(input: {
   scope: ReturnType<typeof withTeam>;
   sessionId: string | undefined;
-  latestUserMessage: UIMessage | null;
+  titleSourceMessage: UIMessage | null;
 }): Promise<void> {
   if (!input.sessionId) return;
-  const question = messageText(input.latestUserMessage);
+  const question = messageText(input.titleSourceMessage);
   if (!question) return;
   const title = deterministicChatEnabled()
     ? dedupeChatTitle(
@@ -274,6 +274,7 @@ async function deterministicChatResponse(input: {
   scope: ReturnType<typeof withTeam>;
   sessionId: string | undefined;
   latestUserMessage: UIMessage | null;
+  titleSourceMessage: UIMessage | null;
   teamId: string;
   userId: string;
   shouldTitleSession: boolean;
@@ -360,7 +361,7 @@ async function deterministicChatResponse(input: {
       await titleChatSession({
         scope: input.scope,
         sessionId: input.sessionId,
-        latestUserMessage: input.latestUserMessage,
+        titleSourceMessage: input.titleSourceMessage,
       }).catch((err: unknown) => {
         log.warn(
           { err, sessionId: input.sessionId, teamId: input.teamId, userId: input.userId },
@@ -586,6 +587,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, error: 'invalid_messages' }, { status: 400 });
   }
   const uiMessages = validation.data;
+  const firstUserMessage = uiMessages.find((m) => m.role === 'user') ?? null;
   const latestUserMessage = [...uiMessages].reverse().find((m) => m.role === 'user') ?? null;
 
   if (deterministicChatEnabled()) {
@@ -593,6 +595,7 @@ export async function POST(req: Request): Promise<Response> {
       scope,
       sessionId,
       latestUserMessage,
+      titleSourceMessage: firstUserMessage,
       teamId: active.teamId,
       userId: session.user.id,
       shouldTitleSession,
@@ -709,7 +712,7 @@ export async function POST(req: Request): Promise<Response> {
         }
         if (!shouldTitleSession) return;
         try {
-          await titleChatSession({ scope, sessionId, latestUserMessage });
+          await titleChatSession({ scope, sessionId, titleSourceMessage: firstUserMessage });
         } catch (err) {
           log.warn(
             { err, sessionId, teamId: active.teamId, userId: session.user.id },

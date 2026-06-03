@@ -113,6 +113,11 @@ const SESSION_ID = '33333333-3333-4333-8333-333333333333';
 const PINNED_ID = '44444444-4444-4444-8444-444444444444';
 
 const userMessage = { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'What happened?' }] };
+const followUpMessage = {
+  id: 'm2',
+  role: 'user',
+  parts: [{ type: 'text', text: 'What changed since then?' }],
+};
 let capturedOnFinish: ((event: Record<string, unknown>) => void) | null = null;
 
 function request(body: unknown, url = 'https://timeline.test/api/chat'): Request {
@@ -500,8 +505,14 @@ describe('POST /api/chat', () => {
 
   it('retries titling an existing persisted session that still has no title', async () => {
     fakes.fakeChatSessionTitleStatus.mockResolvedValue({ exists: true, needsTitle: true });
+    fakes.fakeSafeValidateUIMessages.mockResolvedValue({
+      success: true,
+      data: [userMessage, followUpMessage],
+    });
 
-    const response = await POST(request(validBody({ sessionId: SESSION_ID })));
+    const response = await POST(
+      request(validBody({ messages: [userMessage, followUpMessage], sessionId: SESSION_ID })),
+    );
 
     expect(response.status).toBe(200);
     capturedOnFinish?.({
@@ -517,6 +528,11 @@ describe('POST /api/chat', () => {
         { touchUpdatedAt: false },
       );
     });
+    const titleCall = fakes.fakeChatStructured.mock.calls.at(0) as unknown as
+      | [{ prompt?: unknown }]
+      | undefined;
+    expect(titleCall?.[0].prompt).toEqual(expect.stringContaining('What happened?'));
+    expect(titleCall?.[0].prompt).not.toEqual(expect.stringContaining('What changed since then?'));
   });
 
   it('falls back to a sanitized first-message title when title generation fails', async () => {
