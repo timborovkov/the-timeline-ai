@@ -11,6 +11,10 @@ function booleanString(value: unknown): boolean | undefined {
   return value as boolean;
 }
 
+function emptyStringAsUnset(value: unknown): unknown {
+  return value === '' ? undefined : value;
+}
+
 function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return {
     ...raw,
@@ -53,7 +57,7 @@ const baseSchema = z.object({
    * the same as "unset" — `.url()` would otherwise reject empty string and
    * crash startup for anyone who copied .env.example verbatim.
    */
-  S3_PUBLIC_ENDPOINT: z.preprocess((v) => (v === '' ? undefined : v), z.url().optional()),
+  S3_PUBLIC_ENDPOINT: z.preprocess(emptyStringAsUnset, z.url().optional()),
   S3_REGION: z.string().optional(),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
@@ -75,8 +79,11 @@ const baseSchema = z.object({
   // LangSmith LLM observability (optional)
   LANGSMITH_TRACING: z.preprocess(booleanString, z.boolean().default(false)),
   LANGSMITH_API_KEY: z.string().optional(),
-  LANGSMITH_PROJECT: z.string().optional(),
-  LANGSMITH_ENDPOINT: z.url().default('https://api.smith.langchain.com'),
+  LANGSMITH_PROJECT: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  LANGSMITH_ENDPOINT: z.preprocess(
+    emptyStringAsUnset,
+    z.url().default('https://api.smith.langchain.com'),
+  ),
   LANGSMITH_WORKSPACE_ID: z.string().optional(),
 
   // Telegram (Phase 2+)
@@ -95,7 +102,7 @@ const baseSchema = z.object({
    * local/dev environments where the public form should show a config error
    * instead of silently dropping messages.
    */
-  SUPPORT_EMAIL: z.preprocess((v) => (v === '' ? undefined : v), z.email().optional()),
+  SUPPORT_EMAIL: z.preprocess(emptyStringAsUnset, z.email().optional()),
   INBOUND_EMAIL_DOMAIN: z.string().optional(),
   /**
    * Dev / no-own-domain fallback. When set to a Postmark-default inbound

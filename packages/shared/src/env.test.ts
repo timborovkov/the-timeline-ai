@@ -95,6 +95,23 @@ describe('getEnv', () => {
     });
   });
 
+  it('treats a blank LangSmith endpoint as unset', () => {
+    setBaseEnv({
+      LANGSMITH_ENDPOINT: '',
+    });
+
+    expect(getEnv().LANGSMITH_ENDPOINT).toBe('https://api.smith.langchain.com');
+  });
+
+  it('treats a blank LangSmith project as unset', () => {
+    setBaseEnv({
+      NODE_ENV: 'production',
+      LANGSMITH_PROJECT: '',
+    });
+
+    expect(getEnv().LANGSMITH_PROJECT).toBe('timeline-production');
+  });
+
   it('rejects invalid LangSmith endpoint URLs', () => {
     setBaseEnv({
       LANGSMITH_ENDPOINT: 'not a url',
