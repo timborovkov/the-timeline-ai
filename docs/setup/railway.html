@@ -114,7 +114,9 @@
         <code>NEXT_PUBLIC_SENTRY_PROFILES_SAMPLE_RATE</code>, <code>SENTRY_ENVIRONMENT</code>,
         <code>SENTRY_TRACES_SAMPLE_RATE</code>, <code>SENTRY_PROFILES_SAMPLE_RATE</code>, and
         optional source-map upload variables <code>SENTRY_AUTH_TOKEN</code>,
-        <code>SENTRY_ORG</code>, and <code>SENTRY_PROJECT</code>.
+        <code>SENTRY_ORG</code>, <code>SENTRY_PROJECT</code>, and <code>SENTRY_RELEASE</code>.
+        Source-map variables must be available during the Railway build phase for both the Next.js
+        upload and worker <code>sentry-cli</code> upload.
       </p>
 
       <h2 id="healthchecks">6. Healthchecks</h2>

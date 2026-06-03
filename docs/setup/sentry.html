@@ -60,11 +60,25 @@ SENTRY_PROFILES_SAMPLE_RATE=0
         scrubber removes request cookies and auth headers before send.
       </p>
       <h2 id="source-maps">3. Source maps</h2>
-      <p>Set these only in CI/deploy environments that should upload source maps:</p>
+      <p>
+        The web build uploads Next.js source maps through <code>withSentryConfig</code>. The worker
+        build runs <code>sentry-cli sourcemaps inject</code> and
+        <code>sentry-cli sourcemaps upload</code> for <code>apps/worker/dist</code>,
+        <code>packages/shared/dist</code>, and <code>packages/db/dist</code>. Set these only in
+        CI/deploy environments that should upload source maps, and make sure they are available at
+        build time, not only runtime:
+      </p>
       <pre><code>SENTRY_AUTH_TOKEN=
 SENTRY_ORG=
 SENTRY_PROJECT=
+SENTRY_RELEASE=
 </code></pre>
+      <p>
+        <code>SENTRY_RELEASE</code> is optional because injected debug IDs are enough for source-map
+        matching, but setting it to the deployed git SHA makes Sentry releases easier to audit.
+        Without the first three values, the worker upload script logs a skip and local builds still
+        succeed.
+      </p>
       <h2 id="alerts">4. Production alerting checklist</h2>
       <ul>
         <li>
@@ -81,7 +95,8 @@ SENTRY_PROJECT=
         </li>
         <li>
           Set <code>SENTRY_AUTH_TOKEN</code>, <code>SENTRY_ORG</code>, and
-          <code>SENTRY_PROJECT</code> in CI/deploy environments that should upload source maps.
+          <code>SENTRY_PROJECT</code> in CI/deploy build environments that should upload source
+          maps.
         </li>
       </ul>
     </main>

@@ -140,6 +140,7 @@ const schema = z.object({
   SENTRY_AUTH_TOKEN: z.string().optional(),
   SENTRY_ORG: z.string().optional(),
   SENTRY_PROJECT: z.string().optional(),
+  SENTRY_RELEASE: z.string().optional(),
 
   // PostHog product analytics + feature flags. Browser-facing values are
   // intentionally public; server helpers no-op when the project key is unset.

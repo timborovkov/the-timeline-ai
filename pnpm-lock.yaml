@@ -11,6 +11,9 @@ importers:
       '@playwright/test':
         specifier: ^1.60.0
         version: 1.60.0
+      '@sentry/cli':
+        specifier: 2.58.6
+        version: 2.58.6
       '@timeline/db':
         specifier: workspace:*
         version: link:packages/db
