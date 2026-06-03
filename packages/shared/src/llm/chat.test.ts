@@ -86,6 +86,41 @@ describe('chatStructured', () => {
     expect(result.model).toBe(TIMELINE_MODELS.extraction.id);
   });
 
+  it('repairs known legacy extraction field aliases', async () => {
+    const result = await chatStructured(
+      {
+        schema: extractionResultSchema,
+        prompt: 'Extract facts from: The AuditAI team has a meeting scheduled for Monday.',
+        system: EXTRACTION_SYSTEM_PROMPT,
+      },
+      {
+        model: makeMockModel(
+          JSON.stringify({
+            facts: [
+              {
+                text: 'The AuditAI team has a meeting scheduled for Monday.',
+                confidence: 0.7,
+                entities: [
+                  { name: 'AuditAI', type: 'project', role: 'subject' },
+                  { name: 'Monday meeting', type: 'topic', role: 'topic' },
+                ],
+              },
+            ],
+          }),
+        ),
+      },
+    );
+
+    expect(result.object.facts[0]).toEqual({
+      statement: 'The AuditAI team has a meeting scheduled for Monday.',
+      confidence: 0.7,
+      mentions: [
+        { name: 'AuditAI', type: 'project', role: 'subject' },
+        { name: 'Monday meeting', type: 'topic', role: 'topic' },
+      ],
+    });
+  });
+
   it('requests OpenRouter json_schema structured output for extraction', async () => {
     const requests: unknown[] = [];
     const fetchStub: typeof fetch = (_url, init) => {

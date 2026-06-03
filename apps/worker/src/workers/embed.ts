@@ -17,6 +17,20 @@ interface EmbedWorkerIO {
   getQdrantClient?: typeof qdrant.getQdrantClient;
 }
 
+function embedFailureTags(job: Pick<Job<queue.EmbedJobData>, 'data'> | undefined) {
+  const data = job?.data;
+  if (!data || typeof data !== 'object') return {};
+  const rawEventId =
+    'rawEventId' in data && typeof data.rawEventId === 'string' ? data.rawEventId : undefined;
+  const factId = 'factId' in data && typeof data.factId === 'string' ? data.factId : undefined;
+  const teamId = 'teamId' in data && typeof data.teamId === 'string' ? data.teamId : undefined;
+  try {
+    return { scope: embedding.resolveEmbeddingScope(data), rawEventId, factId, teamId };
+  } catch {
+    return { rawEventId, factId, teamId };
+  }
+}
+
 async function processEmbedJob(
   deps: EmbedWorkerDeps,
   data: queue.EmbedJobData,
@@ -115,7 +129,7 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
 
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'job failed');
-    captureWorkerJobFailure(err, job);
+    captureWorkerJobFailure(err, job, embedFailureTags(job));
     if (!job) return;
     const maxAttempts = job.opts.attempts ?? 1;
     const unrecoverable = err instanceof UnrecoverableError;
@@ -169,3 +183,5 @@ export async function processEmbedJobForTests(
 ) {
   return processEmbedJob(deps, data, io);
 }
+
+export const embedWorkerInternals = { embedFailureTags };

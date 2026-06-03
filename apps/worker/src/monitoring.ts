@@ -50,12 +50,19 @@ function shouldCaptureWorkerJobFailure(
   return job.attemptsMade >= maxAttempts;
 }
 
+function isTerminalWorkerJobFailure(
+  job: Pick<Job, 'attemptsMade' | 'opts'> | undefined,
+  err: unknown,
+): boolean {
+  return shouldCaptureWorkerJobFailure(job, err);
+}
+
 export function captureWorkerJobFailure(
   err: unknown,
   job: Pick<Job, 'id' | 'name' | 'queueName' | 'attemptsMade' | 'opts'> | undefined,
   tags: Record<string, string | number | boolean | null | undefined> = {},
 ): void {
-  if (!shouldCaptureWorkerJobFailure(job, err)) return;
+  const terminal = isTerminalWorkerJobFailure(job, err);
   captureWorkerException(err, {
     component: 'worker_job',
     queueName: job?.queueName,
@@ -63,7 +70,7 @@ export function captureWorkerJobFailure(
     jobId: job?.id,
     attemptsMade: job?.attemptsMade,
     maxAttempts: job?.opts.attempts ?? 1,
-    terminal: true,
+    terminal,
     unrecoverable: err instanceof UnrecoverableError,
     ...tags,
   });

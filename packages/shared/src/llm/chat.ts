@@ -1,6 +1,7 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import {
   stepCountIs,
+  type RepairTextFunction,
   type LanguageModel,
   type ModelMessage,
   type StreamTextResult,
@@ -47,6 +48,37 @@ function structuredOutputSystem(system?: string): string {
   return system.toLowerCase().includes('json') ? system : `${system}\n\n${jsonInstruction}`;
 }
 
+function repairKnownStructuredAliases(schema: z.ZodType): RepairTextFunction {
+  return ({ text }) => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return Promise.resolve(null);
+    }
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      !Array.isArray((parsed as { facts?: unknown }).facts)
+    ) {
+      return Promise.resolve(null);
+    }
+    const repaired = {
+      ...(parsed as Record<string, unknown>),
+      facts: (parsed as { facts: unknown[] }).facts.map((fact) => {
+        if (!fact || typeof fact !== 'object') return fact;
+        const row = fact as Record<string, unknown>;
+        return {
+          ...row,
+          statement: row.statement ?? row.text,
+          mentions: row.mentions ?? row.entities,
+        };
+      }),
+    };
+    return Promise.resolve(schema.safeParse(repaired).success ? JSON.stringify(repaired) : null);
+  };
+}
+
 export function buildOpenRouterLanguageModel(
   modelId: string,
   deps: Pick<ChatDeps, 'fetch'> = {},
@@ -90,6 +122,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
     schema: input.schema,
     prompt: input.prompt,
     system: structuredOutputSystem(input.system),
+    experimental_repairText: repairKnownStructuredAliases(input.schema),
     providerOptions: withLangSmithProviderOptions(undefined, {
       name: 'llm.chatStructured',
       model: modelId,

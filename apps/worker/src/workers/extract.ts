@@ -32,6 +32,15 @@ interface RawEventRow {
   sourceMetadata: unknown;
 }
 
+function extractFailureTags(job: Pick<Job<queue.ExtractJobData>, 'data'> | undefined) {
+  const data = job?.data;
+  if (!data || typeof data !== 'object') return {};
+  return {
+    rawEventId: typeof data.rawEventId === 'string' ? data.rawEventId : undefined,
+    teamId: typeof data.teamId === 'string' ? data.teamId : undefined,
+  };
+}
+
 export async function processExtractJobForTests(
   deps: ExtractWorkerDeps,
   jobData: queue.ExtractJobData,
@@ -150,14 +159,15 @@ export async function processExtractJobForTests(
     system: extract.EXTRACTION_SYSTEM_PROMPT,
     model: modelId,
   });
+  const extractionResult = extract.normalizeExtractionResult(result.object);
 
   const resolvedFacts: {
     statement: string;
     confidence: number;
     entityIds: string[];
-    mentions: (typeof result.object.facts)[number]['mentions'];
+    mentions: (typeof extractionResult.facts)[number]['mentions'];
   }[] = [];
-  for (const fact of result.object.facts) {
+  for (const fact of extractionResult.facts) {
     const entityIds = await extract.resolveMentions(deps.db, teamId, fact.mentions, fact.statement);
     resolvedFacts.push({
       statement: fact.statement,
@@ -317,7 +327,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
 
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'job failed');
-    captureWorkerJobFailure(err, job);
+    captureWorkerJobFailure(err, job, extractFailureTags(job));
     if (!job) return;
     const maxAttempts = job.opts.attempts ?? 1;
     const unrecoverable = err instanceof UnrecoverableError;
@@ -346,3 +356,5 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
 
   return worker;
 }
+
+export const extractWorkerInternals = { extractFailureTags };
