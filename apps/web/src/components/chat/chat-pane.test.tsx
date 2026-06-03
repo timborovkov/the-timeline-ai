@@ -77,4 +77,43 @@ describe('ChatPane', () => {
     expect(html).toContain('What is due?');
     expect(html).toContain('Send proposal');
   });
+
+  it('renders assistant markdown text parts with citation chips', () => {
+    const eventId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    fakes.useChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'text',
+              text: `**Sales & outreach:**\n- Follow-up scheduled [ev:${eventId}].`,
+            },
+          ],
+        },
+      ],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(ChatPane, {
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    expect(html).toContain('<strong');
+    expect(html).toContain('Sales &amp; outreach:');
+    expect(html).toContain('<ul');
+    expect(html).toContain('<li');
+    expect(html).toContain('[ev:aaaaaaaa]');
+    expect(html).not.toContain('**Sales');
+    expect(html).not.toContain('- Follow-up');
+  });
 });
