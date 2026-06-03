@@ -253,6 +253,8 @@ describe('object scope — chat session isolation', () => {
     await ownerScope.appendChatMessages(session.id, [
       { role: 'user', authorUserId: USER_OWNER, content: 'Summarize the rollout' },
     ]);
+    const afterAppend = await db.select().from(chatSessions).where(eq(chatSessions.id, session.id));
+    await ownerScope.setChatSessionTitle(session.id, 'Rollout summary', { touchUpdatedAt: false });
 
     await expect(memberScope.getChatSession(session.id)).resolves.toBeNull();
     await expect(
@@ -267,10 +269,11 @@ describe('object scope — chat session isolation', () => {
 
     const rows = await db.select().from(chatSessions).where(eq(chatSessions.id, session.id));
     expect(rows[0]).toMatchObject({
-      title: 'Private scratchpad',
+      title: 'Rollout summary',
       pinnedEntityId: null,
       createdBy: USER_OWNER,
     });
+    expect(rows[0]?.updatedAt.getTime()).toBe(afterAppend[0]?.updatedAt.getTime());
     expect(rows[0]?.archivedAt).toBeNull();
 
     await ownerScope.linkChatSessionToObject(session.id, object.id);

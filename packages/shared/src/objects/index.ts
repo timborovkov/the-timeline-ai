@@ -2164,12 +2164,13 @@ export async function setChatSessionTitle(
   scope: TeamScopeCore,
   sessionId: string,
   title: string,
+  options: { touchUpdatedAt?: boolean } = {},
 ): Promise<void> {
   await scope.requireMembership();
   if (!UUID_RE.test(sessionId)) return;
   await db
     .update(chatSessions)
-    .set({ title, updatedAt: new Date() })
+    .set(options.touchUpdatedAt === false ? { title } : { title, updatedAt: new Date() })
     .where(
       and(
         eq(chatSessions.id, sessionId),
@@ -2776,8 +2777,11 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     getChatSession: (sessionId: string) => getChatSession(db, scope, sessionId),
     appendChatMessages: (sessionId: string, messages: AppendChatMessageInput[]) =>
       appendChatMessages(db, scope, sessionId, messages),
-    setChatSessionTitle: (sessionId: string, title: string) =>
-      setChatSessionTitle(db, scope, sessionId, title),
+    setChatSessionTitle: (
+      sessionId: string,
+      title: string,
+      options?: Parameters<typeof setChatSessionTitle>[4],
+    ) => setChatSessionTitle(db, scope, sessionId, title, options),
     linkChatSessionToObject: (sessionId: string, entityId: string | null) =>
       linkChatSessionToObject(db, scope, sessionId, entityId),
     archiveChatSession: (sessionId: string) => archiveChatSession(db, scope, sessionId),

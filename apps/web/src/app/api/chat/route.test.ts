@@ -17,6 +17,8 @@ const fakes = vi.hoisted(() => ({
   fakeCurrentUserIdentityContext: vi.fn(),
   fakeChatSessionExists: vi.fn(),
   fakeCreateChatSession: vi.fn(),
+  fakeListChatSessions: vi.fn(),
+  fakeSetChatSessionTitle: vi.fn(),
   fakeListObjects: vi.fn(),
   fakeGetCalendarSettings: vi.fn(),
   fakeListCalendarEvents: vi.fn(),
@@ -29,6 +31,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveAgentModelId: vi.fn(),
   fakeBuildOpenRouterLanguageModel: vi.fn(),
   fakeCompressMessagesForContext: vi.fn(),
+  fakeChatStructured: vi.fn(),
   fakeStreamChat: vi.fn(),
   fakeAppendChatMessages: vi.fn(),
   fakeCreateUIMessageStream: vi.fn(),
@@ -59,6 +62,8 @@ vi.mock('@timeline/shared/team-scope', () => ({
     objects: {
       chatSessionExists: fakes.fakeChatSessionExists,
       createChatSession: fakes.fakeCreateChatSession,
+      listChatSessions: fakes.fakeListChatSessions,
+      setChatSessionTitle: fakes.fakeSetChatSessionTitle,
       listObjects: fakes.fakeListObjects,
     },
     calendar: {
@@ -87,6 +92,7 @@ vi.mock('@timeline/shared/llm', () => ({
   },
   buildOpenRouterLanguageModel: fakes.fakeBuildOpenRouterLanguageModel,
   compressMessagesForContext: fakes.fakeCompressMessagesForContext,
+  chatStructured: fakes.fakeChatStructured,
   resolveAgentModelId: fakes.fakeResolveAgentModelId,
   streamChat: fakes.fakeStreamChat,
 }));
@@ -164,7 +170,9 @@ beforeEach(() => {
     facets: [],
   });
   fakes.fakeChatSessionExists.mockResolvedValue(true);
-  fakes.fakeCreateChatSession.mockResolvedValue({ id: SESSION_ID });
+  fakes.fakeCreateChatSession.mockResolvedValue({ id: SESSION_ID, title: null });
+  fakes.fakeListChatSessions.mockResolvedValue([]);
+  fakes.fakeSetChatSessionTitle.mockResolvedValue(undefined);
   fakes.fakeListObjects.mockImplementation((filter?: { type?: string }) =>
     filter?.type === 'task'
       ? Promise.resolve([
@@ -214,6 +222,7 @@ beforeEach(() => {
     compressed: false,
     messages: [{ role: 'user', content: 'What happened?' }],
   });
+  fakes.fakeChatStructured.mockResolvedValue({ object: { title: 'Generated chat title' } });
   fakes.fakeStreamChat.mockImplementation(
     (input: { onFinish?: (event: Record<string, unknown>) => void }) => {
       capturedOnFinish = input.onFinish ?? null;
@@ -445,6 +454,90 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('x-tl-session-id')).toBe(SESSION_ID);
     expect(fakes.fakeCreateChatSession).toHaveBeenCalledWith({ pinnedEntityId: PINNED_ID });
+  });
+
+  it('titles a newly-created session from the first user turn without renaming existing sessions', async () => {
+    fakes.fakeListChatSessions.mockResolvedValue([{ id: 'old', title: 'Generated chat title' }]);
+    const response = await POST(request(validBody({ startNewSession: true })));
+
+    expect(response.status).toBe(200);
+    capturedOnFinish?.({
+      text: 'Answer',
+      toolCalls: [],
+      finishReason: 'stop',
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+    await vi.waitFor(() => {
+      expect(fakes.fakeSetChatSessionTitle).toHaveBeenCalled();
+    });
+
+    const titleCall = fakes.fakeChatStructured.mock.calls.at(0) as unknown as
+      | [{ schema?: unknown; model?: unknown; prompt?: unknown }]
+      | undefined;
+    expect(titleCall?.[0].schema).toBeDefined();
+    expect(titleCall?.[0].model).toBeTypeOf('string');
+    expect(titleCall?.[0].prompt).toEqual(expect.stringContaining('What happened?'));
+    expect(fakes.fakeSetChatSessionTitle).toHaveBeenCalledWith(
+      SESSION_ID,
+      'Generated chat title 2',
+      { touchUpdatedAt: false },
+    );
+
+    fakes.fakeSetChatSessionTitle.mockClear();
+    await POST(request(validBody({ sessionId: SESSION_ID })));
+    capturedOnFinish?.({
+      text: 'Answer',
+      toolCalls: [],
+      finishReason: 'stop',
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+    await Promise.resolve();
+    expect(fakes.fakeSetChatSessionTitle).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a sanitized first-message title when title generation fails', async () => {
+    fakes.fakeChatStructured.mockRejectedValue(new Error('title model down'));
+
+    await POST(request(validBody({ startNewSession: true })));
+    capturedOnFinish?.({
+      text: 'Answer',
+      toolCalls: [],
+      finishReason: 'stop',
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+    await vi.waitFor(() => {
+      expect(fakes.fakeSetChatSessionTitle).toHaveBeenCalled();
+    });
+
+    expect(fakes.fakeSetChatSessionTitle).toHaveBeenCalledWith(SESSION_ID, 'What happened', {
+      touchUpdatedAt: false,
+    });
+    const warnCall = fakes.fakeLoggerWarn.mock.calls.find(
+      (call) => call[1] === 'chat title generation failed; using fallback',
+    ) as unknown as [{ err?: unknown }, string] | undefined;
+    expect(warnCall?.[0].err).toBeInstanceOf(Error);
+  });
+
+  it('does not title a new session when persisting the first turn fails', async () => {
+    fakes.fakeAppendChatMessages.mockRejectedValue(new Error('append failed'));
+
+    const response = await POST(request(validBody({ startNewSession: true })));
+
+    expect(response.status).toBe(200);
+    capturedOnFinish?.({
+      text: 'Answer',
+      toolCalls: [],
+      finishReason: 'stop',
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+    await vi.waitFor(() => {
+      expect(fakes.fakeLoggerWarn).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: SESSION_ID, teamId: TEAM_ID, userId: USER_ID }),
+        'chat session append failed',
+      );
+    });
+
+    expect(fakes.fakeSetChatSessionTitle).not.toHaveBeenCalled();
   });
 
   it('tolerates new-session creation and MCP discovery failures by streaming without persistence', async () => {
