@@ -125,6 +125,29 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ ok: true });
   }
   const provider = integrationsLib.getProvider('linear');
+  const syncJobs = matchingRows.map((integration) => ({
+    kind: 'incremental' as const,
+    integrationId: integration.id,
+    teamId: integration.teamId,
+    triggeredBy: 'webhook' as const,
+  }));
+  await Promise.all(
+    matchingRows.map(async (integration) => {
+      try {
+        const events = (await provider.handleWebhook?.({ integration, payload })) ?? [];
+        if (events.length > 0) {
+          await integrationsLib.writeIntegrationEvents({ db, integration, events });
+        }
+      } catch (err) {
+        // continue
+        reportCaughtError(err, {
+          surface: 'background',
+          operation: 'linear_webhook_process',
+          tags: { provider: 'linear' },
+        });
+      }
+    }),
+  );
   let queue: Awaited<ReturnType<typeof requireRedisQueue>>;
   try {
     queue = await requireRedisQueue();
@@ -137,23 +160,13 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ ok: true });
   }
   await Promise.all(
-    matchingRows.map(async (integration) => {
+    syncJobs.map(async (job) => {
       try {
-        const events = (await provider.handleWebhook?.({ integration, payload })) ?? [];
-        if (events.length > 0) {
-          await integrationsLib.writeIntegrationEvents({ db, integration, events });
-        }
-        await queue.enqueueIntegrationSyncJob({
-          kind: 'incremental',
-          integrationId: integration.id,
-          teamId: integration.teamId,
-          triggeredBy: 'webhook',
-        });
+        await queue.enqueueIntegrationSyncJob(job);
       } catch (err) {
-        // continue
         reportCaughtError(err, {
           surface: 'background',
-          operation: 'linear_webhook_process',
+          operation: 'linear_webhook_enqueue_sync',
           tags: { provider: 'linear' },
         });
       }

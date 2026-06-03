@@ -14,6 +14,7 @@ const fakes = vi.hoisted(() => ({
   selectionRows: [] as { integrationId: string; externalId: string }[],
   handleWebhook: vi.fn(),
   writeIntegrationEvents: vi.fn(),
+  requireRedisQueue: vi.fn(),
   enqueueIntegrationSyncJob: vi.fn(),
 }));
 
@@ -27,9 +28,7 @@ vi.mock('@/lib/db', () => ({
   },
 }));
 vi.mock('@/lib/queue', () => ({
-  requireRedisQueue: vi.fn().mockResolvedValue({
-    enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
-  }),
+  requireRedisQueue: fakes.requireRedisQueue,
 }));
 
 vi.mock('@timeline/shared/email', async () => {
@@ -72,6 +71,9 @@ beforeEach(() => {
   fakes.integrationRows = [{ id: 'integration-1', teamId: 'team-1', externalAccountId: 'org-1' }];
   fakes.selectionRows = [{ integrationId: 'integration-1', externalId: 'team-linear-1' }];
   fakes.handleWebhook.mockResolvedValue([{ dedupKey: 'event-1' }]);
+  fakes.requireRedisQueue.mockResolvedValue({
+    enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
+  });
   vi.clearAllMocks();
 });
 
@@ -112,5 +114,28 @@ describe('POST /api/webhooks/linear', () => {
     expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
       expect.objectContaining({ integrationId: 'integration-1', triggeredBy: 'webhook' }),
     );
+  });
+
+  it('writes matching webhook events even when Redis queue acquisition fails', async () => {
+    fakes.requireRedisQueue.mockRejectedValue(new Error('redis down'));
+
+    const response = await POST(
+      signedRequest({
+        organizationId: 'org-1',
+        type: 'Issue',
+        data: { teamId: 'team-linear-1' },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true });
+    expect(fakes.handleWebhook).toHaveBeenCalled();
+    expect(fakes.writeIntegrationEvents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        integration: { id: 'integration-1', teamId: 'team-1', externalAccountId: 'org-1' },
+        events: [{ dedupKey: 'event-1' }],
+      }),
+    );
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
   });
 });

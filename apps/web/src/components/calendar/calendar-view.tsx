@@ -20,6 +20,7 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useReducer, useRef, useTransition } from 'react';
 
+import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
 import type { SaveState } from '@/lib/utils';
 import type { Dispatch, SetStateAction } from 'react';
 
@@ -28,6 +29,12 @@ import {
   deleteCalendarEventAction,
   updateCalendarEventAction,
 } from '@/app/actions/calendar';
+import {
+  EMPTY_CALENDAR_OVERLAY,
+  calendarEventsSignature,
+  calendarOverlayReducer,
+  mergeCalendarEvents,
+} from '@/components/calendar/calendar-overlay';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -43,20 +50,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { errorMessage } from '@/lib/utils';
 
 type CalendarViewMode = 'month' | 'week' | 'day';
-
-interface CalendarEvent {
-  id: string;
-  title: string;
-  description: string | null;
-  startAt: string;
-  endAt: string;
-  timezone: string;
-  allDay: boolean;
-  location: string | null;
-  redacted: boolean;
-  visibility: string;
-  visibilityUserIds: string[] | null;
-}
 
 interface CalendarViewProps {
   events: CalendarEvent[];
@@ -82,11 +75,6 @@ interface Draft {
   endDateTime: string;
 }
 
-interface CalendarOverlayState {
-  upserts: Record<string, CalendarEvent>;
-  removedIds: string[];
-}
-
 interface CalendarUiState {
   editing: CalendarEvent | null;
   draft: Draft;
@@ -96,56 +84,9 @@ interface CalendarUiState {
   saveState: SaveState;
 }
 
-type CalendarOverlayAction =
-  | { type: 'upsert'; event: CalendarEvent }
-  | { type: 'replace-id'; previousId: string; event: CalendarEvent }
-  | { type: 'remove'; id: string }
-  | { type: 'restore'; event: CalendarEvent }
-  | { type: 'discard'; id: string };
-
 type CalendarUiAction = Partial<CalendarUiState> | ((state: CalendarUiState) => CalendarUiState);
 
-const EMPTY_CALENDAR_OVERLAY: CalendarOverlayState = { upserts: {}, removedIds: [] };
-
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-function calendarOverlayReducer(
-  state: CalendarOverlayState,
-  action: CalendarOverlayAction,
-): CalendarOverlayState {
-  if (action.type === 'upsert') {
-    return {
-      upserts: { ...state.upserts, [action.event.id]: action.event },
-      removedIds: state.removedIds.filter((id) => id !== action.event.id),
-    };
-  }
-  if (action.type === 'replace-id') {
-    const { [action.previousId]: _discarded, ...rest } = state.upserts;
-    return {
-      upserts: { ...rest, [action.event.id]: action.event },
-      removedIds: state.removedIds.filter(
-        (id) => id !== action.previousId && id !== action.event.id,
-      ),
-    };
-  }
-  if (action.type === 'remove') {
-    const { [action.id]: _discarded, ...rest } = state.upserts;
-    return {
-      upserts: rest,
-      removedIds: state.removedIds.includes(action.id)
-        ? state.removedIds
-        : [...state.removedIds, action.id],
-    };
-  }
-  if (action.type === 'restore') {
-    return {
-      upserts: { ...state.upserts, [action.event.id]: action.event },
-      removedIds: state.removedIds.filter((id) => id !== action.event.id),
-    };
-  }
-  const { [action.id]: _discarded, ...rest } = state.upserts;
-  return { ...state, upserts: rest };
-}
 
 function initCalendarUiState({
   anchor,
@@ -170,21 +111,6 @@ function initCalendarUiState({
 
 function calendarUiReducer(state: CalendarUiState, action: CalendarUiAction): CalendarUiState {
   return typeof action === 'function' ? action(state) : { ...state, ...action };
-}
-
-function mergeCalendarEvents(
-  events: CalendarEvent[],
-  overlay: CalendarOverlayState,
-): CalendarEvent[] {
-  const removed = new Set(overlay.removedIds);
-  const merged = new Map<string, CalendarEvent>();
-  for (const event of events) {
-    if (!removed.has(event.id)) merged.set(event.id, event);
-  }
-  for (const event of Object.values(overlay.upserts)) {
-    if (!removed.has(event.id)) merged.set(event.id, event);
-  }
-  return Array.from(merged.values());
 }
 
 function today(timezone: string): Temporal.PlainDate {
@@ -351,12 +277,33 @@ function CalendarViewContent({
   const [pending, startTransition] = useTransition();
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialogContextRef = useRef(0);
+  const serverEventsSnapshotRef = useRef<{
+    signature: string;
+    ids: string[];
+  } | null>(null);
 
   useEffect(() => {
     return () => {
       if (savedTimer.current) clearTimeout(savedTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    const signature = calendarEventsSignature(events);
+    const ids = events.map((event) => event.id);
+    const previous = serverEventsSnapshotRef.current;
+    if (!previous) {
+      serverEventsSnapshotRef.current = { signature, ids };
+      return;
+    }
+    if (previous.signature === signature || pending) return;
+    serverEventsSnapshotRef.current = { signature, ids };
+    dispatchEventOverlay({
+      type: 'reconcile-server-events',
+      currentIds: ids,
+      previousIds: previous.ids,
+    });
+  }, [events, pending]);
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
