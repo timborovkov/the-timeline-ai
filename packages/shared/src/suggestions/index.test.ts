@@ -208,6 +208,144 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.count).toBe('1');
   });
 
+  it('applies identity facet suggestions only after approval', async () => {
+    const creator = withTeam(db as never, TEAM_ID, USER_ID);
+    const reviewer = withTeam(db as never, TEAM_ID, REVIEWER_ID);
+    const person = await creator.objects.createObject({
+      type: 'person',
+      canonicalName: 'Mikael Rintala',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await creator.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember Telegram identity',
+      dedupeKey: 'identity-facet-telegram',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'identity_facet',
+          targetId: person.id,
+          title: 'Link @mikaelrintala to Mikael Rintala',
+          dedupeKey: 'identity-facet-telegram:item',
+          proposedPayload: {
+            entityId: person.id,
+            kind: 'telegram',
+            value: '@mikaelrintala',
+            linkedUserId: USER_ID,
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    const before = await pg.query<{ count: string }>(
+      `SELECT count(*)::text FROM object_identity_facets WHERE team_id = '${TEAM_ID}'`,
+    );
+    expect(before.rows[0]?.count).toBe('0');
+
+    await expect(reviewer.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const after = await pg.query<{
+      entity_id: string;
+      kind: string;
+      normalized_value: string;
+      linked_user_id: string;
+      status: string;
+    }>(
+      `SELECT entity_id, kind, normalized_value, linked_user_id, status
+       FROM object_identity_facets
+       WHERE team_id = '${TEAM_ID}'`,
+    );
+    expect(after.rows).toEqual([
+      {
+        entity_id: person.id,
+        kind: 'telegram',
+        normalized_value: 'mikaelrintala',
+        linked_user_id: USER_ID,
+        status: 'approved',
+      },
+    ]);
+  });
+
+  it('dedupes approved identity facets by external provider id', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const person = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Mikael Rintala',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    const first = await scope.objects.createIdentityFacet({
+      entityId: person.id,
+      kind: 'telegram',
+      value: '@mikaelrintala',
+      externalId: '12345',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const second = await scope.objects.createIdentityFacet({
+      entityId: person.id,
+      kind: 'telegram',
+      value: '@miku',
+      externalId: '12345',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    expect(second.id).toBe(first.id);
+    const result = await pg.query<{
+      count: string;
+      value: string;
+      external_id: string;
+      source: string;
+    }>(
+      `SELECT count(*)::text, max(value) AS value, max(external_id) AS external_id, max(source) AS source
+       FROM object_identity_facets
+       WHERE team_id = '${TEAM_ID}'`,
+    );
+    expect(result.rows[0]?.count).toBe('1');
+    expect(result.rows[0]).toMatchObject({
+      value: '@miku',
+      external_id: '12345',
+      source: 'manual',
+    });
+  });
+
+  it('does not treat another person identity facet as a successful target match', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const existingPerson = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Existing Mikael',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const targetPerson = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Target Mikael',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    await scope.objects.createIdentityFacet({
+      entityId: existingPerson.id,
+      kind: 'telegram',
+      value: '@mikaelrintala',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    await expect(
+      scope.objects.createIdentityFacet({
+        entityId: targetPerson.id,
+        kind: 'telegram',
+        value: '@mikaelrintala',
+        actor: { kind: 'agent', userId: null },
+      }),
+    ).rejects.toThrow(/another person/);
+
+    const result = await pg.query<{ entity_id: string }>(
+      `SELECT entity_id
+       FROM object_identity_facets
+       WHERE team_id = '${TEAM_ID}' AND normalized_value = 'mikaelrintala'`,
+    );
+    expect(result.rows).toEqual([{ entity_id: existingPerson.id }]);
+  });
+
   it('does not recreate canonical records when retrying an item with a result id', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const existing = await scope.objects.createObject({
@@ -279,6 +417,226 @@ describe('suggestion scope', () => {
       `SELECT count(*)::text FROM entities WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Task with marker'`,
     );
     expect(result.rows[0]?.count).toBe('1');
+  });
+
+  it('does not recreate object notes when retrying after result bookkeeping was lost', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const object = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Memory retry project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember project fact',
+      dedupeKey: 'retry-object-note',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: object.id,
+          title: 'Add project note',
+          dedupeKey: 'retry-object-note:item',
+          proposedPayload: {
+            entityId: object.id,
+            body: 'Miku handles customer follow-up.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+    await pg.query(
+      `UPDATE agent_suggestion_items
+       SET status = 'failed', resolved_at = NULL, resolved_by_user_id = NULL, result_id = NULL
+       WHERE id = $1`,
+      [itemId],
+    );
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ count: string }>(
+      `SELECT count(*)::text
+       FROM object_notes
+       WHERE team_id = '${TEAM_ID}'
+         AND entity_id = '${object.id}'
+         AND body = 'Miku handles customer follow-up.'`,
+    );
+    expect(result.rows[0]?.count).toBe('1');
+  });
+
+  it('records accepted object note suggestions as agent audit changes', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const object = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Agent note audit project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember note',
+      dedupeKey: 'agent-note-audit',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: object.id,
+          title: 'Add note',
+          dedupeKey: 'agent-note-audit:item',
+          proposedPayload: {
+            entityId: object.id,
+            body: 'Agent discovered this durable note.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{
+      actor_kind: string;
+      actor_user_id: string | null;
+      note_author_user_id: string | null;
+      event_author_user_id: string | null;
+    }>(
+      `SELECT
+         oc.actor_kind,
+         oc.actor_user_id,
+         n.author_user_id AS note_author_user_id,
+         re.author_user_id AS event_author_user_id
+       FROM object_changes oc
+       JOIN object_notes n ON n.entity_id = oc.entity_id
+       LEFT JOIN raw_events re ON re.id = oc.source_event_id
+       WHERE oc.team_id = '${TEAM_ID}'
+         AND oc.entity_id = '${object.id}'
+         AND oc.field = '__note_create__'
+       ORDER BY oc.changed_at DESC
+       LIMIT 1`,
+    );
+    expect(result.rows[0]).toEqual({
+      actor_kind: 'agent',
+      actor_user_id: null,
+      note_author_user_id: null,
+      event_author_user_id: null,
+    });
+  });
+
+  it('does not recreate object relationships when retrying after result bookkeeping was lost', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const from = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Relationship retry project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const to = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Relationship retry company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Link project and company',
+      dedupeKey: 'retry-object-relationship',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          targetId: from.id,
+          title: 'Add relationship',
+          dedupeKey: 'retry-object-relationship:item',
+          proposedPayload: {
+            fromEntityId: from.id,
+            toEntityId: to.id,
+            kind: 'linked',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+    await pg.query(
+      `UPDATE agent_suggestion_items
+       SET status = 'failed', resolved_at = NULL, resolved_by_user_id = NULL, result_id = NULL
+       WHERE id = $1`,
+      [itemId],
+    );
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ count: string }>(
+      `SELECT count(*)::text
+       FROM entity_relationships
+       WHERE team_id = '${TEAM_ID}'
+         AND from_entity_id = '${from.id}'
+         AND to_entity_id = '${to.id}'
+         AND kind = 'linked'`,
+    );
+    expect(result.rows[0]?.count).toBe('1');
+  });
+
+  it('records the existing relationship id when accepting a duplicate relationship suggestion', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const from = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Existing relationship project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const to = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Existing relationship company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const existing = await scope.objects.addRelationship({
+      fromEntityId: from.id,
+      toEntityId: to.id,
+      kind: 'linked',
+      actorUserId: USER_ID,
+    });
+    expect(existing?.id).toBeDefined();
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Duplicate project-company link',
+      dedupeKey: 'duplicate-object-relationship',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          targetId: from.id,
+          title: 'Add duplicate relationship',
+          dedupeKey: 'duplicate-object-relationship:item',
+          proposedPayload: {
+            fromEntityId: from.id,
+            toEntityId: to.id,
+            kind: 'linked',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const itemRows = await pg.query<{ result_id: string | null }>(
+      `SELECT result_id FROM agent_suggestion_items WHERE id = $1`,
+      [itemId],
+    );
+    expect(itemRows.rows[0]?.result_id).toBe(existing?.id);
+    const relationshipRows = await pg.query<{ count: string }>(
+      `SELECT count(*)::text
+       FROM entity_relationships
+       WHERE team_id = '${TEAM_ID}'
+         AND from_entity_id = '${from.id}'
+         AND to_entity_id = '${to.id}'
+         AND kind = 'linked'`,
+    );
+    expect(relationshipRows.rows[0]?.count).toBe('1');
   });
 
   it('rejects evidence links outside the caller-visible team boundary', async () => {

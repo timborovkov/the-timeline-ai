@@ -19,6 +19,7 @@ import {
   facts as factsTable,
   notifications,
   objectChanges,
+  objectIdentityFacets,
   objectNotes,
   objectViews,
   rawEvents,
@@ -49,6 +50,50 @@ function fireAndForgetEmbed(fn: () => Promise<void>, context: Record<string, unk
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type IdentityFacetKind =
+  | 'email'
+  | 'phone'
+  | 'telegram'
+  | 'slack'
+  | 'github'
+  | 'timeline_user'
+  | 'other';
+
+export interface IdentityFacetInput {
+  entityId: string;
+  kind: IdentityFacetKind;
+  value: string;
+  normalizedValue?: string;
+  provider?: string | null;
+  externalId?: string | null;
+  linkedUserId?: string | null;
+  source?: 'manual' | 'agent_approved' | 'integration' | 'system';
+  metadata?: Record<string, unknown>;
+  actor: { kind: ActorKind; userId?: string | null };
+}
+
+export interface IdentityFacetRow {
+  id: string;
+  entityId: string;
+  kind: IdentityFacetKind;
+  value: string;
+  normalizedValue: string;
+  provider: string | null;
+  externalId: string | null;
+  linkedUserId: string | null;
+}
+
+export function normalizeIdentityFacet(kind: IdentityFacetKind, value: string): string {
+  const trimmed = value.trim();
+  if (kind === 'email') return trimmed.toLowerCase();
+  if (kind === 'phone') return trimmed.replace(/[^\d+]/g, '');
+  if (kind === 'telegram') return trimmed.toLowerCase().replace(/^@/, '');
+  if (kind === 'github') return trimmed.toLowerCase().replace(/^@/, '');
+  if (kind === 'slack') return trimmed;
+  if (kind === 'timeline_user') return trimmed.toLowerCase();
+  return trimmed.toLowerCase();
+}
 
 /**
  * Order-stable JSON serialization. Used by `updateObject` to decide whether
@@ -1089,6 +1134,7 @@ export async function addRelationship(
     // `{ kind: 'agent', userId: null }` so the audit row attributes the link
     // to the agent, not a user.
     actor?: UpdateActor;
+    metadata?: Record<string, unknown>;
   },
 ): Promise<{ id: string } | null> {
   await scope.requireMembership();
@@ -1128,7 +1174,21 @@ export async function addRelationship(
     // onConflictDoNothing returns nothing on a duplicate; skip audit writes
     // in that case — the relationship already existed and the prior insert
     // logged it. Mirrors the email-event dedup path.
-    if (!row) return null;
+    if (!row) {
+      const existing = await tx
+        .select({ id: entityRelationships.id })
+        .from(entityRelationships)
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            eq(entityRelationships.fromEntityId, input.fromEntityId),
+            eq(entityRelationships.toEntityId, input.toEntityId),
+            eq(entityRelationships.kind, input.kind),
+          ),
+        )
+        .limit(1);
+      return existing[0] ?? null;
+    }
 
     const fromEnt = ends.find((e) => e.id === input.fromEntityId);
     const toEnt = ends.find((e) => e.id === input.toEntityId);
@@ -1144,6 +1204,7 @@ export async function addRelationship(
         occurredAt: new Date(),
         visibility: 'team',
         sourceMetadata: {
+          ...(input.metadata ?? {}),
           kind: 'relationship_create',
           relationship_id: row.id,
           from_entity_id: input.fromEntityId,
@@ -1264,7 +1325,13 @@ export async function removeRelationship(
 export async function createNote(
   db: Db,
   scope: TeamScopeCore,
-  input: { entityId: string; body: string; authorUserId: string },
+  input: {
+    entityId: string;
+    body: string;
+    authorUserId: string | null;
+    metadata?: Record<string, unknown>;
+    actor?: UpdateActor;
+  },
 ): Promise<{ id: string }> {
   await scope.requireMembership();
   if (!UUID_RE.test(input.entityId)) throw new Error('Invalid entity id');
@@ -1308,6 +1375,7 @@ export async function createNote(
         occurredAt: new Date(),
         visibility: 'team',
         sourceMetadata: {
+          ...(input.metadata ?? {}),
           kind: 'object_note_create',
           entity_id: input.entityId,
           note_id: noteId,
@@ -1317,8 +1385,8 @@ export async function createNote(
     await tx.insert(objectChanges).values({
       teamId: scope.teamId,
       entityId: input.entityId,
-      actorUserId: input.authorUserId,
-      actorKind: 'user',
+      actorUserId: input.actor ? (input.actor.userId ?? null) : input.authorUserId,
+      actorKind: input.actor?.kind ?? 'user',
       status: 'applied',
       field: '__note_create__',
       previousValue: null,
@@ -1333,6 +1401,276 @@ export async function createNote(
     teamId: scope.teamId,
     noteId: result.id,
     op: 'createNote',
+  });
+  return result;
+}
+
+export async function listIdentityFacets(
+  db: Db,
+  scope: TeamScopeCore,
+  entityId: string,
+): Promise<IdentityFacetRow[]> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(entityId)) return [];
+  const rows = await db
+    .select({
+      id: objectIdentityFacets.id,
+      entityId: objectIdentityFacets.entityId,
+      kind: objectIdentityFacets.kind,
+      value: objectIdentityFacets.value,
+      normalizedValue: objectIdentityFacets.normalizedValue,
+      provider: objectIdentityFacets.provider,
+      externalId: objectIdentityFacets.externalId,
+      linkedUserId: objectIdentityFacets.linkedUserId,
+    })
+    .from(objectIdentityFacets)
+    .where(
+      and(
+        eq(objectIdentityFacets.teamId, scope.teamId),
+        eq(objectIdentityFacets.entityId, entityId),
+        eq(objectIdentityFacets.status, 'approved'),
+      ),
+    )
+    .orderBy(objectIdentityFacets.kind, objectIdentityFacets.value);
+  return rows;
+}
+
+export async function listIdentityFacetsForUser(
+  db: Db,
+  scope: TeamScopeCore,
+  linkedUserId: string,
+): Promise<IdentityFacetRow[]> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(linkedUserId)) return [];
+  const rows = await db
+    .select({
+      id: objectIdentityFacets.id,
+      entityId: objectIdentityFacets.entityId,
+      kind: objectIdentityFacets.kind,
+      value: objectIdentityFacets.value,
+      normalizedValue: objectIdentityFacets.normalizedValue,
+      provider: objectIdentityFacets.provider,
+      externalId: objectIdentityFacets.externalId,
+      linkedUserId: objectIdentityFacets.linkedUserId,
+    })
+    .from(objectIdentityFacets)
+    .where(
+      and(
+        eq(objectIdentityFacets.teamId, scope.teamId),
+        eq(objectIdentityFacets.linkedUserId, linkedUserId),
+        eq(objectIdentityFacets.status, 'approved'),
+      ),
+    )
+    .orderBy(objectIdentityFacets.kind, objectIdentityFacets.value);
+  return rows;
+}
+
+export async function createIdentityFacet(
+  db: Db,
+  scope: TeamScopeCore,
+  input: IdentityFacetInput,
+): Promise<{ id: string }> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(input.entityId)) throw new Error('Invalid entity id');
+  const value = input.value.trim();
+  if (!value) throw new Error('Identity facet value cannot be empty');
+  const normalizedInput = input.normalizedValue?.trim();
+  const normalizedValue =
+    normalizedInput === undefined || normalizedInput === ''
+      ? normalizeIdentityFacet(input.kind, value)
+      : normalizedInput;
+  if (!normalizedValue) throw new Error('Identity facet normalized value cannot be empty');
+  if (input.linkedUserId) await scope.requireTeamMember(input.linkedUserId);
+
+  const result = await db.transaction(async (tx) => {
+    const ent = await tx
+      .select({ id: entities.id, type: entities.type, canonicalName: entities.canonicalName })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.id, input.entityId),
+          eq(entities.teamId, scope.teamId),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .limit(1);
+    if (!ent[0]) throw new Error('Object not found');
+    if (ent[0].type !== 'person') throw new Error('Identity facets can only be added to people');
+
+    const duplicateConditions = [
+      and(
+        eq(objectIdentityFacets.kind, input.kind),
+        eq(objectIdentityFacets.normalizedValue, normalizedValue),
+      ),
+    ];
+    if (input.externalId) {
+      duplicateConditions.push(
+        and(
+          eq(objectIdentityFacets.kind, input.kind),
+          eq(objectIdentityFacets.externalId, input.externalId),
+          input.provider
+            ? eq(objectIdentityFacets.provider, input.provider)
+            : isNull(objectIdentityFacets.provider),
+        ),
+      );
+    }
+    if (input.kind === 'timeline_user' && input.linkedUserId) {
+      duplicateConditions.push(
+        and(
+          eq(objectIdentityFacets.kind, 'timeline_user'),
+          eq(objectIdentityFacets.linkedUserId, input.linkedUserId),
+        ),
+      );
+    }
+
+    const existing = await tx
+      .select({
+        id: objectIdentityFacets.id,
+        entityId: objectIdentityFacets.entityId,
+        provider: objectIdentityFacets.provider,
+        externalId: objectIdentityFacets.externalId,
+        linkedUserId: objectIdentityFacets.linkedUserId,
+        metadata: objectIdentityFacets.metadata,
+      })
+      .from(objectIdentityFacets)
+      .where(
+        and(
+          eq(objectIdentityFacets.teamId, scope.teamId),
+          eq(objectIdentityFacets.status, 'approved'),
+          or(...duplicateConditions),
+        ),
+      )
+      .limit(1);
+    if (existing[0]) {
+      if (existing[0].entityId !== input.entityId) {
+        throw new Error('Identity facet already belongs to another person');
+      }
+      const mergedMetadata = {
+        ...((existing[0].metadata && typeof existing[0].metadata === 'object'
+          ? existing[0].metadata
+          : {}) as Record<string, unknown>),
+        ...(input.metadata ?? {}),
+      };
+      await tx
+        .update(objectIdentityFacets)
+        .set({
+          value,
+          normalizedValue,
+          provider: input.provider !== undefined ? input.provider : existing[0].provider,
+          externalId: input.externalId !== undefined ? input.externalId : existing[0].externalId,
+          linkedUserId:
+            input.linkedUserId !== undefined ? input.linkedUserId : existing[0].linkedUserId,
+          source: input.source ?? (input.actor.kind === 'agent' ? 'agent_approved' : 'manual'),
+          metadata: mergedMetadata,
+          updatedAt: new Date(),
+        })
+        .where(eq(objectIdentityFacets.id, existing[0].id));
+      const summary = `Updated ${input.kind} identity for ${ent[0].canonicalName}: ${value}`;
+      const ev = await tx
+        .insert(rawEvents)
+        .values({
+          teamId: scope.teamId,
+          authorUserId: input.actor.userId ?? null,
+          source: 'system',
+          contentText: summary,
+          occurredAt: new Date(),
+          visibility: 'team',
+          sourceMetadata: {
+            kind: 'identity_facet_update',
+            entity_id: input.entityId,
+            identity_facet_id: existing[0].id,
+            identity_facet_kind: input.kind,
+          },
+        })
+        .returning({ id: rawEvents.id });
+      await tx.insert(objectChanges).values({
+        teamId: scope.teamId,
+        entityId: input.entityId,
+        actorUserId: input.actor.userId ?? null,
+        actorKind: input.actor.kind,
+        status: 'applied',
+        field: '__identity_facet_update__',
+        previousValue: { id: existing[0].id },
+        newValue: {
+          id: existing[0].id,
+          kind: input.kind,
+          value,
+          normalizedValue,
+          provider: input.provider !== undefined ? input.provider : existing[0].provider,
+          externalId: input.externalId !== undefined ? input.externalId : existing[0].externalId,
+          linkedUserId:
+            input.linkedUserId !== undefined ? input.linkedUserId : existing[0].linkedUserId,
+        },
+        sourceEventId: ev[0]?.id ?? null,
+      });
+      return { id: existing[0].id };
+    }
+
+    const inserted = await tx
+      .insert(objectIdentityFacets)
+      .values({
+        teamId: scope.teamId,
+        entityId: input.entityId,
+        kind: input.kind,
+        value,
+        normalizedValue,
+        provider: input.provider ?? null,
+        externalId: input.externalId ?? null,
+        linkedUserId: input.linkedUserId ?? null,
+        source: input.source ?? (input.actor.kind === 'agent' ? 'agent_approved' : 'manual'),
+        metadata: input.metadata ?? {},
+        createdByUserId: input.actor.userId ?? null,
+      })
+      .returning({ id: objectIdentityFacets.id });
+    const row = inserted[0];
+    if (!row) throw new Error('Failed to create identity facet');
+
+    const summary = `Added ${input.kind} identity for ${ent[0].canonicalName}: ${value}`;
+    const ev = await tx
+      .insert(rawEvents)
+      .values({
+        teamId: scope.teamId,
+        authorUserId: input.actor.userId ?? null,
+        source: 'system',
+        contentText: summary,
+        occurredAt: new Date(),
+        visibility: 'team',
+        sourceMetadata: {
+          kind: 'identity_facet_create',
+          entity_id: input.entityId,
+          identity_facet_id: row.id,
+          identity_facet_kind: input.kind,
+        },
+      })
+      .returning({ id: rawEvents.id });
+
+    await tx.insert(objectChanges).values({
+      teamId: scope.teamId,
+      entityId: input.entityId,
+      actorUserId: input.actor.userId ?? null,
+      actorKind: input.actor.kind,
+      status: 'applied',
+      field: '__identity_facet_create__',
+      previousValue: null,
+      newValue: {
+        id: row.id,
+        kind: input.kind,
+        value,
+        normalizedValue,
+        provider: input.provider ?? null,
+        externalId: input.externalId ?? null,
+        linkedUserId: input.linkedUserId ?? null,
+      },
+      sourceEventId: ev[0]?.id ?? null,
+    });
+
+    return row;
+  });
+
+  fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, input.entityId), {
+    teamId: scope.teamId,
+    entityId: input.entityId,
+    op: 'createIdentityFacet',
   });
   return result;
 }
@@ -2415,6 +2753,10 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
       unarchiveObject(db, scope, entityId, actor),
     addRelationship: (input: Parameters<typeof addRelationship>[2]) =>
       addRelationship(db, scope, input),
+    createIdentityFacet: (input: IdentityFacetInput) => createIdentityFacet(db, scope, input),
+    listIdentityFacets: (entityId: string) => listIdentityFacets(db, scope, entityId),
+    listIdentityFacetsForUser: (linkedUserId: string) =>
+      listIdentityFacetsForUser(db, scope, linkedUserId),
     removeRelationship: (id: string, actor: UpdateActor) =>
       removeRelationship(db, scope, id, actor),
     createNote: (input: Parameters<typeof createNote>[2]) => createNote(db, scope, input),
