@@ -58,6 +58,9 @@ SLACK_SIGNING_SECRET=
             <li>Short description: <code>Ask the Timeline AI</code></li>
             <li>Usage hint: <code>[question]</code></li>
             <li>
+              Answers use plain text so Slack does not surface raw citation ids or Markdown markers.
+            </li>
+            <li>
               Leave <strong>Escape channels, users, and links sent to your app</strong> unchecked.
               Timeline treats the command text as a natural-language question, so readable
               <code>@user</code> and <code>#channel</code> text is more useful than Slack IDs.

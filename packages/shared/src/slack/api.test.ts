@@ -2,6 +2,50 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SlackApi } from '#src/slack/api.js';
 
+describe('SlackApi message posting', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('disables Slack mrkdwn for chat.postMessage text', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new SlackApi('xoxb-test').postMessage({
+      channel: 'C123',
+      text: 'Meeting with **DFK:n** [ev:123]',
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.body).toBeInstanceOf(URLSearchParams);
+    const body = init.body as URLSearchParams;
+    expect(body.get('text')).toBe('Meeting with **DFK:n** [ev:123]');
+    expect(body.get('mrkdwn')).toBe('false');
+  });
+
+  it('disables Slack mrkdwn for response_url replies', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new SlackApi('xoxb-test').postMessage({
+      channel: 'C123',
+      response_url: 'https://hooks.slack.test/response',
+      text: 'Meeting with **DFK:n** [ev:123]',
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(typeof init.body).toBe('string');
+    const body = typeof init.body === 'string' ? init.body : '';
+    expect(JSON.parse(body)).toMatchObject({
+      text: 'Meeting with **DFK:n** [ev:123]',
+      mrkdwn: false,
+      response_type: 'ephemeral',
+    });
+  });
+});
+
 describe('SlackApi file downloads', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
