@@ -2,7 +2,7 @@ import { type Db } from '@timeline/db';
 import { type ModelMessage } from 'ai';
 
 import { AGENT_PROMPT_VERSION, buildSystemPrompt } from '#src/agent/system-prompt.js';
-import { buildAgentTools } from '#src/agent/tools.js';
+import { buildAgentTools, type AgentToolErrorReporter } from '#src/agent/tools.js';
 import { getEnv } from '#src/env.js';
 import { streamChat, type ChatDeps } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
@@ -30,6 +30,11 @@ export type AskAgentResult =
   | { ok: true; answer: string; truncated: boolean }
   | { ok: false; error: 'unconfigured' | 'not_a_member' | 'no_team' | 'failed' };
 
+export interface AskAgentDeps extends ChatDeps {
+  onToolError?: AgentToolErrorReporter | undefined;
+  onAgentError?: ((err: unknown) => void) | undefined;
+}
+
 /**
  * Non-streaming wrapper around the same agent pipeline `/api/chat` uses.
  * Built for surfaces that can't pipe an AI-SDK stream (Telegram, email, cron) —
@@ -40,7 +45,10 @@ export type AskAgentResult =
  * teamId). The system prompt and prompt version match the web chat exactly,
  * so a Telegram answer is replayable against the same agent revision.
  */
-export async function askAgent(input: AskAgentInput, deps: ChatDeps = {}): Promise<AskAgentResult> {
+export async function askAgent(
+  input: AskAgentInput,
+  deps: AskAgentDeps = {},
+): Promise<AskAgentResult> {
   const env = getEnv();
   if (!env.OPENROUTER_API_KEY || !env.QDRANT_URL) {
     return { ok: false, error: 'unconfigured' };
@@ -66,7 +74,7 @@ export async function askAgent(input: AskAgentInput, deps: ChatDeps = {}): Promi
     currentDate,
     workspaceTime: workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });
-  const tools = buildAgentTools(scope);
+  const tools = buildAgentTools(scope, { onToolError: deps.onToolError });
 
   const messages: ModelMessage[] = [{ role: 'user', content: input.question }];
 
@@ -108,6 +116,7 @@ export async function askAgent(input: AskAgentInput, deps: ChatDeps = {}): Promi
     return { ok: true, answer: trimmed, truncated: false };
   } catch (err) {
     log.error({ err, teamId: input.teamId }, 'askAgent failed');
+    deps.onAgentError?.(err);
     return { ok: false, error: 'failed' };
   }
 }

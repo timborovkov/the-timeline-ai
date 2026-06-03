@@ -4,6 +4,7 @@ import { and, eq, isNotNull, isNull, lt, notExists, sql } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 const log = childLogger('web:reconcile-jobs');
 
@@ -118,6 +119,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
   } catch (err) {
     // Non-fatal: visibility metric only, the actual reconcile logic still runs.
     log.warn({ err: (err as Error).message }, 'dead_letter_count_failed');
+    reportCaughtError(err, { surface: 'api', operation: 'reconcile_dead_letter_count' });
   }
 
   // 1. Transcribe orphans: rows with an audio key but no transcript.
@@ -151,6 +153,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
   } catch (err) {
     const msg = (err as Error).message;
     log.error({ err: msg }, 'transcribe_reconcile_failed');
+    reportCaughtError(err, { surface: 'api', operation: 'reconcile_transcribe' });
     result.errors.push(`transcribe: ${msg}`);
   }
 
@@ -188,6 +191,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
   } catch (err) {
     const msg = (err as Error).message;
     log.error({ err: msg }, 'extract_reconcile_failed');
+    reportCaughtError(err, { surface: 'api', operation: 'reconcile_extract' });
     result.errors.push(`extract: ${msg}`);
   }
 
@@ -225,6 +229,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
   } catch (err) {
     const msg = (err as Error).message;
     log.error({ err: msg }, 'embed_reconcile_failed');
+    reportCaughtError(err, { surface: 'api', operation: 'reconcile_embed' });
     result.errors.push(`embed: ${msg}`);
   }
 

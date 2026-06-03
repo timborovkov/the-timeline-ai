@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -88,6 +89,7 @@ export async function POST(req: Request): Promise<Response> {
     results = await scope.timeline.searchEvents(input);
   } catch (err) {
     log.error({ err }, 'searchEvents failed');
+    reportCaughtError(err, { surface: 'api', operation: 'search_events' });
     // 502 = transient (embed or qdrant); distinct from 503 above so the
     // client can distinguish "not configured" from "talk to ops".
     return Response.json({ ok: false, error: 'search_failed' }, { status: 502 });

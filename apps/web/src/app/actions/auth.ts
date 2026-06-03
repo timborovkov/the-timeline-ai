@@ -17,6 +17,7 @@ import { db } from '@/lib/db';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 import { clientIpFromHeaders } from '@/lib/request-ip';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
+import { reportCaughtError } from '@/lib/sentry-report';
 import { turnstileHostnameFromHeaders, verifyTurnstileToken } from '@/lib/turnstile';
 
 const signUpSchema = z.object({
@@ -187,6 +188,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         error: 'This invite was sent to a different email. Sign up with the email it was sent to.',
       };
     }
+    reportCaughtError(e, { surface: 'server_action', operation: 'sign_up' });
     return { error: 'Could not create account. Please try again.' };
   }
 

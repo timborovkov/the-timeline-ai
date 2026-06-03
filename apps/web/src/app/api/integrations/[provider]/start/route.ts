@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -71,6 +72,11 @@ export async function POST(
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'oauth_start_failed';
     log.warn({ err, provider }, 'oauth start failed');
+    reportCaughtError(err, {
+      surface: 'api',
+      operation: 'integration_oauth_start',
+      tags: { provider },
+    });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

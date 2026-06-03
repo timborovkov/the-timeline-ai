@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 const objectTypeSchema = z.enum(objects.OBJECT_TYPES);
 
@@ -50,6 +51,7 @@ export async function saveBoardAction(input: unknown): Promise<ActionState> {
     if (parsed.data.id) revalidatePath(`/app/boards/${parsed.data.id}`);
     return { ok: true, id: row.id };
   } catch (err) {
+    reportCaughtError(err, { surface: 'server_action', operation: 'save_board' });
     return { error: err instanceof Error ? err.message : 'Failed to save board' };
   }
 }
@@ -64,6 +66,7 @@ export async function deleteBoardAction(input: unknown): Promise<ActionState> {
     revalidatePath('/app/boards');
     return ok ? { ok: true } : { error: 'Board not found' };
   } catch (err) {
+    reportCaughtError(err, { surface: 'server_action', operation: 'delete_board' });
     return { error: err instanceof Error ? err.message : 'Failed to delete board' };
   }
 }

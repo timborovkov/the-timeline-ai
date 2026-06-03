@@ -19,6 +19,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 /**
  * Phase 6 — agent chat endpoint. Phase 8 wires session persistence on top.
@@ -407,6 +408,7 @@ export async function POST(req: Request): Promise<Response> {
       // Pinned object not in this team / bad uuid. Fall back to no
       // persistence rather than refuse the chat.
       log.warn({ err }, 'chat session create failed');
+      reportCaughtError(err, { surface: 'api', operation: 'chat_session_create' });
     }
   }
 
@@ -420,19 +422,29 @@ export async function POST(req: Request): Promise<Response> {
     currentDate,
     workspaceTime: time.workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });
+  const onAgentToolError: agent.AgentToolErrorReporter = (err, context) => {
+    reportCaughtError(err, {
+      surface: 'api',
+      operation: 'chat_agent_tool_call',
+      tags: { tool: context.tool },
+    });
+  };
   // Phase 11 — merge any custom MCP tools the team has connected. The
   // MCP manager caches per-team for 5 min so this is cheap on hot paths.
   // Failures here (discovery failed, OAuth expired, server down) MUST
   // NOT crash the chat — but we log them so they show up in observability
   // instead of silently disappearing.
-  const mcpTools = await agent.buildMcpTools(scope).catch((err: unknown) => {
-    log.warn(
-      { err, teamId: active.teamId },
-      'mcp tool discovery failed; chat continues with native tools only',
-    );
-    return {};
-  });
-  const tools = { ...agent.buildAgentTools(scope), ...mcpTools };
+  const mcpTools = await agent
+    .buildMcpTools(scope, { onToolError: onAgentToolError })
+    .catch((err: unknown) => {
+      log.warn(
+        { err, teamId: active.teamId },
+        'mcp tool discovery failed; chat continues with native tools only',
+      );
+      reportCaughtError(err, { surface: 'api', operation: 'chat_mcp_tool_discovery' });
+      return {};
+    });
+  const tools = { ...agent.buildAgentTools(scope, { onToolError: onAgentToolError }), ...mcpTools };
 
   // Validate UIMessages BEFORE convertToModelMessages so a malformed client
   // (or attacker poking the endpoint) gets a clean 400 instead of an
@@ -503,6 +515,13 @@ export async function POST(req: Request): Promise<Response> {
     // tokens nobody will see. Without this, a user navigating away mid-
     // stream still runs the model to completion.
     abortSignal: req.signal,
+    onError: (e) => {
+      reportCaughtError(e.error, {
+        surface: 'api',
+        operation: 'chat_stream',
+        tags: { model: modelId },
+      });
+    },
     onFinish: (e) => {
       log.info(
         {
@@ -554,6 +573,7 @@ export async function POST(req: Request): Promise<Response> {
             { err, sessionId, teamId: active.teamId, userId: session.user.id },
             'chat session append failed',
           );
+          reportCaughtError(err, { surface: 'background', operation: 'chat_session_append' });
         });
     },
   });

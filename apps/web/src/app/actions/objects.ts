@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
 import { trackProductEventBestEffort } from '@/lib/analytics';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 // Derived from the Postgres enum so adding a new object type doesn't
 // require synchronizing this schema with the drizzle enum by hand.
@@ -23,6 +24,10 @@ function friendlyError(err: unknown, fallback: string): string {
     if (code === '23503') return 'Linked record no longer exists.';
     if (code === '23514') return 'Value violates a constraint.';
   }
+  reportCaughtError(err, {
+    surface: 'server_action',
+    operation: fallback.toLowerCase().replace(/\s+/g, '_'),
+  });
   return err instanceof Error ? err.message : fallback;
 }
 

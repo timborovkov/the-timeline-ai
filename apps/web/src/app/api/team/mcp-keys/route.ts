@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -101,6 +102,7 @@ export async function POST(req: Request): Promise<Response> {
         { err, teamId: active.teamId, actorUserId: session.user.id },
         'Failed to create outbound MCP key',
       );
+      reportCaughtError(err, { surface: 'api', operation: 'create_outbound_mcp_key' });
       return null;
     });
   if (!row) return NextResponse.json({ error: 'create_failed' }, { status: 500 });

@@ -11,6 +11,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -126,6 +127,11 @@ export async function GET(
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'oauth_callback_failed';
     log.warn({ err, provider }, 'oauth callback failed');
+    reportCaughtError(err, {
+      surface: 'api',
+      operation: 'integration_oauth_callback',
+      tags: { provider },
+    });
     return NextResponse.redirect(
       new URL(`/app/team/integrations?error=${encodeURIComponent(msg)}`, req.url),
     );

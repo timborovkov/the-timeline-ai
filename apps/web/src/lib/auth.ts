@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { authConfig } from '@/lib/auth.config';
 import { ensureSoloTeam } from '@/lib/default-team';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 const db = getDb();
 const log = childLogger('web:auth');
@@ -90,6 +91,7 @@ const nextAuth = NextAuth({
         pendingInvite = await readPendingInvite();
       } catch (err) {
         log.error({ err: (err as Error).message, userId }, 'createUser_pending_invite_read_failed');
+        reportCaughtError(err, { surface: 'server_action', operation: 'pending_invite_read' });
       }
       if (pendingInvite) return;
       const teamId = await ensureSoloTeam(userId, { name: user.name, email: user.email });

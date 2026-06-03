@@ -3,6 +3,8 @@ import { childLogger, queue } from '@timeline/shared';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, gt, inArray, isNotNull, or, sql } from 'drizzle-orm';
 
+import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
+
 // Keyset paging by id keeps memory bounded on a backlog that hasn't been
 // swept in a while. UUIDs sort lexicographically — total + stable, which
 // is all keyset needs.
@@ -146,6 +148,11 @@ async function sweepDocumentVersions(
           { err, documentVersionId: r.id },
           'janitor: failed to re-enqueue document extract',
         );
+        captureWorkerException(err, {
+          component: 'worker_handoff',
+          queueName: queue.QUEUE_NAMES.documentExtract,
+          operation: 'janitor_reenqueue_document_extract',
+        });
       }
     }
 
@@ -193,6 +200,11 @@ async function sweepMeetings(
         total += 1;
       } catch (err: unknown) {
         log.warn({ err, meetingId: r.id }, 'janitor: failed to re-enqueue meeting finalize');
+        captureWorkerException(err, {
+          component: 'worker_handoff',
+          queueName: queue.QUEUE_NAMES.meetingFinalize,
+          operation: 'janitor_reenqueue_meeting_finalize',
+        });
       }
     }
 
@@ -230,6 +242,7 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
 
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'janitor tick failed');
+    captureWorkerJobFailure(err, job);
   });
 
   return worker;

@@ -1,8 +1,10 @@
 'use client';
 
 import { AlertTriangle, RotateCw } from 'lucide-react';
+import { useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 interface Props {
   title?: string;
@@ -17,6 +19,15 @@ export function ErrorState({
   error,
   reset,
 }: Props) {
+  useEffect(() => {
+    if (!error) return;
+    reportCaughtError(error, {
+      surface: 'render',
+      operation: title,
+      tags: { digest: error.digest },
+    });
+  }, [error, title]);
+
   return (
     <div
       role="alert"

@@ -11,6 +11,8 @@ import {
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 
+import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
+
 const log = childLogger('worker:transcribe');
 
 // Phase 3 cap: 25 MB. Telegram voice memos are well under this; the web
@@ -105,6 +107,11 @@ export async function processTranscribeJobForTests(
     }
   } catch (enqueueErr) {
     log.error({ err: enqueueErr }, 'failed to enqueue extract job');
+    captureWorkerException(enqueueErr, {
+      component: 'worker_handoff',
+      queueName: queue.QUEUE_NAMES.extract,
+      operation: 'enqueue_extract_after_transcribe',
+    });
     const failurePatch = JSON.stringify({
       extraction_failed_at: new Date().toISOString(),
       extraction_error: `enqueue failed: ${
@@ -119,6 +126,10 @@ export async function processTranscribeJobForTests(
       .where(eq(rawEvents.id, rawEventId))
       .catch((markErr: unknown) => {
         log.error({ err: markErr }, 'failed to mark extract failure');
+        captureWorkerException(markErr, {
+          component: 'worker_failure_marker',
+          operation: 'mark_extract_enqueue_failure',
+        });
       });
   }
 
@@ -129,6 +140,11 @@ export async function processTranscribeJobForTests(
     }
   } catch (enqueueErr) {
     log.error({ err: enqueueErr }, 'failed to enqueue embed job');
+    captureWorkerException(enqueueErr, {
+      component: 'worker_handoff',
+      queueName: queue.QUEUE_NAMES.embed,
+      operation: 'enqueue_embed_after_transcribe',
+    });
     const failurePatch = JSON.stringify({
       embedding_failed_at: new Date().toISOString(),
       embedding_error: `enqueue failed: ${
@@ -143,6 +159,10 @@ export async function processTranscribeJobForTests(
       .where(eq(rawEvents.id, rawEventId))
       .catch((markErr: unknown) => {
         log.error({ err: markErr }, 'failed to mark embed failure');
+        captureWorkerException(markErr, {
+          component: 'worker_failure_marker',
+          operation: 'mark_embed_enqueue_failure',
+        });
       });
   }
 
@@ -153,6 +173,11 @@ export async function processTranscribeJobForTests(
     }
   } catch (enqueueErr) {
     log.error({ err: enqueueErr }, 'failed to enqueue suggestion job');
+    captureWorkerException(enqueueErr, {
+      component: 'worker_handoff',
+      queueName: queue.QUEUE_NAMES.suggestions,
+      operation: 'enqueue_suggestion_after_transcribe',
+    });
     const failurePatch = JSON.stringify({
       suggestions_failed_at: new Date().toISOString(),
       suggestions_error: `enqueue failed: ${
@@ -167,6 +192,10 @@ export async function processTranscribeJobForTests(
       .where(eq(rawEvents.id, rawEventId))
       .catch((markErr: unknown) => {
         log.error({ err: markErr }, 'failed to mark suggestion failure');
+        captureWorkerException(markErr, {
+          component: 'worker_failure_marker',
+          operation: 'mark_suggestion_enqueue_failure',
+        });
       });
   }
   return { rawEventId, model: result.model };
@@ -214,6 +243,7 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
 
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'job failed');
+    captureWorkerJobFailure(err, job);
     if (!job) return;
     // BullMQ retries within `attempts`; this handler fires after each
     // attempt. Only mark the row as permanently failed once the attempts
@@ -226,6 +256,10 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
     if (!unrecoverable && job.attemptsMade < maxAttempts) return;
     void markTranscribeFailureForTests(deps, job.data, err).catch((updateErr: unknown) => {
       log.error({ err: updateErr }, 'failed to mark row failure');
+      captureWorkerException(updateErr, {
+        component: 'worker_failure_marker',
+        operation: 'mark_transcription_failure',
+      });
     });
   });
   worker.on('completed', (job) => {
