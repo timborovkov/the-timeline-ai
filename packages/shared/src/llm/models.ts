@@ -17,9 +17,9 @@ export interface TimelineModelConfig {
 
 export const TIMELINE_MODELS = {
   extraction: {
-    id: 'deepseek/deepseek-v4-flash',
+    id: 'qwen/qwen3.7-max',
     provider: 'openrouter',
-    contextWindowTokens: 1_048_576,
+    contextWindowTokens: 1_000_000,
     capabilities: ['chat', 'structured', 'tools'],
   },
   agent: {
