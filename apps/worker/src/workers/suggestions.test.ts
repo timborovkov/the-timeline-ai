@@ -609,6 +609,109 @@ describe('processSuggestionJobForTests', () => {
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
   });
 
+  it('supersedes a Slack channel review after an unthreaded message advances the anchor', async () => {
+    const rootId = '10000000-0000-0000-0000-0000000001a1';
+    const unthreadedId = '10000000-0000-0000-0000-0000000001a2';
+    const replyId = '10000000-0000-0000-0000-0000000001a3';
+    const enqueueSuggestionJob = vi.fn().mockResolvedValue(undefined);
+    await seedRawEvent(db as never, {
+      id: rootId,
+      source: 'slack',
+      text: 'Sarah can send the Acme deck Friday.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+      sourceMetadata: {
+        slack_workspace_id: 'T1',
+        slack_channel_id: 'C5',
+        slack_message_ts: '1716810000.000100',
+      },
+    });
+    await seedRawEvent(db as never, {
+      id: unthreadedId,
+      source: 'slack',
+      text: 'Separately, Alex should draft the weekly recap.',
+      occurredAt: new Date('2026-05-27T10:01:00.000Z'),
+      sourceMetadata: {
+        slack_workspace_id: 'T1',
+        slack_channel_id: 'C5',
+        slack_message_ts: '1716810060.000150',
+      },
+    });
+    await seedRawEvent(db as never, {
+      id: replyId,
+      source: 'slack',
+      text: 'Actually wait for legal before sending anything.',
+      occurredAt: new Date('2026-05-27T10:02:00.000Z'),
+      sourceMetadata: {
+        slack_workspace_id: 'T1',
+        slack_channel_id: 'C5',
+        slack_message_ts: '1716810120.000200',
+        slack_thread_ts: '1716810000.000100',
+      },
+    });
+
+    for (const rawEventId of [rootId, unthreadedId, replyId]) {
+      await processSuggestionJobForTests(
+        { db: db as never },
+        { rawEventId, teamId: TEAM_ID },
+        { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID, enqueueSuggestionJob },
+      );
+    }
+
+    const reviews = await db.select().from(conversationReviews);
+    const channelReview = reviews.find((review) => review.conversationKey.endsWith(':C5'));
+    const threadReview = reviews.find((review) =>
+      review.conversationKey.endsWith(':C5:thread:1716810000.000100'),
+    );
+    expect(channelReview).toMatchObject({
+      status: 'completed',
+      lastRawEventId: unthreadedId,
+    });
+    expect(channelReview?.metadata).toMatchObject({
+      review_outcome: 'superseded_by_thread_review',
+      superseded_by_conversation_key: threadReview?.conversationKey,
+    });
+    expect(threadReview).toMatchObject({
+      status: 'pending',
+      lastRawEventId: replyId,
+    });
+
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Draft weekly recap',
+            summary: 'Should not be created by the superseded channel review.',
+            reason: 'The moved channel anchor looked actionable.',
+            confidence: 'high',
+            quote: 'Alex should draft the weekly recap.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Draft weekly recap',
+                proposedPayload: { canonicalName: 'Draft weekly recap' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'conversation_review',
+        conversationReviewId: channelReview?.id ?? '00000000-0000-0000-0000-000000000000',
+        teamId: TEAM_ID,
+      },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(chat).not.toHaveBeenCalled();
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
+  });
+
   it('drops model results when a Slack channel review is superseded in flight', async () => {
     const rootId = '10000000-0000-0000-0000-0000000000fe';
     const reviewId = '20000000-0000-0000-0000-0000000000fe';

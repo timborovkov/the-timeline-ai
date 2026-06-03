@@ -723,7 +723,8 @@ async function supersedePendingSlackChannelReviewForThreadReply(
             AND ${rawEvents.source} = 'slack'
             AND ${rawEvents.sourceMetadata} ->> 'slack_workspace_id' = ${thread.workspaceId}
             AND ${rawEvents.sourceMetadata} ->> 'slack_channel_id' = ${thread.channelId}
-            AND ${rawEvents.sourceMetadata} ->> 'slack_message_ts' = ${thread.threadTs}
+            AND ${rawEvents.sourceMetadata} ->> 'slack_thread_ts' IS NULL
+            AND (${rawEvents.occurredAt}, ${rawEvents.id}) <= (${row.occurredAt.toISOString()}::timestamptz, ${row.id}::uuid)
         )`,
       ),
     );

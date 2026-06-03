@@ -24,8 +24,9 @@ For Slack, thread reviews use the Slack thread timestamp as the conversation
 key, include the root message as evidence even when the original root event was
 captured before Slack supplied thread metadata, and keep unthreaded channel
 reviews from absorbing replies from unrelated threads. When a reply arrives for
-an initially unthreaded root, the pending channel review for that root is
-superseded by the thread review.
+an initially unthreaded root, the pending unthreaded channel review for that
+Slack channel is superseded by the thread review, even if the channel review
+anchor has already advanced to a later unthreaded message.
 
 The first implementation should prioritize proposal quality over retrieval
 enrichment, while keeping the evidence-window helper reusable by retrieval.

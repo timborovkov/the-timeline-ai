@@ -303,6 +303,70 @@ describe('suggestion scope', () => {
     expect(rows.rows[0]?.count).toBe('2');
   });
 
+  it('re-offers a rejected correction proposal as a new pending bundle', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const original = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Send Acme deck',
+      summary: 'Sarah owns the deck.',
+      dedupeKey: 'conversation:rejected-correction',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send Acme deck',
+          dedupeKey: 'conversation:rejected-correction:item',
+          proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'Sarah' },
+        },
+      ],
+    });
+    await pg.exec(`
+      UPDATE agent_suggestions
+      SET status = 'accepted', resolved_at = '2026-05-27T10:00:00.000Z'
+      WHERE id = '${original.id}';
+    `);
+    const correctionInput = {
+      source: 'background' as const,
+      title: 'Send Acme deck',
+      summary: 'John owns the deck now.',
+      dedupeKey: 'conversation:rejected-correction',
+      visibility: 'team' as const,
+      items: [
+        {
+          operation: 'create' as const,
+          targetKind: 'task' as const,
+          title: 'Send Acme deck',
+          dedupeKey: 'conversation:rejected-correction:item',
+          proposedPayload: { canonicalName: 'Send Acme deck', ownerName: 'John' },
+        },
+      ],
+    };
+
+    const rejectedCorrection =
+      await scope.suggestions.createOrMergeSuggestionBundle(correctionInput);
+    await pg.exec(`
+      UPDATE agent_suggestions
+      SET status = 'rejected', resolved_at = '2026-05-27T10:05:00.000Z'
+      WHERE id = '${rejectedCorrection.id}';
+    `);
+
+    const reoffered = await scope.suggestions.createOrMergeSuggestionBundle(correctionInput);
+    const replay = await scope.suggestions.createOrMergeSuggestionBundle(correctionInput);
+
+    expect(reoffered.id).not.toBe(original.id);
+    expect(reoffered.id).not.toBe(rejectedCorrection.id);
+    expect(reoffered.status).toBe('pending');
+    expect(replay.id).toBe(reoffered.id);
+    const rows = await pg.query<{ count: string; reoffered_dedupe_key: string | null }>(`
+      SELECT count(*)::text, max(dedupe_key) FILTER (WHERE id = '${reoffered.id}') AS reoffered_dedupe_key
+      FROM agent_suggestions
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    expect(rows.rows[0]?.count).toBe('3');
+    expect(rows.rows[0]?.reoffered_dedupe_key).toContain(':reoffer:1');
+  });
+
   it('claims accept once before applying canonical changes', async () => {
     const creator = withTeam(db as never, TEAM_ID, USER_ID);
     const reviewer = withTeam(db as never, TEAM_ID, REVIEWER_ID);

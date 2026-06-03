@@ -832,28 +832,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           visibilityUserIds: input.visibilityUserIds ?? null,
           metadata,
         };
-        let [inserted] = await tx
-          .insert(agentSuggestions)
-          .values(suggestionValues)
-          .onConflictDoUpdate({
-            target: [agentSuggestions.teamId, agentSuggestions.dedupeKey],
-            set: {
-              title: input.title,
-              summary: input.summary ?? null,
-              reason: input.reason ?? null,
-              confidence: input.confidence ?? 'medium',
-              metadata: sql`${agentSuggestions.metadata} || ${JSON.stringify(metadata)}::jsonb`,
-              updatedAt: new Date(),
-            },
-            where: sql`${agentSuggestions.status} NOT IN ('accepted', 'rejected')`,
-          })
-          .returning();
-        if (!inserted && dedupeKey === input.dedupeKey) {
-          [inserted] = await tx
+        const insertSuggestion = async (candidateDedupeKey: string) => {
+          const [row] = await tx
             .insert(agentSuggestions)
             .values({
               ...suggestionValues,
-              dedupeKey: correctionDedupeKey,
+              dedupeKey: candidateDedupeKey,
             })
             .onConflictDoUpdate({
               target: [agentSuggestions.teamId, agentSuggestions.dedupeKey],
@@ -868,6 +852,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               where: sql`${agentSuggestions.status} NOT IN ('accepted', 'rejected')`,
             })
             .returning();
+          return row;
+        };
+
+        let inserted = await insertSuggestion(dedupeKey);
+        if (!inserted && dedupeKey === input.dedupeKey) {
+          inserted = await insertSuggestion(correctionDedupeKey);
         }
         if (!inserted) {
           const [resolvedDuplicate] = await tx
@@ -877,12 +867,33 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               and(eq(agentSuggestions.teamId, teamId), eq(agentSuggestions.dedupeKey, dedupeKey)),
             )
             .limit(1);
-          if (
-            resolvedDuplicate?.status === 'accepted' ||
-            resolvedDuplicate?.status === 'rejected'
-          ) {
+          if (resolvedDuplicate?.status === 'accepted') {
             return { row: resolvedDuplicate, changed: false };
           }
+          if (resolvedDuplicate?.status === 'rejected') {
+            for (let attempt = 1; attempt <= 10; attempt += 1) {
+              const reofferDedupeKey = `${dedupeKey}:reoffer:${attempt}`;
+              inserted = await insertSuggestion(reofferDedupeKey);
+              if (inserted) break;
+
+              const [reofferDuplicate] = await tx
+                .select()
+                .from(agentSuggestions)
+                .where(
+                  and(
+                    eq(agentSuggestions.teamId, teamId),
+                    eq(agentSuggestions.dedupeKey, reofferDedupeKey),
+                  ),
+                )
+                .limit(1);
+              if (reofferDuplicate?.status === 'accepted') {
+                return { row: reofferDuplicate, changed: false };
+              }
+              if (reofferDuplicate?.status !== 'rejected') break;
+            }
+          }
+        }
+        if (!inserted) {
           throw new Error('Failed to create suggestion');
         }
 
