@@ -5,6 +5,10 @@ import { resetEnvForTests } from '#src/env.js';
 import {
   generateObject,
   generateText,
+  sanitizeAiSdkInputs,
+  sanitizeEmbedInputs,
+  sanitizeEmbedOutputs,
+  sanitizeTranscribeInputs,
   streamText,
   withLangSmithProviderOptions,
 } from '#src/llm/tracing.js';
@@ -84,5 +88,104 @@ describe('llm LangSmith tracing', () => {
         ls_model_name: 'anthropic/test-model',
       },
     });
+  });
+
+  it('redacts AI SDK file and image inputs while preserving text prompts', () => {
+    const inputs = sanitizeAiSdkInputs({
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Transcribe this exactly.' },
+            {
+              type: 'file',
+              data: Buffer.from('%PDF-1.4'),
+              mediaType: 'application/pdf',
+              filename: 'contract.pdf',
+            },
+            {
+              type: 'image',
+              image: Buffer.from([0xff, 0xd8, 0xff]),
+              mediaType: 'image/jpeg',
+            },
+          ],
+        },
+      ],
+    });
+
+    const message = (inputs.messages as { content: Record<string, unknown>[] }[])[0];
+    expect(message?.content[0]).toEqual({ type: 'text', text: 'Transcribe this exactly.' });
+    expect(message?.content[1]).toEqual({
+      type: 'file',
+      mediaType: 'application/pdf',
+      filename: 'contract.pdf',
+      data: { redacted: true, kind: 'buffer', bytes: 8 },
+    });
+    expect(message?.content[2]).toEqual({
+      type: 'image',
+      mediaType: 'image/jpeg',
+      image: { redacted: true, kind: 'buffer', bytes: 3 },
+    });
+    expect(JSON.stringify(inputs)).not.toContain('%PDF-1.4');
+  });
+
+  it('installs binary redaction hooks in LangSmith provider options', () => {
+    const providerOptions = withLangSmithProviderOptions(undefined, {
+      name: 'llm.extractTextFromMedia',
+      model: 'openai/vision-test',
+      processInputs: sanitizeAiSdkInputs,
+      processChildLLMRunInputs: sanitizeAiSdkInputs,
+    });
+    const langsmith = providerOptions.langsmith as unknown as {
+      processInputs: typeof sanitizeAiSdkInputs;
+      processChildLLMRunInputs: typeof sanitizeAiSdkInputs;
+    };
+
+    const input = {
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'file', data: Buffer.from('secret'), mediaType: 'application/pdf' }],
+        },
+      ],
+    };
+
+    expect(langsmith.processInputs(input)).toEqual(langsmith.processChildLLMRunInputs(input));
+    expect(JSON.stringify(langsmith.processInputs(input))).not.toContain('secret');
+  });
+
+  it('redacts embedding vectors from trace outputs but keeps text inputs', () => {
+    const input = sanitizeEmbedInputs({
+      model: {} as never,
+      value: 'private note text',
+    });
+    const output = sanitizeEmbedOutputs({ embedding: [0.1, 0.2, 0.3] });
+
+    expect(input).toMatchObject({
+      value: 'private note text',
+      value_chars: 17,
+    });
+    expect(output).toEqual({
+      embedding: {
+        redacted: true,
+        dimensions: 3,
+      },
+    });
+    expect(JSON.stringify(output)).not.toContain('0.1');
+  });
+
+  it('redacts transcription audio inputs while preserving useful options', () => {
+    const input = sanitizeTranscribeInputs({
+      model: {} as never,
+      audio: Buffer.from('raw-audio-bytes'),
+      providerOptions: { openai: { language: 'en' } },
+    });
+
+    expect(input).toEqual({
+      audio: { redacted: true, kind: 'buffer', bytes: 15 },
+      providerOptions: { openai: { language: 'en' } },
+      maxRetries: undefined,
+    });
+    expect(JSON.stringify(input)).not.toContain('raw-audio-bytes');
   });
 });

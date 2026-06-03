@@ -3,7 +3,11 @@ import { type FilePart, type ImagePart, type LanguageModel } from 'ai';
 
 import { getEnv } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-import { generateText, withLangSmithProviderOptions } from '#src/llm/tracing.js';
+import {
+  generateText,
+  sanitizeAiSdkInputs,
+  withLangSmithProviderOptions,
+} from '#src/llm/tracing.js';
 
 /**
  * Vision-based text extraction. One inference layer for OCR/transcription of
@@ -135,6 +139,8 @@ export async function extractTextFromMedia(
     providerOptions: withLangSmithProviderOptions(undefined, {
       name: 'llm.extractTextFromMedia',
       model: modelId,
+      processInputs: sanitizeAiSdkInputs,
+      processChildLLMRunInputs: sanitizeAiSdkInputs,
       metadata: {
         operation: 'extract_text_from_media',
         media_type: mediaType,
