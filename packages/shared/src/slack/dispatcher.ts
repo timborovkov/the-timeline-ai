@@ -58,6 +58,7 @@ export interface SlackIngestDeps {
   };
   extract?: { enqueueExtract(input: { rawEventId: string; teamId: string }): Promise<void> };
   embed?: { enqueueEmbed(input: { rawEventId: string; teamId: string }): Promise<void> };
+  suggestions?: { enqueueSuggestion(input: { rawEventId: string; teamId: string }): Promise<void> };
 }
 
 interface SlackTokenJson {
@@ -926,6 +927,11 @@ async function enqueueTextPipelines(
     ?.enqueueEmbed({ rawEventId: row.id, teamId: row.teamId })
     .catch((err: unknown) => {
       log.error({ err, rawEventId: row.id }, 'slack embed enqueue failed');
+    });
+  await deps.suggestions
+    ?.enqueueSuggestion({ rawEventId: row.id, teamId: row.teamId })
+    .catch((err: unknown) => {
+      log.error({ err, rawEventId: row.id }, 'slack suggestion enqueue failed');
     });
 }
 

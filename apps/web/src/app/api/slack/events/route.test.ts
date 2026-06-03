@@ -11,10 +11,14 @@ const ENV_BACKUP = { ...process.env };
 
 const fakes = vi.hoisted(() => ({
   handleSlackEnvelope: vi.fn(),
+  slackIngestDeps: vi.fn(),
+  extract: { enqueueExtract: vi.fn() },
+  embed: { enqueueEmbed: vi.fn() },
+  suggestions: { enqueueSuggestion: vi.fn() },
 }));
 
 vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/app/api/slack/_shared', () => ({ slackIngestDeps: () => ({}) }));
+vi.mock('@/app/api/slack/_shared', () => ({ slackIngestDeps: fakes.slackIngestDeps }));
 
 vi.mock('@timeline/shared/logger', () => ({
   childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
@@ -61,6 +65,7 @@ beforeEach(() => {
   process.env.SLACK_SIGNING_SECRET = 'slack-secret';
   resetEnvForTests();
   fakes.handleSlackEnvelope.mockResolvedValue({ ok: true });
+  fakes.slackIngestDeps.mockReturnValue({});
   vi.clearAllMocks();
 });
 
@@ -96,5 +101,37 @@ describe('POST /api/slack/events', () => {
       { db: {} },
       expect.objectContaining({ type: 'url_verification' }),
     );
+  });
+
+  it('passes Redis-backed text queues to Slack dispatcher for event callbacks', async () => {
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    resetEnvForTests();
+    fakes.slackIngestDeps.mockReturnValue({
+      extract: fakes.extract,
+      embed: fakes.embed,
+      suggestions: fakes.suggestions,
+    });
+
+    const response = await POST(
+      slackRequest({
+        type: 'event_callback',
+        team_id: 'T_SLACK',
+        event_id: 'EvText',
+        event: { type: 'message', user: 'U_SLACK' },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await vi.waitFor(() => {
+      expect(fakes.handleSlackEnvelope).toHaveBeenCalledWith(
+        {
+          db: {},
+          extract: fakes.extract,
+          embed: fakes.embed,
+          suggestions: fakes.suggestions,
+        },
+        expect.objectContaining({ event_id: 'EvText' }),
+      );
+    });
   });
 });

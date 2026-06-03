@@ -8,9 +8,18 @@ const ENV_BACKUP = { ...process.env };
 
 const fakes = vi.hoisted(() => ({
   handleInbound: vi.fn(),
+  queue: {
+    enqueueExtractJob: vi.fn(),
+    enqueueEmbedJob: vi.fn(),
+    enqueueSuggestionJob: vi.fn(),
+    enqueueTranscribeJob: vi.fn(),
+  },
 }));
 
 vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/queue', () => ({
+  requireRedisQueue: vi.fn(() => Promise.resolve(fakes.queue)),
+}));
 
 vi.mock('@timeline/shared/logger', () => ({
   childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
@@ -56,6 +65,10 @@ beforeEach(() => {
   process.env.INBOUND_EMAIL_DOMAIN = 'inbound.test';
   resetEnvForTests();
   fakes.handleInbound.mockResolvedValue({ ok: true, inserted: 1 });
+  fakes.queue.enqueueExtractJob.mockResolvedValue(undefined);
+  fakes.queue.enqueueEmbedJob.mockResolvedValue(undefined);
+  fakes.queue.enqueueSuggestionJob.mockResolvedValue(undefined);
+  fakes.queue.enqueueTranscribeJob.mockResolvedValue(undefined);
   vi.clearAllMocks();
 });
 
@@ -85,5 +98,55 @@ describe('POST /api/email/inbound', () => {
       expect.objectContaining({ db: {}, inboundDomain: 'inbound.test' }),
       expect.objectContaining({ TextBody: 'Launch note' }),
     );
+  });
+
+  it('passes Redis-backed extract, embed, and suggestion queues to the dispatcher', async () => {
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    resetEnvForTests();
+    fakes.handleInbound.mockImplementationOnce(async (deps: EmailModule.DispatcherDeps) => {
+      await deps.extract?.enqueueExtract({ rawEventId: 'raw-1', teamId: 'team-1' });
+      await deps.embed?.enqueueEmbed({ rawEventId: 'raw-1', teamId: 'team-1' });
+      await deps.suggestions?.enqueueSuggestion({ rawEventId: 'raw-1', teamId: 'team-1' });
+      return { ok: true, inserted: 1 };
+    });
+
+    const response = await POST(inboundRequest());
+
+    expect(response.status).toBe(200);
+    expect(fakes.queue.enqueueExtractJob).toHaveBeenCalledWith({
+      rawEventId: 'raw-1',
+      teamId: 'team-1',
+    });
+    expect(fakes.queue.enqueueEmbedJob).toHaveBeenCalledWith({
+      rawEventId: 'raw-1',
+      teamId: 'team-1',
+    });
+    expect(fakes.queue.enqueueSuggestionJob).toHaveBeenCalledWith({
+      rawEventId: 'raw-1',
+      teamId: 'team-1',
+    });
+  });
+
+  it('keeps attachment deps separate from Redis text queues', async () => {
+    process.env.S3_ENDPOINT = 'http://localhost:9000';
+    process.env.S3_REGION = 'us-east-1';
+    process.env.S3_ACCESS_KEY_ID = 'timeline';
+    process.env.S3_SECRET_ACCESS_KEY = 'secret';
+    process.env.S3_BUCKET_ATTACHMENTS = 'attachments';
+    process.env.S3_BUCKET_AUDIO = 'audio';
+    delete process.env.REDIS_URL;
+    resetEnvForTests();
+    fakes.handleInbound.mockImplementationOnce((deps: EmailModule.DispatcherDeps) => {
+      expect(deps.attachments).toBeDefined();
+      expect(deps.extract).toBeUndefined();
+      expect(deps.embed).toBeUndefined();
+      expect(deps.suggestions).toBeUndefined();
+      return Promise.resolve({ ok: true, inserted: 1 });
+    });
+
+    const response = await POST(inboundRequest());
+
+    expect(response.status).toBe(200);
+    expect(fakes.handleInbound).toHaveBeenCalledOnce();
   });
 });

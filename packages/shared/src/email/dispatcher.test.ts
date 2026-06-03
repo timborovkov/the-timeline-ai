@@ -6,7 +6,9 @@ import { PGlite } from '@electric-sql/pglite';
 import { rawEvents, teamMembers, teams, teamVisibilityDefaults, users } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { PostmarkInbound } from '#src/email/postmark-schema.js';
 
 import { handleInbound } from '#src/email/dispatcher.js';
 
@@ -16,24 +18,62 @@ const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
-function inboundPayload(messageId: string) {
+function inboundPayload(messageId: string): PostmarkInbound {
   return {
     MessageID: `postmark-${messageId}`,
     Date: '2026-05-27T09:00:00Z',
     Subject: 'Vendor note',
     From: 'vendor@example.net',
     FromName: 'Vendor',
-    FromFull: { Email: 'vendor@example.net', Name: 'Vendor' },
+    FromFull: { Email: 'vendor@example.net', Name: 'Vendor', MailboxHash: '' },
     To: 'team-a@inbound.test',
-    ToFull: [{ Email: 'team-a@inbound.test', Name: 'Team A' }],
+    ToFull: [{ Email: 'team-a@inbound.test', Name: 'Team A', MailboxHash: '' }],
+    Cc: '',
     CcFull: [],
+    Bcc: '',
     BccFull: [],
     OriginalRecipient: '',
+    ReplyTo: '',
     MailboxHash: 'team-a',
     TextBody: 'Please review this.',
     HtmlBody: '',
+    StrippedTextReply: '',
+    Tag: '',
     Headers: [{ Name: 'Message-ID', Value: `<${messageId}@example.net>` }],
     Attachments: [],
+  };
+}
+
+function attachment(name: string, contentType: string, body = 'hello') {
+  const bytes = Buffer.from(body);
+  return {
+    Name: name,
+    Content: bytes.toString('base64'),
+    ContentType: contentType,
+    ContentLength: bytes.length,
+    ContentID: '',
+  };
+}
+
+function textQueueDeps() {
+  return {
+    extract: { enqueueExtract: vi.fn().mockResolvedValue(undefined) },
+    embed: { enqueueEmbed: vi.fn().mockResolvedValue(undefined) },
+    suggestions: { enqueueSuggestion: vi.fn().mockResolvedValue(undefined) },
+  };
+}
+
+function attachmentDeps() {
+  return {
+    uploadAttachment: vi.fn().mockResolvedValue(undefined),
+    uploadAudio: vi.fn().mockResolvedValue(undefined),
+    enqueueTranscribe: vi.fn().mockResolvedValue(undefined),
+    buildAttachmentKey: vi.fn(({ teamId, messageId, filename }) => {
+      return `attachments/${teamId}/${messageId}/${filename}`;
+    }),
+    buildAudioKey: vi.fn(({ teamId, messageId, filename }) => {
+      return `audio/${teamId}/${messageId}/${filename}`;
+    }),
   };
 }
 
@@ -72,6 +112,248 @@ describe('email dispatcher', () => {
       userId: USER_ID,
       role: 'owner',
     });
+  });
+
+  afterEach(async () => {
+    await pg.close();
+  });
+
+  it('creates a team-scoped email raw event with sender metadata and text queues', async () => {
+    const queues = textQueueDeps();
+
+    await expect(
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', ...queues },
+        inboundPayload('vendor-note'),
+      ),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    expect(row).toMatchObject({
+      source: 'email',
+      teamId: TEAM_ID,
+      authorUserId: null,
+      contentText: 'Please review this.',
+      visibility: 'team',
+    });
+    expect(row?.sourceMetadata).toMatchObject({
+      subject: 'Vendor note',
+      from: { email: 'vendor@example.net', name: 'Vendor' },
+      to: [{ email: 'team-a@inbound.test', name: 'Team A' }],
+      message_id: 'vendor-note@example.net',
+      auth_verdict: 'absent',
+      sender_unverified: true,
+    });
+    expect(queues.extract.enqueueExtract).toHaveBeenCalledWith({
+      rawEventId: row?.id,
+      teamId: TEAM_ID,
+    });
+    expect(queues.embed.enqueueEmbed).toHaveBeenCalledWith({
+      rawEventId: row?.id,
+      teamId: TEAM_ID,
+    });
+    expect(queues.suggestions.enqueueSuggestion).toHaveBeenCalledWith({
+      rawEventId: row?.id,
+      teamId: TEAM_ID,
+    });
+  });
+
+  it('attributes verified member senders and honors private email defaults', async () => {
+    await db.insert(teamVisibilityDefaults).values({
+      teamId: TEAM_ID,
+      source: 'email',
+      visibility: 'private',
+      sourceOwnerUserId: USER_ID,
+    });
+    const payload = inboundPayload('member-note');
+    payload.From = 'member@example.com';
+    payload.FromName = 'Timeline Member';
+    payload.FromFull = {
+      Email: 'member@example.com',
+      Name: 'Timeline Member',
+      MailboxHash: '',
+    };
+    payload.Headers.push({
+      Name: 'Authentication-Results',
+      Value: 'mx.test; spf=pass smtp.mailfrom=example.com; dkim=fail',
+    });
+
+    await expect(
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', trustedAuthservIds: ['mx.test'] },
+        payload,
+      ),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    expect(row).toMatchObject({
+      authorUserId: USER_ID,
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
+    });
+    expect(row?.sourceMetadata).toMatchObject({ auth_verdict: 'pass' });
+    expect(row?.sourceMetadata).not.toMatchObject({ sender_unverified: true });
+  });
+
+  it('treats spoofed member senders as unverified team-visible events', async () => {
+    await db.insert(teamVisibilityDefaults).values({
+      teamId: TEAM_ID,
+      source: 'email',
+      visibility: 'private',
+      sourceOwnerUserId: USER_ID,
+    });
+    const payload = inboundPayload('spoofed-member');
+    payload.From = 'member@example.com';
+    payload.FromName = 'Timeline Member';
+    payload.FromFull = {
+      Email: 'member@example.com',
+      Name: 'Timeline Member',
+      MailboxHash: '',
+    };
+    payload.Headers.push({
+      Name: 'Authentication-Results',
+      Value: 'mx.test; spf=fail smtp.mailfrom=bad.test; dkim=fail',
+    });
+
+    await expect(
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', trustedAuthservIds: ['mx.test'] },
+        payload,
+      ),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    expect(row).toMatchObject({
+      authorUserId: null,
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+    });
+    expect(row?.sourceMetadata).toMatchObject({
+      auth_verdict: 'fail',
+      sender_unverified: true,
+    });
+  });
+
+  it('deduplicates duplicate deliveries and re-attempts text queues for recovery', async () => {
+    const queues = textQueueDeps();
+    const payload = inboundPayload('duplicate-note');
+
+    await handleInbound({ db: db as never, inboundDomain: 'inbound.test', ...queues }, payload);
+    await handleInbound({ db: db as never, inboundDomain: 'inbound.test', ...queues }, payload);
+
+    const rows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(rows).toHaveLength(1);
+    expect(queues.extract.enqueueExtract).toHaveBeenCalledTimes(2);
+    expect(queues.embed.enqueueEmbed).toHaveBeenCalledTimes(2);
+    expect(queues.suggestions.enqueueSuggestion).toHaveBeenCalledTimes(2);
+    expect(queues.suggestions.enqueueSuggestion).toHaveBeenLastCalledWith({
+      rawEventId: rows[0]?.id,
+      teamId: TEAM_ID,
+    });
+  });
+
+  it('records non-audio attachment metadata without direct suggestions when no text exists', async () => {
+    const queues = textQueueDeps();
+    const attachments = attachmentDeps();
+    const payload = inboundPayload('attachment-only');
+    payload.TextBody = '';
+    payload.Attachments = [attachment('proposal.pdf', 'application/pdf', '%PDF-1.7')];
+
+    await expect(
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', attachments, ...queues },
+        payload,
+      ),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+
+    expect(attachments.uploadAttachment).toHaveBeenCalledOnce();
+    expect(queues.suggestions.enqueueSuggestion).not.toHaveBeenCalled();
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(row?.sourceMetadata).toMatchObject({
+      attachments: [
+        expect.objectContaining({
+          filename: 'proposal.pdf',
+          content_type: 'application/pdf',
+          bucket: 'attachments',
+        }),
+      ],
+    });
+  });
+
+  it('promotes audio attachments to child raw events and transcription work', async () => {
+    const queues = textQueueDeps();
+    const attachments = attachmentDeps();
+    const payload = inboundPayload('audio-note');
+    payload.TextBody = 'Voice memo context';
+    payload.Attachments = [attachment('memo.m4a', 'audio/mp4', 'audio-bytes')];
+
+    await expect(
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', attachments, ...queues },
+        payload,
+      ),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+
+    expect(attachments.uploadAudio).toHaveBeenCalledOnce();
+    expect(attachments.enqueueTranscribe).toHaveBeenCalledOnce();
+    expect(queues.suggestions.enqueueSuggestion).toHaveBeenCalledOnce();
+    const rows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(rows).toHaveLength(2);
+    const parent = rows.find((r) => r.contentText === 'Voice memo context');
+    const child = rows.find((r) => r.contentAudioUrl);
+    expect(parent?.sourceMetadata).toMatchObject({
+      attachments: [
+        expect.objectContaining({
+          filename: 'memo.m4a',
+          bucket: 'audio',
+          audio_event_id: child?.id,
+        }),
+      ],
+    });
+    expect(child).toMatchObject({
+      teamId: TEAM_ID,
+      authorUserId: null,
+      visibility: 'team',
+    });
+    expect(child?.contentAudioUrl).toContain('memo.m4a');
+    expect(attachments.enqueueTranscribe).toHaveBeenCalledWith({
+      rawEventId: child?.id,
+      teamId: TEAM_ID,
+      audioKey: child?.contentAudioUrl,
+    });
+  });
+
+  it('does not create raw events or agent work for malformed, unmatched, or memberless payloads', async () => {
+    const queues = textQueueDeps();
+
+    await expect(
+      handleInbound({ db: db as never, inboundDomain: 'inbound.test', ...queues }, { nope: true }),
+    ).resolves.toMatchObject({ ok: false, inserted: 0, reason: 'invalid_payload' });
+
+    await expect(
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', ...queues },
+        {
+          ...inboundPayload('unknown-team'),
+          MailboxHash: '',
+          ToFull: [{ Email: 'missing@inbound.test', Name: '', MailboxHash: '' }],
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, inserted: 0, reason: 'no_matching_team' });
+
+    await db.delete(teamMembers).where(eq(teamMembers.teamId, TEAM_ID));
+    await expect(
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', ...queues },
+        inboundPayload('memberless-team'),
+      ),
+    ).resolves.toMatchObject({ ok: true, inserted: 0 });
+
+    const rows = await db.select().from(rawEvents);
+    expect(rows).toHaveLength(0);
+    expect(queues.extract.enqueueExtract).not.toHaveBeenCalled();
+    expect(queues.embed.enqueueEmbed).not.toHaveBeenCalled();
+    expect(queues.suggestions.enqueueSuggestion).not.toHaveBeenCalled();
   });
 
   it('falls back to team visibility for unverified private email with no real owner', async () => {

@@ -13,6 +13,7 @@ const env = {
 const integrationTests = [
   'src/workers/documentExtract.test.ts',
   'src/workers/embed.test.ts',
+  'src/workers/extract.test.ts',
   'src/workers/janitor.test.ts',
   'src/workers/meetingFinalize.test.ts',
   'src/workers/overdue.test.ts',

@@ -18,6 +18,7 @@ const pgliteTests = [
   'src/job-recovery/index.test.ts',
   'src/mcp-server/handler.test.ts',
   'src/meetings/scope.test.ts',
+  'src/onboarding/index.test.ts',
   'src/objects/index.test.ts',
   'src/slack/dispatcher.test.ts',
   'src/suggestions/index.test.ts',

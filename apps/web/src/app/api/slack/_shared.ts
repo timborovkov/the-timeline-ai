@@ -74,5 +74,13 @@ export function slackIngestDeps() {
           },
         }
       : undefined,
+    suggestions: env.REDIS_URL
+      ? {
+          async enqueueSuggestion(input: { rawEventId: string; teamId: string }) {
+            const queue = await requireRedisQueue();
+            await queue.enqueueSuggestionJob(input);
+          },
+        }
+      : undefined,
   } satisfies Omit<slack.SlackIngestDeps, 'db'>;
 }

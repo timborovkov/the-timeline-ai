@@ -118,6 +118,7 @@ SUPPORT_EMAIL=support@example.com
           Looks up the From address against <code>users.email</code> joined to
           <code>team_members</code>. Match → attributed to that user. No match → row lands with
           <code>authorUserId=null</code> and <code>source_metadata.sender_unverified=true</code>.
+          Unverified senders are kept team-visible rather than inheriting private owner defaults.
         </li>
         <li>
           Strips quoted-reply chains for <code>content_text</code>; preserves the original
@@ -142,7 +143,11 @@ SUPPORT_EMAIL=support@example.com
             </li>
           </ul>
         </li>
-        <li>Enqueues extract + embed for the parent event.</li>
+        <li>
+          Enqueues extract, embed, and approval-suggestion work for text-bearing parent events.
+          Attachment-only deliveries wait for transcription or document extraction before any
+          approval suggestion is created.
+        </li>
       </ol>
       <p>
         Idempotency: a partial unique index on

@@ -52,6 +52,10 @@ export interface EmbedEnqueueDeps {
   enqueueEmbed(input: { rawEventId: string; teamId: string }): Promise<void>;
 }
 
+export interface SuggestionEnqueueDeps {
+  enqueueSuggestion(input: { rawEventId: string; teamId: string }): Promise<void>;
+}
+
 export interface DispatcherDeps {
   db: Db;
   /** Per-team inbound address suffix (e.g. `in.thetimeline.cc`). Used as
@@ -75,6 +79,7 @@ export interface DispatcherDeps {
   attachments?: EmailAttachmentDeps;
   extract?: ExtractEnqueueDeps;
   embed?: EmbedEnqueueDeps;
+  suggestions?: SuggestionEnqueueDeps;
 }
 
 export interface HandleInboundResult {
@@ -425,7 +430,9 @@ async function ingestForTeam(
   }
   const scope = withTeam(deps.db, team.id, callerUserId);
   const emailDefault = await scope.timeline.resolveVisibilityDefault('email');
-  const visibilityOwnerUserId = authorUserId ?? emailDefault.sourceOwnerUserId ?? null;
+  const visibilityOwnerUserId = senderUnverified
+    ? null
+    : (authorUserId ?? emailDefault.sourceOwnerUserId ?? null);
   let resolvedEmailVisibility: 'private' | 'team' = 'team';
   if (emailDefault.visibility === 'private' && visibilityOwnerUserId !== null) {
     resolvedEmailVisibility = 'private';
@@ -579,6 +586,7 @@ async function ingestForTeam(
     // children missing" case via a periodic scan.
     await maybeEnqueueExtract(deps, createResult.id, team.id);
     await maybeEnqueueEmbed(deps, createResult.id, team.id);
+    if (contentText.trim()) await maybeEnqueueSuggestion(deps, createResult.id, team.id);
     return false;
   }
 
@@ -686,6 +694,7 @@ async function ingestForTeam(
   // cascade), so we don't enqueue them here.
   await maybeEnqueueExtract(deps, parentEventId, team.id);
   await maybeEnqueueEmbed(deps, parentEventId, team.id);
+  if (contentText.trim()) await maybeEnqueueSuggestion(deps, parentEventId, team.id);
 
   return true;
 }
@@ -780,6 +789,34 @@ async function maybeEnqueueEmbed(
       .where(eq(rawEvents.id, rawEventId))
       .catch((markErr: unknown) => {
         log.error({ err: markErr }, 'failed to mark embed failure');
+      });
+  }
+}
+
+async function maybeEnqueueSuggestion(
+  deps: { db: Db; suggestions?: SuggestionEnqueueDeps },
+  rawEventId: string,
+  teamId: string,
+): Promise<void> {
+  if (!deps.suggestions) return;
+  try {
+    await deps.suggestions.enqueueSuggestion({ rawEventId, teamId });
+  } catch (err) {
+    log.error({ err }, 'suggestion enqueue failed');
+    const failurePatch = JSON.stringify({
+      suggestions_failed_at: new Date().toISOString(),
+      suggestions_error: `enqueue failed: ${
+        err instanceof Error ? err.message.slice(0, 480) : 'unknown'
+      }`,
+    });
+    await deps.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, rawEventId))
+      .catch((markErr: unknown) => {
+        log.error({ err: markErr }, 'failed to mark suggestion failure');
       });
   }
 }
