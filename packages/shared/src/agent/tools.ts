@@ -81,7 +81,7 @@ const listEventsInput = z.object({
 });
 
 const listPendingApprovalsInput = z.object({
-  status: z.enum(['pending', 'failed', 'all']).default('pending'),
+  status: z.enum(['pending', 'failed']).default('pending'),
   limit: z.number().int().min(1).max(50).optional(),
 });
 
@@ -756,10 +756,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
             if (item.kind === 'create_object') {
               return {
                 operation: 'create' as const,
-                targetKind:
-                  item.type === 'task' || item.type === 'follow_up'
-                    ? ('task' as const)
-                    : ('object' as const),
+                targetKind: item.type === 'task' ? ('task' as const) : ('object' as const),
                 title: `Create ${item.type}: ${item.canonicalName}`,
                 dedupeKey: suggestionDedupeKey([
                   'object-memory',

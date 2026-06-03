@@ -821,6 +821,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     if (!senderCondition) return { hits: [], usedSqlSenderFilter: true };
     const batchSize =
       deps.senderSearchEventIdBatchSize ?? DEFAULT_SENDER_SEARCH_EVENT_ID_BATCH_SIZE;
+    const batchSearchLimit = Math.max(searchOpts.limit ?? 20, batchSize);
     const conditions = [
       eq(rawEvents.teamId, teamId),
       visibilityFilter,
@@ -856,6 +857,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       hits.push(
         ...(await searchFn(teamId, userId, vector, {
           ...searchOpts,
+          limit: batchSearchLimit,
           eventIds: rows.map((row) => row.id),
         })),
       );

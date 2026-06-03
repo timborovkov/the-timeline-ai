@@ -292,6 +292,18 @@ describe('buildAgentTools — team isolation', () => {
     });
   });
 
+  it('list_pending_approvals rejects all-status queries', async () => {
+    const scope = makeFakeScope();
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.list_pending_approvals?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await expect(exec({ status: 'all' }, {})).resolves.toEqual({ error: 'tool_failed' });
+    expect(scope.suggestions.listSuggestions).not.toHaveBeenCalled();
+  });
+
   it('list_calendar_events defaults to upcoming events when no range is provided', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-26T12:00:00Z'));
@@ -390,6 +402,44 @@ describe('buildAgentTools — team isolation', () => {
         entityId: TEAM_B_ENTITY_ID,
         kind: 'telegram',
         value: '@mikaelrintala',
+      },
+    });
+  });
+
+  it('suggest_object_memory keeps follow-up object proposals as objects', async () => {
+    const scope = makeFakeScope();
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.suggest_object_memory?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await exec(
+      {
+        title: 'Remember follow-up',
+        items: [
+          {
+            kind: 'create_object',
+            type: 'follow_up',
+            canonicalName: 'Call Mikael back',
+          },
+        ],
+      },
+      {},
+    );
+
+    const input = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: {
+        targetKind: string;
+        proposedPayload: Record<string, unknown>;
+      }[];
+    };
+    expect(input.items[0]).toMatchObject({
+      targetKind: 'object',
+      proposedPayload: {
+        type: 'follow_up',
+        canonicalName: 'Call Mikael back',
       },
     });
   });

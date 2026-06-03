@@ -546,6 +546,7 @@ describe('withTeam namespaced port', () => {
         expect.arrayContaining([firstId]),
       ]),
     );
+    expect(qdrantSearch.mock.calls.map(([, , , opts]) => opts.limit)).toEqual([2, 2]);
   });
 
   it('uses qdrant source filtering instead of event-id prefilter for senderSource-only search', async () => {
