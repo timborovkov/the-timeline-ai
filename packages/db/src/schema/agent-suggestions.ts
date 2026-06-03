@@ -40,6 +40,9 @@ export const agentSuggestionTargetKind = pgEnum('agent_suggestion_target_kind', 
   'object',
   'task',
   'calendar_event',
+  'identity_facet',
+  'object_note',
+  'object_relationship',
 ]);
 
 export const agentSuggestions = pgTable(

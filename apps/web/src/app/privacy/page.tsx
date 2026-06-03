@@ -3,10 +3,10 @@ import type { Metadata } from 'next';
 import { LegalPage } from '@/components/legal-page';
 import {
   LEGAL_ADDRESS,
-  LEGAL_CONTACT_EMAIL,
   LEGAL_EFFECTIVE_DATE,
   LEGAL_PROVIDER,
   PRIVACY_VERSION,
+  getLegalContactEmail,
 } from '@/lib/legal-versions';
 import { publicMetadata } from '@/lib/public-metadata';
 
@@ -16,7 +16,11 @@ export const metadata: Metadata = publicMetadata({
   path: '/privacy',
 });
 
+export const dynamic = 'force-dynamic';
+
 export default function PrivacyPage() {
+  const legalContactEmail = getLegalContactEmail();
+
   return (
     <LegalPage
       eyebrow={`Version ${PRIVACY_VERSION} · Effective ${LEGAL_EFFECTIVE_DATE}`}
@@ -31,8 +35,14 @@ export default function PrivacyPage() {
       <h2>1. Controller</h2>
       <p>
         For account, billing, product, support, and website data, the controller is {LEGAL_PROVIDER}
-        , {LEGAL_ADDRESS}. Contact us at{' '}
-        <a href={`mailto:${LEGAL_CONTACT_EMAIL}`}>{LEGAL_CONTACT_EMAIL}</a>.
+        , {LEGAL_ADDRESS}.{' '}
+        {legalContactEmail ? (
+          <>
+            Contact us at <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>.
+          </>
+        ) : (
+          'Support email is not configured in this environment.'
+        )}
       </p>
       <p>
         For team content submitted to a workspace, the team or organization using The Timeline may
@@ -191,8 +201,13 @@ export default function PrivacyPage() {
 
       <h2>13. Contact</h2>
       <p>
-        Contact: <a href={`mailto:${LEGAL_CONTACT_EMAIL}`}>{LEGAL_CONTACT_EMAIL}</a>. Provider:{' '}
-        {LEGAL_PROVIDER}, {LEGAL_ADDRESS}.
+        Contact:{' '}
+        {legalContactEmail ? (
+          <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>
+        ) : (
+          'support email not configured'
+        )}
+        . Provider: {LEGAL_PROVIDER}, {LEGAL_ADDRESS}.
       </p>
     </LegalPage>
   );

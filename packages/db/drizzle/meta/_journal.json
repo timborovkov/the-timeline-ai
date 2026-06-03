@@ -211,6 +211,13 @@
       "when": 1795652100000,
       "tag": "0029_legal_acceptance",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1795652160000,
+      "tag": "0030_object_memory",
+      "breakpoints": true
     }
   ]
 }

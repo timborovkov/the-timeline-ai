@@ -9,12 +9,15 @@ import {
   documents,
   documentVersions,
   integrations,
+  objectIdentityFacets,
   rawEvents,
   teamVisibilityDefaults,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 
 import { withTeam } from '#src/team-scope.js';
 
@@ -61,7 +64,14 @@ async function seed(pg: PGlite): Promise<void> {
 
 async function insertTelegramEvent(
   pg: PGlite,
-  input: { id: string; authorUserId: string | null; text: string; deleted?: boolean },
+  input: {
+    id: string;
+    authorUserId: string | null;
+    text: string;
+    deleted?: boolean;
+    username?: string;
+    tgUserId?: number;
+  },
 ): Promise<void> {
   const metadata = {
     tg_chat_id: 42,
@@ -69,12 +79,52 @@ async function insertTelegramEvent(
     tg_message_id: 10,
     tg_update_id: Number(input.id.slice(-6)),
     ...(input.deleted ? { deleted: true } : {}),
+    ...(input.username ? { tg_username: input.username } : {}),
+    ...(input.tgUserId ? { tg_user_id: input.tgUserId } : {}),
   };
   await pg.query(
     `INSERT INTO raw_events (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, source_metadata)
      VALUES ($1, $2, $3, $3, 'telegram', $4, now(), $5::jsonb)`,
     [input.id, TEAM_A, input.authorUserId, input.text, JSON.stringify(metadata)],
   );
+}
+
+function qdrantRawEventHit(input: {
+  id: string;
+  score?: number;
+  source?: 'telegram' | 'slack' | 'email';
+}): SearchHit {
+  return {
+    id: `point-${input.id}`,
+    score: input.score ?? 0.9,
+    payload: {
+      team_id: TEAM_A,
+      source_kind: 'raw_event',
+      event_id: input.id,
+      fact_id: null,
+      object_id: null,
+      note_id: null,
+      change_id: null,
+      entity_id: null,
+      entity_ids: [],
+      occurred_at: '2026-06-01T10:00:00.000Z',
+      author_user_id: null,
+      visibility_owner_user_id: null,
+      source: input.source ?? 'telegram',
+      visibility: 'team',
+      visibility_user_ids: null,
+      embedding_model: 'test',
+      document_id: null,
+      document_version_id: null,
+      document_chunk_id: null,
+      folder_id: null,
+      owner_user_id: null,
+      updated_at: null,
+      meeting_id: null,
+      meeting_chunk_id: null,
+      speaker: null,
+    },
+  };
 }
 
 describe('withTeam namespaced port', () => {
@@ -253,6 +303,312 @@ describe('withTeam namespaced port', () => {
     await expect(scope.timeline.getEventsByIds([visibleId, deletedId])).resolves.toMatchObject([
       { id: visibleId },
     ]);
+  });
+
+  it('fails closed for person sender filters when no approved identity facet exists', async () => {
+    const eventId = '00000000-0000-0000-0000-000000000106';
+    await insertTelegramEvent(pg, {
+      id: eventId,
+      authorUserId: null,
+      text: 'visible telegram from someone else',
+      username: 'someone',
+      tgUserId: 123,
+    });
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const person = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Mikael Rintala',
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    await expect(scope.timeline.listEvents({ personObjectId: person.id })).resolves.toEqual([]);
+  });
+
+  it('matches telegram senderHandle when raw username includes at-prefix', async () => {
+    const eventId = '00000000-0000-0000-0000-000000000107';
+    await insertTelegramEvent(pg, {
+      id: eventId,
+      authorUserId: null,
+      text: 'telegram from prefixed username',
+      username: '@mikaelrintala',
+      tgUserId: 12345,
+    });
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+
+    await expect(
+      scope.timeline.listEvents({ source: 'telegram', senderHandle: '@mikaelrintala' }),
+    ).resolves.toMatchObject([{ id: eventId }]);
+    await expect(
+      scope.timeline.listEvents({ source: 'telegram', senderHandle: 'mikaelrintala' }),
+    ).resolves.toMatchObject([{ id: eventId }]);
+  });
+
+  it('matches telegram person sender filters when raw username includes at-prefix', async () => {
+    const eventId = '00000000-0000-0000-0000-000000000108';
+    await insertTelegramEvent(pg, {
+      id: eventId,
+      authorUserId: null,
+      text: 'telegram from linked person',
+      username: '@mikaelrintala',
+      tgUserId: 12345,
+    });
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const person = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Mikael Rintala',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.objects.createIdentityFacet({
+      entityId: person.id,
+      kind: 'telegram',
+      value: '@mikaelrintala',
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    await expect(
+      scope.timeline.listEvents({ source: 'telegram', personObjectId: person.id }),
+    ).resolves.toMatchObject([{ id: eventId }]);
+  });
+
+  it('matches email sender filters across nested and flat metadata shapes', async () => {
+    const fromEmailId = '00000000-0000-0000-0000-000000000120';
+    const senderEmailId = '00000000-0000-0000-0000-000000000121';
+    await pg.query(
+      `INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, occurred_at, source_metadata)
+       VALUES
+         ($1, $2, NULL, 'email', 'flat from_email event', now(), $3::jsonb),
+         ($4, $2, NULL, 'email', 'flat sender_email event', now(), $5::jsonb)`,
+      [
+        fromEmailId,
+        TEAM_A,
+        JSON.stringify({ from_email: 'Mikael@Example.com' }),
+        senderEmailId,
+        JSON.stringify({ sender_email: 'mikael@example.com' }),
+      ],
+    );
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const person = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Mikael Rintala',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.objects.createIdentityFacet({
+      entityId: person.id,
+      kind: 'email',
+      value: 'mikael@example.com',
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    await expect(
+      scope.timeline.listEvents({ senderSource: 'email', senderHandle: 'mikael@example.com' }),
+    ).resolves.toMatchObject([{ id: senderEmailId }, { id: fromEmailId }]);
+    await expect(
+      scope.timeline.listEvents({ senderSource: 'email', personObjectId: person.id }),
+    ).resolves.toMatchObject([{ id: senderEmailId }, { id: fromEmailId }]);
+  });
+
+  it('limits listEvents by senderSource even without handle or person filters', async () => {
+    const telegramId = '00000000-0000-0000-0000-000000000109';
+    const emailId = '00000000-0000-0000-0000-000000000110';
+    await insertTelegramEvent(pg, {
+      id: telegramId,
+      authorUserId: null,
+      text: 'telegram sender source event',
+      username: '@mikaelrintala',
+    });
+    await pg.query(
+      `INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, occurred_at, source_metadata)
+       VALUES ($1, $2, NULL, 'email', 'email sender source event', now(), $3::jsonb)`,
+      [emailId, TEAM_A, JSON.stringify({ from: { email: 'mikael@example.com' } })],
+    );
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+
+    await expect(scope.timeline.listEvents({ senderSource: 'telegram' })).resolves.toMatchObject([
+      { id: telegramId },
+    ]);
+    await expect(scope.timeline.listEvents({ senderSource: 'email' })).resolves.toMatchObject([
+      { id: emailId },
+    ]);
+  });
+
+  it('passes SQL sender-filtered event ids into semantic search', async () => {
+    const matchingId = '00000000-0000-0000-0000-000000000111';
+    const otherId = '00000000-0000-0000-0000-000000000112';
+    await insertTelegramEvent(pg, {
+      id: matchingId,
+      authorUserId: null,
+      text: 'matching sender search event',
+      username: '@mikaelrintala',
+    });
+    await insertTelegramEvent(pg, {
+      id: otherId,
+      authorUserId: null,
+      text: 'other sender search event',
+      username: '@someoneelse',
+    });
+    const qdrantSearch = vi.fn().mockResolvedValue([
+      {
+        id: 'point-1',
+        score: 0.9,
+        payload: {
+          team_id: TEAM_A,
+          source_kind: 'raw_event',
+          event_id: matchingId,
+          fact_id: null,
+          object_id: null,
+          note_id: null,
+          change_id: null,
+          entity_id: null,
+          entity_ids: [],
+          occurred_at: '2026-06-01T10:00:00.000Z',
+          author_user_id: null,
+          visibility_owner_user_id: null,
+          source: 'telegram',
+          visibility: 'team',
+          visibility_user_ids: null,
+          embedding_model: 'test',
+          document_id: null,
+          document_version_id: null,
+          document_chunk_id: null,
+          folder_id: null,
+          owner_user_id: null,
+          updated_at: null,
+          meeting_id: null,
+          meeting_chunk_id: null,
+          speaker: null,
+        },
+      },
+    ]);
+    const scope = withTeam(db as never, TEAM_A, USER_A, {
+      embed: () => Promise.resolve({ vector: [0.1], model: 'test' }),
+      qdrantSearch,
+    });
+
+    await expect(
+      scope.timeline.searchEvents({
+        query: 'sender search',
+        senderHandle: '@mikaelrintala',
+      }),
+    ).resolves.toHaveLength(1);
+
+    expect(qdrantSearch).toHaveBeenCalledWith(
+      TEAM_A,
+      USER_A,
+      [0.1],
+      expect.objectContaining({ eventIds: [matchingId] }),
+    );
+  });
+
+  it('searches every SQL sender-filtered event id batch before ranking semantic results', async () => {
+    const firstId = '00000000-0000-0000-0000-000000000122';
+    const secondId = '00000000-0000-0000-0000-000000000123';
+    const thirdId = '00000000-0000-0000-0000-000000000124';
+    for (const id of [firstId, secondId, thirdId]) {
+      await insertTelegramEvent(pg, {
+        id,
+        authorUserId: null,
+        text: `batched sender search ${id}`,
+        username: '@mikaelrintala',
+      });
+    }
+    const qdrantSearch = vi.fn(
+      (
+        _teamId: string,
+        _userId: string,
+        _vector: number[],
+        opts: SearchOpts,
+      ): Promise<SearchHit[]> => {
+        if (opts.eventIds?.includes(firstId))
+          return Promise.resolve([qdrantRawEventHit({ id: firstId, score: 0.4 })]);
+        if (opts.eventIds?.includes(thirdId))
+          return Promise.resolve([qdrantRawEventHit({ id: thirdId, score: 0.95 })]);
+        return Promise.resolve([]);
+      },
+    );
+    const scope = withTeam(db as never, TEAM_A, USER_A, {
+      embed: () => Promise.resolve({ vector: [0.3], model: 'test' }),
+      qdrantSearch,
+      senderSearchEventIdBatchSize: 2,
+    });
+
+    await expect(
+      scope.timeline.searchEvents({
+        query: 'sender search all batches',
+        senderHandle: '@mikaelrintala',
+        limit: 1,
+      }),
+    ).resolves.toMatchObject([{ eventId: thirdId }]);
+
+    expect(qdrantSearch).toHaveBeenCalledTimes(2);
+    expect(qdrantSearch.mock.calls.map(([, , , opts]) => opts.eventIds)).toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining([thirdId, secondId]),
+        expect.arrayContaining([firstId]),
+      ]),
+    );
+    expect(qdrantSearch.mock.calls.map(([, , , opts]) => opts.limit)).toEqual([2, 2]);
+  });
+
+  it('uses qdrant source filtering instead of event-id prefilter for senderSource-only search', async () => {
+    const eventId = '00000000-0000-0000-0000-000000000113';
+    await insertTelegramEvent(pg, {
+      id: eventId,
+      authorUserId: null,
+      text: 'telegram source-only search event',
+      username: '@mikaelrintala',
+    });
+    const qdrantSearch = vi.fn().mockResolvedValue([
+      {
+        id: 'point-source-only',
+        score: 0.9,
+        payload: {
+          team_id: TEAM_A,
+          source_kind: 'raw_event',
+          event_id: eventId,
+          fact_id: null,
+          object_id: null,
+          note_id: null,
+          change_id: null,
+          entity_id: null,
+          entity_ids: [],
+          occurred_at: '2026-06-01T10:00:00.000Z',
+          author_user_id: null,
+          visibility_owner_user_id: null,
+          source: 'telegram',
+          visibility: 'team',
+          visibility_user_ids: null,
+          embedding_model: 'test',
+          document_id: null,
+          document_version_id: null,
+          document_chunk_id: null,
+          folder_id: null,
+          owner_user_id: null,
+          updated_at: null,
+          meeting_id: null,
+          meeting_chunk_id: null,
+          speaker: null,
+        },
+      },
+    ]);
+    const scope = withTeam(db as never, TEAM_A, USER_A, {
+      embed: () => Promise.resolve({ vector: [0.2], model: 'test' }),
+      qdrantSearch,
+    });
+
+    await expect(
+      scope.timeline.searchEvents({
+        query: 'telegram source only',
+        senderSource: 'telegram',
+      }),
+    ).resolves.toHaveLength(1);
+
+    expect(qdrantSearch).toHaveBeenCalledWith(
+      TEAM_A,
+      USER_A,
+      [0.2],
+      expect.objectContaining({ source: 'telegram' }),
+    );
+    expect(qdrantSearch.mock.calls[0]?.[3]).not.toHaveProperty('eventIds');
   });
 
   it('does not hydrate entity facts whose source event has been tombstoned', async () => {
@@ -536,6 +892,165 @@ describe('withTeam namespaced port', () => {
         }),
       ],
     });
+  });
+
+  it('links accepted object-memory suggestion impact to the object, not the created note', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_A,
+      source: 'telegram',
+      contentText: 'Miku handles customer follow-up.',
+      visibility: 'team',
+    });
+    const object = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Customer follow-up',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember project owner',
+      dedupeKey: 'impact-object-note',
+      evidence: [{ rawEventId: event.id }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: object.id,
+          title: 'Add project memory',
+          dedupeKey: 'impact-object-note:item',
+          proposedPayload: {
+            entityId: object.id,
+            body: 'Miku handles customer follow-up.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    await expect(scope.timeline.listImpactItems([event.id])).resolves.toMatchObject({
+      [event.id]: [
+        expect.objectContaining({
+          kind: 'object',
+          label: 'Add project memory',
+          href: `/app/objects/${object.id}`,
+          status: 'accepted',
+        }),
+      ],
+    });
+  });
+
+  it('links accepted relationship suggestion impact to the source object', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_A,
+      source: 'telegram',
+      contentText: 'Project Falcon is linked to Acme.',
+      visibility: 'team',
+    });
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Project Falcon',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Acme',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember project company relationship',
+      dedupeKey: 'impact-object-relationship',
+      evidence: [{ rawEventId: event.id }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          targetId: project.id,
+          title: 'Add linked relationship',
+          dedupeKey: 'impact-object-relationship:item',
+          proposedPayload: {
+            fromEntityId: project.id,
+            toEntityId: company.id,
+            kind: 'linked',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    await expect(scope.timeline.listImpactItems([event.id])).resolves.toMatchObject({
+      [event.id]: [
+        expect.objectContaining({
+          kind: 'object',
+          label: 'Add linked relationship',
+          href: `/app/objects/${project.id}`,
+          status: 'accepted',
+        }),
+      ],
+    });
+  });
+
+  it('includes all approved facets from the current user linked person object', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const person = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Tim Borovkov',
+      aliases: ['Timbo'],
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    await scope.objects.createIdentityFacet({
+      entityId: person.id,
+      kind: 'timeline_user',
+      value: USER_A,
+      linkedUserId: USER_A,
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.objects.createIdentityFacet({
+      entityId: person.id,
+      kind: 'telegram',
+      value: '@timbo0',
+      externalId: '12345',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    await scope.objects.createIdentityFacet({
+      entityId: person.id,
+      kind: 'email',
+      value: 'tim@example.com',
+      actor: { kind: 'user', userId: USER_A },
+    });
+
+    const context = await scope.timeline.currentUserIdentityContext();
+
+    expect(context.person).toMatchObject({
+      id: person.id,
+      canonicalName: 'Tim Borovkov',
+      aliases: ['Timbo'],
+    });
+    expect(context.facets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'timeline_user', value: USER_A }),
+        expect.objectContaining({ kind: 'telegram', value: '@timbo0', externalId: '12345' }),
+        expect.objectContaining({ kind: 'email', value: 'tim@example.com' }),
+      ]),
+    );
+    expect(context.facets).toHaveLength(3);
+
+    await db
+      .update(objectIdentityFacets)
+      .set({ status: 'archived' })
+      .where(eq(objectIdentityFacets.value, '@timbo0'));
+
+    const archivedContext = await scope.timeline.currentUserIdentityContext();
+    expect(archivedContext.facets.some((facet) => facet.value === '@timbo0')).toBe(false);
   });
 
   it('rejects visibility edits for ownerless legacy events with a clear error', async () => {

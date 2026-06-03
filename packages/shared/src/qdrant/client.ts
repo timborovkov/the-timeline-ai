@@ -117,6 +117,7 @@ export interface SearchOpts {
   to?: Date;
   source?: QdrantPayload['source'];
   entityIds?: string[];
+  eventIds?: string[];
   /**
    * Filter to one or more source kinds. When unset, all points match. When
    * set, the filter additionally accepts legacy pre-Phase-8 points (which
@@ -377,6 +378,9 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     }
     if (searchOpts.entityIds && searchOpts.entityIds.length > 0) {
       extraMust.push({ key: 'entity_ids', match: { any: searchOpts.entityIds } });
+    }
+    if (searchOpts.eventIds && searchOpts.eventIds.length > 0) {
+      extraMust.push({ key: 'event_id', match: { any: searchOpts.eventIds } });
     }
     if (searchOpts.sourceKind) {
       const kinds = Array.isArray(searchOpts.sourceKind)

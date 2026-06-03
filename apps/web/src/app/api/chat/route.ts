@@ -411,10 +411,12 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const calendarSettings = await scope.calendar.getCalendarSettings();
+  const currentUser = await scope.timeline.currentUserIdentityContext();
   const currentDate = new Date();
   const system = agent.buildSystemPrompt({
     teamName,
     userName,
+    currentUser,
     currentDate,
     workspaceTime: time.workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });

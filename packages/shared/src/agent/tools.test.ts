@@ -42,6 +42,7 @@ interface FakeScope {
   };
   suggestions: {
     createOrMergeSuggestionBundle: ReturnType<typeof vi.fn>;
+    listSuggestions: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -67,6 +68,7 @@ function makeFakeScope(): FakeScope {
     },
     suggestions: {
       createOrMergeSuggestionBundle: vi.fn(),
+      listSuggestions: vi.fn(),
     },
   };
 }
@@ -212,6 +214,96 @@ describe('buildAgentTools — team isolation', () => {
     );
   });
 
+  it('list_pending_approvals exposes pending bundles as noncanonical context', async () => {
+    const scope = makeFakeScope();
+    scope.suggestions.listSuggestions.mockResolvedValue([
+      {
+        id: 'suggestion-1',
+        source: 'chat',
+        status: 'pending',
+        title: 'Remember Mikael Telegram identity',
+        summary: 'Miku is @mikaelrintala',
+        reason: 'User said so',
+        confidence: 'high',
+        visibility: 'team',
+        visibilityOwnerUserId: null,
+        visibilityUserIds: null,
+        createdAt: new Date('2026-06-02T12:00:00Z'),
+        updatedAt: new Date('2026-06-02T12:05:00Z'),
+        evidence: [
+          {
+            id: 'evidence-1',
+            rawEventId: TEAM_B_EVENT_ID,
+            quote: 'Miku is Mikael',
+            occurredAt: new Date('2026-06-02T11:59:00Z'),
+            source: 'telegram',
+          },
+        ],
+        items: [
+          {
+            id: 'item-1',
+            status: 'pending',
+            operation: 'create',
+            targetKind: 'identity_facet',
+            targetId: TEAM_B_ENTITY_ID,
+            resultId: null,
+            title: 'Add telegram identity',
+            description: null,
+            proposedPayload: {
+              entityId: TEAM_B_ENTITY_ID,
+              kind: 'telegram',
+              value: '@mikaelrintala',
+            },
+            failureReason: null,
+          },
+        ],
+      },
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.list_pending_approvals?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec({ status: 'pending', limit: 5 }, {});
+
+    expect(scope.suggestions.listSuggestions).toHaveBeenCalledWith({
+      status: 'pending',
+      limit: 5,
+    });
+    expect(result).toMatchObject({
+      count: 1,
+      canonical: false,
+      approvals: [
+        {
+          suggestion_id: 'suggestion-1',
+          status: 'pending',
+          items: [
+            {
+              item_id: 'item-1',
+              target_kind: 'identity_facet',
+              proposed_payload: {
+                value: '@mikaelrintala',
+              },
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('list_pending_approvals rejects all-status queries', async () => {
+    const scope = makeFakeScope();
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.list_pending_approvals?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await expect(exec({ status: 'all' }, {})).resolves.toEqual({ error: 'tool_failed' });
+    expect(scope.suggestions.listSuggestions).not.toHaveBeenCalled();
+  });
+
   it('list_calendar_events defaults to upcoming events when no range is provided', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-26T12:00:00Z'));
@@ -263,6 +355,136 @@ describe('buildAgentTools — team isolation', () => {
       endAt: '2026-06-02T15:00:00.000Z',
       timezone: 'Asia/Tokyo',
       allDay: true,
+    });
+  });
+
+  it('suggest_object_memory queues identity facet proposals for approval', async () => {
+    const scope = makeFakeScope();
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.suggest_object_memory?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        title: 'Remember Mikael Telegram identity',
+        reason: 'User said Miku is @mikaelrintala',
+        confidence: 'high',
+        items: [
+          {
+            kind: 'add_identity_facet',
+            entityId: TEAM_B_ENTITY_ID,
+            facetKind: 'telegram',
+            value: '@mikaelrintala',
+          },
+        ],
+      },
+      {},
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      suggestion_id: 'suggestion-1',
+    });
+    const input = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      source: string;
+      items: {
+        targetKind: string;
+        proposedPayload: Record<string, unknown>;
+      }[];
+    };
+    expect(input.source).toBe('chat');
+    expect(input.items[0]).toMatchObject({
+      targetKind: 'identity_facet',
+      proposedPayload: {
+        entityId: TEAM_B_ENTITY_ID,
+        kind: 'telegram',
+        value: '@mikaelrintala',
+      },
+    });
+  });
+
+  it('suggest_object_memory keeps follow-up object proposals as objects', async () => {
+    const scope = makeFakeScope();
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.suggest_object_memory?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await exec(
+      {
+        title: 'Remember follow-up',
+        items: [
+          {
+            kind: 'create_object',
+            type: 'follow_up',
+            canonicalName: 'Call Mikael back',
+          },
+        ],
+      },
+      {},
+    );
+
+    const input = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: {
+        targetKind: string;
+        proposedPayload: Record<string, unknown>;
+      }[];
+    };
+    expect(input.items[0]).toMatchObject({
+      targetKind: 'object',
+      proposedPayload: {
+        type: 'follow_up',
+        canonicalName: 'Call Mikael back',
+      },
+    });
+  });
+
+  it('suggest_object_memory targets relationship proposals at the source object', async () => {
+    const scope = makeFakeScope();
+    scope.suggestions.createOrMergeSuggestionBundle.mockResolvedValue({ id: 'suggestion-1' });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.suggest_object_memory?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+    const fromEntityId = '11111111-1111-4111-8111-111111111111';
+    const toEntityId = '22222222-2222-4222-8222-222222222222';
+
+    await exec(
+      {
+        title: 'Remember relationship',
+        items: [
+          {
+            kind: 'add_relationship',
+            fromEntityId,
+            toEntityId,
+            relationshipKind: 'linked',
+          },
+        ],
+      },
+      {},
+    );
+
+    const input = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as {
+      items: {
+        targetKind: string;
+        targetId: string | null;
+        proposedPayload: Record<string, unknown>;
+      }[];
+    };
+    expect(input.items[0]).toMatchObject({
+      targetKind: 'object_relationship',
+      targetId: fromEntityId,
+      proposedPayload: {
+        fromEntityId,
+        toEntityId,
+        kind: 'linked',
+      },
     });
   });
 

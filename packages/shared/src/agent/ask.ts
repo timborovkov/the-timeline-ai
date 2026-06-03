@@ -56,11 +56,13 @@ export async function askAgent(input: AskAgentInput, deps: ChatDeps = {}): Promi
   const team = await scope.timeline.team();
   if (!team) return { ok: false, error: 'no_team' };
   const calendarSettings = await scope.calendar.getCalendarSettings();
+  const currentUser = await scope.timeline.currentUserIdentityContext();
   const currentDate = new Date();
 
   const system = buildSystemPrompt({
     teamName: team.name,
     userName: input.userName ?? 'a teammate',
+    currentUser,
     currentDate,
     workspaceTime: workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });

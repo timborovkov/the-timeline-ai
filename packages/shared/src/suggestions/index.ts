@@ -6,6 +6,7 @@ import {
   agentSuggestions,
   calendarEvents,
   entities,
+  objectIdentityFacets,
   notifications,
   rawEvents,
   teamMembers,
@@ -21,6 +22,7 @@ import type {
 } from '#src/calendar/index.js';
 import type {
   CreateObjectInput,
+  IdentityFacetInput,
   ObjectPatch,
   ObjectScope,
   ObjectType,
@@ -33,7 +35,13 @@ type Visibility = 'private' | 'team' | 'specific_users';
 type SuggestionStatus = 'pending' | 'partially_resolved' | 'accepted' | 'rejected';
 type ItemStatus = 'pending' | 'accepted' | 'rejected' | 'failed';
 type Operation = 'create' | 'update' | 'archive_or_cancel';
-type TargetKind = 'object' | 'task' | 'calendar_event';
+type TargetKind =
+  | 'object'
+  | 'task'
+  | 'calendar_event'
+  | 'identity_facet'
+  | 'object_note'
+  | 'object_relationship';
 
 export interface SuggestionScopeDeps {
   db: Db;
@@ -122,6 +130,7 @@ const uuid = z.string().regex(UUID_RE);
 const objectCreatePayload = z.object({
   type: z.string().optional(),
   canonicalName: z.string().trim().min(1).max(200),
+  aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
   status: z.string().trim().min(1).max(40).optional(),
   stage: z.string().trim().max(40).nullable().optional(),
   priority: z.number().int().min(1).max(4).nullable().optional(),
@@ -142,6 +151,28 @@ const objectUpdatePayload = z.object({
   assigneeUserId: uuid.nullable().optional(),
   dueAt: z.iso.datetime().nullable().optional(),
   aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+});
+
+const identityFacetPayload = z.object({
+  entityId: uuid,
+  kind: z.enum(['email', 'phone', 'telegram', 'slack', 'github', 'timeline_user', 'other']),
+  value: z.string().trim().min(1).max(300),
+  normalizedValue: z.string().trim().min(1).max(300).optional(),
+  provider: z.string().trim().min(1).max(80).nullable().optional(),
+  externalId: z.string().trim().min(1).max(200).nullable().optional(),
+  linkedUserId: uuid.nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+const objectNotePayload = z.object({
+  entityId: uuid,
+  body: z.string().trim().min(1).max(5000),
+});
+
+const objectRelationshipPayload = z.object({
+  fromEntityId: uuid,
+  toEntityId: uuid,
+  kind: z.enum(['parent', 'child', 'related', 'blocks', 'blocked_by', 'duplicate_of', 'linked']),
 });
 
 const calendarCreatePayload = z.object({
@@ -429,6 +460,49 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .limit(1);
       return rows[0]?.id ?? null;
     }
+    if (item.targetKind === 'identity_facet') {
+      const rows = await db
+        .select({ id: objectIdentityFacets.id })
+        .from(objectIdentityFacets)
+        .where(
+          and(
+            eq(objectIdentityFacets.teamId, teamId),
+            sql`${objectIdentityFacets.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
+          ),
+        )
+        .limit(1);
+      return rows[0]?.id ?? null;
+    }
+    if (item.targetKind === 'object_note') {
+      const rows = await db
+        .select({ id: sql<string | null>`${rawEvents.sourceMetadata} ->> 'note_id'` })
+        .from(rawEvents)
+        .where(
+          and(
+            eq(rawEvents.teamId, teamId),
+            eq(rawEvents.source, 'system'),
+            sql`${rawEvents.sourceMetadata} ->> 'kind' = 'object_note_create'`,
+            sql`${rawEvents.sourceMetadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
+          ),
+        )
+        .limit(1);
+      return rows[0]?.id ?? null;
+    }
+    if (item.targetKind === 'object_relationship') {
+      const rows = await db
+        .select({ id: sql<string | null>`${rawEvents.sourceMetadata} ->> 'relationship_id'` })
+        .from(rawEvents)
+        .where(
+          and(
+            eq(rawEvents.teamId, teamId),
+            eq(rawEvents.source, 'system'),
+            sql`${rawEvents.sourceMetadata} ->> 'kind' = 'relationship_create'`,
+            sql`${rawEvents.sourceMetadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
+          ),
+        )
+        .limit(1);
+      return rows[0]?.id ?? null;
+    }
     const rows = await db
       .select({ id: calendarEvents.id })
       .from(calendarEvents)
@@ -458,6 +532,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           canonicalName: parsed.canonicalName,
           actor: { kind: 'agent', userId: null },
         };
+        if (parsed.aliases !== undefined) input.aliases = parsed.aliases;
         if (parsed.status !== undefined) input.status = parsed.status;
         if (parsed.stage !== undefined) input.stage = parsed.stage;
         if (parsed.priority !== undefined) input.priority = parsed.priority;
@@ -493,6 +568,59 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
       await objects.archiveObject(targetId, { kind: 'agent', userId: null });
       return targetId;
+    }
+
+    if (item.targetKind === 'identity_facet') {
+      if (item.operation !== 'create') throw new Error('Identity facets only support create');
+      const parsed = identityFacetPayload.parse(payload);
+      const identityFacetInput: IdentityFacetInput = {
+        entityId: parsed.entityId,
+        kind: parsed.kind,
+        value: parsed.value,
+        provider: parsed.provider ?? null,
+        externalId: parsed.externalId ?? null,
+        linkedUserId: parsed.linkedUserId ?? null,
+        source: 'agent_approved',
+        metadata: {
+          ...(parsed.metadata ?? {}),
+          agent_suggestion_item_id: item.id,
+        },
+        actor: { kind: 'agent', userId: null },
+      };
+      const created = await objects.createIdentityFacet({
+        ...identityFacetInput,
+        ...(parsed.normalizedValue !== undefined
+          ? { normalizedValue: parsed.normalizedValue }
+          : {}),
+      });
+      return created.id;
+    }
+
+    if (item.targetKind === 'object_note') {
+      if (item.operation !== 'create') throw new Error('Object notes only support create');
+      const parsed = objectNotePayload.parse(payload);
+      const created = await objects.createNote({
+        entityId: parsed.entityId,
+        body: parsed.body,
+        authorUserId: null,
+        metadata: { agent_suggestion_item_id: item.id },
+        actor: { kind: 'agent', userId: null },
+      });
+      return created.id;
+    }
+
+    if (item.targetKind === 'object_relationship') {
+      if (item.operation !== 'create') throw new Error('Object relationships only support create');
+      const parsed = objectRelationshipPayload.parse(payload);
+      const created = await objects.addRelationship({
+        fromEntityId: parsed.fromEntityId,
+        toEntityId: parsed.toEntityId,
+        kind: parsed.kind,
+        actorUserId: null,
+        actor: { kind: 'agent', userId: null },
+        metadata: { agent_suggestion_item_id: item.id },
+      });
+      return created?.id ?? null;
     }
 
     if (item.operation === 'create') {
