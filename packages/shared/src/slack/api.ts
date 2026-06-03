@@ -152,6 +152,7 @@ export class SlackApi {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           text: input.text,
+          mrkdwn: false,
           response_type: input.response_type ?? 'ephemeral',
           ...(input.thread_ts ? { thread_ts: input.thread_ts } : {}),
         }),
@@ -161,6 +162,7 @@ export class SlackApi {
     await this.call('chat.postMessage', {
       channel: input.channel,
       text: input.text,
+      mrkdwn: false,
       thread_ts: input.thread_ts,
     });
   }

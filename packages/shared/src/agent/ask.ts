@@ -36,26 +36,32 @@ export interface AskAgentDeps extends ChatDeps {
   onAgentError?: ((err: unknown) => void) | undefined;
 }
 
+function stripMarkdownEmphasis(text: string): string {
+  return text
+    .replace(/(^|[^\w*])\*\*\*([^\n*]+?)\*\*\*(?=$|[^\w*])/g, '$1$2')
+    .replace(/(^|[^\w*])\*\*([^\n*]+?)\*\*(?=$|[^\w*])/g, '$1$2')
+    .replace(/(^|[^\w_])__([^\n_]+?)__(?=$|[^\w_])/g, '$1$2')
+    .replace(/(^|[^\w*])\*([^\n*]+?)\*(?=$|[^\w*])/g, '$1$2')
+    .replace(/(^|[^\w_])_([^\n_]+?)_(?=$|[^\w_])/g, '$1$2');
+}
+
 export function formatBotPlainTextAnswer(text: string): string {
   const withoutCitations = parseCitations(text)
     .flatMap((part) => (part.type === 'text' ? [part.value] : []))
     .join('');
 
-  return withoutCitations
-    .replace(/\r\n?/g, '\n')
-    .replace(/^```[^\n]*\n?/gm, '')
-    .replace(/^```$/gm, '')
-    .replace(/`([^`\n]+)`/g, '$1')
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)')
-    .replace(/<([^>|]+)\|([^>]+)>/g, '$2 ($1)')
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/^>\s?/gm, '')
-    .replace(/(^|\s)\*\*\*([^*\n][\s\S]*?[^*\n])\*\*\*(?=\s|$|[.,!?;:])/g, '$1$2')
-    .replace(/(^|\s)\*\*([^*\n][\s\S]*?[^*\n])\*\*(?=\s|$|[.,!?;:])/g, '$1$2')
-    .replace(/(^|\s)__([^_\n][\s\S]*?[^_\n])__(?=\s|$|[.,!?;:])/g, '$1$2')
-    .replace(/(^|\s)\*([^*\n][^*\n]*?[^*\n])\*(?=\s|$|[.,!?;:])/g, '$1$2')
-    .replace(/(^|\s)_([^_\n][^_\n]*?[^_\n])_(?=\s|$|[.,!?;:])/g, '$1$2')
+  return stripMarkdownEmphasis(
+    withoutCitations
+      .replace(/\r\n?/g, '\n')
+      .replace(/^```[^\n]*\n?/gm, '')
+      .replace(/^```$/gm, '')
+      .replace(/`([^`\n]+)`/g, '$1')
+      .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)')
+      .replace(/<([^>|]+)\|([^>]+)>/g, '$2 ($1)')
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/^>\s?/gm, ''),
+  )
     .replace(/[ \t]+([.,!?;:])/g, '$1')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')

@@ -93,6 +93,22 @@ describe('formatBotPlainTextAnswer', () => {
       ].join('\n'),
     );
   });
+
+  it('removes emphasis around short words and punctuation-adjacent text', () => {
+    expect(
+      formatBotPlainTextAnswer(
+        [
+          '**I** met with **Ada**, then reviewed (**note**) and __OK__).',
+          'Keep snake_case and mid_word_text intact, but strip _yes_ and *no*.',
+        ].join('\n'),
+      ),
+    ).toBe(
+      [
+        'I met with Ada, then reviewed (note) and OK).',
+        'Keep snake_case and mid_word_text intact, but strip yes and no.',
+      ].join('\n'),
+    );
+  });
 });
 
 describe('askAgent', () => {
