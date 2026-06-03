@@ -178,6 +178,12 @@ LOG_LEVEL=info
         redirected to this origin before Auth.js runs.
       </p>
       <p>
+        Railway uses the checked-in Railpack manifests for web and worker deploys. The Dockerfiles
+        are kept for local production-parity runs and now accept the same Sentry build/runtime
+        variables, but Railway source-map upload depends on the variables above being available at
+        build time in each Railway service.
+      </p>
+      <p>
         Keep <code>NODE_ENV</code> set to <code>production</code> in both staging and production
         Railway environments. Use Railway's environment name and <code>SENTRY_ENVIRONMENT</code> for
         labels such as <code>staging</code>; Node.js and the app env schema only accept

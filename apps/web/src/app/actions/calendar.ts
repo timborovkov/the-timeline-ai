@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 
 const log = childLogger('web:actions:calendar');
@@ -45,37 +46,39 @@ const createSchema = z.object({
 export async function createCalendarEventAction(
   input: z.input<typeof createSchema>,
 ): Promise<Result> {
-  const parsed = createSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message };
+  return runSentryServerAction('create_calendar_event', async () => {
+    const parsed = createSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message };
 
-  const start = new Date(parsed.data.startAt);
-  const end = new Date(parsed.data.endAt);
-  if (end <= start) return { ok: false, error: 'End time must be after start time' };
+    const start = new Date(parsed.data.startAt);
+    const end = new Date(parsed.data.endAt);
+    if (end <= start) return { ok: false, error: 'End time must be after start time' };
 
-  const got = await withScopeOrError();
-  if ('error' in got) return { ok: false, error: got.error };
+    const got = await withScopeOrError();
+    if ('error' in got) return { ok: false, error: got.error };
 
-  try {
-    const event = await got.scope.calendar.createCalendarEvent({
-      title: parsed.data.title,
-      description: parsed.data.description ?? null,
-      startAt: start,
-      endAt: end,
-      timezone: parsed.data.timezone,
-      allDay: parsed.data.allDay,
-      location: parsed.data.location ?? null,
-      visibility: parsed.data.visibility,
-      visibilityUserIds: parsed.data.visibilityUserIds ?? null,
-      reminderMinutes: parsed.data.reminderMinutes ?? null,
-      linkedEntityIds: parsed.data.linkedEntityIds,
-    });
-    revalidatePath('/app/calendar');
-    return { ok: true, id: event.id };
-  } catch (err) {
-    log.error({ err }, 'create_calendar_event_failed');
-    reportCaughtError(err, { surface: 'server_action', operation: 'create_calendar_event' });
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed to create event' };
-  }
+    try {
+      const event = await got.scope.calendar.createCalendarEvent({
+        title: parsed.data.title,
+        description: parsed.data.description ?? null,
+        startAt: start,
+        endAt: end,
+        timezone: parsed.data.timezone,
+        allDay: parsed.data.allDay,
+        location: parsed.data.location ?? null,
+        visibility: parsed.data.visibility,
+        visibilityUserIds: parsed.data.visibilityUserIds ?? null,
+        reminderMinutes: parsed.data.reminderMinutes ?? null,
+        linkedEntityIds: parsed.data.linkedEntityIds,
+      });
+      revalidatePath('/app/calendar');
+      return { ok: true, id: event.id };
+    } catch (err) {
+      log.error({ err }, 'create_calendar_event_failed');
+      reportCaughtError(err, { surface: 'server_action', operation: 'create_calendar_event' });
+      return { ok: false, error: err instanceof Error ? err.message : 'Failed to create event' };
+    }
+  });
 }
 
 const updateSchema = z.object({
@@ -95,52 +98,56 @@ const updateSchema = z.object({
 export async function updateCalendarEventAction(
   input: z.input<typeof updateSchema>,
 ): Promise<Result> {
-  const parsed = updateSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message };
+  return runSentryServerAction('update_calendar_event', async () => {
+    const parsed = updateSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message };
 
-  const got = await withScopeOrError();
-  if ('error' in got) return { ok: false, error: got.error };
+    const got = await withScopeOrError();
+    if ('error' in got) return { ok: false, error: got.error };
 
-  try {
-    const patch: Record<string, unknown> = {};
-    if (parsed.data.title !== undefined) patch.title = parsed.data.title;
-    if (parsed.data.description !== undefined) patch.description = parsed.data.description;
-    if (parsed.data.startAt !== undefined) patch.startAt = new Date(parsed.data.startAt);
-    if (parsed.data.endAt !== undefined) patch.endAt = new Date(parsed.data.endAt);
-    if (parsed.data.timezone !== undefined) patch.timezone = parsed.data.timezone;
-    if (parsed.data.allDay !== undefined) patch.allDay = parsed.data.allDay;
-    if (parsed.data.location !== undefined) patch.location = parsed.data.location;
-    if (parsed.data.visibility !== undefined) patch.visibility = parsed.data.visibility;
-    if (parsed.data.visibilityUserIds !== undefined)
-      patch.visibilityUserIds = parsed.data.visibilityUserIds;
-    if (parsed.data.reminderMinutes !== undefined)
-      patch.reminderMinutes = parsed.data.reminderMinutes;
+    try {
+      const patch: Record<string, unknown> = {};
+      if (parsed.data.title !== undefined) patch.title = parsed.data.title;
+      if (parsed.data.description !== undefined) patch.description = parsed.data.description;
+      if (parsed.data.startAt !== undefined) patch.startAt = new Date(parsed.data.startAt);
+      if (parsed.data.endAt !== undefined) patch.endAt = new Date(parsed.data.endAt);
+      if (parsed.data.timezone !== undefined) patch.timezone = parsed.data.timezone;
+      if (parsed.data.allDay !== undefined) patch.allDay = parsed.data.allDay;
+      if (parsed.data.location !== undefined) patch.location = parsed.data.location;
+      if (parsed.data.visibility !== undefined) patch.visibility = parsed.data.visibility;
+      if (parsed.data.visibilityUserIds !== undefined)
+        patch.visibilityUserIds = parsed.data.visibilityUserIds;
+      if (parsed.data.reminderMinutes !== undefined)
+        patch.reminderMinutes = parsed.data.reminderMinutes;
 
-    const updated = await got.scope.calendar.updateCalendarEvent(parsed.data.id, patch);
-    if (!updated) return { ok: false, error: 'Event not found' };
-    revalidatePath('/app/calendar');
-    revalidatePath(`/app/calendar/${parsed.data.id}`);
-    return { ok: true, id: updated.id };
-  } catch (err) {
-    log.error({ err }, 'update_calendar_event_failed');
-    reportCaughtError(err, { surface: 'server_action', operation: 'update_calendar_event' });
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed to update event' };
-  }
+      const updated = await got.scope.calendar.updateCalendarEvent(parsed.data.id, patch);
+      if (!updated) return { ok: false, error: 'Event not found' };
+      revalidatePath('/app/calendar');
+      revalidatePath(`/app/calendar/${parsed.data.id}`);
+      return { ok: true, id: updated.id };
+    } catch (err) {
+      log.error({ err }, 'update_calendar_event_failed');
+      reportCaughtError(err, { surface: 'server_action', operation: 'update_calendar_event' });
+      return { ok: false, error: err instanceof Error ? err.message : 'Failed to update event' };
+    }
+  });
 }
 
 export async function deleteCalendarEventAction(id: string): Promise<Result> {
-  if (!UUID_RE.test(id)) return { ok: false, error: 'Invalid event id' };
-  const got = await withScopeOrError();
-  if ('error' in got) return { ok: false, error: got.error };
+  return runSentryServerAction('delete_calendar_event', async () => {
+    if (!UUID_RE.test(id)) return { ok: false, error: 'Invalid event id' };
+    const got = await withScopeOrError();
+    if ('error' in got) return { ok: false, error: got.error };
 
-  try {
-    const deleted = await got.scope.calendar.deleteCalendarEvent(id);
-    if (!deleted) return { ok: false, error: 'Event not found' };
-    revalidatePath('/app/calendar');
-    return { ok: true, id };
-  } catch (err) {
-    log.error({ err }, 'delete_calendar_event_failed');
-    reportCaughtError(err, { surface: 'server_action', operation: 'delete_calendar_event' });
-    return { ok: false, error: err instanceof Error ? err.message : 'Failed to delete event' };
-  }
+    try {
+      const deleted = await got.scope.calendar.deleteCalendarEvent(id);
+      if (!deleted) return { ok: false, error: 'Event not found' };
+      revalidatePath('/app/calendar');
+      return { ok: true, id };
+    } catch (err) {
+      log.error({ err }, 'delete_calendar_event_failed');
+      reportCaughtError(err, { surface: 'server_action', operation: 'delete_calendar_event' });
+      return { ok: false, error: err instanceof Error ? err.message : 'Failed to delete event' };
+    }
+  });
 }

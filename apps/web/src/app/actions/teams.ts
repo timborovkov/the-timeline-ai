@@ -27,6 +27,7 @@ import { z } from 'zod';
 import { ACTIVE_TEAM_COOKIE, resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -46,45 +47,47 @@ export async function createTeamAction(
   _prev: CreateTeamState,
   formData: FormData,
 ): Promise<CreateTeamState> {
-  const session = await auth();
-  if (!session?.user) return { error: 'Not signed in' };
+  return runSentryServerAction('create_team', async () => {
+    const session = await auth();
+    if (!session?.user) return { error: 'Not signed in' };
 
-  const parsed = createTeamSchema.safeParse({ name: formData.get('name') });
-  if (!parsed.success) return { error: 'Invalid team name' };
+    const parsed = createTeamSchema.safeParse({ name: formData.get('name') });
+    if (!parsed.success) return { error: 'Invalid team name' };
 
-  const baseSlug = slugify(parsed.data.name) || 'team';
-  const slug = `${baseSlug}-${randomSlugSuffix()}`;
-  const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
-  let teamId: string;
-  try {
-    teamId = await db.transaction(async (tx) => {
-      const inserted = await tx
-        .insert(teams)
-        .values({ name: parsed.data.name, slug, inboundEmail })
-        .returning({ id: teams.id });
-      const id = inserted[0]?.id;
-      if (!id) throw new Error('insert teams returned nothing');
-      await tx.insert(teamMembers).values({
-        teamId: id,
-        userId: session.user.id,
-        role: 'owner',
+    const baseSlug = slugify(parsed.data.name) || 'team';
+    const slug = `${baseSlug}-${randomSlugSuffix()}`;
+    const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
+    let teamId: string;
+    try {
+      teamId = await db.transaction(async (tx) => {
+        const inserted = await tx
+          .insert(teams)
+          .values({ name: parsed.data.name, slug, inboundEmail })
+          .returning({ id: teams.id });
+        const id = inserted[0]?.id;
+        if (!id) throw new Error('insert teams returned nothing');
+        await tx.insert(teamMembers).values({
+          teamId: id,
+          userId: session.user.id,
+          role: 'owner',
+        });
+        return id;
       });
-      return id;
-    });
-  } catch (err) {
-    reportCaughtError(err, { surface: 'server_action', operation: 'create_team' });
-    return { error: 'Failed to create team' };
-  }
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'create_team' });
+      return { error: 'Failed to create team' };
+    }
 
-  const cookieStore = await cookies();
-  cookieStore.set(ACTIVE_TEAM_COOKIE, teamId, {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 365,
+    const cookieStore = await cookies();
+    cookieStore.set(ACTIVE_TEAM_COOKIE, teamId, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 365,
+    });
+    revalidatePath('/app');
+    redirect('/app/timeline');
   });
-  revalidatePath('/app');
-  redirect('/app/timeline');
 }
 
 export interface RenameTeamState {
@@ -96,46 +99,48 @@ export async function renameTeamAction(
   _prev: RenameTeamState,
   formData: FormData,
 ): Promise<RenameTeamState> {
-  const session = await auth();
-  if (!session?.user) return { error: 'Not signed in' };
+  return runSentryServerAction('rename_team', async () => {
+    const session = await auth();
+    if (!session?.user) return { error: 'Not signed in' };
 
-  const parsed = renameTeamSchema.safeParse({
-    teamId: formData.get('teamId'),
-    name: formData.get('name'),
-  });
-  if (!parsed.success) return { error: 'Invalid team name' };
-
-  const scope = withTeam(db, parsed.data.teamId, session.user.id);
-  try {
-    await scope.requireMembership('admin');
-  } catch {
-    return { error: 'Only admins can rename a team' };
-  }
-
-  try {
-    await db.transaction(async (tx) => {
-      await tx
-        .update(teams)
-        .set({ name: parsed.data.name })
-        .where(eq(teams.id, parsed.data.teamId));
-      await tx.insert(auditLog).values({
-        teamId: parsed.data.teamId,
-        actorUserId: session.user.id,
-        action: 'settings.change',
-        targetType: 'team',
-        targetId: parsed.data.teamId,
-        targetVisibility: 'team',
-        metadata: { setting: 'team.name' },
-      });
+    const parsed = renameTeamSchema.safeParse({
+      teamId: formData.get('teamId'),
+      name: formData.get('name'),
     });
-  } catch (err) {
-    reportCaughtError(err, { surface: 'server_action', operation: 'rename_team' });
-    return { error: 'Failed to rename team' };
-  }
+    if (!parsed.success) return { error: 'Invalid team name' };
 
-  revalidatePath('/app', 'layout');
-  revalidatePath('/app/team');
-  return { ok: true };
+    const scope = withTeam(db, parsed.data.teamId, session.user.id);
+    try {
+      await scope.requireMembership('admin');
+    } catch {
+      return { error: 'Only admins can rename a team' };
+    }
+
+    try {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(teams)
+          .set({ name: parsed.data.name })
+          .where(eq(teams.id, parsed.data.teamId));
+        await tx.insert(auditLog).values({
+          teamId: parsed.data.teamId,
+          actorUserId: session.user.id,
+          action: 'settings.change',
+          targetType: 'team',
+          targetId: parsed.data.teamId,
+          targetVisibility: 'team',
+          metadata: { setting: 'team.name' },
+        });
+      });
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'rename_team' });
+      return { error: 'Failed to rename team' };
+    }
+
+    revalidatePath('/app', 'layout');
+    revalidatePath('/app/team');
+    return { ok: true };
+  });
 }
 
 const inviteSchema = z.object({
@@ -193,270 +198,223 @@ export async function inviteMemberAction(
   _prev: InviteState,
   formData: FormData,
 ): Promise<InviteState> {
-  const session = await auth();
-  if (!session?.user) return { error: 'Not signed in' };
-  const { active } = await resolveActiveTeam(session.user.id);
-  if (!active) return { error: 'No active team' };
+  return runSentryServerAction('invite_member', async () => {
+    const session = await auth();
+    if (!session?.user) return { error: 'Not signed in' };
+    const { active } = await resolveActiveTeam(session.user.id);
+    if (!active) return { error: 'No active team' };
 
-  const parsed = inviteSchema.safeParse({
-    email: formData.get('email'),
-    role: formData.get('role') ?? 'member',
-  });
-  if (!parsed.success) return { error: 'Invalid email' };
+    const parsed = inviteSchema.safeParse({
+      email: formData.get('email'),
+      role: formData.get('role') ?? 'member',
+    });
+    if (!parsed.success) return { error: 'Invalid email' };
 
-  const scope = withTeam(db, active.teamId, session.user.id);
-  let callerRole: 'owner' | 'admin' | 'member';
-  try {
-    callerRole = await scope.requireMembership('admin');
-    if (parsed.data.role === 'admin' && callerRole !== 'owner') {
-      return { error: 'Only owners can invite admins' };
+    const scope = withTeam(db, active.teamId, session.user.id);
+    let callerRole: 'owner' | 'admin' | 'member';
+    try {
+      callerRole = await scope.requireMembership('admin');
+      if (parsed.data.role === 'admin' && callerRole !== 'owner') {
+        return { error: 'Only owners can invite admins' };
+      }
+    } catch {
+      return { error: 'Only admins can invite' };
     }
-  } catch {
-    return { error: 'Only admins can invite' };
-  }
 
-  const token = randomToken(24);
-  const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
-  const inviterName = session.user.name ?? session.user.email ?? 'A teammate';
-  let delivery: InviteDeliveryInput;
-  try {
-    delivery = await db.transaction(async (tx) => {
-      const activeMembers = await tx
-        .select({ userId: teamMembers.userId })
-        .from(users)
-        .innerJoin(teamMembers, eq(teamMembers.userId, users.id))
-        .where(
-          and(
-            eq(teamMembers.teamId, active.teamId),
-            isNull(teamMembers.removedAt),
-            sql`lower(${users.email}) = ${parsed.data.email}`,
-          ),
-        )
-        .limit(1);
-      if (activeMembers[0]) throw new Error('already-member');
+    const token = randomToken(24);
+    const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
+    const inviterName = session.user.name ?? session.user.email ?? 'A teammate';
+    let delivery: InviteDeliveryInput;
+    try {
+      delivery = await db.transaction(async (tx) => {
+        const activeMembers = await tx
+          .select({ userId: teamMembers.userId })
+          .from(users)
+          .innerJoin(teamMembers, eq(teamMembers.userId, users.id))
+          .where(
+            and(
+              eq(teamMembers.teamId, active.teamId),
+              isNull(teamMembers.removedAt),
+              sql`lower(${users.email}) = ${parsed.data.email}`,
+            ),
+          )
+          .limit(1);
+        if (activeMembers[0]) throw new Error('already-member');
 
-      const openInvites = await tx
-        .select({ id: teamInvites.id, role: teamInvites.role })
+        const openInvites = await tx
+          .select({ id: teamInvites.id, role: teamInvites.role })
+          .from(teamInvites)
+          .where(
+            and(
+              eq(teamInvites.teamId, active.teamId),
+              sql`lower(${teamInvites.email}) = ${parsed.data.email}`,
+              isNull(teamInvites.acceptedAt),
+              isNull(teamInvites.revokedAt),
+            ),
+          )
+          .limit(1)
+          .for('update');
+        const existing = openInvites[0];
+        if (existing?.role === 'admin' && callerRole !== 'owner') {
+          throw new Error('admin-invite-owned-by-owner');
+        }
+        const rows = existing
+          ? await tx
+              .update(teamInvites)
+              .set({
+                role: parsed.data.role,
+                token,
+                invitedByUserId: session.user.id,
+                expiresAt,
+                sendStatus: 'pending',
+                sendError: null,
+                lastSentAt: null,
+              })
+              .where(eq(teamInvites.id, existing.id))
+              .returning({ id: teamInvites.id })
+          : await tx
+              .insert(teamInvites)
+              .values({
+                teamId: active.teamId,
+                email: parsed.data.email,
+                role: parsed.data.role,
+                token,
+                invitedByUserId: session.user.id,
+                expiresAt,
+                sendStatus: 'pending',
+              })
+              .returning({ id: teamInvites.id });
+        const id = rows[0]?.id;
+        if (!id) throw new Error('invite-write-failed');
+        await tx.insert(auditLog).values({
+          teamId: active.teamId,
+          actorUserId: session.user.id,
+          action: 'settings.change',
+          targetType: 'team',
+          targetId: active.teamId,
+          targetVisibility: 'team',
+          metadata: {
+            setting: existing ? 'team.invite_updated' : 'team.invite',
+            inviteId: id,
+            role: parsed.data.role,
+          },
+        });
+        return {
+          id,
+          email: parsed.data.email,
+          role: parsed.data.role,
+          token,
+          expiresAt,
+          teamName: active.teamName,
+          inviterName,
+        };
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message === 'already-member') {
+        return {
+          error: 'This person is already a member. Change their role from the members list.',
+        };
+      }
+      if (err instanceof Error && err.message === 'admin-invite-owned-by-owner') {
+        return { error: 'Only owners can change an admin invite for this email.' };
+      }
+      reportCaughtError(err, { surface: 'server_action', operation: 'invite_member' });
+      return { error: 'Failed to create invite' };
+    }
+
+    const result = await deliverInviteEmail(delivery);
+    revalidatePath('/app/team');
+    return result;
+  });
+}
+
+export async function resendInviteAction(formData: FormData): Promise<void> {
+  return runSentryServerAction('resend_invite', async () => {
+    const session = await auth();
+    if (!session?.user) return;
+    const { active } = await resolveActiveTeam(session.user.id);
+    if (!active) return;
+    const inviteId = formData.get('inviteId');
+    if (typeof inviteId !== 'string') return;
+
+    const scope = withTeam(db, active.teamId, session.user.id);
+    const callerRole = await scope.requireMembership('admin');
+    const token = randomToken(24);
+    const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
+    const inviterName = session.user.name ?? session.user.email ?? 'A teammate';
+    const delivery = await db.transaction(async (tx): Promise<InviteDeliveryInput | null> => {
+      const rows = await tx
+        .select({
+          id: teamInvites.id,
+          email: teamInvites.email,
+          role: teamInvites.role,
+        })
         .from(teamInvites)
         .where(
           and(
+            eq(teamInvites.id, inviteId),
             eq(teamInvites.teamId, active.teamId),
-            sql`lower(${teamInvites.email}) = ${parsed.data.email}`,
             isNull(teamInvites.acceptedAt),
             isNull(teamInvites.revokedAt),
           ),
         )
         .limit(1)
         .for('update');
-      const existing = openInvites[0];
-      if (existing?.role === 'admin' && callerRole !== 'owner') {
-        throw new Error('admin-invite-owned-by-owner');
-      }
-      const rows = existing
-        ? await tx
-            .update(teamInvites)
-            .set({
-              role: parsed.data.role,
-              token,
-              invitedByUserId: session.user.id,
-              expiresAt,
-              sendStatus: 'pending',
-              sendError: null,
-              lastSentAt: null,
-            })
-            .where(eq(teamInvites.id, existing.id))
-            .returning({ id: teamInvites.id })
-        : await tx
-            .insert(teamInvites)
-            .values({
-              teamId: active.teamId,
-              email: parsed.data.email,
-              role: parsed.data.role,
-              token,
-              invitedByUserId: session.user.id,
-              expiresAt,
-              sendStatus: 'pending',
-            })
-            .returning({ id: teamInvites.id });
-      const id = rows[0]?.id;
-      if (!id) throw new Error('invite-write-failed');
-      await tx.insert(auditLog).values({
-        teamId: active.teamId,
-        actorUserId: session.user.id,
-        action: 'settings.change',
-        targetType: 'team',
-        targetId: active.teamId,
-        targetVisibility: 'team',
-        metadata: {
-          setting: existing ? 'team.invite_updated' : 'team.invite',
-          inviteId: id,
-          role: parsed.data.role,
-        },
-      });
+      const invite = rows[0];
+      if (!invite) return null;
+      if (invite.role === 'owner') return null;
+      if (invite.role === 'admin' && callerRole !== 'owner') return null;
+      await tx
+        .update(teamInvites)
+        .set({ token, expiresAt, sendStatus: 'pending', sendError: null, lastSentAt: null })
+        .where(eq(teamInvites.id, invite.id));
       return {
-        id,
-        email: parsed.data.email,
-        role: parsed.data.role,
+        id: invite.id,
+        email: invite.email,
+        role: invite.role,
         token,
         expiresAt,
         teamName: active.teamName,
         inviterName,
       };
     });
-  } catch (err) {
-    if (err instanceof Error && err.message === 'already-member') {
-      return { error: 'This person is already a member. Change their role from the members list.' };
-    }
-    if (err instanceof Error && err.message === 'admin-invite-owned-by-owner') {
-      return { error: 'Only owners can change an admin invite for this email.' };
-    }
-    reportCaughtError(err, { surface: 'server_action', operation: 'invite_member' });
-    return { error: 'Failed to create invite' };
-  }
-
-  const result = await deliverInviteEmail(delivery);
-  revalidatePath('/app/team');
-  return result;
-}
-
-export async function resendInviteAction(formData: FormData): Promise<void> {
-  const session = await auth();
-  if (!session?.user) return;
-  const { active } = await resolveActiveTeam(session.user.id);
-  if (!active) return;
-  const inviteId = formData.get('inviteId');
-  if (typeof inviteId !== 'string') return;
-
-  const scope = withTeam(db, active.teamId, session.user.id);
-  const callerRole = await scope.requireMembership('admin');
-  const token = randomToken(24);
-  const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
-  const inviterName = session.user.name ?? session.user.email ?? 'A teammate';
-  const delivery = await db.transaction(async (tx): Promise<InviteDeliveryInput | null> => {
-    const rows = await tx
-      .select({
-        id: teamInvites.id,
-        email: teamInvites.email,
-        role: teamInvites.role,
-      })
-      .from(teamInvites)
-      .where(
-        and(
-          eq(teamInvites.id, inviteId),
-          eq(teamInvites.teamId, active.teamId),
-          isNull(teamInvites.acceptedAt),
-          isNull(teamInvites.revokedAt),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    const invite = rows[0];
-    if (!invite) return null;
-    if (invite.role === 'owner') return null;
-    if (invite.role === 'admin' && callerRole !== 'owner') return null;
-    await tx
-      .update(teamInvites)
-      .set({ token, expiresAt, sendStatus: 'pending', sendError: null, lastSentAt: null })
-      .where(eq(teamInvites.id, invite.id));
-    return {
-      id: invite.id,
-      email: invite.email,
-      role: invite.role,
-      token,
-      expiresAt,
-      teamName: active.teamName,
-      inviterName,
-    };
+    if (delivery) await deliverInviteEmail(delivery);
+    revalidatePath('/app/team');
   });
-  if (delivery) await deliverInviteEmail(delivery);
-  revalidatePath('/app/team');
 }
 
 export async function revokeInviteAction(formData: FormData): Promise<void> {
-  const session = await auth();
-  if (!session?.user) return;
-  const { active } = await resolveActiveTeam(session.user.id);
-  if (!active) return;
-  const inviteId = formData.get('inviteId');
-  if (typeof inviteId !== 'string') return;
+  return runSentryServerAction('revoke_invite', async () => {
+    const session = await auth();
+    if (!session?.user) return;
+    const { active } = await resolveActiveTeam(session.user.id);
+    if (!active) return;
+    const inviteId = formData.get('inviteId');
+    if (typeof inviteId !== 'string') return;
 
-  const scope = withTeam(db, active.teamId, session.user.id);
-  const callerRole = await scope.requireMembership('admin');
-  await db.transaction(async (tx) => {
-    const rows = await tx
-      .select({ role: teamInvites.role })
-      .from(teamInvites)
-      .where(
-        and(
-          eq(teamInvites.id, inviteId),
-          eq(teamInvites.teamId, active.teamId),
-          isNull(teamInvites.acceptedAt),
-          isNull(teamInvites.revokedAt),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    const invite = rows[0];
-    if (!invite) return;
-    if (invite.role === 'admin' && callerRole !== 'owner') return;
-    await tx
-      .update(teamInvites)
-      .set({ revokedAt: new Date(), revokedByUserId: session.user.id })
-      .where(eq(teamInvites.id, inviteId));
-    await tx.insert(auditLog).values({
-      teamId: active.teamId,
-      actorUserId: session.user.id,
-      action: 'settings.change',
-      targetType: 'team',
-      targetId: active.teamId,
-      targetVisibility: 'team',
-      metadata: { setting: 'team.invite_revoked', inviteId, role: invite.role },
-    });
-  });
-  revalidatePath('/app/team');
-}
-
-export async function changeMemberRoleAction(formData: FormData): Promise<void> {
-  const session = await auth();
-  if (!session?.user) return;
-  const { active } = await resolveActiveTeam(session.user.id);
-  if (!active) return;
-  const memberUserId = formData.get('userId');
-  const role = formData.get('role');
-  if (typeof memberUserId !== 'string') return;
-  if (role !== 'owner' && role !== 'admin' && role !== 'member') return;
-
-  const scope = withTeam(db, active.teamId, session.user.id);
-  try {
-    await scope.requireMembership('owner');
-  } catch {
-    return;
-  }
-
-  try {
+    const scope = withTeam(db, active.teamId, session.user.id);
+    const callerRole = await scope.requireMembership('admin');
     await db.transaction(async (tx) => {
-      const targetRows = await tx
-        .select({ role: teamMembers.role })
-        .from(teamMembers)
+      const rows = await tx
+        .select({ role: teamInvites.role })
+        .from(teamInvites)
         .where(
           and(
-            eq(teamMembers.teamId, active.teamId),
-            eq(teamMembers.userId, memberUserId),
-            isNull(teamMembers.removedAt),
+            eq(teamInvites.id, inviteId),
+            eq(teamInvites.teamId, active.teamId),
+            isNull(teamInvites.acceptedAt),
+            isNull(teamInvites.revokedAt),
           ),
         )
         .limit(1)
         .for('update');
-      const target = targetRows[0];
-      if (!target) return;
-      if (target.role === role) return;
-      if (target.role === 'owner' && role !== 'owner') {
-        await assertNotLastOwner(tx, active.teamId, memberUserId);
-      }
+      const invite = rows[0];
+      if (!invite) return;
+      if (invite.role === 'admin' && callerRole !== 'owner') return;
       await tx
-        .update(teamMembers)
-        .set({ role })
-        .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
+        .update(teamInvites)
+        .set({ revokedAt: new Date(), revokedByUserId: session.user.id })
+        .where(eq(teamInvites.id, inviteId));
       await tx.insert(auditLog).values({
         teamId: active.teamId,
         actorUserId: session.user.id,
@@ -464,305 +422,366 @@ export async function changeMemberRoleAction(formData: FormData): Promise<void> 
         targetType: 'team',
         targetId: active.teamId,
         targetVisibility: 'team',
-        metadata: {
-          setting: 'team.member_role',
-          memberUserId,
-          previousRole: target.role,
-          role,
-        },
+        metadata: { setting: 'team.invite_revoked', inviteId, role: invite.role },
       });
     });
-  } catch (e) {
-    if (e instanceof Error && e.message === 'last_owner') return;
-    throw e;
-  }
-  revalidatePath('/app/team');
+    revalidatePath('/app/team');
+  });
+}
+
+export async function changeMemberRoleAction(formData: FormData): Promise<void> {
+  return runSentryServerAction('change_member_role', async () => {
+    const session = await auth();
+    if (!session?.user) return;
+    const { active } = await resolveActiveTeam(session.user.id);
+    if (!active) return;
+    const memberUserId = formData.get('userId');
+    const role = formData.get('role');
+    if (typeof memberUserId !== 'string') return;
+    if (role !== 'owner' && role !== 'admin' && role !== 'member') return;
+
+    const scope = withTeam(db, active.teamId, session.user.id);
+    try {
+      await scope.requireMembership('owner');
+    } catch {
+      return;
+    }
+
+    try {
+      await db.transaction(async (tx) => {
+        const targetRows = await tx
+          .select({ role: teamMembers.role })
+          .from(teamMembers)
+          .where(
+            and(
+              eq(teamMembers.teamId, active.teamId),
+              eq(teamMembers.userId, memberUserId),
+              isNull(teamMembers.removedAt),
+            ),
+          )
+          .limit(1)
+          .for('update');
+        const target = targetRows[0];
+        if (!target) return;
+        if (target.role === role) return;
+        if (target.role === 'owner' && role !== 'owner') {
+          await assertNotLastOwner(tx, active.teamId, memberUserId);
+        }
+        await tx
+          .update(teamMembers)
+          .set({ role })
+          .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
+        await tx.insert(auditLog).values({
+          teamId: active.teamId,
+          actorUserId: session.user.id,
+          action: 'settings.change',
+          targetType: 'team',
+          targetId: active.teamId,
+          targetVisibility: 'team',
+          metadata: {
+            setting: 'team.member_role',
+            memberUserId,
+            previousRole: target.role,
+            role,
+          },
+        });
+      });
+    } catch (e) {
+      if (e instanceof Error && e.message === 'last_owner') return;
+      throw e;
+    }
+    revalidatePath('/app/team');
+  });
 }
 
 export async function removeMemberAction(formData: FormData): Promise<void> {
-  const session = await auth();
-  if (!session?.user) return;
-  const { active } = await resolveActiveTeam(session.user.id);
-  if (!active) return;
-  const memberUserId = formData.get('userId');
-  if (typeof memberUserId !== 'string') return;
+  return runSentryServerAction('remove_member', async () => {
+    const session = await auth();
+    if (!session?.user) return;
+    const { active } = await resolveActiveTeam(session.user.id);
+    if (!active) return;
+    const memberUserId = formData.get('userId');
+    if (typeof memberUserId !== 'string') return;
 
-  const scope = withTeam(db, active.teamId, session.user.id);
-  const callerRole = await scope.requireMembership('admin');
-  if (memberUserId === session.user.id) return;
+    const scope = withTeam(db, active.teamId, session.user.id);
+    const callerRole = await scope.requireMembership('admin');
+    if (memberUserId === session.user.id) return;
 
-  try {
-    await db.transaction(async (tx) => {
-      const targetRows = await tx
-        .select({ role: teamMembers.role })
-        .from(teamMembers)
-        .where(
-          and(
-            eq(teamMembers.teamId, active.teamId),
-            eq(teamMembers.userId, memberUserId),
-            isNull(teamMembers.removedAt),
-          ),
-        )
-        .limit(1);
-      const targetRole = targetRows[0]?.role;
-      if (!targetRole) return;
-      if (callerRole === 'admin' && targetRole !== 'member') return;
-      if (callerRole !== 'owner' && callerRole !== 'admin') return;
-      // Never strand a team with zero owners. `assertNotLastOwner` runs
-      // SELECT FOR UPDATE on the team's owner rows so a concurrent removal
-      // of a different owner cannot also pass this check.
-      if (targetRole === 'owner') {
-        await assertNotLastOwner(tx, active.teamId, memberUserId);
-      }
-      await tx
-        .update(teamMembers)
-        .set({ removedAt: new Date(), removedByUserId: session.user.id })
-        .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
-      await tx
-        .update(teamVisibilityDefaults)
-        .set({
-          sourceOwnerUserId: null,
-          visibility: 'team',
-          visibilityUserIds: null,
-          updatedByUserId: session.user.id,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(teamVisibilityDefaults.teamId, active.teamId),
-            eq(teamVisibilityDefaults.sourceOwnerUserId, memberUserId),
-            eq(teamVisibilityDefaults.visibility, 'private'),
-          ),
-        );
-      await tx
-        .update(teamVisibilityDefaults)
-        .set({ sourceOwnerUserId: null, updatedByUserId: session.user.id, updatedAt: new Date() })
-        .where(
-          and(
-            eq(teamVisibilityDefaults.teamId, active.teamId),
-            eq(teamVisibilityDefaults.sourceOwnerUserId, memberUserId),
-          ),
-        );
-      const defaultRows = await tx
-        .select({
-          source: teamVisibilityDefaults.source,
-          visibility: teamVisibilityDefaults.visibility,
-          visibilityUserIds: teamVisibilityDefaults.visibilityUserIds,
-        })
-        .from(teamVisibilityDefaults)
-        .where(
-          and(
-            eq(teamVisibilityDefaults.teamId, active.teamId),
-            sql`${memberUserId}::uuid = ANY(${teamVisibilityDefaults.visibilityUserIds})`,
-          ),
-        );
-      for (const row of defaultRows) {
-        const nextUserIds = (row.visibilityUserIds ?? []).filter((id) => id !== memberUserId);
-        const nextVisibility =
-          row.visibility === 'specific_users' && nextUserIds.length === 0 ? 'team' : row.visibility;
+    try {
+      await db.transaction(async (tx) => {
+        const targetRows = await tx
+          .select({ role: teamMembers.role })
+          .from(teamMembers)
+          .where(
+            and(
+              eq(teamMembers.teamId, active.teamId),
+              eq(teamMembers.userId, memberUserId),
+              isNull(teamMembers.removedAt),
+            ),
+          )
+          .limit(1);
+        const targetRole = targetRows[0]?.role;
+        if (!targetRole) return;
+        if (callerRole === 'admin' && targetRole !== 'member') return;
+        if (callerRole !== 'owner' && callerRole !== 'admin') return;
+        // Never strand a team with zero owners. `assertNotLastOwner` runs
+        // SELECT FOR UPDATE on the team's owner rows so a concurrent removal
+        // of a different owner cannot also pass this check.
+        if (targetRole === 'owner') {
+          await assertNotLastOwner(tx, active.teamId, memberUserId);
+        }
+        await tx
+          .update(teamMembers)
+          .set({ removedAt: new Date(), removedByUserId: session.user.id })
+          .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
         await tx
           .update(teamVisibilityDefaults)
           .set({
-            visibility: nextVisibility,
-            visibilityUserIds: nextUserIds.length > 0 ? nextUserIds : null,
+            sourceOwnerUserId: null,
+            visibility: 'team',
+            visibilityUserIds: null,
             updatedByUserId: session.user.id,
             updatedAt: new Date(),
           })
           .where(
             and(
               eq(teamVisibilityDefaults.teamId, active.teamId),
-              eq(teamVisibilityDefaults.source, row.source),
+              eq(teamVisibilityDefaults.sourceOwnerUserId, memberUserId),
+              eq(teamVisibilityDefaults.visibility, 'private'),
             ),
           );
-      }
-      const integrationRows = await tx
-        .select({
-          id: integrations.id,
-          connectedByUserId: integrations.connectedByUserId,
-          visibilityDefault: integrations.visibilityDefault,
-          visibilityDefaultUserIds: integrations.visibilityDefaultUserIds,
-        })
-        .from(integrations)
-        .where(
-          and(
-            eq(integrations.teamId, active.teamId),
-            or(
-              eq(integrations.connectedByUserId, memberUserId),
-              sql`${memberUserId}::uuid = ANY(${integrations.visibilityDefaultUserIds})`,
-            ),
-          ),
-        );
-      for (const row of integrationRows) {
-        const ownedByRemovedMember = row.connectedByUserId === memberUserId;
-        const nextUserIds = ownedByRemovedMember
-          ? []
-          : (row.visibilityDefaultUserIds ?? []).filter((id) => id !== memberUserId);
-        const nextVisibility = ownedByRemovedMember
-          ? row.visibilityDefault === 'private' || row.visibilityDefault === 'specific_users'
-            ? 'team'
-            : row.visibilityDefault
-          : row.visibilityDefault === 'specific_users' && nextUserIds.length === 0
-            ? 'team'
-            : row.visibilityDefault;
         await tx
-          .update(integrations)
-          .set({
-            visibilityDefault: nextVisibility,
-            visibilityDefaultUserIds: nextUserIds.length > 0 ? nextUserIds : null,
-            updatedAt: new Date(),
-          })
-          .where(eq(integrations.id, row.id));
-      }
-      // Revoke Telegram routing for this user — two anchors, both needed:
-      //
-      //   1. Consumer-side: telegram_users.user_id points at this app
-      //      user (bound at /link time, after the username-match identity
-      //      check). Any telegram_user_teams row keyed by such a
-      //      telegram_users.id is *their* DM. This is the primary anchor.
-      //   2. Provenance-side: rows where linked_by_user_id matches —
-      //      catches edge cases like a teammate consuming an admin's token
-      //      under a different TG account (rejected at consumption now,
-      //      but the historical cleanup stays as defense in depth).
-      //
-      // Also drop group bindings they personally established.
-      const ownedTgUserIds = await tx
-        .select({ id: telegramUsers.id })
-        .from(telegramUsers)
-        .where(eq(telegramUsers.userId, memberUserId));
-      const ownedIds = ownedTgUserIds.map((r) => r.id);
-
-      // Snapshot the TG users whose active-team row is about to be deleted.
-      // After the deletes we'll promote a remaining linked team to active
-      // for each, so a DM author isn't left in a "linked but no active
-      // team" state when they had other teams linked.
-      const deactivationCandidates = await tx
-        .select({ telegramUserId: telegramUserTeams.telegramUserId })
-        .from(telegramUserTeams)
-        .where(
-          and(
-            eq(telegramUserTeams.teamId, active.teamId),
-            eq(telegramUserTeams.isActive, true),
-            or(
-              ownedIds.length > 0
-                ? inArray(telegramUserTeams.telegramUserId, ownedIds)
-                : sql`false`,
-              eq(telegramUserTeams.linkedByUserId, memberUserId),
+          .update(teamVisibilityDefaults)
+          .set({ sourceOwnerUserId: null, updatedByUserId: session.user.id, updatedAt: new Date() })
+          .where(
+            and(
+              eq(teamVisibilityDefaults.teamId, active.teamId),
+              eq(teamVisibilityDefaults.sourceOwnerUserId, memberUserId),
             ),
-          ),
-        );
-      const affectedTgIds = Array.from(
-        new Set(deactivationCandidates.map((r) => r.telegramUserId)),
-      );
+          );
+        const defaultRows = await tx
+          .select({
+            source: teamVisibilityDefaults.source,
+            visibility: teamVisibilityDefaults.visibility,
+            visibilityUserIds: teamVisibilityDefaults.visibilityUserIds,
+          })
+          .from(teamVisibilityDefaults)
+          .where(
+            and(
+              eq(teamVisibilityDefaults.teamId, active.teamId),
+              sql`${memberUserId}::uuid = ANY(${teamVisibilityDefaults.visibilityUserIds})`,
+            ),
+          );
+        for (const row of defaultRows) {
+          const nextUserIds = (row.visibilityUserIds ?? []).filter((id) => id !== memberUserId);
+          const nextVisibility =
+            row.visibility === 'specific_users' && nextUserIds.length === 0
+              ? 'team'
+              : row.visibility;
+          await tx
+            .update(teamVisibilityDefaults)
+            .set({
+              visibility: nextVisibility,
+              visibilityUserIds: nextUserIds.length > 0 ? nextUserIds : null,
+              updatedByUserId: session.user.id,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(teamVisibilityDefaults.teamId, active.teamId),
+                eq(teamVisibilityDefaults.source, row.source),
+              ),
+            );
+        }
+        const integrationRows = await tx
+          .select({
+            id: integrations.id,
+            connectedByUserId: integrations.connectedByUserId,
+            visibilityDefault: integrations.visibilityDefault,
+            visibilityDefaultUserIds: integrations.visibilityDefaultUserIds,
+          })
+          .from(integrations)
+          .where(
+            and(
+              eq(integrations.teamId, active.teamId),
+              or(
+                eq(integrations.connectedByUserId, memberUserId),
+                sql`${memberUserId}::uuid = ANY(${integrations.visibilityDefaultUserIds})`,
+              ),
+            ),
+          );
+        for (const row of integrationRows) {
+          const ownedByRemovedMember = row.connectedByUserId === memberUserId;
+          const nextUserIds = ownedByRemovedMember
+            ? []
+            : (row.visibilityDefaultUserIds ?? []).filter((id) => id !== memberUserId);
+          const nextVisibility = ownedByRemovedMember
+            ? row.visibilityDefault === 'private' || row.visibilityDefault === 'specific_users'
+              ? 'team'
+              : row.visibilityDefault
+            : row.visibilityDefault === 'specific_users' && nextUserIds.length === 0
+              ? 'team'
+              : row.visibilityDefault;
+          await tx
+            .update(integrations)
+            .set({
+              visibilityDefault: nextVisibility,
+              visibilityDefaultUserIds: nextUserIds.length > 0 ? nextUserIds : null,
+              updatedAt: new Date(),
+            })
+            .where(eq(integrations.id, row.id));
+        }
+        // Revoke Telegram routing for this user — two anchors, both needed:
+        //
+        //   1. Consumer-side: telegram_users.user_id points at this app
+        //      user (bound at /link time, after the username-match identity
+        //      check). Any telegram_user_teams row keyed by such a
+        //      telegram_users.id is *their* DM. This is the primary anchor.
+        //   2. Provenance-side: rows where linked_by_user_id matches —
+        //      catches edge cases like a teammate consuming an admin's token
+        //      under a different TG account (rejected at consumption now,
+        //      but the historical cleanup stays as defense in depth).
+        //
+        // Also drop group bindings they personally established.
+        const ownedTgUserIds = await tx
+          .select({ id: telegramUsers.id })
+          .from(telegramUsers)
+          .where(eq(telegramUsers.userId, memberUserId));
+        const ownedIds = ownedTgUserIds.map((r) => r.id);
 
-      if (ownedIds.length > 0) {
+        // Snapshot the TG users whose active-team row is about to be deleted.
+        // After the deletes we'll promote a remaining linked team to active
+        // for each, so a DM author isn't left in a "linked but no active
+        // team" state when they had other teams linked.
+        const deactivationCandidates = await tx
+          .select({ telegramUserId: telegramUserTeams.telegramUserId })
+          .from(telegramUserTeams)
+          .where(
+            and(
+              eq(telegramUserTeams.teamId, active.teamId),
+              eq(telegramUserTeams.isActive, true),
+              or(
+                ownedIds.length > 0
+                  ? inArray(telegramUserTeams.telegramUserId, ownedIds)
+                  : sql`false`,
+                eq(telegramUserTeams.linkedByUserId, memberUserId),
+              ),
+            ),
+          );
+        const affectedTgIds = Array.from(
+          new Set(deactivationCandidates.map((r) => r.telegramUserId)),
+        );
+
+        if (ownedIds.length > 0) {
+          await tx
+            .delete(telegramUserTeams)
+            .where(
+              and(
+                eq(telegramUserTeams.teamId, active.teamId),
+                inArray(telegramUserTeams.telegramUserId, ownedIds),
+              ),
+            );
+        }
         await tx
           .delete(telegramUserTeams)
           .where(
             and(
               eq(telegramUserTeams.teamId, active.teamId),
-              inArray(telegramUserTeams.telegramUserId, ownedIds),
+              eq(telegramUserTeams.linkedByUserId, memberUserId),
             ),
           );
-      }
-      await tx
-        .delete(telegramUserTeams)
-        .where(
-          and(
-            eq(telegramUserTeams.teamId, active.teamId),
-            eq(telegramUserTeams.linkedByUserId, memberUserId),
-          ),
-        );
-      await tx
-        .delete(telegramChatBindings)
-        .where(
-          and(
-            eq(telegramChatBindings.teamId, active.teamId),
-            eq(telegramChatBindings.boundByUserId, memberUserId),
-          ),
-        );
-
-      // For each TG user that just lost its active routing row, promote
-      // the oldest remaining linked team to active. Skip if another active
-      // row somehow survived (paranoia) or if they have no remaining
-      // links at all.
-      for (const tgUserId of affectedTgIds) {
-        const remaining = await tx
-          .select({ id: telegramUserTeams.id, isActive: telegramUserTeams.isActive })
-          .from(telegramUserTeams)
-          .where(eq(telegramUserTeams.telegramUserId, tgUserId))
-          .orderBy(asc(telegramUserTeams.createdAt), asc(telegramUserTeams.id));
-        const oldest = remaining[0];
-        if (!oldest) continue;
-        if (remaining.some((r) => r.isActive)) continue;
         await tx
-          .update(telegramUserTeams)
-          .set({ isActive: true })
-          .where(eq(telegramUserTeams.id, oldest.id));
-      }
-
-      const affectedSlackRows = await tx
-        .select({ slackUserId: slackUserTeams.slackUserId })
-        .from(slackUserTeams)
-        .where(
-          and(
-            eq(slackUserTeams.teamId, active.teamId),
-            eq(slackUserTeams.isActive, true),
-            or(
-              eq(slackUserTeams.userId, memberUserId),
-              eq(slackUserTeams.linkedByUserId, memberUserId),
+          .delete(telegramChatBindings)
+          .where(
+            and(
+              eq(telegramChatBindings.teamId, active.teamId),
+              eq(telegramChatBindings.boundByUserId, memberUserId),
             ),
-          ),
-        );
-      const affectedSlackIds = Array.from(new Set(affectedSlackRows.map((r) => r.slackUserId)));
+          );
 
-      await tx
-        .delete(slackUserTeams)
-        .where(
-          and(
-            eq(slackUserTeams.teamId, active.teamId),
-            or(
-              eq(slackUserTeams.userId, memberUserId),
-              eq(slackUserTeams.linkedByUserId, memberUserId),
-            ),
-          ),
-        );
-      await tx
-        .update(slackConversationBindings)
-        .set({ enabled: false, updatedAt: new Date() })
-        .where(
-          and(
-            eq(slackConversationBindings.teamId, active.teamId),
-            eq(slackConversationBindings.boundByUserId, memberUserId),
-          ),
-        );
+        // For each TG user that just lost its active routing row, promote
+        // the oldest remaining linked team to active. Skip if another active
+        // row somehow survived (paranoia) or if they have no remaining
+        // links at all.
+        for (const tgUserId of affectedTgIds) {
+          const remaining = await tx
+            .select({ id: telegramUserTeams.id, isActive: telegramUserTeams.isActive })
+            .from(telegramUserTeams)
+            .where(eq(telegramUserTeams.telegramUserId, tgUserId))
+            .orderBy(asc(telegramUserTeams.createdAt), asc(telegramUserTeams.id));
+          const oldest = remaining[0];
+          if (!oldest) continue;
+          if (remaining.some((r) => r.isActive)) continue;
+          await tx
+            .update(telegramUserTeams)
+            .set({ isActive: true })
+            .where(eq(telegramUserTeams.id, oldest.id));
+        }
 
-      for (const slackUserId of affectedSlackIds) {
-        const remaining = await tx
-          .select({ id: slackUserTeams.id, isActive: slackUserTeams.isActive })
+        const affectedSlackRows = await tx
+          .select({ slackUserId: slackUserTeams.slackUserId })
           .from(slackUserTeams)
-          .where(eq(slackUserTeams.slackUserId, slackUserId))
-          .orderBy(asc(slackUserTeams.createdAt), asc(slackUserTeams.id));
-        const oldest = remaining[0];
-        if (!oldest) continue;
-        if (remaining.some((r) => r.isActive)) continue;
+          .where(
+            and(
+              eq(slackUserTeams.teamId, active.teamId),
+              eq(slackUserTeams.isActive, true),
+              or(
+                eq(slackUserTeams.userId, memberUserId),
+                eq(slackUserTeams.linkedByUserId, memberUserId),
+              ),
+            ),
+          );
+        const affectedSlackIds = Array.from(new Set(affectedSlackRows.map((r) => r.slackUserId)));
+
         await tx
-          .update(slackUserTeams)
-          .set({ isActive: true })
-          .where(eq(slackUserTeams.id, oldest.id));
-      }
-      await tx.insert(auditLog).values({
-        teamId: active.teamId,
-        actorUserId: session.user.id,
-        action: 'settings.change',
-        targetType: 'team',
-        targetId: active.teamId,
-        targetVisibility: 'team',
-        metadata: { setting: 'team.member_removed', memberUserId, role: targetRole },
+          .delete(slackUserTeams)
+          .where(
+            and(
+              eq(slackUserTeams.teamId, active.teamId),
+              or(
+                eq(slackUserTeams.userId, memberUserId),
+                eq(slackUserTeams.linkedByUserId, memberUserId),
+              ),
+            ),
+          );
+        await tx
+          .update(slackConversationBindings)
+          .set({ enabled: false, updatedAt: new Date() })
+          .where(
+            and(
+              eq(slackConversationBindings.teamId, active.teamId),
+              eq(slackConversationBindings.boundByUserId, memberUserId),
+            ),
+          );
+
+        for (const slackUserId of affectedSlackIds) {
+          const remaining = await tx
+            .select({ id: slackUserTeams.id, isActive: slackUserTeams.isActive })
+            .from(slackUserTeams)
+            .where(eq(slackUserTeams.slackUserId, slackUserId))
+            .orderBy(asc(slackUserTeams.createdAt), asc(slackUserTeams.id));
+          const oldest = remaining[0];
+          if (!oldest) continue;
+          if (remaining.some((r) => r.isActive)) continue;
+          await tx
+            .update(slackUserTeams)
+            .set({ isActive: true })
+            .where(eq(slackUserTeams.id, oldest.id));
+        }
+        await tx.insert(auditLog).values({
+          teamId: active.teamId,
+          actorUserId: session.user.id,
+          action: 'settings.change',
+          targetType: 'team',
+          targetId: active.teamId,
+          targetVisibility: 'team',
+          metadata: { setting: 'team.member_removed', memberUserId, role: targetRole },
+        });
       });
-    });
-  } catch (e) {
-    if (e instanceof Error && e.message === 'last_owner') return;
-    throw e;
-  }
-  revalidatePath('/app/team');
+    } catch (e) {
+      if (e instanceof Error && e.message === 'last_owner') return;
+      throw e;
+    }
+    revalidatePath('/app/team');
+  });
 }

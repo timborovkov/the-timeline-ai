@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 
 const log = childLogger('web:actions:visibility');
@@ -51,92 +52,99 @@ export async function setVisibilityDefaultAction(
   _prev: VisibilityActionState,
   formData: FormData,
 ): Promise<VisibilityActionState> {
-  const parsed = z
-    .object({
-      source: sourceSchema,
-      visibility: visibilitySchema,
-      sourceOwnerUserId: z.string().regex(UUID_RE).nullable(),
-    })
-    .safeParse({
-      source: formData.get('source'),
-      visibility: formData.get('visibility'),
-      sourceOwnerUserId: optionalUuidFromForm(formData, 'sourceOwnerUserId'),
-    });
-  if (!parsed.success) return { error: 'Invalid visibility default' };
-  const got = await scopeOrError();
-  if ('error' in got) return { error: got.error };
-  try {
-    await got.scope.requireMembership('admin');
-    await got.scope.timeline.setVisibilityDefault({
-      source: parsed.data.source,
-      visibility: parsed.data.visibility,
-      visibilityUserIds: idsFromForm(formData, 'visibilityUserIds'),
-      sourceOwnerUserId: parsed.data.sourceOwnerUserId,
-    });
-    revalidatePath('/app/team');
-    revalidatePath('/app/timeline');
-    return { ok: true };
-  } catch (err) {
-    log.error({ err }, 'visibility_default_update_failed');
-    reportCaughtError(err, { surface: 'server_action', operation: 'visibility_default_update' });
-    return { error: err instanceof Error ? err.message : 'Failed to update visibility default' };
-  }
+  return runSentryServerAction('set_visibility_default', async () => {
+    const parsed = z
+      .object({
+        source: sourceSchema,
+        visibility: visibilitySchema,
+        sourceOwnerUserId: z.string().regex(UUID_RE).nullable(),
+      })
+      .safeParse({
+        source: formData.get('source'),
+        visibility: formData.get('visibility'),
+        sourceOwnerUserId: optionalUuidFromForm(formData, 'sourceOwnerUserId'),
+      });
+    if (!parsed.success) return { error: 'Invalid visibility default' };
+    const got = await scopeOrError();
+    if ('error' in got) return { error: got.error };
+    try {
+      await got.scope.requireMembership('admin');
+      await got.scope.timeline.setVisibilityDefault({
+        source: parsed.data.source,
+        visibility: parsed.data.visibility,
+        visibilityUserIds: idsFromForm(formData, 'visibilityUserIds'),
+        sourceOwnerUserId: parsed.data.sourceOwnerUserId,
+      });
+      revalidatePath('/app/team');
+      revalidatePath('/app/timeline');
+      return { ok: true };
+    } catch (err) {
+      log.error({ err }, 'visibility_default_update_failed');
+      reportCaughtError(err, { surface: 'server_action', operation: 'visibility_default_update' });
+      return { error: err instanceof Error ? err.message : 'Failed to update visibility default' };
+    }
+  });
 }
 
 export async function setEventVisibilityAction(
   _prev: VisibilityActionState,
   formData: FormData,
 ): Promise<VisibilityActionState> {
-  const parsed = z
-    .object({ id: z.string().regex(UUID_RE), visibility: visibilitySchema })
-    .safeParse({
-      id: formData.get('id'),
-      visibility: formData.get('visibility'),
-    });
-  if (!parsed.success) return { error: 'Invalid visibility' };
-  const got = await scopeOrError();
-  if ('error' in got) return { error: got.error };
-  try {
-    const updated = await got.scope.timeline.setEventVisibility(parsed.data.id, {
-      visibility: parsed.data.visibility,
-      visibilityUserIds: idsFromForm(formData, 'visibilityUserIds'),
-    });
-    if (!updated) return { error: 'Event not found or not visible' };
-    revalidatePath('/app/timeline');
-    return { ok: true };
-  } catch (err) {
-    log.error({ err }, 'event_visibility_update_failed');
-    reportCaughtError(err, { surface: 'server_action', operation: 'event_visibility_update' });
-    return { error: err instanceof Error ? err.message : 'Failed to update event visibility' };
-  }
+  return runSentryServerAction('set_event_visibility', async () => {
+    const parsed = z
+      .object({ id: z.string().regex(UUID_RE), visibility: visibilitySchema })
+      .safeParse({
+        id: formData.get('id'),
+        visibility: formData.get('visibility'),
+      });
+    if (!parsed.success) return { error: 'Invalid visibility' };
+    const got = await scopeOrError();
+    if ('error' in got) return { error: got.error };
+    try {
+      const updated = await got.scope.timeline.setEventVisibility(parsed.data.id, {
+        visibility: parsed.data.visibility,
+        visibilityUserIds: idsFromForm(formData, 'visibilityUserIds'),
+      });
+      if (!updated) return { error: 'Event not found or not visible' };
+      revalidatePath('/app/timeline');
+      return { ok: true };
+    } catch (err) {
+      log.error({ err }, 'event_visibility_update_failed');
+      reportCaughtError(err, { surface: 'server_action', operation: 'event_visibility_update' });
+      return { error: err instanceof Error ? err.message : 'Failed to update event visibility' };
+    }
+  });
 }
 
 export async function setIntegrationVisibilityDefaultAction(
   _prev: VisibilityActionState,
   formData: FormData,
 ): Promise<VisibilityActionState> {
-  const parsed = z
-    .object({ id: z.string().regex(UUID_RE), visibility: visibilitySchema })
-    .safeParse({ id: formData.get('id'), visibility: formData.get('visibility') });
-  if (!parsed.success) return { error: 'Invalid integration visibility default' };
-  const got = await scopeOrError();
-  if ('error' in got) return { error: got.error };
-  try {
-    await got.scope.integrations.setIntegrationVisibilityDefault(
-      parsed.data.id,
-      parsed.data.visibility,
-      idsFromForm(formData, 'visibilityUserIds'),
-    );
-    revalidatePath('/app/team/integrations');
-    return { ok: true };
-  } catch (err) {
-    log.error({ err }, 'integration_visibility_default_update_failed');
-    reportCaughtError(err, {
-      surface: 'server_action',
-      operation: 'integration_visibility_default_update',
-    });
-    return {
-      error: err instanceof Error ? err.message : 'Failed to update integration visibility default',
-    };
-  }
+  return runSentryServerAction('set_integration_visibility_default', async () => {
+    const parsed = z
+      .object({ id: z.string().regex(UUID_RE), visibility: visibilitySchema })
+      .safeParse({ id: formData.get('id'), visibility: formData.get('visibility') });
+    if (!parsed.success) return { error: 'Invalid integration visibility default' };
+    const got = await scopeOrError();
+    if ('error' in got) return { error: got.error };
+    try {
+      await got.scope.integrations.setIntegrationVisibilityDefault(
+        parsed.data.id,
+        parsed.data.visibility,
+        idsFromForm(formData, 'visibilityUserIds'),
+      );
+      revalidatePath('/app/team/integrations');
+      return { ok: true };
+    } catch (err) {
+      log.error({ err }, 'integration_visibility_default_update_failed');
+      reportCaughtError(err, {
+        surface: 'server_action',
+        operation: 'integration_visibility_default_update',
+      });
+      return {
+        error:
+          err instanceof Error ? err.message : 'Failed to update integration visibility default',
+      };
+    }
+  });
 }
