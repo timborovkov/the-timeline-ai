@@ -234,10 +234,6 @@ async function runOneIntegration(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log.warn({ err, integrationId }, 'integration sync failed');
-      captureWorkerException(err, {
-        component: 'worker_integration_sync',
-        operation: 'run_one_integration',
-      });
       await integrationsLib.adminRecordError(db, integrationId, msg);
       await integrationsLib.adminRecordAudit(
         db,
