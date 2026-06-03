@@ -65,6 +65,30 @@ function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }
 
+function extractionSettled(meta: Record<string, unknown>): boolean {
+  return (
+    typeof meta.extraction_model_version === 'string' ||
+    typeof meta.extracted_at === 'string' ||
+    typeof meta.extraction_skipped_at === 'string' ||
+    typeof meta.extraction_failed_at === 'string'
+  );
+}
+
+async function stampSuggestionMetadata(
+  db: Db,
+  rawEventId: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  await db
+    .update(rawEvents)
+    .set({
+      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${JSON.stringify(
+        patch,
+      )}::jsonb`,
+    })
+    .where(eq(rawEvents.id, rawEventId));
+}
+
 function commitmentActionBeforeTimePhrase(s: string): string {
   const fragment =
     s
@@ -169,7 +193,18 @@ export async function processSuggestionJobForTests(
     row.sourceMetadata && typeof row.sourceMetadata === 'object'
       ? (row.sourceMetadata as Record<string, unknown>)
       : {};
+  if (row.visibility !== 'team') {
+    await stampSuggestionMetadata(deps.db, rawEventId, {
+      suggestions_skipped_at: new Date().toISOString(),
+      suggestions_skipped_reason: `visibility=${row.visibility}`,
+      suggestion_model_version: modelVersion,
+    });
+    return;
+  }
   if (meta.suggestion_model_version === modelVersion) return;
+
+  const hasSettledExtraction = extractionSettled(meta);
+  if (!hasSettledExtraction && meta.suggestion_pre_extract_model_version === modelVersion) return;
 
   const factRows = await deps.db
     .select({ statement: factsTable.statement })
@@ -198,56 +233,8 @@ export async function processSuggestionJobForTests(
   const activeAuthorUserId = memberRows.some((member) => member.userId === row.authorUserId)
     ? row.authorUserId
     : null;
-  const activeMemberIds = new Set(memberRows.map((member) => member.userId));
-  const activeVisibilityUserIds = (row.visibilityUserIds ?? []).filter((uid) =>
-    activeMemberIds.has(uid),
-  );
-  let scopeUserId = PSEUDO_USER;
-  let visibilityOwnerUserId: string | null = null;
-  let visibilityUserIds: string[] | null = null;
 
-  if (row.visibility === 'private') {
-    if (!activeAuthorUserId) {
-      await deps.db
-        .update(rawEvents)
-        .set({
-          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${JSON.stringify(
-            {
-              suggestions_skipped_at: new Date().toISOString(),
-              suggestions_skipped_reason: 'private_author_not_active',
-              suggestion_model_version: modelVersion,
-            },
-          )}::jsonb`,
-        })
-        .where(eq(rawEvents.id, rawEventId));
-      return;
-    }
-    scopeUserId = activeAuthorUserId;
-    visibilityOwnerUserId = activeAuthorUserId;
-  } else if (row.visibility === 'specific_users') {
-    if (activeVisibilityUserIds.length === 0) {
-      await deps.db
-        .update(rawEvents)
-        .set({
-          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${JSON.stringify(
-            {
-              suggestions_skipped_at: new Date().toISOString(),
-              suggestions_skipped_reason: 'specific_users_empty',
-              suggestion_model_version: modelVersion,
-            },
-          )}::jsonb`,
-        })
-        .where(eq(rawEvents.id, rawEventId));
-      return;
-    }
-    scopeUserId =
-      activeAuthorUserId && activeVisibilityUserIds.includes(activeAuthorUserId)
-        ? activeAuthorUserId
-        : (activeVisibilityUserIds[0] ?? PSEUDO_USER);
-    visibilityUserIds = activeVisibilityUserIds;
-  }
-
-  const scope = withTeam(deps.db, teamId, scopeUserId, {
+  const scope = withTeam(deps.db, teamId, PSEUDO_USER, {
     skipMembershipCheck: true,
   });
   const settings = await scope.calendar.getCalendarSettings();
@@ -331,8 +318,8 @@ export async function processSuggestionJobForTests(
       confidence: bundle.confidence,
       dedupeKey: bundleDedupe,
       visibility: row.visibility,
-      visibilityOwnerUserId,
-      visibilityUserIds,
+      visibilityOwnerUserId: null,
+      visibilityUserIds: null,
       evidence: [{ rawEventId, quote: bundle.quote ?? truncate(text, 500) }],
       metadata: { suggestion_model_version: modelVersion },
       items: bundle.items.map((item, index) => ({
@@ -352,15 +339,19 @@ export async function processSuggestionJobForTests(
     });
   }
 
-  await deps.db
-    .update(rawEvents)
-    .set({
-      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${JSON.stringify({
-        suggestion_model_version: modelVersion,
-        suggestions_extracted_at: new Date().toISOString(),
-      })}::jsonb`,
-    })
-    .where(eq(rawEvents.id, rawEventId));
+  await stampSuggestionMetadata(
+    deps.db,
+    rawEventId,
+    hasSettledExtraction
+      ? {
+          suggestion_model_version: modelVersion,
+          suggestions_extracted_at: new Date().toISOString(),
+        }
+      : {
+          suggestion_pre_extract_model_version: modelVersion,
+          suggestions_pre_extracted_at: new Date().toISOString(),
+        },
+  );
 }
 
 function buildPrompt(args: {

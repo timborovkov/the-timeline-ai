@@ -3,14 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import {
-  agentSuggestionItems,
-  agentSuggestions,
-  entities,
-  facts,
-  rawEvents,
-  type Db,
-} from '@timeline/db';
+import { agentSuggestionItems, entities, facts, rawEvents, type Db } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -79,6 +72,7 @@ async function seedRawEvent(
     source?: 'web' | 'telegram';
     visibility?: 'team' | 'private' | 'specific_users';
     visibilityUserIds?: string[] | null;
+    sourceMetadata?: Record<string, unknown>;
   },
 ): Promise<void> {
   await db.insert(rawEvents).values({
@@ -91,7 +85,7 @@ async function seedRawEvent(
     visibility: args.visibility ?? 'team',
     visibilityOwnerUserId: args.visibility === 'private' ? (args.authorUserId ?? OWNER_ID) : null,
     visibilityUserIds: args.visibilityUserIds,
-    sourceMetadata: {},
+    sourceMetadata: args.sourceMetadata ?? {},
   });
 }
 
@@ -217,9 +211,9 @@ describe('processSuggestionJobForTests', () => {
 
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(event?.sourceMetadata).toMatchObject({
-      suggestion_model_version: `${MODEL_ID}@2026-05-a`,
+      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-05-a`,
     });
-    expect(event?.sourceMetadata).toHaveProperty('suggestions_extracted_at');
+    expect(event?.sourceMetadata).toHaveProperty('suggestions_pre_extracted_at');
   });
 
   it('turns Telegram conversation commitments into approval suggestions', async () => {
@@ -254,6 +248,10 @@ describe('processSuggestionJobForTests', () => {
     await seedRawEvent(db as never, {
       id: rawEventId,
       text: 'Move Acme renewal to negotiation.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
     });
     await db.insert(entities).values({
       id: OBJECT_ID,
@@ -316,9 +314,10 @@ describe('processSuggestionJobForTests', () => {
     expect(bundle?.items[0]?.proposedPayload).toEqual({ stage: 'negotiation' });
   });
 
-  it('scopes private and specific-user suggestions to the intended reviewers', async () => {
+  it('skips private and specific-user suggestions before calling the model', async () => {
     const privateEventId = '10000000-0000-0000-0000-000000000003';
     const specificEventId = '10000000-0000-0000-0000-000000000004';
+    const chat = emptyModel();
     await seedRawEvent(db as never, {
       id: privateEventId,
       text: "I'll book my dentist appointment tomorrow",
@@ -335,49 +334,30 @@ describe('processSuggestionJobForTests', () => {
     await processSuggestionJobForTests(
       { db: db as never },
       { rawEventId: privateEventId, teamId: TEAM_ID },
-      { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
     );
     await processSuggestionJobForTests(
       { db: db as never },
       { rawEventId: specificEventId, teamId: TEAM_ID },
-      { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
     );
 
-    const ownerVisible = await withTeam(
-      db as never,
-      TEAM_ID,
-      OWNER_ID,
-    ).suggestions.listPendingSuggestions();
-    const memberVisible = await withTeam(
-      db as never,
-      TEAM_ID,
-      MEMBER_ID,
-    ).suggestions.listPendingSuggestions();
-    expect(ownerVisible.map((bundle) => bundle.evidence[0]?.rawEventId)).toContain(privateEventId);
-    expect(ownerVisible.map((bundle) => bundle.evidence[0]?.rawEventId)).not.toContain(
-      specificEventId,
-    );
-    expect(memberVisible.map((bundle) => bundle.evidence[0]?.rawEventId)).toContain(
-      specificEventId,
-    );
-    expect(memberVisible.map((bundle) => bundle.evidence[0]?.rawEventId)).not.toContain(
-      privateEventId,
-    );
-
-    const privateRow = (
-      await db.select().from(agentSuggestions).where(eq(agentSuggestions.visibility, 'private'))
-    )[0];
-    expect(privateRow?.visibilityOwnerUserId).toBe(OWNER_ID);
-    const specificRow = (
-      await db
-        .select()
-        .from(agentSuggestions)
-        .where(eq(agentSuggestions.visibility, 'specific_users'))
-    )[0];
-    expect(specificRow?.visibilityUserIds).toEqual([MEMBER_ID]);
+    expect(chat).not.toHaveBeenCalled();
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
+    const skipped = await db
+      .select({ id: rawEvents.id, sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents);
+    expect(skipped.find((row) => row.id === privateEventId)?.sourceMetadata).toMatchObject({
+      suggestions_skipped_reason: 'visibility=private',
+      suggestion_model_version: `${MODEL_ID}@2026-05-a`,
+    });
+    expect(skipped.find((row) => row.id === specificEventId)?.sourceMetadata).toMatchObject({
+      suggestions_skipped_reason: 'visibility=specific_users',
+      suggestion_model_version: `${MODEL_ID}@2026-05-a`,
+    });
   });
 
-  it('stamps skipped private/specific-user events when no active reviewer can see them', async () => {
+  it('stamps skipped non-team events even when no active reviewer can see them', async () => {
     const inactivePrivateId = '10000000-0000-0000-0000-000000000005';
     const emptySpecificId = '10000000-0000-0000-0000-000000000006';
     await seedRawEvent(db as never, {
@@ -408,14 +388,64 @@ describe('processSuggestionJobForTests', () => {
       .select({ id: rawEvents.id, sourceMetadata: rawEvents.sourceMetadata })
       .from(rawEvents);
     expect(skipped.find((row) => row.id === inactivePrivateId)?.sourceMetadata).toMatchObject({
-      suggestions_skipped_reason: 'private_author_not_active',
+      suggestions_skipped_reason: 'visibility=private',
       suggestion_model_version: `${MODEL_ID}@2026-05-a`,
     });
     expect(skipped.find((row) => row.id === emptySpecificId)?.sourceMetadata).toMatchObject({
-      suggestions_skipped_reason: 'specific_users_empty',
+      suggestions_skipped_reason: 'visibility=specific_users',
       suggestion_model_version: `${MODEL_ID}@2026-05-a`,
     });
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
+  });
+
+  it('reruns after extraction when the capture-time suggestion job wins the race', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000008';
+    const chat = emptyModel();
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: "I'll send the proposal next Tuesday",
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    await db.insert(facts).values({
+      teamId: TEAM_ID,
+      rawEventId,
+      statement: 'The proposal is part of the Acme renewal.',
+      confidence: 0.9,
+      modelVersion: 'test',
+    });
+    await db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: {
+          suggestion_pre_extract_model_version: `${MODEL_ID}@2026-05-a`,
+          suggestions_pre_extracted_at: '2026-05-27T10:00:00.000Z',
+          extracted_at: '2026-05-27T10:01:00.000Z',
+          extraction_model_version: 'test-extract@1',
+        },
+      })
+      .where(eq(rawEvents.id, rawEventId));
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(chat).toHaveBeenCalledTimes(2);
+    expect((chat.mock.calls[1]?.[0] as { prompt: string }).prompt).toContain(
+      'The proposal is part of the Acme renewal.',
+    );
+    const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
+    expect(event?.sourceMetadata).toMatchObject({
+      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-05-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-05-a`,
+    });
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 2 });
   });
 
   it('is idempotent when the same model version reruns', async () => {

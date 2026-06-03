@@ -433,8 +433,10 @@ tests and evals carry the branch coverage and model/tool behavior.
     unambiguous.
   - Model-backed suggestion output and deterministic fallback output are both
     covered with injected LLM fakes.
-  - Private events produce private/owner-visible suggestions only.
-  - Specific-user events produce suggestions visible only to allowed users.
+  - Private and specific-user events are stamped as skipped before the
+    suggestion LLM boundary, matching extract/embed privacy behavior.
+  - Capture-time suggestion jobs use a pre-extraction model stamp so an
+    extract-triggered rerun can enrich approvals with same-event facts.
   - Cross-team events and target IDs are rejected or ignored.
   - Worker retries are idempotent and do not create duplicate bundles/items.
   - Skipped events are stamped with a bounded reason instead of silently
