@@ -137,6 +137,15 @@ describe('onboarding checklist scope', () => {
     ]);
   });
 
+  it('counts non-web captured events as the first timeline event', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events (team_id, author_user_id, source, content_text)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'telegram', 'captured from chat');
+    `);
+
+    expect(completedKeys(await scope().getChecklistState())).toEqual(['first_note']);
+  });
+
   it('dismisses and reopens per user and team', async () => {
     await scope().dismissChecklist();
 
