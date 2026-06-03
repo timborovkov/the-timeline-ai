@@ -410,6 +410,13 @@ async function runSuggestionExtraction(
     prompt,
   });
 
+  if (
+    args.conversation &&
+    !(await isConversationReviewCurrent(deps.db, args.conversation.reviewId, rawEventId))
+  ) {
+    return 0;
+  }
+
   const bundles =
     result.object.bundles.length > 0
       ? result.object.bundles
@@ -661,6 +668,7 @@ async function processConversationReviewJob(
     identity,
     evidenceWindow: window,
   });
+  if (!(await isConversationReviewCurrent(deps.db, review.id, last.id))) return;
 
   const proposalsCreated = await runSuggestionExtraction(deps, {
     anchor: last,
@@ -721,6 +729,25 @@ async function supersedePendingSlackChannelReviewForThreadReply(
     );
 }
 
+async function isConversationReviewCurrent(
+  db: Db,
+  reviewId: string,
+  lastRawEventId: string,
+): Promise<boolean> {
+  const [review] = await db
+    .select({ id: conversationReviews.id })
+    .from(conversationReviews)
+    .where(
+      and(
+        eq(conversationReviews.id, reviewId),
+        eq(conversationReviews.status, 'pending'),
+        eq(conversationReviews.lastRawEventId, lastRawEventId),
+      ),
+    )
+    .limit(1);
+  return Boolean(review);
+}
+
 async function markReviewMissingAnchor(db: Db, reviewId: string): Promise<void> {
   await db
     .update(conversationReviews)
@@ -732,7 +759,13 @@ async function markReviewMissingAnchor(db: Db, reviewId: string): Promise<void> 
       })}::jsonb`,
       updatedAt: new Date(),
     })
-    .where(eq(conversationReviews.id, reviewId));
+    .where(
+      and(
+        eq(conversationReviews.id, reviewId),
+        eq(conversationReviews.status, 'pending'),
+        isNull(conversationReviews.lastRawEventId),
+      ),
+    );
 }
 
 async function markReviewComplete(
@@ -753,7 +786,13 @@ async function markReviewComplete(
       })}::jsonb`,
       updatedAt: new Date(),
     })
-    .where(eq(conversationReviews.id, reviewId));
+    .where(
+      and(
+        eq(conversationReviews.id, reviewId),
+        eq(conversationReviews.status, 'pending'),
+        eq(conversationReviews.lastRawEventId, last.id),
+      ),
+    );
 }
 
 function buildPrompt(args: {
