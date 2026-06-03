@@ -6,6 +6,7 @@ import * as slack from '@timeline/shared/slack';
 
 import { slackIngestDeps } from '@/app/api/slack/_shared';
 import { db } from '@/lib/db';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -63,14 +64,30 @@ export async function POST(req: Request): Promise<Response> {
       }
     } catch (err) {
       log.error({ err }, 'slack url verification failed');
+      reportCaughtError(err, { surface: 'api', operation: 'slack_url_verification' });
     }
     return Response.json({ ok: false, reason: 'invalid_challenge' }, { status: 200 });
   }
 
+  const deps = {
+    db,
+    ...slackIngestDeps(),
+    onAgentToolError(err: unknown, context: { tool: string }) {
+      reportCaughtError(err, {
+        surface: 'background',
+        operation: 'slack_agent_tool_call',
+        tags: { tool: context.tool },
+      });
+    },
+    onAgentError(err: unknown) {
+      reportCaughtError(err, { surface: 'background', operation: 'slack_agent_run' });
+    },
+  };
   void Promise.resolve()
-    .then(() => slack.handleSlackEnvelope({ db, ...slackIngestDeps() }, payload))
+    .then(() => slack.handleSlackEnvelope(deps, payload))
     .catch((err: unknown) => {
       log.error({ err }, 'slack event handler failed');
+      reportCaughtError(err, { surface: 'background', operation: 'slack_event_handler' });
     });
   return Response.json({ ok: true }, { status: 200 });
 }

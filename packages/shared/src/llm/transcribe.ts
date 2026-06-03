@@ -1,8 +1,9 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import { experimental_transcribe as aiTranscribe, type TranscriptionModel } from 'ai';
+import { type TranscriptionModel } from 'ai';
 
 import { getEnv } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { experimental_transcribe as tracedTranscribe } from '#src/llm/tracing.js';
 
 export interface TranscribeInput {
   /** Raw audio bytes. The SDK builds the multipart upload internally and
@@ -69,10 +70,21 @@ export async function transcribeAudio(
 ): Promise<TranscribeResult> {
   const modelId = resolveModelId();
   const model = deps.model ?? buildDefaultModel(modelId);
-  const result = await aiTranscribe({
-    model,
-    audio: input.audio,
-    ...(input.language ? { providerOptions: { openai: { language: input.language } } } : {}),
-  });
+  const result = await tracedTranscribe(
+    {
+      model,
+      audio: input.audio,
+      ...(input.language ? { providerOptions: { openai: { language: input.language } } } : {}),
+    },
+    {
+      name: 'llm.transcribeAudio',
+      model: modelId,
+      metadata: {
+        operation: 'transcribe_audio',
+        audio_bytes: input.audio.byteLength,
+        language_hint: input.language ? true : false,
+      },
+    },
+  );
   return { text: result.text, model: modelId };
 }

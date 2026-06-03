@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 const log = childLogger('web:actions:calendar');
 
@@ -72,6 +73,7 @@ export async function createCalendarEventAction(
     return { ok: true, id: event.id };
   } catch (err) {
     log.error({ err }, 'create_calendar_event_failed');
+    reportCaughtError(err, { surface: 'server_action', operation: 'create_calendar_event' });
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to create event' };
   }
 }
@@ -121,6 +123,7 @@ export async function updateCalendarEventAction(
     return { ok: true, id: updated.id };
   } catch (err) {
     log.error({ err }, 'update_calendar_event_failed');
+    reportCaughtError(err, { surface: 'server_action', operation: 'update_calendar_event' });
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to update event' };
   }
 }
@@ -137,6 +140,7 @@ export async function deleteCalendarEventAction(id: string): Promise<Result> {
     return { ok: true, id };
   } catch (err) {
     log.error({ err }, 'delete_calendar_event_failed');
+    reportCaughtError(err, { surface: 'server_action', operation: 'delete_calendar_event' });
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to delete event' };
   }
 }

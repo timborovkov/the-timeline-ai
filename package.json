@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
+    "@sentry/cli": "2.58.6",
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",
     "@typescript-eslint/eslint-plugin": "^8.60.0",

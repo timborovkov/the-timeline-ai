@@ -8,6 +8,7 @@ const flush = vi.fn();
 const withScope = vi.fn((fn: (scope: { setTag: typeof setScopeTag }) => void) => {
   fn({ setTag: setScopeTag });
 });
+class MockUnrecoverableError extends Error {}
 
 interface WorkerBeforeSendEvent {
   request?: {
@@ -27,6 +28,10 @@ vi.mock('@sentry/node', () => ({
   withScope,
   captureException,
   flush,
+}));
+
+vi.mock('bullmq', () => ({
+  UnrecoverableError: MockUnrecoverableError,
 }));
 
 const ENV_BACKUP = { ...process.env };
@@ -107,5 +112,50 @@ describe('worker Sentry monitoring', () => {
     });
 
     expect(event?.request?.url).toBe('https://app.timeline.test/accept-invite/[redacted]');
+  });
+
+  it('captures terminal worker job failures only', async () => {
+    process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
+    const monitoring = await import('#src/monitoring.js');
+    const err = new Error('job failed');
+
+    monitoring.captureWorkerJobFailure(err, {
+      id: 'job-1',
+      name: 'transcribe',
+      queueName: 'transcribe',
+      attemptsMade: 1,
+      opts: { attempts: 3 },
+    });
+    expect(captureException).not.toHaveBeenCalled();
+
+    monitoring.captureWorkerJobFailure(err, {
+      id: 'job-1',
+      name: 'transcribe',
+      queueName: 'transcribe',
+      attemptsMade: 3,
+      opts: { attempts: 3 },
+    });
+
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(setScopeTag).toHaveBeenCalledWith('component', 'worker_job');
+    expect(setScopeTag).toHaveBeenCalledWith('queueName', 'transcribe');
+    expect(setScopeTag).toHaveBeenCalledWith('attemptsMade', '3');
+    expect(setScopeTag).not.toHaveBeenCalledWith('rawEventId', expect.any(String));
+  });
+
+  it('captures unrecoverable worker job failures immediately', async () => {
+    process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
+    const monitoring = await import('#src/monitoring.js');
+
+    monitoring.captureWorkerJobFailure(new MockUnrecoverableError('bad input'), {
+      id: 'job-2',
+      name: 'extract',
+      queueName: 'extract',
+      attemptsMade: 1,
+      opts: { attempts: 3 },
+    });
+
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(setScopeTag).toHaveBeenCalledWith('unrecoverable', 'true');
   });
 });

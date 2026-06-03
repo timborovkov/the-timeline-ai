@@ -10,6 +10,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 const log = childLogger('web:actions:meetings');
 
@@ -142,6 +143,7 @@ export async function scheduleMeetingBotAction(
     });
   } catch (err) {
     log.error({ err, meetingId: meeting.id }, 'recall_join_failed');
+    reportCaughtError(err, { surface: 'server_action', operation: 'recall_join_meeting' });
     await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
       metadata: {
         join_failed_at: new Date().toISOString(),
@@ -195,6 +197,7 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
       // Log but continue — we still want the local row marked failed so
       // the user isn't blocked on a provider-side hiccup.
       log.warn({ err, meetingId }, 'recall_leave_failed');
+      reportCaughtError(err, { surface: 'server_action', operation: 'recall_leave_meeting' });
     }
   }
   await scope.meetings.updateMeetingStatus(meetingId, 'failed', {

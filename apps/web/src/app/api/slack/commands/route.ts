@@ -5,6 +5,7 @@ import * as rateLimit from '@timeline/shared/rate-limit';
 import * as slack from '@timeline/shared/slack';
 
 import { db } from '@/lib/db';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -61,8 +62,26 @@ export async function POST(req: Request): Promise<Response> {
     });
   }
 
-  void slack.handleSlackSlashCommand({ db }, input).catch((err: unknown) => {
-    log.error({ err }, 'slack slash command failed');
-  });
+  void slack
+    .handleSlackSlashCommand(
+      {
+        db,
+        onAgentToolError(err, context) {
+          reportCaughtError(err, {
+            surface: 'background',
+            operation: 'slack_agent_tool_call',
+            tags: { tool: context.tool },
+          });
+        },
+        onAgentError(err) {
+          reportCaughtError(err, { surface: 'background', operation: 'slack_agent_run' });
+        },
+      },
+      input,
+    )
+    .catch((err: unknown) => {
+      log.error({ err }, 'slack slash command failed');
+      reportCaughtError(err, { surface: 'background', operation: 'slack_slash_command' });
+    });
   return Response.json({ response_type: 'ephemeral', text: 'Asking Timeline...' }, { status: 200 });
 }

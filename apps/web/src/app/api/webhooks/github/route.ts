@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -105,8 +106,13 @@ export async function POST(req: Request): Promise<Response> {
         if (events.length > 0) {
           await integrationsLib.writeIntegrationEvents({ db, integration, events });
         }
-      } catch {
+      } catch (err) {
         // continue — one broken integration doesn't fail the whole webhook
+        reportCaughtError(err, {
+          surface: 'background',
+          operation: 'github_webhook_write_events',
+          tags: { provider: 'github' },
+        });
       }
     }),
   );
@@ -116,17 +122,29 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const queue = await requireRedisQueue();
     await Promise.all(
-      rows.map((integration) =>
-        queue.enqueueIntegrationSyncJob({
-          kind: 'incremental',
-          integrationId: integration.id,
-          teamId: integration.teamId,
-          triggeredBy: 'webhook',
-        }),
-      ),
+      rows.map(async (integration) => {
+        try {
+          await queue.enqueueIntegrationSyncJob({
+            kind: 'incremental',
+            integrationId: integration.id,
+            teamId: integration.teamId,
+            triggeredBy: 'webhook',
+          });
+        } catch (err) {
+          reportCaughtError(err, {
+            surface: 'background',
+            operation: 'github_webhook_enqueue_sync',
+            tags: { provider: 'github' },
+          });
+        }
+      }),
     );
-  } catch {
-    // ignore
+  } catch (err) {
+    reportCaughtError(err, {
+      surface: 'background',
+      operation: 'github_webhook_enqueue_sync',
+      tags: { provider: 'github' },
+    });
   }
   return NextResponse.json({ ok: true });
 }

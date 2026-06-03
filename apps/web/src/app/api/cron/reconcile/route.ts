@@ -4,6 +4,7 @@ import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 
 import { reconcileOrphanedJobs } from '@/lib/reconcile-jobs';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: true, ...result }, { status: 200 });
   } catch (err) {
     log.error({ err: (err as Error).message }, 'reconcile_failed');
+    reportCaughtError(err, { surface: 'api', operation: 'cron_reconcile' });
     return Response.json({ ok: false, reason: 'handler_error' }, { status: 503 });
   }
 }

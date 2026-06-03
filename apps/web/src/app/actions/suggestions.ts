@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 function revalidateSuggestionSurfaces() {
   revalidatePath('/app/approvals');
@@ -25,6 +26,7 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Action
     revalidateSuggestionSurfaces();
     return { ok: true };
   } catch (err) {
+    reportCaughtError(err, { surface: 'server_action', operation: 'accept_suggestion_item' });
     revalidateSuggestionSurfaces();
     return { error: err instanceof Error ? err.message : 'Failed to accept suggestion' };
   }
@@ -41,6 +43,7 @@ export async function rejectSuggestionItemAction(input: unknown): Promise<Action
     revalidateSuggestionSurfaces();
     return { ok: true };
   } catch (err) {
+    reportCaughtError(err, { surface: 'server_action', operation: 'reject_suggestion_item' });
     return { error: err instanceof Error ? err.message : 'Failed to reject suggestion' };
   }
 }
@@ -55,6 +58,7 @@ export async function acceptAllSuggestionAction(input: unknown): Promise<ActionS
     revalidateSuggestionSurfaces();
     return result.failed > 0 ? { error: `${result.failed} item(s) failed to apply` } : { ok: true };
   } catch (err) {
+    reportCaughtError(err, { surface: 'server_action', operation: 'accept_all_suggestions' });
     revalidateSuggestionSurfaces();
     return { error: err instanceof Error ? err.message : 'Failed to accept suggestion' };
   }

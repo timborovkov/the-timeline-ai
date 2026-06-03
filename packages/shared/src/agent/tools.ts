@@ -16,6 +16,12 @@ import {
 
 const log = childLogger('agent:tools');
 
+export type AgentToolErrorReporter = (err: unknown, context: { tool: string }) => void;
+
+interface AgentToolOptions {
+  onToolError?: AgentToolErrorReporter | undefined;
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const sourceKindSchema = z.enum([
@@ -215,11 +221,16 @@ function fenceExternalContent(
   return `<external_content source="${source}" event_id="${eventId}">${sanitized}</external_content>`;
 }
 
-async function safe<T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> {
+async function safe<T>(
+  label: string,
+  fn: () => Promise<T>,
+  onToolError?: AgentToolErrorReporter,
+): Promise<T | { error: string }> {
   try {
     return await fn();
   } catch (err) {
     log.error({ err, tool: label }, 'tool failed');
+    onToolError?.(err, { tool: label });
     return { error: 'tool_failed' };
   }
 }
@@ -243,7 +254,10 @@ async function safe<T>(label: string, fn: () => Promise<T>): Promise<T | { error
 // server contributes its discovered tools, namespaced with the server id
 // so collisions are impossible. Outputs are fenced through
 // fenceExternalContent (see Rule 8).
-export async function buildMcpTools(scope: TeamScope): Promise<ToolSet> {
+export async function buildMcpTools(
+  scope: TeamScope,
+  options: AgentToolOptions = {},
+): Promise<ToolSet> {
   const db = getDb();
   const discovery = await getMcpManager()
     .connectForTeam(db, scope.teamId, scope.userId)
@@ -283,6 +297,7 @@ export async function buildMcpTools(scope: TeamScope): Promise<ToolSet> {
           };
         } catch (err) {
           log.warn({ err, tool: namespaced }, 'mcp tool call failed');
+          options.onToolError?.(err, { tool: namespaced });
           // Surface needs_reauth in a structured shape the chat UI can
           // recognize and render as an inline "Reconnect <server>" CTA.
           // McpNeedsReauthError is thrown by the client when refresh fails.
@@ -305,14 +320,16 @@ export async function buildMcpTools(scope: TeamScope): Promise<ToolSet> {
   return out;
 }
 
-export function buildAgentTools(scope: TeamScope): ToolSet {
+export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}): ToolSet {
+  const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
+    safe(label, fn, options.onToolError);
   return {
     search_timeline: tool({
       description:
         "Semantic search across the current team's timeline. Returns ranked events with event_id (use for [ev:<id>] citations), fact statements, and entity_ids. Use this for 'what was discussed about X' or 'find anything mentioning Y'.",
       inputSchema: searchTimelineInput,
       execute: async (raw) =>
-        safe('search_timeline', async () => {
+        runSafe('search_timeline', async () => {
           const input = searchTimelineInput.parse(raw);
           const args: Parameters<typeof scope.timeline.searchEvents>[0] = { query: input.query };
           if (input.from) args.from = new Date(input.from);
@@ -341,7 +358,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         "Look up one entity (person, company, project, topic) by exact UUID or canonical-name/alias match. Returns the entity, its 20 most recent facts (capped — call search_timeline if you need more depth on a specific topic), its visibility-filtered source events with event_ids, and the top 10 co-occurring entities. Use this for 'tell me about <name>' or to resolve a name into an entity id before searching.",
       inputSchema: getEntityInput,
       execute: async (raw) =>
-        safe('get_entity', async () => {
+        runSafe('get_entity', async () => {
           const { idOrName } = getEntityInput.parse(raw);
           // Cap the payload for agent calls so a chatty entity doesn't blow
           // the LLM context. 20 facts + 10 co-occurring is enough to anchor
@@ -382,7 +399,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         "List raw events in reverse-chronological order. Filterable by ISO datetime range (from inclusive, to exclusive), author UUID, and source. Use this for 'what happened on <date>' or 'what did <person> post'. Returns events with event_id, occurred_at, source, author_user_id, and content_text.",
       inputSchema: listEventsInput,
       execute: async (raw) =>
-        safe('list_events', async () => {
+        runSafe('list_events', async () => {
           const input = listEventsInput.parse(raw);
           const filters: Parameters<typeof scope.timeline.listEvents>[0] = {};
           if (input.from) filters.from = new Date(input.from);
@@ -423,7 +440,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         "Look up a workspace object (task, deal, project, person, company, follow_up, etc.) by UUID or canonical name. Returns its status/stage/owner/due_at, the most recent suggested+applied changes, any notes, related objects, and open child tasks. Use this for 'what's the status of <X>' or before proposing a change to verify the current value.",
       inputSchema: z.object({ idOrName: z.string().trim().min(1).max(200) }),
       execute: async ({ idOrName }) =>
-        safe('get_object', async () => {
+        runSafe('get_object', async () => {
           const result = await scope.objects.getObject(idOrName);
           if (!result) return { found: false };
           return {
@@ -468,7 +485,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         limit: z.number().int().min(1).max(50).optional(),
       }),
       execute: async (raw) =>
-        safe('list_objects', async () => {
+        runSafe('list_objects', async () => {
           const input = raw as {
             type?: string;
             status?: string;
@@ -511,7 +528,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         limit: z.number().int().min(1).max(50).optional(),
       }),
       execute: async (raw) =>
-        safe('list_tasks', async () => {
+        runSafe('list_tasks', async () => {
           const input = raw as { status?: string; ownerUserId?: string; limit?: number };
           const filter: objects.ObjectListFilter = {
             type: 'task',
@@ -556,7 +573,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         limit: z.number().int().min(1).max(50).optional(),
       }),
       execute: async (raw) =>
-        safe('recent_changes', async () => {
+        runSafe('recent_changes', async () => {
           const input = raw as {
             entityId?: string;
             status?: 'applied' | 'suggested' | 'rejected';
@@ -592,7 +609,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         'List visible approval-backed proposals that are not canonical yet. Use this before claiming durable memory is approved, and when checking whether an alias, identity facet, object note, relationship, task, or calendar proposal is already pending.',
       inputSchema: listPendingApprovalsInput,
       execute: async (raw) =>
-        safe('list_pending_approvals', async () => {
+        runSafe('list_pending_approvals', async () => {
           const input = listPendingApprovalsInput.parse(raw);
           const suggestions = await scope.suggestions.listSuggestions({
             status: input.status,
@@ -646,7 +663,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         sourceEventId: z.string().regex(UUID_RE).optional(),
       }),
       execute: async (raw) =>
-        safe('suggest_task', async () => {
+        runSafe('suggest_task', async () => {
           const input = raw as {
             title: string;
             dueAt?: string;
@@ -706,7 +723,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         note: z.string().trim().max(500).optional(),
       }),
       execute: async (raw) =>
-        safe('propose_object_change', async () => {
+        runSafe('propose_object_change', async () => {
           const input = raw as {
             entityId: string;
             field: 'status' | 'stage' | 'priority' | 'ownerUserId' | 'assigneeUserId' | 'dueAt';
@@ -750,7 +767,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         'Create an approval-backed proposal for durable object memory. Use when the user gives lasting information about people, companies, projects, tasks, deals, calendar commitments, aliases, identity facets, relationships, notes, or typo/name cleanup. This queues approval only; it does not make memory canonical until accepted.',
       inputSchema: suggestObjectMemoryInput,
       execute: async (raw) =>
-        safe('suggest_object_memory', async () => {
+        runSafe('suggest_object_memory', async () => {
           const input = suggestObjectMemoryInput.parse(raw);
           const items = input.items.map((item) => {
             if (item.kind === 'create_object') {
@@ -887,7 +904,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         "Fetch one raw event by id, including its linked facts and entities. Use this to verify a citation or drill into a specific event_id you've already received from another tool. Returns null if the id isn't in this team or isn't visible to you.",
       inputSchema: getEventInput,
       execute: async (raw) =>
-        safe('get_event', async () => {
+        runSafe('get_event', async () => {
           const { id } = getEventInput.parse(raw);
           const result = await scope.timeline.getEventWithFacts(id);
           if (!result) return { found: false };
@@ -924,7 +941,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         "Semantic search across the team's document drive. Returns ranked chunks with document_id, version, chunk_id, page_number, and snippet. Use this when the answer might live in an uploaded contract, deal doc, policy, onboarding guide, or customer note. Cite hits with [doc:<documentId>#v<version>:chunk:<chunkId>].",
       inputSchema: searchDocumentsInput,
       execute: async (raw) =>
-        safe('search_documents', async () => {
+        runSafe('search_documents', async () => {
           const input = searchDocumentsInput.parse(raw);
           const args: Parameters<typeof scope.documents.searchDocumentChunks>[0] = {
             query: input.query,
@@ -962,7 +979,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         'Fetch a document by id: metadata, owner, visibility, folder, current version, and full version history. Use this to verify a [doc:...] citation or to drill into a hit returned by search_documents.',
       inputSchema: getDocumentInput,
       execute: async (raw) =>
-        safe('get_document', async () => {
+        runSafe('get_document', async () => {
           const { id } = getDocumentInput.parse(raw);
           const document = await scope.documents.getDocument(id);
           if (!document) return { found: false };
@@ -997,7 +1014,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         "Fetch the full text of a single document chunk by chunk_id. Use this to expand a citation when the snippet returned by search_documents isn't enough. Returns the chunk text fenced as external content.",
       inputSchema: getDocumentChunkInput,
       execute: async (raw) =>
-        safe('get_document_chunk', async () => {
+        runSafe('get_document_chunk', async () => {
           const { id } = getDocumentChunkInput.parse(raw);
           const chunk = await scope.documents.getDocumentChunk(id);
           if (!chunk) return { found: false };
@@ -1024,7 +1041,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         "List third-party integrations connected to this team (Google Drive, Linear, GitHub) and custom MCP servers. Returns provider, displayName, and last_synced_at. Use when the user asks 'what's connected' or to confirm a source before searching.",
       inputSchema: z.object({}).strict(),
       execute: async () =>
-        safe('list_integrations', async () => {
+        runSafe('list_integrations', async () => {
           const [rows, mcpServers] = await Promise.all([
             scope.integrations.listIntegrations(),
             scope.mcp.listServers(),
@@ -1061,7 +1078,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         })
         .strict(),
       execute: async (raw) =>
-        safe('search_integration_events', async () => {
+        runSafe('search_integration_events', async () => {
           const parsed = z
             .object({
               query: z.string().trim().min(1).max(500),
@@ -1125,7 +1142,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         })
         .strict(),
       execute: async (raw) =>
-        safe('get_integration_resource', async () => {
+        runSafe('get_integration_resource', async () => {
           const parsed = z
             .object({
               provider: z.enum(['google_drive', 'linear', 'github']),
@@ -1190,7 +1207,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         "List recent document drive activity (uploads, new versions, renames, moves, deletes, restores, visibility changes). Use this for 'what's new in the docs', 'what did someone change recently', or to enumerate documents touched since a given time. Each entry links to a raw_events id for [ev:...] citation.",
       inputSchema: listDocumentChangesInput,
       execute: async (raw) =>
-        safe('list_recent_document_changes', async () => {
+        runSafe('list_recent_document_changes', async () => {
           const input = listDocumentChangesInput.parse(raw);
           const args: Parameters<typeof scope.documents.listRecentDocumentChanges>[0] = {};
           if (input.since) args.since = new Date(input.since);
@@ -1221,7 +1238,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         limit: z.number().int().min(1).max(50).optional(),
       }),
       execute: async (raw) =>
-        safe('list_calendar_events', async () => {
+        runSafe('list_calendar_events', async () => {
           const input = z
             .object({
               from: z.iso.datetime().optional(),
@@ -1261,7 +1278,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         referenceDate: z.iso.datetime().optional(),
       }),
       execute: async (raw) =>
-        safe('resolve_time_context', async () => {
+        runSafe('resolve_time_context', async () => {
           const input = z
             .object({
               phrase: z.string().trim().min(1).max(100).optional(),
@@ -1299,7 +1316,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         'Fetch one calendar event by UUID. Returns full details including description, timezone, location, and visibility. Use this to drill into a specific event after listing.',
       inputSchema: z.object({ id: z.string().regex(UUID_RE) }),
       execute: async (raw) =>
-        safe('get_calendar_event', async () => {
+        runSafe('get_calendar_event', async () => {
           const { id } = z.object({ id: z.string().regex(UUID_RE) }).parse(raw);
           const event = await scope.calendar.getCalendarEvent(id);
           if (!event) return { found: false };
@@ -1349,7 +1366,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         reminderMinutes: z.number().int().min(0).max(1440).optional(),
       }),
       execute: async (raw) =>
-        safe('suggest_calendar_event', async () => {
+        runSafe('suggest_calendar_event', async () => {
           const input = z
             .object({
               title: z.string().trim().min(1).max(200),
@@ -1463,7 +1480,7 @@ export function buildAgentTools(scope: TeamScope): ToolSet {
         reason: z.string().trim().max(500).optional(),
       }),
       execute: async (raw) =>
-        safe('propose_calendar_update', async () => {
+        runSafe('propose_calendar_update', async () => {
           const input = z
             .object({
               id: z.string().regex(UUID_RE),

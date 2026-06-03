@@ -12,6 +12,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export interface CreateTeamExportState {
   error?: string;
@@ -64,6 +65,10 @@ export async function createTeamExportAction(
       requestedByUserId: session.user.id,
     });
   } catch (err: unknown) {
+    reportCaughtError(err, {
+      surface: 'server_action',
+      operation: 'create_team_export_enqueue',
+    });
     await db
       .update(teamExports)
       .set({

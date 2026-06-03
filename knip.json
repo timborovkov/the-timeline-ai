@@ -16,8 +16,8 @@
       "ignoreDependencies": ["tailwindcss"]
     },
     "apps/worker": {
-      "entry": ["src/scripts/*.ts", "src/workers/*.test.ts"],
-      "project": ["src/**/*.ts"]
+      "entry": ["scripts/*.mjs", "src/scripts/*.ts", "src/workers/*.test.ts"],
+      "project": ["scripts/*.mjs", "src/**/*.ts"]
     },
     "packages/db": {
       "entry": ["src/schema/**/*.ts"],

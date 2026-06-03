@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/node';
 import { scrubSentryRequestEvent } from '@timeline/shared/monitoring/sentry-scrub';
+import { UnrecoverableError, type Job } from 'bullmq';
 
 function sampleRate(name: string): number {
   const value = Number(process.env[name] ?? 0);
@@ -36,6 +37,35 @@ export function captureWorkerException(
       if (value !== undefined && value !== null) scope.setTag(key, String(value));
     });
     Sentry.captureException(err);
+  });
+}
+
+function shouldCaptureWorkerJobFailure(
+  job: Pick<Job, 'attemptsMade' | 'opts'> | undefined,
+  err: unknown,
+): boolean {
+  if (err instanceof UnrecoverableError) return true;
+  if (!job) return true;
+  const maxAttempts = job.opts.attempts ?? 1;
+  return job.attemptsMade >= maxAttempts;
+}
+
+export function captureWorkerJobFailure(
+  err: unknown,
+  job: Pick<Job, 'id' | 'name' | 'queueName' | 'attemptsMade' | 'opts'> | undefined,
+  tags: Record<string, string | number | boolean | null | undefined> = {},
+): void {
+  if (!shouldCaptureWorkerJobFailure(job, err)) return;
+  captureWorkerException(err, {
+    component: 'worker_job',
+    queueName: job?.queueName,
+    jobName: job?.name,
+    jobId: job?.id,
+    attemptsMade: job?.attemptsMade,
+    maxAttempts: job?.opts.attempts ?? 1,
+    terminal: true,
+    unrecoverable: err instanceof UnrecoverableError,
+    ...tags,
   });
 }
 

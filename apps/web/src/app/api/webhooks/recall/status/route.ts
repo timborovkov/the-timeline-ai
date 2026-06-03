@@ -7,6 +7,7 @@ import { z } from 'zod';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -177,6 +178,10 @@ export async function POST(req: Request): Promise<Response> {
   // joining) so the next retry re-enters this branch cleanly.
   if (shouldEnqueueFinalize && !env.REDIS_URL) {
     log.error({ meetingId: meeting.id }, 'redis_unavailable_cannot_enqueue_finalize');
+    reportCaughtError(new Error('redis_unavailable_cannot_enqueue_finalize'), {
+      surface: 'api',
+      operation: 'recall_status_enqueue_finalize',
+    });
     return Response.json({ ok: false, reason: 'redis_unavailable' }, { status: 503 });
   }
 
@@ -233,6 +238,7 @@ export async function POST(req: Request): Promise<Response> {
     }
   } catch (err) {
     log.error({ err, botId, event: parsed.event }, 'status_handler_error');
+    reportCaughtError(err, { surface: 'api', operation: 'recall_status_handler' });
     return Response.json({ ok: false, reason: 'handler_error' }, { status: 503 });
   }
 

@@ -27,6 +27,7 @@ import { z } from 'zod';
 import { ACTIVE_TEAM_COOKIE, resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { reportCaughtError } from '@/lib/sentry-report';
 import { getSiteUrl } from '@/lib/site-url';
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -70,7 +71,8 @@ export async function createTeamAction(
       });
       return id;
     });
-  } catch {
+  } catch (err) {
+    reportCaughtError(err, { surface: 'server_action', operation: 'create_team' });
     return { error: 'Failed to create team' };
   }
 
@@ -126,7 +128,8 @@ export async function renameTeamAction(
         metadata: { setting: 'team.name' },
       });
     });
-  } catch {
+  } catch (err) {
+    reportCaughtError(err, { surface: 'server_action', operation: 'rename_team' });
     return { error: 'Failed to rename team' };
   }
 
@@ -307,6 +310,7 @@ export async function inviteMemberAction(
     if (err instanceof Error && err.message === 'admin-invite-owned-by-owner') {
       return { error: 'Only owners can change an admin invite for this email.' };
     }
+    reportCaughtError(err, { surface: 'server_action', operation: 'invite_member' });
     return { error: 'Failed to create invite' };
   }
 

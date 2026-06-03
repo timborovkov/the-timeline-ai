@@ -17,6 +17,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
 import { requireRedisQueue } from '@/lib/queue';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 const log = childLogger('web:actions');
 
@@ -110,6 +111,10 @@ export async function createTextEventAction(
     await queue.enqueueExtractJob({ rawEventId: event.id, teamId: event.teamId });
   } catch (err) {
     log.error({ err }, 'failed to enqueue extract job');
+    reportCaughtError(err, {
+      surface: 'server_action',
+      operation: 'create_text_event_enqueue_extract',
+    });
     // Same shape as the transcribe-enqueue failure path: mark the row so the
     // timeline UI can surface an "extraction unavailable" state. The text
     // event itself is committed and visible — only structured facts are
@@ -126,6 +131,10 @@ export async function createTextEventAction(
       .where(eq(rawEvents.id, event.id))
       .catch((markErr: unknown) => {
         log.error({ err: markErr }, 'failed to mark extract failure');
+        reportCaughtError(markErr, {
+          surface: 'background',
+          operation: 'create_text_event_mark_extract_failure',
+        });
       });
     processingWarnings.push('structured extraction');
   }
@@ -138,6 +147,10 @@ export async function createTextEventAction(
     await queue.enqueueEmbedJob({ rawEventId: event.id, teamId: event.teamId });
   } catch (err) {
     log.error({ err }, 'failed to enqueue embed job');
+    reportCaughtError(err, {
+      surface: 'server_action',
+      operation: 'create_text_event_enqueue_embed',
+    });
     const failurePatch = JSON.stringify({
       embedding_failed_at: new Date().toISOString(),
       embedding_error: `enqueue failed: ${err instanceof Error ? err.message.slice(0, 480) : 'unknown'}`,
@@ -150,6 +163,10 @@ export async function createTextEventAction(
       .where(eq(rawEvents.id, event.id))
       .catch((markErr: unknown) => {
         log.error({ err: markErr }, 'failed to mark embed failure');
+        reportCaughtError(markErr, {
+          surface: 'background',
+          operation: 'create_text_event_mark_embed_failure',
+        });
       });
     processingWarnings.push('semantic search');
   }
@@ -339,6 +356,10 @@ export async function createAudioEventAction(
     });
   } catch (err) {
     log.error({ err }, 'failed to enqueue transcribe job');
+    reportCaughtError(err, {
+      surface: 'server_action',
+      operation: 'create_audio_event_enqueue_transcribe',
+    });
     // Row is already committed. Return ok=true so the client does not retry
     // the upload+insert (which would create a second orphan row). There is
     // NO automatic re-enqueue for the web path today — say so honestly.
@@ -360,6 +381,10 @@ export async function createAudioEventAction(
       .where(eq(rawEvents.id, event.id))
       .catch((markErr: unknown) => {
         log.error({ err: markErr }, 'failed to mark row failure');
+        reportCaughtError(markErr, {
+          surface: 'background',
+          operation: 'create_audio_event_mark_transcribe_failure',
+        });
       });
     revalidatePath('/app/timeline');
     revalidatePath('/app');
@@ -393,6 +418,10 @@ export async function removeConversationalEventAction(formData: FormData): Promi
     await scope.timeline.removeConversationalMessage(parsed.data.id);
   } catch (err) {
     log.warn({ err, rawEventId: parsed.data.id }, 'remove_conversational_event_failed');
+    reportCaughtError(err, {
+      surface: 'server_action',
+      operation: 'remove_conversational_event',
+    });
   }
   revalidatePath('/app/timeline');
 }

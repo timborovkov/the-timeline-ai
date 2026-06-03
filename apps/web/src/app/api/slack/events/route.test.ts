@@ -123,15 +123,19 @@ describe('POST /api/slack/events', () => {
 
     expect(response.status).toBe(200);
     await vi.waitFor(() => {
-      expect(fakes.handleSlackEnvelope).toHaveBeenCalledWith(
-        {
-          db: {},
-          extract: fakes.extract,
-          embed: fakes.embed,
-          suggestions: fakes.suggestions,
-        },
-        expect.objectContaining({ event_id: 'EvText' }),
-      );
+      expect(fakes.handleSlackEnvelope).toHaveBeenCalled();
     });
+    const [deps, envelope] = fakes.handleSlackEnvelope.mock.calls[0] as Parameters<
+      typeof SlackModule.handleSlackEnvelope
+    >;
+    expect(deps).toMatchObject({
+      db: {},
+      extract: fakes.extract,
+      embed: fakes.embed,
+      suggestions: fakes.suggestions,
+    });
+    expect(typeof deps.onAgentToolError).toBe('function');
+    expect(typeof deps.onAgentError).toBe('function');
+    expect(envelope).toEqual(expect.objectContaining({ event_id: 'EvText' }));
   });
 });
