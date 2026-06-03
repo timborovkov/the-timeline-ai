@@ -64,6 +64,11 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
   -H "Content-Type: application/json" \
   -d '{"model":"qwen/qwen3.7-max","messages":[{"role":"user","content":"ping"}]}'
 </code></pre>
+      <p>
+        The normal test suite mocks OpenRouter. To run the optional live structured-extraction smoke
+        test, export <code>OPENROUTER_API_KEY</code> and <code>OPENROUTER_LIVE_TESTS=1</code>, then
+        run <code>pnpm --filter @timeline/shared test -- src/llm/chat.test.ts</code>.
+      </p>
 
       <h2 id="phase-3">Phase 3 verification (transcription)</h2>
       <p>After setting <code>OPENROUTER_API_KEY</code> and starting <code>pnpm dev</code>:</p>

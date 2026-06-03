@@ -24,6 +24,8 @@ export interface ChatStructuredInput<TSchema extends z.ZodType> {
 export interface ChatDeps {
   /** Inject a pre-built LanguageModel — used by tests with MockLanguageModelV2. */
   model?: LanguageModel;
+  /** Inject fetch for provider-boundary tests. */
+  fetch?: typeof globalThis.fetch;
 }
 
 export interface ChatStructuredResult<TSchema extends z.ZodType> {
@@ -40,7 +42,16 @@ function resolveAgentModelId(): string {
   return TIMELINE_MODELS.agent.id;
 }
 
-export function buildOpenRouterLanguageModel(modelId: string): LanguageModel {
+function structuredOutputSystem(system?: string): string {
+  const jsonInstruction = 'Return JSON that matches the requested schema.';
+  if (!system) return jsonInstruction;
+  return system.toLowerCase().includes('json') ? system : `${system}\n\n${jsonInstruction}`;
+}
+
+export function buildOpenRouterLanguageModel(
+  modelId: string,
+  deps: Pick<ChatDeps, 'fetch'> = {},
+): LanguageModel {
   const env = getEnv();
   if (!env.OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY is required for llm.chat');
@@ -50,6 +61,8 @@ export function buildOpenRouterLanguageModel(modelId: string): LanguageModel {
     name: 'openrouter',
     apiKey: env.OPENROUTER_API_KEY,
     baseURL,
+    supportsStructuredOutputs: true,
+    ...(deps.fetch ? { fetch: deps.fetch } : {}),
   });
   return provider(modelId);
 }
@@ -68,7 +81,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
   deps: ChatDeps = {},
 ): Promise<ChatStructuredResult<TSchema>> {
   const modelId = input.model ?? resolveDefaultModelId();
-  const model = deps.model ?? buildOpenRouterLanguageModel(modelId);
+  const model = deps.model ?? buildOpenRouterLanguageModel(modelId, deps);
   // generateObject is the right primitive for structured-output extraction;
   // the "use generateText with output" deprecation guidance applies to chat
   // surfaces where streaming matters. Revisit once ai v6 stabilises.
@@ -77,7 +90,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
     model,
     schema: input.schema,
     prompt: input.prompt,
-    ...(input.system ? { system: input.system } : {}),
+    system: structuredOutputSystem(input.system),
   });
   return { object: result.object as z.infer<TSchema>, model: modelId };
 }
@@ -118,7 +131,7 @@ export function streamChat<TTools extends ToolSet>(
   deps: ChatDeps = {},
 ): StreamTextResult<TTools, never> {
   const modelId = input.model ?? resolveAgentModelId();
-  const model = deps.model ?? buildOpenRouterLanguageModel(modelId);
+  const model = deps.model ?? buildOpenRouterLanguageModel(modelId, deps);
   const args: Parameters<typeof streamText>[0] = {
     model,
     system: input.system,

@@ -28,7 +28,7 @@ Rules:
   - "other": only when none of the above fits.
 - Each mention has a role inside its fact: "subject" (the actor), "object" (acted upon), or "topic" (what it is about).
 - Use the recent context only to disambiguate pronouns and short references in the current event. Never emit facts about events that only appear in the context.
-- Names: emit the canonical form you would write a profile under. Include common short forms as "aliases" when relevant (e.g. canonical "John Ternus", aliases ["John"]).`;
+- Names: each mention's canonical display name belongs in the exact JSON field "name". Do not use "canonical_name". Include common short forms as "aliases" when relevant (e.g. name "John Ternus", aliases ["John"]).`;
 
 const MAX_CONTEXT_CHARS = 4000;
 const MAX_PER_EVENT_CHARS = 800;
