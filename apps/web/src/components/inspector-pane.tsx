@@ -26,7 +26,6 @@ export function InspectorPane() {
   return (
     <aside
       id="inspector-pane"
-      role="dialog"
       aria-label={`Inspector for ${id}`}
       aria-labelledby="inspector-title"
       className={cn(

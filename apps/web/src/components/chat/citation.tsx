@@ -31,14 +31,22 @@ interface Props {
  */
 export function CitationText({ text }: Props) {
   const parts = parseCitations(text);
+  let cursor = 0;
+  const keyedParts = parts.map((part) => {
+    const start = cursor;
+    if (part.type === 'text') cursor += part.value.length;
+    else if (part.type === 'doc') cursor += part.documentId.length + part.chunkId.length;
+    else cursor += part.value.length;
+    return { part, key: `${part.type}:${start}:${cursor}` };
+  });
 
   return (
     <p className="whitespace-pre-wrap leading-relaxed">
-      {parts.map((p, i) => {
-        if (p.type === 'text') return <span key={i}>{p.value}</span>;
+      {keyedParts.map(({ part: p, key }) => {
+        if (p.type === 'text') return <span key={key}>{p.value}</span>;
         if (p.type === 'ev') {
           return (
-            <span key={i} className="mx-0.5">
+            <span key={key} className="mx-0.5">
               <CitationChip
                 id={`ev:${p.value.slice(0, 8)}`}
                 source="Event"
@@ -49,7 +57,7 @@ export function CitationText({ text }: Props) {
         }
         if (p.type === 'ent') {
           return (
-            <span key={i} className="mx-0.5">
+            <span key={key} className="mx-0.5">
               <CitationChip
                 id={`ent:${p.value.slice(0, 8)}`}
                 source="Entity"
@@ -62,7 +70,7 @@ export function CitationText({ text }: Props) {
         // carries the version + chunk hash so the document detail
         // page can scroll to the exact cited slice.
         return (
-          <span key={i} className="mx-0.5">
+          <span key={key} className="mx-0.5">
             <CitationChip
               id={`doc:${p.documentId.slice(0, 8)}#v${p.version}`}
               source="Document"

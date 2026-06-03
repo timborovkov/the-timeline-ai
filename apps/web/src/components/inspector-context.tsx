@@ -5,6 +5,7 @@ import {
   use,
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useState,
   type ReactNode,
@@ -40,6 +41,9 @@ export function InspectorProvider({ children }: { children: ReactNode }) {
   const hide = useCallback(() => {
     setOpen(false);
   }, []);
+  const hideOnEscape = useEffectEvent(() => {
+    hide();
+  });
   const toggle = useCallback(() => {
     setOpen((o) => !o);
   }, []);
@@ -50,14 +54,14 @@ export function InspectorProvider({ children }: { children: ReactNode }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        hide();
+        hideOnEscape();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
     };
-  }, [open, hide]);
+  }, [open]);
 
   const value = useMemo(
     () => ({ open, content, show, hide, toggle }),

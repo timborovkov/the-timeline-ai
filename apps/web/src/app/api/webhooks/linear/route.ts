@@ -114,36 +114,39 @@ export async function POST(req: Request): Promise<Response> {
     }
     set.add(r.externalId);
   }
-  for (const integration of rows) {
-    try {
-      const selectedTeams = teamsByIntegration.get(integration.id);
-      const matches =
-        // If selections exist for this integration: payload team id must
-        // be present AND must be one of the selected teams. If we can't
-        // resolve a team id from the payload, drop (conservative).
-        selectedTeams && selectedTeams.size > 0
-          ? payloadTeamId !== null && selectedTeams.has(payloadTeamId)
-          : // No selections recorded: drop everything for this integration,
-            // matching github.repo's "explicit opt-in required" posture.
-            false;
-      if (!matches) {
-        continue;
-      }
-      const provider = integrationsLib.getProvider('linear');
-      const events = (await provider.handleWebhook?.({ integration, payload })) ?? [];
-      if (events.length > 0) {
-        await integrationsLib.writeIntegrationEvents({ db, integration, events });
-      }
-      const queue = await requireRedisQueue();
-      await queue.enqueueIntegrationSyncJob({
-        kind: 'incremental',
-        integrationId: integration.id,
-        teamId: integration.teamId,
-        triggeredBy: 'webhook',
-      });
-    } catch {
-      // continue
-    }
+  const matchingRows = rows.filter((integration) => {
+    const selectedTeams = teamsByIntegration.get(integration.id);
+    return selectedTeams && selectedTeams.size > 0
+      ? payloadTeamId !== null && selectedTeams.has(payloadTeamId)
+      : false;
+  });
+  if (matchingRows.length === 0) {
+    return NextResponse.json({ ok: true });
   }
+  const provider = integrationsLib.getProvider('linear');
+  let queue: Awaited<ReturnType<typeof requireRedisQueue>>;
+  try {
+    queue = await requireRedisQueue();
+  } catch {
+    return NextResponse.json({ ok: true });
+  }
+  await Promise.all(
+    matchingRows.map(async (integration) => {
+      try {
+        const events = (await provider.handleWebhook?.({ integration, payload })) ?? [];
+        if (events.length > 0) {
+          await integrationsLib.writeIntegrationEvents({ db, integration, events });
+        }
+        await queue.enqueueIntegrationSyncJob({
+          kind: 'incremental',
+          integrationId: integration.id,
+          teamId: integration.teamId,
+          triggeredBy: 'webhook',
+        });
+      } catch {
+        // continue
+      }
+    }),
+  );
   return NextResponse.json({ ok: true });
 }

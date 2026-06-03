@@ -16,15 +16,14 @@ export default function NewObjectPage() {
       <IndexStrip
         srLabel="Create a new workspace object"
         segments={[{ value: 'OBJECTS / NEW' }, { label: 'mode', value: 'create', signal: true }]}
-        trailing={
-          <Link
-            href="/app/objects"
-            className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg hover:underline"
-          >
-            ← all objects
-          </Link>
-        }
-      />
+      >
+        <Link
+          href="/app/objects"
+          className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg hover:underline"
+        >
+          ← all objects
+        </Link>
+      </IndexStrip>
       <NewObjectForm />
     </div>
   );

@@ -25,6 +25,11 @@ interface ApiResponse {
   count?: number;
 }
 
+const RESULT_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
 /**
  * Phase 5 semantic search bar. Mounted above the timeline filter form;
  * empty query renders nothing (the existing reverse-chron timeline shows
@@ -55,13 +60,13 @@ export function SearchBar({ initialQuery = '' }: Props) {
 
   async function runSearch(raw: string): Promise<void> {
     const q = raw.trim();
-    const myRequestId = ++requestIdRef.current;
     if (!q) {
       setResults(null);
       setError(null);
       setLoading(false);
       return;
     }
+    const myRequestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -185,11 +190,7 @@ export function SearchBar({ initialQuery = '' }: Props) {
                 <CardContent className="space-y-1 py-3 text-sm">
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>
-                      {new Intl.DateTimeFormat(undefined, {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      }).format(new Date(r.occurredAt))}{' '}
-                      · {r.source}
+                      {RESULT_DATE_FORMAT.format(new Date(r.occurredAt))} · {r.source}
                     </span>
                     <span>score {r.score.toFixed(3)}</span>
                   </div>

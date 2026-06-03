@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
+import type { ComponentProps, ReactNode } from 'react';
 
 import { IndexStrip } from '@/components/index-strip';
 import { SearchBar } from '@/components/search-bar';
@@ -43,6 +44,19 @@ interface Props {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+type SearchParams = Awaited<Props['searchParams']>;
+type TimelineUserMap = Map<string, { id: string; name: string | null; email: string }>;
+interface TimelineMember {
+  userId: string;
+}
+type TimelineFeedProps = ComponentProps<typeof TimelineFeed>;
+interface TimelineBaseParams extends Record<string, string | null | undefined> {
+  q: string | null | undefined;
+  author: string | null;
+  from: string | null;
+  to: string | null;
+  density: 'dense' | null;
+}
 
 function parseDate(input: string | undefined): Date | undefined {
   if (!input) return undefined;
@@ -158,7 +172,7 @@ export default async function TimelinePage({ searchParams }: Props) {
     author: authorFilter ?? null,
     from: sp.from ?? null,
     to: sp.to ?? null,
-    density: density === 'dense' ? 'dense' : null,
+    density: density === 'dense' ? ('dense' as const) : null,
   };
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -183,202 +197,345 @@ export default async function TimelinePage({ searchParams }: Props) {
 
       <SearchBar initialQuery={sp.q ?? ''} />
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-            Moment browser
-          </h2>
-          <details className="text-sm" open={hasFilters}>
-            <summary className="cursor-pointer list-none rounded-sm px-2 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg">
-              Filters{hasFilters ? ' · ON' : ''}
-            </summary>
-            <form
-              method="get"
-              className="mt-3 flex flex-wrap items-end gap-3 rounded-sm border border-border bg-surface p-3 text-sm"
-            >
-              {sp.q ? <input type="hidden" name="q" value={sp.q} /> : null}
-              <label className="flex flex-col gap-1">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                  Source
-                </span>
-                <select
-                  name="source"
-                  defaultValue={sourceFilter ?? ''}
-                  className="h-9 rounded-sm border border-border bg-bg px-2 text-sm focus:border-border-strong focus:outline-none"
-                >
-                  <option value="">All sources</option>
-                  {TIMELINE_SOURCES.map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                  Impact
-                </span>
-                <select
-                  name="impact"
-                  defaultValue={impactFilter ?? ''}
-                  className="h-9 rounded-sm border border-border bg-bg px-2 text-sm focus:border-border-strong focus:outline-none"
-                >
-                  <option value="">All impact</option>
-                  {TIMELINE_IMPACT_FILTERS.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                  Author
-                </span>
-                <select
-                  name="author"
-                  defaultValue={authorFilter ?? ''}
-                  className="h-9 rounded-sm border border-border bg-bg px-2 text-sm focus:border-border-strong focus:outline-none"
-                >
-                  <option value="">Everyone</option>
-                  {members.map((m) => {
-                    const u = userMap.get(m.userId);
-                    return (
-                      <option key={m.userId} value={m.userId}>
-                        {u?.name ?? u?.email ?? m.userId}
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                  From
-                </span>
-                <input
-                  type="date"
-                  name="from"
-                  defaultValue={toDateInputValue(fromFilter)}
-                  className="h-9 rounded-sm border border-border bg-bg px-2 text-sm font-mono focus:border-border-strong focus:outline-none"
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                  To
-                </span>
-                <input
-                  type="date"
-                  name="to"
-                  defaultValue={toDateInputValue(toFilter)}
-                  className="h-9 rounded-sm border border-border bg-bg px-2 text-sm font-mono focus:border-border-strong focus:outline-none"
-                />
-              </label>
-              <button
-                type="submit"
-                className="h-9 rounded-sm border border-border bg-bg px-3 text-sm transition-colors hover:border-border-strong hover:bg-surface-2"
-              >
-                Apply
-              </button>
-              <input type="hidden" name="density" value={density} />
-              {hasPanelFilters ? (
-                <Link
-                  href={timelineHref(
-                    { q: baseParams.q, density: baseParams.density },
-                    { author: null, from: null, to: null, source: null, impact: null },
-                  )}
-                  className="inline-flex h-9 items-center rounded-sm border border-border px-3 text-sm transition-colors hover:bg-surface-2"
-                >
-                  Clear
-                </Link>
-              ) : null}
-            </form>
-          </details>
-        </div>
+      <TimelineBrowserSection
+        sp={sp}
+        members={members}
+        userMap={userMap}
+        baseParams={baseParams}
+        hasFilters={hasFilters}
+        hasPanelFilters={hasPanelFilters}
+        sourceFilter={sourceFilter}
+        impactFilter={impactFilter}
+        authorFilter={authorFilter}
+        fromFilter={fromFilter}
+        toFilter={toFilter}
+        density={density}
+        events={events}
+        nextCursor={timelinePage.nextCursor}
+        userRows={userRows}
+        audioUrlMap={audioUrlMap}
+        impactItems={timelinePage.impactItems}
+        currentUserId={session.user.id}
+        isAdmin={isAdmin}
+      />
+    </div>
+  );
+}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border py-2">
-          <nav aria-label="Timeline presets" className="flex flex-wrap gap-1.5">
-            {TIMELINE_PRESETS.map((preset) => {
-              const href =
-                'all' in preset
-                  ? timelineHref(baseParams, { source: null, impact: null })
-                  : timelineHref(baseParams, {
-                      source: 'source' in preset ? preset.source : null,
-                      impact: 'impact' in preset ? preset.impact : null,
-                    });
-              const active =
-                ('source' in preset && preset.source === sourceFilter) ||
-                ('impact' in preset && preset.impact === impactFilter) ||
-                ('all' in preset && !sourceFilter && !impactFilter);
+function TimelineBrowserSection({
+  sp,
+  members,
+  userMap,
+  baseParams,
+  hasFilters,
+  hasPanelFilters,
+  sourceFilter,
+  impactFilter,
+  authorFilter,
+  fromFilter,
+  toFilter,
+  density,
+  events,
+  nextCursor,
+  userRows,
+  audioUrlMap,
+  impactItems,
+  currentUserId,
+  isAdmin,
+}: {
+  sp: SearchParams;
+  members: TimelineMember[];
+  userMap: TimelineUserMap;
+  baseParams: TimelineBaseParams;
+  hasFilters: boolean;
+  hasPanelFilters: boolean;
+  sourceFilter: ReturnType<typeof parseTimelineSource>;
+  impactFilter: ReturnType<typeof parseTimelineImpact>;
+  authorFilter: string | undefined;
+  fromFilter: Date | undefined;
+  toFilter: Date | undefined;
+  density: ReturnType<typeof parseTimelineDensity>;
+  events: TimelineFeedProps['initialPage']['items'];
+  nextCursor: TimelineFeedProps['initialPage']['nextCursor'];
+  userRows: { id: string; name: string | null; email: string }[];
+  audioUrlMap: Map<string, string>;
+  impactItems: TimelineFeedProps['initialPage']['impactItems'];
+  currentUserId: string;
+  isAdmin: boolean;
+}) {
+  return (
+    <section className="space-y-3">
+      <TimelineFilterPanel
+        sp={sp}
+        members={members}
+        userMap={userMap}
+        baseParams={baseParams}
+        hasFilters={hasFilters}
+        hasPanelFilters={hasPanelFilters}
+        sourceFilter={sourceFilter}
+        impactFilter={impactFilter}
+        authorFilter={authorFilter}
+        fromFilter={fromFilter}
+        toFilter={toFilter}
+        density={density}
+      />
+      <TimelinePresetControls
+        baseParams={baseParams}
+        sourceFilter={sourceFilter}
+        impactFilter={impactFilter}
+        density={density}
+      />
+      <TimelineFeed
+        initialPage={{
+          items: events,
+          nextCursor,
+          authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
+          audioUrls: Object.fromEntries(audioUrlMap),
+          impactItems,
+        }}
+        filters={{
+          author: authorFilter ?? null,
+          from: sp.from ?? null,
+          to: sp.to ?? null,
+          source: sourceFilter ?? null,
+          impact: impactFilter ?? null,
+        }}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
+        members={members.map((member) => {
+          const user = userMap.get(member.userId);
+          return { id: member.userId, label: user?.name ?? user?.email ?? member.userId };
+        })}
+        density={density}
+        impactFilter={impactFilter ?? 'all'}
+        emptyLabel={hasFilters ? 'NO EVENTS MATCH THIS VIEW' : 'NO EVENTS YET'}
+        emptyAction={{
+          href: hasFilters ? '/app/timeline' : '/app#capture',
+          label: hasFilters ? 'Clear timeline filters' : 'Capture first event',
+          body: hasFilters
+            ? 'The archive is still intact. Clear the filters or broaden your search to see more events.'
+            : 'Start from Home with one raw note, decision, or follow-up.',
+        }}
+      />
+    </section>
+  );
+}
+
+function TimelineFilterPanel({
+  sp,
+  members,
+  userMap,
+  baseParams,
+  hasFilters,
+  hasPanelFilters,
+  sourceFilter,
+  impactFilter,
+  authorFilter,
+  fromFilter,
+  toFilter,
+  density,
+}: {
+  sp: SearchParams;
+  members: TimelineMember[];
+  userMap: TimelineUserMap;
+  baseParams: TimelineBaseParams;
+  hasFilters: boolean;
+  hasPanelFilters: boolean;
+  sourceFilter: ReturnType<typeof parseTimelineSource>;
+  impactFilter: ReturnType<typeof parseTimelineImpact>;
+  authorFilter: string | undefined;
+  fromFilter: Date | undefined;
+  toFilter: Date | undefined;
+  density: ReturnType<typeof parseTimelineDensity>;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+        Moment browser
+      </h2>
+      <details className="text-sm" open={hasFilters}>
+        <summary className="cursor-pointer list-none rounded-sm px-2 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg">
+          Filters{hasFilters ? ' · ON' : ''}
+        </summary>
+        <form
+          method="get"
+          className="mt-3 flex flex-wrap items-end gap-3 rounded-sm border border-border bg-surface p-3 text-sm"
+        >
+          {sp.q ? <input type="hidden" name="q" value={sp.q} /> : null}
+          <TimelineSelect name="source" label="Source" value={sourceFilter ?? ''}>
+            <option value="">All sources</option>
+            {TIMELINE_SOURCES.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </TimelineSelect>
+          <TimelineSelect name="impact" label="Impact" value={impactFilter ?? ''}>
+            <option value="">All impact</option>
+            {TIMELINE_IMPACT_FILTERS.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </TimelineSelect>
+          <TimelineSelect name="author" label="Author" value={authorFilter ?? ''}>
+            <option value="">Everyone</option>
+            {members.map((member) => {
+              const user = userMap.get(member.userId);
               return (
-                <Link
-                  key={preset.label}
-                  href={href}
-                  aria-current={active ? 'page' : undefined}
-                  className={`inline-flex min-h-8 items-center rounded-sm border px-2.5 font-mono text-[11px] uppercase tracking-[0.12em] transition-colors ${
-                    active
-                      ? 'border-signal/50 bg-signal-soft text-signal'
-                      : 'border-border text-fg-muted hover:bg-surface hover:text-fg'
-                  }`}
-                >
-                  {preset.label}
-                </Link>
+                <option key={member.userId} value={member.userId}>
+                  {user?.name ?? user?.email ?? member.userId}
+                </option>
               );
             })}
-          </nav>
-          <div className="flex items-center gap-1 rounded-sm border border-border p-1">
-            {(['comfortable', 'dense'] as const).map((value) => (
-              <Link
-                key={value}
-                href={timelineHref(
-                  { ...baseParams, source: sourceFilter ?? null, impact: impactFilter ?? null },
-                  { density: value === 'dense' ? 'dense' : null },
-                )}
-                aria-current={density === value ? 'page' : undefined}
-                className={`inline-flex h-7 items-center rounded-sm px-2 font-mono text-[10px] uppercase tracking-[0.12em] transition-colors ${
-                  density === value
-                    ? 'bg-surface-2 text-fg'
-                    : 'text-fg-dim hover:bg-surface hover:text-fg'
-                }`}
-              >
-                {value}
-              </Link>
-            ))}
-          </div>
-        </div>
+          </TimelineSelect>
+          <TimelineDateField name="from" label="From" value={toDateInputValue(fromFilter)} />
+          <TimelineDateField name="to" label="To" value={toDateInputValue(toFilter)} />
+          <button
+            type="submit"
+            className="h-9 rounded-sm border border-border bg-bg px-3 text-sm transition-colors hover:border-border-strong hover:bg-surface-2"
+          >
+            Apply
+          </button>
+          <input type="hidden" name="density" value={density} />
+          {hasPanelFilters ? (
+            <Link
+              href={timelineHref(
+                { q: baseParams.q, density: baseParams.density },
+                { author: null, from: null, to: null, source: null, impact: null },
+              )}
+              className="inline-flex h-9 items-center rounded-sm border border-border px-3 text-sm transition-colors hover:bg-surface-2"
+            >
+              Clear
+            </Link>
+          ) : null}
+        </form>
+      </details>
+    </div>
+  );
+}
 
-        <TimelineFeed
-          initialPage={{
-            items: events,
-            nextCursor: timelinePage.nextCursor,
-            authors: Object.fromEntries(userRows.map((row) => [row.id, row])),
-            audioUrls: Object.fromEntries(audioUrlMap),
-            impactItems: timelinePage.impactItems,
-          }}
-          filters={{
-            author: authorFilter ?? null,
-            from: sp.from ?? null,
-            to: sp.to ?? null,
-            source: sourceFilter ?? null,
-            impact: impactFilter ?? null,
-          }}
-          currentUserId={session.user.id}
-          isAdmin={isAdmin}
-          members={members.map((m) => {
-            const u = userMap.get(m.userId);
-            return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
-          })}
-          density={density}
-          impactFilter={impactFilter ?? 'all'}
-          emptyLabel={hasFilters ? 'NO EVENTS MATCH THIS VIEW' : 'NO EVENTS YET'}
-          emptyAction={{
-            href: hasFilters ? '/app/timeline' : '/app#capture',
-            label: hasFilters ? 'Clear timeline filters' : 'Capture first event',
-            body: hasFilters
-              ? 'The archive is still intact. Clear the filters or broaden your search to see more events.'
-              : 'Start from Home with one raw note, decision, or follow-up.',
-          }}
-        />
-      </section>
+function TimelineSelect({
+  name,
+  label,
+  value,
+  children,
+}: {
+  name: string;
+  label: string;
+  value: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">{label}</span>
+      <select
+        name={name}
+        defaultValue={value}
+        className="h-9 rounded-sm border border-border bg-bg px-2 text-sm focus:border-border-strong focus:outline-none"
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
+
+function TimelineDateField({ name, label, value }: { name: string; label: string; value: string }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">{label}</span>
+      <input
+        type="date"
+        name={name}
+        defaultValue={value}
+        className="h-9 rounded-sm border border-border bg-bg px-2 text-sm font-mono focus:border-border-strong focus:outline-none"
+      />
+    </label>
+  );
+}
+
+function TimelinePresetControls({
+  baseParams,
+  sourceFilter,
+  impactFilter,
+  density,
+}: {
+  baseParams: TimelineBaseParams;
+  sourceFilter: ReturnType<typeof parseTimelineSource>;
+  impactFilter: ReturnType<typeof parseTimelineImpact>;
+  density: ReturnType<typeof parseTimelineDensity>;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border py-2">
+      <nav aria-label="Timeline presets" className="flex flex-wrap gap-1.5">
+        {TIMELINE_PRESETS.map((preset) => {
+          const href =
+            'all' in preset
+              ? timelineHref(baseParams, { source: null, impact: null })
+              : timelineHref(baseParams, {
+                  source: 'source' in preset ? preset.source : null,
+                  impact: 'impact' in preset ? preset.impact : null,
+                });
+          const active =
+            ('source' in preset && preset.source === sourceFilter) ||
+            ('impact' in preset && preset.impact === impactFilter) ||
+            ('all' in preset && !sourceFilter && !impactFilter);
+          return (
+            <Link
+              key={preset.label}
+              href={href}
+              aria-current={active ? 'page' : undefined}
+              className={`inline-flex min-h-8 items-center rounded-sm border px-2.5 font-mono text-[11px] uppercase tracking-[0.12em] transition-colors ${
+                active
+                  ? 'border-signal/50 bg-signal-soft text-signal'
+                  : 'border-border text-fg-muted hover:bg-surface hover:text-fg'
+              }`}
+            >
+              {preset.label}
+            </Link>
+          );
+        })}
+      </nav>
+      <TimelineDensityToggle
+        baseParams={baseParams}
+        sourceFilter={sourceFilter}
+        impactFilter={impactFilter}
+        density={density}
+      />
+    </div>
+  );
+}
+
+function TimelineDensityToggle({
+  baseParams,
+  sourceFilter,
+  impactFilter,
+  density,
+}: {
+  baseParams: TimelineBaseParams;
+  sourceFilter: ReturnType<typeof parseTimelineSource>;
+  impactFilter: ReturnType<typeof parseTimelineImpact>;
+  density: ReturnType<typeof parseTimelineDensity>;
+}) {
+  return (
+    <div className="flex items-center gap-1 rounded-sm border border-border p-1">
+      {(['comfortable', 'dense'] as const).map((value) => (
+        <Link
+          key={value}
+          href={timelineHref(
+            { ...baseParams, source: sourceFilter ?? null, impact: impactFilter ?? null },
+            { density: value === 'dense' ? 'dense' : null },
+          )}
+          aria-current={density === value ? 'page' : undefined}
+          className={`inline-flex h-7 items-center rounded-sm px-2 font-mono text-[10px] uppercase tracking-[0.12em] transition-colors ${
+            density === value
+              ? 'bg-surface-2 text-fg'
+              : 'text-fg-dim hover:bg-surface hover:text-fg'
+          }`}
+        >
+          {value}
+        </Link>
+      ))}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { NavBadgeMap } from '@/components/nav-items';
 import type { RecipientInvite } from '@/components/team-switcher';
@@ -19,8 +19,8 @@ interface Props {
   badges?: NavBadgeMap;
 }
 
+const EMPTY_BADGES: NavBadgeMap = {};
 const SIDEBAR_STORAGE_KEY = 'timeline.sidebar.expanded';
-const useBrowserLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 function readStoredExpanded(): boolean {
   try {
@@ -38,12 +38,13 @@ function writeStoredExpanded(expanded: boolean) {
   }
 }
 
-export function DesktopSidebar({ active, memberships, recipientInvites, badges = {} }: Props) {
-  const [expanded, setExpanded] = useState(true);
-
-  useBrowserLayoutEffect(() => {
-    setExpanded(readStoredExpanded());
-  }, []);
+export function DesktopSidebar({
+  active,
+  memberships,
+  recipientInvites,
+  badges = EMPTY_BADGES,
+}: Props) {
+  const [expanded, setExpanded] = useState(readStoredExpanded);
 
   useEffect(() => {
     function handleStorage(event: StorageEvent) {

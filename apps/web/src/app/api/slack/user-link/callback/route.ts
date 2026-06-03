@@ -42,14 +42,16 @@ export async function GET(req: Request): Promise<Response> {
     userId: session.user.id,
     teamId: state.teamId,
   });
-  await scope.audit.record({
-    action: 'slack.connect',
-    targetType: 'slack_user_link',
-    metadata: {
-      slack_team_id: oauth.team?.id ?? null,
-      slack_user_id: oauth.authed_user?.id ?? null,
-    },
-  });
-  await safeMarkOnboardingStep(scope, 'slack');
+  await Promise.all([
+    scope.audit.record({
+      action: 'slack.connect',
+      targetType: 'slack_user_link',
+      metadata: {
+        slack_team_id: oauth.team?.id ?? null,
+        slack_user_id: oauth.authed_user?.id ?? null,
+      },
+    }),
+    safeMarkOnboardingStep(scope, 'slack'),
+  ]);
   redirect('/app/team/slack?linked=1');
 }

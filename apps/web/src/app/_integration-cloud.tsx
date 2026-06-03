@@ -1,4 +1,5 @@
 import * as integrationsLib from '@timeline/shared/integrations/registry';
+import Image from 'next/image';
 import Link from 'next/link';
 
 import { cn } from '@/lib/utils';
@@ -13,8 +14,10 @@ import { cn } from '@/lib/utils';
 export function IntegrationCloud() {
   const featured = integrationsLib.listFeaturedCatalog();
   const prompts: string[] = [];
+  const seenPrompts = new Set<string>();
   for (const connector of featured) {
-    if (!prompts.includes(connector.examplePrompt)) {
+    if (!seenPrompts.has(connector.examplePrompt)) {
+      seenPrompts.add(connector.examplePrompt);
       prompts.push(connector.examplePrompt);
       if (prompts.length === 4) break;
     }
@@ -34,7 +37,7 @@ export function IntegrationCloud() {
                   Plain <img> is fine — connector marks are small, eagerly
                   visible inside the cloud, and need no Next/Image
                   optimization pipeline. */}
-              <img src={c.logo} alt="" width={28} height={28} className="size-7" />
+              <Image src={c.logo} alt="" width={28} height={28} className="size-7" />
             </span>
             <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
               {c.label}

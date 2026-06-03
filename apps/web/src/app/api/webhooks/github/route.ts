@@ -97,32 +97,36 @@ export async function POST(req: Request): Promise<Response> {
   if (rows.length === 0) {
     return NextResponse.json({ ok: true, reason: 'no_matching_tenant' }, { status: 200 });
   }
-  for (const integration of rows) {
-    try {
-      const provider = integrationsLib.getProvider('github');
-      const events = (await provider.handleWebhook?.({ integration, payload })) ?? [];
-      if (events.length > 0) {
-        await integrationsLib.writeIntegrationEvents({ db, integration, events });
+  const provider = integrationsLib.getProvider('github');
+  await Promise.all(
+    rows.map(async (integration) => {
+      try {
+        const events = (await provider.handleWebhook?.({ integration, payload })) ?? [];
+        if (events.length > 0) {
+          await integrationsLib.writeIntegrationEvents({ db, integration, events });
+        }
+      } catch {
+        // continue — one broken integration doesn't fail the whole webhook
       }
-    } catch {
-      // continue — one broken integration doesn't fail the whole webhook
-    }
-  }
+    }),
+  );
   // Side benefit: kick an incremental sync so any missed events get
   // back-filled from the cursor. incrementalSync internally walks the
   // selections, so this is safe — unselected repos won't generate events.
-  for (const integration of rows) {
-    try {
-      const queue = await requireRedisQueue();
-      await queue.enqueueIntegrationSyncJob({
-        kind: 'incremental',
-        integrationId: integration.id,
-        teamId: integration.teamId,
-        triggeredBy: 'webhook',
-      });
-    } catch {
-      // ignore
-    }
+  try {
+    const queue = await requireRedisQueue();
+    await Promise.all(
+      rows.map((integration) =>
+        queue.enqueueIntegrationSyncJob({
+          kind: 'incremental',
+          integrationId: integration.id,
+          teamId: integration.teamId,
+          triggeredBy: 'webhook',
+        }),
+      ),
+    );
+  } catch {
+    // ignore
   }
   return NextResponse.json({ ok: true });
 }

@@ -84,8 +84,10 @@ export async function createTextEventAction(
     contentText: parsed.data.text,
     visibility: parsed.data.visibility,
   });
-  const completedFirstNote = await safeMarkOnboardingStep(scope, 'first_note');
-  await deleteCacheKey(cacheKey(['onboarding', active.teamId, session.user.id]));
+  const [completedFirstNote] = await Promise.all([
+    safeMarkOnboardingStep(scope, 'first_note'),
+    deleteCacheKey(cacheKey(['onboarding', active.teamId, session.user.id])),
+  ]);
   trackProductEventBestEffort(session.user.id, 'capture_created', {
     teamId: active.teamId,
     userId: session.user.id,
@@ -307,8 +309,10 @@ export async function createAudioEventAction(
     visibility: parsed.data.visibility,
     sourceMetadata,
   });
-  const completedFirstNote = await safeMarkOnboardingStep(scope, 'first_note');
-  await deleteCacheKey(cacheKey(['onboarding', active.teamId, session.user.id]));
+  const [completedFirstNote] = await Promise.all([
+    safeMarkOnboardingStep(scope, 'first_note'),
+    deleteCacheKey(cacheKey(['onboarding', active.teamId, session.user.id])),
+  ]);
   trackProductEventBestEffort(session.user.id, 'capture_created', {
     teamId: active.teamId,
     userId: session.user.id,

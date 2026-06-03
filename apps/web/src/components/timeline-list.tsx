@@ -426,7 +426,14 @@ function RawEventExpansion({
                     aria-label="Voice memo"
                     preload="metadata"
                     className="mt-2 w-full max-w-md"
-                  />
+                  >
+                    <track
+                      kind="captions"
+                      src="data:text/vtt,WEBVTT"
+                      srcLang="en"
+                      label="Captions"
+                    />
+                  </audio>
                 ) : (
                   <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                     [audio unavailable]

@@ -14,6 +14,8 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
+const EMPTY_BADGES: NavBadgeMap = {};
+
 /**
  * Primary desktop navigation. In folded mode this renders the compact icon rail;
  * in expanded mode it shows the same destinations with labels.
@@ -21,7 +23,7 @@ import { cn } from '@/lib/utils';
 export function RailNav({
   role,
   expanded = false,
-  badges = {},
+  badges = EMPTY_BADGES,
 }: {
   role: TeamMembership['role'];
   expanded?: boolean;

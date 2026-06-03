@@ -22,17 +22,20 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
 
-  const legal = await getUserLegalAcceptance(session.user.id);
+  const [legal, activeTeam, currentUsers] = await Promise.all([
+    getUserLegalAcceptance(session.user.id),
+    resolveActiveTeam(session.user.id),
+    db
+      .select({ email: users.email, emailVerified: users.emailVerified })
+      .from(users)
+      .where(eq(users.id, session.user.id))
+      .limit(1),
+  ]);
   if (!legal || !hasCurrentLegalAcceptance(legal)) {
     redirect('/legal/accept');
   }
 
-  const { active, memberships } = await resolveActiveTeam(session.user.id);
-  const currentUsers = await db
-    .select({ email: users.email, emailVerified: users.emailVerified })
-    .from(users)
-    .where(eq(users.id, session.user.id))
-    .limit(1);
+  const { active, memberships } = activeTeam;
   const currentUser = currentUsers[0];
   const verifiedEmail = currentUser?.emailVerified ? currentUser.email.toLowerCase() : null;
   const recipientInvites = verifiedEmail

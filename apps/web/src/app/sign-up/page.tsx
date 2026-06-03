@@ -24,8 +24,7 @@ interface Props {
 }
 
 export default async function SignUpPage({ searchParams }: Props) {
-  const { invite } = await searchParams;
-  const session = await auth();
+  const [{ invite }, session] = await Promise.all([searchParams, auth()]);
   if (session?.user) {
     const pendingInviteToken = await readPendingInvite();
     redirect(signedInAuthRedirect({ inviteToken: invite, pendingInviteToken }));

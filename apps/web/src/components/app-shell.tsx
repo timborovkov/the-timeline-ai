@@ -26,6 +26,8 @@ interface Props {
   children: ReactNode;
 }
 
+const EMPTY_BADGES: NavBadgeMap = {};
+
 /**
  * Operational Archive v2 shell. Three columns:
  *   • foldable desktop sidebar (mobile: hamburger sheet)
@@ -38,7 +40,7 @@ export function AppShell({
   memberships,
   recipientInvites,
   user,
-  badges = {},
+  badges = EMPTY_BADGES,
   children,
 }: Props) {
   return (

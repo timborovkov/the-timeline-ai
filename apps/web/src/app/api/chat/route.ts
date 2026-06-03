@@ -410,8 +410,10 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  const calendarSettings = await scope.calendar.getCalendarSettings();
-  const currentUser = await scope.timeline.currentUserIdentityContext();
+  const [calendarSettings, currentUser] = await Promise.all([
+    scope.calendar.getCalendarSettings(),
+    scope.timeline.currentUserIdentityContext(),
+  ]);
   const currentDate = new Date();
   const system = agent.buildSystemPrompt({
     teamName,

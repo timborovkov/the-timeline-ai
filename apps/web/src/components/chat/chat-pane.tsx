@@ -296,13 +296,7 @@ function ChatPaneContent({
         </div>
       )}
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit(input);
-        }}
-        className="shrink-0"
-      >
+      <div className="shrink-0">
         <div className="relative rounded-sm border border-border bg-surface focus-within:border-border-strong">
           <label htmlFor="chat-composer" className="sr-only">
             Ask the timeline
@@ -314,12 +308,19 @@ function ChatPaneContent({
             onChange={(e) => {
               setInput(e.target.value);
             }}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              submit(input);
+            }}
             placeholder="Ask anything about your team's timeline…"
             disabled={isStreaming}
             className="h-12 w-full rounded-sm bg-transparent pl-4 pr-12 text-sm focus:outline-none"
           />
           <button
-            type="submit"
+            type="button"
+            onClick={() => {
+              submit(input);
+            }}
             disabled={isStreaming || !input.trim()}
             aria-label="Send"
             className="absolute right-1.5 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-sm bg-signal text-signal-fg transition-opacity hover:opacity-90 disabled:opacity-30"
@@ -327,7 +328,7 @@ function ChatPaneContent({
             <Send className="size-4" />
           </button>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

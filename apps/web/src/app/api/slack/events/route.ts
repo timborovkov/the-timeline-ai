@@ -67,9 +67,8 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, reason: 'invalid_challenge' }, { status: 200 });
   }
 
-  const deps = { db, ...slackIngestDeps() };
   void Promise.resolve()
-    .then(() => slack.handleSlackEnvelope(deps, payload))
+    .then(() => slack.handleSlackEnvelope({ db, ...slackIngestDeps() }, payload))
     .catch((err: unknown) => {
       log.error({ err }, 'slack event handler failed');
     });

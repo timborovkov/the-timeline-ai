@@ -3,7 +3,7 @@
 import { ArrowLeft, Download, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
 
 import {
@@ -62,12 +62,14 @@ const STATUS_BADGE: Record<string, string> = {
 export function DocumentDetail({ document, versions, requestedVersion }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [currentDocument, setCurrentDocument] = useState(document);
+  const [optimisticRename, setOptimisticRename] = useState<{
+    id: string;
+    name: string;
+    updatedAt: string;
+  } | null>(null);
   const [downloading, setDownloading] = useState<readonly string[]>([]);
-
-  useEffect(() => {
-    setCurrentDocument(document);
-  }, [document]);
+  const currentDocument =
+    optimisticRename?.id === document.id ? { ...document, ...optimisticRename } : document;
 
   function onRename(): void {
     const name = window.prompt('New name', currentDocument.name);
@@ -77,11 +79,11 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
       const res = await renameDocumentAction({ id: currentDocument.id, name: trimmedName });
       if (!res.ok) toast.error(res.error ?? 'Rename failed');
       else {
-        setCurrentDocument((prev) => ({
-          ...prev,
+        setOptimisticRename({
+          id: currentDocument.id,
           name: trimmedName,
           updatedAt: new Date().toISOString(),
-        }));
+        });
         router.refresh();
       }
     });

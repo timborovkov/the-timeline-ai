@@ -482,10 +482,10 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
   if (!active) return;
   const memberUserId = formData.get('userId');
   if (typeof memberUserId !== 'string') return;
+  if (memberUserId === session.user.id) return;
 
   const scope = withTeam(db, active.teamId, session.user.id);
   const callerRole = await scope.requireMembership('admin');
-  if (memberUserId === session.user.id) return;
 
   try {
     await db.transaction(async (tx) => {

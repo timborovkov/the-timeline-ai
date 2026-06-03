@@ -82,9 +82,14 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const [savingCardIds, setSavingCardIds] = useState<ReadonlySet<string>>(() => new Set());
   const savingCountRef = useRef(0);
-  const savingCardIdsRef = useRef<Set<string>>(new Set());
+  const savingCardIdsRef = useRef<Set<string> | null>(null);
   const batchHadFailureRef = useRef(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function activeSavingCardIds() {
+    savingCardIdsRef.current ??= new Set();
+    return savingCardIdsRef.current;
+  }
 
   useEffect(() => {
     return () => {
@@ -108,7 +113,7 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
     const id = e.active.id as string;
     const col = e.over?.id as string | undefined;
     if (!col) return;
-    if (savingCardIdsRef.current.has(id)) return;
+    if (activeSavingCardIds().has(id)) return;
     const row = items.find((r) => r.id === id);
     if (!row || colValue(row, groupBy) === col) return;
     // `startTransition` is required to call setState (via useOptimistic) and
@@ -124,9 +129,9 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
       setSaveState('saving');
       if (savingCountRef.current === 0) batchHadFailureRef.current = false;
       savingCountRef.current += 1;
-      savingCardIdsRef.current.add(id);
+      activeSavingCardIds().add(id);
       setSavingCount(savingCountRef.current);
-      setSavingCardIds(new Set(savingCardIdsRef.current));
+      setSavingCardIds(new Set(activeSavingCardIds()));
       setCardErrors((errors) => {
         const { [id]: _cleared, ...rest } = errors;
         return rest;
@@ -149,9 +154,9 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
         setCardErrors((errors) => ({ ...errors, [id]: errorMessage(err, 'Move failed') }));
       } finally {
         savingCountRef.current = Math.max(0, savingCountRef.current - 1);
-        savingCardIdsRef.current.delete(id);
+        activeSavingCardIds().delete(id);
         setSavingCount(savingCountRef.current);
-        setSavingCardIds(new Set(savingCardIdsRef.current));
+        setSavingCardIds(new Set(activeSavingCardIds()));
         if (savingCountRef.current === 0) {
           if (batchHadFailureRef.current) {
             setSaveState('idle');

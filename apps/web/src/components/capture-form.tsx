@@ -3,7 +3,7 @@
 import { type InfiniteData, useQueryClient } from '@tanstack/react-query';
 import { Lock, Send, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useEffect, useRef, useState } from 'react';
+import { type SyntheticEvent, useReducer, useRef } from 'react';
 
 import {
   createAudioEventAction,
@@ -36,6 +36,36 @@ interface Props {
 
 type CaptureFilters = NonNullable<Props['filters']>;
 
+const EMPTY_FILTERS: CaptureFilters = {};
+
+interface CaptureUiState {
+  isPrivate: boolean;
+  clip: RecordedClip | null;
+  pending: boolean;
+  error: string | null;
+  notice: { tone: 'success' | 'warning'; message: string } | null;
+  recorderKey: number;
+}
+
+type CaptureUiAction = Partial<CaptureUiState> | ((state: CaptureUiState) => CaptureUiState);
+
+function initCaptureUiState(
+  initialVisibility: NonNullable<Props['initialVisibility']>,
+): CaptureUiState {
+  return {
+    isPrivate: initialVisibility === 'private',
+    clip: null,
+    pending: false,
+    error: null,
+    notice: null,
+    recorderKey: 0,
+  };
+}
+
+function captureUiReducer(state: CaptureUiState, action: CaptureUiAction): CaptureUiState {
+  return typeof action === 'function' ? action(state) : { ...state, ...action };
+}
+
 function filterAllowsEvent(
   filters: CaptureFilters,
   event: Pick<TimelineEvent, 'authorUserId' | 'occurredAt' | 'source'>,
@@ -51,31 +81,27 @@ function filterAllowsEvent(
   return true;
 }
 
-export function CaptureForm({ initialVisibility = 'team', currentUser, filters = {} }: Props) {
+export function CaptureForm({
+  initialVisibility = 'team',
+  currentUser,
+  filters = EMPTY_FILTERS,
+}: Props) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [isPrivate, setIsPrivate] = useState(initialVisibility === 'private');
-  const [clip, setClip] = useState<RecordedClip | null>(null);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [hydrated, setHydrated] = useState(false);
-  const [notice, setNotice] = useState<{ tone: 'success' | 'warning'; message: string } | null>(
-    null,
+  const [{ isPrivate, clip, pending, error, notice, recorderKey }, setCaptureUi] = useReducer(
+    captureUiReducer,
+    initialVisibility,
+    initCaptureUiState,
   );
   // Bumped on successful post; passed as `key` to AudioRecorder so React
   // remounts it with a fresh `phase: 'idle'` / `clip: null` state. The
   // recorder owns its own clip state internally; without remount it would
   // still show the post-recording audio player + Discard button.
-  const [recorderKey, setRecorderKey] = useState(0);
   // setPending is async; a quick double-click could enter submit twice before
   // the button disables. Same in-flight latch the old AudioRecorder used.
   const inFlightRef = useRef(false);
-
-  useEffect(() => {
-    setHydrated(true);
-  }, []);
 
   async function submitTextOnly(text: string): Promise<CreateEventState> {
     const fd = new FormData();
@@ -169,13 +195,11 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
     if (inFlightRef.current) return;
     const text = (textareaRef.current?.value ?? '').trim();
     if (!clip && text.length === 0) {
-      setError('Write something or record a voice note.');
+      setCaptureUi({ error: 'Write something or record a voice note.' });
       return;
     }
     inFlightRef.current = true;
-    setPending(true);
-    setError(null);
-    setNotice(null);
+    setCaptureUi({ pending: true, error: null, notice: null });
     let optimisticTextId: string | null = null;
     let textCommitted = false;
     const warnings: string[] = [];
@@ -215,16 +239,21 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
       // clip in the parent while the child still shows it in review,
       // wedging the user (next Post sees no clip).
       if (hadClip) {
-        setClip(null);
-        setRecorderKey((k) => k + 1);
+        setCaptureUi((current) => ({
+          ...current,
+          clip: null,
+          recorderKey: current.recorderKey + 1,
+        }));
       }
       // Keep visibility pill sticky — it's a preference, not per-post.
-      setNotice({
-        tone: warnings.length > 0 ? 'warning' : 'success',
-        message:
-          warnings.length > 0
-            ? warnings.join(' ')
-            : 'Saved to the timeline. Processing will add search, facts, and citations when available.',
+      setCaptureUi({
+        notice: {
+          tone: warnings.length > 0 ? 'warning' : 'success',
+          message:
+            warnings.length > 0
+              ? warnings.join(' ')
+              : 'Saved to the timeline. Processing will add search, facts, and citations when available.',
+        },
       });
       await queryClient.invalidateQueries({ queryKey: queryKeys.onboarding() });
       router.refresh();
@@ -234,11 +263,10 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
       } else if (textCommitted) {
         router.refresh();
       }
-      setError(err instanceof Error ? err.message : 'Post failed');
-      setNotice(null);
+      setCaptureUi({ error: err instanceof Error ? err.message : 'Post failed', notice: null });
     } finally {
       inFlightRef.current = false;
-      setPending(false);
+      setCaptureUi({ pending: false });
     }
   }
 
@@ -246,7 +274,7 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
     <form
       ref={formRef}
       onSubmit={handleSubmit}
-      data-capture-ready={hydrated ? 'true' : 'false'}
+      data-capture-ready="true"
       className="space-y-4 sm:space-y-5"
     >
       <div className="flex items-baseline gap-x-3 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
@@ -261,12 +289,18 @@ export function CaptureForm({ initialVisibility = 'team', currentUser, filters =
         rows={3}
         className="resize-none rounded-md border-0 bg-transparent p-0 text-[15px] leading-7 shadow-none ring-0 ring-offset-0 transition-colors focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:[outline:none]"
       />
-      <AudioRecorder key={recorderKey} onClipChange={setClip} disabled={pending} />
+      <AudioRecorder
+        key={recorderKey}
+        onClipChange={(nextClip) => {
+          setCaptureUi({ clip: nextClip });
+        }}
+        disabled={pending}
+      />
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
         <button
           type="button"
           onClick={() => {
-            setIsPrivate((v) => !v);
+            setCaptureUi((current) => ({ ...current, isPrivate: !current.isPrivate }));
           }}
           className={cn(
             'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors',

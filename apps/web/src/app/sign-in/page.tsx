@@ -22,8 +22,7 @@ interface Props {
 }
 
 export default async function SignInPage({ searchParams }: Props) {
-  const { callbackUrl } = await searchParams;
-  const session = await auth();
+  const [{ callbackUrl }, session] = await Promise.all([searchParams, auth()]);
   if (session?.user) {
     const pendingInviteToken = await readPendingInvite();
     redirect(signedInAuthRedirect({ callbackUrl, pendingInviteToken }));

@@ -115,19 +115,18 @@ export default async function BoardDetailPage({ params }: { params: Promise<{ id
             ? ([{ label: 'group', value: effectiveGroupBy }] as const)
             : ([] as const)),
         ]}
-        trailing={
-          <span className="inline-flex items-center gap-3">
-            <Link
-              href="/app/boards"
-              className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg hover:underline"
-            >
-              ← all boards
-            </Link>
-            <DeleteBoardButton id={board.id} />
-          </span>
-        }
         className="mb-6 shrink-0"
-      />
+      >
+        <span className="inline-flex items-center gap-3">
+          <Link
+            href="/app/boards"
+            className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg hover:underline"
+          >
+            ← all boards
+          </Link>
+          <DeleteBoardButton id={board.id} />
+        </span>
+      </IndexStrip>
 
       {isKanban && (
         <div className="min-h-0 flex-1">

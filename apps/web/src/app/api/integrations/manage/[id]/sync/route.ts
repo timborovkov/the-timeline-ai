@@ -14,9 +14,8 @@ export async function POST(
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   void req;
-  const session = await auth();
+  const [session, { id }] = await Promise.all([auth(), ctx.params]);
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  const { id } = await ctx.params;
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) return NextResponse.json({ error: 'no_team' }, { status: 400 });
   const scope = withTeam(db, active.teamId, session.user.id);
@@ -25,9 +24,11 @@ export async function POST(
   } catch {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
-  const integration = await scope.integrations.getIntegration(id);
+  const [integration, queue] = await Promise.all([
+    scope.integrations.getIntegration(id),
+    requireRedisQueue(),
+  ]);
   if (!integration) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  const queue = await requireRedisQueue();
   await queue.enqueueIntegrationSyncJob({
     kind: 'backfill',
     integrationId: integration.id,

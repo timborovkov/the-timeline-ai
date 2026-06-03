@@ -1,26 +1,22 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 
 import { markAllNotificationsReadAction } from '@/app/actions/objects';
 
 export function MarkAllReadButton({ hasUnread }: { hasUnread: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [locallyRead, setLocallyRead] = useState(!hasUnread);
-  const disabled = locallyRead || pending;
-
-  useEffect(() => {
-    setLocallyRead(!hasUnread);
-  }, [hasUnread]);
+  const [optimisticRead, setOptimisticRead] = useState(false);
+  const disabled = !hasUnread || optimisticRead || pending;
 
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={() => {
-        setLocallyRead(true);
+        setOptimisticRead(true);
         window.dispatchEvent(new CustomEvent('timeline:notifications-read-all', { detail: true }));
         startTransition(async () => {
           try {
@@ -32,7 +28,7 @@ export function MarkAllReadButton({ hasUnread }: { hasUnread: boolean }) {
           } catch {
             // Fall through to the same rollback as an explicit action error.
           }
-          setLocallyRead(false);
+          setOptimisticRead(false);
           window.dispatchEvent(
             new CustomEvent('timeline:notifications-read-all', { detail: false }),
           );

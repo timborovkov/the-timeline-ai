@@ -1,8 +1,7 @@
 'use client';
 
 import { Search } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -23,9 +22,7 @@ export function CommandBar({
   placeholder = 'Ask, jump, capture, or search…',
   className,
 }: CommandBarProps) {
-  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState('');
 
   // ⌘K / Ctrl+K focuses the bar from anywhere
   useEffect(() => {
@@ -44,13 +41,8 @@ export function CommandBar({
 
   return (
     <form
-      role="search"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const q = query.trim();
-        if (!q) return;
-        router.push(`/app/timeline?q=${encodeURIComponent(q)}`);
-      }}
+      action="/app/timeline"
+      method="get"
       className={cn(
         'flex h-10 flex-1 items-center gap-2 rounded-sm border border-border bg-surface px-3',
         'focus-within:border-border-strong',
@@ -70,12 +62,9 @@ export function CommandBar({
       <Search aria-hidden="true" className="size-3.5 text-fg-dim" />
       <input
         id="command-bar-input"
+        name="q"
         ref={inputRef}
         type="search"
-        value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
-        }}
         placeholder={placeholder}
         className="flex-1 bg-transparent font-mono text-xs text-fg placeholder:text-fg-dim focus:outline-none"
       />

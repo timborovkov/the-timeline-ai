@@ -236,17 +236,21 @@ export async function finalizeDocumentVersionAction(
     if (head.contentLength > MAX_UPLOAD_BYTES) {
       return { ok: false, error: 'File exceeds size limit' };
     }
-    const finalized = await got.scope.documents.finalizeDocumentVersion({
-      versionId: parsed.data.versionId,
-      byteSize: head.contentLength,
-      contentType: head.contentType ?? version.contentType ?? 'application/octet-stream',
-    });
-    const queue = await requireRedisQueue();
-    await queue.enqueueDocumentExtractJob({
-      documentVersionId: finalized.version.id,
-      teamId: got.teamId,
-    });
-    const completedFirstDocument = await safeMarkOnboardingStep(got.scope, 'first_document');
+    const [finalized, queue] = await Promise.all([
+      got.scope.documents.finalizeDocumentVersion({
+        versionId: parsed.data.versionId,
+        byteSize: head.contentLength,
+        contentType: head.contentType ?? version.contentType ?? 'application/octet-stream',
+      }),
+      requireRedisQueue(),
+    ]);
+    const [, completedFirstDocument] = await Promise.all([
+      queue.enqueueDocumentExtractJob({
+        documentVersionId: finalized.version.id,
+        teamId: got.teamId,
+      }),
+      safeMarkOnboardingStep(got.scope, 'first_document'),
+    ]);
     trackProductEventBestEffort(got.userId, 'document_uploaded', {
       teamId: got.teamId,
       userId: got.userId,
