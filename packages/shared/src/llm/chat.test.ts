@@ -16,6 +16,11 @@ const liveOpenRouterIt =
 const openRouterRequestSchema = z.object({
   model: z.unknown(),
   messages: z.array(z.object({ role: z.unknown(), content: z.unknown() })),
+  provider: z
+    .object({
+      require_parameters: z.unknown(),
+    })
+    .optional(),
   response_format: z.object({
     type: z.unknown(),
     json_schema: z.object({
@@ -287,6 +292,7 @@ describe('chatStructured', () => {
       body.messages.some((message) => String(message.content).toLowerCase().includes('json')),
     ).toBe(true);
     expect(body.response_format.type).toBe('json_schema');
+    expect(body.provider?.require_parameters).toBe(true);
     expect(body.response_format.json_schema.strict).toBe(true);
     const factSchema = body.response_format.json_schema.schema.properties.facts.items;
     expect(factSchema.required).toEqual(
@@ -360,13 +366,20 @@ describe('chatStructured', () => {
     expect(requests).toHaveLength(2);
     const primary = openRouterRequestSchema.parse(requests[0]);
     expect(primary.response_format.type).toBe('json_schema');
+    expect(primary.provider?.require_parameters).toBe(true);
     const fallback = z
       .object({
         messages: z.array(z.object({ role: z.unknown(), content: z.unknown() })),
+        provider: z
+          .object({
+            require_parameters: z.unknown(),
+          })
+          .optional(),
         response_format: z.object({ type: z.unknown() }),
       })
       .parse(requests[1]);
     expect(fallback.response_format.type).toBe('json_object');
+    expect(fallback.provider?.require_parameters).toBe(true);
     expect(
       fallback.messages.some((message) =>
         String(message.content).includes('Return only a JSON object matching this JSON Schema'),
@@ -481,6 +494,6 @@ describe('streamChat', () => {
       model: TIMELINE_MODELS.agent.id,
       causeName: 'Error',
     });
-    expect(event?.error).toHaveProperty('cause', cause);
+    expect(event?.error).not.toHaveProperty('cause');
   });
 });

@@ -72,8 +72,8 @@ SENTRY_PROFILES_SAMPLE_RATE=0
         <code>tool_failed</code> or a graceful reconnect shape to the model. Shared LLM wrapper
         failures are tagged with <code>aiOperation</code> and <code>aiModel</code> so worker and web
         captures can be filtered without attaching prompt, transcript, file, document content, or
-        provider error bodies. The wrapper records the safe cause type, not the provider's original
-        exception chain.
+        provider error bodies. The wrapper records the safe cause type and a sanitized bounded cause
+        message, not the provider's original exception chain.
       </p>
       <p>
         Keep <code>sendDefaultPii</code> disabled. Do not attach cookies, auth headers, prompts,

@@ -14,6 +14,10 @@ import { TimelineAiError, toTimelineAiError, wrapAiFailure } from '#src/llm/erro
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { generateObject, streamText, withLangSmithProviderOptions } from '#src/llm/tracing.js';
 
+type GenerateObjectProviderOptions = NonNullable<
+  Parameters<typeof generateObject>[0]['providerOptions']
+>;
+
 export interface ChatStructuredInput<TSchema extends z.ZodType> {
   schema: TSchema;
   prompt: string;
@@ -55,6 +59,16 @@ function structuredOutputFallbackSystem(schema: z.ZodType, system?: string): str
 
 Return only a JSON object matching this JSON Schema:
 ${jsonSchema}`;
+}
+
+function openRouterRequireParametersOptions(): GenerateObjectProviderOptions {
+  return {
+    openrouter: {
+      provider: {
+        require_parameters: true,
+      },
+    },
+  };
 }
 
 function repairKnownStructuredOutput(schema: z.ZodType): RepairTextFunction {
@@ -136,7 +150,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
     prompt,
     system,
     experimental_repairText: repairKnownStructuredOutput(schema),
-    providerOptions: withLangSmithProviderOptions(undefined, {
+    providerOptions: withLangSmithProviderOptions(openRouterRequireParametersOptions(), {
       name: 'llm.chatStructured',
       model: modelId,
       metadata: {
