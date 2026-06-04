@@ -186,7 +186,7 @@ Covered route tests include:
 - Telegram webhook.
 - Slack events webhook.
 - GitHub, Google Drive, Linear, and Recall webhooks.
-- Job recovery retry/dismiss routes.
+- Per-job and bulk job recovery retry/dismiss routes.
 - Search route auth/config/rate-limit/schema/scope behavior.
 - Timeline route auth, active-team, query parsing, cache, response shaping,
   author hydration, and audio signing behavior.

@@ -95,6 +95,9 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
   );
   const failedItems = filtered.filter((item) => item.status === 'failed');
   const failedCount = failedItems.length;
+  const hasQueuedFailedRetry = failedItems.some(
+    (item) => retryStates[item.id]?.status === 'queued',
+  );
 
   async function call(action: 'retry' | 'dismiss', id: string) {
     const retryStartedAt = Date.now();
@@ -161,6 +164,42 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
     }
   }
 
+  async function retryFailed() {
+    if (failedCount === 0) return;
+    const retryStartedAt = Date.now();
+    setBusy('retry-failed');
+    try {
+      const res = await fetch('/api/team/job-recovery/retry-failed', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...(filter === 'all' ? {} : { kind: filter }),
+          items: failedItems.map((item) => ({
+            id: item.id,
+            detectedAt: new Date(item.detectedAt).toISOString(),
+          })),
+          expectedCount: failedCount,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        alert(`Retry failed jobs failed: ${text}`);
+        return;
+      }
+      setRetrySnapshots((previous) => {
+        const next = { ...previous };
+        for (const item of failedItems) {
+          next[item.id] = { startedAt: retryStartedAt, status: 'queued', error: null };
+        }
+        return next;
+      });
+      void finishedJobs.refetch();
+      router.refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <section className="space-y-3">
       <ConversationSuggestionRecovery
@@ -192,21 +231,40 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
             );
           })}
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          disabled={busy !== null || failedCount === 0}
-          onClick={() => {
-            void dismissFailed();
-          }}
-          className="self-start md:self-auto"
-        >
-          <X aria-hidden="true" className="mr-1 size-3.5" />
-          {busy === 'dismiss-failed'
-            ? 'Dismissing failed'
-            : `Dismiss failed${failedCount > 0 ? ` (${String(failedCount)})` : ''}`}
-        </Button>
+        <div className="flex flex-wrap gap-2 self-start md:self-auto">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={busy !== null || failedCount === 0 || hasQueuedFailedRetry}
+            onClick={() => {
+              void retryFailed();
+            }}
+          >
+            {busy === 'retry-failed' ? (
+              <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+            ) : (
+              <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
+            )}
+            {busy === 'retry-failed'
+              ? 'Retrying failed'
+              : `Retry failed${failedCount > 0 ? ` (${String(failedCount)})` : ''}`}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={busy !== null || failedCount === 0}
+            onClick={() => {
+              void dismissFailed();
+            }}
+          >
+            <X aria-hidden="true" className="mr-1 size-3.5" />
+            {busy === 'dismiss-failed'
+              ? 'Dismissing failed'
+              : `Dismiss failed${failedCount > 0 ? ` (${String(failedCount)})` : ''}`}
+          </Button>
+        </div>
       </div>
 
       <ul className="divide-y divide-border rounded-sm border border-border bg-surface">
