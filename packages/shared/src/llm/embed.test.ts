@@ -48,6 +48,24 @@ describe('llm.embed', () => {
     expect(result.model).toBe(TIMELINE_MODELS.embedding.id);
   });
 
+  it('truncates text before sending it to the embedding model budget', async () => {
+    let modelInput = '';
+    const model = new MockEmbeddingModelV3({
+      doEmbed: (({ values }: { values: string[] }) => {
+        modelInput = values[0] ?? '';
+        return Promise.resolve({ embeddings: [[1, 2, 3, 4]] });
+      }) as never,
+    });
+
+    await embed({ text: 'x'.repeat(40_000) }, { model });
+
+    expect(modelInput.length).toBeLessThan(40_000);
+    expect(modelInput.endsWith('…')).toBe(true);
+    expect(modelInput.length).toBeLessThanOrEqual(
+      Math.floor(TIMELINE_MODELS.embedding.contextWindowTokens * 0.8) * 4,
+    );
+  });
+
   it('throws when OPENROUTER_API_KEY is missing AND no model is injected', async () => {
     delete process.env.OPENROUTER_API_KEY;
     resetEnvForTests();

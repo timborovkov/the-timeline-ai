@@ -89,6 +89,15 @@ export interface QdrantPayload {
    */
   visibility_user_ids: string[] | null;
   embedding_model: string;
+  /**
+   * Stable source identity used for chunk cleanup. `source_kind` is the
+   * retriever-facing discriminator; `source_scope/source_id` are the writer's
+   * deterministic point-id inputs and remain stable across rendered-kind
+   * aliases such as event + integration_event.
+   */
+  source_scope: PointScope;
+  source_id: string;
+  chunk_index: number;
   // ---- Phase 9 doc-chunk-only fields (per-kind, like object_id / note_id
   // above). All null for non-doc_chunk points.
   /** documents.id. Set only for source_kind='doc_chunk'. */
@@ -153,6 +162,20 @@ export interface QdrantClient {
     opts?: SearchOpts,
   ): Promise<SearchHit[]>;
   deletePoints(ids: string[], opts?: DeletePointsOpts): Promise<void>;
+  deletePointsForSource(input: {
+    teamId: string;
+    scope: PointScope;
+    sourceId: string;
+    model: string;
+    verifyDeleted?: boolean;
+  }): Promise<void>;
+  deletePointsForSourceFromChunk(input: {
+    teamId: string;
+    scope: PointScope;
+    sourceId: string;
+    model: string;
+    minChunkIndex: number;
+  }): Promise<void>;
   /**
    * Return the subset of ids that currently exist in the collection. Used by
    * the orphaned-job reconciler to detect facts that never made it into the
@@ -160,12 +183,11 @@ export interface QdrantClient {
    */
   pointsExist(ids: string[]): Promise<Set<string>>;
   /**
-   * Exact count of points matching team + visibility + optional kind filter.
-   * Used by the embed-coverage audit script to compare row counts to point
-   * counts. NOT for hot paths — Qdrant's `exact: true` count walks the
-   * collection.
+   * Exact count of points matching team + optional kind filter. NOT for hot
+   * paths — Qdrant's `exact: true` count walks the collection.
    */
   countPoints(teamId: string, opts?: { sourceKind?: SourceKind }): Promise<number>;
+  countDistinctSources(teamId: string, opts?: { sourceKind?: SourceKind }): Promise<number>;
   /** Test/admin-only: read the collection name this instance writes to. */
   collectionName(): string;
 }
@@ -207,6 +229,24 @@ function buildHeaders(apiKey: string | undefined): Record<string, string> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (apiKey) headers['api-key'] = apiKey;
   return headers;
+}
+
+function collectionVectorSize(data: unknown): number | null {
+  const result = data && typeof data === 'object' ? (data as { result?: unknown }).result : null;
+  const config =
+    result && typeof result === 'object' ? (result as { config?: unknown }).config : null;
+  const params =
+    config && typeof config === 'object' ? (config as { params?: unknown }).params : null;
+  const vectors =
+    params && typeof params === 'object' ? (params as { vectors?: unknown }).vectors : null;
+  if (!vectors || typeof vectors !== 'object') return null;
+  const size = (vectors as { size?: unknown }).size;
+  if (typeof size === 'number') return size;
+
+  const firstNamedVector = Object.values(vectors).find(
+    (value): value is { size?: unknown } => Boolean(value) && typeof value === 'object',
+  );
+  return typeof firstNamedVector?.size === 'number' ? firstNamedVector.size : null;
 }
 
 /**
@@ -262,7 +302,19 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
   async function ensureCollection(): Promise<void> {
     ensurePromise ??= (async () => {
       const head = await request('GET', `/collections/${encodeURIComponent(collection)}`);
-      if (head.status === 200) return;
+      if (head.status === 200) {
+        const existingVectorSize = collectionVectorSize(head.data);
+        if (existingVectorSize !== null && existingVectorSize !== vectorSize) {
+          throw new Error(
+            `Qdrant collection '${collection}' vector size ${String(
+              existingVectorSize,
+            )} != configured embedding dimensions ${String(
+              vectorSize,
+            )}. Recreate the collection or set QDRANT_COLLECTION to a collection built for the active embedding model before retrying jobs.`,
+          );
+        }
+        return;
+      }
       // requireExisting: used by the re-embed script's --target-collection
       // path. The operator pre-creates the new collection at the new vector
       // size (documented step 2). Without this guard, a worker process
@@ -480,6 +532,62 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     }
   }
 
+  function sourceFilter(input: {
+    teamId: string;
+    scope: PointScope;
+    sourceId: string;
+    model: string;
+    minChunkIndex?: number;
+  }) {
+    const must: unknown[] = [
+      { key: 'team_id', match: { value: input.teamId } },
+      { key: 'embedding_model', match: { value: input.model } },
+      { key: 'source_scope', match: { value: input.scope } },
+      { key: 'source_id', match: { value: input.sourceId } },
+    ];
+    if (typeof input.minChunkIndex === 'number') {
+      must.push({ key: 'chunk_index', range: { gte: input.minChunkIndex } });
+    }
+    return { must };
+  }
+
+  async function deletePointsForSource(input: {
+    teamId: string;
+    scope: PointScope;
+    sourceId: string;
+    model: string;
+    verifyDeleted?: boolean;
+  }): Promise<void> {
+    await ensureCollection();
+    await request('POST', `/collections/${encodeURIComponent(collection)}/points/delete`, {
+      filter: sourceFilter(input),
+    });
+    if (input.verifyDeleted) {
+      const remaining = await scrollPointPayloads(sourceFilter(input), ['source_id'], 1);
+      if (remaining.length > 0) {
+        throw new Error(
+          `Qdrant deletePointsForSource verification failed for ${input.scope}:${input.sourceId}`,
+        );
+      }
+    }
+  }
+
+  async function deletePointsForSourceFromChunk(input: {
+    teamId: string;
+    scope: PointScope;
+    sourceId: string;
+    model: string;
+    minChunkIndex: number;
+  }): Promise<void> {
+    if (!Number.isInteger(input.minChunkIndex) || input.minChunkIndex < 0) {
+      throw new Error('Qdrant stale chunk cleanup requires a non-negative integer minChunkIndex');
+    }
+    await ensureCollection();
+    await request('POST', `/collections/${encodeURIComponent(collection)}/points/delete`, {
+      filter: sourceFilter(input),
+    });
+  }
+
   async function pointsExist(ids: string[]): Promise<Set<string>> {
     if (ids.length === 0) return new Set();
     await ensureCollection();
@@ -516,13 +624,102 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     return body.result?.count ?? 0;
   }
 
+  async function scrollPointPayloads(
+    filter: Record<string, unknown>,
+    payloadFields: string[],
+    pageLimit = 256,
+  ): Promise<Record<string, unknown>[]> {
+    const payloads: Record<string, unknown>[] = [];
+    let offset: unknown;
+    for (;;) {
+      const body: Record<string, unknown> = {
+        limit: pageLimit,
+        filter,
+        with_payload: payloadFields,
+        with_vector: false,
+        with_vectors: false,
+      };
+      if (offset !== undefined && offset !== null) body.offset = offset;
+      const res = await request(
+        'POST',
+        `/collections/${encodeURIComponent(collection)}/points/scroll`,
+        body,
+      );
+      if (res.status !== 200) {
+        throw new Error(`Qdrant scroll failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
+      }
+      const result = (res.data ?? {}) as {
+        result?: {
+          points?: { payload?: Record<string, unknown> }[];
+          next_page_offset?: unknown;
+        };
+      };
+      for (const point of result.result?.points ?? []) {
+        payloads.push(point.payload ?? {});
+      }
+      offset = result.result?.next_page_offset;
+      if (offset === undefined || offset === null) return payloads;
+    }
+  }
+
+  function sourceIdFromPayload(payload: Record<string, unknown>, kind?: SourceKind): string | null {
+    if (typeof payload.source_id === 'string') return payload.source_id;
+    const field =
+      kind === 'fact'
+        ? 'fact_id'
+        : kind === 'doc_chunk'
+          ? 'document_chunk_id'
+          : kind === 'meeting_chunk'
+            ? 'meeting_chunk_id'
+            : kind === 'object'
+              ? 'object_id'
+              : kind === 'object_note'
+                ? 'note_id'
+                : kind === 'object_change'
+                  ? 'change_id'
+                  : kind === 'entity'
+                    ? 'entity_id'
+                    : kind === 'calendar_event'
+                      ? 'event_id'
+                      : 'event_id';
+    const value = payload[field];
+    return typeof value === 'string' ? value : null;
+  }
+
+  async function countDistinctSources(
+    teamId: string,
+    opts: { sourceKind?: SourceKind } = {},
+  ): Promise<number> {
+    await ensureCollection();
+    const must: unknown[] = [{ key: 'team_id', match: { value: teamId } }];
+    if (opts.sourceKind) {
+      must.push({ key: 'source_kind', match: { value: opts.sourceKind } });
+    }
+    const payloads = await scrollPointPayloads({ must }, [
+      'source_id',
+      'event_id',
+      'fact_id',
+      'object_id',
+      'note_id',
+      'change_id',
+      'entity_id',
+      'document_chunk_id',
+      'meeting_chunk_id',
+    ]);
+    return new Set(payloads.map((p) => sourceIdFromPayload(p, opts.sourceKind)).filter(Boolean))
+      .size;
+  }
+
   return {
     ensureCollection,
     upsertVector,
     search,
     deletePoints,
+    deletePointsForSource,
+    deletePointsForSourceFromChunk,
     pointsExist,
     countPoints,
+    countDistinctSources,
     collectionName: () => collection,
   };
 }

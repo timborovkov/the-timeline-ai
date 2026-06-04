@@ -2,7 +2,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { type EmbeddingModel } from 'ai';
 
 import { getEnv } from '#src/env.js';
-import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { TIMELINE_MODELS, truncateTextToTokenBudget } from '#src/llm/models.js';
 import { embed as tracedEmbed } from '#src/llm/tracing.js';
 
 export interface EmbedInput {
@@ -21,6 +21,11 @@ export interface EmbedDeps {
 
 function resolveModelId(): string {
   return TIMELINE_MODELS.embedding.id;
+}
+
+function embeddingInputTokenBudget(): number {
+  const contextWindow = TIMELINE_MODELS.embedding.contextWindowTokens;
+  return Math.max(1, Math.floor(contextWindow * 0.8));
 }
 
 function buildDefaultModel(modelId: string): EmbeddingModel {
@@ -49,14 +54,17 @@ function buildDefaultModel(modelId: string): EmbeddingModel {
 export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<EmbedResult> {
   const modelId = resolveModelId();
   const model = deps.model ?? buildDefaultModel(modelId);
+  const text = truncateTextToTokenBudget(input.text, embeddingInputTokenBudget());
   const result = await tracedEmbed(
-    { model, value: input.text },
+    { model, value: text },
     {
       name: 'llm.embed',
       model: modelId,
       metadata: {
         operation: 'embed',
-        input_text_chars: input.text.length,
+        input_text_chars: text.length,
+        original_input_text_chars: input.text.length,
+        input_truncated: text.length !== input.text.length,
       },
     },
   );
