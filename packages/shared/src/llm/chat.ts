@@ -76,6 +76,7 @@ function repairKnownStructuredOutput(schema: z.ZodType): RepairTextFunction {
           }
         : {}),
       action_items: row.action_items ?? row.actionItems,
+      choice: row.choice ?? row.candidate_index ?? row.candidateIndex ?? row.index,
     };
     return Promise.resolve(schema.safeParse(repaired).success ? JSON.stringify(repaired) : null);
   };
