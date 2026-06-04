@@ -224,6 +224,12 @@ interface EmbedJobBase {
    *  collection during a model migration. When unset, the worker writes to
    *  `QDRANT_COLLECTION`. */
   targetCollection?: string;
+  /**
+   * Internal continuation cursor for oversized source text. The first job
+   * chunks the hydrated source, writes a bounded batch, then enqueues the same
+   * source with the next chunk index until all chunks land.
+   */
+  embeddingStartChunk?: number;
 }
 
 export interface EmbedRawEventJobData extends EmbedJobBase {
@@ -264,8 +270,8 @@ export interface EmbedEntityJobData extends EmbedJobBase {
  * Phase 9: one job per chunk of a finalised `document_versions` row.
  * The worker hydrates the chunk + document + version, stamps a
  * `source_kind='doc_chunk'` payload, and upserts a deterministic point
- * via `buildPointId('doc_chunk', chunkId, model)`. Idempotent under
- * duplicate enqueue.
+ * via `(doc_chunk, chunkId, model, chunk_index)`. Idempotent under duplicate
+ * enqueue; oversized chunk text continues through bounded child jobs.
  */
 export interface EmbedDocChunkJobData extends EmbedJobBase {
   scope: 'doc_chunk';
@@ -275,10 +281,10 @@ export interface EmbedDocChunkJobData extends EmbedJobBase {
 /**
  * Phase 10: one job per `meeting_transcript_chunks` row. The worker
  * hydrates chunk + parent meeting, stamps a `source_kind='meeting_chunk'`
- * payload, and upserts via `buildPointId('meeting_chunk', chunkId, model)`.
- * Idempotent under duplicate enqueue. The parent raw_event (per-utterance)
- * is embedded by the standard raw_event job; this is the second, utterance-
- * granular point.
+ * payload, and upserts via `(meeting_chunk, chunkId, model, chunk_index)`.
+ * Idempotent under duplicate enqueue; oversized chunk text continues through
+ * bounded child jobs. The parent raw_event (per-utterance) is embedded by the
+ * standard raw_event job; this is the second, utterance-granular point.
  */
 export interface EmbedMeetingChunkJobData extends EmbedJobBase {
   scope: 'meeting_chunk';
@@ -312,8 +318,8 @@ export function getEmbedQueue(): TimelineQueue<EmbedJobData> {
 export async function enqueueEmbedJob(data: EmbedJobData): Promise<void> {
   // Same no-jobId-dedup rationale as the other queues. Worker-side idempotency
   // is provided by deterministic Qdrant point ids derived from
-  // (scope, sourceId, embedding_model) — duplicate enqueues upsert the same
-  // point and cost at most one embedding call.
+  // (scope, sourceId, embedding_model, chunk_index) — duplicate enqueues upsert
+  // the same point(s). Oversized sources continue through bounded child jobs.
   await getEmbedQueue().add('embed', data);
 }
 

@@ -73,6 +73,20 @@ function makeFetcher(initial: { collectionExists?: boolean; vectorSize?: number 
     if (method === 'POST' && url.endsWith('/points/delete')) {
       return Promise.resolve(new Response(JSON.stringify({ result: true }), { status: 200 }));
     }
+    // POST /collections/<name>/points/scroll
+    if (method === 'POST' && url.endsWith('/points/scroll')) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            result: {
+              points: searchResult.map((hit) => ({ id: hit.id, payload: hit.payload })),
+              next_page_offset: null,
+            },
+          }),
+          { status: 200 },
+        ),
+      );
+    }
     return Promise.resolve(new Response('unhandled', { status: 500 }));
   };
 
@@ -120,6 +134,9 @@ const samplePayload: QdrantPayload = {
   visibility: 'team',
   visibility_user_ids: null,
   embedding_model: 'openai/text-embedding-3-small',
+  source_scope: 'event',
+  source_id: 'ev-1',
+  chunk_index: 0,
   // Phase 9 per-kind doc fields — null on non-doc_chunk points.
   document_id: null,
   document_version_id: null,
@@ -172,6 +189,44 @@ describe('createQdrantClient', () => {
     const client = createQdrantClient({ fetcher, vectorSize: 4 });
     await expect(client.upsertVector('id-1', [0.1, 0.2, 0.3], samplePayload)).rejects.toThrow(
       /vector length/,
+    );
+  });
+
+  it('deletes all chunk points for a source by payload filter', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher });
+
+    await client.deletePointsForSource({
+      teamId: 'team-A',
+      scope: 'event',
+      sourceId: 'ev-1',
+      model: 'openai/text-embedding-3-small',
+    });
+
+    const del = calls.find((c) => c.url.endsWith('/points/delete'));
+    expect(del?.body).toEqual({
+      filter: {
+        must: [
+          { key: 'team_id', match: { value: 'team-A' } },
+          { key: 'embedding_model', match: { value: 'openai/text-embedding-3-small' } },
+          { key: 'source_scope', match: { value: 'event' } },
+          { key: 'source_id', match: { value: 'ev-1' } },
+        ],
+      },
+    });
+  });
+
+  it('counts distinct source ids instead of raw chunk points', async () => {
+    const { fetcher, setSearchResult } = makeFetcher({ collectionExists: true });
+    setSearchResult([
+      { id: 'p1', score: 1, payload: { ...samplePayload, source_id: 'ev-1', chunk_index: 0 } },
+      { id: 'p2', score: 1, payload: { ...samplePayload, source_id: 'ev-1', chunk_index: 1 } },
+      { id: 'p3', score: 1, payload: { ...samplePayload, source_id: 'ev-2', chunk_index: 0 } },
+    ]);
+    const client = createQdrantClient({ fetcher });
+
+    await expect(client.countDistinctSources('team-A', { sourceKind: 'raw_event' })).resolves.toBe(
+      2,
     );
   });
 

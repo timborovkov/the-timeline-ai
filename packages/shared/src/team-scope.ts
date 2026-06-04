@@ -42,7 +42,7 @@ import {
   type SearchOpts,
   type SourceKind,
 } from '#src/qdrant/client.js';
-import { buildChunkedPointIds } from '#src/qdrant/point-id.js';
+import { buildPointId } from '#src/qdrant/point-id.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
 import { normalizeVisibilityUserIds, rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -72,7 +72,6 @@ export type EventVisibility = 'private' | 'team' | 'specific_users';
 export type EmailEventVisibility = Exclude<EventVisibility, 'specific_users'>;
 
 const ROLE_RANK: Record<TeamRole, number> = { member: 0, admin: 1, owner: 2 };
-const MAX_EMBEDDING_CLEANUP_CHUNKS = 128;
 const SPECIFIC_USERS_DEFAULT_SOURCES = new Set<VisibilityDefaultSource>([
   'document',
   'meeting',
@@ -956,13 +955,23 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         .where(and(eq(factsTable.teamId, teamId), eq(factsTable.rawEventId, rawEventId)));
       const activeModel = TIMELINE_MODELS.embedding.id;
       const models = [...new Set([activeModel, 'openai/text-embedding-3-small'])];
-      const pointIds = models.flatMap((model) => [
-        ...buildChunkedPointIds('event', rawEventId, model, MAX_EMBEDDING_CLEANUP_CHUNKS),
-        ...factRows.flatMap((f) =>
-          buildChunkedPointIds('fact', f.id, model, MAX_EMBEDDING_CLEANUP_CHUNKS),
-        ),
+      const client = getQdrantClient();
+      for (const model of models) {
+        await client.deletePointsForSource({ teamId, scope: 'event', sourceId: rawEventId, model });
+        for (const fact of factRows) {
+          await client.deletePointsForSource({
+            teamId,
+            scope: 'fact',
+            sourceId: fact.id,
+            model,
+          });
+        }
+      }
+      const legacyPointIds = models.flatMap((model) => [
+        buildPointId('event', rawEventId, model),
+        ...factRows.map((f) => buildPointId('fact', f.id, model)),
       ]);
-      await getQdrantClient().deletePoints(pointIds);
+      await client.deletePoints(legacyPointIds);
     } catch {
       // Visibility updates are authoritative in Postgres. Qdrant cleanup is
       // best-effort; the DB visibility filter still gates hydrated results.

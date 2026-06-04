@@ -89,6 +89,15 @@ export interface QdrantPayload {
    */
   visibility_user_ids: string[] | null;
   embedding_model: string;
+  /**
+   * Stable source identity used for chunk cleanup. `source_kind` is the
+   * retriever-facing discriminator; `source_scope/source_id` are the writer's
+   * deterministic point-id inputs and remain stable across rendered-kind
+   * aliases such as event + integration_event.
+   */
+  source_scope: PointScope;
+  source_id: string;
+  chunk_index: number;
   // ---- Phase 9 doc-chunk-only fields (per-kind, like object_id / note_id
   // above). All null for non-doc_chunk points.
   /** documents.id. Set only for source_kind='doc_chunk'. */
@@ -153,6 +162,13 @@ export interface QdrantClient {
     opts?: SearchOpts,
   ): Promise<SearchHit[]>;
   deletePoints(ids: string[], opts?: DeletePointsOpts): Promise<void>;
+  deletePointsForSource(input: {
+    teamId: string;
+    scope: PointScope;
+    sourceId: string;
+    model: string;
+    verifyDeleted?: boolean;
+  }): Promise<void>;
   /**
    * Return the subset of ids that currently exist in the collection. Used by
    * the orphaned-job reconciler to detect facts that never made it into the
@@ -160,12 +176,11 @@ export interface QdrantClient {
    */
   pointsExist(ids: string[]): Promise<Set<string>>;
   /**
-   * Exact count of points matching team + visibility + optional kind filter.
-   * Used by the embed-coverage audit script to compare row counts to point
-   * counts. NOT for hot paths — Qdrant's `exact: true` count walks the
-   * collection.
+   * Exact count of points matching team + optional kind filter. NOT for hot
+   * paths — Qdrant's `exact: true` count walks the collection.
    */
   countPoints(teamId: string, opts?: { sourceKind?: SourceKind }): Promise<number>;
+  countDistinctSources(teamId: string, opts?: { sourceKind?: SourceKind }): Promise<number>;
   /** Test/admin-only: read the collection name this instance writes to. */
   collectionName(): string;
 }
@@ -510,6 +525,43 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     }
   }
 
+  function sourceFilter(input: {
+    teamId: string;
+    scope: PointScope;
+    sourceId: string;
+    model: string;
+  }) {
+    return {
+      must: [
+        { key: 'team_id', match: { value: input.teamId } },
+        { key: 'embedding_model', match: { value: input.model } },
+        { key: 'source_scope', match: { value: input.scope } },
+        { key: 'source_id', match: { value: input.sourceId } },
+      ],
+    };
+  }
+
+  async function deletePointsForSource(input: {
+    teamId: string;
+    scope: PointScope;
+    sourceId: string;
+    model: string;
+    verifyDeleted?: boolean;
+  }): Promise<void> {
+    await ensureCollection();
+    await request('POST', `/collections/${encodeURIComponent(collection)}/points/delete`, {
+      filter: sourceFilter(input),
+    });
+    if (input.verifyDeleted) {
+      const remaining = await scrollPointPayloads(sourceFilter(input), ['source_id'], 1);
+      if (remaining.length > 0) {
+        throw new Error(
+          `Qdrant deletePointsForSource verification failed for ${input.scope}:${input.sourceId}`,
+        );
+      }
+    }
+  }
+
   async function pointsExist(ids: string[]): Promise<Set<string>> {
     if (ids.length === 0) return new Set();
     await ensureCollection();
@@ -546,13 +598,101 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     return body.result?.count ?? 0;
   }
 
+  async function scrollPointPayloads(
+    filter: Record<string, unknown>,
+    payloadFields: string[],
+    pageLimit = 256,
+  ): Promise<Record<string, unknown>[]> {
+    const payloads: Record<string, unknown>[] = [];
+    let offset: unknown;
+    for (;;) {
+      const body: Record<string, unknown> = {
+        limit: pageLimit,
+        filter,
+        with_payload: payloadFields,
+        with_vector: false,
+        with_vectors: false,
+      };
+      if (offset !== undefined && offset !== null) body.offset = offset;
+      const res = await request(
+        'POST',
+        `/collections/${encodeURIComponent(collection)}/points/scroll`,
+        body,
+      );
+      if (res.status !== 200) {
+        throw new Error(`Qdrant scroll failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
+      }
+      const result = (res.data ?? {}) as {
+        result?: {
+          points?: { payload?: Record<string, unknown> }[];
+          next_page_offset?: unknown;
+        };
+      };
+      for (const point of result.result?.points ?? []) {
+        payloads.push(point.payload ?? {});
+      }
+      offset = result.result?.next_page_offset;
+      if (offset === undefined || offset === null) return payloads;
+    }
+  }
+
+  function sourceIdFromPayload(payload: Record<string, unknown>, kind?: SourceKind): string | null {
+    if (typeof payload.source_id === 'string') return payload.source_id;
+    const field =
+      kind === 'fact'
+        ? 'fact_id'
+        : kind === 'doc_chunk'
+          ? 'document_chunk_id'
+          : kind === 'meeting_chunk'
+            ? 'meeting_chunk_id'
+            : kind === 'object'
+              ? 'object_id'
+              : kind === 'object_note'
+                ? 'note_id'
+                : kind === 'object_change'
+                  ? 'change_id'
+                  : kind === 'entity'
+                    ? 'entity_id'
+                    : kind === 'calendar_event'
+                      ? 'event_id'
+                      : 'event_id';
+    const value = payload[field];
+    return typeof value === 'string' ? value : null;
+  }
+
+  async function countDistinctSources(
+    teamId: string,
+    opts: { sourceKind?: SourceKind } = {},
+  ): Promise<number> {
+    await ensureCollection();
+    const must: unknown[] = [{ key: 'team_id', match: { value: teamId } }];
+    if (opts.sourceKind) {
+      must.push({ key: 'source_kind', match: { value: opts.sourceKind } });
+    }
+    const payloads = await scrollPointPayloads({ must }, [
+      'source_id',
+      'event_id',
+      'fact_id',
+      'object_id',
+      'note_id',
+      'change_id',
+      'entity_id',
+      'document_chunk_id',
+      'meeting_chunk_id',
+    ]);
+    return new Set(payloads.map((p) => sourceIdFromPayload(p, opts.sourceKind)).filter(Boolean))
+      .size;
+  }
+
   return {
     ensureCollection,
     upsertVector,
     search,
     deletePoints,
+    deletePointsForSource,
     pointsExist,
     countPoints,
+    countDistinctSources,
     collectionName: () => collection,
   };
 }

@@ -11,7 +11,7 @@ import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
-import { buildChunkedPointIds } from '#src/qdrant/point-id.js';
+import { buildPointId } from '#src/qdrant/point-id.js';
 import { enqueueCalendarEventEmbedJob } from '#src/queue/queues.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
 
@@ -22,7 +22,6 @@ type DbOrTx = Db | DbTx;
 type CalendarQdrantAction = 'embed' | 'delete' | null;
 
 const log = childLogger('calendar:scope');
-const MAX_EMBEDDING_CLEANUP_CHUNKS = 128;
 
 export interface CalendarScopeDeps {
   db: Db;
@@ -251,15 +250,20 @@ async function assertEntitiesBelongToTeam(
   return entityIds;
 }
 
-async function deleteCalendarEventPoints(eventId: string): Promise<void> {
+async function deleteCalendarEventPoints(teamId: string, eventId: string): Promise<void> {
   try {
     const client = getQdrantClient();
     const activeModel = TIMELINE_MODELS.embedding.id;
     const models = uniqueIds([activeModel, 'openai/text-embedding-3-small']);
-    const pointIds = models.flatMap((m) =>
-      buildChunkedPointIds('calendar_event', eventId, m, MAX_EMBEDDING_CLEANUP_CHUNKS),
-    );
-    await client.deletePoints(pointIds);
+    for (const model of models) {
+      await client.deletePointsForSource({
+        teamId,
+        scope: 'calendar_event',
+        sourceId: eventId,
+        model,
+      });
+    }
+    await client.deletePoints(models.map((m) => buildPointId('calendar_event', eventId, m)));
   } catch {
     // Calendar deletion should not fail just because semantic search cleanup
     // is temporarily unavailable. The embed coverage/reembed scripts can
@@ -664,7 +668,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       if (result.qdrantAction === 'embed') {
         await enqueueCalendarEventEmbedding(teamId, id);
       } else if (result.qdrantAction === 'delete') {
-        await deleteCalendarEventPoints(id);
+        await deleteCalendarEventPoints(teamId, id);
       }
 
       return result.event;
@@ -727,7 +731,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       });
 
       if (deleted) {
-        await deleteCalendarEventPoints(id);
+        await deleteCalendarEventPoints(teamId, id);
       }
 
       return deleted;

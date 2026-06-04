@@ -7,6 +7,7 @@ import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring
 
 const log = childLogger('worker:embed');
 const EMBEDDING_OVERLAP_TOKENS = 120;
+const EMBEDDING_CHUNKS_PER_JOB = 16;
 
 interface EmbedWorkerDeps {
   db: Db;
@@ -16,6 +17,7 @@ interface EmbedWorkerIO {
   getEnv?: typeof getEnv;
   embed?: typeof llm.embed;
   getQdrantClient?: typeof qdrant.getQdrantClient;
+  enqueueEmbedJob?: typeof queue.enqueueEmbedJob;
 }
 
 function embedFailureTags(job: Pick<Job<queue.EmbedJobData>, 'data'> | undefined) {
@@ -41,6 +43,15 @@ function chunkForEmbedding(text: string) {
     targetTokens: embeddingChunkBudgetTokens(),
     overlapTokens: EMBEDDING_OVERLAP_TOKENS,
   });
+}
+
+function embeddingStartChunk(data: queue.EmbedJobData): number {
+  const value = 'embeddingStartChunk' in data ? data.embeddingStartChunk : undefined;
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+function continuationJob(data: queue.EmbedJobData, nextChunk: number): queue.EmbedJobData {
+  return { ...data, embeddingStartChunk: nextChunk };
 }
 
 async function processEmbedJob(
@@ -71,8 +82,11 @@ async function processEmbedJob(
   // instead of being truncated, preserving retrievable evidence.
   const embed = io.embed ?? llm.embed;
   const chunks = chunkForEmbedding(plan.text);
+  const startChunk = embeddingStartChunk(data);
+  const chunksForJob = chunks.slice(startChunk, startChunk + EMBEDDING_CHUNKS_PER_JOB);
+  if (chunksForJob.length === 0) return { skipped: true };
   const embeddedChunks = [];
-  for (const chunk of chunks) {
+  for (const chunk of chunksForJob) {
     const result = await embed({ text: chunk.text });
     embeddedChunks.push({ ...chunk, vector: result.vector, model: result.model });
   }
@@ -94,22 +108,39 @@ async function processEmbedJob(
     ...basePayload,
     ...plan.payloadOverrides,
     embedding_model: model,
+    source_scope: plan.scope,
+    source_id: plan.sourceId,
+    chunk_index: 0,
   };
+  if (startChunk === 0) {
+    await client.deletePointsForSource({
+      teamId: data.teamId,
+      scope: plan.scope,
+      sourceId: plan.sourceId,
+      model,
+    });
+  }
   const pointIds = [];
   for (const chunk of embeddedChunks) {
     const pointId = qdrant.buildChunkedPointId(plan.scope, plan.sourceId, chunk.model, chunk.index);
     pointIds.push(pointId);
-    await client.upsertVector(pointId, chunk.vector, payload);
+    await client.upsertVector(pointId, chunk.vector, { ...payload, chunk_index: chunk.index });
+  }
+
+  const nextChunk = startChunk + embeddedChunks.length;
+  if (nextChunk < chunks.length) {
+    const enqueueEmbedJob = io.enqueueEmbedJob ?? queue.enqueueEmbedJob;
+    await enqueueEmbedJob(continuationJob(data, nextChunk));
   }
 
   // Only event-scope raw_events.source_metadata gets stamped — see Phase 5
   // rationale below. Non-event scopes don't have a single canonical row to
   // stamp; their freshness is tracked by the coverage audit script.
-  if (plan.scope === 'event' && 'rawEventId' in data) {
+  if (plan.scope === 'event' && 'rawEventId' in data && nextChunk >= chunks.length) {
     const successPatch = JSON.stringify({
       embedded_at: new Date().toISOString(),
       embedding_model: model,
-      embedding_chunks: embeddedChunks.length,
+      embedding_chunks: chunks.length,
     });
     await deps.db
       .update(rawEvents)

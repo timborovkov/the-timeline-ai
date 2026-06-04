@@ -3,12 +3,12 @@
  *
  * For a given team, count rows in each source-of-truth table (filtered to
  * what the embed worker actually indexes) and compare against the count of
- * Qdrant points carrying that `source_kind` payload value. Reports per-kind
+ * distinct Qdrant source ids carrying that `source_kind` payload value. Reports per-kind
  * drift. Exits non-zero when drift exceeds the threshold so a CI / cron run
  * can fail loudly.
  *
  * What "drift" means here: source rows that exist but have no corresponding
- * Qdrant point (point count < row count). The reverse — Qdrant points with
+ * Qdrant source (source count < row count). The reverse — Qdrant sources with
  * no source row — can happen briefly between a soft-delete and a deletion
  * sweep, and is not flagged as an error.
  *
@@ -67,7 +67,7 @@ function parseArgs(): Args {
 interface KindReport {
   kind: qdrant.SourceKind;
   rows: number;
-  points: number;
+  sources: number;
 }
 
 async function countTeamRows(teamId: string): Promise<Record<qdrant.SourceKind, number>> {
@@ -218,20 +218,20 @@ async function main(): Promise<void> {
   ];
   const reports: KindReport[] = [];
   for (const kind of kinds) {
-    const points = await client.countPoints(args.teamId, { sourceKind: kind });
-    reports.push({ kind, rows: rowCounts[kind], points });
+    const sources = await client.countDistinctSources(args.teamId, { sourceKind: kind });
+    reports.push({ kind, rows: rowCounts[kind], sources });
   }
 
   let exitCode = 0;
   console.log('');
-  console.log('kind            rows        points      drift   drift%');
+  console.log('kind            rows        sources     drift   drift%');
   console.log('-----------     ---------   ---------   -----   ------');
   for (const r of reports) {
-    const drift = r.rows - r.points;
+    const drift = r.rows - r.sources;
     const driftPct = r.rows > 0 ? drift / r.rows : 0;
     const flag = drift > 0 && driftPct > args.threshold ? '⚠' : ' ';
     console.log(
-      `${flag} ${r.kind.padEnd(13)} ${String(r.rows).padStart(9)}   ${String(r.points).padStart(9)}   ${String(drift).padStart(5)}   ${(driftPct * 100).toFixed(2).padStart(5)}%`,
+      `${flag} ${r.kind.padEnd(13)} ${String(r.rows).padStart(9)}   ${String(r.sources).padStart(9)}   ${String(drift).padStart(5)}   ${(driftPct * 100).toFixed(2).padStart(5)}%`,
     );
     if (drift > 0 && driftPct > args.threshold) exitCode = 1;
   }

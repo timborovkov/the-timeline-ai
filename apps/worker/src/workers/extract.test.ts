@@ -230,6 +230,7 @@ describe('processExtractJobForTests', () => {
     ]);
 
     const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
     for (const job of embedJobs) {
       const embedJob = job.factId
         ? {
@@ -243,11 +244,12 @@ describe('processExtractJobForTests', () => {
         getEnv: () =>
           ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
         embed: vi.fn().mockResolvedValue({ vector: [0.1, 0.2, 0.3, 0.4], model: 'test-embed' }),
-        getQdrantClient: vi.fn(() => ({ upsertVector }) as never),
+        getQdrantClient: vi.fn(() => ({ deletePointsForSource, upsertVector }) as never),
       });
     }
 
     expect(upsertVector).toHaveBeenCalledTimes(2);
+    expect(deletePointsForSource).toHaveBeenCalledTimes(2);
     expect(upsertVector).toHaveBeenCalledWith(
       expect.any(String),
       [0.1, 0.2, 0.3, 0.4],

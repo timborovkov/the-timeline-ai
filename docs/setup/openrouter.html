@@ -192,7 +192,9 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         </li>
         <li>
           The extract worker writes facts; the embed worker writes one or more Qdrant chunk points
-          per fact and raw event, depending on source text length. Confirm via:
+          per fact and raw event, depending on source text length. Oversized sources continue
+          through bounded child jobs, so the worker does not drop tail text or monopolize one job.
+          Confirm via:
           <pre><code>curl -s "$QDRANT_URL/collections/events" | jq '.result.points_count'
 </code></pre>
         </li>
@@ -310,7 +312,9 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 </code></pre>
           Re-running is idempotent — point ids derived from
           <code>(scope, sourceId, embedding_model, chunk_index)</code> are deterministic, so the
-          same source chunk maps to the same point id and Qdrant upserts naturally.
+          same source chunk maps to the same point id and Qdrant upserts naturally. The worker
+          deletes existing points for the same <code>(team, scope, source, model)</code> before
+          writing the first chunk batch, so shorter re-embeds do not leave stale tail chunks.
         </li>
         <li>
           <strong>Verify</strong> spot-checks against the new collection by overriding
