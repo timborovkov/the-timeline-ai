@@ -528,6 +528,52 @@ describe('job recovery scope', () => {
       ],
     });
   });
+
+  it('scans past cross-team retained jobs when listing finished jobs', async () => {
+    const now = Date.now();
+    const otherTeamJobs = Array.from({ length: 100 }, (_, index) => ({
+      id: `other-${String(index)}`,
+      name: 'transcribe',
+      data: { rawEventId: OTHER_TEAM_RAW_ID, teamId: OTHER_TEAM_ID },
+      attemptsMade: 1,
+      finishedOn: now - index,
+    }));
+    const getJobs = vi.fn().mockImplementation((_types: unknown, start?: number, end?: number) => {
+      const startIndex = start ?? 0;
+      const endIndex = end ?? otherTeamJobs.length + 2;
+      return Promise.resolve(
+        [
+          ...otherTeamJobs,
+          {
+            id: 'transcribe-1',
+            name: 'transcribe',
+            data: { rawEventId: RAW_ID, teamId: TEAM_ID },
+            attemptsMade: 1,
+            finishedOn: now - 10_000,
+          },
+          {
+            id: 'transcribe-2',
+            name: 'transcribe',
+            data: { rawEventId: FAILED_EXTRACTION_RAW_ID, teamId: TEAM_ID },
+            attemptsMade: 1,
+            finishedOn: now - 11_000,
+          },
+        ].slice(startIndex, endIndex + 1),
+      );
+    });
+    const scope = scopeFor(ADMIN_ID, 'admin', {
+      getTranscribeQueue: () => ({ name: 'transcribe', getJobs }),
+    });
+
+    const page = await scope.listFinishedJobs({ offset: 0, limit: 1 });
+
+    expect(page).toMatchObject({
+      nextOffset: 1,
+      items: [{ id: 'transcribe:transcribe-1', artifactId: RAW_ID }],
+    });
+    expect(getJobs).toHaveBeenCalledWith(['completed', 'failed'], 0, 99);
+    expect(getJobs).toHaveBeenCalledWith(['completed', 'failed'], 100, 199);
+  });
 });
 
 function scopeFor(
@@ -569,7 +615,11 @@ function scopeFor(
 function fakeQueue(jobs: unknown[], name = 'queue') {
   return {
     name,
-    getJobs: vi.fn().mockResolvedValue(jobs),
+    getJobs: vi.fn().mockImplementation((_types: unknown, start?: number, end?: number) => {
+      const startIndex = start ?? 0;
+      const endIndex = end ?? jobs.length - 1;
+      return Promise.resolve(jobs.slice(startIndex, endIndex + 1));
+    }),
   };
 }
 

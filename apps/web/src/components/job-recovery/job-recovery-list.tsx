@@ -17,6 +17,12 @@ import { cn } from '@/lib/utils';
 type JobRecoveryItem = jobRecovery.JobRecoveryItem;
 type JobRecoveryKind = jobRecovery.JobRecoveryKind;
 
+interface RetrySnapshot {
+  startedAt: number;
+  status: 'queued' | 'completed' | 'failed';
+  error: string | null;
+}
+
 const FILTERS: { kind: JobRecoveryKind | 'all'; label: string }[] = [
   { kind: 'all', label: 'All' },
   { kind: 'transcription', label: 'Transcription' },
@@ -32,17 +38,12 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
   const finishedJobs = useFinishedJobsInfiniteQuery();
   const [filter, setFilter] = useState<JobRecoveryKind | 'all'>('all');
   const [busy, setBusy] = useState<string | null>(null);
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => new Set());
-  const [retrySnapshots, setRetrySnapshots] = useState<
-    Record<
-      string,
-      { startedAt: number; status: 'queued' | 'completed' | 'failed'; error: string | null }
-    >
-  >({});
+  const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(() => new Set());
+  const [retrySnapshots, setRetrySnapshots] = useState<Record<string, RetrySnapshot>>({});
 
   const visibleItems = useMemo(
-    () => items.filter((item) => !dismissedIds.has(item.id)),
-    [dismissedIds, items],
+    () => items.filter((item) => !dismissedKeys.has(itemSnapshotKey(item))),
+    [dismissedKeys, items],
   );
 
   const finishedArchiveItems = useMemo(
@@ -70,7 +71,7 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
         [];
       let match: FinishedJobArchivePage['items'][number] | undefined;
       for (const finished of matches) {
-        if (new Date(finished.finishedAt).getTime() >= snapshot.startedAt - 1_000) {
+        if (new Date(finished.finishedAt).getTime() >= snapshot.startedAt) {
           match = finished;
           break;
         }
@@ -94,6 +95,7 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
   const failedCount = failedItems.length;
 
   async function call(action: 'retry' | 'dismiss', id: string) {
+    const retryStartedAt = Date.now();
     setBusy(`${action}:${id}`);
     try {
       const res = await fetch(`/api/team/job-recovery/${encodeURIComponent(id)}/${action}`, {
@@ -107,11 +109,14 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
       if (action === 'retry') {
         setRetrySnapshots((previous) => ({
           ...previous,
-          [id]: { startedAt: Date.now(), status: 'queued', error: null },
+          [id]: { startedAt: retryStartedAt, status: 'queued', error: null },
         }));
         void finishedJobs.refetch();
       } else {
-        setDismissedIds((previous) => new Set(previous).add(id));
+        const dismissed = items.find((item) => item.id === id);
+        if (dismissed) {
+          setDismissedKeys((previous) => new Set(previous).add(itemSnapshotKey(dismissed)));
+        }
         router.refresh();
       }
     } finally {
@@ -143,9 +148,9 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
         alert(`Dismiss failed jobs failed: ${text}`);
         return;
       }
-      setDismissedIds((previous) => {
+      setDismissedKeys((previous) => {
         const next = new Set(previous);
-        for (const item of failedItems) next.add(item.id);
+        for (const item of failedItems) next.add(itemSnapshotKey(item));
         return next;
       });
       router.refresh();
@@ -265,11 +270,11 @@ function archiveIdentityKey(kind: string, artifactKind: string, artifactId: stri
   return `${kind}:${artifactKind}:${artifactId}`;
 }
 
-function RetryStatus({
-  snapshot,
-}: {
-  snapshot: { status: 'queued' | 'completed' | 'failed'; error: string | null };
-}) {
+function itemSnapshotKey(item: Pick<JobRecoveryItem, 'detectedAt' | 'id'>) {
+  return `${item.id}:${new Date(item.detectedAt).toISOString()}`;
+}
+
+function RetryStatus({ snapshot }: { snapshot: RetrySnapshot }) {
   if (snapshot.status === 'completed') {
     return (
       <p className="flex items-center gap-1 text-xs text-signal">

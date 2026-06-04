@@ -143,6 +143,7 @@ const DOCUMENT_PENDING_MS = 5 * 60 * 1000;
 const DOCUMENT_EXTRACTING_MS = 60 * 60 * 1000;
 const MEETING_PROCESSING_MS = 30 * 60 * 1000;
 const LIMIT = 200;
+const FINISHED_ARCHIVE_SCAN_BATCH = 100;
 
 const KIND_LABELS: Record<JobRecoveryKind, string> = {
   transcription: 'Transcription',
@@ -282,8 +283,8 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
     } = {},
   ): Promise<FinishedJobArchivePage> {
     await requireAdmin();
-    const offset = Math.max(0, Math.floor(input.offset ?? 0));
-    const limit = Math.min(100, Math.max(1, Math.floor(input.limit ?? 20)));
+    const offset = boundedInteger(input.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+    const limit = boundedInteger(input.limit, 20, 1, 100);
     return collectFinishedJobs(deps.teamId, q, { offset, limit });
   }
 
@@ -384,7 +385,7 @@ async function collectFinishedJobs(
   q: Required<RecoveryQueues>,
   page: { offset: number; limit: number },
 ): Promise<FinishedJobArchivePage> {
-  const end = page.offset + page.limit;
+  const minimumItems = page.offset + page.limit + 1;
   const queueEntries: FinishedQueueLike[] = [
     q.getTranscribeQueue(),
     q.getExtractQueue(),
@@ -399,17 +400,30 @@ async function collectFinishedJobs(
     q.getSuggestionQueue(),
   ];
   const jobsByQueue = await Promise.all(
-    queueEntries.map(async (queueLike) => {
-      const queueName = queueLike.name ?? 'background';
-      const jobs = await queueLike.getJobs(['completed', 'failed'], 0, end).catch(() => []);
-      return jobs.flatMap((job) => finishedJobToArchiveItem(queueName, teamId, job));
-    }),
+    queueEntries.map((queueLike) => collectFinishedQueueItems(queueLike, teamId, minimumItems)),
   );
   const items = jobsByQueue.flat().sort((a, b) => b.finishedAt.getTime() - a.finishedAt.getTime());
   return {
     items: items.slice(page.offset, page.offset + page.limit),
     nextOffset: items.length > page.offset + page.limit ? page.offset + page.limit : null,
   };
+}
+
+async function collectFinishedQueueItems(
+  queueLike: FinishedQueueLike,
+  teamId: string,
+  minimumItems: number,
+): Promise<FinishedJobArchiveItem[]> {
+  const queueName = queueLike.name ?? 'background';
+  const items: FinishedJobArchiveItem[] = [];
+  for (let start = 0; items.length < minimumItems; start += FINISHED_ARCHIVE_SCAN_BATCH) {
+    const end = start + FINISHED_ARCHIVE_SCAN_BATCH - 1;
+    const jobs = await queueLike.getJobs(['completed', 'failed'], start, end).catch(() => []);
+    if (jobs.length === 0) break;
+    items.push(...jobs.flatMap((job) => finishedJobToArchiveItem(queueName, teamId, job)));
+    if (jobs.length < FINISHED_ARCHIVE_SCAN_BATCH) break;
+  }
+  return items;
 }
 
 function finishedJobToArchiveItem(
@@ -1623,6 +1637,16 @@ function objectMeta(v: unknown): Record<string, unknown> {
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function boundedInteger(
+  value: number | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (value === undefined || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(value)));
 }
 
 function textValue(v: unknown): string | null {

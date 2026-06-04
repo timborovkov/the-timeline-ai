@@ -20,8 +20,8 @@ export async function GET(req: Request): Promise<Response> {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
   const url = new URL(req.url);
-  const offset = Number(url.searchParams.get('offset') ?? '0');
-  const limit = Number(url.searchParams.get('limit') ?? '20');
+  const offset = finiteNumber(url.searchParams.get('offset'), 0);
+  const limit = finiteNumber(url.searchParams.get('limit'), 20);
   const page = await scope.jobRecovery.listFinishedJobs({ offset, limit });
   return NextResponse.json({
     items: page.items.map((item) => ({
@@ -31,4 +31,10 @@ export async function GET(req: Request): Promise<Response> {
     })),
     nextOffset: page.nextOffset,
   });
+}
+
+function finiteNumber(value: string | null, fallback: number): number {
+  if (value === null) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
