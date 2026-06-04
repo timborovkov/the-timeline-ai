@@ -18,6 +18,26 @@
 
 const ALLOWED_UPDATES = ['message', 'edited_message', 'callback_query'] as const;
 
+let processPipeErrorHandlersInstalled = false;
+
+function isBrokenPipeError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const candidate = err as { code?: unknown };
+  return candidate.code === 'EPIPE' || candidate.code === 'ERR_STREAM_DESTROYED';
+}
+
+function ignoreBrokenPipeError(err: unknown): void {
+  if (isBrokenPipeError(err)) return;
+  throw err;
+}
+
+function installProcessPipeErrorHandlers(): void {
+  if (processPipeErrorHandlersInstalled) return;
+  processPipeErrorHandlersInstalled = true;
+  process.stdout.on('error', ignoreBrokenPipeError);
+  process.stderr.on('error', ignoreBrokenPipeError);
+}
+
 function nonEmptyEnv(value: string | undefined): string | undefined {
   return value && value.length > 0 ? value : undefined;
 }
@@ -103,6 +123,7 @@ export async function register(): Promise<void> {
   }
 
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
+  installProcessPipeErrorHandlers();
 
   if (process.env.NODE_ENV !== 'production') return;
 

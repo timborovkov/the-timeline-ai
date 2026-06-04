@@ -1,11 +1,31 @@
 import pino, { type Logger } from 'pino';
 
 let _root: Logger | undefined;
+let processPipeErrorHandlersInstalled = false;
 
 const LEVELS = new Set(['debug', 'info', 'warn', 'error', 'silent', 'trace', 'fatal']);
 
+function isBrokenPipeError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const candidate = err as { code?: unknown; syscall?: unknown };
+  return candidate.code === 'EPIPE' || candidate.code === 'ERR_STREAM_DESTROYED';
+}
+
+function ignoreBrokenPipeError(err: unknown): void {
+  if (isBrokenPipeError(err)) return;
+  throw err;
+}
+
+function installProcessPipeErrorHandlers(): void {
+  if (processPipeErrorHandlersInstalled) return;
+  processPipeErrorHandlersInstalled = true;
+  process.stdout.on('error', ignoreBrokenPipeError);
+  process.stderr.on('error', ignoreBrokenPipeError);
+}
+
 function getRoot(): Logger {
   if (_root) return _root;
+  installProcessPipeErrorHandlers();
   // Read directly from process.env rather than going through the validated
   // `getEnv()` schema — the logger must work during Next.js build's
   // "collect page data" phase and in tests where full env isn't set.
@@ -14,7 +34,7 @@ function getRoot(): Logger {
   const nodeEnv = process.env.NODE_ENV ?? 'development';
   const usePretty =
     nodeEnv === 'development' && level !== 'silent' && process.env.LOG_PRETTY === 'true';
-  _root = pino({
+  const options = {
     level,
     base: { env: nodeEnv },
     timestamp: pino.stdTimeFunctions.isoTime,
@@ -26,7 +46,14 @@ function getRoot(): Logger {
           },
         }
       : {}),
-  });
+  };
+  if (usePretty) {
+    _root = pino(options);
+  } else {
+    const destination = pino.destination(1);
+    destination.on('error', ignoreBrokenPipeError);
+    _root = pino(options, destination);
+  }
   return _root;
 }
 
