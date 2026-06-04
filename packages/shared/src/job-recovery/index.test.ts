@@ -457,6 +457,156 @@ describe('job recovery scope', () => {
     });
     await expect(scope.listRecoverableJobs()).resolves.toEqual([]);
   });
+
+  it('lists retained finished jobs for the active team with offset pagination', async () => {
+    const now = Date.now();
+    const scope = scopeFor(ADMIN_ID, 'admin', {
+      getTranscribeQueue: () =>
+        fakeQueue(
+          [
+            {
+              id: 'transcribe-1',
+              name: 'transcribe',
+              data: { rawEventId: RAW_ID, teamId: TEAM_ID },
+              attemptsMade: 1,
+              processedOn: now - 5_000,
+              finishedOn: now - 4_000,
+            },
+            {
+              id: 'transcribe-other-team',
+              name: 'transcribe',
+              data: { rawEventId: OTHER_TEAM_RAW_ID, teamId: OTHER_TEAM_ID },
+              attemptsMade: 1,
+              finishedOn: now - 1_000,
+            },
+          ],
+          'transcribe',
+        ),
+      getExtractQueue: () =>
+        fakeQueue(
+          [
+            {
+              id: 'extract-1',
+              name: 'extract',
+              data: { rawEventId: FAILED_EXTRACTION_RAW_ID, teamId: TEAM_ID },
+              attemptsMade: 3,
+              failedReason: 'model failed',
+              finishedOn: now - 2_000,
+            },
+          ],
+          'extract',
+        ),
+    });
+
+    const firstPage = await scope.listFinishedJobs({ offset: 0, limit: 1 });
+    const secondPage = await scope.listFinishedJobs({ offset: 1, limit: 1 });
+
+    expect(firstPage).toMatchObject({
+      nextOffset: 1,
+      items: [
+        {
+          artifactId: FAILED_EXTRACTION_RAW_ID,
+          artifactKind: 'raw_event',
+          kind: 'extraction',
+          queue: 'extract',
+          status: 'failed',
+          error: 'model failed',
+        },
+      ],
+    });
+    expect(secondPage).toMatchObject({
+      nextOffset: null,
+      items: [
+        {
+          artifactId: RAW_ID,
+          artifactKind: 'raw_event',
+          kind: 'transcription',
+          queue: 'transcribe',
+          status: 'completed',
+          error: null,
+        },
+      ],
+    });
+  });
+
+  it('scans past cross-team retained jobs when listing finished jobs', async () => {
+    const now = Date.now();
+    const otherTeamJobs = Array.from({ length: 100 }, (_, index) => ({
+      id: `other-${String(index)}`,
+      name: 'transcribe',
+      data: { rawEventId: OTHER_TEAM_RAW_ID, teamId: OTHER_TEAM_ID },
+      attemptsMade: 1,
+      finishedOn: now - index,
+    }));
+    const getJobs = vi.fn().mockImplementation((_types: unknown, start?: number, end?: number) => {
+      const startIndex = start ?? 0;
+      const endIndex = end ?? otherTeamJobs.length + 2;
+      return Promise.resolve(
+        [
+          ...otherTeamJobs,
+          {
+            id: 'transcribe-1',
+            name: 'transcribe',
+            data: { rawEventId: RAW_ID, teamId: TEAM_ID },
+            attemptsMade: 1,
+            finishedOn: now - 10_000,
+          },
+          {
+            id: 'transcribe-2',
+            name: 'transcribe',
+            data: { rawEventId: FAILED_EXTRACTION_RAW_ID, teamId: TEAM_ID },
+            attemptsMade: 1,
+            finishedOn: now - 11_000,
+          },
+        ].slice(startIndex, endIndex + 1),
+      );
+    });
+    const scope = scopeFor(ADMIN_ID, 'admin', {
+      getTranscribeQueue: () => ({ name: 'transcribe', getJobs }),
+    });
+
+    const page = await scope.listFinishedJobs({ offset: 0, limit: 1 });
+
+    expect(page).toMatchObject({
+      nextOffset: 1,
+      items: [{ id: 'transcribe:transcribe-1', artifactId: RAW_ID }],
+    });
+    expect(getJobs).toHaveBeenCalledWith(['completed', 'failed'], 0, 99);
+    expect(getJobs).toHaveBeenCalledWith(['completed', 'failed'], 100, 199);
+  });
+
+  it('keeps integration sync kind on finished archive rows', async () => {
+    const now = Date.now();
+    const scope = scopeFor(ADMIN_ID, 'admin', {
+      getIntegrationSyncQueue: () =>
+        fakeQueue(
+          [
+            {
+              id: 'backfill-1',
+              name: 'sync',
+              data: { kind: 'backfill', integrationId: INTEGRATION_ID, teamId: TEAM_ID },
+              attemptsMade: 1,
+              finishedOn: now - 1_000,
+            },
+            {
+              id: 'incremental-1',
+              name: 'sync',
+              data: { kind: 'incremental', integrationId: INTEGRATION_ID, teamId: TEAM_ID },
+              attemptsMade: 1,
+              finishedOn: now - 2_000,
+            },
+          ],
+          'integration-sync',
+        ),
+    });
+
+    const page = await scope.listFinishedJobs({ offset: 0, limit: 2 });
+
+    expect(page.items).toMatchObject([
+      { artifactId: INTEGRATION_ID, kind: 'integration_sync', syncKind: 'backfill' },
+      { artifactId: INTEGRATION_ID, kind: 'integration_sync', syncKind: 'incremental' },
+    ]);
+  });
 });
 
 function scopeFor(
@@ -479,17 +629,30 @@ function scopeFor(
       enqueueDocumentExtractJob: vi.fn().mockResolvedValue(undefined),
       enqueueMeetingFinalizeJob: vi.fn().mockResolvedValue(undefined),
       enqueueIntegrationSyncJob: vi.fn().mockResolvedValue(undefined),
+      getTranscribeQueue: () => fakeQueue([], 'transcribe'),
+      getExtractQueue: () => fakeQueue([], 'extract'),
       getEmbedQueue: () => fakeQueue([]),
+      getDocumentExtractQueue: () => fakeQueue([], 'document-extract'),
       getMeetingFinalizeQueue: () => fakeQueue([]),
       getIntegrationSyncQueue: () => fakeQueue([]),
+      getOverdueScanQueue: () => fakeQueue([], 'overdue-scan'),
+      getJanitorQueue: () => fakeQueue([], 'janitor'),
+      getMcpHealthQueue: () => fakeQueue([], 'mcp-health'),
+      getTeamExportQueue: () => fakeQueue([], 'team-export'),
+      getSuggestionQueue: () => fakeQueue([], 'suggestions'),
       ...queues,
     },
   });
 }
 
-function fakeQueue(jobs: unknown[]) {
+function fakeQueue(jobs: unknown[], name = 'queue') {
   return {
-    getJobs: vi.fn().mockResolvedValue(jobs),
+    name,
+    getJobs: vi.fn().mockImplementation((_types: unknown, start?: number, end?: number) => {
+      const startIndex = start ?? 0;
+      const endIndex = end ?? jobs.length - 1;
+      return Promise.resolve(jobs.slice(startIndex, endIndex + 1));
+    }),
   };
 }
 

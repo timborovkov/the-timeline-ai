@@ -194,6 +194,40 @@ export function useJobDashboardQuery() {
   });
 }
 
+export interface FinishedJobArchivePage {
+  items: {
+    id: string;
+    queue: string;
+    name: string;
+    kind: string;
+    artifactKind: string | null;
+    artifactId: string | null;
+    label: string;
+    status: 'completed' | 'failed';
+    attemptsMade: number;
+    processedAt: string | null;
+    finishedAt: string;
+    error: string | null;
+    syncKind?: 'backfill' | 'incremental';
+  }[];
+  nextOffset: number | null;
+}
+
+export function useFinishedJobsInfiniteQuery() {
+  return useInfiniteQuery({
+    queryKey: queryKeys.finishedJobs(),
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      const params = new URLSearchParams({ offset: String(pageParam), limit: '20' });
+      return readJson<FinishedJobArchivePage>(
+        await fetch(`/api/team/job-recovery/finished?${params.toString()}`),
+      );
+    },
+    getNextPageParam: (lastPage) => lastPage.nextOffset,
+    refetchInterval: 5_000,
+  });
+}
+
 export function useOnboardingChecklistQuery() {
   const queryClient = useQueryClient();
   const query = useQuery({

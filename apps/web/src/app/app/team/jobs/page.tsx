@@ -13,7 +13,7 @@ import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
   title: 'Jobs',
-  description: 'Review failed jobs and recovery actions.',
+  description: 'Review background jobs, retries, and finished history.',
 };
 
 export const dynamic = 'force-dynamic';
@@ -37,13 +37,13 @@ export default async function JobRecoveryPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
-      <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Job recovery' }]} />
+      <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Background jobs' }]} />
       <IndexStrip
-        srLabel={`Job recovery · ${String(items.length)} recoverable items`}
+        srLabel={`Background jobs · ${String(items.length)} items need attention`}
         segments={[
-          { value: 'JOB RECOVERY' },
+          { value: 'BACKGROUND JOBS' },
           { label: 'team', value: active.teamName, signal: true },
-          { label: 'items', value: items.length },
+          { label: 'needs attention', value: items.length },
         ]}
       />
       <section className="space-y-3">

@@ -23,4 +23,16 @@ describe('JobRecoveryList', () => {
     expect(source).not.toContain('waiting');
     expect(source).not.toContain('delayed');
   });
+
+  it('keys transient retry and dismiss state to the current job snapshot', () => {
+    const source = readFileSync(join(__dirname, 'job-recovery-list.tsx'), 'utf-8');
+
+    expect(source).toContain('const retryStartedAt = Date.now()');
+    expect(source).toContain('new Date(finished.finishedAt).getTime() >= snapshot.startedAt');
+    expect(source).not.toContain('snapshot.startedAt - 1_000');
+    expect(source).toContain('function itemSnapshotKey');
+    expect(source).toContain('new Date(item.detectedAt).toISOString()');
+    expect(source).toContain('item.syncKind');
+    expect(source).toContain("kind === 'integration_sync'");
+  });
 });

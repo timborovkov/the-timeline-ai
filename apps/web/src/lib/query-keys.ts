@@ -5,5 +5,6 @@ export const queryKeys = {
   documentSearch: (query: string, filters: Record<string, string | null | undefined>) =>
     ['documents', 'search', query, filters] as const,
   jobDashboard: () => ['jobs', 'dashboard'] as const,
+  finishedJobs: () => ['jobs', 'finished'] as const,
   onboarding: () => ['onboarding', 'checklist'] as const,
 };
