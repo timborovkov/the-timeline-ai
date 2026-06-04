@@ -13,23 +13,8 @@ interface ReportMessageOptions extends ReportOptions {
   message: string;
 }
 
-const EXPECTED_ERROR_MESSAGES = new Set([
-  'invalid',
-  'wrong-account',
-  'already-member',
-  'last_owner',
-  'not_found',
-  'invalid_recovery_id',
-  'stale_recovery_set',
-  'invalid_recovery_ids',
-]);
-
 export function shouldReportToSentry(err: unknown): boolean {
-  if (!(err instanceof Error)) return true;
-  if (err.name === 'AbortError') return false;
-  if (EXPECTED_ERROR_MESSAGES.has(err.message)) return false;
-  const digest = (err as Error & { digest?: string }).digest;
-  if (digest?.startsWith('NEXT_REDIRECT') || digest?.startsWith('NEXT_NOT_FOUND')) return false;
+  void err;
   return true;
 }
 

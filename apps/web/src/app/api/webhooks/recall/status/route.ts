@@ -81,6 +81,13 @@ function statusCodeFromEvent(event: string): string | null {
 export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
   if (!env.RECALL_STATUS_WEBHOOK_SECRET) {
+    reportHandledEvent({
+      message: 'recall_status_webhook_disabled',
+      surface: 'api',
+      operation: 'recall_status_config',
+      level: 'warning',
+      tags: { reason: 'webhook_disabled' },
+    });
     return Response.json({ ok: false, reason: 'webhook_disabled' }, { status: 503 });
   }
 
@@ -114,6 +121,13 @@ export async function POST(req: Request): Promise<Response> {
     parsed = statusEventSchema.parse(JSON.parse(body));
   } catch (err) {
     log.warn({ err }, 'invalid_payload');
+    reportHandledEvent({
+      message: 'recall_status_invalid_payload',
+      surface: 'api',
+      operation: 'recall_status_parse',
+      level: 'warning',
+      tags: { reason: 'invalid_payload' },
+    });
     return Response.json({ ok: true, reason: 'invalid_payload' }, { status: 200 });
   }
 

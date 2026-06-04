@@ -105,6 +105,11 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
       const raw = e instanceof Error ? e.message : '';
       const reason =
         raw === 'invalid' || raw === 'wrong-account' || raw === 'already-member' ? raw : 'failed';
+      reportCaughtError(e, {
+        surface: 'server_action',
+        operation: 'accept_invite',
+        tags: { reason },
+      });
 
       // Fallback: an OAuth user who arrived via /sign-up?invite=<token> skipped
       // the default solo-team creation in createUser. If invite acceptance then
@@ -268,7 +273,8 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
           );
         return { teamId: invite.teamId, role: invite.role };
       });
-    } catch {
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'accept_recipient_invite' });
       revalidatePath('/app', 'layout');
       return;
     }

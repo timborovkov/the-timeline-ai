@@ -12,6 +12,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
 import { runSentryServerAction } from '@/lib/sentry-action';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 const LINK_TOKEN_TTL_MS = 15 * 60 * 1000;
 
@@ -46,7 +47,11 @@ async function generateLinkTokenAction(
   const teamScope = withTeam(db, active.teamId, session.user.id);
   try {
     await teamScope.requireMembership(scope === 'group' ? 'admin' : 'member');
-  } catch {
+  } catch (err) {
+    reportCaughtError(err, {
+      surface: 'server_action',
+      operation: `telegram_${scope}_link_token_membership`,
+    });
     return { error: scope === 'group' ? 'Only admins can issue group tokens' : 'Not a member' };
   }
 
@@ -112,7 +117,8 @@ export async function revokeLinkTokenAction(formData: FormData): Promise<void> {
     const scope = withTeam(db, active.teamId, session.user.id);
     try {
       await scope.requireMembership('admin');
-    } catch {
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'revoke_link_token_auth' });
       return;
     }
     await db
@@ -134,7 +140,8 @@ export async function unbindChatAction(formData: FormData): Promise<void> {
     const scope = withTeam(db, active.teamId, session.user.id);
     try {
       await scope.requireMembership('admin');
-    } catch {
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'unbind_chat_auth' });
       return;
     }
     await db

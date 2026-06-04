@@ -162,6 +162,7 @@ const baseSchema = z.object({
   SENTRY_ORG: z.string().optional(),
   SENTRY_PROJECT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
+  SENTRY_SMOKE_TEST_TOKEN: z.string().optional(),
 
   // PostHog product analytics + feature flags. Browser-facing values are
   // intentionally public; server helpers no-op when the project key is unset.

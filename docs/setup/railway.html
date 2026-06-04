@@ -116,7 +116,9 @@
         optional source-map upload variables <code>SENTRY_AUTH_TOKEN</code>,
         <code>SENTRY_ORG</code>, <code>SENTRY_PROJECT</code>, and <code>SENTRY_RELEASE</code>.
         Source-map variables must be available during the Railway build phase for both the Next.js
-        upload and worker <code>sentry-cli</code> upload.
+        upload and worker <code>sentry-cli</code> upload. Set
+        <code>SENTRY_SMOKE_TEST_TOKEN</code> temporarily when testing production Sentry ingestion
+        through <code>/api/sentry/smoke</code>.
       </p>
       <p>
         For LLM observability, set <code>LANGSMITH_TRACING=true</code>,

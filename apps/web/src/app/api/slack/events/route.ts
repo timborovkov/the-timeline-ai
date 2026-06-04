@@ -6,7 +6,7 @@ import * as slack from '@timeline/shared/slack';
 
 import { slackIngestDeps } from '@/app/api/slack/_shared';
 import { db } from '@/lib/db';
-import { reportCaughtError } from '@/lib/sentry-report';
+import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,6 +16,13 @@ const log = childLogger('web:api:slack:events');
 export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
   if (!env.SLACK_SIGNING_SECRET) {
+    reportHandledEvent({
+      message: 'slack_events_webhook_disabled',
+      surface: 'api',
+      operation: 'slack_events_config',
+      level: 'warning',
+      tags: { reason: 'webhook_disabled' },
+    });
     return Response.json({ ok: false, reason: 'webhook_disabled' }, { status: 503 });
   }
   const clientIp = email.clientIpFromHeaders(req.headers);
@@ -35,12 +42,32 @@ export async function POST(req: Request): Promise<Response> {
     signature: req.headers.get('x-slack-signature'),
     body,
   });
-  if (!verified) return Response.json({ ok: false, reason: 'forbidden' }, { status: 401 });
+  if (!verified) {
+    reportHandledEvent({
+      message: 'slack_events_signature_failed',
+      surface: 'api',
+      operation: 'slack_events_verify',
+      level: 'warning',
+      tags: {
+        reason: 'forbidden',
+        has_timestamp: req.headers.has('x-slack-request-timestamp'),
+        has_signature: req.headers.has('x-slack-signature'),
+      },
+    });
+    return Response.json({ ok: false, reason: 'forbidden' }, { status: 401 });
+  }
 
   let payload: unknown;
   try {
     payload = JSON.parse(body);
   } catch {
+    reportHandledEvent({
+      message: 'slack_events_invalid_json',
+      surface: 'api',
+      operation: 'slack_events_parse',
+      level: 'warning',
+      tags: { reason: 'invalid_json' },
+    });
     return Response.json({ ok: false, reason: 'invalid_json' }, { status: 200 });
   }
 
@@ -66,6 +93,13 @@ export async function POST(req: Request): Promise<Response> {
       log.error({ err }, 'slack url verification failed');
       reportCaughtError(err, { surface: 'api', operation: 'slack_url_verification' });
     }
+    reportHandledEvent({
+      message: 'slack_events_invalid_challenge',
+      surface: 'api',
+      operation: 'slack_url_verification',
+      level: 'warning',
+      tags: { reason: 'invalid_challenge' },
+    });
     return Response.json({ ok: false, reason: 'invalid_challenge' }, { status: 200 });
   }
 

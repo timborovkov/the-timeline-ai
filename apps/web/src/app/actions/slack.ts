@@ -10,6 +10,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
 import { runSentryServerAction } from '@/lib/sentry-action';
+import { reportCaughtError } from '@/lib/sentry-report';
 
 const bindSchema = z.object({
   conversationId: z.string().min(1),
@@ -50,7 +51,8 @@ export async function bindSlackConversationAction(formData: FormData): Promise<v
           source: 'automatic',
         });
       }
-    } catch {
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'bind_slack_conversation' });
       return;
     }
     revalidatePath('/app/team/slack');
@@ -80,7 +82,8 @@ export async function unbindSlackConversationAction(formData: FormData): Promise
         targetId: parsed.data.id,
         metadata: { action: 'unbind' },
       });
-    } catch {
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'unbind_slack_conversation' });
       return;
     }
     revalidatePath('/app/team/slack');

@@ -9,11 +9,8 @@ vi.mock('@sentry/nextjs', () => ({
 }));
 
 describe('Sentry caught-error reporting', () => {
-  it('ignores expected framework and domain control-flow errors', () => {
-    expect(shouldReportToSentry(new Error('already-member'))).toBe(false);
-    expect(
-      shouldReportToSentry(Object.assign(new Error('redirect'), { digest: 'NEXT_REDIRECT;/' })),
-    ).toBe(false);
+  it('reports every error passed to the caught-error helper', () => {
+    expect(shouldReportToSentry(new Error('already-member'))).toBe(true);
     expect(shouldReportToSentry(new Error('database down'))).toBe(true);
   });
 

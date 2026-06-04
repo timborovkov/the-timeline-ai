@@ -47,10 +47,16 @@ SENTRY_PROFILES_SAMPLE_RATE=0
       <p>
         App Router render boundaries, API route handlers, server actions, webhook background
         handlers, queue handoffs, and other caught-but-unexpected operational failures report to
-        Sentry explicitly before returning graceful responses. Expected validation, authentication,
-        not-found, rate-limit, and provider-noise outcomes stay out of Sentry, except integration
-        authentication failures that indicate broken operator configuration such as Recall status
-        webhook Svix verification failures.
+        Sentry explicitly before returning graceful responses. Machine-to-machine authentication,
+        configuration, and malformed-payload failures are reported even when the endpoint returns a
+        provider-friendly <code>200</code> to avoid retry storms. Deliberate no-op outcomes such as
+        idempotent duplicates, unknown tenants, missing optional matches, and rate-limit skips stay
+        out of Sentry unless they throw.
+      </p>
+      <p>
+        Server action catch blocks that convert exceptions into returned action errors call Sentry
+        before returning. Plain validation, signed-out, not-found, and permission-denied branches
+        that do not throw remain product control flow.
       </p>
       <p>
         Server actions run through <code>runSentryServerAction</code>, which delegates to Sentry's
@@ -81,6 +87,8 @@ SENTRY_PROFILES_SAMPLE_RATE=0
 SENTRY_ORG=
 SENTRY_PROJECT=
 SENTRY_RELEASE=
+# Optional: enables POST /api/sentry/smoke for production ingestion checks.
+SENTRY_SMOKE_TEST_TOKEN=
 </code></pre>
       <p>
         <code>SENTRY_RELEASE</code> is optional because injected debug IDs are enough for source-map
@@ -116,6 +124,20 @@ SENTRY_RELEASE=
           maps.
         </li>
       </ul>
+      <h2 id="smoke-test">5. Smoke test</h2>
+      <p>
+        To prove production ingestion from the deployed web container, set
+        <code>SENTRY_SMOKE_TEST_TOKEN</code> on the web service and redeploy. Then call:
+      </p>
+      <pre><code>curl -X POST https://thetimeline.cc/api/sentry/smoke \
+  -H "Authorization: Bearer $SENTRY_SMOKE_TEST_TOKEN"
+</code></pre>
+      <p>
+        A healthy response is
+        <code>{"ok":true,"sentryConfigured":true,"clientInitialized":true,"flushed":true}</code>,
+        and Sentry should receive an error named <code>sentry_smoke_test</code>. Remove or rotate
+        the token after testing if you do not want the endpoint available.
+      </p>
     </main>
   </body>
 </html>

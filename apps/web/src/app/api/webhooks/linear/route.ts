@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
-import { reportCaughtError } from '@/lib/sentry-report';
+import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 // Pull the Linear team id out of a webhook payload. The schema varies by
 // entity type — Linear puts it at different paths for Issue vs Comment
@@ -53,12 +53,26 @@ export async function POST(req: Request): Promise<Response> {
   const sig = req.headers.get('linear-signature');
   const body = await req.text();
   if (!integrationsLib.verifyLinearSignature(body, sig)) {
+    reportHandledEvent({
+      message: 'linear_webhook_bad_signature',
+      surface: 'api',
+      operation: 'linear_webhook_auth',
+      level: 'warning',
+      tags: { provider: 'linear', reason: 'bad_signature', has_signature: Boolean(sig) },
+    });
     return NextResponse.json({ ok: false, reason: 'bad_signature' }, { status: 200 });
   }
   let payload: unknown;
   try {
     payload = JSON.parse(body);
   } catch {
+    reportHandledEvent({
+      message: 'linear_webhook_bad_json',
+      surface: 'api',
+      operation: 'linear_webhook_parse',
+      level: 'warning',
+      tags: { provider: 'linear', reason: 'bad_json' },
+    });
     return NextResponse.json({ ok: false, reason: 'bad_json' }, { status: 200 });
   }
   // Linear webhooks carry `organizationId` at the top level. We OAuth as
