@@ -10,7 +10,8 @@ import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
-import { getQdrantClient, buildPointId } from '#src/qdrant/client.js';
+import { getQdrantClient } from '#src/qdrant/client.js';
+import { buildChunkedPointIds } from '#src/qdrant/point-id.js';
 import { enqueueCalendarEventEmbedJob } from '#src/queue/queues.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
 
@@ -21,6 +22,7 @@ type DbOrTx = Db | DbTx;
 type CalendarQdrantAction = 'embed' | 'delete' | null;
 
 const log = childLogger('calendar:scope');
+const MAX_EMBEDDING_CLEANUP_CHUNKS = 128;
 
 export interface CalendarScopeDeps {
   db: Db;
@@ -254,7 +256,9 @@ async function deleteCalendarEventPoints(eventId: string): Promise<void> {
     const client = getQdrantClient();
     const activeModel = TIMELINE_MODELS.embedding.id;
     const models = uniqueIds([activeModel, 'openai/text-embedding-3-small']);
-    const pointIds = models.map((m) => buildPointId('calendar_event', eventId, m));
+    const pointIds = models.flatMap((m) =>
+      buildChunkedPointIds('calendar_event', eventId, m, MAX_EMBEDDING_CLEANUP_CHUNKS),
+    );
     await client.deletePoints(pointIds);
   } catch {
     // Calendar deletion should not fail just because semantic search cleanup

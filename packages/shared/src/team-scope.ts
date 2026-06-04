@@ -37,12 +37,12 @@ import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js
 import { createOnboardingScope } from '#src/onboarding/index.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import {
-  buildPointId,
   getQdrantClient,
   type SearchHit,
   type SearchOpts,
   type SourceKind,
 } from '#src/qdrant/client.js';
+import { buildChunkedPointIds } from '#src/qdrant/point-id.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
 import { normalizeVisibilityUserIds, rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -72,6 +72,7 @@ export type EventVisibility = 'private' | 'team' | 'specific_users';
 export type EmailEventVisibility = Exclude<EventVisibility, 'specific_users'>;
 
 const ROLE_RANK: Record<TeamRole, number> = { member: 0, admin: 1, owner: 2 };
+const MAX_EMBEDDING_CLEANUP_CHUNKS = 128;
 const SPECIFIC_USERS_DEFAULT_SOURCES = new Set<VisibilityDefaultSource>([
   'document',
   'meeting',
@@ -956,8 +957,10 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       const activeModel = TIMELINE_MODELS.embedding.id;
       const models = [...new Set([activeModel, 'openai/text-embedding-3-small'])];
       const pointIds = models.flatMap((model) => [
-        buildPointId('event', rawEventId, model),
-        ...factRows.map((f) => buildPointId('fact', f.id, model)),
+        ...buildChunkedPointIds('event', rawEventId, model, MAX_EMBEDDING_CLEANUP_CHUNKS),
+        ...factRows.flatMap((f) =>
+          buildChunkedPointIds('fact', f.id, model, MAX_EMBEDDING_CLEANUP_CHUNKS),
+        ),
       ]);
       await getQdrantClient().deletePoints(pointIds);
     } catch {

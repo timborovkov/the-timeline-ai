@@ -1,11 +1,12 @@
 import { type Db, rawEvents } from '@timeline/db';
-import { childLogger, embedding, getEnv, llm, qdrant, queue } from '@timeline/shared';
+import { childLogger, chunkText, embedding, getEnv, llm, qdrant, queue } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:embed');
+const EMBEDDING_OVERLAP_TOKENS = 120;
 
 interface EmbedWorkerDeps {
   db: Db;
@@ -31,6 +32,17 @@ function embedFailureTags(job: Pick<Job<queue.EmbedJobData>, 'data'> | undefined
   }
 }
 
+function embeddingChunkBudgetTokens(): number {
+  return Math.max(1, Math.floor(llm.TIMELINE_MODELS.embedding.contextWindowTokens * 0.8));
+}
+
+function chunkForEmbedding(text: string) {
+  return chunkText(text, {
+    targetTokens: embeddingChunkBudgetTokens(),
+    overlapTokens: EMBEDDING_OVERLAP_TOKENS,
+  });
+}
+
 async function processEmbedJob(
   deps: EmbedWorkerDeps,
   data: queue.EmbedJobData,
@@ -54,15 +66,23 @@ async function processEmbedJob(
     return { skipped: true };
   }
 
-  // LLM call BEFORE Qdrant write so a transient embedding failure
-  // retries cleanly. No DB transaction is open during the network call.
+  // LLM calls BEFORE Qdrant writes so transient embedding failures retry
+  // cleanly. Long source text is split into multiple deterministic points
+  // instead of being truncated, preserving retrievable evidence.
   const embed = io.embed ?? llm.embed;
-  const { vector, model } = await embed({ text: plan.text });
+  const chunks = chunkForEmbedding(plan.text);
+  const embeddedChunks = [];
+  for (const chunk of chunks) {
+    const result = await embed({ text: chunk.text });
+    embeddedChunks.push({ ...chunk, vector: result.vector, model: result.model });
+  }
+  const model = embeddedChunks[0]?.model;
+  if (!model) return { skipped: true };
+
   const getQdrantClient = io.getQdrantClient ?? qdrant.getQdrantClient;
   const client = getQdrantClient(
     data.targetCollection ? { collection: data.targetCollection, requireExisting: true } : {},
   );
-  const pointId = qdrant.buildPointId(plan.scope, plan.sourceId, model);
   const basePayload = embedding.blankEmbeddingPayload({
     teamId: data.teamId,
     occurredAt: plan.occurredAt,
@@ -75,7 +95,12 @@ async function processEmbedJob(
     ...plan.payloadOverrides,
     embedding_model: model,
   };
-  await client.upsertVector(pointId, vector, payload);
+  const pointIds = [];
+  for (const chunk of embeddedChunks) {
+    const pointId = qdrant.buildChunkedPointId(plan.scope, plan.sourceId, chunk.model, chunk.index);
+    pointIds.push(pointId);
+    await client.upsertVector(pointId, chunk.vector, payload);
+  }
 
   // Only event-scope raw_events.source_metadata gets stamped — see Phase 5
   // rationale below. Non-event scopes don't have a single canonical row to
@@ -84,6 +109,7 @@ async function processEmbedJob(
     const successPatch = JSON.stringify({
       embedded_at: new Date().toISOString(),
       embedding_model: model,
+      embedding_chunks: embeddedChunks.length,
     });
     await deps.db
       .update(rawEvents)
@@ -93,17 +119,17 @@ async function processEmbedJob(
       .where(eq(rawEvents.id, data.rawEventId));
   }
 
-  return { scope: plan.scope, sourceId: plan.sourceId, model, pointId };
+  return { scope: plan.scope, sourceId: plan.sourceId, model, pointId: pointIds[0], pointIds };
 }
 
 /**
- * Embed worker: writes one Qdrant point per source row using the pinned
- * embedding model. Phase 5 covers {raw_event, fact}; Phase 8 follow-ups
+ * Embed worker: writes one or more Qdrant chunk points per source row using the
+ * pinned embedding model. Phase 5 covers {raw_event, fact}; Phase 8 follow-ups
  * add {object, object_note, object_change, entity}.
  *
  * Idempotency comes from deterministic Qdrant point ids derived from
- * (scope, sourceId, embedding_model). A duplicate enqueue upserts the same
- * point and costs at most one embedding call.
+ * (scope, sourceId, embedding_model, chunk_index). A duplicate enqueue upserts
+ * the same point(s) and costs at most the same embedding calls.
  *
  * Failure modes:
  *   - `OPENROUTER_API_KEY` or `QDRANT_URL` unset → UnrecoverableError.

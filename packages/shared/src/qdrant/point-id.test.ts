@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPointId } from '#src/qdrant/point-id.js';
+import { buildChunkedPointId, buildChunkedPointIds, buildPointId } from '#src/qdrant/point-id.js';
 
 const UUID_V4_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -34,5 +34,17 @@ describe('buildPointId', () => {
     const docId = buildPointId('doc_chunk', sameSourceId, 'm');
     expect(new Set([evId, factId, docId]).size).toBe(3);
     expect(docId).toMatch(UUID_V4_LIKE);
+  });
+
+  it('uses the base point id for chunk zero and deterministic ids for later chunks', () => {
+    expect(buildChunkedPointId('event', 'src-1', 'm', 0)).toBe(buildPointId('event', 'src-1', 'm'));
+    expect(buildChunkedPointId('event', 'src-1', 'm', 1)).toBe(
+      buildPointId('event', 'src-1:chunk:1', 'm'),
+    );
+    expect(buildChunkedPointIds('event', 'src-1', 'm', 3)).toEqual([
+      buildPointId('event', 'src-1', 'm'),
+      buildPointId('event', 'src-1:chunk:1', 'm'),
+      buildPointId('event', 'src-1:chunk:2', 'm'),
+    ]);
   });
 });

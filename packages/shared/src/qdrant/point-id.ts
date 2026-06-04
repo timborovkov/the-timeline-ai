@@ -43,3 +43,27 @@ export function buildPointId(scope: PointScope, sourceId: string, modelTag: stri
     `${hex.slice(16, 20)}-${hex.slice(20, 32)}`
   );
 }
+
+export function buildChunkedPointId(
+  scope: PointScope,
+  sourceId: string,
+  modelTag: string,
+  chunkIndex: number,
+): string {
+  return buildPointId(
+    scope,
+    chunkIndex === 0 ? sourceId : `${sourceId}:chunk:${chunkIndex}`,
+    modelTag,
+  );
+}
+
+export function buildChunkedPointIds(
+  scope: PointScope,
+  sourceId: string,
+  modelTag: string,
+  chunkCount: number,
+): string[] {
+  return Array.from({ length: chunkCount }, (_, index) =>
+    buildChunkedPointId(scope, sourceId, modelTag, index),
+  );
+}

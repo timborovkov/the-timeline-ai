@@ -209,6 +209,24 @@ function buildHeaders(apiKey: string | undefined): Record<string, string> {
   return headers;
 }
 
+function collectionVectorSize(data: unknown): number | null {
+  const result = data && typeof data === 'object' ? (data as { result?: unknown }).result : null;
+  const config =
+    result && typeof result === 'object' ? (result as { config?: unknown }).config : null;
+  const params =
+    config && typeof config === 'object' ? (config as { params?: unknown }).params : null;
+  const vectors =
+    params && typeof params === 'object' ? (params as { vectors?: unknown }).vectors : null;
+  if (!vectors || typeof vectors !== 'object') return null;
+  const size = (vectors as { size?: unknown }).size;
+  if (typeof size === 'number') return size;
+
+  const firstNamedVector = Object.values(vectors).find(
+    (value): value is { size?: unknown } => Boolean(value) && typeof value === 'object',
+  );
+  return typeof firstNamedVector?.size === 'number' ? firstNamedVector.size : null;
+}
+
 /**
  * Construct a Qdrant client bound to a single collection. The raw REST surface
  * is intentionally hidden — every read path goes through `search`, which bakes
@@ -262,7 +280,19 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
   async function ensureCollection(): Promise<void> {
     ensurePromise ??= (async () => {
       const head = await request('GET', `/collections/${encodeURIComponent(collection)}`);
-      if (head.status === 200) return;
+      if (head.status === 200) {
+        const existingVectorSize = collectionVectorSize(head.data);
+        if (existingVectorSize !== null && existingVectorSize !== vectorSize) {
+          throw new Error(
+            `Qdrant collection '${collection}' vector size ${String(
+              existingVectorSize,
+            )} != configured embedding dimensions ${String(
+              vectorSize,
+            )}. Recreate the collection or set QDRANT_COLLECTION to a collection built for the active embedding model before retrying jobs.`,
+          );
+        }
+        return;
+      }
       // requireExisting: used by the re-embed script's --target-collection
       // path. The operator pre-creates the new collection at the new vector
       // size (documented step 2). Without this guard, a worker process

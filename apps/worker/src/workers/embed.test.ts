@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import { calendarEvents, rawEvents } from '@timeline/db';
-import { qdrant } from '@timeline/shared';
+import { llm, qdrant } from '@timeline/shared';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -183,6 +183,7 @@ describe('processEmbedJobForTests', () => {
       sourceId: rawEventId,
       model: 'test-embed-model',
       pointId: expectedPointId,
+      pointIds: [expectedPointId],
     });
     expect(upsertVector).toHaveBeenCalledWith(
       expectedPointId,
@@ -202,6 +203,76 @@ describe('processEmbedJobForTests', () => {
     const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(row?.sourceMetadata).toMatchObject({ embedding_model: 'test-embed-model' });
     expect(row?.sourceMetadata).toHaveProperty('embedded_at');
+    expect(row?.sourceMetadata).toMatchObject({ embedding_chunks: 1 });
+  });
+
+  it('splits oversized source text and upserts one vector per chunk', async () => {
+    const rawEventId = '11111111-2222-4333-8444-555555555555';
+    const longText = Array.from(
+      { length: 2400 },
+      (_, i) => `Long meeting note sentence ${String(i)} with a useful detail.`,
+    ).join(' ');
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: longText,
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const embed = vi.fn<(input: { text: string }) => Promise<{ vector: number[]; model: string }>>(
+      () =>
+        Promise.resolve({
+          vector: [0.1, 0.2, 0.3, 0.4],
+          model: 'test-embed-model',
+        }),
+    );
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+
+    const result = await processEmbedJobForTests(
+      { db: db as never },
+      { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+      {
+        getEnv: () =>
+          ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+        embed,
+        getQdrantClient: vi.fn(() => ({ upsertVector }) as never),
+      },
+    );
+
+    expect(embed.mock.calls.length).toBeGreaterThan(1);
+    expect(upsertVector).toHaveBeenCalledTimes(embed.mock.calls.length);
+    const sentText = embed.mock.calls.map((call) => call[0].text);
+    expect(sentText.join(' ')).toContain('Long meeting note sentence 2399');
+    for (const text of sentText) {
+      expect(text.length).toBeLessThanOrEqual(
+        Math.floor(llm.TIMELINE_MODELS.embedding.contextWindowTokens * 0.8) * 4,
+      );
+    }
+    const expectedPointIds = qdrant.buildChunkedPointIds(
+      'event',
+      rawEventId,
+      'test-embed-model',
+      embed.mock.calls.length,
+    );
+    expect(result).toMatchObject({
+      scope: 'event',
+      sourceId: rawEventId,
+      model: 'test-embed-model',
+      pointId: expectedPointIds[0],
+      pointIds: expectedPointIds,
+    });
+    for (const pointId of expectedPointIds) {
+      expect(upsertVector).toHaveBeenCalledWith(pointId, [0.1, 0.2, 0.3, 0.4], expect.any(Object));
+    }
+    const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
+    expect(row?.sourceMetadata).toMatchObject({
+      embedding_model: 'test-embed-model',
+      embedding_chunks: embed.mock.calls.length,
+    });
   });
 
   it('skips non-team raw events without embedding or Qdrant writes', async () => {

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { resetEnvForTests } from '#src/env.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 import {
   createQdrantClient,
   getQdrantClient,
@@ -16,13 +17,14 @@ interface CapturedCall {
   body: unknown;
 }
 
-function makeFetcher(initial: { collectionExists?: boolean } = {}): {
+function makeFetcher(initial: { collectionExists?: boolean; vectorSize?: number } = {}): {
   fetcher: typeof fetch;
   calls: CapturedCall[];
   setSearchResult: (hits: { id: string; score: number; payload: QdrantPayload }[]) => void;
 } {
   const calls: CapturedCall[] = [];
   let collectionExists = initial.collectionExists ?? false;
+  const collectionVectorSize = initial.vectorSize ?? TIMELINE_MODELS.embedding.embeddingDimensions;
   let searchResult: { id: string; score: number; payload: QdrantPayload }[] = [];
 
   const fetcher: typeof fetch = (input, init) => {
@@ -35,7 +37,15 @@ function makeFetcher(initial: { collectionExists?: boolean } = {}): {
     if (method === 'GET' && url.includes('/collections/')) {
       if (collectionExists) {
         return Promise.resolve(
-          new Response(JSON.stringify({ result: { status: 'green' } }), { status: 200 }),
+          new Response(
+            JSON.stringify({
+              result: {
+                status: 'green',
+                config: { params: { vectors: { size: collectionVectorSize, distance: 'Cosine' } } },
+              },
+            }),
+            { status: 200 },
+          ),
         );
       }
       return Promise.resolve(new Response('not found', { status: 404 }));
@@ -142,7 +152,7 @@ describe('createQdrantClient', () => {
   });
 
   it('skips collection creation when HEAD returns 200', async () => {
-    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const { fetcher, calls } = makeFetcher({ collectionExists: true, vectorSize: 4 });
     const client = createQdrantClient({ fetcher, vectorSize: 4 });
     await client.upsertVector('id-1', [0.1, 0.2, 0.3, 0.4], samplePayload);
     const creates = calls.filter(
@@ -151,8 +161,14 @@ describe('createQdrantClient', () => {
     expect(creates).toHaveLength(0);
   });
 
+  it('rejects an existing collection with the wrong vector dimension', async () => {
+    const { fetcher } = makeFetcher({ collectionExists: true, vectorSize: 2560 });
+    const client = createQdrantClient({ fetcher, vectorSize: 1536 });
+    await expect(client.ensureCollection()).rejects.toThrow(/vector size 2560/);
+  });
+
   it('rejects vectors that disagree with the collection dimension', async () => {
-    const { fetcher } = makeFetcher({ collectionExists: true });
+    const { fetcher } = makeFetcher({ collectionExists: true, vectorSize: 4 });
     const client = createQdrantClient({ fetcher, vectorSize: 4 });
     await expect(client.upsertVector('id-1', [0.1, 0.2, 0.3], samplePayload)).rejects.toThrow(
       /vector length/,
