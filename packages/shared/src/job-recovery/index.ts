@@ -52,6 +52,7 @@ export interface JobRecoveryItem {
   error: string | null;
   retryable: boolean;
   detectedAt: Date;
+  syncKind?: 'backfill' | 'incremental';
 }
 
 export interface DismissFailedRecoverableJobsInput {
@@ -74,6 +75,7 @@ export interface FinishedJobArchiveItem {
   processedAt: Date | null;
   finishedAt: Date;
   error: string | null;
+  syncKind?: 'backfill' | 'incremental';
 }
 
 export interface FinishedJobArchivePage {
@@ -453,6 +455,7 @@ function finishedJobToArchiveItem(
       processedAt: typeof job.processedOn === 'number' ? new Date(job.processedOn) : null,
       finishedAt: new Date(finishedOn),
       error: job.failedReason ?? null,
+      ...(identity.syncKind ? { syncKind: identity.syncKind } : {}),
     },
   ];
 }
@@ -464,7 +467,7 @@ function isBullJob(job: unknown): job is BullJobLike {
 function archiveIdentity(
   queueName: string,
   data: Record<string, unknown>,
-): Pick<FinishedJobArchiveItem, 'artifactId' | 'artifactKind' | 'kind' | 'label'> {
+): Pick<FinishedJobArchiveItem, 'artifactId' | 'artifactKind' | 'kind' | 'label' | 'syncKind'> {
   if (queueName === queue.QUEUE_NAMES.transcribe && typeof data.rawEventId === 'string') {
     return archiveItemIdentity('transcription', 'raw_event', data.rawEventId, 'Transcription');
   }
@@ -494,12 +497,15 @@ function archiveIdentity(
     );
   }
   if (queueName === queue.QUEUE_NAMES.integrationSync && typeof data.integrationId === 'string') {
-    return archiveItemIdentity(
-      'integration_sync',
-      'integration',
-      data.integrationId,
-      'Integration sync',
-    );
+    return {
+      ...archiveItemIdentity(
+        'integration_sync',
+        'integration',
+        data.integrationId,
+        'Integration sync',
+      ),
+      syncKind: data.kind === 'backfill' ? 'backfill' : 'incremental',
+    };
   }
   if (queueName === queue.QUEUE_NAMES.teamExport && typeof data.teamExportId === 'string') {
     return archiveItemIdentity('team_export', 'team', data.teamExportId, 'Team export');
@@ -532,7 +538,7 @@ function archiveIdentity(
 
 function archiveEmbedIdentity(
   data: Record<string, unknown>,
-): Pick<FinishedJobArchiveItem, 'artifactId' | 'artifactKind' | 'kind' | 'label'> {
+): Pick<FinishedJobArchiveItem, 'artifactId' | 'artifactKind' | 'kind' | 'label' | 'syncKind'> {
   if (typeof data.factId === 'string') {
     return archiveItemIdentity('embedding', 'fact', data.factId, 'Embedding');
   }
@@ -1255,6 +1261,7 @@ function item(
     error: opts.error ?? null,
     retryable: true,
     detectedAt: opts.detectedAt,
+    ...(opts.syncKind ? { syncKind: opts.syncKind } : {}),
   };
 }
 

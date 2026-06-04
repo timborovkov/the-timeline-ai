@@ -32,5 +32,7 @@ describe('JobRecoveryList', () => {
     expect(source).not.toContain('snapshot.startedAt - 1_000');
     expect(source).toContain('function itemSnapshotKey');
     expect(source).toContain('new Date(item.detectedAt).toISOString()');
+    expect(source).toContain('item.syncKind');
+    expect(source).toContain("kind === 'integration_sync'");
   });
 });

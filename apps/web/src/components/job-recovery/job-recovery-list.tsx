@@ -54,7 +54,7 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
     const byIdentity = new Map<string, FinishedJobArchivePage['items']>();
     for (const item of finishedArchiveItems) {
       if (!item.artifactKind || !item.artifactId) continue;
-      const key = archiveIdentityKey(item.kind, item.artifactKind, item.artifactId);
+      const key = archiveIdentityKey(item.kind, item.artifactKind, item.artifactId, item.syncKind);
       const current = byIdentity.get(key) ?? [];
       current.push(item);
       byIdentity.set(key, current);
@@ -67,8 +67,9 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
       const snapshot = retrySnapshots[item.id];
       if (!snapshot) continue;
       const matches =
-        finishedByIdentity.get(archiveIdentityKey(item.kind, item.artifactKind, item.artifactId)) ??
-        [];
+        finishedByIdentity.get(
+          archiveIdentityKey(item.kind, item.artifactKind, item.artifactId, item.syncKind),
+        ) ?? [];
       let match: FinishedJobArchivePage['items'][number] | undefined;
       for (const finished of matches) {
         if (new Date(finished.finishedAt).getTime() >= snapshot.startedAt) {
@@ -266,8 +267,13 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
   );
 }
 
-function archiveIdentityKey(kind: string, artifactKind: string, artifactId: string) {
-  return `${kind}:${artifactKind}:${artifactId}`;
+function archiveIdentityKey(
+  kind: string,
+  artifactKind: string,
+  artifactId: string,
+  syncKind?: string,
+) {
+  return `${kind}:${artifactKind}:${artifactId}:${kind === 'integration_sync' ? (syncKind ?? 'incremental') : ''}`;
 }
 
 function itemSnapshotKey(item: Pick<JobRecoveryItem, 'detectedAt' | 'id'>) {

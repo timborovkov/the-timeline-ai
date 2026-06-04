@@ -574,6 +574,39 @@ describe('job recovery scope', () => {
     expect(getJobs).toHaveBeenCalledWith(['completed', 'failed'], 0, 99);
     expect(getJobs).toHaveBeenCalledWith(['completed', 'failed'], 100, 199);
   });
+
+  it('keeps integration sync kind on finished archive rows', async () => {
+    const now = Date.now();
+    const scope = scopeFor(ADMIN_ID, 'admin', {
+      getIntegrationSyncQueue: () =>
+        fakeQueue(
+          [
+            {
+              id: 'backfill-1',
+              name: 'sync',
+              data: { kind: 'backfill', integrationId: INTEGRATION_ID, teamId: TEAM_ID },
+              attemptsMade: 1,
+              finishedOn: now - 1_000,
+            },
+            {
+              id: 'incremental-1',
+              name: 'sync',
+              data: { kind: 'incremental', integrationId: INTEGRATION_ID, teamId: TEAM_ID },
+              attemptsMade: 1,
+              finishedOn: now - 2_000,
+            },
+          ],
+          'integration-sync',
+        ),
+    });
+
+    const page = await scope.listFinishedJobs({ offset: 0, limit: 2 });
+
+    expect(page.items).toMatchObject([
+      { artifactId: INTEGRATION_ID, kind: 'integration_sync', syncKind: 'backfill' },
+      { artifactId: INTEGRATION_ID, kind: 'integration_sync', syncKind: 'incremental' },
+    ]);
+  });
 });
 
 function scopeFor(

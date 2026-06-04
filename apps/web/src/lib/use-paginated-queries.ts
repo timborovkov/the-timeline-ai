@@ -208,6 +208,7 @@ export interface FinishedJobArchivePage {
     processedAt: string | null;
     finishedAt: string;
     error: string | null;
+    syncKind?: 'backfill' | 'incremental';
   }[];
   nextOffset: number | null;
 }
