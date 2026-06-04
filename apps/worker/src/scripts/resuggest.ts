@@ -253,9 +253,11 @@ async function main(): Promise<void> {
   }
 
   const jobs = [...direct, ...conversations.values()].sort(
-    (a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || a.id.localeCompare(b.id),
+    (a, b) => b.occurredAt.getTime() - a.occurredAt.getTime() || b.id.localeCompare(a.id),
   );
-  const limitedJobs = jobs.slice(0, limit);
+  const limitedJobs = jobs
+    .slice(0, limit)
+    .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || a.id.localeCompare(b.id));
 
   let recovered = 0;
   let enqueued = 0;

@@ -12,12 +12,12 @@ from `main`. Current suite shape:
 
 - DB Vitest: 1 file / 5 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 63 files / 527 tests plus 1 skipped, including PGlite
+- Shared Vitest: 64 files / 561 tests plus 1 skipped, including PGlite
   integration/eval coverage plus queue, S3, and onboarding contracts.
-- Web Vitest: 71 files / 360 tests, including route/action/component coverage
+- Web Vitest: 74 files / 373 tests, including route/action/component coverage
   for core recovery, onboarding, object sections, and first high-value UI
   states.
-- Worker Vitest: 10 files / 94 tests, including extract, transcribe,
+- Worker Vitest: 10 files / 105 tests, including extract, transcribe,
   suggestions, embed, document extract, meeting finalize, janitor, and overdue
   processors.
 - Playwright: 13 local core E2E journeys plus 1 production-ish smoke journey.

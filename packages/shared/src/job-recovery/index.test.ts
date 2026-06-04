@@ -308,12 +308,42 @@ describe('job recovery scope', () => {
       expectedCount: failedExtractions.length,
     });
 
-    expect(result).toEqual({ retried: 1 });
+    expect(result).toEqual({ retried: 1, failed: 0, failedIds: [] });
     expect(enqueueExtractJob).toHaveBeenCalledWith({
       rawEventId: FAILED_EXTRACTION_RAW_ID,
       teamId: TEAM_ID,
     });
     expect(enqueueTranscribeJob).not.toHaveBeenCalled();
+  });
+
+  it('bulk retry reports partial enqueue failures without hiding successful retries', async () => {
+    await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
+    await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
+      sourceMetadata:
+        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+    });
+    const enqueueTranscribeJob = vi.fn().mockResolvedValue(undefined);
+    const enqueueExtractJob = vi.fn().mockRejectedValue(new Error('redis down'));
+    const scope = scopeFor(ADMIN_ID, 'admin', { enqueueExtractJob, enqueueTranscribeJob });
+
+    const failed = (await scope.listRecoverableJobs()).filter((item) => item.status === 'failed');
+    const extraction = failed.find((item) => item.artifactId === FAILED_EXTRACTION_RAW_ID);
+    if (!extraction) throw new Error('expected failed extraction');
+    const result = await scope.retryFailedRecoverableJobs({
+      items: failed.map((item) => ({ id: item.id, detectedAt: item.detectedAt })),
+      expectedCount: failed.length,
+    });
+
+    expect(result).toEqual({ retried: 1, failed: 1, failedIds: [extraction.id] });
+    expect(enqueueTranscribeJob).toHaveBeenCalledWith({
+      rawEventId: RAW_ID,
+      teamId: TEAM_ID,
+      audioKey: 'audio/raw.ogg',
+    });
+    expect(enqueueExtractJob).toHaveBeenCalledWith({
+      rawEventId: FAILED_EXTRACTION_RAW_ID,
+      teamId: TEAM_ID,
+    });
   });
 
   it('rejects stale bulk retry snapshots', async () => {

@@ -160,6 +160,22 @@ function bullmqCustomJobId(parts: string[]): string {
   return parts.map((part) => encodeURIComponent(part)).join('|');
 }
 
+interface ExistingJobLike {
+  getState?: () => Promise<string>;
+  remove?: () => Promise<void>;
+}
+
+const SUGGESTION_JOB_DEDUPE_STATES = new Set([
+  'active',
+  'delayed',
+  'paused',
+  'prioritized',
+  'waiting',
+  'waiting-children',
+]);
+
+const SUGGESTION_JOB_REPLACEABLE_STATES = new Set(['completed', 'failed']);
+
 export function getSuggestionQueue(): TimelineQueue<SuggestionJobData> {
   if (_suggestionQueue) return _suggestionQueue;
   _suggestionQueue = new Queue<
@@ -196,7 +212,21 @@ export async function enqueueSuggestionJob(
         ? bullmqCustomJobId(['raw-event', data.rawEventId, opts.jobIdSuffix])
         : undefined;
   const q = getSuggestionQueue();
-  if (jobId && (await q.getJob(jobId))) return { enqueued: false, jobId };
+  const existing = jobId ? ((await q.getJob(jobId)) as ExistingJobLike | null) : null;
+  if (jobId && existing) {
+    const state = await existing.getState?.().catch(() => null);
+    if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) return { enqueued: false, jobId };
+    if (SUGGESTION_JOB_REPLACEABLE_STATES.has(state)) {
+      if (!existing.remove) return { enqueued: false, jobId };
+      const removed = await existing.remove().then(
+        () => true,
+        () => false,
+      );
+      if (!removed) return { enqueued: false, jobId };
+    } else {
+      return { enqueued: false, jobId };
+    }
+  }
   await q.add('suggestions', data, {
     ...(jobId ? { jobId } : {}),
     ...(opts.delayMs ? { delay: opts.delayMs } : {}),

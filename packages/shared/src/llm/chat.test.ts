@@ -387,6 +387,35 @@ describe('chatStructured', () => {
     ).toBe(true);
   });
 
+  it('does not retry json_object fallback for transient provider failures', async () => {
+    const requests: unknown[] = [];
+    const fetchStub: typeof fetch = (_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('expected request body');
+      requests.push(JSON.parse(init.body));
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: { message: 'invalid api key' } }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    };
+
+    await expect(
+      chatStructured(
+        {
+          schema: extractionResultSchema,
+          prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
+          system: EXTRACTION_SYSTEM_PROMPT,
+        },
+        { fetch: fetchStub },
+      ),
+    ).rejects.toThrow('llm.chatStructured failed');
+
+    expect(requests).toHaveLength(1);
+    const primary = openRouterRequestSchema.parse(requests[0]);
+    expect(primary.response_format.type).toBe('json_schema');
+  });
+
   liveOpenRouterIt(
     'integration/live: extracts facts with OpenRouter structured output',
     async () => {

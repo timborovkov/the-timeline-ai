@@ -17,18 +17,38 @@ interface AddCall {
   opts?: unknown;
 }
 
+class FakeJob {
+  constructor(
+    private queue: FakeQueue,
+    public id: string,
+  ) {}
+
+  getState = vi.fn(() => Promise.resolve(this.queue.jobStates.get(this.id) ?? 'waiting'));
+  remove = vi.fn(() => {
+    this.queue.jobs.delete(this.id);
+    this.queue.jobStates.delete(this.id);
+    return Promise.resolve();
+  });
+}
+
 class FakeQueue {
   name: string;
   options: Record<string, unknown>;
   jobs = new Set<string>();
+  jobStates = new Map<string, string>();
   add = vi.fn<(name: string, data: unknown, opts?: { jobId?: string }) => Promise<void>>(
     (name, data, opts) => {
       this.addCalls.push({ name, data, opts });
-      if (opts?.jobId) this.jobs.add(opts.jobId);
+      if (opts?.jobId) {
+        this.jobs.add(opts.jobId);
+        this.jobStates.set(opts.jobId, 'waiting');
+      }
       return Promise.resolve();
     },
   );
-  getJob = vi.fn((jobId: string) => Promise.resolve(this.jobs.has(jobId) ? { id: jobId } : null));
+  getJob = vi.fn((jobId: string) =>
+    Promise.resolve(this.jobs.has(jobId) ? new FakeJob(this, jobId) : null),
+  );
   addCalls: AddCall[] = [];
   close = vi.fn(() => Promise.resolve());
 
@@ -166,6 +186,28 @@ describe('queue wrappers', () => {
     expect(fakes.queues[0]?.addCalls).toHaveLength(1);
     expect(first).toMatchObject({ enqueued: true });
     expect(duplicate).toMatchObject({ enqueued: false });
+  });
+
+  it('replaces retained completed or failed suggestion jobs with the same recovery id', async () => {
+    const queues = await importQueues();
+    const data = {
+      scope: 'conversation_review' as const,
+      conversationReviewId: '66666666-6666-4666-8666-666666666666',
+      teamId: '22222222-2222-4222-8222-222222222222',
+    };
+
+    const first = await queues.enqueueSuggestionJob(data, { jobIdSuffix: 'recovery' });
+    const firstJobId = first.jobId;
+    if (!firstJobId) throw new Error('expected stable job id');
+    fakes.queues[0]?.jobStates.set(firstJobId, 'completed');
+    const completedRerun = await queues.enqueueSuggestionJob(data, { jobIdSuffix: 'recovery' });
+    fakes.queues[0]?.jobStates.set(firstJobId, 'failed');
+    const failedRerun = await queues.enqueueSuggestionJob(data, { jobIdSuffix: 'recovery' });
+
+    expect(first).toMatchObject({ enqueued: true, jobId: firstJobId });
+    expect(completedRerun).toMatchObject({ enqueued: true, jobId: firstJobId });
+    expect(failedRerun).toMatchObject({ enqueued: true, jobId: firstJobId });
+    expect(fakes.queues[0]?.addCalls).toHaveLength(3);
   });
 
   it('dedupes raw suggestion jobs only when a suffix is provided', async () => {

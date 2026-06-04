@@ -247,6 +247,26 @@ function summaryFailureFromError(err: unknown, model: string): MeetingSummaryFai
   };
 }
 
+function isRetryableSummaryError(err: unknown): boolean {
+  const failure = summaryFailureFromError(err, '');
+  const causeName = failure.causeName ?? '';
+  const message = failure.message.toLowerCase();
+  return (
+    causeName === 'AI_APICallError' ||
+    causeName === 'AbortError' ||
+    causeName === 'TimeoutError' ||
+    message.includes('429') ||
+    message.includes('5xx') ||
+    /\b5\d\d\b/.test(message) ||
+    message.includes('rate limit') ||
+    message.includes('timeout') ||
+    message.includes('temporar') ||
+    message.includes('unavailable') ||
+    message.includes('network') ||
+    message.includes('econn')
+  );
+}
+
 async function createMeetingCalendarEvent(
   tx: Db,
   args: {
@@ -401,6 +421,7 @@ async function summarizeTranscript(
       summaryFailure: null,
     };
   } catch (err) {
+    if (isRetryableSummaryError(err)) throw err;
     log.warn({ err, meetingId: meeting.id }, 'meeting_summary_failed_transcript_only');
     return {
       transcriptText,

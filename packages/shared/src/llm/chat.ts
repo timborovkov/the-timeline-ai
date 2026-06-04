@@ -71,6 +71,24 @@ function openRouterRequireParametersOptions(): GenerateObjectProviderOptions {
   };
 }
 
+function errorMessage(err: unknown): string {
+  if (err instanceof AggregateError) return err.errors.map(errorMessage).join('\n');
+  if (err instanceof Error) return `${err.name}: ${err.message}`;
+  return String(err);
+}
+
+function shouldFallbackToJsonObject(err: unknown): boolean {
+  const message = errorMessage(err).toLowerCase();
+  return (
+    message.includes('json_schema') ||
+    message.includes('structured output') ||
+    (message.includes('response_format') &&
+      (message.includes('not supported') ||
+        message.includes('unsupported') ||
+        message.includes('rejected')))
+  );
+}
+
 function repairKnownStructuredOutput(schema: z.ZodType): RepairTextFunction {
   return ({ text }) => {
     let parsed: unknown;
@@ -187,7 +205,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
       });
       return { object: result.object as z.infer<TSchema>, model: modelId };
     } catch (err) {
-      if (deps.model) throw err;
+      if (deps.model || !shouldFallbackToJsonObject(err)) throw err;
       const fallbackModel = buildOpenRouterLanguageModel(modelId, deps, {
         supportsStructuredOutputs: false,
       });

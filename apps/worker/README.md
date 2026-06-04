@@ -20,6 +20,9 @@ pnpm --filter @timeline/worker redocument-extract -- --team=<teamId> [--status=f
 pnpm --filter @timeline/worker redocument-embed   -- --team=<teamId> [--target-collection=docs_v2]
 ```
 
+`resuggest` scans the requested window before applying `--limit`; conversational sources recover
+the latest anchor per conversation, and limited runs keep the latest candidate anchors.
+
 Production starts the combined worker entry point (see [docs/railway.html](../../docs/railway.html)):
 
 ```bash

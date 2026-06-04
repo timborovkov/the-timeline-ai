@@ -24,6 +24,14 @@ interface RetrySnapshot {
   error: string | null;
 }
 
+type RetryStates = Record<string, RetrySnapshot>;
+
+interface RetryFailedResponse {
+  retried?: number;
+  failed?: number;
+  failedIds?: string[];
+}
+
 const FILTERS: { kind: JobRecoveryKind | 'all'; label: string }[] = [
   { kind: 'all', label: 'All' },
   { kind: 'transcription', label: 'Transcription' },
@@ -186,13 +194,23 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
         alert(`Retry failed jobs failed: ${text}`);
         return;
       }
+      const body = (await res.json().catch(() => ({}))) as RetryFailedResponse;
+      const failedRetryIds = new Set(body.failedIds ?? []);
       setRetrySnapshots((previous) => {
         const next = { ...previous };
         for (const item of failedItems) {
+          if (failedRetryIds.has(item.id)) continue;
           next[item.id] = { startedAt: retryStartedAt, status: 'queued', error: null };
         }
         return next;
       });
+      if ((body.failed ?? failedRetryIds.size) > 0) {
+        alert(
+          `Retried ${String(body.retried ?? failedCount - failedRetryIds.size)} failed jobs; ${String(
+            body.failed ?? failedRetryIds.size,
+          )} could not be queued.`,
+        );
+      }
       void finishedJobs.refetch();
       router.refresh();
     } finally {
@@ -208,127 +226,189 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
         }}
       />
 
-      <div className="flex flex-col gap-2 border-y border-border py-2 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-wrap gap-2">
-          {FILTERS.map((f) => {
-            const active = filter === f.kind;
-            return (
-              <button
-                key={f.kind}
-                type="button"
-                onClick={() => {
-                  setFilter(f.kind);
-                }}
-                className={cn(
-                  'rounded-sm border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors',
-                  active
-                    ? 'border-signal bg-signal/10 text-signal'
-                    : 'border-border bg-surface text-fg-muted hover:border-border-strong hover:text-fg',
-                )}
-              >
-                {f.label}
-              </button>
-            );
-          })}
-        </div>
-        <div className="flex flex-wrap gap-2 self-start md:self-auto">
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={busy !== null || failedCount === 0 || hasQueuedFailedRetry}
-            onClick={() => {
-              void retryFailed();
-            }}
-          >
-            {busy === 'retry-failed' ? (
-              <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
-            ) : (
-              <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
-            )}
-            {busy === 'retry-failed'
-              ? 'Retrying failed'
-              : `Retry failed${failedCount > 0 ? ` (${String(failedCount)})` : ''}`}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={busy !== null || failedCount === 0}
-            onClick={() => {
-              void dismissFailed();
-            }}
-          >
-            <X aria-hidden="true" className="mr-1 size-3.5" />
-            {busy === 'dismiss-failed'
-              ? 'Dismissing failed'
-              : `Dismiss failed${failedCount > 0 ? ` (${String(failedCount)})` : ''}`}
-          </Button>
-        </div>
-      </div>
+      <JobRecoveryToolbar
+        busy={busy}
+        failedCount={failedCount}
+        filter={filter}
+        hasQueuedFailedRetry={hasQueuedFailedRetry}
+        onDismissFailed={dismissFailed}
+        onRetryFailed={retryFailed}
+        onSetFilter={setFilter}
+      />
 
-      <ul className="divide-y divide-border rounded-sm border border-border bg-surface">
-        {filtered.length === 0 ? (
-          <li className="px-3 py-4 text-sm text-fg-muted">No jobs need attention in this view.</li>
-        ) : (
-          filtered.map((item) => {
-            const retry = retryStates[item.id];
-            return (
-              <li key={item.id} className="flex flex-col gap-3 p-3 md:flex-row md:items-center">
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={item.status === 'failed' ? 'destructive' : 'outline'}>
-                      {retry?.status === 'queued' ? 'retrying' : item.status}
-                    </Badge>
-                    <span className="truncate text-sm font-medium">{item.label}</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
-                    <span>{new Date(item.detectedAt).toLocaleString()}</span>
-                    {item.error ? (
-                      <span className="max-w-full truncate text-destructive md:max-w-lg">
-                        {item.error}
-                      </span>
-                    ) : null}
-                  </div>
-                  {retry ? <RetryStatus snapshot={retry} /> : null}
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  {item.retryable ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={busy !== null || retry?.status === 'queued'}
-                      onClick={() => {
-                        void call('retry', item.id);
-                      }}
-                    >
-                      {retry?.status === 'queued' ? (
-                        <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
-                      ) : (
-                        <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
-                      )}
-                      {busy === `retry:${item.id}` ? 'Retrying' : 'Retry'}
-                    </Button>
-                  ) : null}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={busy !== null}
-                    onClick={() => {
-                      void call('dismiss', item.id);
-                    }}
-                  >
-                    <X aria-hidden="true" className="mr-1 size-3.5" />
-                    {busy === `dismiss:${item.id}` ? 'Dismissing' : 'Dismiss'}
-                  </Button>
-                </div>
-              </li>
-            );
-          })
-        )}
-      </ul>
+      <JobRecoveryItems busy={busy} items={filtered} onAction={call} retryStates={retryStates} />
       <FinishedJobsArchive items={finishedArchiveItems} query={finishedJobs} />
     </section>
+  );
+}
+
+function JobRecoveryToolbar({
+  busy,
+  failedCount,
+  filter,
+  hasQueuedFailedRetry,
+  onDismissFailed,
+  onRetryFailed,
+  onSetFilter,
+}: {
+  busy: string | null;
+  failedCount: number;
+  filter: JobRecoveryKind | 'all';
+  hasQueuedFailedRetry: boolean;
+  onDismissFailed: () => Promise<void>;
+  onRetryFailed: () => Promise<void>;
+  onSetFilter: (filter: JobRecoveryKind | 'all') => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 border-y border-border py-2 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-wrap gap-2">
+        {FILTERS.map((f) => {
+          const active = filter === f.kind;
+          return (
+            <button
+              key={f.kind}
+              type="button"
+              onClick={() => {
+                onSetFilter(f.kind);
+              }}
+              className={cn(
+                'rounded-sm border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors',
+                active
+                  ? 'border-signal bg-signal/10 text-signal'
+                  : 'border-border bg-surface text-fg-muted hover:border-border-strong hover:text-fg',
+              )}
+            >
+              {f.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-2 self-start md:self-auto">
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={busy !== null || failedCount === 0 || hasQueuedFailedRetry}
+          onClick={() => {
+            void onRetryFailed();
+          }}
+        >
+          {busy === 'retry-failed' ? (
+            <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+          ) : (
+            <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
+          )}
+          {busy === 'retry-failed'
+            ? 'Retrying failed'
+            : `Retry failed${failedCount > 0 ? ` (${String(failedCount)})` : ''}`}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={busy !== null || failedCount === 0}
+          onClick={() => {
+            void onDismissFailed();
+          }}
+        >
+          <X aria-hidden="true" className="mr-1 size-3.5" />
+          {busy === 'dismiss-failed'
+            ? 'Dismissing failed'
+            : `Dismiss failed${failedCount > 0 ? ` (${String(failedCount)})` : ''}`}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function JobRecoveryItems({
+  busy,
+  items,
+  onAction,
+  retryStates,
+}: {
+  busy: string | null;
+  items: JobRecoveryItem[];
+  onAction: (action: 'retry' | 'dismiss', id: string) => Promise<void>;
+  retryStates: RetryStates;
+}) {
+  return (
+    <ul className="divide-y divide-border rounded-sm border border-border bg-surface">
+      {items.length === 0 ? (
+        <li className="px-3 py-4 text-sm text-fg-muted">No jobs need attention in this view.</li>
+      ) : (
+        items.map((item) => {
+          const retry = retryStates[item.id];
+          return (
+            <li key={item.id} className="flex flex-col gap-3 p-3 md:flex-row md:items-center">
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={item.status === 'failed' ? 'destructive' : 'outline'}>
+                    {retry?.status === 'queued' ? 'retrying' : item.status}
+                  </Badge>
+                  <span className="truncate text-sm font-medium">{item.label}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
+                  <span>{new Date(item.detectedAt).toLocaleString()}</span>
+                  {item.error ? (
+                    <span className="max-w-full truncate text-destructive md:max-w-lg">
+                      {item.error}
+                    </span>
+                  ) : null}
+                </div>
+                {retry ? <RetryStatus snapshot={retry} /> : null}
+              </div>
+              <JobRecoveryItemActions busy={busy} item={item} onAction={onAction} retry={retry} />
+            </li>
+          );
+        })
+      )}
+    </ul>
+  );
+}
+
+function JobRecoveryItemActions({
+  busy,
+  item,
+  onAction,
+  retry,
+}: {
+  busy: string | null;
+  item: JobRecoveryItem;
+  onAction: (action: 'retry' | 'dismiss', id: string) => Promise<void>;
+  retry: RetrySnapshot | undefined;
+}) {
+  return (
+    <div className="flex shrink-0 gap-2">
+      {item.retryable ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={busy !== null || retry?.status === 'queued'}
+          onClick={() => {
+            void onAction('retry', item.id);
+          }}
+        >
+          {retry?.status === 'queued' ? (
+            <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+          ) : (
+            <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
+          )}
+          {busy === `retry:${item.id}` ? 'Retrying' : 'Retry'}
+        </Button>
+      ) : null}
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={busy !== null}
+        onClick={() => {
+          void onAction('dismiss', item.id);
+        }}
+      >
+        <X aria-hidden="true" className="mr-1 size-3.5" />
+        {busy === `dismiss:${item.id}` ? 'Dismissing' : 'Dismiss'}
+      </Button>
+    </div>
   );
 }
 

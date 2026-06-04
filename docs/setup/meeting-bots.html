@@ -26,10 +26,11 @@
         worker creates one consolidated <code>raw_events</code> row with the full transcript so the
         meeting appears as a single timeline entry, then creates a native calendar event for the
         call with links back to the meeting detail page. When OpenRouter summary generation
-        succeeds, the row also carries the LLM-generated summary and action items. If summary
-        generation fails, the transcript still finalizes and the summary error is recorded in
-        metadata for operations debugging. The linked calendar audit rows stay factual and
-        extraction-skipped, so generated meeting notes do not feed a second extraction pass.
+        succeeds, the row also carries the LLM-generated summary and action items. Retryable
+        provider/API failures keep the finalization job retryable; non-retryable structured-output
+        failures still finalize the transcript and record the summary error in metadata for
+        operations debugging. The linked calendar audit rows stay factual and extraction-skipped, so
+        generated meeting notes do not feed a second extraction pass.
       </p>
       <p>
         Completed meeting detail pages expose the transcript directly, with controls to download a

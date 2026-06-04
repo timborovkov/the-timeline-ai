@@ -416,8 +416,8 @@ describe('processMeetingFinalizeJob', () => {
   it('finalizes transcript-only when structured summary generation fails', async () => {
     await seedMeeting(db as never);
     await seedChunk(db as never, 0, 'We should follow up on the launch plan.', 'Alice');
-    const cause = new Error('provider unavailable');
-    cause.name = 'AI_APICallError';
+    const cause = new Error('model returned no structured object');
+    cause.name = 'AI_NoObjectGeneratedError';
     const chat = vi.fn().mockRejectedValue(cause);
 
     const result = await processMeetingFinalizeJob(
@@ -433,15 +433,38 @@ describe('processMeetingFinalizeJob', () => {
     )[0];
     expect(meeting?.status).toBe('completed');
     expect(meeting?.metadata).toMatchObject({
-      summary_error: 'provider unavailable',
-      summary_error_cause: 'AI_APICallError',
+      summary_error: 'model returned no structured object',
+      summary_error_cause: 'AI_NoObjectGeneratedError',
     });
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting')))[0];
     expect(event?.contentText).toContain('We should follow up on the launch plan.');
     expect(event?.sourceMetadata).toMatchObject({
-      summary_error: 'provider unavailable',
-      summary_error_cause: 'AI_APICallError',
+      summary_error: 'model returned no structured object',
+      summary_error_cause: 'AI_NoObjectGeneratedError',
     });
+  });
+
+  it('keeps transient summary failures retryable instead of completing transcript-only', async () => {
+    await seedMeeting(db as never);
+    await seedChunk(db as never, 0, 'We should follow up on the launch plan.', 'Alice');
+    const cause = new Error('provider unavailable');
+    cause.name = 'AI_APICallError';
+    const chat = vi.fn().mockRejectedValue(cause);
+
+    await expect(
+      processMeetingFinalizeJob(
+        { db: db as never },
+        { meetingId: MEETING_ID, teamId: TEAM_ID },
+        { chatStructured: chat as never },
+      ),
+    ).rejects.toThrow('provider unavailable');
+
+    const meeting = (
+      await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID))
+    )[0];
+    expect(meeting?.status).toBe('processing');
+    const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+    expect(events).toHaveLength(0);
   });
 
   it('usage row is unique per meeting (re-insert is no-op)', async () => {

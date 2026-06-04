@@ -24,7 +24,7 @@ beforeEach(() => {
   fakes.fakeAuth.mockResolvedValue({ user: { id: 'user-1' } });
   fakes.fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.fakeRequireMembership.mockResolvedValue('admin');
-  fakes.fakeRetryFailed.mockResolvedValue({ retried: 3 });
+  fakes.fakeRetryFailed.mockResolvedValue({ retried: 3, failed: 0, failedIds: [] });
 });
 
 describe('job recovery retry failed route', () => {
@@ -54,7 +54,12 @@ describe('job recovery retry failed route', () => {
     );
 
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ ok: true, retried: 3 });
+    await expect(res.json()).resolves.toEqual({
+      ok: true,
+      retried: 3,
+      failed: 0,
+      failedIds: [],
+    });
     expect(fakes.fakeRequireMembership).toHaveBeenCalledWith('admin');
     expect(fakes.fakeRetryFailed).toHaveBeenCalledWith({
       kind: 'embedding',

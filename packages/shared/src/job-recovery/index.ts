@@ -68,6 +68,12 @@ export interface RetryFailedRecoverableJobsInput {
   expectedCount: number;
 }
 
+export interface RetryFailedRecoverableJobsResult {
+  retried: number;
+  failed: number;
+  failedIds: string[];
+}
+
 export interface FinishedJobArchiveItem {
   id: string;
   queue: string;
@@ -253,10 +259,10 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
 
   async function retryFailedRecoverableJobs(
     input: RetryFailedRecoverableJobsInput,
-  ): Promise<{ retried: number }> {
+  ): Promise<RetryFailedRecoverableJobsResult> {
     await requireAdmin();
     const selectedFailed = await selectCurrentFailedSnapshot(input);
-    if (selectedFailed.length === 0) return { retried: 0 };
+    if (selectedFailed.length === 0) return { retried: 0, failed: 0, failedIds: [] };
     const retryableFailed = selectedFailed.filter((candidate) => candidate.retryable);
     if (retryableFailed.length !== selectedFailed.length) throw new Error('not_retryable');
     const parsedJobs = retryableFailed.map((item) => decodeRecoveryId(item.id));
@@ -267,14 +273,22 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
     for (const parsed of parsedJobs) {
       retryPlans.push(await prepareRetryParsed(deps.db, deps.teamId, parsed, q));
     }
+    let retried = 0;
+    const failedIds: string[] = [];
     for (let index = 0; index < parsedJobs.length; index += 1) {
       const parsed = parsedJobs[index];
       const retryPlan = retryPlans[index];
       if (!parsed || !retryPlan) throw new Error('invalid_recovery_ids');
-      await clearDismissal(deps.db, deps.teamId, parsed);
-      await executeRetryPlan(retryPlan);
+      try {
+        await clearDismissal(deps.db, deps.teamId, parsed);
+        await executeRetryPlan(retryPlan);
+        retried += 1;
+      } catch {
+        const item = retryableFailed[index];
+        if (item) failedIds.push(item.id);
+      }
     }
-    return { retried: retryableFailed.length };
+    return { retried, failed: failedIds.length, failedIds };
   }
 
   async function retryRecoverableJob(id: string): Promise<void> {
