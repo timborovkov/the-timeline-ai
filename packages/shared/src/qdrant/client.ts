@@ -249,6 +249,22 @@ function collectionVectorSize(data: unknown): number | null {
   return typeof firstNamedVector?.size === 'number' ? firstNamedVector.size : null;
 }
 
+function collectionHasTenantPayloadIndex(data: unknown): boolean {
+  const result = data && typeof data === 'object' ? (data as { result?: unknown }).result : null;
+  const payloadSchema =
+    result && typeof result === 'object'
+      ? (result as { payload_schema?: unknown }).payload_schema
+      : null;
+  if (!payloadSchema || typeof payloadSchema !== 'object') return false;
+  const schema = (payloadSchema as { team_id?: unknown }).team_id;
+  if (!schema || typeof schema !== 'object') return false;
+  const dataType = (schema as { data_type?: unknown }).data_type;
+  const params = (schema as { params?: unknown }).params;
+  const isTenant =
+    params && typeof params === 'object' ? (params as { is_tenant?: unknown }).is_tenant : false;
+  return dataType === 'keyword' && isTenant === true;
+}
+
 function tenantPayloadIndexBody(): unknown {
   return {
     field_name: 'team_id',
@@ -325,6 +341,9 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
             )}. Recreate the collection or set QDRANT_COLLECTION to a collection built for the active embedding model before retrying jobs.`,
           );
         }
+        if (!collectionHasTenantPayloadIndex(head.data)) {
+          await ensureTenantPayloadIndex();
+        }
         return;
       }
       // requireExisting: used by the re-embed script's --target-collection
@@ -349,22 +368,26 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
           `Qdrant create collection failed: ${String(create.status)} ${JSON.stringify(create.data)}`,
         );
       }
-      const index = await request(
-        'PUT',
-        `/collections/${encodeURIComponent(collection)}/index`,
-        tenantPayloadIndexBody(),
-      );
-      if (index.status !== 200 && index.status !== 201) {
-        throw new Error(
-          `Qdrant create team_id payload index failed: ${String(index.status)} ${JSON.stringify(index.data)}`,
-        );
-      }
+      await ensureTenantPayloadIndex();
     })().catch((err: unknown) => {
       // Reset on failure so the next call can retry (e.g. transient network).
       ensurePromise = undefined;
       throw err;
     });
     await ensurePromise;
+  }
+
+  async function ensureTenantPayloadIndex(): Promise<void> {
+    const index = await request(
+      'PUT',
+      `/collections/${encodeURIComponent(collection)}/index`,
+      tenantPayloadIndexBody(),
+    );
+    if (index.status !== 200 && index.status !== 201) {
+      throw new Error(
+        `Qdrant create team_id payload index failed: ${String(index.status)} ${JSON.stringify(index.data)}`,
+      );
+    }
   }
 
   async function upsertVector(id: string, vector: number[], payload: QdrantPayload): Promise<void> {
