@@ -78,6 +78,10 @@ const baseSchema = z.object({
 
   // LangSmith LLM observability (optional)
   LANGSMITH_TRACING: z.preprocess(booleanString, z.boolean().default(false)),
+  LANGSMITH_TRACING_SAMPLING_RATE: z.preprocess(
+    emptyStringAsUnset,
+    z.coerce.number().min(0).max(1).optional(),
+  ),
   LANGSMITH_API_KEY: z.string().optional(),
   LANGSMITH_PROJECT: z.preprocess(emptyStringAsUnset, z.string().optional()),
   LANGSMITH_ENDPOINT: z.preprocess(
