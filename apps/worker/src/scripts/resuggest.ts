@@ -14,7 +14,7 @@
  * Requires DATABASE_URL and REDIS_URL. OPENROUTER_API_KEY is required at
  * suggestion time (in the worker), not here.
  */
-import { closeDb, getDb, rawEvents } from '@timeline/db';
+import { closeDb, conversationReviews, type Db, getDb, rawEvents } from '@timeline/db';
 import { conversationReview, queue } from '@timeline/shared';
 import { and, asc, eq, gt, isNotNull, or, type SQL, sql } from 'drizzle-orm';
 
@@ -28,6 +28,10 @@ interface Candidate {
   source: string;
   sourceMetadata: unknown;
   occurredAt: Date;
+}
+
+interface ConversationCandidate extends Candidate {
+  identity: conversationReview.ConversationIdentity;
 }
 
 function parseDate(value: string): Date | null {
@@ -105,6 +109,68 @@ function isNewer(a: Candidate, b: Candidate): boolean {
   );
 }
 
+function recoverableAnchorCondition(candidate: ConversationCandidate): SQL {
+  return sql`COALESCE(${conversationReviews.metadata} ->> 'review_outcome', '') <> 'superseded_by_thread_review'
+    AND (
+      COALESCE(
+        (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
+        (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
+      ) IS NULL OR (
+        COALESCE(
+          (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
+          (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
+        ),
+        COALESCE(
+          ${conversationReviews.lastRawEventId},
+          (${conversationReviews.metadata} ->> 'last_anchor_raw_event_id')::uuid
+        )
+      ) <= (${candidate.occurredAt.toISOString()}::timestamptz, ${candidate.id}::uuid)
+    )`;
+}
+
+async function recoverConversationReview(
+  db: Db,
+  candidate: ConversationCandidate,
+  args: { source: 'all' | 'telegram' | 'slack'; requestedAt: Date },
+): Promise<{ id: string; teamId: string } | null> {
+  const anchorMetadata = {
+    kind: candidate.identity.kind,
+    last_anchor_raw_event_id: candidate.id,
+    last_anchor_occurred_at: candidate.occurredAt.toISOString(),
+    recovery_requested_at: args.requestedAt.toISOString(),
+    recovery_source: args.source,
+    recovery_tool: 'worker_resuggest_cli',
+  };
+  const [review] = await db
+    .insert(conversationReviews)
+    .values({
+      teamId: candidate.teamId,
+      conversationKey: candidate.identity.key,
+      source: candidate.identity.source,
+      status: 'pending',
+      lastRawEventId: candidate.id,
+      reviewedThroughRawEventId: null,
+      reviewedThroughOccurredAt: null,
+      quietUntil: args.requestedAt,
+      metadata: anchorMetadata,
+    })
+    .onConflictDoUpdate({
+      target: [conversationReviews.teamId, conversationReviews.conversationKey],
+      set: {
+        status: 'pending',
+        lastRawEventId: candidate.id,
+        reviewedThroughRawEventId: null,
+        reviewedThroughOccurredAt: null,
+        quietUntil: args.requestedAt,
+        metadata: sql`${conversationReviews.metadata} || ${JSON.stringify(anchorMetadata)}::jsonb`,
+        updatedAt: args.requestedAt,
+      },
+      where: recoverableAnchorCondition(candidate),
+    })
+    .returning({ id: conversationReviews.id, teamId: conversationReviews.teamId });
+  return review ?? null;
+}
+
 async function main(): Promise<void> {
   const { teamId, since, until, source, limit, dryRun } = parseArgs();
   console.log(
@@ -114,11 +180,13 @@ async function main(): Promise<void> {
   );
 
   const db = getDb();
+  const requestedAt = new Date();
+  const recoveryRunId = requestedAt.toISOString();
   let cursor: { occurredAt: Date; id: string } | null = null;
   let scanned = 0;
   let hasMore = true;
   const direct: Candidate[] = [];
-  const conversations = new Map<string, Candidate>();
+  const conversations = new Map<string, ConversationCandidate>();
 
   while (hasMore) {
     const conditions: SQL[] = [
@@ -171,7 +239,8 @@ async function main(): Promise<void> {
         continue;
       }
       const existing = conversations.get(identity.key);
-      if (!existing || isNewer(row, existing)) conversations.set(identity.key, row);
+      if (!existing || isNewer(row, existing))
+        conversations.set(identity.key, { ...row, identity });
     }
 
     const last = page[page.length - 1];
@@ -188,16 +257,37 @@ async function main(): Promise<void> {
   );
   const limitedJobs = jobs.slice(0, limit);
 
+  let recovered = 0;
+  let enqueued = 0;
   if (!dryRun) {
     for (const row of limitedJobs) {
-      await queue.enqueueSuggestionJob({ rawEventId: row.id, teamId: row.teamId });
+      const identity = conversationReview.conversationIdentityForRawEvent(row);
+      if (!identity) {
+        const result = await queue.enqueueSuggestionJob({ rawEventId: row.id, teamId: row.teamId });
+        if (result.enqueued) enqueued += 1;
+        continue;
+      }
+      const review = await recoverConversationReview(
+        db,
+        { ...row, identity },
+        { source, requestedAt },
+      );
+      if (!review) continue;
+      recovered += 1;
+      const result = await queue.enqueueSuggestionJob(
+        { scope: 'conversation_review', conversationReviewId: review.id, teamId: review.teamId },
+        { jobIdSuffix: `recovery:${recoveryRunId}` },
+      );
+      if (result.enqueued) enqueued += 1;
     }
   }
 
   console.log(
     `[resuggest] done. scanned=${scanned} direct=${direct.length} conversations=${
       conversations.size
-    } candidates=${jobs.length} enqueued=${limitedJobs.length}${
+    } candidates=${jobs.length} recovered=${recovered} enqueued=${
+      dryRun ? limitedJobs.length : enqueued
+    }${
       jobs.length > limitedJobs.length ? ' (limit reached)' : ''
     }${dryRun ? ' (dry-run, no jobs queued)' : ''}`,
   );

@@ -20,12 +20,15 @@ interface AddCall {
 class FakeQueue {
   name: string;
   options: Record<string, unknown>;
-  add = vi.fn<(name: string, data: unknown, opts?: unknown) => Promise<void>>(
+  jobs = new Set<string>();
+  add = vi.fn<(name: string, data: unknown, opts?: { jobId?: string }) => Promise<void>>(
     (name, data, opts) => {
       this.addCalls.push({ name, data, opts });
+      if (opts?.jobId) this.jobs.add(opts.jobId);
       return Promise.resolve();
     },
   );
+  getJob = vi.fn((jobId: string) => Promise.resolve(this.jobs.has(jobId) ? { id: jobId } : null));
   addCalls: AddCall[] = [];
   close = vi.fn(() => Promise.resolve());
 
@@ -133,7 +136,15 @@ describe('queue wrappers', () => {
   it('dedupes delayed conversation review suggestion jobs by review id and suffix', async () => {
     const queues = await importQueues();
 
-    await queues.enqueueSuggestionJob(
+    const first = await queues.enqueueSuggestionJob(
+      {
+        scope: 'conversation_review',
+        conversationReviewId: '66666666-6666-4666-8666-666666666666',
+        teamId: '22222222-2222-4222-8222-222222222222',
+      },
+      { delayMs: 600_000, jobIdSuffix: '2026-05-27T10:10:00.000Z' },
+    );
+    const duplicate = await queues.enqueueSuggestionJob(
       {
         scope: 'conversation_review',
         conversationReviewId: '66666666-6666-4666-8666-666666666666',
@@ -146,9 +157,15 @@ describe('queue wrappers', () => {
       name: 'suggestions',
       opts: {
         delay: 600_000,
-        jobId: 'conversation-review:66666666-6666-4666-8666-666666666666:2026-05-27T10:10:00.000Z',
+        jobId:
+          'conversation-review|66666666-6666-4666-8666-666666666666|2026-05-27T10%3A10%3A00.000Z',
       },
     });
+    const jobId = fakes.queues[0]?.addCalls[0]?.opts as { jobId?: string };
+    expect(jobId.jobId).not.toContain(':');
+    expect(fakes.queues[0]?.addCalls).toHaveLength(1);
+    expect(first).toMatchObject({ enqueued: true });
+    expect(duplicate).toMatchObject({ enqueued: false });
   });
 
   it('dedupes raw suggestion jobs only when a suffix is provided', async () => {
@@ -172,8 +189,12 @@ describe('queue wrappers', () => {
     });
     expect(fakes.queues[0]?.addCalls[1]).toMatchObject({
       name: 'suggestions',
-      opts: { jobId: 'raw-event:11111111-1111-4111-8111-111111111111:recovery:30:all' },
+      opts: {
+        jobId: 'raw-event|11111111-1111-4111-8111-111111111111|recovery%3A30%3Aall',
+      },
     });
+    const jobId = fakes.queues[0]?.addCalls[1]?.opts as { jobId?: string };
+    expect(jobId.jobId).not.toContain(':');
   });
 
   it('registers repeatable jobs with stable job ids and closes singleton queues', async () => {

@@ -156,6 +156,10 @@ export interface SuggestionConversationReviewJobData {
 
 let _suggestionQueue: TimelineQueue<SuggestionJobData> | undefined;
 
+function bullmqCustomJobId(parts: string[]): string {
+  return parts.map((part) => encodeURIComponent(part)).join('|');
+}
+
 export function getSuggestionQueue(): TimelineQueue<SuggestionJobData> {
   if (_suggestionQueue) return _suggestionQueue;
   _suggestionQueue = new Queue<
@@ -180,17 +184,24 @@ export function getSuggestionQueue(): TimelineQueue<SuggestionJobData> {
 export async function enqueueSuggestionJob(
   data: SuggestionJobData,
   opts: { delayMs?: number; jobIdSuffix?: string } = {},
-): Promise<void> {
+): Promise<{ enqueued: boolean; jobId: string | null }> {
   const jobId =
     'scope' in data
-      ? `conversation-review:${data.conversationReviewId}${opts.jobIdSuffix ? `:${opts.jobIdSuffix}` : ''}`
+      ? bullmqCustomJobId([
+          'conversation-review',
+          data.conversationReviewId,
+          ...(opts.jobIdSuffix ? [opts.jobIdSuffix] : []),
+        ])
       : opts.jobIdSuffix
-        ? `raw-event:${data.rawEventId}:${opts.jobIdSuffix}`
+        ? bullmqCustomJobId(['raw-event', data.rawEventId, opts.jobIdSuffix])
         : undefined;
-  await getSuggestionQueue().add('suggestions', data, {
+  const q = getSuggestionQueue();
+  if (jobId && (await q.getJob(jobId))) return { enqueued: false, jobId };
+  await q.add('suggestions', data, {
     ...(jobId ? { jobId } : {}),
     ...(opts.delayMs ? { delay: opts.delayMs } : {}),
   });
+  return { enqueued: true, jobId: jobId ?? null };
 }
 
 export async function closeSuggestionQueue(): Promise<void> {

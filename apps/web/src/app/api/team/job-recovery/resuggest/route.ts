@@ -1,4 +1,4 @@
-import { rawEvents } from '@timeline/db';
+import { conversationReviews, rawEvents } from '@timeline/db';
 import * as conversationReview from '@timeline/shared/conversation-review';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, isNotNull, lt, or, type SQL, sql } from 'drizzle-orm';
@@ -15,6 +15,7 @@ export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 500;
 const MAX_CONVERSATIONS = 10_000;
+const RECOVER_CONCURRENCY = 25;
 
 const inputSchema = z.object({
   windowDays: z.union([z.literal(7), z.literal(30), z.literal(90)]).default(30),
@@ -27,6 +28,113 @@ interface Candidate {
   source: string;
   sourceMetadata: unknown;
   occurredAt: Date;
+  identity: conversationReview.ConversationIdentity;
+}
+
+function recoverableAnchorCondition(candidate: Candidate): SQL {
+  return sql`COALESCE(${conversationReviews.metadata} ->> 'review_outcome', '') <> 'superseded_by_thread_review'
+    AND (
+      COALESCE(
+        (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
+        (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
+      ) IS NULL OR (
+        COALESCE(
+          (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),
+          (${conversationReviews.metadata} ->> 'last_anchor_occurred_at')::timestamptz
+        ),
+        COALESCE(
+          ${conversationReviews.lastRawEventId},
+          (${conversationReviews.metadata} ->> 'last_anchor_raw_event_id')::uuid
+        )
+      ) <= (${candidate.occurredAt.toISOString()}::timestamptz, ${candidate.id}::uuid)
+    )`;
+}
+
+async function recoverConversationReview(
+  candidate: Candidate,
+  args: { windowDays: number; source: 'all' | 'telegram' | 'slack'; requestedAt: Date },
+): Promise<{ id: string; teamId: string } | null> {
+  const anchorMetadata = {
+    kind: candidate.identity.kind,
+    last_anchor_raw_event_id: candidate.id,
+    last_anchor_occurred_at: candidate.occurredAt.toISOString(),
+    recovery_requested_at: args.requestedAt.toISOString(),
+    recovery_window_days: args.windowDays,
+    recovery_source: args.source,
+  };
+  const [review] = await db
+    .insert(conversationReviews)
+    .values({
+      teamId: candidate.teamId,
+      conversationKey: candidate.identity.key,
+      source: candidate.identity.source,
+      status: 'pending',
+      lastRawEventId: candidate.id,
+      reviewedThroughRawEventId: null,
+      reviewedThroughOccurredAt: null,
+      quietUntil: args.requestedAt,
+      metadata: anchorMetadata,
+    })
+    .onConflictDoUpdate({
+      target: [conversationReviews.teamId, conversationReviews.conversationKey],
+      set: {
+        status: 'pending',
+        lastRawEventId: candidate.id,
+        reviewedThroughRawEventId: null,
+        reviewedThroughOccurredAt: null,
+        quietUntil: args.requestedAt,
+        metadata: sql`${conversationReviews.metadata} || ${JSON.stringify(anchorMetadata)}::jsonb`,
+        updatedAt: args.requestedAt,
+      },
+      where: recoverableAnchorCondition(candidate),
+    })
+    .returning({ id: conversationReviews.id, teamId: conversationReviews.teamId });
+  return review ?? null;
+}
+
+async function recoverAndEnqueueConversationReview(
+  queue: Awaited<ReturnType<typeof requireRedisQueue>>,
+  candidate: Candidate,
+  args: {
+    windowDays: number;
+    source: 'all' | 'telegram' | 'slack';
+    requestedAt: Date;
+    recoveryRunId: string;
+  },
+): Promise<{ recovered: number; enqueued: number }> {
+  const review = await recoverConversationReview(candidate, args);
+  if (!review) return { recovered: 0, enqueued: 0 };
+  const result = await queue.enqueueSuggestionJob(
+    { scope: 'conversation_review', conversationReviewId: review.id, teamId: review.teamId },
+    { jobIdSuffix: `recovery:${args.recoveryRunId}` },
+  );
+  return { recovered: 1, enqueued: result.enqueued ? 1 : 0 };
+}
+
+async function recoverAndEnqueueInBatches(
+  queue: Awaited<ReturnType<typeof requireRedisQueue>>,
+  jobs: Candidate[],
+  args: {
+    windowDays: number;
+    source: 'all' | 'telegram' | 'slack';
+    requestedAt: Date;
+    recoveryRunId: string;
+  },
+): Promise<{ recovered: number; enqueued: number }> {
+  let recovered = 0;
+  let enqueued = 0;
+  for (let start = 0; start < jobs.length; start += RECOVER_CONCURRENCY) {
+    const results = await Promise.all(
+      jobs
+        .slice(start, start + RECOVER_CONCURRENCY)
+        .map((job) => recoverAndEnqueueConversationReview(queue, job, args)),
+    );
+    for (const result of results) {
+      recovered += result.recovered;
+      enqueued += result.enqueued;
+    }
+  }
+  return { recovered, enqueued };
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -55,6 +163,8 @@ export async function POST(req: Request): Promise<Response> {
 
   const queue = await requireRedisQueue();
   const since = new Date(Date.now() - parsed.data.windowDays * 24 * 60 * 60 * 1000);
+  const requestedAt = new Date();
+  const recoveryRunId = requestedAt.toISOString();
   let cursor: { occurredAt: Date; id: string } | null = null;
   let scanned = 0;
   const conversations = new Map<string, Candidate>();
@@ -101,7 +211,7 @@ export async function POST(req: Request): Promise<Response> {
       scanned += 1;
       const identity = conversationReview.conversationIdentityForRawEvent(row);
       if (!identity) continue;
-      if (!conversations.has(identity.key)) conversations.set(identity.key, row);
+      if (!conversations.has(identity.key)) conversations.set(identity.key, { ...row, identity });
       if (conversations.size >= MAX_CONVERSATIONS) break;
     }
 
@@ -113,17 +223,19 @@ export async function POST(req: Request): Promise<Response> {
   const jobs = [...conversations.values()].sort(
     (a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || a.id.localeCompare(b.id),
   );
-  for (const row of jobs) {
-    await queue.enqueueSuggestionJob(
-      { rawEventId: row.id, teamId: row.teamId },
-      { jobIdSuffix: `recovery:${parsed.data.windowDays}:${parsed.data.source}` },
-    );
-  }
+  const recoveredJobs = await recoverAndEnqueueInBatches(queue, jobs, {
+    windowDays: parsed.data.windowDays,
+    source: parsed.data.source,
+    requestedAt,
+    recoveryRunId,
+  });
 
   return NextResponse.json({
     ok: true,
     scanned,
-    enqueued: jobs.length,
+    candidates: jobs.length,
+    recovered: recoveredJobs.recovered,
+    enqueued: recoveredJobs.enqueued,
     truncated: conversations.size >= MAX_CONVERSATIONS,
     windowDays: parsed.data.windowDays,
     source: parsed.data.source,
