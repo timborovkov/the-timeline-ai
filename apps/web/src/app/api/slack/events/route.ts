@@ -92,6 +92,7 @@ export async function POST(req: Request): Promise<Response> {
     } catch (err) {
       log.error({ err }, 'slack url verification failed');
       reportCaughtError(err, { surface: 'api', operation: 'slack_url_verification' });
+      return Response.json({ ok: false, reason: 'url_verification_failed' }, { status: 200 });
     }
     reportHandledEvent({
       message: 'slack_events_invalid_challenge',

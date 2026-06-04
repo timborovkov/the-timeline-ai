@@ -12,6 +12,8 @@ const ENV_BACKUP = { ...process.env };
 const fakes = vi.hoisted(() => ({
   handleSlackEnvelope: vi.fn(),
   slackIngestDeps: vi.fn(),
+  reportCaughtError: vi.fn(),
+  reportHandledEvent: vi.fn(),
   extract: { enqueueExtract: vi.fn() },
   embed: { enqueueEmbed: vi.fn() },
   suggestions: { enqueueSuggestion: vi.fn() },
@@ -19,6 +21,10 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/app/api/slack/_shared', () => ({ slackIngestDeps: fakes.slackIngestDeps }));
+vi.mock('@/lib/sentry-report', () => ({
+  reportCaughtError: fakes.reportCaughtError,
+  reportHandledEvent: fakes.reportHandledEvent,
+}));
 
 vi.mock('@timeline/shared/logger', () => ({
   childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
@@ -100,6 +106,28 @@ describe('POST /api/slack/events', () => {
     expect(fakes.handleSlackEnvelope).toHaveBeenCalledWith(
       { db: {} },
       expect.objectContaining({ type: 'url_verification' }),
+    );
+  });
+
+  it('reports URL verification handler exceptions without also reporting invalid challenges', async () => {
+    const err = new Error('database down');
+    fakes.handleSlackEnvelope.mockRejectedValueOnce(err);
+
+    const response = await POST(
+      slackRequest({ type: 'url_verification', challenge: 'challenge-token' }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      reason: 'url_verification_failed',
+    });
+    expect(fakes.reportCaughtError).toHaveBeenCalledWith(err, {
+      surface: 'api',
+      operation: 'slack_url_verification',
+    });
+    expect(fakes.reportHandledEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'slack_events_invalid_challenge' }),
     );
   });
 
