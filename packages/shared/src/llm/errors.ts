@@ -10,7 +10,7 @@ export class TimelineAiError extends Error {
   readonly causeName: string;
 
   constructor(metadata: TimelineAiErrorMetadata, cause: unknown) {
-    super(`${metadata.operation} failed`);
+    super(`${metadata.operation} failed`, { cause });
     this.name = 'TimelineAiError';
     this.operation = metadata.operation;
     this.model = metadata.model;

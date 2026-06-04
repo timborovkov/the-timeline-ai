@@ -413,6 +413,37 @@ describe('processMeetingFinalizeJob', () => {
     expect(events).toHaveLength(0);
   });
 
+  it('finalizes transcript-only when structured summary generation fails', async () => {
+    await seedMeeting(db as never);
+    await seedChunk(db as never, 0, 'We should follow up on the launch plan.', 'Alice');
+    const cause = new Error('provider unavailable');
+    cause.name = 'AI_APICallError';
+    const chat = vi.fn().mockRejectedValue(cause);
+
+    const result = await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+
+    expect(result.meetingId).toBe(MEETING_ID);
+    expect(result.actionItems).toBe(0);
+    const meeting = (
+      await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID))
+    )[0];
+    expect(meeting?.status).toBe('completed');
+    expect(meeting?.metadata).toMatchObject({
+      summary_error: 'provider unavailable',
+      summary_error_cause: 'AI_APICallError',
+    });
+    const event = (await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting')))[0];
+    expect(event?.contentText).toContain('We should follow up on the launch plan.');
+    expect(event?.sourceMetadata).toMatchObject({
+      summary_error: 'provider unavailable',
+      summary_error_cause: 'AI_APICallError',
+    });
+  });
+
   it('usage row is unique per meeting (re-insert is no-op)', async () => {
     await seedMeeting(db as never);
     await seedChunk(db as never, 0, 'Hello.', 'Alice');

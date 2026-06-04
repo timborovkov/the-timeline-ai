@@ -403,6 +403,6 @@ describe('streamChat', () => {
       model: TIMELINE_MODELS.agent.id,
       causeName: 'Error',
     });
-    expect(event?.error).not.toHaveProperty('cause');
+    expect(event?.error).toHaveProperty('cause', cause);
   });
 });

@@ -15,6 +15,7 @@ pnpm --filter @timeline/worker dev          # all workers, watch mode
 pnpm --filter @timeline/worker build
 pnpm --filter @timeline/worker reextract -- --team=<teamId>
 pnpm --filter @timeline/worker reembed   -- --team=<teamId> --target-collection=events_v2
+pnpm --filter @timeline/worker resuggest -- --team=<teamId> [--since=2026-06-01] [--all]
 pnpm --filter @timeline/worker redocument-extract -- --team=<teamId> [--status=failed,pending] [--force]
 pnpm --filter @timeline/worker redocument-embed   -- --team=<teamId> [--target-collection=docs_v2]
 ```

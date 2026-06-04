@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 
 type JobRecoveryItem = jobRecovery.JobRecoveryItem;
 type JobRecoveryKind = jobRecovery.JobRecoveryKind;
+type ResuggestWindowDays = 7 | 30 | 90;
 
 interface RetrySnapshot {
   startedAt: number;
@@ -162,6 +163,12 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
 
   return (
     <section className="space-y-3">
+      <ConversationSuggestionRecovery
+        onQueued={() => {
+          router.refresh();
+        }}
+      />
+
       <div className="flex flex-col gap-2 border-y border-border py-2 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-wrap gap-2">
           {FILTERS.map((f) => {
@@ -264,6 +271,81 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
       </ul>
       <FinishedJobsArchive items={finishedArchiveItems} query={finishedJobs} />
     </section>
+  );
+}
+
+function ConversationSuggestionRecovery({ onQueued }: { onQueued: () => void }) {
+  const [windowDays, setWindowDays] = useState<ResuggestWindowDays>(30);
+  const [status, setStatus] = useState<string | null>(null);
+  const [queueing, setQueueing] = useState(false);
+
+  async function queueConversationSuggestions() {
+    setQueueing(true);
+    setStatus(null);
+    try {
+      const res = await fetch('/api/team/job-recovery/resuggest', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ windowDays, source: 'all' }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        alert(`Queue suggestions failed: ${text}`);
+        return;
+      }
+      const body = (await res.json()) as {
+        enqueued?: number;
+        scanned?: number;
+        truncated?: boolean;
+      };
+      setStatus(
+        `Queued ${String(body.enqueued ?? 0)} conversation reviews from ${String(body.scanned ?? 0)} events${
+          body.truncated ? ' (conversation limit reached)' : ''
+        }.`,
+      );
+      onQueued();
+    } finally {
+      setQueueing(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-sm border border-border bg-surface p-3 md:flex-row md:items-center md:justify-between">
+      <div className="space-y-1">
+        <h2 className="text-sm font-medium">Conversation suggestions</h2>
+        {status ? <p className="text-xs text-fg-muted">{status}</p> : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={windowDays}
+          onChange={(event) => {
+            setWindowDays(Number(event.target.value) as ResuggestWindowDays);
+          }}
+          className="h-8 rounded-sm border border-border bg-bg px-2 text-sm text-fg"
+          aria-label="Suggestion recovery window"
+        >
+          <option value={7}>7 days</option>
+          <option value={30}>30 days</option>
+          <option value={90}>90 days</option>
+        </select>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={queueing}
+          onClick={() => {
+            void queueConversationSuggestions();
+          }}
+        >
+          {queueing ? (
+            <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+          ) : (
+            <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
+          )}
+          {queueing ? 'Queueing' : 'Queue suggestions'}
+        </Button>
+      </div>
+    </div>
   );
 }
 

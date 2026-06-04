@@ -184,7 +184,9 @@ export async function enqueueSuggestionJob(
   const jobId =
     'scope' in data
       ? `conversation-review:${data.conversationReviewId}${opts.jobIdSuffix ? `:${opts.jobIdSuffix}` : ''}`
-      : undefined;
+      : opts.jobIdSuffix
+        ? `raw-event:${data.rawEventId}:${opts.jobIdSuffix}`
+        : undefined;
   await getSuggestionQueue().add('suggestions', data, {
     ...(jobId ? { jobId } : {}),
     ...(opts.delayMs ? { delay: opts.delayMs } : {}),

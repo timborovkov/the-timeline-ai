@@ -151,6 +151,31 @@ describe('queue wrappers', () => {
     });
   });
 
+  it('dedupes raw suggestion jobs only when a suffix is provided', async () => {
+    const queues = await importQueues();
+
+    await queues.enqueueSuggestionJob({
+      rawEventId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+    });
+    await queues.enqueueSuggestionJob(
+      {
+        rawEventId: '11111111-1111-4111-8111-111111111111',
+        teamId: '22222222-2222-4222-8222-222222222222',
+      },
+      { jobIdSuffix: 'recovery:30:all' },
+    );
+
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'suggestions',
+      opts: {},
+    });
+    expect(fakes.queues[0]?.addCalls[1]).toMatchObject({
+      name: 'suggestions',
+      opts: { jobId: 'raw-event:11111111-1111-4111-8111-111111111111:recovery:30:all' },
+    });
+  });
+
   it('registers repeatable jobs with stable job ids and closes singleton queues', async () => {
     const queues = await importQueues();
 
