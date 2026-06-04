@@ -8,6 +8,7 @@ export class TimelineAiError extends Error {
   readonly operation: string;
   readonly model: string;
   readonly causeName: string;
+  readonly causeMessage: string;
 
   constructor(metadata: TimelineAiErrorMetadata, cause: unknown) {
     super(`${metadata.operation} failed`, { cause });
@@ -15,6 +16,7 @@ export class TimelineAiError extends Error {
     this.operation = metadata.operation;
     this.model = metadata.model;
     this.causeName = nameFromCause(cause);
+    this.causeMessage = messageFromCause(cause);
   }
 }
 
@@ -40,4 +42,9 @@ export function wrapAiFailure<T>(
 function nameFromCause(cause: unknown): string {
   if (cause instanceof Error) return cause.name;
   return typeof cause;
+}
+
+function messageFromCause(cause: unknown): string {
+  if (cause instanceof Error) return cause.message.slice(0, 500);
+  return String(cause).slice(0, 500);
 }

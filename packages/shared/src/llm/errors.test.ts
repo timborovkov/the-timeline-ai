@@ -20,6 +20,7 @@ describe('TimelineAiError', () => {
       operation: 'llm.chatStructured',
       model: TIMELINE_MODELS.extraction.id,
       causeName: 'Error',
+      causeMessage: 'provider unavailable',
     });
     await expect(
       wrapAiFailure(
