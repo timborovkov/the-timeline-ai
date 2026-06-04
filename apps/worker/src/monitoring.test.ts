@@ -74,6 +74,24 @@ describe('worker Sentry monitoring', () => {
     expect(flush).toHaveBeenCalledWith(2000);
   });
 
+  it('tags AI failures by operation and model without prompt data', async () => {
+    process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
+    const monitoring = await import('#src/monitoring.js');
+    const err = Object.assign(new Error('provider down'), {
+      timelineAi: true,
+      operation: 'llm.embed',
+      model: 'openrouter/embed',
+      prompt: 'must not be tagged',
+    });
+
+    monitoring.captureWorkerException(err, { component: 'worker_job' });
+
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(setScopeTag).toHaveBeenCalledWith('aiOperation', 'llm.embed');
+    expect(setScopeTag).toHaveBeenCalledWith('aiModel', 'openrouter/embed');
+    expect(setScopeTag).not.toHaveBeenCalledWith('prompt', expect.anything());
+  });
+
   it('scrubs request auth material case-insensitively', async () => {
     process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
     const monitoring = await import('#src/monitoring.js');

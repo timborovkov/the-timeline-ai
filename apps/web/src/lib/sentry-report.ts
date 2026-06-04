@@ -25,6 +25,7 @@ export function reportCaughtError(err: unknown, options: ReportOptions): void {
     tags: {
       surface: options.surface,
       operation: options.operation,
+      ...aiErrorTags(err),
       ...stringifyTags(options.tags),
     },
   });
@@ -51,4 +52,14 @@ function stringifyTags(tags: Record<string, SentryTagValue> | undefined): Record
       })
       .map(([key, value]) => [key, String(value)]),
   );
+}
+
+function aiErrorTags(err: unknown): Record<string, string> {
+  if (!err || typeof err !== 'object') return {};
+  const row = err as { timelineAi?: unknown; operation?: unknown; model?: unknown };
+  if (row.timelineAi !== true) return {};
+  return stringifyTags({
+    aiOperation: typeof row.operation === 'string' ? row.operation : undefined,
+    aiModel: typeof row.model === 'string' ? row.model : undefined,
+  });
 }

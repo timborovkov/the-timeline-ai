@@ -33,7 +33,7 @@ export function captureWorkerException(
 ): void {
   if (!isWorkerSentryConfigured()) return;
   Sentry.withScope((scope) => {
-    Object.entries(tags).forEach(([key, value]) => {
+    Object.entries({ ...aiErrorTags(err), ...tags }).forEach(([key, value]) => {
       if (value !== undefined && value !== null) scope.setTag(key, String(value));
     });
     Sentry.captureException(err);
@@ -82,3 +82,15 @@ export async function flushWorkerSentry(timeoutMs = 2000): Promise<boolean> {
 }
 
 export const workerSentryInternals = { sampleRate };
+
+function aiErrorTags(err: unknown): Record<string, string> {
+  if (!err || typeof err !== 'object') return {};
+  const row = err as { timelineAi?: unknown; operation?: unknown; model?: unknown };
+  if (row.timelineAi !== true) return {};
+  return Object.fromEntries(
+    Object.entries({
+      aiOperation: typeof row.operation === 'string' ? row.operation : undefined,
+      aiModel: typeof row.model === 'string' ? row.model : undefined,
+    }).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  );
+}

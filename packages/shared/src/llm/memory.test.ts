@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { LanguageModel, ModelMessage } from 'ai';
 
+import { TimelineAiError } from '#src/llm/errors.js';
 import { compressMessagesForContext } from '#src/llm/memory.js';
 import {
   DEFAULT_CHAT_MEMORY,
@@ -242,6 +243,44 @@ describe('compressMessagesForContext', () => {
     expect(
       Array.isArray(prior?.content) && prior.content.some((part) => part.type === 'tool-call'),
     ).toBe(true);
+  });
+
+  it('wraps summarization model failures with AI metadata', async () => {
+    const cause = new Error('summary model unavailable');
+    const messages: ModelMessage[] = [
+      { role: 'user', content: 'old context '.repeat(45_000) },
+      { role: 'user', content: 'latest question' },
+    ];
+
+    await expect(
+      compressMessagesForContext({
+        system: 'system',
+        messages,
+        model: () => {
+          throw cause;
+        },
+        modelId: 'test/summarizer',
+        contextWindowTokens: 128_000,
+      }),
+    ).rejects.toMatchObject({
+      name: 'TimelineAiError',
+      timelineAi: true,
+      operation: 'llm.compressMessagesForContext',
+      model: 'test/summarizer',
+      cause,
+    });
+
+    await expect(
+      compressMessagesForContext({
+        system: 'system',
+        messages,
+        model: () => {
+          throw cause;
+        },
+        modelId: 'test/summarizer',
+        contextWindowTokens: 128_000,
+      }),
+    ).rejects.toBeInstanceOf(TimelineAiError);
   });
 });
 

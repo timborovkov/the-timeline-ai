@@ -2,6 +2,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { embed as aiEmbed, type EmbeddingModel } from 'ai';
 
 import { getEnv } from '#src/env.js';
+import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS, truncateTextToTokenBudget } from '#src/llm/models.js';
 
 export interface EmbedInput {
@@ -52,8 +53,10 @@ function buildDefaultModel(modelId: string): EmbeddingModel {
  */
 export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<EmbedResult> {
   const modelId = resolveModelId();
-  const model = deps.model ?? buildDefaultModel(modelId);
-  const text = truncateTextToTokenBudget(input.text, embeddingInputTokenBudget());
-  const result = await aiEmbed({ model, value: text });
-  return { vector: Array.from(result.embedding), model: modelId };
+  return wrapAiFailure({ operation: 'llm.embed', model: modelId }, async () => {
+    const model = deps.model ?? buildDefaultModel(modelId);
+    const text = truncateTextToTokenBudget(input.text, embeddingInputTokenBudget());
+    const result = await aiEmbed({ model, value: text });
+    return { vector: Array.from(result.embedding), model: modelId };
+  });
 }

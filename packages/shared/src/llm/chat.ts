@@ -10,6 +10,7 @@ import {
 import { type z } from 'zod';
 
 import { getEnv } from '#src/env.js';
+import { TimelineAiError, wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { generateObject, streamText, withLangSmithProviderOptions } from '#src/llm/tracing.js';
 
@@ -115,26 +116,28 @@ export async function chatStructured<TSchema extends z.ZodType>(
   deps: ChatDeps = {},
 ): Promise<ChatStructuredResult<TSchema>> {
   const modelId = input.model ?? resolveDefaultModelId();
-  const model = deps.model ?? buildOpenRouterLanguageModel(modelId, deps);
-  // generateObject is the right primitive for structured-output extraction;
-  // the "use generateText with output" deprecation guidance applies to chat
-  // surfaces where streaming matters. Revisit once ai v6 stabilises.
-  // eslint-disable-next-line @typescript-eslint/no-deprecated
-  const result = await generateObject({
-    model,
-    schema: input.schema,
-    prompt: input.prompt,
-    system: structuredOutputSystem(input.system),
-    experimental_repairText: repairKnownStructuredOutput(input.schema),
-    providerOptions: withLangSmithProviderOptions(undefined, {
-      name: 'llm.chatStructured',
-      model: modelId,
-      metadata: {
-        operation: 'chat_structured',
-      },
-    }),
+  return wrapAiFailure({ operation: 'llm.chatStructured', model: modelId }, async () => {
+    const model = deps.model ?? buildOpenRouterLanguageModel(modelId, deps);
+    // generateObject is the right primitive for structured-output extraction;
+    // the "use generateText with output" deprecation guidance applies to chat
+    // surfaces where streaming matters. Revisit once ai v6 stabilises.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    const result = await generateObject({
+      model,
+      schema: input.schema,
+      prompt: input.prompt,
+      system: structuredOutputSystem(input.system),
+      experimental_repairText: repairKnownStructuredOutput(input.schema),
+      providerOptions: withLangSmithProviderOptions(undefined, {
+        name: 'llm.chatStructured',
+        model: modelId,
+        metadata: {
+          operation: 'chat_structured',
+        },
+      }),
+    });
+    return { object: result.object as z.infer<TSchema>, model: modelId };
   });
-  return { object: result.object as z.infer<TSchema>, model: modelId };
 }
 
 export interface StreamChatInput<TTools extends ToolSet> {
@@ -175,7 +178,12 @@ export function streamChat<TTools extends ToolSet>(
   deps: ChatDeps = {},
 ): StreamTextResult<TTools, never> {
   const modelId = input.model ?? resolveAgentModelId();
-  const model = deps.model ?? buildOpenRouterLanguageModel(modelId, deps);
+  let model: LanguageModel;
+  try {
+    model = deps.model ?? buildOpenRouterLanguageModel(modelId, deps);
+  } catch (err) {
+    throw new TimelineAiError({ operation: 'llm.streamChat', model: modelId }, err);
+  }
   const args: Parameters<typeof streamText>[0] = {
     model,
     system: input.system,

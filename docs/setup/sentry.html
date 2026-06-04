@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Sentry setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-03</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-04</span></div>
       <blockquote><p>Optional locally. Strongly recommended before production.</p></blockquote>
       <p class="tldr">
         Hook the web and worker services into Sentry for error tracking. The integration is wired in
@@ -67,7 +67,9 @@ SENTRY_PROFILES_SAMPLE_RATE=0
       <p>
         Agent model runs, native tools, and custom MCP tool calls also report caught internal
         failures. Tool events include only the safe tool-name tag before returning
-        <code>tool_failed</code> or a graceful reconnect shape to the model.
+        <code>tool_failed</code> or a graceful reconnect shape to the model. Shared LLM wrapper
+        failures are tagged with <code>aiOperation</code> and <code>aiModel</code> so worker and web
+        captures can be filtered without attaching prompt, transcript, file, or document content.
       </p>
       <p>
         Keep <code>sendDefaultPii</code> disabled. Do not attach cookies, auth headers, prompts,

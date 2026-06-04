@@ -15,7 +15,11 @@ describe('Sentry caught-error reporting', () => {
   });
 
   it('captures unexpected errors with safe tags only', () => {
-    const err = new Error('database down');
+    const err = Object.assign(new Error('database down'), {
+      timelineAi: true,
+      operation: 'llm.chatStructured',
+      model: 'openrouter/test',
+    });
 
     reportCaughtError(err, {
       surface: 'api',
@@ -28,6 +32,8 @@ describe('Sentry caught-error reporting', () => {
       tags: {
         surface: 'api',
         operation: 'searchEvents',
+        aiOperation: 'llm.chatStructured',
+        aiModel: 'openrouter/test',
         provider: 'qdrant',
         enabled: 'true',
       },
