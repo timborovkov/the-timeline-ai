@@ -17,13 +17,22 @@ interface CapturedCall {
   body: unknown;
 }
 
-function makeFetcher(initial: { collectionExists?: boolean; vectorSize?: number } = {}): {
+function makeFetcher(
+  initial: {
+    collectionExists?: boolean;
+    vectorSize?: number;
+    teamIndexExists?: boolean;
+    teamIndexIsTenant?: boolean;
+  } = {},
+): {
   fetcher: typeof fetch;
   calls: CapturedCall[];
   setSearchResult: (hits: { id: string; score: number; payload: QdrantPayload }[]) => void;
 } {
   const calls: CapturedCall[] = [];
   let collectionExists = initial.collectionExists ?? false;
+  let teamIndexExists = initial.teamIndexExists ?? collectionExists;
+  let teamIndexIsTenant = initial.teamIndexIsTenant ?? teamIndexExists;
   const collectionVectorSize = initial.vectorSize ?? TIMELINE_MODELS.embedding.embeddingDimensions;
   let searchResult: { id: string; score: number; payload: QdrantPayload }[] = [];
 
@@ -42,6 +51,9 @@ function makeFetcher(initial: { collectionExists?: boolean; vectorSize?: number 
               result: {
                 status: 'green',
                 config: { params: { vectors: { size: collectionVectorSize, distance: 'Cosine' } } },
+                payload_schema: teamIndexExists
+                  ? { team_id: { data_type: 'keyword', params: { is_tenant: teamIndexIsTenant } } }
+                  : {},
               },
             }),
             { status: 200 },
@@ -53,6 +65,12 @@ function makeFetcher(initial: { collectionExists?: boolean; vectorSize?: number 
     // PUT /collections/<name> — create
     if (method === 'PUT' && /\/collections\/[^/]+$/.exec(url)) {
       collectionExists = true;
+      return Promise.resolve(new Response(JSON.stringify({ result: true }), { status: 200 }));
+    }
+    // PUT /collections/<name>/index — payload index creation
+    if (method === 'PUT' && url.endsWith('/index')) {
+      teamIndexExists = true;
+      teamIndexIsTenant = true;
       return Promise.resolve(new Response(JSON.stringify({ result: true }), { status: 200 }));
     }
     // PUT /collections/<name>/points — upsert
@@ -159,6 +177,12 @@ describe('createQdrantClient', () => {
       (c) => c.method === 'PUT' && c.url.endsWith('/collections/events_test'),
     );
     expect(creates).toHaveLength(1);
+    const indexes = calls.filter((c) => c.method === 'PUT' && c.url.endsWith('/index'));
+    expect(indexes).toHaveLength(1);
+    expect(indexes[0]?.body).toEqual({
+      field_name: 'team_id',
+      field_schema: { type: 'keyword', on_disk: false, is_tenant: true },
+    });
 
     // Second call must NOT re-create.
     await client.upsertVector('id-2', [0.1, 0.2, 0.3, 0.4], samplePayload);
@@ -166,6 +190,8 @@ describe('createQdrantClient', () => {
       (c) => c.method === 'PUT' && c.url.endsWith('/collections/events_test'),
     );
     expect(createsAfter).toHaveLength(1);
+    const indexesAfter = calls.filter((c) => c.method === 'PUT' && c.url.endsWith('/index'));
+    expect(indexesAfter).toHaveLength(1);
   });
 
   it('skips collection creation when HEAD returns 200', async () => {
@@ -176,6 +202,43 @@ describe('createQdrantClient', () => {
       (c) => c.method === 'PUT' && c.url.endsWith('/collections/events_test'),
     );
     expect(creates).toHaveLength(0);
+    const indexes = calls.filter((c) => c.method === 'PUT' && c.url.endsWith('/index'));
+    expect(indexes).toHaveLength(0);
+  });
+
+  it('repairs a matching existing collection that is missing the team tenant index', async () => {
+    const { fetcher, calls } = makeFetcher({
+      collectionExists: true,
+      vectorSize: 4,
+      teamIndexExists: false,
+    });
+    const client = createQdrantClient({ fetcher, vectorSize: 4 });
+    await client.upsertVector('id-1', [0.1, 0.2, 0.3, 0.4], samplePayload);
+
+    const creates = calls.filter(
+      (c) => c.method === 'PUT' && c.url.endsWith('/collections/events_test'),
+    );
+    expect(creates).toHaveLength(0);
+    const indexes = calls.filter((c) => c.method === 'PUT' && c.url.endsWith('/index'));
+    expect(indexes).toHaveLength(1);
+  });
+
+  it('repairs a plain team_id payload index that is not marked as tenant-optimized', async () => {
+    const { fetcher, calls } = makeFetcher({
+      collectionExists: true,
+      vectorSize: 4,
+      teamIndexExists: true,
+      teamIndexIsTenant: false,
+    });
+    const client = createQdrantClient({ fetcher, vectorSize: 4 });
+    await client.upsertVector('id-1', [0.1, 0.2, 0.3, 0.4], samplePayload);
+
+    const indexes = calls.filter((c) => c.method === 'PUT' && c.url.endsWith('/index'));
+    expect(indexes).toHaveLength(1);
+    expect(indexes[0]?.body).toEqual({
+      field_name: 'team_id',
+      field_schema: { type: 'keyword', on_disk: false, is_tenant: true },
+    });
   });
 
   it('rejects an existing collection with the wrong vector dimension', async () => {
