@@ -249,6 +249,17 @@ function collectionVectorSize(data: unknown): number | null {
   return typeof firstNamedVector?.size === 'number' ? firstNamedVector.size : null;
 }
 
+function tenantPayloadIndexBody(): unknown {
+  return {
+    field_name: 'team_id',
+    field_schema: {
+      type: 'keyword',
+      on_disk: false,
+      is_tenant: true,
+    },
+  };
+}
+
 /**
  * Construct a Qdrant client bound to a single collection. The raw REST surface
  * is intentionally hidden — every read path goes through `search`, which bakes
@@ -256,7 +267,8 @@ function collectionVectorSize(data: unknown): number | null {
  * omits those.
  *
  * `QDRANT_URL` is required at construction time. The collection is auto-created
- * on first use (idempotent: HEAD, create-if-404).
+ * on first use (idempotent: HEAD, create-if-404), with a tenant payload index
+ * for the mandatory `team_id` filter.
  */
 export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient {
   const env = getEnv();
@@ -335,6 +347,16 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
         // see a non-success, throw so the caller (worker boot) fails loudly.
         throw new Error(
           `Qdrant create collection failed: ${String(create.status)} ${JSON.stringify(create.data)}`,
+        );
+      }
+      const index = await request(
+        'PUT',
+        `/collections/${encodeURIComponent(collection)}/index`,
+        tenantPayloadIndexBody(),
+      );
+      if (index.status !== 200 && index.status !== 201) {
+        throw new Error(
+          `Qdrant create team_id payload index failed: ${String(index.status)} ${JSON.stringify(index.data)}`,
         );
       }
     })().catch((err: unknown) => {

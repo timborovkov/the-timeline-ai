@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>OpenRouter setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-28</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-04</span></div>
       <blockquote>
         <p>Used from <strong>Phase 3</strong> (transcription) and onwards.</p>
       </blockquote>
@@ -56,6 +56,13 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         The embedding model remains special: changing it or its dimensions invalidates the current
         vector index. Update the catalog and follow the re-embed procedure before switching traffic
         to the new collection.
+      </p>
+      <p>
+        The default Qdrant collection is <code>QDRANT_COLLECTION=events</code>. The app creates that
+        collection on first embedding/search use with
+        <code>TIMELINE_MODELS.embedding.embeddingDimensions</code> and <code>distance=Cosine</code>.
+        If an existing collection has a different vector size, the worker fails loudly instead of
+        writing incompatible vectors; create a new collection and follow the re-embed procedure.
       </p>
 
       <h2 id="smoke-test">3. Quick smoke test</h2>
@@ -175,14 +182,44 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       </p>
       <ol>
         <li>
-          Create the default Qdrant collection before the first embed worker write. The collection
-          vector size must match the embedding model dimensions in
-          <code>TIMELINE_MODELS.embedding.embeddingDimensions</code>; Qdrant rejects vectors from a
-          different-sized model.
+          Let the first embedding/search write create the default <code>events</code> collection, or
+          create it explicitly with the current catalog dimensions if you prefer a manual setup
+          check. Current default: <code>openai/text-embedding-3-small</code>,
+          <code>vectors.size=1536</code>, <code>distance=Cosine</code>.
+          <pre><code>curl -s "$QDRANT_URL/collections/events" \
+  -H "api-key: $QDRANT_API_KEY" | jq '.result.config.params.vectors.size'
+</code></pre>
+          A missing collection before the first write is fine. Any existing value other than
+          <code>1536</code> means the collection belongs to an older embedding model and must not be
+          reused.
+        </li>
+        <li>
+          If creating the collection through the Qdrant dashboard, use:
+          <ul>
+            <li><strong>Name</strong>: <code>events</code> or the new cutover name.</li>
+            <li><strong>Use case</strong>: Multitenancy.</li>
+            <li><strong>Tenant field name</strong>: <code>team_id</code>.</li>
+            <li><strong>Vector type</strong>: Dense vector.</li>
+            <li>
+              <strong>Vector name</strong>: leave unnamed/default; the app writes bare vectors.
+            </li>
+            <li><strong>Vector size</strong>: <code>1536</code>.</li>
+            <li><strong>Distance</strong>: Cosine.</li>
+            <li>
+              <strong>Quantization / on-disk vectors</strong>: leave disabled unless a later
+              performance pass intentionally changes the app defaults.
+            </li>
+          </ul>
+          The equivalent API shape is:
           <pre><code>curl -s -X PUT "$QDRANT_URL/collections/events" \
   -H "content-type: application/json" \
   -H "api-key: $QDRANT_API_KEY" \
   -d '{"vectors":{"size":1536,"distance":"Cosine"}}'
+
+curl -s -X PUT "$QDRANT_URL/collections/events/index" \
+  -H "content-type: application/json" \
+  -H "api-key: $QDRANT_API_KEY" \
+  -d '{"field_name":"team_id","field_schema":{"type":"keyword","on_disk":false,"is_tenant":true}}'
 </code></pre>
         </li>
         <li>
@@ -283,12 +320,19 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         vector space. The cutover below keeps the old collection alive (read-only) while the new one
         is populated, then flips reads atomically via the <code>QDRANT_COLLECTION</code> env var.
       </p>
+      <p>
+        Use this same procedure if production reports a vector-size mismatch, for example an
+        existing <code>events</code> collection at <code>2560</code> while the current catalog
+        expects <code>1536</code>. Do not delete the old collection before the replacement has been
+        populated and verified.
+      </p>
       <ol>
         <li>
           <strong>Update the model catalog</strong> in
           <code>packages/shared/src/llm/models.ts</code>. Leave
-          <code>QDRANT_COLLECTION=events</code> unchanged — the worker keeps writing to the current
-          collection until step 5.
+          <code>QDRANT_COLLECTION=events</code> unchanged until cutover if the current collection
+          still accepts writes. If the current collection already has the wrong vector size, failed
+          jobs can wait while you create and populate the replacement collection.
         </li>
         <li>
           <strong>Create the new collection</strong> with the new vector size. This step is
@@ -299,7 +343,7 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
           <pre><code>curl -s -X PUT "$QDRANT_URL/collections/events_v2" \
   -H "content-type: application/json" \
   -H "api-key: $QDRANT_API_KEY" \
-  -d '{"vectors":{"size":3072,"distance":"Cosine"}}'
+  -d '{"vectors":{"size":1536,"distance":"Cosine"}}'
 </code></pre>
         </li>
         <li>

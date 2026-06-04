@@ -55,6 +55,10 @@ function makeFetcher(initial: { collectionExists?: boolean; vectorSize?: number 
       collectionExists = true;
       return Promise.resolve(new Response(JSON.stringify({ result: true }), { status: 200 }));
     }
+    // PUT /collections/<name>/index — payload index creation
+    if (method === 'PUT' && url.endsWith('/index')) {
+      return Promise.resolve(new Response(JSON.stringify({ result: true }), { status: 200 }));
+    }
     // PUT /collections/<name>/points — upsert
     if (method === 'PUT' && url.endsWith('/points')) {
       return Promise.resolve(
@@ -159,6 +163,12 @@ describe('createQdrantClient', () => {
       (c) => c.method === 'PUT' && c.url.endsWith('/collections/events_test'),
     );
     expect(creates).toHaveLength(1);
+    const indexes = calls.filter((c) => c.method === 'PUT' && c.url.endsWith('/index'));
+    expect(indexes).toHaveLength(1);
+    expect(indexes[0]?.body).toEqual({
+      field_name: 'team_id',
+      field_schema: { type: 'keyword', on_disk: false, is_tenant: true },
+    });
 
     // Second call must NOT re-create.
     await client.upsertVector('id-2', [0.1, 0.2, 0.3, 0.4], samplePayload);
@@ -166,6 +176,8 @@ describe('createQdrantClient', () => {
       (c) => c.method === 'PUT' && c.url.endsWith('/collections/events_test'),
     );
     expect(createsAfter).toHaveLength(1);
+    const indexesAfter = calls.filter((c) => c.method === 'PUT' && c.url.endsWith('/index'));
+    expect(indexesAfter).toHaveLength(1);
   });
 
   it('skips collection creation when HEAD returns 200', async () => {
