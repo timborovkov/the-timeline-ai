@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
-import { reportCaughtError } from '@/lib/sentry-report';
+import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -113,6 +113,13 @@ function buildChunkFromPayload(payload: z.infer<typeof transcriptSchema>): {
 export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
   if (!env.RECALL_API_KEY) {
+    reportHandledEvent({
+      message: 'recall_transcript_webhook_disabled',
+      surface: 'api',
+      operation: 'recall_transcript_config',
+      level: 'warning',
+      tags: { reason: 'webhook_disabled' },
+    });
     return Response.json({ ok: false, reason: 'webhook_disabled' }, { status: 503 });
   }
 
@@ -137,6 +144,13 @@ export async function POST(req: Request): Promise<Response> {
   try {
     raw = await req.json();
   } catch {
+    reportHandledEvent({
+      message: 'recall_transcript_invalid_json',
+      surface: 'api',
+      operation: 'recall_transcript_parse',
+      level: 'warning',
+      tags: { reason: 'invalid_json' },
+    });
     return Response.json({ ok: true, reason: 'invalid_json' }, { status: 200 });
   }
   let parsed: z.infer<typeof transcriptSchema>;
@@ -144,6 +158,13 @@ export async function POST(req: Request): Promise<Response> {
     parsed = transcriptSchema.parse(raw);
   } catch (err) {
     log.warn({ err }, 'invalid_transcript_payload');
+    reportHandledEvent({
+      message: 'recall_transcript_invalid_payload',
+      surface: 'api',
+      operation: 'recall_transcript_parse',
+      level: 'warning',
+      tags: { reason: 'invalid_payload' },
+    });
     return Response.json({ ok: true, reason: 'invalid_payload' }, { status: 200 });
   }
 

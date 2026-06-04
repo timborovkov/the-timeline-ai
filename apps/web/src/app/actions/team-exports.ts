@@ -33,7 +33,8 @@ export async function createTeamExportAction(
     const scope = withTeam(db, active.teamId, session.user.id);
     try {
       await scope.requireMembership('admin');
-    } catch {
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'create_team_export_auth' });
       return { error: 'Only owners and admins can export team data' };
     }
 
@@ -108,7 +109,8 @@ export async function downloadTeamExportAction(formData: FormData): Promise<void
     let hasAdminAccess = true;
     try {
       await scope.requireMembership('admin');
-    } catch {
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'download_team_export_auth' });
       hasAdminAccess = false;
     }
     if (!hasAdminAccess) redirect('/app/team');

@@ -69,6 +69,12 @@ describe('llm.embed', () => {
   it('throws when OPENROUTER_API_KEY is missing AND no model is injected', async () => {
     delete process.env.OPENROUTER_API_KEY;
     resetEnvForTests();
-    await expect(embed({ text: 'hello' })).rejects.toThrow(/OPENROUTER_API_KEY/);
+    await expect(embed({ text: 'hello' })).rejects.toMatchObject({
+      name: 'TimelineAiError',
+      timelineAi: true,
+      operation: 'llm.embed',
+      model: TIMELINE_MODELS.embedding.id,
+      causeName: 'Error',
+    });
   });
 });

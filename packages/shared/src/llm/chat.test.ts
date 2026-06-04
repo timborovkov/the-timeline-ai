@@ -1,8 +1,8 @@
 import { MockLanguageModelV3 } from 'ai/test';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
-import type { LanguageModel } from 'ai';
+import type { LanguageModel, StreamTextOnErrorCallback } from 'ai';
 
 import { resetEnvForTests } from '#src/env.js';
 import { EXTRACTION_SYSTEM_PROMPT } from '#src/extract/prompt.js';
@@ -211,7 +211,13 @@ describe('chatStructured', () => {
         },
         { model: makeMockModel(JSON.stringify({ candidate_index: 999 })) },
       ),
-    ).rejects.toThrow('No object generated');
+    ).rejects.toMatchObject({
+      name: 'TimelineAiError',
+      timelineAi: true,
+      operation: 'llm.chatStructured',
+      model: TIMELINE_MODELS.extraction.id,
+      causeName: 'AI_NoObjectGeneratedError',
+    });
   });
 
   it('requests OpenRouter json_schema structured output for extraction', async () => {
@@ -326,7 +332,13 @@ describe('chatStructured', () => {
     resetEnvForTests();
     await expect(
       chatStructured({ schema: z.object({ k: z.number() }), prompt: 'p' }),
-    ).rejects.toThrow(/OPENROUTER_API_KEY/);
+    ).rejects.toMatchObject({
+      name: 'TimelineAiError',
+      timelineAi: true,
+      operation: 'llm.chatStructured',
+      model: TIMELINE_MODELS.extraction.id,
+      causeName: 'Error',
+    });
   });
 });
 
@@ -365,5 +377,32 @@ describe('streamChat', () => {
     );
     const text = await result.text;
     expect(text).toBe('hi');
+  });
+
+  it('wraps stream-time provider failures before invoking onError', async () => {
+    const cause = new Error('provider streamed a private payload');
+    const onError = vi.fn<StreamTextOnErrorCallback>();
+    const model = new MockLanguageModelV3({
+      doStream: (() => {
+        throw cause;
+      }) as never,
+    });
+
+    const result = streamChat(
+      { system: 'sys', messages: [{ role: 'user', content: 'hi' }], tools: {}, onError },
+      { model },
+    );
+
+    await expect(result.text).rejects.toThrow();
+    expect(onError).toHaveBeenCalledOnce();
+    const event = onError.mock.calls[0]?.[0];
+    expect(event?.error).toMatchObject({
+      name: 'TimelineAiError',
+      timelineAi: true,
+      operation: 'llm.streamChat',
+      model: TIMELINE_MODELS.agent.id,
+      causeName: 'Error',
+    });
+    expect(event?.error).not.toHaveProperty('cause');
   });
 });

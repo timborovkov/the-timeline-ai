@@ -2,6 +2,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { type TranscriptionModel } from 'ai';
 
 import { getEnv } from '#src/env.js';
+import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { experimental_transcribe as tracedTranscribe } from '#src/llm/tracing.js';
 
@@ -69,22 +70,24 @@ export async function transcribeAudio(
   deps: TranscribeDeps = {},
 ): Promise<TranscribeResult> {
   const modelId = resolveModelId();
-  const model = deps.model ?? buildDefaultModel(modelId);
-  const result = await tracedTranscribe(
-    {
-      model,
-      audio: input.audio,
-      ...(input.language ? { providerOptions: { openai: { language: input.language } } } : {}),
-    },
-    {
-      name: 'llm.transcribeAudio',
-      model: modelId,
-      metadata: {
-        operation: 'transcribe_audio',
-        audio_bytes: input.audio.byteLength,
-        language_hint: input.language ? true : false,
+  return wrapAiFailure({ operation: 'llm.transcribeAudio', model: modelId }, async () => {
+    const model = deps.model ?? buildDefaultModel(modelId);
+    const result = await tracedTranscribe(
+      {
+        model,
+        audio: input.audio,
+        ...(input.language ? { providerOptions: { openai: { language: input.language } } } : {}),
       },
-    },
-  );
-  return { text: result.text, model: modelId };
+      {
+        name: 'llm.transcribeAudio',
+        model: modelId,
+        metadata: {
+          operation: 'transcribe_audio',
+          audio_bytes: input.audio.byteLength,
+          language_hint: input.language ? true : false,
+        },
+      },
+    );
+    return { text: result.text, model: modelId };
+  });
 }

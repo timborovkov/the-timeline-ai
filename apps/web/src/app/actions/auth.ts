@@ -183,9 +183,11 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     } catch (e) {
       const msg = e instanceof Error ? e.message : '';
       if (msg === INVITE_INVALID) {
+        reportCaughtError(e, { surface: 'server_action', operation: 'sign_up_invite_invalid' });
         return { error: 'This invite link is invalid or has expired. Ask for a new one.' };
       }
       if (msg === INVITE_WRONG_EMAIL) {
+        reportCaughtError(e, { surface: 'server_action', operation: 'sign_up_invite_wrong_email' });
         return {
           error:
             'This invite was sent to a different email. Sign up with the email it was sent to.',
@@ -231,6 +233,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
       });
     } catch (e) {
       if (e instanceof AuthError) {
+        reportCaughtError(e, { surface: 'server_action', operation: 'sign_up_auto_sign_in' });
         signInFailed = true;
       } else {
         throw e;
@@ -275,6 +278,7 @@ export async function signInAction(_prev: SignInState, formData: FormData): Prom
       // Only swallow real auth failures. Re-throw framework errors (Next's
       // NEXT_REDIRECT, etc.) so they propagate to the runtime.
       if (e instanceof AuthError) {
+        reportCaughtError(e, { surface: 'server_action', operation: 'sign_in' });
         return { error: 'Invalid email or password.' };
       }
       throw e;

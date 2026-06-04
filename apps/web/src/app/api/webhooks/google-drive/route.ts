@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
-import { reportCaughtError } from '@/lib/sentry-report';
+import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -47,6 +47,13 @@ export async function POST(req: Request): Promise<Response> {
   }
   const channelToken = req.headers.get('x-goog-channel-token') ?? '';
   if (!channelToken) {
+    reportHandledEvent({
+      message: 'google_drive_webhook_missing_token',
+      surface: 'api',
+      operation: 'google_drive_webhook_auth',
+      level: 'warning',
+      tags: { provider: 'google_drive', reason: 'missing_token' },
+    });
     return NextResponse.json({ ok: false, reason: 'missing_token' }, { status: 200 });
   }
   const env = getEnv();
@@ -56,10 +63,24 @@ export async function POST(req: Request): Promise<Response> {
     // accept guessable plain-UUID tokens. Drive will keep retrying for
     // a while but stops eventually; the watch will need re-registration
     // once the secret is set.
+    reportHandledEvent({
+      message: 'google_drive_webhook_secret_unconfigured',
+      surface: 'api',
+      operation: 'google_drive_webhook_auth',
+      level: 'warning',
+      tags: { provider: 'google_drive', reason: 'webhook_secret_unconfigured' },
+    });
     return NextResponse.json({ ok: false, reason: 'webhook_secret_unconfigured' }, { status: 200 });
   }
   const integrationId = verifyChannelToken(channelToken, secret);
   if (!integrationId) {
+    reportHandledEvent({
+      message: 'google_drive_webhook_bad_signature',
+      surface: 'api',
+      operation: 'google_drive_webhook_auth',
+      level: 'warning',
+      tags: { provider: 'google_drive', reason: 'bad_signature' },
+    });
     return NextResponse.json({ ok: false, reason: 'bad_signature' }, { status: 200 });
   }
   const rows = await db

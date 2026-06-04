@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
-import { reportCaughtError } from '@/lib/sentry-report';
+import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,12 +45,26 @@ export async function POST(req: Request): Promise<Response> {
   const sig = req.headers.get('x-hub-signature-256');
   const body = await req.text();
   if (!integrationsLib.verifyGithubSignature(body, sig)) {
+    reportHandledEvent({
+      message: 'github_webhook_bad_signature',
+      surface: 'api',
+      operation: 'github_webhook_auth',
+      level: 'warning',
+      tags: { provider: 'github', reason: 'bad_signature', has_signature: Boolean(sig) },
+    });
     return NextResponse.json({ ok: false, reason: 'bad_signature' }, { status: 200 });
   }
   let payload: unknown;
   try {
     payload = JSON.parse(body);
   } catch {
+    reportHandledEvent({
+      message: 'github_webhook_bad_json',
+      surface: 'api',
+      operation: 'github_webhook_parse',
+      level: 'warning',
+      tags: { provider: 'github', reason: 'bad_json' },
+    });
     return NextResponse.json({ ok: false, reason: 'bad_json' }, { status: 200 });
   }
   // Resolve which integrations actually care about this payload's repo.

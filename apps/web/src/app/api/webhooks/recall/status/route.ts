@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
-import { reportCaughtError } from '@/lib/sentry-report';
+import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -81,6 +81,13 @@ function statusCodeFromEvent(event: string): string | null {
 export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
   if (!env.RECALL_STATUS_WEBHOOK_SECRET) {
+    reportHandledEvent({
+      message: 'recall_status_webhook_disabled',
+      surface: 'api',
+      operation: 'recall_status_config',
+      level: 'warning',
+      tags: { reason: 'webhook_disabled' },
+    });
     return Response.json({ ok: false, reason: 'webhook_disabled' }, { status: 503 });
   }
 
@@ -92,6 +99,20 @@ export async function POST(req: Request): Promise<Response> {
   });
   if (!verify.ok) {
     log.warn({ reason: verify.reason }, 'svix_verification_failed');
+    reportHandledEvent({
+      message: 'recall_status_svix_verification_failed',
+      surface: 'api',
+      operation: 'recall_status_svix_verification',
+      level: 'warning',
+      tags: {
+        reason: verify.reason,
+        has_svix_id: req.headers.has('svix-id') || req.headers.has('webhook-id'),
+        has_svix_timestamp:
+          req.headers.has('svix-timestamp') || req.headers.has('webhook-timestamp'),
+        has_svix_signature:
+          req.headers.has('svix-signature') || req.headers.has('webhook-signature'),
+      },
+    });
     return Response.json({ ok: false, reason: 'forbidden' }, { status: 401 });
   }
 
@@ -100,6 +121,13 @@ export async function POST(req: Request): Promise<Response> {
     parsed = statusEventSchema.parse(JSON.parse(body));
   } catch (err) {
     log.warn({ err }, 'invalid_payload');
+    reportHandledEvent({
+      message: 'recall_status_invalid_payload',
+      surface: 'api',
+      operation: 'recall_status_parse',
+      level: 'warning',
+      tags: { reason: 'invalid_payload' },
+    });
     return Response.json({ ok: true, reason: 'invalid_payload' }, { status: 200 });
   }
 

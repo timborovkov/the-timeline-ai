@@ -170,7 +170,10 @@ RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcr
         </li>
         <li>
           <strong>401 on status webhook</strong> — Svix signature mismatch. Re-copy the signing
-          secret from the Recall dashboard into <code>RECALL_STATUS_WEBHOOK_SECRET</code>.
+          secret from the Recall dashboard into <code>RECALL_STATUS_WEBHOOK_SECRET</code>. The web
+          app reports these failures to Sentry as
+          <code>recall_status_svix_verification_failed</code> warnings tagged with the verification
+          reason.
         </li>
       </ul>
     </main>

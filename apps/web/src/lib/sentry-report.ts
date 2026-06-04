@@ -9,23 +9,20 @@ interface ReportOptions {
   tags?: Record<string, SentryTagValue>;
 }
 
-const EXPECTED_ERROR_MESSAGES = new Set([
-  'invalid',
-  'wrong-account',
-  'already-member',
-  'last_owner',
-  'not_found',
-  'invalid_recovery_id',
-  'stale_recovery_set',
-  'invalid_recovery_ids',
-]);
+interface ReportMessageOptions extends ReportOptions {
+  message: string;
+}
+
+const HANDLED_EVENT_WINDOW_MS = 60_000;
+const HANDLED_EVENT_MAX_PER_WINDOW = 10;
+
+const handledEventBuckets = new Map<
+  string,
+  { count: number; suppressed: number; windowStart: number }
+>();
 
 export function shouldReportToSentry(err: unknown): boolean {
-  if (!(err instanceof Error)) return true;
-  if (err.name === 'AbortError') return false;
-  if (EXPECTED_ERROR_MESSAGES.has(err.message)) return false;
-  const digest = (err as Error & { digest?: string }).digest;
-  if (digest?.startsWith('NEXT_REDIRECT') || digest?.startsWith('NEXT_NOT_FOUND')) return false;
+  void err;
   return true;
 }
 
@@ -36,9 +33,31 @@ export function reportCaughtError(err: unknown, options: ReportOptions): void {
     tags: {
       surface: options.surface,
       operation: options.operation,
+      ...aiErrorTags(err),
       ...stringifyTags(options.tags),
     },
   });
+}
+
+export function reportHandledEvent(options: ReportMessageOptions): void {
+  const tags = {
+    surface: options.surface,
+    operation: options.operation,
+    ...stringifyTags(options.tags),
+  };
+  const throttle = handledEventThrottle(options.message, tags, Date.now());
+  if (!throttle.capture) return;
+  Sentry.captureMessage(options.message, {
+    level: options.level ?? 'warning',
+    tags: {
+      ...tags,
+      ...throttle.tags,
+    },
+  });
+}
+
+export function resetHandledEventThrottleForTests(): void {
+  handledEventBuckets.clear();
 }
 
 function stringifyTags(tags: Record<string, SentryTagValue> | undefined): Record<string, string> {
@@ -51,4 +70,44 @@ function stringifyTags(tags: Record<string, SentryTagValue> | undefined): Record
       })
       .map(([key, value]) => [key, String(value)]),
   );
+}
+
+function handledEventThrottle(
+  message: string,
+  tags: Record<string, string>,
+  now: number,
+): { capture: boolean; tags: Record<string, string> } {
+  const key = handledEventKey(message, tags);
+  const bucket = handledEventBuckets.get(key);
+  if (!bucket || now - bucket.windowStart >= HANDLED_EVENT_WINDOW_MS) {
+    handledEventBuckets.set(key, { count: 1, suppressed: 0, windowStart: now });
+    return bucket?.suppressed
+      ? { capture: true, tags: { suppressedCount: String(bucket.suppressed) } }
+      : { capture: true, tags: {} };
+  }
+  if (bucket.count < HANDLED_EVENT_MAX_PER_WINDOW) {
+    bucket.count += 1;
+    return { capture: true, tags: {} };
+  }
+  bucket.suppressed += 1;
+  return { capture: false, tags: {} };
+}
+
+function handledEventKey(message: string, tags: Record<string, string>): string {
+  return JSON.stringify({
+    message,
+    surface: tags.surface,
+    operation: tags.operation,
+    reason: tags.reason,
+  });
+}
+
+function aiErrorTags(err: unknown): Record<string, string> {
+  if (!err || typeof err !== 'object') return {};
+  const row = err as { timelineAi?: unknown; operation?: unknown; model?: unknown };
+  if (row.timelineAi !== true) return {};
+  return stringifyTags({
+    aiOperation: typeof row.operation === 'string' ? row.operation : undefined,
+    aiModel: typeof row.model === 'string' ? row.model : undefined,
+  });
 }

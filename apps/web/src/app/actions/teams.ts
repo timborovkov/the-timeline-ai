@@ -112,7 +112,8 @@ export async function renameTeamAction(
     const scope = withTeam(db, parsed.data.teamId, session.user.id);
     try {
       await scope.requireMembership('admin');
-    } catch {
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'rename_team_auth' });
       return { error: 'Only admins can rename a team' };
     }
 
@@ -217,7 +218,8 @@ export async function inviteMemberAction(
       if (parsed.data.role === 'admin' && callerRole !== 'owner') {
         return { error: 'Only owners can invite admins' };
       }
-    } catch {
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'invite_member_auth' });
       return { error: 'Only admins can invite' };
     }
 
@@ -443,7 +445,8 @@ export async function changeMemberRoleAction(formData: FormData): Promise<void> 
     const scope = withTeam(db, active.teamId, session.user.id);
     try {
       await scope.requireMembership('owner');
-    } catch {
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'change_member_role_auth' });
       return;
     }
 
@@ -487,7 +490,10 @@ export async function changeMemberRoleAction(formData: FormData): Promise<void> 
         });
       });
     } catch (e) {
-      if (e instanceof Error && e.message === 'last_owner') return;
+      if (e instanceof Error && e.message === 'last_owner') {
+        reportCaughtError(e, { surface: 'server_action', operation: 'change_member_role' });
+        return;
+      }
       throw e;
     }
     revalidatePath('/app/team');
@@ -779,7 +785,10 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
         });
       });
     } catch (e) {
-      if (e instanceof Error && e.message === 'last_owner') return;
+      if (e instanceof Error && e.message === 'last_owner') {
+        reportCaughtError(e, { surface: 'server_action', operation: 'remove_member' });
+        return;
+      }
       throw e;
     }
     revalidatePath('/app/team');

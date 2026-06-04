@@ -175,6 +175,10 @@ export async function createTextEventAction(
       await queue.enqueueSuggestionJob({ rawEventId: event.id, teamId: event.teamId });
     } catch (err) {
       log.error({ err }, 'failed to enqueue suggestion job');
+      reportCaughtError(err, {
+        surface: 'server_action',
+        operation: 'create_text_event_enqueue_suggestion',
+      });
       const failurePatch = JSON.stringify({
         suggestions_failed_at: new Date().toISOString(),
         suggestions_error: `enqueue failed: ${err instanceof Error ? err.message.slice(0, 480) : 'unknown'}`,
@@ -187,6 +191,10 @@ export async function createTextEventAction(
         .where(eq(rawEvents.id, event.id))
         .catch((markErr: unknown) => {
           log.error({ err: markErr }, 'failed to mark suggestion failure');
+          reportCaughtError(markErr, {
+            surface: 'background',
+            operation: 'create_text_event_mark_suggestion_failure',
+          });
         });
       processingWarnings.push('approval suggestions');
     }

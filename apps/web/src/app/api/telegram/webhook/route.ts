@@ -6,7 +6,7 @@ import * as telegram from '@timeline/shared/telegram';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
-import { reportCaughtError } from '@/lib/sentry-report';
+import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,10 +18,24 @@ export async function POST(req: Request): Promise<Response> {
   const expected = env.TELEGRAM_WEBHOOK_SECRET;
   if (!expected) {
     // Feature gated off in this environment.
+    reportHandledEvent({
+      message: 'telegram_webhook_disabled',
+      surface: 'api',
+      operation: 'telegram_webhook_config',
+      level: 'warning',
+      tags: { reason: 'webhook_disabled' },
+    });
     return Response.json({ ok: false, reason: 'webhook_disabled' }, { status: 503 });
   }
   const header = req.headers.get('x-telegram-bot-api-secret-token');
   if (!telegram.verifyWebhookSecret(header, expected)) {
+    reportHandledEvent({
+      message: 'telegram_webhook_forbidden',
+      surface: 'api',
+      operation: 'telegram_webhook_auth',
+      level: 'warning',
+      tags: { reason: 'forbidden', has_secret_header: Boolean(header) },
+    });
     return Response.json({ ok: false, reason: 'forbidden' }, { status: 401 });
   }
 
@@ -29,6 +43,13 @@ export async function POST(req: Request): Promise<Response> {
   try {
     payload = await req.json();
   } catch {
+    reportHandledEvent({
+      message: 'telegram_webhook_invalid_json',
+      surface: 'api',
+      operation: 'telegram_webhook_parse',
+      level: 'warning',
+      tags: { reason: 'invalid_json' },
+    });
     return Response.json({ ok: false, reason: 'invalid_json' }, { status: 200 });
   }
 

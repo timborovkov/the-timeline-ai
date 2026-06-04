@@ -2,6 +2,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { type FilePart, type ImagePart, type LanguageModel } from 'ai';
 
 import { getEnv } from '#src/env.js';
+import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import {
   generateText,
@@ -97,8 +98,6 @@ export async function extractTextFromMedia(
   deps: VisionDeps = {},
 ): Promise<ExtractTextFromMediaResult> {
   const modelId = input.model ?? resolveVisionModelId();
-  const model = deps.model ?? buildDefaultModel(modelId);
-
   const mediaType = input.mediaType.toLowerCase();
   const isImage = mediaType.startsWith('image/');
   const isPdf = mediaType === 'application/pdf';
@@ -120,36 +119,42 @@ export async function extractTextFromMedia(
         ...(input.filename ? { filename: input.filename } : {}),
       };
 
-  const result = await generateText({
-    model,
-    system: SYSTEM_PROMPT,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          contentPart,
+  const result = await wrapAiFailure(
+    { operation: 'llm.extractTextFromMedia', model: modelId },
+    async () => {
+      const model = deps.model ?? buildDefaultModel(modelId);
+      return generateText({
+        model,
+        system: SYSTEM_PROMPT,
+        messages: [
           {
-            type: 'text',
-            text: 'Transcribe the attached document to plain text. Follow the formatting rules in the system prompt.',
+            role: 'user',
+            content: [
+              contentPart,
+              {
+                type: 'text',
+                text: 'Transcribe the attached document to plain text. Follow the formatting rules in the system prompt.',
+              },
+            ],
           },
         ],
-      },
-    ],
-    maxOutputTokens: input.maxOutputTokens ?? 8000,
-    providerOptions: withLangSmithProviderOptions(undefined, {
-      name: 'llm.extractTextFromMedia',
-      model: modelId,
-      processInputs: sanitizeAiSdkInputs,
-      processChildLLMRunInputs: sanitizeAiSdkInputs,
-      metadata: {
-        operation: 'extract_text_from_media',
-        media_type: mediaType,
-        input_bytes: input.body.byteLength,
-        has_filename: input.filename ? true : false,
-        max_output_tokens: input.maxOutputTokens ?? 8000,
-      },
-    }),
-  });
+        maxOutputTokens: input.maxOutputTokens ?? 8000,
+        providerOptions: withLangSmithProviderOptions(undefined, {
+          name: 'llm.extractTextFromMedia',
+          model: modelId,
+          processInputs: sanitizeAiSdkInputs,
+          processChildLLMRunInputs: sanitizeAiSdkInputs,
+          metadata: {
+            operation: 'extract_text_from_media',
+            media_type: mediaType,
+            input_bytes: input.body.byteLength,
+            has_filename: input.filename ? true : false,
+            max_output_tokens: input.maxOutputTokens ?? 8000,
+          },
+        }),
+      });
+    },
+  );
 
   return { text: result.text, model: modelId };
 }

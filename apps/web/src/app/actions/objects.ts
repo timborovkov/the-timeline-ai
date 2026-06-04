@@ -334,6 +334,7 @@ export async function acceptObjectChangeAction(input: unknown): Promise<ActionSt
       revalidatePath('/app/tasks');
       return ok ? { ok: true } : { error: 'Suggestion no longer pending' };
     } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'accept_object_change' });
       return { error: err instanceof Error ? err.message : 'Failed to accept' };
     }
   });
@@ -351,6 +352,7 @@ export async function rejectObjectChangeAction(input: unknown): Promise<ActionSt
       revalidatePath('/app/inbox');
       return ok ? { ok: true } : { error: 'Suggestion no longer pending' };
     } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'reject_object_change' });
       return { error: err instanceof Error ? err.message : 'Failed to reject' };
     }
   });

@@ -4,7 +4,7 @@ import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 
 import { reconcileOrphanedJobs } from '@/lib/reconcile-jobs';
-import { reportCaughtError } from '@/lib/sentry-report';
+import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,12 +24,26 @@ const log = childLogger('web:cron:reconcile');
 export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
   if (!env.CRON_SECRET) {
+    reportHandledEvent({
+      message: 'cron_reconcile_disabled',
+      surface: 'api',
+      operation: 'cron_reconcile_auth',
+      level: 'warning',
+      tags: { reason: 'reconcile_disabled' },
+    });
     return Response.json({ ok: false, reason: 'reconcile_disabled' }, { status: 503 });
   }
   const provided = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
   const a = Buffer.from(provided);
   const b = Buffer.from(env.CRON_SECRET);
   if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    reportHandledEvent({
+      message: 'cron_reconcile_forbidden',
+      surface: 'api',
+      operation: 'cron_reconcile_auth',
+      level: 'warning',
+      tags: { reason: 'forbidden', has_authorization: Boolean(provided) },
+    });
     return Response.json({ ok: false, reason: 'forbidden' }, { status: 401 });
   }
   try {
