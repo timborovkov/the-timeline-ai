@@ -11,6 +11,8 @@ describe('job recovery resuggest route', () => {
     const source = readFileSync(join(__dirname, 'route.ts'), 'utf-8');
 
     expect(source).toContain("const RECOVERY_JOB_ID_SUFFIX = 'recovery'");
+    expect(source).toContain('previousQuietUntil');
+    expect(source).toContain('removeSuggestionJob');
     expect(source).toContain('jobIdSuffix: RECOVERY_JOB_ID_SUFFIX');
     expect(source).not.toContain('recoveryRunId');
     expect(source).not.toContain('jobIdSuffix: `recovery:${');

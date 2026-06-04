@@ -210,6 +210,31 @@ describe('queue wrappers', () => {
     expect(fakes.queues[0]?.addCalls).toHaveLength(3);
   });
 
+  it('removes a delayed conversation review suggestion job by suffix', async () => {
+    const queues = await importQueues();
+    const data = {
+      scope: 'conversation_review' as const,
+      conversationReviewId: '66666666-6666-4666-8666-666666666666',
+      teamId: '22222222-2222-4222-8222-222222222222',
+    };
+
+    const queued = await queues.enqueueSuggestionJob(data, {
+      delayMs: 600_000,
+      jobIdSuffix: '2026-05-27T10:10:00.000Z',
+    });
+    const removed = await queues.removeSuggestionJob(data, {
+      jobIdSuffix: '2026-05-27T10:10:00.000Z',
+    });
+    const rerun = await queues.enqueueSuggestionJob(data, {
+      delayMs: 600_000,
+      jobIdSuffix: '2026-05-27T10:10:00.000Z',
+    });
+
+    expect(removed).toEqual({ removed: true, jobId: queued.jobId });
+    expect(rerun).toMatchObject({ enqueued: true, jobId: queued.jobId });
+    expect(fakes.queues[0]?.addCalls).toHaveLength(2);
+  });
+
   it('dedupes raw suggestion jobs only when a suffix is provided', async () => {
     const queues = await importQueues();
 

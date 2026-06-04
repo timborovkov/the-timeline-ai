@@ -54,7 +54,21 @@ function recoverableAnchorCondition(candidate: Candidate): SQL {
 async function recoverConversationReview(
   candidate: Candidate,
   args: { windowDays: number; source: 'all' | 'telegram' | 'slack'; requestedAt: Date },
-): Promise<{ id: string; teamId: string } | null> {
+): Promise<{ id: string; teamId: string; previousQuietUntil: Date | null } | null> {
+  const [existing] = await db
+    .select({
+      id: conversationReviews.id,
+      quietUntil: conversationReviews.quietUntil,
+      teamId: conversationReviews.teamId,
+    })
+    .from(conversationReviews)
+    .where(
+      and(
+        eq(conversationReviews.teamId, candidate.teamId),
+        eq(conversationReviews.conversationKey, candidate.identity.key),
+      ),
+    )
+    .limit(1);
   const anchorMetadata = {
     kind: candidate.identity.kind,
     last_anchor_raw_event_id: candidate.id,
@@ -90,7 +104,7 @@ async function recoverConversationReview(
       where: recoverableAnchorCondition(candidate),
     })
     .returning({ id: conversationReviews.id, teamId: conversationReviews.teamId });
-  return review ?? null;
+  return review ? { ...review, previousQuietUntil: existing?.quietUntil ?? null } : null;
 }
 
 async function recoverAndEnqueueConversationReview(
@@ -104,6 +118,12 @@ async function recoverAndEnqueueConversationReview(
 ): Promise<{ recovered: number; enqueued: number }> {
   const review = await recoverConversationReview(candidate, args);
   if (!review) return { recovered: 0, enqueued: 0 };
+  if (review.previousQuietUntil) {
+    await queue.removeSuggestionJob(
+      { scope: 'conversation_review', conversationReviewId: review.id, teamId: review.teamId },
+      { jobIdSuffix: review.previousQuietUntil.toISOString() },
+    );
+  }
   const result = await queue.enqueueSuggestionJob(
     { scope: 'conversation_review', conversationReviewId: review.id, teamId: review.teamId },
     { jobIdSuffix: RECOVERY_JOB_ID_SUFFIX },

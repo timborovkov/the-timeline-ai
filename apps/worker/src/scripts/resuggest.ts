@@ -133,6 +133,20 @@ async function recoverConversationReview(
   candidate: ConversationCandidate,
   args: { source: 'all' | 'telegram' | 'slack'; requestedAt: Date },
 ): Promise<{ id: string; teamId: string } | null> {
+  const [existing] = await db
+    .select({
+      id: conversationReviews.id,
+      quietUntil: conversationReviews.quietUntil,
+      teamId: conversationReviews.teamId,
+    })
+    .from(conversationReviews)
+    .where(
+      and(
+        eq(conversationReviews.teamId, candidate.teamId),
+        eq(conversationReviews.conversationKey, candidate.identity.key),
+      ),
+    )
+    .limit(1);
   const anchorMetadata = {
     kind: candidate.identity.kind,
     last_anchor_raw_event_id: candidate.id,
@@ -168,7 +182,14 @@ async function recoverConversationReview(
       where: recoverableAnchorCondition(candidate),
     })
     .returning({ id: conversationReviews.id, teamId: conversationReviews.teamId });
-  return review ?? null;
+  if (!review) return null;
+  if (existing?.quietUntil) {
+    await queue.removeSuggestionJob(
+      { scope: 'conversation_review', conversationReviewId: review.id, teamId: review.teamId },
+      { jobIdSuffix: existing.quietUntil.toISOString() },
+    );
+  }
+  return review;
 }
 
 async function main(): Promise<void> {

@@ -160,6 +160,18 @@ function bullmqCustomJobId(parts: string[]): string {
   return parts.map((part) => encodeURIComponent(part)).join('|');
 }
 
+function suggestionJobId(data: SuggestionJobData, jobIdSuffix?: string): string | undefined {
+  return 'scope' in data
+    ? bullmqCustomJobId([
+        'conversation-review',
+        data.conversationReviewId,
+        ...(jobIdSuffix ? [jobIdSuffix] : []),
+      ])
+    : jobIdSuffix
+      ? bullmqCustomJobId(['raw-event', data.rawEventId, jobIdSuffix])
+      : undefined;
+}
+
 interface ExistingJobLike {
   getState?: () => Promise<string>;
   remove?: () => Promise<void>;
@@ -201,16 +213,7 @@ export async function enqueueSuggestionJob(
   data: SuggestionJobData,
   opts: { delayMs?: number; jobIdSuffix?: string } = {},
 ): Promise<{ enqueued: boolean; jobId: string | null }> {
-  const jobId =
-    'scope' in data
-      ? bullmqCustomJobId([
-          'conversation-review',
-          data.conversationReviewId,
-          ...(opts.jobIdSuffix ? [opts.jobIdSuffix] : []),
-        ])
-      : opts.jobIdSuffix
-        ? bullmqCustomJobId(['raw-event', data.rawEventId, opts.jobIdSuffix])
-        : undefined;
+  const jobId = suggestionJobId(data, opts.jobIdSuffix);
   const q = getSuggestionQueue();
   const existing = jobId ? ((await q.getJob(jobId)) as ExistingJobLike | null) : null;
   if (jobId && existing) {
@@ -232,6 +235,21 @@ export async function enqueueSuggestionJob(
     ...(opts.delayMs ? { delay: opts.delayMs } : {}),
   });
   return { enqueued: true, jobId: jobId ?? null };
+}
+
+export async function removeSuggestionJob(
+  data: SuggestionJobData,
+  opts: { jobIdSuffix: string },
+): Promise<{ removed: boolean; jobId: string }> {
+  const jobId = suggestionJobId(data, opts.jobIdSuffix);
+  if (!jobId) throw new Error('suggestion job id suffix required');
+  const job = (await getSuggestionQueue().getJob(jobId)) as ExistingJobLike | null;
+  if (!job?.remove) return { removed: false, jobId };
+  const removed = await job.remove().then(
+    () => true,
+    () => false,
+  );
+  return { removed, jobId };
 }
 
 export async function closeSuggestionQueue(): Promise<void> {

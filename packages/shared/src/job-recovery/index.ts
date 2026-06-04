@@ -269,17 +269,13 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
     for (const parsed of parsedJobs) {
       await assertArtifactVisible(deps.db, deps.teamId, deps.userId, parsed);
     }
-    const retryPlans: RetryPlan[] = [];
-    for (const parsed of parsedJobs) {
-      retryPlans.push(await prepareRetryParsed(deps.db, deps.teamId, parsed, q));
-    }
     let retried = 0;
     const failedIds: string[] = [];
     for (let index = 0; index < parsedJobs.length; index += 1) {
       const parsed = parsedJobs[index];
-      const retryPlan = retryPlans[index];
-      if (!parsed || !retryPlan) throw new Error('invalid_recovery_ids');
+      if (!parsed) throw new Error('invalid_recovery_ids');
       try {
+        const retryPlan = await prepareRetryParsed(deps.db, deps.teamId, parsed, q);
         await clearDismissal(deps.db, deps.teamId, parsed);
         await executeRetryPlan(retryPlan);
         retried += 1;
