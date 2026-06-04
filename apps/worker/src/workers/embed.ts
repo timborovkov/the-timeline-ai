@@ -61,17 +61,68 @@ function expectedEmbeddingSourceHash(data: queue.EmbedJobData): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+function embeddingModel(data: queue.EmbedJobData): string {
+  const value = 'embeddingModel' in data ? data.embeddingModel : undefined;
+  return typeof value === 'string' && value.length > 0 ? value : llm.TIMELINE_MODELS.embedding.id;
+}
+
 function continuationJob(
   data: queue.EmbedJobData,
   nextChunk: number,
   sourceHash: string,
+  model: string,
 ): queue.EmbedJobData {
-  return { ...data, embeddingStartChunk: nextChunk, embeddingSourceHash: sourceHash };
+  return {
+    ...data,
+    embeddingStartChunk: nextChunk,
+    embeddingSourceHash: sourceHash,
+    embeddingModel: model,
+  };
 }
 
 function restartJob(data: queue.EmbedJobData): queue.EmbedJobData {
-  const { embeddingStartChunk: _start, embeddingSourceHash: _hash, ...rest } = data;
+  const {
+    embeddingStartChunk: _start,
+    embeddingSourceHash: _hash,
+    embeddingModel: _model,
+    ...rest
+  } = data;
   return rest;
+}
+
+async function finalizeSourceEmbedding(input: {
+  db: Db;
+  client: qdrant.QdrantClient;
+  data: queue.EmbedJobData;
+  scope: qdrant.PointScope;
+  sourceId: string;
+  model: string;
+  chunkCount: number;
+}): Promise<void> {
+  await input.client.deletePointsForSourceFromChunk({
+    teamId: input.data.teamId,
+    scope: input.scope,
+    sourceId: input.sourceId,
+    model: input.model,
+    minChunkIndex: input.chunkCount,
+  });
+
+  // Only event-scope raw_events.source_metadata gets stamped — see Phase 5
+  // rationale below. Non-event scopes don't have a single canonical row to
+  // stamp; their freshness is tracked by the coverage audit script.
+  if (input.scope === 'event' && 'rawEventId' in input.data) {
+    const successPatch = JSON.stringify({
+      embedded_at: new Date().toISOString(),
+      embedding_model: input.model,
+      embedding_chunks: input.chunkCount,
+    });
+    await input.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'embedding_failed_at' - 'embedding_error') || ${successPatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, input.data.rawEventId));
+  }
 }
 
 async function processEmbedJob(
@@ -116,7 +167,29 @@ async function processEmbedJob(
     };
   }
   const chunksForJob = chunks.slice(startChunk, startChunk + EMBEDDING_CHUNKS_PER_JOB);
-  if (chunksForJob.length === 0) return { skipped: true };
+  const getQdrantClient = io.getQdrantClient ?? qdrant.getQdrantClient;
+  const client = getQdrantClient(
+    data.targetCollection ? { collection: data.targetCollection, requireExisting: true } : {},
+  );
+  if (chunksForJob.length === 0) {
+    const model = embeddingModel(data);
+    await finalizeSourceEmbedding({
+      db: deps.db,
+      client,
+      data,
+      scope: plan.scope,
+      sourceId: plan.sourceId,
+      model,
+      chunkCount: chunks.length,
+    });
+    return {
+      skipped: true,
+      reason: 'empty_continuation_finalized',
+      scope: plan.scope,
+      sourceId: plan.sourceId,
+      model,
+    };
+  }
   const embeddedChunks = [];
   for (const chunk of chunksForJob) {
     const result = await embed({ text: chunk.text });
@@ -125,10 +198,6 @@ async function processEmbedJob(
   const model = embeddedChunks[0]?.model;
   if (!model) return { skipped: true };
 
-  const getQdrantClient = io.getQdrantClient ?? qdrant.getQdrantClient;
-  const client = getQdrantClient(
-    data.targetCollection ? { collection: data.targetCollection, requireExisting: true } : {},
-  );
   const basePayload = embedding.blankEmbeddingPayload({
     teamId: data.teamId,
     occurredAt: plan.occurredAt,
@@ -154,32 +223,17 @@ async function processEmbedJob(
   const nextChunk = startChunk + embeddedChunks.length;
   if (nextChunk < chunks.length) {
     const enqueueEmbedJob = io.enqueueEmbedJob ?? queue.enqueueEmbedJob;
-    await enqueueEmbedJob(continuationJob(data, nextChunk, sourceHash));
+    await enqueueEmbedJob(continuationJob(data, nextChunk, sourceHash, model));
   } else {
-    await client.deletePointsForSourceFromChunk({
-      teamId: data.teamId,
+    await finalizeSourceEmbedding({
+      db: deps.db,
+      client,
+      data,
       scope: plan.scope,
       sourceId: plan.sourceId,
       model,
-      minChunkIndex: chunks.length,
+      chunkCount: chunks.length,
     });
-  }
-
-  // Only event-scope raw_events.source_metadata gets stamped — see Phase 5
-  // rationale below. Non-event scopes don't have a single canonical row to
-  // stamp; their freshness is tracked by the coverage audit script.
-  if (plan.scope === 'event' && 'rawEventId' in data && nextChunk >= chunks.length) {
-    const successPatch = JSON.stringify({
-      embedded_at: new Date().toISOString(),
-      embedding_model: model,
-      embedding_chunks: chunks.length,
-    });
-    await deps.db
-      .update(rawEvents)
-      .set({
-        sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'embedding_failed_at' - 'embedding_error') || ${successPatch}::jsonb`,
-      })
-      .where(eq(rawEvents.id, data.rawEventId));
   }
 
   return { scope: plan.scope, sourceId: plan.sourceId, model, pointId: pointIds[0], pointIds };

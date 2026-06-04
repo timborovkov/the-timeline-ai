@@ -303,6 +303,7 @@ describe('processEmbedJobForTests', () => {
       teamId: TEAM_ID,
       rawEventId,
       embeddingStartChunk: 16,
+      embeddingModel: 'test-embed-model',
     });
     expect(continuation?.embeddingSourceHash).toMatch(/^[0-9a-f]{64}$/);
     const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
@@ -371,6 +372,73 @@ describe('processEmbedJobForTests', () => {
     const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(row?.sourceMetadata).toMatchObject({
       embedding_model: 'test-embed-model',
+    });
+    expect(row?.sourceMetadata).toHaveProperty('embedded_at');
+  });
+
+  it('finalizes orphan continuations that start beyond the current chunk count', async () => {
+    const rawEventId = '44444444-5555-4666-8777-888888888888';
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Shorter replacement text',
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const embed = vi.fn();
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
+
+    const result = await processEmbedJobForTests(
+      { db: db as never },
+      {
+        scope: 'raw_event',
+        teamId: TEAM_ID,
+        rawEventId,
+        embeddingStartChunk: 16,
+        embeddingModel: 'test-embed-model',
+      },
+      {
+        getEnv: () =>
+          ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+        embed,
+        enqueueEmbedJob,
+        getQdrantClient: vi.fn(
+          () => ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+        ),
+      },
+    );
+
+    expect(result).toMatchObject({
+      skipped: true,
+      reason: 'empty_continuation_finalized',
+      scope: 'event',
+      sourceId: rawEventId,
+      model: 'test-embed-model',
+    });
+    expect(embed).not.toHaveBeenCalled();
+    expect(upsertVector).not.toHaveBeenCalled();
+    expect(deletePointsForSource).not.toHaveBeenCalled();
+    expect(deletePointsForSourceFromChunk).toHaveBeenCalledWith({
+      teamId: TEAM_ID,
+      scope: 'event',
+      sourceId: rawEventId,
+      model: 'test-embed-model',
+      minChunkIndex: 1,
+    });
+    expect(enqueueEmbedJob).not.toHaveBeenCalled();
+    const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
+    expect(row?.sourceMetadata).toMatchObject({
+      embedding_model: 'test-embed-model',
+      embedding_chunks: 1,
     });
     expect(row?.sourceMetadata).toHaveProperty('embedded_at');
   });

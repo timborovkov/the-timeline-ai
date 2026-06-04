@@ -236,6 +236,11 @@ interface EmbedJobBase {
    * chunk indices never mix embeddings from two different rendered texts.
    */
   embeddingSourceHash?: string;
+  /**
+   * Internal model id carried by continuation jobs so an orphaned continuation
+   * can still prune stale tail chunks even when it has no new chunk to embed.
+   */
+  embeddingModel?: string;
 }
 
 export interface EmbedRawEventJobData extends EmbedJobBase {
