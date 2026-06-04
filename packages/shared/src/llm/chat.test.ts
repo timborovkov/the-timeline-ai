@@ -16,6 +16,11 @@ const liveOpenRouterIt =
 const openRouterRequestSchema = z.object({
   model: z.unknown(),
   messages: z.array(z.object({ role: z.unknown(), content: z.unknown() })),
+  provider: z
+    .object({
+      require_parameters: z.unknown(),
+    })
+    .optional(),
   response_format: z.object({
     type: z.unknown(),
     json_schema: z.object({
@@ -287,6 +292,7 @@ describe('chatStructured', () => {
       body.messages.some((message) => String(message.content).toLowerCase().includes('json')),
     ).toBe(true);
     expect(body.response_format.type).toBe('json_schema');
+    expect(body.provider?.require_parameters).toBe(true);
     expect(body.response_format.json_schema.strict).toBe(true);
     const factSchema = body.response_format.json_schema.schema.properties.facts.items;
     expect(factSchema.required).toEqual(
@@ -294,6 +300,91 @@ describe('chatStructured', () => {
     );
     expect(factSchema.properties).toHaveProperty('statement');
     expect(factSchema.properties).toHaveProperty('mentions');
+  });
+
+  it('falls back to json_object mode when OpenRouter rejects strict json_schema', async () => {
+    const requests: unknown[] = [];
+    const fetchStub: typeof fetch = (_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('expected request body');
+      const parsed: unknown = JSON.parse(init.body);
+      requests.push(parsed);
+      if (requests.length === 1) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: { message: 'Provider rejected json_schema for this route' },
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-test-fallback',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.extraction.id,
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content: JSON.stringify({
+                    facts: [
+                      {
+                        statement: 'Acme is evaluating Timeline for Q4.',
+                        confidence: 0.92,
+                        mentions: [{ name: 'Acme', type: 'company', role: 'subject' }],
+                      },
+                    ],
+                  }),
+                },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    const result = await chatStructured(
+      {
+        schema: extractionResultSchema,
+        prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
+        system: EXTRACTION_SYSTEM_PROMPT,
+      },
+      { fetch: fetchStub },
+    );
+
+    expect(result.object.facts[0]).toMatchObject({
+      statement: 'Acme is evaluating Timeline for Q4.',
+      mentions: [{ name: 'Acme', type: 'company', role: 'subject' }],
+    });
+    expect(requests).toHaveLength(2);
+    const primary = openRouterRequestSchema.parse(requests[0]);
+    expect(primary.response_format.type).toBe('json_schema');
+    expect(primary.provider?.require_parameters).toBe(true);
+    const fallback = z
+      .object({
+        messages: z.array(z.object({ role: z.unknown(), content: z.unknown() })),
+        provider: z
+          .object({
+            require_parameters: z.unknown(),
+          })
+          .optional(),
+        response_format: z.object({ type: z.unknown() }),
+      })
+      .parse(requests[1]);
+    expect(fallback.response_format.type).toBe('json_object');
+    expect(fallback.provider?.require_parameters).toBe(true);
+    expect(
+      fallback.messages.some((message) =>
+        String(message.content).includes('Return only a JSON object matching this JSON Schema'),
+      ),
+    ).toBe(true);
   });
 
   liveOpenRouterIt(
@@ -403,6 +494,6 @@ describe('streamChat', () => {
       model: TIMELINE_MODELS.agent.id,
       causeName: 'Error',
     });
-    expect(event?.error).toHaveProperty('cause', cause);
+    expect(event?.error).not.toHaveProperty('cause');
   });
 });
