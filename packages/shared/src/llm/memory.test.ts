@@ -266,8 +266,8 @@ describe('compressMessagesForContext', () => {
       name: 'TimelineAiError',
       timelineAi: true,
       operation: 'llm.compressMessagesForContext',
-      model: 'test/summarizer',
-      cause,
+      model: TIMELINE_MODELS.summarization.id,
+      causeName: 'Error',
     });
 
     await expect(

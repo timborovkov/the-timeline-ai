@@ -7,13 +7,23 @@ export class TimelineAiError extends Error {
   readonly timelineAi = true;
   readonly operation: string;
   readonly model: string;
+  readonly causeName: string;
 
   constructor(metadata: TimelineAiErrorMetadata, cause: unknown) {
-    super(`${metadata.operation} failed: ${messageFromCause(cause)}`, { cause });
+    super(`${metadata.operation} failed`);
     this.name = 'TimelineAiError';
     this.operation = metadata.operation;
     this.model = metadata.model;
+    this.causeName = nameFromCause(cause);
   }
+}
+
+export function toTimelineAiError(
+  metadata: TimelineAiErrorMetadata,
+  cause: unknown,
+): TimelineAiError {
+  if (cause instanceof TimelineAiError) return cause;
+  return new TimelineAiError(metadata, cause);
 }
 
 export function wrapAiFailure<T>(
@@ -23,12 +33,11 @@ export function wrapAiFailure<T>(
   return Promise.resolve()
     .then(fn)
     .catch((err: unknown) => {
-      if (err instanceof TimelineAiError) throw err;
-      throw new TimelineAiError(metadata, err);
+      throw toTimelineAiError(metadata, err);
     });
 }
 
-function messageFromCause(cause: unknown): string {
-  if (cause instanceof Error) return cause.message;
-  return typeof cause === 'string' ? cause : 'unknown error';
+function nameFromCause(cause: unknown): string {
+  if (cause instanceof Error) return cause.name;
+  return typeof cause;
 }

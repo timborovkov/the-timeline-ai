@@ -69,9 +69,13 @@ describe('transcribeAudio', () => {
   it('throws when OPENROUTER_API_KEY is missing AND no model is injected', async () => {
     delete process.env.OPENROUTER_API_KEY;
     resetEnvForTests();
-    await expect(transcribeAudio({ audio: Buffer.from('x') })).rejects.toThrow(
-      /OPENROUTER_API_KEY/,
-    );
+    await expect(transcribeAudio({ audio: Buffer.from('x') })).rejects.toMatchObject({
+      name: 'TimelineAiError',
+      timelineAi: true,
+      operation: 'llm.transcribeAudio',
+      model: TIMELINE_MODELS.transcription.id,
+      causeName: 'Error',
+    });
   });
 
   it('propagates SDK errors from the provider', async () => {
@@ -80,6 +84,12 @@ describe('transcribeAudio', () => {
     });
     await expect(
       transcribeAudio({ audio: Buffer.from('x') }, { model: erroringModel }),
-    ).rejects.toThrow(/upstream busted/);
+    ).rejects.toMatchObject({
+      name: 'TimelineAiError',
+      timelineAi: true,
+      operation: 'llm.transcribeAudio',
+      model: TIMELINE_MODELS.transcription.id,
+      causeName: 'Error',
+    });
   });
 });

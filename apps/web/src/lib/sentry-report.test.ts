@@ -1,7 +1,12 @@
 import * as Sentry from '@sentry/nextjs';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { reportCaughtError, reportHandledEvent, shouldReportToSentry } from '@/lib/sentry-report';
+import {
+  reportCaughtError,
+  reportHandledEvent,
+  resetHandledEventThrottleForTests,
+  shouldReportToSentry,
+} from '@/lib/sentry-report';
 
 vi.mock('@sentry/nextjs', () => ({
   captureException: vi.fn(),
@@ -9,6 +14,12 @@ vi.mock('@sentry/nextjs', () => ({
 }));
 
 describe('Sentry caught-error reporting', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+    resetHandledEventThrottleForTests();
+  });
+
   it('reports every error passed to the caught-error helper', () => {
     expect(shouldReportToSentry(new Error('already-member'))).toBe(true);
     expect(shouldReportToSentry(new Error('database down'))).toBe(true);
@@ -55,6 +66,41 @@ describe('Sentry caught-error reporting', () => {
         operation: 'recall_status_svix_verification',
         reason: 'bad_signature',
         enabled: 'true',
+      },
+    });
+  });
+
+  it('throttles repeated handled events and reports the suppressed count on the next window', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-04T00:00:00Z'));
+
+    for (let i = 0; i < 12; i += 1) {
+      reportHandledEvent({
+        message: 'telegram_webhook_forbidden',
+        surface: 'api',
+        operation: 'telegram_webhook_auth',
+        tags: { reason: 'forbidden' },
+      });
+    }
+
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(10);
+
+    vi.setSystemTime(new Date('2026-06-04T00:01:01Z'));
+    reportHandledEvent({
+      message: 'telegram_webhook_forbidden',
+      surface: 'api',
+      operation: 'telegram_webhook_auth',
+      tags: { reason: 'forbidden' },
+    });
+
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(11);
+    expect(Sentry.captureMessage).toHaveBeenLastCalledWith('telegram_webhook_forbidden', {
+      level: 'warning',
+      tags: {
+        surface: 'api',
+        operation: 'telegram_webhook_auth',
+        reason: 'forbidden',
+        suppressedCount: '2',
       },
     });
   });

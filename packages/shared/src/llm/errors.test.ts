@@ -19,8 +19,16 @@ describe('TimelineAiError', () => {
       timelineAi: true,
       operation: 'llm.chatStructured',
       model: TIMELINE_MODELS.extraction.id,
-      cause,
+      causeName: 'Error',
     });
+    await expect(
+      wrapAiFailure(
+        { operation: 'llm.chatStructured', model: TIMELINE_MODELS.extraction.id },
+        () => {
+          throw cause;
+        },
+      ),
+    ).rejects.not.toHaveProperty('cause');
   });
 
   it('does not double-wrap existing AI failures', async () => {

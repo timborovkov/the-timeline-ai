@@ -10,7 +10,7 @@ import {
 import { type z } from 'zod';
 
 import { getEnv } from '#src/env.js';
-import { TimelineAiError, wrapAiFailure } from '#src/llm/errors.js';
+import { TimelineAiError, toTimelineAiError, wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { generateObject, streamText, withLangSmithProviderOptions } from '#src/llm/tracing.js';
 
@@ -178,11 +178,12 @@ export function streamChat<TTools extends ToolSet>(
   deps: ChatDeps = {},
 ): StreamTextResult<TTools, never> {
   const modelId = input.model ?? resolveAgentModelId();
+  const metadata = { operation: 'llm.streamChat', model: modelId };
   let model: LanguageModel;
   try {
     model = deps.model ?? buildOpenRouterLanguageModel(modelId, deps);
   } catch (err) {
-    throw new TimelineAiError({ operation: 'llm.streamChat', model: modelId }, err);
+    throw new TimelineAiError(metadata, err);
   }
   const args: Parameters<typeof streamText>[0] = {
     model,
@@ -200,7 +201,11 @@ export function streamChat<TTools extends ToolSet>(
     }),
   };
   if (input.onFinish) args.onFinish = input.onFinish;
-  if (input.onError) args.onError = input.onError;
+  if (input.onError) {
+    args.onError = (event) => {
+      input.onError?.({ ...event, error: toTimelineAiError(metadata, event.error) });
+    };
+  }
   if (input.abortSignal) args.abortSignal = input.abortSignal;
   return streamText(args) as unknown as StreamTextResult<TTools, never>;
 }
