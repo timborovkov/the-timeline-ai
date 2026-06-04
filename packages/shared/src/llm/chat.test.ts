@@ -190,6 +190,30 @@ describe('chatStructured', () => {
     });
   });
 
+  it('repairs candidate_index aliases in entity disambiguation responses', async () => {
+    const result = await chatStructured(
+      {
+        schema: z.object({ choice: z.number().int() }),
+        prompt: 'Pick the candidate that refers to the same real-world entity.',
+      },
+      { model: makeMockModel(JSON.stringify({ candidate_index: 1 })) },
+    );
+
+    expect(result.object).toEqual({ choice: 1 });
+  });
+
+  it('rejects repaired candidate_index values outside a bounded choice schema', async () => {
+    await expect(
+      chatStructured(
+        {
+          schema: z.object({ choice: z.number().int().min(-1).max(1) }),
+          prompt: 'Pick the candidate that refers to the same real-world entity.',
+        },
+        { model: makeMockModel(JSON.stringify({ candidate_index: 999 })) },
+      ),
+    ).rejects.toThrow('No object generated');
+  });
+
   it('requests OpenRouter json_schema structured output for extraction', async () => {
     const requests: unknown[] = [];
     const fetchStub: typeof fetch = (_url, init) => {
