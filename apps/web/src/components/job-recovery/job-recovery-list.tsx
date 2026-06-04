@@ -68,9 +68,13 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
       const matches =
         finishedByIdentity.get(archiveIdentityKey(item.kind, item.artifactKind, item.artifactId)) ??
         [];
-      const match = matches.find(
-        (finished) => new Date(finished.finishedAt).getTime() >= snapshot.startedAt - 1_000,
-      );
+      let match: FinishedJobArchivePage['items'][number] | undefined;
+      for (const finished of matches) {
+        if (new Date(finished.finishedAt).getTime() >= snapshot.startedAt - 1_000) {
+          match = finished;
+          break;
+        }
+      }
       states[item.id] = match
         ? {
             startedAt: snapshot.startedAt,
@@ -252,10 +256,7 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
           })
         )}
       </ul>
-      <FinishedJobsArchive
-        items={finishedArchiveItems}
-        query={finishedJobs}
-      />
+      <FinishedJobsArchive items={finishedArchiveItems} query={finishedJobs} />
     </section>
   );
 }

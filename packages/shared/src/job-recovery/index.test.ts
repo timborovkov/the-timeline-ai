@@ -457,6 +457,77 @@ describe('job recovery scope', () => {
     });
     await expect(scope.listRecoverableJobs()).resolves.toEqual([]);
   });
+
+  it('lists retained finished jobs for the active team with offset pagination', async () => {
+    const now = Date.now();
+    const scope = scopeFor(ADMIN_ID, 'admin', {
+      getTranscribeQueue: () =>
+        fakeQueue(
+          [
+            {
+              id: 'transcribe-1',
+              name: 'transcribe',
+              data: { rawEventId: RAW_ID, teamId: TEAM_ID },
+              attemptsMade: 1,
+              processedOn: now - 5_000,
+              finishedOn: now - 4_000,
+            },
+            {
+              id: 'transcribe-other-team',
+              name: 'transcribe',
+              data: { rawEventId: OTHER_TEAM_RAW_ID, teamId: OTHER_TEAM_ID },
+              attemptsMade: 1,
+              finishedOn: now - 1_000,
+            },
+          ],
+          'transcribe',
+        ),
+      getExtractQueue: () =>
+        fakeQueue(
+          [
+            {
+              id: 'extract-1',
+              name: 'extract',
+              data: { rawEventId: FAILED_EXTRACTION_RAW_ID, teamId: TEAM_ID },
+              attemptsMade: 3,
+              failedReason: 'model failed',
+              finishedOn: now - 2_000,
+            },
+          ],
+          'extract',
+        ),
+    });
+
+    const firstPage = await scope.listFinishedJobs({ offset: 0, limit: 1 });
+    const secondPage = await scope.listFinishedJobs({ offset: 1, limit: 1 });
+
+    expect(firstPage).toMatchObject({
+      nextOffset: 1,
+      items: [
+        {
+          artifactId: FAILED_EXTRACTION_RAW_ID,
+          artifactKind: 'raw_event',
+          kind: 'extraction',
+          queue: 'extract',
+          status: 'failed',
+          error: 'model failed',
+        },
+      ],
+    });
+    expect(secondPage).toMatchObject({
+      nextOffset: null,
+      items: [
+        {
+          artifactId: RAW_ID,
+          artifactKind: 'raw_event',
+          kind: 'transcription',
+          queue: 'transcribe',
+          status: 'completed',
+          error: null,
+        },
+      ],
+    });
+  });
 });
 
 function scopeFor(
@@ -479,16 +550,25 @@ function scopeFor(
       enqueueDocumentExtractJob: vi.fn().mockResolvedValue(undefined),
       enqueueMeetingFinalizeJob: vi.fn().mockResolvedValue(undefined),
       enqueueIntegrationSyncJob: vi.fn().mockResolvedValue(undefined),
+      getTranscribeQueue: () => fakeQueue([], 'transcribe'),
+      getExtractQueue: () => fakeQueue([], 'extract'),
       getEmbedQueue: () => fakeQueue([]),
+      getDocumentExtractQueue: () => fakeQueue([], 'document-extract'),
       getMeetingFinalizeQueue: () => fakeQueue([]),
       getIntegrationSyncQueue: () => fakeQueue([]),
+      getOverdueScanQueue: () => fakeQueue([], 'overdue-scan'),
+      getJanitorQueue: () => fakeQueue([], 'janitor'),
+      getMcpHealthQueue: () => fakeQueue([], 'mcp-health'),
+      getTeamExportQueue: () => fakeQueue([], 'team-export'),
+      getSuggestionQueue: () => fakeQueue([], 'suggestions'),
       ...queues,
     },
   });
 }
 
-function fakeQueue(jobs: unknown[]) {
+function fakeQueue(jobs: unknown[], name = 'queue') {
   return {
+    name,
     getJobs: vi.fn().mockResolvedValue(jobs),
   };
 }

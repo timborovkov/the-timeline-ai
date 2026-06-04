@@ -14,7 +14,7 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, inArray, isNotNull, isNull, lt, notExists, or, sql } from 'drizzle-orm';
 
-import type { Job, JobType } from 'bullmq';
+import type { JobType } from 'bullmq';
 
 import * as queue from '#src/queue/index.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
@@ -115,6 +115,16 @@ interface FailedQueueLike {
 
 interface FinishedQueueLike extends FailedQueueLike {
   name?: string;
+}
+
+interface BullJobLike {
+  attemptsMade: number;
+  data: unknown;
+  failedReason?: string;
+  finishedOn?: number;
+  id?: string | number;
+  name: string;
+  processedOn?: number;
 }
 
 interface RecoveryIdentity {
@@ -265,10 +275,12 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
     await retryParsed(deps.db, deps.teamId, parsed, q);
   }
 
-  async function listFinishedJobs(input: {
-    offset?: number;
-    limit?: number;
-  } = {}): Promise<FinishedJobArchivePage> {
+  async function listFinishedJobs(
+    input: {
+      offset?: number;
+      limit?: number;
+    } = {},
+  ): Promise<FinishedJobArchivePage> {
     await requireAdmin();
     const offset = Math.max(0, Math.floor(input.offset ?? 0));
     const limit = Math.min(100, Math.max(1, Math.floor(input.limit ?? 20)));
@@ -393,9 +405,7 @@ async function collectFinishedJobs(
       return jobs.flatMap((job) => finishedJobToArchiveItem(queueName, teamId, job));
     }),
   );
-  const items = jobsByQueue
-    .flat()
-    .sort((a, b) => b.finishedAt.getTime() - a.finishedAt.getTime());
+  const items = jobsByQueue.flat().sort((a, b) => b.finishedAt.getTime() - a.finishedAt.getTime());
   return {
     items: items.slice(page.offset, page.offset + page.limit),
     nextOffset: items.length > page.offset + page.limit ? page.offset + page.limit : null,
@@ -433,10 +443,7 @@ function finishedJobToArchiveItem(
   ];
 }
 
-function isBullJob(job: unknown): job is Pick<
-  Job,
-  'attemptsMade' | 'data' | 'failedReason' | 'finishedOn' | 'id' | 'name' | 'processedOn'
-> {
+function isBullJob(job: unknown): job is BullJobLike {
   return typeof job === 'object' && job !== null && 'data' in job && 'name' in job;
 }
 
