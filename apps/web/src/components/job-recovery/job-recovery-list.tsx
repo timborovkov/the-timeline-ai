@@ -1,6 +1,6 @@
 'use client';
 
-import { RotateCcw, X } from 'lucide-react';
+import { CheckCircle2, CircleAlert, LoaderCircle, RotateCcw, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
@@ -8,6 +8,10 @@ import type * as jobRecovery from '@timeline/shared/job-recovery';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  type FinishedJobArchivePage,
+  useFinishedJobsInfiniteQuery,
+} from '@/lib/use-paginated-queries';
 import { cn } from '@/lib/utils';
 
 type JobRecoveryItem = jobRecovery.JobRecoveryItem;
@@ -25,12 +29,62 @@ const FILTERS: { kind: JobRecoveryKind | 'all'; label: string }[] = [
 
 export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
   const router = useRouter();
+  const finishedJobs = useFinishedJobsInfiniteQuery();
   const [filter, setFilter] = useState<JobRecoveryKind | 'all'>('all');
   const [busy, setBusy] = useState<string | null>(null);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => new Set());
+  const [retrySnapshots, setRetrySnapshots] = useState<
+    Record<
+      string,
+      { startedAt: number; status: 'queued' | 'completed' | 'failed'; error: string | null }
+    >
+  >({});
+
+  const visibleItems = useMemo(
+    () => items.filter((item) => !dismissedIds.has(item.id)),
+    [dismissedIds, items],
+  );
+
+  const finishedArchiveItems = useMemo(
+    () => finishedJobs.data?.pages.flatMap((page) => page.items) ?? [],
+    [finishedJobs.data],
+  );
+  const finishedByIdentity = useMemo(() => {
+    const byIdentity = new Map<string, FinishedJobArchivePage['items']>();
+    for (const item of finishedArchiveItems) {
+      if (!item.artifactKind || !item.artifactId) continue;
+      const key = archiveIdentityKey(item.kind, item.artifactKind, item.artifactId);
+      const current = byIdentity.get(key) ?? [];
+      current.push(item);
+      byIdentity.set(key, current);
+    }
+    return byIdentity;
+  }, [finishedArchiveItems]);
+  const retryStates = useMemo(() => {
+    const states: typeof retrySnapshots = {};
+    for (const item of visibleItems) {
+      const snapshot = retrySnapshots[item.id];
+      if (!snapshot) continue;
+      const matches =
+        finishedByIdentity.get(archiveIdentityKey(item.kind, item.artifactKind, item.artifactId)) ??
+        [];
+      const match = matches.find(
+        (finished) => new Date(finished.finishedAt).getTime() >= snapshot.startedAt - 1_000,
+      );
+      states[item.id] = match
+        ? {
+            startedAt: snapshot.startedAt,
+            status: match.status,
+            error: match.error,
+          }
+        : snapshot;
+    }
+    return states;
+  }, [finishedByIdentity, retrySnapshots, visibleItems]);
 
   const filtered = useMemo(
-    () => (filter === 'all' ? items : items.filter((item) => item.kind === filter)),
-    [filter, items],
+    () => (filter === 'all' ? visibleItems : visibleItems.filter((item) => item.kind === filter)),
+    [filter, visibleItems],
   );
   const failedItems = filtered.filter((item) => item.status === 'failed');
   const failedCount = failedItems.length;
@@ -46,7 +100,16 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
         alert(`${action === 'retry' ? 'Retry' : 'Dismiss'} failed: ${text}`);
         return;
       }
-      router.refresh();
+      if (action === 'retry') {
+        setRetrySnapshots((previous) => ({
+          ...previous,
+          [id]: { startedAt: Date.now(), status: 'queued', error: null },
+        }));
+        void finishedJobs.refetch();
+      } else {
+        setDismissedIds((previous) => new Set(previous).add(id));
+        router.refresh();
+      }
     } finally {
       setBusy(null);
     }
@@ -76,6 +139,11 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
         alert(`Dismiss failed jobs failed: ${text}`);
         return;
       }
+      setDismissedIds((previous) => {
+        const next = new Set(previous);
+        for (const item of failedItems) next.add(item.id);
+        return next;
+      });
       router.refresh();
     } finally {
       setBusy(null);
@@ -126,56 +194,189 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
 
       <ul className="divide-y divide-border rounded-sm border border-border bg-surface">
         {filtered.length === 0 ? (
-          <li className="px-3 py-4 text-sm text-fg-muted">No recoverable jobs in this view.</li>
+          <li className="px-3 py-4 text-sm text-fg-muted">No jobs need attention in this view.</li>
         ) : (
-          filtered.map((item) => (
-            <li key={item.id} className="flex flex-col gap-3 p-3 md:flex-row md:items-center">
-              <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={item.status === 'failed' ? 'destructive' : 'outline'}>
-                    {item.status}
-                  </Badge>
-                  <span className="truncate text-sm font-medium">{item.label}</span>
+          filtered.map((item) => {
+            const retry = retryStates[item.id];
+            return (
+              <li key={item.id} className="flex flex-col gap-3 p-3 md:flex-row md:items-center">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={item.status === 'failed' ? 'destructive' : 'outline'}>
+                      {retry?.status === 'queued' ? 'retrying' : item.status}
+                    </Badge>
+                    <span className="truncate text-sm font-medium">{item.label}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
+                    <span>{new Date(item.detectedAt).toLocaleString()}</span>
+                    {item.error ? (
+                      <span className="max-w-full truncate text-destructive md:max-w-lg">
+                        {item.error}
+                      </span>
+                    ) : null}
+                  </div>
+                  {retry ? <RetryStatus snapshot={retry} /> : null}
                 </div>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
-                  <span>{new Date(item.detectedAt).toLocaleString()}</span>
-                  {item.error ? (
-                    <span className="max-w-full truncate text-destructive md:max-w-lg">
-                      {item.error}
-                    </span>
+                <div className="flex shrink-0 gap-2">
+                  {item.retryable ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy !== null || retry?.status === 'queued'}
+                      onClick={() => {
+                        void call('retry', item.id);
+                      }}
+                    >
+                      {retry?.status === 'queued' ? (
+                        <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
+                      )}
+                      {busy === `retry:${item.id}` ? 'Retrying' : 'Retry'}
+                    </Button>
                   ) : null}
-                </div>
-              </div>
-              <div className="flex shrink-0 gap-2">
-                {item.retryable ? (
                   <Button
                     size="sm"
-                    variant="secondary"
+                    variant="ghost"
                     disabled={busy !== null}
                     onClick={() => {
-                      void call('retry', item.id);
+                      void call('dismiss', item.id);
                     }}
                   >
-                    <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
-                    {busy === `retry:${item.id}` ? 'Retrying' : 'Retry'}
+                    <X aria-hidden="true" className="mr-1 size-3.5" />
+                    {busy === `dismiss:${item.id}` ? 'Dismissing' : 'Dismiss'}
                   </Button>
-                ) : null}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={busy !== null}
-                  onClick={() => {
-                    void call('dismiss', item.id);
-                  }}
-                >
-                  <X aria-hidden="true" className="mr-1 size-3.5" />
-                  {busy === `dismiss:${item.id}` ? 'Dismissing' : 'Dismiss'}
-                </Button>
-              </div>
-            </li>
-          ))
+                </div>
+              </li>
+            );
+          })
         )}
       </ul>
+      <FinishedJobsArchive
+        items={finishedArchiveItems}
+        query={finishedJobs}
+      />
+    </section>
+  );
+}
+
+function archiveIdentityKey(kind: string, artifactKind: string, artifactId: string) {
+  return `${kind}:${artifactKind}:${artifactId}`;
+}
+
+function RetryStatus({
+  snapshot,
+}: {
+  snapshot: { status: 'queued' | 'completed' | 'failed'; error: string | null };
+}) {
+  if (snapshot.status === 'completed') {
+    return (
+      <p className="flex items-center gap-1 text-xs text-signal">
+        <CheckCircle2 aria-hidden="true" className="size-3.5" />
+        Retry finished successfully.
+      </p>
+    );
+  }
+  if (snapshot.status === 'failed') {
+    return (
+      <p className="flex items-center gap-1 text-xs text-destructive">
+        <CircleAlert aria-hidden="true" className="size-3.5" />
+        Retry failed{snapshot.error ? `: ${snapshot.error}` : '.'}
+      </p>
+    );
+  }
+  return (
+    <p className="flex items-center gap-1 text-xs text-fg-muted">
+      <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+      Retry queued. Watching finished jobs below.
+    </p>
+  );
+}
+
+function FinishedJobsArchive({
+  items,
+  query,
+}: {
+  items: FinishedJobArchivePage['items'];
+  query: ReturnType<typeof useFinishedJobsInfiniteQuery>;
+}) {
+  return (
+    <section className="space-y-3 pt-5">
+      <div className="border-y border-border py-2">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-fg-muted">
+          Finished jobs
+        </h2>
+      </div>
+      <div className="overflow-x-auto rounded-sm border border-border bg-surface">
+        <table className="w-full min-w-[760px] text-left text-sm">
+          <thead className="border-b border-border font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+            <tr>
+              <th className="px-3 py-2 font-medium">Status</th>
+              <th className="px-3 py-2 font-medium">Job</th>
+              <th className="px-3 py-2 font-medium">Queue</th>
+              <th className="px-3 py-2 font-medium">Attempts</th>
+              <th className="px-3 py-2 font-medium">Finished</th>
+              <th className="px-3 py-2 font-medium">Error</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {query.isPending ? (
+              <tr>
+                <td className="px-3 py-4 text-fg-muted" colSpan={6}>
+                  Loading finished jobs…
+                </td>
+              </tr>
+            ) : query.isError ? (
+              <tr>
+                <td className="px-3 py-4 text-destructive" colSpan={6}>
+                  {query.error.message}
+                </td>
+              </tr>
+            ) : items.length === 0 ? (
+              <tr>
+                <td className="px-3 py-4 text-fg-muted" colSpan={6}>
+                  No finished jobs are currently retained.
+                </td>
+              </tr>
+            ) : (
+              items.map((item) => (
+                <tr key={item.id}>
+                  <td className="px-3 py-2">
+                    <Badge variant={item.status === 'failed' ? 'destructive' : 'outline'}>
+                      {item.status}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{item.label}</div>
+                    <div className="font-mono text-[11px] text-fg-dim">{item.artifactId}</div>
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs text-fg-muted">{item.queue}</td>
+                  <td className="px-3 py-2 text-fg-muted">{item.attemptsMade}</td>
+                  <td className="px-3 py-2 text-fg-muted">
+                    {new Date(item.finishedAt).toLocaleString()}
+                  </td>
+                  <td className="max-w-xs truncate px-3 py-2 text-destructive">
+                    {item.error ?? ''}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      {query.hasNextPage ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={query.isFetchingNextPage}
+          onClick={() => {
+            void query.fetchNextPage();
+          }}
+        >
+          {query.isFetchingNextPage ? 'Loading' : 'Load more'}
+        </Button>
+      ) : null}
     </section>
   );
 }

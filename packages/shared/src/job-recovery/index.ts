@@ -14,7 +14,7 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, inArray, isNotNull, isNull, lt, notExists, or, sql } from 'drizzle-orm';
 
-import type { JobType } from 'bullmq';
+import type { Job, JobType } from 'bullmq';
 
 import * as queue from '#src/queue/index.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
@@ -40,6 +40,7 @@ export type JobRecoveryArtifactKind =
   | 'calendar_event';
 
 export type JobRecoveryStatus = 'failed' | 'stuck' | 'dismissed';
+export type FinishedJobStatus = 'completed' | 'failed';
 
 export interface JobRecoveryItem {
   id: string;
@@ -60,6 +61,26 @@ export interface DismissFailedRecoverableJobsInput {
   reason?: string;
 }
 
+export interface FinishedJobArchiveItem {
+  id: string;
+  queue: string;
+  name: string;
+  kind: JobRecoveryKind | 'overdue_scan' | 'janitor' | 'mcp_health' | 'team_export' | 'suggestions';
+  artifactKind: JobRecoveryArtifactKind | 'team' | 'suggestion' | null;
+  artifactId: string | null;
+  label: string;
+  status: FinishedJobStatus;
+  attemptsMade: number;
+  processedAt: Date | null;
+  finishedAt: Date;
+  error: string | null;
+}
+
+export interface FinishedJobArchivePage {
+  items: FinishedJobArchiveItem[];
+  nextOffset: number | null;
+}
+
 interface JobRecoveryScopeDeps {
   db: Db;
   teamId: string;
@@ -76,12 +97,24 @@ interface RecoveryQueues {
   enqueueMeetingFinalizeJob?: typeof queue.enqueueMeetingFinalizeJob;
   enqueueIntegrationSyncJob?: typeof queue.enqueueIntegrationSyncJob;
   getEmbedQueue?: () => FailedQueueLike;
+  getTranscribeQueue?: () => FinishedQueueLike;
+  getExtractQueue?: () => FinishedQueueLike;
+  getDocumentExtractQueue?: () => FinishedQueueLike;
   getMeetingFinalizeQueue?: () => FailedQueueLike;
   getIntegrationSyncQueue?: () => FailedQueueLike;
+  getOverdueScanQueue?: () => FinishedQueueLike;
+  getJanitorQueue?: () => FinishedQueueLike;
+  getMcpHealthQueue?: () => FinishedQueueLike;
+  getTeamExportQueue?: () => FinishedQueueLike;
+  getSuggestionQueue?: () => FinishedQueueLike;
 }
 
 interface FailedQueueLike {
   getJobs: (types?: JobType | JobType[], start?: number, end?: number) => Promise<unknown[]>;
+}
+
+interface FinishedQueueLike extends FailedQueueLike {
+  name?: string;
 }
 
 interface RecoveryIdentity {
@@ -120,6 +153,14 @@ const queuesDefault: Required<RecoveryQueues> = {
   getEmbedQueue: queue.getEmbedQueue,
   getMeetingFinalizeQueue: queue.getMeetingFinalizeQueue,
   getIntegrationSyncQueue: queue.getIntegrationSyncQueue,
+  getTranscribeQueue: queue.getTranscribeQueue,
+  getExtractQueue: queue.getExtractQueue,
+  getDocumentExtractQueue: queue.getDocumentExtractQueue,
+  getOverdueScanQueue: queue.getOverdueScanQueue,
+  getJanitorQueue: queue.getJanitorQueue,
+  getMcpHealthQueue: queue.getMcpHealthQueue,
+  getTeamExportQueue: queue.getTeamExportQueue,
+  getSuggestionQueue: queue.getSuggestionQueue,
 };
 
 export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
@@ -224,8 +265,19 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
     await retryParsed(deps.db, deps.teamId, parsed, q);
   }
 
+  async function listFinishedJobs(input: {
+    offset?: number;
+    limit?: number;
+  } = {}): Promise<FinishedJobArchivePage> {
+    await requireAdmin();
+    const offset = Math.max(0, Math.floor(input.offset ?? 0));
+    const limit = Math.min(100, Math.max(1, Math.floor(input.limit ?? 20)));
+    return collectFinishedJobs(deps.teamId, q, { offset, limit });
+  }
+
   return {
     listRecoverableJobs,
+    listFinishedJobs,
     dismissRecoverableJob,
     dismissFailedRecoverableJobs,
     retryRecoverableJob,
@@ -313,6 +365,184 @@ async function collectCandidates(
     collectQueueCandidates(db, teamId, userId, q),
   ]);
   return [...raw, ...docs, ...meetingRows, ...integrationRows, ...queueRows];
+}
+
+async function collectFinishedJobs(
+  teamId: string,
+  q: Required<RecoveryQueues>,
+  page: { offset: number; limit: number },
+): Promise<FinishedJobArchivePage> {
+  const end = page.offset + page.limit;
+  const queueEntries: FinishedQueueLike[] = [
+    q.getTranscribeQueue(),
+    q.getExtractQueue(),
+    q.getEmbedQueue(),
+    q.getDocumentExtractQueue(),
+    q.getMeetingFinalizeQueue(),
+    q.getIntegrationSyncQueue(),
+    q.getOverdueScanQueue(),
+    q.getJanitorQueue(),
+    q.getMcpHealthQueue(),
+    q.getTeamExportQueue(),
+    q.getSuggestionQueue(),
+  ];
+  const jobsByQueue = await Promise.all(
+    queueEntries.map(async (queueLike) => {
+      const queueName = queueLike.name ?? 'background';
+      const jobs = await queueLike.getJobs(['completed', 'failed'], 0, end).catch(() => []);
+      return jobs.flatMap((job) => finishedJobToArchiveItem(queueName, teamId, job));
+    }),
+  );
+  const items = jobsByQueue
+    .flat()
+    .sort((a, b) => b.finishedAt.getTime() - a.finishedAt.getTime());
+  return {
+    items: items.slice(page.offset, page.offset + page.limit),
+    nextOffset: items.length > page.offset + page.limit ? page.offset + page.limit : null,
+  };
+}
+
+function finishedJobToArchiveItem(
+  queueName: string,
+  teamId: string,
+  job: unknown,
+): FinishedJobArchiveItem[] {
+  if (!isBullJob(job)) return [];
+  const data = objectMeta(job.data);
+  if (data.teamId !== teamId) return [];
+  if (data.integrationId === '__tick__') return [];
+  const finishedOn = typeof job.finishedOn === 'number' ? job.finishedOn : null;
+  if (!finishedOn) return [];
+  const status = job.failedReason ? 'failed' : 'completed';
+  const identity = archiveIdentity(queueName, data);
+  return [
+    {
+      id: `${queueName}:${String(job.id ?? finishedOn)}`,
+      queue: queueName,
+      name: job.name,
+      kind: identity.kind,
+      artifactKind: identity.artifactKind,
+      artifactId: identity.artifactId,
+      label: identity.label,
+      status,
+      attemptsMade: job.attemptsMade,
+      processedAt: typeof job.processedOn === 'number' ? new Date(job.processedOn) : null,
+      finishedAt: new Date(finishedOn),
+      error: job.failedReason ?? null,
+    },
+  ];
+}
+
+function isBullJob(job: unknown): job is Pick<
+  Job,
+  'attemptsMade' | 'data' | 'failedReason' | 'finishedOn' | 'id' | 'name' | 'processedOn'
+> {
+  return typeof job === 'object' && job !== null && 'data' in job && 'name' in job;
+}
+
+function archiveIdentity(
+  queueName: string,
+  data: Record<string, unknown>,
+): Pick<FinishedJobArchiveItem, 'artifactId' | 'artifactKind' | 'kind' | 'label'> {
+  if (queueName === queue.QUEUE_NAMES.transcribe && typeof data.rawEventId === 'string') {
+    return archiveItemIdentity('transcription', 'raw_event', data.rawEventId, 'Transcription');
+  }
+  if (queueName === queue.QUEUE_NAMES.extract && typeof data.rawEventId === 'string') {
+    return archiveItemIdentity('extraction', 'raw_event', data.rawEventId, 'Extraction');
+  }
+  if (queueName === queue.QUEUE_NAMES.embed) {
+    return archiveEmbedIdentity(data);
+  }
+  if (
+    queueName === queue.QUEUE_NAMES.documentExtract &&
+    typeof data.documentVersionId === 'string'
+  ) {
+    return archiveItemIdentity(
+      'document_processing',
+      'document_version',
+      data.documentVersionId,
+      'Document processing',
+    );
+  }
+  if (queueName === queue.QUEUE_NAMES.meetingFinalize && typeof data.meetingId === 'string') {
+    return archiveItemIdentity(
+      'meeting_finalization',
+      'meeting',
+      data.meetingId,
+      'Meeting finalization',
+    );
+  }
+  if (queueName === queue.QUEUE_NAMES.integrationSync && typeof data.integrationId === 'string') {
+    return archiveItemIdentity(
+      'integration_sync',
+      'integration',
+      data.integrationId,
+      'Integration sync',
+    );
+  }
+  if (queueName === queue.QUEUE_NAMES.teamExport && typeof data.teamExportId === 'string') {
+    return archiveItemIdentity('team_export', 'team', data.teamExportId, 'Team export');
+  }
+  if (queueName === queue.QUEUE_NAMES.suggestions) {
+    const id =
+      typeof data.rawEventId === 'string'
+        ? data.rawEventId
+        : typeof data.conversationReviewId === 'string'
+          ? data.conversationReviewId
+          : null;
+    return {
+      kind: 'suggestions',
+      artifactKind: id ? 'suggestion' : null,
+      artifactId: id,
+      label: 'Suggestions',
+    };
+  }
+  if (queueName === queue.QUEUE_NAMES.overdueScan) {
+    return { kind: 'overdue_scan', artifactKind: null, artifactId: null, label: 'Overdue scan' };
+  }
+  if (queueName === queue.QUEUE_NAMES.janitor) {
+    return { kind: 'janitor', artifactKind: null, artifactId: null, label: 'Janitor sweep' };
+  }
+  if (queueName === queue.QUEUE_NAMES.mcpHealth) {
+    return { kind: 'mcp_health', artifactKind: null, artifactId: null, label: 'MCP health' };
+  }
+  return { kind: 'janitor', artifactKind: null, artifactId: null, label: queueName };
+}
+
+function archiveEmbedIdentity(
+  data: Record<string, unknown>,
+): Pick<FinishedJobArchiveItem, 'artifactId' | 'artifactKind' | 'kind' | 'label'> {
+  if (typeof data.factId === 'string') {
+    return archiveItemIdentity('embedding', 'fact', data.factId, 'Embedding');
+  }
+  if (typeof data.rawEventId === 'string') {
+    return archiveItemIdentity('embedding', 'raw_event', data.rawEventId, 'Embedding');
+  }
+  if (typeof data.objectId === 'string') {
+    return archiveItemIdentity('embedding', 'object', data.objectId, 'Embedding');
+  }
+  if (typeof data.entityId === 'string') {
+    return archiveItemIdentity('embedding', 'object', data.entityId, 'Embedding');
+  }
+  if (typeof data.documentChunkId === 'string') {
+    return archiveItemIdentity('embedding', 'document_chunk', data.documentChunkId, 'Embedding');
+  }
+  if (typeof data.meetingChunkId === 'string') {
+    return archiveItemIdentity('embedding', 'meeting', data.meetingChunkId, 'Embedding');
+  }
+  if (typeof data.calendarEventId === 'string') {
+    return archiveItemIdentity('embedding', 'calendar_event', data.calendarEventId, 'Embedding');
+  }
+  return { kind: 'embedding', artifactKind: null, artifactId: null, label: 'Embedding' };
+}
+
+function archiveItemIdentity(
+  kind: FinishedJobArchiveItem['kind'],
+  artifactKind: FinishedJobArchiveItem['artifactKind'],
+  artifactId: string,
+  label: string,
+): Pick<FinishedJobArchiveItem, 'artifactId' | 'artifactKind' | 'kind' | 'label'> {
+  return { kind, artifactKind, artifactId, label };
 }
 
 async function collectRawEventCandidates(
