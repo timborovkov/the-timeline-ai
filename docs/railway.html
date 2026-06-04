@@ -139,6 +139,7 @@ S3_REGION=us-east-1
 S3_FORCE_PATH_STYLE=true
 S3_BUCKET_AUDIO=timeline-audio
 S3_BUCKET_ATTACHMENTS=timeline-attachments
+S3_BUCKET_DOCUMENTS=timeline-documents
 S3_BUCKET_EXPORTS=timeline-exports
 AUTH_SECRET=&lt;32-byte random, generate per env&gt;
 AUTH_URL=https://thetimeline.cc
@@ -273,6 +274,7 @@ mc mb timeline-prod/timeline-documents
 mc version enable timeline-prod/timeline-audio
 mc version enable timeline-prod/timeline-attachments
 mc version enable timeline-prod/timeline-documents
+mc version enable timeline-prod/timeline-exports
 </code></pre>
       <p>
         Versioning on audio, attachments, and documents is non-negotiable. Source-of-truth data;
