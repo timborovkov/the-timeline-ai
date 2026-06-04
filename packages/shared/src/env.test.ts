@@ -80,6 +80,7 @@ describe('getEnv', () => {
     setBaseEnv({
       NODE_ENV: 'production',
       LANGSMITH_TRACING: 'true',
+      LANGSMITH_TRACING_SAMPLING_RATE: '0.05',
       LANGSMITH_API_KEY: 'lsv2_test_key',
       LANGSMITH_PROJECT: 'timeline-production',
       LANGSMITH_ENDPOINT: 'https://eu.api.smith.langchain.com',
@@ -88,6 +89,7 @@ describe('getEnv', () => {
 
     expect(getEnv()).toMatchObject({
       LANGSMITH_TRACING: true,
+      LANGSMITH_TRACING_SAMPLING_RATE: 0.05,
       LANGSMITH_API_KEY: 'lsv2_test_key',
       LANGSMITH_PROJECT: 'timeline-production',
       LANGSMITH_ENDPOINT: 'https://eu.api.smith.langchain.com',
@@ -118,5 +120,13 @@ describe('getEnv', () => {
     });
 
     expect(() => getEnv()).toThrow(/LANGSMITH_ENDPOINT/);
+  });
+
+  it('rejects invalid LangSmith sampling rates', () => {
+    setBaseEnv({
+      LANGSMITH_TRACING_SAMPLING_RATE: '2',
+    });
+
+    expect(() => getEnv()).toThrow(/LANGSMITH_TRACING_SAMPLING_RATE/);
   });
 });
