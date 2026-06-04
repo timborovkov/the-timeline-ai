@@ -26,6 +26,8 @@ const ENV_BACKUP = { ...process.env };
 const fakes = vi.hoisted(() => ({
   fakeLookup: vi.fn(),
   fakeEnqueueFinalize: vi.fn(),
+  fakeReportCaughtError: vi.fn(),
+  fakeReportHandledEvent: vi.fn(),
   fakeUpdateStatus: vi.fn(),
   fakeWithTeam: vi.fn(),
 }));
@@ -35,6 +37,10 @@ vi.mock('@/lib/queue', () => ({
   requireRedisQueue: vi.fn().mockResolvedValue({
     enqueueMeetingFinalizeJob: fakes.fakeEnqueueFinalize,
   }),
+}));
+vi.mock('@/lib/sentry-report', () => ({
+  reportCaughtError: fakes.fakeReportCaughtError,
+  reportHandledEvent: fakes.fakeReportHandledEvent,
 }));
 
 vi.mock('@timeline/shared/logger', () => ({
@@ -151,6 +157,18 @@ describe('POST /api/webhooks/recall/status — config + auth', () => {
     );
     expect(r.status).toBe(401);
     expect(fakes.fakeLookup).not.toHaveBeenCalled();
+    expect(fakes.fakeReportHandledEvent).toHaveBeenCalledWith({
+      message: 'recall_status_svix_verification_failed',
+      surface: 'api',
+      operation: 'recall_status_svix_verification',
+      level: 'warning',
+      tags: {
+        reason: 'bad_signature',
+        has_svix_id: true,
+        has_svix_timestamp: true,
+        has_svix_signature: true,
+      },
+    });
   });
 
   it('returns 200 with no_bot_id when payload lacks bot.id', async () => {

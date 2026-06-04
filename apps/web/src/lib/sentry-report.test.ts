@@ -1,10 +1,11 @@
 import * as Sentry from '@sentry/nextjs';
 import { describe, expect, it, vi } from 'vitest';
 
-import { reportCaughtError, shouldReportToSentry } from '@/lib/sentry-report';
+import { reportCaughtError, reportHandledEvent, shouldReportToSentry } from '@/lib/sentry-report';
 
 vi.mock('@sentry/nextjs', () => ({
   captureException: vi.fn(),
+  captureMessage: vi.fn(),
 }));
 
 describe('Sentry caught-error reporting', () => {
@@ -31,6 +32,25 @@ describe('Sentry caught-error reporting', () => {
         surface: 'api',
         operation: 'searchEvents',
         provider: 'qdrant',
+        enabled: 'true',
+      },
+    });
+  });
+
+  it('captures handled warning events with safe tags only', () => {
+    reportHandledEvent({
+      message: 'recall_status_svix_verification_failed',
+      surface: 'api',
+      operation: 'recall_status_svix_verification',
+      tags: { reason: 'bad_signature', empty: undefined, enabled: true },
+    });
+
+    expect(Sentry.captureMessage).toHaveBeenCalledWith('recall_status_svix_verification_failed', {
+      level: 'warning',
+      tags: {
+        surface: 'api',
+        operation: 'recall_status_svix_verification',
+        reason: 'bad_signature',
         enabled: 'true',
       },
     });

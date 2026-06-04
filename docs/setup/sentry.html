@@ -48,7 +48,9 @@ SENTRY_PROFILES_SAMPLE_RATE=0
         App Router render boundaries, API route handlers, server actions, webhook background
         handlers, queue handoffs, and other caught-but-unexpected operational failures report to
         Sentry explicitly before returning graceful responses. Expected validation, authentication,
-        not-found, rate-limit, and provider-noise outcomes stay out of Sentry.
+        not-found, rate-limit, and provider-noise outcomes stay out of Sentry, except integration
+        authentication failures that indicate broken operator configuration such as Recall status
+        webhook Svix verification failures.
       </p>
       <p>
         Server actions run through <code>runSentryServerAction</code>, which delegates to Sentry's

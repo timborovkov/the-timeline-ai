@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
-import { reportCaughtError } from '@/lib/sentry-report';
+import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -92,6 +92,20 @@ export async function POST(req: Request): Promise<Response> {
   });
   if (!verify.ok) {
     log.warn({ reason: verify.reason }, 'svix_verification_failed');
+    reportHandledEvent({
+      message: 'recall_status_svix_verification_failed',
+      surface: 'api',
+      operation: 'recall_status_svix_verification',
+      level: 'warning',
+      tags: {
+        reason: verify.reason,
+        has_svix_id: req.headers.has('svix-id') || req.headers.has('webhook-id'),
+        has_svix_timestamp:
+          req.headers.has('svix-timestamp') || req.headers.has('webhook-timestamp'),
+        has_svix_signature:
+          req.headers.has('svix-signature') || req.headers.has('webhook-signature'),
+      },
+    });
     return Response.json({ ok: false, reason: 'forbidden' }, { status: 401 });
   }
 

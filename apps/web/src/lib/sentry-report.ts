@@ -9,6 +9,10 @@ interface ReportOptions {
   tags?: Record<string, SentryTagValue>;
 }
 
+interface ReportMessageOptions extends ReportOptions {
+  message: string;
+}
+
 const EXPECTED_ERROR_MESSAGES = new Set([
   'invalid',
   'wrong-account',
@@ -33,6 +37,17 @@ export function reportCaughtError(err: unknown, options: ReportOptions): void {
   if (!shouldReportToSentry(err)) return;
   Sentry.captureException(err, {
     level: options.level ?? 'error',
+    tags: {
+      surface: options.surface,
+      operation: options.operation,
+      ...stringifyTags(options.tags),
+    },
+  });
+}
+
+export function reportHandledEvent(options: ReportMessageOptions): void {
+  Sentry.captureMessage(options.message, {
+    level: options.level ?? 'warning',
     tags: {
       surface: options.surface,
       operation: options.operation,
