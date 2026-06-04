@@ -11,15 +11,7 @@ vi.mock('@sentry/nextjs', () => ({
 
 const { POST } = await import('./route.js');
 
-function request(token?: string): Request {
-  return new Request('https://timeline.test/api/sentry/smoke', {
-    method: 'POST',
-    headers: token ? { authorization: `Bearer ${token}` } : {},
-  });
-}
-
 beforeEach(() => {
-  process.env.SENTRY_SMOKE_TEST_TOKEN = 'smoke-secret';
   process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
   vi.mocked(Sentry.getClient).mockReturnValue({} as ReturnType<typeof Sentry.getClient>);
   vi.mocked(Sentry.flush).mockResolvedValue(true);
@@ -31,26 +23,11 @@ afterEach(() => {
 });
 
 describe('/api/sentry/smoke', () => {
-  it('is disabled unless the smoke token is configured', async () => {
-    delete process.env.SENTRY_SMOKE_TEST_TOKEN;
-
-    const response = await POST(request('smoke-secret'));
-
-    expect(response.status).toBe(404);
-    expect(Sentry.captureException).not.toHaveBeenCalled();
-  });
-
-  it('requires the bearer token', async () => {
-    expect((await POST(request())).status).toBe(401);
-    expect((await POST(request('wrong-secret'))).status).toBe(401);
-    expect(Sentry.captureException).not.toHaveBeenCalled();
-  });
-
   it('reports whether the deployed runtime is missing a Sentry DSN', async () => {
     delete process.env.SENTRY_DSN;
     delete process.env.NEXT_PUBLIC_SENTRY_DSN;
 
-    const response = await POST(request('smoke-secret'));
+    const response = await POST();
 
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({ ok: false, sentryConfigured: false });
@@ -60,7 +37,7 @@ describe('/api/sentry/smoke', () => {
   it('reports whether the Sentry SDK client was never initialized', async () => {
     vi.mocked(Sentry.getClient).mockReturnValue(undefined);
 
-    const response = await POST(request('smoke-secret'));
+    const response = await POST();
 
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({
@@ -72,7 +49,7 @@ describe('/api/sentry/smoke', () => {
   });
 
   it('captures and flushes a synthetic Sentry error', async () => {
-    const response = await POST(request('smoke-secret'));
+    const response = await POST();
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({

@@ -87,8 +87,6 @@ SENTRY_PROFILES_SAMPLE_RATE=0
 SENTRY_ORG=
 SENTRY_PROJECT=
 SENTRY_RELEASE=
-# Optional: enables POST /api/sentry/smoke for production ingestion checks.
-SENTRY_SMOKE_TEST_TOKEN=
 </code></pre>
       <p>
         <code>SENTRY_RELEASE</code> is optional because injected debug IDs are enough for source-map
@@ -126,17 +124,15 @@ SENTRY_SMOKE_TEST_TOKEN=
       </ul>
       <h2 id="smoke-test">5. Smoke test</h2>
       <p>
-        To prove production ingestion from the deployed web container, set
-        <code>SENTRY_SMOKE_TEST_TOKEN</code> on the web service and redeploy. Then call:
+        To prove production ingestion from the deployed web container, temporarily deploy the smoke
+        route and call:
       </p>
-      <pre><code>curl -X POST https://thetimeline.cc/api/sentry/smoke \
-  -H "Authorization: Bearer $SENTRY_SMOKE_TEST_TOKEN"
-</code></pre>
+      <pre><code>curl -X POST https://thetimeline.cc/api/sentry/smoke</code></pre>
       <p>
         A healthy response is
         <code>{"ok":true,"sentryConfigured":true,"clientInitialized":true,"flushed":true}</code>,
-        and Sentry should receive an error named <code>sentry_smoke_test</code>. Remove or rotate
-        the token after testing if you do not want the endpoint available.
+        and Sentry should receive an error named <code>sentry_smoke_test</code>. Remove the route
+        after testing.
       </p>
     </main>
   </body>
