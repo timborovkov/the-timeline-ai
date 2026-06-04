@@ -110,6 +110,11 @@ pnpm check:web-bundle     # inspect built Next server chunks
 ```
 
 `pnpm validate` is the main pre-merge gate and includes the unit/integration test suite.
+GitHub PR CI intentionally does not run `pnpm build` or `pnpm check:web-bundle`;
+TypeScript compilation, linting, tests, formatting, and Knip are the required
+proof before merge. Run the build and bundle hygiene checks manually when a
+change touches production bundling, deployment output, or server/client import
+boundaries.
 
 ## Documentation
 
