@@ -21,6 +21,7 @@ import { and, asc, eq, gt, isNotNull, or, type SQL, sql } from 'drizzle-orm';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PAGE_SIZE = 500;
 const DEFAULT_SINCE_DAYS = 30;
+const RECOVERY_JOB_ID_SUFFIX = 'recovery';
 
 interface Candidate {
   id: string;
@@ -202,7 +203,6 @@ async function main(): Promise<void> {
 
   const db = getDb();
   const requestedAt = new Date();
-  const recoveryRunId = requestedAt.toISOString();
   let cursor: { occurredAt: Date; id: string } | null = null;
   let scanned = 0;
   let hasMore = true;
@@ -299,7 +299,7 @@ async function main(): Promise<void> {
       recovered += 1;
       const result = await queue.enqueueSuggestionJob(
         { scope: 'conversation_review', conversationReviewId: review.id, teamId: review.teamId },
-        { jobIdSuffix: `recovery:${recoveryRunId}` },
+        { jobIdSuffix: RECOVERY_JOB_ID_SUFFIX },
       );
       if (result.enqueued) enqueued += 1;
     }
