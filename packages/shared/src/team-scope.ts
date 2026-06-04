@@ -37,12 +37,12 @@ import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js
 import { createOnboardingScope } from '#src/onboarding/index.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import {
-  buildPointId,
   getQdrantClient,
   type SearchHit,
   type SearchOpts,
   type SourceKind,
 } from '#src/qdrant/client.js';
+import { buildPointId } from '#src/qdrant/point-id.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
 import { normalizeVisibilityUserIds, rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -955,11 +955,23 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         .where(and(eq(factsTable.teamId, teamId), eq(factsTable.rawEventId, rawEventId)));
       const activeModel = TIMELINE_MODELS.embedding.id;
       const models = [...new Set([activeModel, 'openai/text-embedding-3-small'])];
-      const pointIds = models.flatMap((model) => [
+      const client = getQdrantClient();
+      for (const model of models) {
+        await client.deletePointsForSource({ teamId, scope: 'event', sourceId: rawEventId, model });
+        for (const fact of factRows) {
+          await client.deletePointsForSource({
+            teamId,
+            scope: 'fact',
+            sourceId: fact.id,
+            model,
+          });
+        }
+      }
+      const legacyPointIds = models.flatMap((model) => [
         buildPointId('event', rawEventId, model),
         ...factRows.map((f) => buildPointId('fact', f.id, model)),
       ]);
-      await getQdrantClient().deletePoints(pointIds);
+      await client.deletePoints(legacyPointIds);
     } catch {
       // Visibility updates are authoritative in Postgres. Qdrant cleanup is
       // best-effort; the DB visibility filter still gates hydrated results.

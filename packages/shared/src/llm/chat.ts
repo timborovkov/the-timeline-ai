@@ -48,7 +48,7 @@ function structuredOutputSystem(system?: string): string {
   return system.toLowerCase().includes('json') ? system : `${system}\n\n${jsonInstruction}`;
 }
 
-function repairKnownStructuredAliases(schema: z.ZodType): RepairTextFunction {
+function repairKnownStructuredOutput(schema: z.ZodType): RepairTextFunction {
   return ({ text }) => {
     let parsed: unknown;
     try {
@@ -56,24 +56,27 @@ function repairKnownStructuredAliases(schema: z.ZodType): RepairTextFunction {
     } catch {
       return Promise.resolve(null);
     }
-    if (
-      !parsed ||
-      typeof parsed !== 'object' ||
-      !Array.isArray((parsed as { facts?: unknown }).facts)
-    ) {
-      return Promise.resolve(null);
-    }
+    const candidate = Array.isArray(parsed) ? { facts: parsed } : parsed;
+    if (!candidate || typeof candidate !== 'object') return Promise.resolve(null);
+    const row = candidate as Record<string, unknown>;
+    const facts = Array.isArray(row.facts) ? (row.facts as unknown[]) : null;
     const repaired = {
-      ...(parsed as Record<string, unknown>),
-      facts: (parsed as { facts: unknown[] }).facts.map((fact) => {
-        if (!fact || typeof fact !== 'object') return fact;
-        const row = fact as Record<string, unknown>;
-        return {
-          ...row,
-          statement: row.statement ?? row.text,
-          mentions: row.mentions ?? row.entities,
-        };
-      }),
+      ...row,
+      ...(facts
+        ? {
+            facts: facts.map((fact) => {
+              if (!fact || typeof fact !== 'object') return fact;
+              const factRow = fact as Record<string, unknown>;
+              return {
+                ...factRow,
+                statement: factRow.statement ?? factRow.text,
+                mentions: factRow.mentions ?? factRow.entities,
+              };
+            }),
+          }
+        : {}),
+      action_items: row.action_items ?? row.actionItems,
+      choice: row.choice ?? row.candidate_index ?? row.candidateIndex ?? row.index,
     };
     return Promise.resolve(schema.safeParse(repaired).success ? JSON.stringify(repaired) : null);
   };
@@ -122,7 +125,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
     schema: input.schema,
     prompt: input.prompt,
     system: structuredOutputSystem(input.system),
-    experimental_repairText: repairKnownStructuredAliases(input.schema),
+    experimental_repairText: repairKnownStructuredOutput(input.schema),
     providerOptions: withLangSmithProviderOptions(undefined, {
       name: 'llm.chatStructured',
       model: modelId,

@@ -144,6 +144,7 @@ AUTH_SECRET=&lt;32-byte random, generate per env&gt;
 AUTH_URL=https://thetimeline.cc
 OPENROUTER_API_KEY=&lt;openrouter key&gt;
 LANGSMITH_TRACING=true
+LANGSMITH_TRACING_SAMPLING_RATE=0.05
 LANGSMITH_API_KEY=&lt;langsmith key&gt;
 LANGSMITH_PROJECT=timeline-production
 LANGSMITH_ENDPOINT=https://api.smith.langchain.com
@@ -193,7 +194,9 @@ LOG_LEVEL=info
         LangSmith is opt-in via <code>LANGSMITH_TRACING=true</code>. Rich traces include the prompt
         and output text sent through the shared LLM wrapper, including private timeline, document,
         meeting, and integration content. Treat LangSmith project access as sensitive operational
-        access. Raw media/audio bytes and embedding vectors are redacted from traces. Set
+        access. Set <code>LANGSMITH_TRACING_SAMPLING_RATE</code> to a value between
+        <code>0</code> and <code>1</code> to cap trace volume. Raw media/audio bytes are redacted
+        from traces, and embeddings are not sent to LangSmith by default. Set
         <code>LANGSMITH_WORKSPACE_ID</code> too when using an org-scoped LangSmith API key.
       </p>
       <p>

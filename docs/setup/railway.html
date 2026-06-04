@@ -125,8 +125,9 @@
         another LangSmith region, and set <code>LANGSMITH_WORKSPACE_ID</code> when using an
         org-scoped API key. Rich LangSmith traces include private prompt and output content from
         timeline events, documents, meetings, and integrations, so treat LangSmith access as
-        sensitive operational access. Raw media/audio bytes and embedding vectors are redacted from
-        traces.
+        sensitive operational access. Set <code>LANGSMITH_TRACING_SAMPLING_RATE</code> to a value
+        between <code>0</code> and <code>1</code> to cap trace volume. Raw media/audio bytes are
+        redacted from traces, and embeddings are not sent to LangSmith by default.
       </p>
 
       <h2 id="healthchecks">6. Healthchecks</h2>

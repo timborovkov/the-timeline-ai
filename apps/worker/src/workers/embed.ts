@@ -1,11 +1,15 @@
+import { createHash } from 'node:crypto';
+
 import { type Db, rawEvents } from '@timeline/db';
-import { childLogger, embedding, getEnv, llm, qdrant, queue } from '@timeline/shared';
+import { childLogger, chunkText, embedding, getEnv, llm, qdrant, queue } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:embed');
+const EMBEDDING_OVERLAP_TOKENS = 120;
+const EMBEDDING_CHUNKS_PER_JOB = 16;
 
 interface EmbedWorkerDeps {
   db: Db;
@@ -15,6 +19,7 @@ interface EmbedWorkerIO {
   getEnv?: typeof getEnv;
   embed?: typeof llm.embed;
   getQdrantClient?: typeof qdrant.getQdrantClient;
+  enqueueEmbedJob?: typeof queue.enqueueEmbedJob;
 }
 
 function embedFailureTags(job: Pick<Job<queue.EmbedJobData>, 'data'> | undefined) {
@@ -28,6 +33,95 @@ function embedFailureTags(job: Pick<Job<queue.EmbedJobData>, 'data'> | undefined
     return { scope: embedding.resolveEmbeddingScope(data), rawEventId, factId, teamId };
   } catch {
     return { rawEventId, factId, teamId };
+  }
+}
+
+function embeddingChunkBudgetTokens(): number {
+  return Math.max(1, Math.floor(llm.TIMELINE_MODELS.embedding.contextWindowTokens * 0.8));
+}
+
+function chunkForEmbedding(text: string) {
+  return chunkText(text, {
+    targetTokens: embeddingChunkBudgetTokens(),
+    overlapTokens: EMBEDDING_OVERLAP_TOKENS,
+  });
+}
+
+function embeddingStartChunk(data: queue.EmbedJobData): number {
+  const value = 'embeddingStartChunk' in data ? data.embeddingStartChunk : undefined;
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+function embeddingSourceHash(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
+}
+
+function expectedEmbeddingSourceHash(data: queue.EmbedJobData): string | null {
+  const value = 'embeddingSourceHash' in data ? data.embeddingSourceHash : undefined;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function embeddingModel(data: queue.EmbedJobData): string {
+  const value = 'embeddingModel' in data ? data.embeddingModel : undefined;
+  return typeof value === 'string' && value.length > 0 ? value : llm.TIMELINE_MODELS.embedding.id;
+}
+
+function continuationJob(
+  data: queue.EmbedJobData,
+  nextChunk: number,
+  sourceHash: string,
+  model: string,
+): queue.EmbedJobData {
+  return {
+    ...data,
+    embeddingStartChunk: nextChunk,
+    embeddingSourceHash: sourceHash,
+    embeddingModel: model,
+  };
+}
+
+function restartJob(data: queue.EmbedJobData): queue.EmbedJobData {
+  const {
+    embeddingStartChunk: _start,
+    embeddingSourceHash: _hash,
+    embeddingModel: _model,
+    ...rest
+  } = data;
+  return rest;
+}
+
+async function finalizeSourceEmbedding(input: {
+  db: Db;
+  client: qdrant.QdrantClient;
+  data: queue.EmbedJobData;
+  scope: qdrant.PointScope;
+  sourceId: string;
+  model: string;
+  chunkCount: number;
+}): Promise<void> {
+  await input.client.deletePointsForSourceFromChunk({
+    teamId: input.data.teamId,
+    scope: input.scope,
+    sourceId: input.sourceId,
+    model: input.model,
+    minChunkIndex: input.chunkCount,
+  });
+
+  // Only event-scope raw_events.source_metadata gets stamped — see Phase 5
+  // rationale below. Non-event scopes don't have a single canonical row to
+  // stamp; their freshness is tracked by the coverage audit script.
+  if (input.scope === 'event' && 'rawEventId' in input.data) {
+    const successPatch = JSON.stringify({
+      embedded_at: new Date().toISOString(),
+      embedding_model: input.model,
+      embedding_chunks: input.chunkCount,
+    });
+    await input.db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'embedding_failed_at' - 'embedding_error') || ${successPatch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, input.data.rawEventId));
   }
 }
 
@@ -54,15 +148,56 @@ async function processEmbedJob(
     return { skipped: true };
   }
 
-  // LLM call BEFORE Qdrant write so a transient embedding failure
-  // retries cleanly. No DB transaction is open during the network call.
+  // LLM calls BEFORE Qdrant writes so transient embedding failures retry
+  // cleanly. Long source text is split into multiple deterministic points
+  // instead of being truncated, preserving retrievable evidence.
   const embed = io.embed ?? llm.embed;
-  const { vector, model } = await embed({ text: plan.text });
+  const chunks = chunkForEmbedding(plan.text);
+  const startChunk = embeddingStartChunk(data);
+  const sourceHash = embeddingSourceHash(plan.text);
+  const expectedSourceHash = expectedEmbeddingSourceHash(data);
+  if (startChunk > 0 && expectedSourceHash && expectedSourceHash !== sourceHash) {
+    const enqueueEmbedJob = io.enqueueEmbedJob ?? queue.enqueueEmbedJob;
+    await enqueueEmbedJob(restartJob(data));
+    return {
+      skipped: true,
+      reason: 'stale_continuation',
+      scope: plan.scope,
+      sourceId: plan.sourceId,
+    };
+  }
+  const chunksForJob = chunks.slice(startChunk, startChunk + EMBEDDING_CHUNKS_PER_JOB);
   const getQdrantClient = io.getQdrantClient ?? qdrant.getQdrantClient;
   const client = getQdrantClient(
     data.targetCollection ? { collection: data.targetCollection, requireExisting: true } : {},
   );
-  const pointId = qdrant.buildPointId(plan.scope, plan.sourceId, model);
+  if (chunksForJob.length === 0) {
+    const model = embeddingModel(data);
+    await finalizeSourceEmbedding({
+      db: deps.db,
+      client,
+      data,
+      scope: plan.scope,
+      sourceId: plan.sourceId,
+      model,
+      chunkCount: chunks.length,
+    });
+    return {
+      skipped: true,
+      reason: 'empty_continuation_finalized',
+      scope: plan.scope,
+      sourceId: plan.sourceId,
+      model,
+    };
+  }
+  const embeddedChunks = [];
+  for (const chunk of chunksForJob) {
+    const result = await embed({ text: chunk.text });
+    embeddedChunks.push({ ...chunk, vector: result.vector, model: result.model });
+  }
+  const model = embeddedChunks[0]?.model;
+  if (!model) return { skipped: true };
+
   const basePayload = embedding.blankEmbeddingPayload({
     teamId: data.teamId,
     occurredAt: plan.occurredAt,
@@ -74,36 +209,44 @@ async function processEmbedJob(
     ...basePayload,
     ...plan.payloadOverrides,
     embedding_model: model,
+    source_scope: plan.scope,
+    source_id: plan.sourceId,
+    chunk_index: 0,
   };
-  await client.upsertVector(pointId, vector, payload);
-
-  // Only event-scope raw_events.source_metadata gets stamped — see Phase 5
-  // rationale below. Non-event scopes don't have a single canonical row to
-  // stamp; their freshness is tracked by the coverage audit script.
-  if (plan.scope === 'event' && 'rawEventId' in data) {
-    const successPatch = JSON.stringify({
-      embedded_at: new Date().toISOString(),
-      embedding_model: model,
-    });
-    await deps.db
-      .update(rawEvents)
-      .set({
-        sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'embedding_failed_at' - 'embedding_error') || ${successPatch}::jsonb`,
-      })
-      .where(eq(rawEvents.id, data.rawEventId));
+  const pointIds = [];
+  for (const chunk of embeddedChunks) {
+    const pointId = qdrant.buildChunkedPointId(plan.scope, plan.sourceId, chunk.model, chunk.index);
+    pointIds.push(pointId);
+    await client.upsertVector(pointId, chunk.vector, { ...payload, chunk_index: chunk.index });
   }
 
-  return { scope: plan.scope, sourceId: plan.sourceId, model, pointId };
+  const nextChunk = startChunk + embeddedChunks.length;
+  if (nextChunk < chunks.length) {
+    const enqueueEmbedJob = io.enqueueEmbedJob ?? queue.enqueueEmbedJob;
+    await enqueueEmbedJob(continuationJob(data, nextChunk, sourceHash, model));
+  } else {
+    await finalizeSourceEmbedding({
+      db: deps.db,
+      client,
+      data,
+      scope: plan.scope,
+      sourceId: plan.sourceId,
+      model,
+      chunkCount: chunks.length,
+    });
+  }
+
+  return { scope: plan.scope, sourceId: plan.sourceId, model, pointId: pointIds[0], pointIds };
 }
 
 /**
- * Embed worker: writes one Qdrant point per source row using the pinned
- * embedding model. Phase 5 covers {raw_event, fact}; Phase 8 follow-ups
+ * Embed worker: writes one or more Qdrant chunk points per source row using the
+ * pinned embedding model. Phase 5 covers {raw_event, fact}; Phase 8 follow-ups
  * add {object, object_note, object_change, entity}.
  *
  * Idempotency comes from deterministic Qdrant point ids derived from
- * (scope, sourceId, embedding_model). A duplicate enqueue upserts the same
- * point and costs at most one embedding call.
+ * (scope, sourceId, embedding_model, chunk_index). A duplicate enqueue upserts
+ * the same point(s) and costs at most the same embedding calls.
  *
  * Failure modes:
  *   - `OPENROUTER_API_KEY` or `QDRANT_URL` unset → UnrecoverableError.

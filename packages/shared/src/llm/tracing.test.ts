@@ -6,8 +6,6 @@ import {
   generateObject,
   generateText,
   sanitizeAiSdkInputs,
-  sanitizeEmbedInputs,
-  sanitizeEmbedOutputs,
   sanitizeTranscribeInputs,
   streamText,
   withLangSmithProviderOptions,
@@ -152,26 +150,6 @@ describe('llm LangSmith tracing', () => {
 
     expect(langsmith.processInputs(input)).toEqual(langsmith.processChildLLMRunInputs(input));
     expect(JSON.stringify(langsmith.processInputs(input))).not.toContain('secret');
-  });
-
-  it('redacts embedding vectors from trace outputs but keeps text inputs', () => {
-    const input = sanitizeEmbedInputs({
-      model: {} as never,
-      value: 'private note text',
-    });
-    const output = sanitizeEmbedOutputs({ embedding: [0.1, 0.2, 0.3] });
-
-    expect(input).toMatchObject({
-      value: 'private note text',
-      value_chars: 17,
-    });
-    expect(output).toEqual({
-      embedding: {
-        redacted: true,
-        dimensions: 3,
-      },
-    });
-    expect(JSON.stringify(output)).not.toContain('0.1');
   });
 
   it('redacts transcription audio inputs while preserving useful options', () => {

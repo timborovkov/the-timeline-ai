@@ -121,6 +121,99 @@ describe('chatStructured', () => {
     });
   });
 
+  it('repairs bare extraction fact arrays returned by the model', async () => {
+    const result = await chatStructured(
+      {
+        schema: extractionResultSchema,
+        prompt: 'Extract facts from: Mikael Rintala shared a Google Drive folder for Otto.',
+        system: EXTRACTION_SYSTEM_PROMPT,
+      },
+      {
+        model: makeMockModel(
+          JSON.stringify([
+            {
+              statement:
+                'Mikael Rintala shared a Google Drive folder link containing zip files and an HTML version for Otto.',
+              confidence: 1,
+              mentions: [
+                {
+                  name: 'Mikael Rintala',
+                  type: 'person',
+                  role: 'subject',
+                  aliases: ['@mikaelrintala'],
+                },
+                { name: 'Otto', type: 'person', role: 'object', aliases: [] },
+                { name: 'Google Drive', type: 'company', role: 'object', aliases: [] },
+              ],
+            },
+          ]),
+        ),
+      },
+    );
+
+    expect(result.object.facts).toHaveLength(1);
+    expect(result.object.facts[0]).toMatchObject({
+      statement:
+        'Mikael Rintala shared a Google Drive folder link containing zip files and an HTML version for Otto.',
+      mentions: [
+        { name: 'Mikael Rintala', type: 'person', role: 'subject' },
+        { name: 'Otto', type: 'person', role: 'object' },
+        { name: 'Google Drive', type: 'company', role: 'object' },
+      ],
+    });
+  });
+
+  it('repairs camelCase actionItems in structured meeting summaries', async () => {
+    const result = await chatStructured(
+      {
+        schema: z.object({
+          summary: z.string(),
+          action_items: z.array(
+            z.object({ text: z.string(), owner: z.string().nullable().optional() }),
+          ),
+        }),
+        prompt: 'Summarize the meeting.',
+      },
+      {
+        model: makeMockModel(
+          JSON.stringify({
+            summary: 'The team discussed launch readiness.',
+            actionItems: [{ text: 'Send the launch checklist.', owner: 'Mikael' }],
+          }),
+        ),
+      },
+    );
+
+    expect(result.object).toEqual({
+      summary: 'The team discussed launch readiness.',
+      action_items: [{ text: 'Send the launch checklist.', owner: 'Mikael' }],
+    });
+  });
+
+  it('repairs candidate_index aliases in entity disambiguation responses', async () => {
+    const result = await chatStructured(
+      {
+        schema: z.object({ choice: z.number().int() }),
+        prompt: 'Pick the candidate that refers to the same real-world entity.',
+      },
+      { model: makeMockModel(JSON.stringify({ candidate_index: 1 })) },
+    );
+
+    expect(result.object).toEqual({ choice: 1 });
+  });
+
+  it('rejects repaired candidate_index values outside a bounded choice schema', async () => {
+    await expect(
+      chatStructured(
+        {
+          schema: z.object({ choice: z.number().int().min(-1).max(1) }),
+          prompt: 'Pick the candidate that refers to the same real-world entity.',
+        },
+        { model: makeMockModel(JSON.stringify({ candidate_index: 999 })) },
+      ),
+    ).rejects.toThrow('No object generated');
+  });
+
   it('requests OpenRouter json_schema structured output for extraction', async () => {
     const requests: unknown[] = [];
     const fetchStub: typeof fetch = (_url, init) => {

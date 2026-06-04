@@ -22,7 +22,6 @@ type LangSmithConfig = Pick<
   | 'processChildLLMRunInputs'
   | 'processChildLLMRunOutputs'
 >;
-type EmbedParams = Parameters<typeof ai.embed>[0];
 type TranscribeParams = Parameters<typeof ai.experimental_transcribe>[0];
 
 export interface LangSmithRunOptions {
@@ -175,24 +174,6 @@ export function sanitizeAiSdkInputs(inputs: Record<string, unknown>): Record<str
   };
 }
 
-export function sanitizeEmbedInputs(inputs: Readonly<EmbedParams>): Record<string, unknown> {
-  return {
-    value: inputs.value,
-    value_chars: inputs.value.length,
-    maxRetries: inputs.maxRetries,
-  };
-}
-
-export function sanitizeEmbedOutputs(outputs: { embedding?: unknown }): Record<string, unknown> {
-  const embedding = outputs.embedding;
-  return {
-    embedding: {
-      redacted: true,
-      dimensions: Array.isArray(embedding) ? embedding.length : undefined,
-    },
-  };
-}
-
 export function sanitizeTranscribeInputs(
   inputs: Readonly<TranscribeParams>,
 ): Record<string, unknown> {
@@ -211,20 +192,6 @@ export function sanitizeTranscribeInputs(
 
 function sanitizeTranscribeOutputs(outputs: { text?: unknown }): Record<string, unknown> {
   return { text: outputs.text };
-}
-
-export async function embed(
-  params: Parameters<typeof ai.embed>[0],
-  options: LangSmithRunOptions,
-): ReturnType<typeof ai.embed> {
-  const base = langSmithTraceableConfig(options);
-  const traced = traceable(ai.embed, {
-    ...base,
-    run_type: 'embedding',
-    processInputs: sanitizeEmbedInputs,
-    processOutputs: sanitizeEmbedOutputs,
-  });
-  return traced(params);
 }
 
 export async function experimental_transcribe(
