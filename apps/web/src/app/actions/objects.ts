@@ -19,16 +19,16 @@ const objectTypeSchema = z.enum(objects.OBJECT_TYPES);
  * constraint "entities_team_type_canonical_name_unq"' string in the toast.
  */
 function friendlyError(err: unknown, fallback: string): string {
-  reportCaughtError(err, {
-    surface: 'server_action',
-    operation: fallback.toLowerCase().replace(/\s+/g, '_'),
-  });
   if (err && typeof err === 'object' && 'code' in err) {
     const code = (err as { code?: unknown }).code;
     if (code === '23505') return 'An object with that name already exists.';
     if (code === '23503') return 'Linked record no longer exists.';
     if (code === '23514') return 'Value violates a constraint.';
   }
+  reportCaughtError(err, {
+    surface: 'server_action',
+    operation: fallback.toLowerCase().replace(/\s+/g, '_'),
+  });
   return err instanceof Error ? err.message : fallback;
 }
 

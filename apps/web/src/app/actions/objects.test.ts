@@ -25,6 +25,7 @@ import {
 const fakes = vi.hoisted(() => ({
   fakeResolveScope: vi.fn(),
   fakeRevalidatePath: vi.fn(),
+  fakeReportCaughtError: vi.fn(),
   fakeObjects: {
     createObject: vi.fn(),
     updateObject: vi.fn(),
@@ -49,6 +50,7 @@ vi.mock('@/lib/action-scope', async () => {
   };
 });
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
+vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
 
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const OBJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -129,6 +131,22 @@ describe('object CRUD actions', () => {
         error: 'An object with that name already exists.',
       },
     );
+    expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
+  });
+
+  it('reports unmapped object failures before returning the action error', async () => {
+    const err = new Error('database down');
+    fakes.fakeObjects.createObject.mockRejectedValue(err);
+
+    await expect(createObjectAction({ type: 'task', canonicalName: 'Follow up' })).resolves.toEqual(
+      {
+        error: 'database down',
+      },
+    );
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
+      surface: 'server_action',
+      operation: 'failed_to_create_object',
+    });
   });
 
   it('updates object fields and revalidates object, board, and task surfaces', async () => {
