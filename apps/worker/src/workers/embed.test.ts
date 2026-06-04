@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import { calendarEvents, rawEvents } from '@timeline/db';
-import { llm, qdrant } from '@timeline/shared';
+import { llm, qdrant, type queue } from '@timeline/shared';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,6 +23,8 @@ const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const CALENDAR_EVENT_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const SCHEDULED_RAW_EVENT_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const START_RAW_EVENT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+type EnqueueEmbed = (data: queue.EmbedJobData) => Promise<void>;
+type DeletePointsForSourceFromChunk = qdrant.QdrantClient['deletePointsForSourceFromChunk'];
 
 async function applyMigrations(pg: PGlite): Promise<void> {
   const files = readdirSync(MIGRATIONS_DIR)
@@ -161,6 +163,9 @@ describe('processEmbedJobForTests', () => {
     );
     const upsertVector = vi.fn().mockResolvedValue(undefined);
     const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
 
     const result = await processEmbedJobForTests(
       { db: db as never },
@@ -169,7 +174,9 @@ describe('processEmbedJobForTests', () => {
         getEnv: () =>
           ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
         embed,
-        getQdrantClient: vi.fn(() => ({ deletePointsForSource, upsertVector }) as never),
+        getQdrantClient: vi.fn(
+          () => ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+        ),
       },
     );
 
@@ -204,11 +211,13 @@ describe('processEmbedJobForTests', () => {
         embedding_model: 'test-embed-model',
       }),
     );
-    expect(deletePointsForSource).toHaveBeenCalledWith({
+    expect(deletePointsForSource).not.toHaveBeenCalled();
+    expect(deletePointsForSourceFromChunk).toHaveBeenCalledWith({
       teamId: TEAM_ID,
       scope: 'event',
       sourceId: rawEventId,
       model: 'test-embed-model',
+      minChunkIndex: 1,
     });
     const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(row?.sourceMetadata).toMatchObject({ embedding_model: 'test-embed-model' });
@@ -242,7 +251,10 @@ describe('processEmbedJobForTests', () => {
     );
     const upsertVector = vi.fn().mockResolvedValue(undefined);
     const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
-    const enqueueEmbedJob = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
 
     const result = await processEmbedJobForTests(
       { db: db as never },
@@ -252,7 +264,9 @@ describe('processEmbedJobForTests', () => {
           ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
         embed,
         enqueueEmbedJob,
-        getQdrantClient: vi.fn(() => ({ deletePointsForSource, upsertVector }) as never),
+        getQdrantClient: vi.fn(
+          () => ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+        ),
       },
     );
 
@@ -280,13 +294,17 @@ describe('processEmbedJobForTests', () => {
     for (const pointId of expectedPointIds) {
       expect(upsertVector).toHaveBeenCalledWith(pointId, [0.1, 0.2, 0.3, 0.4], expect.any(Object));
     }
-    expect(deletePointsForSource).toHaveBeenCalledTimes(1);
-    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+    expect(deletePointsForSource).not.toHaveBeenCalled();
+    expect(deletePointsForSourceFromChunk).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).toHaveBeenCalledTimes(1);
+    const continuation = enqueueEmbedJob.mock.calls[0]?.[0];
+    expect(continuation).toMatchObject({
       scope: 'raw_event',
       teamId: TEAM_ID,
       rawEventId,
       embeddingStartChunk: 16,
     });
+    expect(continuation?.embeddingSourceHash).toMatch(/^[0-9a-f]{64}$/);
     const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(row?.sourceMetadata).not.toHaveProperty('embedded_at');
   });
@@ -317,7 +335,10 @@ describe('processEmbedJobForTests', () => {
     );
     const upsertVector = vi.fn().mockResolvedValue(undefined);
     const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
-    const enqueueEmbedJob = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
 
     const result = await processEmbedJobForTests(
       { db: db as never },
@@ -327,11 +348,22 @@ describe('processEmbedJobForTests', () => {
           ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
         embed,
         enqueueEmbedJob,
-        getQdrantClient: vi.fn(() => ({ deletePointsForSource, upsertVector }) as never),
+        getQdrantClient: vi.fn(
+          () => ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+        ),
       },
     );
 
     expect(deletePointsForSource).not.toHaveBeenCalled();
+    expect(deletePointsForSourceFromChunk).toHaveBeenCalledTimes(1);
+    const cleanup = deletePointsForSourceFromChunk.mock.calls[0]?.[0];
+    expect(cleanup).toMatchObject({
+      teamId: TEAM_ID,
+      scope: 'event',
+      sourceId: rawEventId,
+      model: 'test-embed-model',
+    });
+    expect(cleanup?.minChunkIndex).toBeGreaterThan(16);
     expect(enqueueEmbedJob).not.toHaveBeenCalled();
     expect(result).toMatchObject({ scope: 'event', sourceId: rawEventId });
     const sentText = embed.mock.calls.map((call) => call[0].text).join(' ');
@@ -341,6 +373,126 @@ describe('processEmbedJobForTests', () => {
       embedding_model: 'test-embed-model',
     });
     expect(row?.sourceMetadata).toHaveProperty('embedded_at');
+  });
+
+  it('does not prune stale chunks when an upsert fails partway through replacement', async () => {
+    const rawEventId = '22222222-3333-4444-8555-666666666666';
+    const longText = Array.from(
+      { length: 10_000 },
+      (_, i) => `Replacement sentence ${String(i)} with a useful detail.`,
+    ).join(' ');
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: longText,
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const embed = vi.fn<(input: { text: string }) => Promise<{ vector: number[]; model: string }>>(
+      () =>
+        Promise.resolve({
+          vector: [0.1, 0.2, 0.3, 0.4],
+          model: 'test-embed-model',
+        }),
+    );
+    const upsertVector = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('qdrant temporarily down'));
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
+
+    await expect(
+      processEmbedJobForTests(
+        { db: db as never },
+        { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+        {
+          getEnv: () =>
+            ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+          embed,
+          enqueueEmbedJob,
+          getQdrantClient: vi.fn(
+            () =>
+              ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+          ),
+        },
+      ),
+    ).rejects.toThrow('qdrant temporarily down');
+
+    expect(deletePointsForSource).not.toHaveBeenCalled();
+    expect(deletePointsForSourceFromChunk).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).not.toHaveBeenCalled();
+    const row = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
+    expect(row?.sourceMetadata).not.toHaveProperty('embedded_at');
+  });
+
+  it('restarts continuation jobs when the source text changed between batches', async () => {
+    const rawEventId = '33333333-4444-4555-8666-777777777777';
+    const longText = Array.from(
+      { length: 10_000 },
+      (_, i) => `Changed continuation sentence ${String(i)} with a useful detail.`,
+    ).join(' ');
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: longText,
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const embed = vi.fn();
+    const upsertVector = vi.fn();
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
+
+    const result = await processEmbedJobForTests(
+      { db: db as never },
+      {
+        scope: 'raw_event',
+        teamId: TEAM_ID,
+        rawEventId,
+        embeddingStartChunk: 16,
+        embeddingSourceHash: 'stale-hash',
+      },
+      {
+        getEnv: () =>
+          ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+        embed,
+        enqueueEmbedJob,
+        getQdrantClient: vi.fn(
+          () => ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+        ),
+      },
+    );
+
+    expect(result).toMatchObject({
+      skipped: true,
+      reason: 'stale_continuation',
+      scope: 'event',
+      sourceId: rawEventId,
+    });
+    expect(embed).not.toHaveBeenCalled();
+    expect(upsertVector).not.toHaveBeenCalled();
+    expect(deletePointsForSource).not.toHaveBeenCalled();
+    expect(deletePointsForSourceFromChunk).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'raw_event',
+      teamId: TEAM_ID,
+      rawEventId,
+    });
   });
 
   it('skips non-team raw events without embedding or Qdrant writes', async () => {
@@ -367,7 +519,14 @@ describe('processEmbedJobForTests', () => {
           getEnv: () =>
             ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
           embed,
-          getQdrantClient: vi.fn(() => ({ deletePointsForSource: vi.fn(), upsertVector }) as never),
+          getQdrantClient: vi.fn(
+            () =>
+              ({
+                deletePointsForSource: vi.fn(),
+                deletePointsForSourceFromChunk: vi.fn(),
+                upsertVector,
+              }) as never,
+          ),
         },
       ),
     ).resolves.toEqual({ skipped: true });

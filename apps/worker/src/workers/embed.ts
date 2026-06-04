@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { type Db, rawEvents } from '@timeline/db';
 import { childLogger, chunkText, embedding, getEnv, llm, qdrant, queue } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
@@ -50,8 +52,26 @@ function embeddingStartChunk(data: queue.EmbedJobData): number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 0;
 }
 
-function continuationJob(data: queue.EmbedJobData, nextChunk: number): queue.EmbedJobData {
-  return { ...data, embeddingStartChunk: nextChunk };
+function embeddingSourceHash(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
+}
+
+function expectedEmbeddingSourceHash(data: queue.EmbedJobData): string | null {
+  const value = 'embeddingSourceHash' in data ? data.embeddingSourceHash : undefined;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function continuationJob(
+  data: queue.EmbedJobData,
+  nextChunk: number,
+  sourceHash: string,
+): queue.EmbedJobData {
+  return { ...data, embeddingStartChunk: nextChunk, embeddingSourceHash: sourceHash };
+}
+
+function restartJob(data: queue.EmbedJobData): queue.EmbedJobData {
+  const { embeddingStartChunk: _start, embeddingSourceHash: _hash, ...rest } = data;
+  return rest;
 }
 
 async function processEmbedJob(
@@ -83,6 +103,18 @@ async function processEmbedJob(
   const embed = io.embed ?? llm.embed;
   const chunks = chunkForEmbedding(plan.text);
   const startChunk = embeddingStartChunk(data);
+  const sourceHash = embeddingSourceHash(plan.text);
+  const expectedSourceHash = expectedEmbeddingSourceHash(data);
+  if (startChunk > 0 && expectedSourceHash && expectedSourceHash !== sourceHash) {
+    const enqueueEmbedJob = io.enqueueEmbedJob ?? queue.enqueueEmbedJob;
+    await enqueueEmbedJob(restartJob(data));
+    return {
+      skipped: true,
+      reason: 'stale_continuation',
+      scope: plan.scope,
+      sourceId: plan.sourceId,
+    };
+  }
   const chunksForJob = chunks.slice(startChunk, startChunk + EMBEDDING_CHUNKS_PER_JOB);
   if (chunksForJob.length === 0) return { skipped: true };
   const embeddedChunks = [];
@@ -112,14 +144,6 @@ async function processEmbedJob(
     source_id: plan.sourceId,
     chunk_index: 0,
   };
-  if (startChunk === 0) {
-    await client.deletePointsForSource({
-      teamId: data.teamId,
-      scope: plan.scope,
-      sourceId: plan.sourceId,
-      model,
-    });
-  }
   const pointIds = [];
   for (const chunk of embeddedChunks) {
     const pointId = qdrant.buildChunkedPointId(plan.scope, plan.sourceId, chunk.model, chunk.index);
@@ -130,7 +154,15 @@ async function processEmbedJob(
   const nextChunk = startChunk + embeddedChunks.length;
   if (nextChunk < chunks.length) {
     const enqueueEmbedJob = io.enqueueEmbedJob ?? queue.enqueueEmbedJob;
-    await enqueueEmbedJob(continuationJob(data, nextChunk));
+    await enqueueEmbedJob(continuationJob(data, nextChunk, sourceHash));
+  } else {
+    await client.deletePointsForSourceFromChunk({
+      teamId: data.teamId,
+      scope: plan.scope,
+      sourceId: plan.sourceId,
+      model,
+      minChunkIndex: chunks.length,
+    });
   }
 
   // Only event-scope raw_events.source_metadata gets stamped — see Phase 5

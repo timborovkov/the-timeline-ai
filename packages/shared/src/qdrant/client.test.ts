@@ -216,6 +216,32 @@ describe('createQdrantClient', () => {
     });
   });
 
+  it('deletes only stale tail chunks for a source by payload range filter', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher });
+
+    await client.deletePointsForSourceFromChunk({
+      teamId: 'team-A',
+      scope: 'event',
+      sourceId: 'ev-1',
+      model: 'openai/text-embedding-3-small',
+      minChunkIndex: 3,
+    });
+
+    const del = calls.find((c) => c.url.endsWith('/points/delete'));
+    expect(del?.body).toEqual({
+      filter: {
+        must: [
+          { key: 'team_id', match: { value: 'team-A' } },
+          { key: 'embedding_model', match: { value: 'openai/text-embedding-3-small' } },
+          { key: 'source_scope', match: { value: 'event' } },
+          { key: 'source_id', match: { value: 'ev-1' } },
+          { key: 'chunk_index', range: { gte: 3 } },
+        ],
+      },
+    });
+  });
+
   it('counts distinct source ids instead of raw chunk points', async () => {
     const { fetcher, setSearchResult } = makeFetcher({ collectionExists: true });
     setSearchResult([

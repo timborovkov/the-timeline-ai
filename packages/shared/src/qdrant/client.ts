@@ -169,6 +169,13 @@ export interface QdrantClient {
     model: string;
     verifyDeleted?: boolean;
   }): Promise<void>;
+  deletePointsForSourceFromChunk(input: {
+    teamId: string;
+    scope: PointScope;
+    sourceId: string;
+    model: string;
+    minChunkIndex: number;
+  }): Promise<void>;
   /**
    * Return the subset of ids that currently exist in the collection. Used by
    * the orphaned-job reconciler to detect facts that never made it into the
@@ -530,15 +537,18 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     scope: PointScope;
     sourceId: string;
     model: string;
+    minChunkIndex?: number;
   }) {
-    return {
-      must: [
-        { key: 'team_id', match: { value: input.teamId } },
-        { key: 'embedding_model', match: { value: input.model } },
-        { key: 'source_scope', match: { value: input.scope } },
-        { key: 'source_id', match: { value: input.sourceId } },
-      ],
-    };
+    const must: unknown[] = [
+      { key: 'team_id', match: { value: input.teamId } },
+      { key: 'embedding_model', match: { value: input.model } },
+      { key: 'source_scope', match: { value: input.scope } },
+      { key: 'source_id', match: { value: input.sourceId } },
+    ];
+    if (typeof input.minChunkIndex === 'number') {
+      must.push({ key: 'chunk_index', range: { gte: input.minChunkIndex } });
+    }
+    return { must };
   }
 
   async function deletePointsForSource(input: {
@@ -560,6 +570,22 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
         );
       }
     }
+  }
+
+  async function deletePointsForSourceFromChunk(input: {
+    teamId: string;
+    scope: PointScope;
+    sourceId: string;
+    model: string;
+    minChunkIndex: number;
+  }): Promise<void> {
+    if (!Number.isInteger(input.minChunkIndex) || input.minChunkIndex < 0) {
+      throw new Error('Qdrant stale chunk cleanup requires a non-negative integer minChunkIndex');
+    }
+    await ensureCollection();
+    await request('POST', `/collections/${encodeURIComponent(collection)}/points/delete`, {
+      filter: sourceFilter(input),
+    });
   }
 
   async function pointsExist(ids: string[]): Promise<Set<string>> {
@@ -690,6 +716,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     search,
     deletePoints,
     deletePointsForSource,
+    deletePointsForSourceFromChunk,
     pointsExist,
     countPoints,
     countDistinctSources,

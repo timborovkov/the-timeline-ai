@@ -312,9 +312,10 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 </code></pre>
           Re-running is idempotent — point ids derived from
           <code>(scope, sourceId, embedding_model, chunk_index)</code> are deterministic, so the
-          same source chunk maps to the same point id and Qdrant upserts naturally. The worker
-          deletes existing points for the same <code>(team, scope, source, model)</code> before
-          writing the first chunk batch, so shorter re-embeds do not leave stale tail chunks.
+          same source chunk maps to the same point id and Qdrant upserts naturally. After the final
+          chunk batch lands, the worker deletes stale tail points for the same
+          <code>(team, scope, source, model)</code> where <code>chunk_index</code> is beyond the new
+          chunk count, so shorter re-embeds do not leave obsolete tail chunks.
         </li>
         <li>
           <strong>Verify</strong> spot-checks against the new collection by overriding

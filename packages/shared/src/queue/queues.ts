@@ -230,6 +230,12 @@ interface EmbedJobBase {
    * source with the next chunk index until all chunks land.
    */
   embeddingStartChunk?: number;
+  /**
+   * Internal source-text fingerprint carried by continuation jobs. If the
+   * source changes between batches, the continuation restarts at chunk 0 so
+   * chunk indices never mix embeddings from two different rendered texts.
+   */
+  embeddingSourceHash?: string;
 }
 
 export interface EmbedRawEventJobData extends EmbedJobBase {
