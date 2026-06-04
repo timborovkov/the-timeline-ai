@@ -288,6 +288,60 @@ describe('job recovery scope', () => {
     expect(rows[0]?.meta).not.toHaveProperty('transcription_error');
   });
 
+  it('bulk retries failed jobs by kind', async () => {
+    await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
+    await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
+      sourceMetadata:
+        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+    });
+    const enqueueExtractJob = vi.fn().mockResolvedValue(undefined);
+    const enqueueTranscribeJob = vi.fn().mockResolvedValue(undefined);
+    const scope = scopeFor(ADMIN_ID, 'admin', { enqueueExtractJob, enqueueTranscribeJob });
+
+    const before = await scope.listRecoverableJobs();
+    const failedExtractions = before.filter(
+      (item) => item.kind === 'extraction' && item.status === 'failed',
+    );
+    const result = await scope.retryFailedRecoverableJobs({
+      kind: 'extraction',
+      items: failedExtractions.map((item) => ({ id: item.id, detectedAt: item.detectedAt })),
+      expectedCount: failedExtractions.length,
+    });
+
+    expect(result).toEqual({ retried: 1 });
+    expect(enqueueExtractJob).toHaveBeenCalledWith({
+      rawEventId: FAILED_EXTRACTION_RAW_ID,
+      teamId: TEAM_ID,
+    });
+    expect(enqueueTranscribeJob).not.toHaveBeenCalled();
+  });
+
+  it('rejects stale bulk retry snapshots', async () => {
+    await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
+      sourceMetadata:
+        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+    });
+    const scope = scopeFor(ADMIN_ID, 'admin');
+    const [staleItem] = await scope.listRecoverableJobs();
+    if (!staleItem) throw new Error('expected recovery item');
+    await pg.exec(`
+      UPDATE raw_events
+      SET source_metadata = '{
+        "extraction_failed_at":"2099-05-27T10:00:00.000Z",
+        "extraction_error":"model failed again",
+        "embedded_at":"2099-05-27T10:00:00.000Z"
+      }'::jsonb
+      WHERE id = '${FAILED_EXTRACTION_RAW_ID}';
+    `);
+
+    await expect(
+      scope.retryFailedRecoverableJobs({
+        items: [{ id: staleItem.id, detectedAt: staleItem.detectedAt }],
+        expectedCount: 1,
+      }),
+    ).rejects.toThrow('stale_recovery_set');
+  });
+
   it('does not flag successful zero-fact extraction as stuck', async () => {
     await seedTextRawEvent(pg, RAW_ID, {
       sourceMetadata: '{}',

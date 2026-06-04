@@ -62,6 +62,12 @@ export interface DismissFailedRecoverableJobsInput {
   reason?: string;
 }
 
+export interface RetryFailedRecoverableJobsInput {
+  kind?: JobRecoveryKind;
+  items: { id: string; detectedAt: Date }[];
+  expectedCount: number;
+}
+
 export interface FinishedJobArchiveItem {
   id: string;
   queue: string;
@@ -226,6 +232,73 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
     input: DismissFailedRecoverableJobsInput,
   ): Promise<{ dismissed: number }> {
     await requireAdmin();
+    const selectedFailed = await selectCurrentFailedSnapshot(input);
+    if (selectedFailed.length === 0) return { dismissed: 0 };
+    const unique = selectedFailed.map((candidate) => ({
+      kind: candidate.kind,
+      artifactKind: candidate.artifactKind,
+      artifactId: candidate.artifactId,
+      detectedAt: candidate.detectedAt,
+    }));
+    await insertDismissals(deps.db, deps.teamId, deps.userId, unique, input.reason, {
+      preserveNewerDismissals: true,
+    });
+    return { dismissed: unique.length };
+  }
+
+  async function retryFailedRecoverableJobs(
+    input: RetryFailedRecoverableJobsInput,
+  ): Promise<{ retried: number }> {
+    await requireAdmin();
+    const selectedFailed = await selectCurrentFailedSnapshot(input);
+    if (selectedFailed.length === 0) return { retried: 0 };
+    const retryableFailed = selectedFailed.filter((candidate) => candidate.retryable);
+    if (retryableFailed.length !== selectedFailed.length) throw new Error('not_retryable');
+    const parsedJobs = retryableFailed.map((item) => decodeRecoveryId(item.id));
+    for (const parsed of parsedJobs) {
+      await assertArtifactVisible(deps.db, deps.teamId, deps.userId, parsed);
+    }
+    for (const parsed of parsedJobs) {
+      await clearDismissal(deps.db, deps.teamId, parsed);
+      await retryParsed(deps.db, deps.teamId, parsed, q);
+    }
+    return { retried: retryableFailed.length };
+  }
+
+  async function retryRecoverableJob(id: string): Promise<void> {
+    await requireAdmin();
+    const parsed = decodeRecoveryId(id);
+    await assertArtifactVisible(deps.db, deps.teamId, deps.userId, parsed);
+    await clearDismissal(deps.db, deps.teamId, parsed);
+    await retryParsed(deps.db, deps.teamId, parsed, q);
+  }
+
+  async function listFinishedJobs(
+    input: {
+      offset?: number;
+      limit?: number;
+    } = {},
+  ): Promise<FinishedJobArchivePage> {
+    await requireAdmin();
+    const offset = boundedInteger(input.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+    const limit = boundedInteger(input.limit, 20, 1, 100);
+    return collectFinishedJobs(deps.teamId, q, { offset, limit });
+  }
+
+  return {
+    listRecoverableJobs,
+    listFinishedJobs,
+    dismissRecoverableJob,
+    dismissFailedRecoverableJobs,
+    retryFailedRecoverableJobs,
+    retryRecoverableJob,
+  };
+
+  async function selectCurrentFailedSnapshot(input: {
+    kind?: JobRecoveryKind;
+    items: { id: string; detectedAt: Date }[];
+    expectedCount: number;
+  }): Promise<JobRecoveryItem[]> {
     const requestedIds = uniqueStrings(input.items.map((item) => item.id));
     if (requestedIds.length === 0 || requestedIds.length !== input.items.length) {
       throw new Error('invalid_recovery_ids');
@@ -257,46 +330,8 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
     if (!idsMatchCurrentSet) {
       throw new Error('stale_recovery_set');
     }
-    if (failed.length === 0) return { dismissed: 0 };
-    const unique = selectedFailed.map((candidate) => ({
-      kind: candidate.kind,
-      artifactKind: candidate.artifactKind,
-      artifactId: candidate.artifactId,
-      detectedAt: candidate.detectedAt,
-    }));
-    await insertDismissals(deps.db, deps.teamId, deps.userId, unique, input.reason, {
-      preserveNewerDismissals: true,
-    });
-    return { dismissed: unique.length };
+    return selectedFailed;
   }
-
-  async function retryRecoverableJob(id: string): Promise<void> {
-    await requireAdmin();
-    const parsed = decodeRecoveryId(id);
-    await assertArtifactVisible(deps.db, deps.teamId, deps.userId, parsed);
-    await clearDismissal(deps.db, deps.teamId, parsed);
-    await retryParsed(deps.db, deps.teamId, parsed, q);
-  }
-
-  async function listFinishedJobs(
-    input: {
-      offset?: number;
-      limit?: number;
-    } = {},
-  ): Promise<FinishedJobArchivePage> {
-    await requireAdmin();
-    const offset = boundedInteger(input.offset, 0, 0, Number.MAX_SAFE_INTEGER);
-    const limit = boundedInteger(input.limit, 20, 1, 100);
-    return collectFinishedJobs(deps.teamId, q, { offset, limit });
-  }
-
-  return {
-    listRecoverableJobs,
-    listFinishedJobs,
-    dismissRecoverableJob,
-    dismissFailedRecoverableJobs,
-    retryRecoverableJob,
-  };
 }
 
 async function insertDismissals(

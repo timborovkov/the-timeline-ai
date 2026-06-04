@@ -16,6 +16,7 @@ export const dynamic = 'force-dynamic';
 const PAGE_SIZE = 500;
 const MAX_CONVERSATIONS = 10_000;
 const RECOVER_CONCURRENCY = 25;
+const RECOVERY_JOB_ID_SUFFIX = 'recovery';
 
 const inputSchema = z.object({
   windowDays: z.union([z.literal(7), z.literal(30), z.literal(90)]).default(30),
@@ -99,14 +100,13 @@ async function recoverAndEnqueueConversationReview(
     windowDays: number;
     source: 'all' | 'telegram' | 'slack';
     requestedAt: Date;
-    recoveryRunId: string;
   },
 ): Promise<{ recovered: number; enqueued: number }> {
   const review = await recoverConversationReview(candidate, args);
   if (!review) return { recovered: 0, enqueued: 0 };
   const result = await queue.enqueueSuggestionJob(
     { scope: 'conversation_review', conversationReviewId: review.id, teamId: review.teamId },
-    { jobIdSuffix: `recovery:${args.recoveryRunId}` },
+    { jobIdSuffix: RECOVERY_JOB_ID_SUFFIX },
   );
   return { recovered: 1, enqueued: result.enqueued ? 1 : 0 };
 }
@@ -118,7 +118,6 @@ async function recoverAndEnqueueInBatches(
     windowDays: number;
     source: 'all' | 'telegram' | 'slack';
     requestedAt: Date;
-    recoveryRunId: string;
   },
 ): Promise<{ recovered: number; enqueued: number }> {
   let recovered = 0;
@@ -164,7 +163,6 @@ export async function POST(req: Request): Promise<Response> {
   const queue = await requireRedisQueue();
   const since = new Date(Date.now() - parsed.data.windowDays * 24 * 60 * 60 * 1000);
   const requestedAt = new Date();
-  const recoveryRunId = requestedAt.toISOString();
   let cursor: { occurredAt: Date; id: string } | null = null;
   let scanned = 0;
   const conversations = new Map<string, Candidate>();
@@ -227,7 +225,6 @@ export async function POST(req: Request): Promise<Response> {
     windowDays: parsed.data.windowDays,
     source: parsed.data.source,
     requestedAt,
-    recoveryRunId,
   });
 
   return NextResponse.json({
