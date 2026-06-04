@@ -122,18 +122,6 @@ SENTRY_RELEASE=
           maps.
         </li>
       </ul>
-      <h2 id="smoke-test">5. Smoke test</h2>
-      <p>
-        To prove production ingestion from the deployed web container, temporarily deploy the smoke
-        route and call:
-      </p>
-      <pre><code>curl -X POST https://thetimeline.cc/api/sentry/smoke</code></pre>
-      <p>
-        A healthy response is
-        <code>{"ok":true,"sentryConfigured":true,"clientInitialized":true,"flushed":true}</code>,
-        and Sentry should receive an error named <code>sentry_smoke_test</code>. Remove the route
-        after testing.
-      </p>
     </main>
   </body>
 </html>
