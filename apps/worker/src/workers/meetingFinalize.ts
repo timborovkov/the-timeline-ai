@@ -250,11 +250,30 @@ function summaryFailureFromError(err: unknown, model: string): MeetingSummaryFai
 function isRetryableSummaryError(err: unknown): boolean {
   const failure = summaryFailureFromError(err, '');
   const causeName = failure.causeName ?? '';
-  const message = failure.message.toLowerCase();
+  const messages = summaryFailureMessages(err);
   return (
     causeName === 'AI_APICallError' ||
     causeName === 'AbortError' ||
     causeName === 'TimeoutError' ||
+    messages.some((message) => retryableSummaryMessage(message))
+  );
+}
+
+function summaryFailureMessages(err: unknown): string[] {
+  const messages = [err instanceof Error ? err.message : String(err)];
+  if (
+    err &&
+    typeof err === 'object' &&
+    'causeMessage' in err &&
+    typeof err.causeMessage === 'string'
+  ) {
+    messages.push(err.causeMessage);
+  }
+  return messages.map((message) => message.toLowerCase());
+}
+
+function retryableSummaryMessage(message: string): boolean {
+  return (
     message.includes('429') ||
     message.includes('5xx') ||
     /\b5\d\d\b/.test(message) ||

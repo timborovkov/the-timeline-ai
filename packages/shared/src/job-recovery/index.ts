@@ -155,6 +155,8 @@ interface EncodedRecoveryId extends RecoveryIdentity {
 interface RetryPlan {
   clear: () => Promise<void>;
   enqueue: () => Promise<void>;
+  restore?: () => Promise<void>;
+  clearBeforeEnqueue?: boolean;
 }
 
 const STALE_MS = 15 * 60 * 1000;
@@ -276,8 +278,8 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
       if (!parsed) throw new Error('invalid_recovery_ids');
       try {
         const retryPlan = await prepareRetryParsed(deps.db, deps.teamId, parsed, q);
-        await clearDismissal(deps.db, deps.teamId, parsed);
         await executeRetryPlan(retryPlan);
+        await clearDismissal(deps.db, deps.teamId, parsed);
         retried += 1;
       } catch {
         const item = retryableFailed[index];
@@ -292,8 +294,8 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
     const parsed = decodeRecoveryId(id);
     await assertArtifactVisible(deps.db, deps.teamId, deps.userId, parsed);
     const retryPlan = await prepareRetryParsed(deps.db, deps.teamId, parsed, q);
-    await clearDismissal(deps.db, deps.teamId, parsed);
     await executeRetryPlan(retryPlan);
+    await clearDismissal(deps.db, deps.teamId, parsed);
   }
 
   async function listFinishedJobs(
@@ -1087,6 +1089,16 @@ async function prepareRetryParsed(
     return prepareRetryEmbedding(db, teamId, parsed, q);
   }
   if (parsed.kind === 'document_processing' && parsed.artifactKind === 'document_version') {
+    const rows = await db
+      .select({
+        processingStatus: documentVersions.processingStatus,
+        processingError: documentVersions.processingError,
+      })
+      .from(documentVersions)
+      .where(and(eq(documentVersions.teamId, teamId), eq(documentVersions.id, parsed.artifactId)))
+      .limit(1);
+    const previous = rows[0];
+    if (!previous) throw new Error('not_found');
     return {
       clear: () =>
         db
@@ -1097,6 +1109,18 @@ async function prepareRetryParsed(
           )
           .then(() => undefined),
       enqueue: () => q.enqueueDocumentExtractJob({ documentVersionId: parsed.artifactId, teamId }),
+      restore: () =>
+        db
+          .update(documentVersions)
+          .set({
+            processingStatus: previous.processingStatus,
+            processingError: previous.processingError,
+          })
+          .where(
+            and(eq(documentVersions.teamId, teamId), eq(documentVersions.id, parsed.artifactId)),
+          )
+          .then(() => undefined),
+      clearBeforeEnqueue: true,
     };
   }
   if (parsed.kind === 'meeting_finalization' && parsed.artifactKind === 'meeting') {
@@ -1129,8 +1153,18 @@ async function prepareRetryParsed(
 }
 
 async function executeRetryPlan(plan: RetryPlan): Promise<void> {
-  await plan.clear();
+  if (plan.clearBeforeEnqueue) {
+    await plan.clear();
+    try {
+      await plan.enqueue();
+    } catch (err) {
+      await plan.restore?.().catch(() => undefined);
+      throw err;
+    }
+    return;
+  }
   await plan.enqueue();
+  await plan.clear();
 }
 
 async function prepareRetryEmbedding(

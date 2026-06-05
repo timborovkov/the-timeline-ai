@@ -11,6 +11,7 @@ import {
   meetingUsage,
   rawEvents,
 } from '@timeline/db';
+import { TimelineAiError } from '@timeline/shared/llm';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -458,6 +459,38 @@ describe('processMeetingFinalizeJob', () => {
         { chatStructured: chat as never },
       ),
     ).rejects.toThrow('provider unavailable');
+
+    const meeting = (
+      await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID))
+    )[0];
+    expect(meeting?.status).toBe('processing');
+    const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+    expect(events).toHaveLength(0);
+  });
+
+  it('keeps aggregate structured-output fallback provider failures retryable', async () => {
+    await seedMeeting(db as never);
+    await seedChunk(db as never, 0, 'We should follow up on the launch plan.', 'Alice');
+    const cause = new AggregateError(
+      [
+        new Error('json_schema unsupported by provider'),
+        new Error('OpenRouter 503 temporarily unavailable'),
+      ],
+      'llm.chatStructured failed with json_schema and json_object response formats',
+    );
+    const chat = vi
+      .fn()
+      .mockRejectedValue(
+        new TimelineAiError({ operation: 'llm.chatStructured', model: 'test-model@1.0' }, cause),
+      );
+
+    await expect(
+      processMeetingFinalizeJob(
+        { db: db as never },
+        { meetingId: MEETING_ID, teamId: TEAM_ID },
+        { chatStructured: chat as never },
+      ),
+    ).rejects.toThrow('llm.chatStructured failed');
 
     const meeting = (
       await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID))
