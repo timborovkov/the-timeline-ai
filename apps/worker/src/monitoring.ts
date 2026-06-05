@@ -33,9 +33,11 @@ export function captureWorkerException(
 ): void {
   if (!isWorkerSentryConfigured()) return;
   Sentry.withScope((scope) => {
-    Object.entries({ ...aiErrorTags(err), ...tags }).forEach(([key, value]) => {
+    const aiError = aiErrorDetails(err);
+    Object.entries({ ...aiError.tags, ...tags }).forEach(([key, value]) => {
       if (value !== undefined && value !== null) scope.setTag(key, String(value));
     });
+    if (aiError.context) scope.setContext('ai', aiError.context);
     Sentry.captureException(err);
   });
 }
@@ -83,14 +85,31 @@ export async function flushWorkerSentry(timeoutMs = 2000): Promise<boolean> {
 
 export const workerSentryInternals = { sampleRate };
 
-function aiErrorTags(err: unknown): Record<string, string> {
-  if (!err || typeof err !== 'object') return {};
-  const row = err as { timelineAi?: unknown; operation?: unknown; model?: unknown };
-  if (row.timelineAi !== true) return {};
-  return Object.fromEntries(
+function aiErrorDetails(err: unknown): {
+  tags: Record<string, string>;
+  context: Record<string, string> | null;
+} {
+  if (!err || typeof err !== 'object') return { tags: {}, context: null };
+  const row = err as {
+    timelineAi?: unknown;
+    operation?: unknown;
+    model?: unknown;
+    causeName?: unknown;
+    causeMessage?: unknown;
+  };
+  if (row.timelineAi !== true) return { tags: {}, context: null };
+  const tags = Object.fromEntries(
     Object.entries({
       aiOperation: typeof row.operation === 'string' ? row.operation : undefined,
       aiModel: typeof row.model === 'string' ? row.model : undefined,
+      aiCauseName: typeof row.causeName === 'string' ? row.causeName : undefined,
     }).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
   );
+  const context =
+    typeof row.causeMessage === 'string'
+      ? {
+          causeMessage: row.causeMessage,
+        }
+      : null;
+  return { tags, context };
 }

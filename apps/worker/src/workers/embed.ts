@@ -36,6 +36,17 @@ function embedFailureTags(job: Pick<Job<queue.EmbedJobData>, 'data'> | undefined
   }
 }
 
+function embedFailureMessage(err: Error): string {
+  if (
+    'causeMessage' in err &&
+    typeof err.causeMessage === 'string' &&
+    err.causeMessage.length > 0
+  ) {
+    return err.causeMessage.slice(0, 500);
+  }
+  return err.message.slice(0, 500);
+}
+
 function embeddingChunkBudgetTokens(): number {
   return Math.max(1, Math.floor(llm.TIMELINE_MODELS.embedding.contextWindowTokens * 0.8));
 }
@@ -286,7 +297,7 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
     if (!('rawEventId' in job.data) || !job.data.rawEventId) return;
     const patch = JSON.stringify({
       embedding_failed_at: new Date().toISOString(),
-      embedding_error: err.message.slice(0, 500),
+      embedding_error: embedFailureMessage(err),
     });
     void deps.db
       .update(rawEvents)
@@ -327,4 +338,4 @@ export async function processEmbedJobForTests(
   return processEmbedJob(deps, data, io);
 }
 
-export const embedWorkerInternals = { embedFailureTags };
+export const embedWorkerInternals = { embedFailureTags, embedFailureMessage };
