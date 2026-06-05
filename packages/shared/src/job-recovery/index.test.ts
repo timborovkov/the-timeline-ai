@@ -3,8 +3,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import { type Db, rawEvents } from '@timeline/db';
-import { eq } from 'drizzle-orm';
+import { type Db, documents, documentVersions, rawEvents } from '@timeline/db';
+import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -43,6 +43,8 @@ const INTEGRATION_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const OBJECT_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 const ZERO_FACT_RAW_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
 const FAILED_EXTRACTION_RAW_ID = '12121212-1212-1212-1212-121212121212';
+const DOCUMENT_ID = '13131313-1313-1313-1313-131313131313';
+const DOCUMENT_VERSION_ID = '14141414-1414-1414-1414-141414141414';
 
 let pg: PGlite;
 let db: ReturnType<typeof drizzle>;
@@ -265,7 +267,7 @@ describe('job recovery scope', () => {
     ).rejects.toThrow('stale_recovery_set');
   });
 
-  it('retry clears dismissal and failure markers before enqueueing', async () => {
+  it('retry clears dismissal and failure markers after enqueueing', async () => {
     await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
     const enqueueTranscribeJob = vi.fn().mockResolvedValue(undefined);
     const scope = scopeFor(ADMIN_ID, 'admin', { enqueueTranscribeJob });
@@ -286,6 +288,137 @@ describe('job recovery scope', () => {
       .where(eq(rawEvents.id, RAW_ID));
     expect(rows[0]?.meta).not.toHaveProperty('transcription_failed_at');
     expect(rows[0]?.meta).not.toHaveProperty('transcription_error');
+  });
+
+  it('bulk retries failed jobs by kind', async () => {
+    await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
+    await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
+      sourceMetadata:
+        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+    });
+    const enqueueExtractJob = vi.fn().mockResolvedValue(undefined);
+    const enqueueTranscribeJob = vi.fn().mockResolvedValue(undefined);
+    const scope = scopeFor(ADMIN_ID, 'admin', { enqueueExtractJob, enqueueTranscribeJob });
+
+    const before = await scope.listRecoverableJobs();
+    const failedExtractions = before.filter(
+      (item) => item.kind === 'extraction' && item.status === 'failed',
+    );
+    const result = await scope.retryFailedRecoverableJobs({
+      kind: 'extraction',
+      items: failedExtractions.map((item) => ({ id: item.id, detectedAt: item.detectedAt })),
+      expectedCount: failedExtractions.length,
+    });
+
+    expect(result).toEqual({ retried: 1, failed: 0, failedIds: [] });
+    expect(enqueueExtractJob).toHaveBeenCalledWith({
+      rawEventId: FAILED_EXTRACTION_RAW_ID,
+      teamId: TEAM_ID,
+    });
+    expect(enqueueTranscribeJob).not.toHaveBeenCalled();
+  });
+
+  it('bulk retry reports partial enqueue failures without hiding successful retries', async () => {
+    await seedRawEventFailure(pg, RAW_ID, TEAM_ID, ADMIN_ID, 'team');
+    await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
+      sourceMetadata:
+        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+    });
+    const enqueueTranscribeJob = vi.fn().mockResolvedValue(undefined);
+    const enqueueExtractJob = vi.fn().mockRejectedValue(new Error('redis down'));
+    const scope = scopeFor(ADMIN_ID, 'admin', { enqueueExtractJob, enqueueTranscribeJob });
+
+    const failed = (await scope.listRecoverableJobs()).filter((item) => item.status === 'failed');
+    const extraction = failed.find((item) => item.artifactId === FAILED_EXTRACTION_RAW_ID);
+    if (!extraction) throw new Error('expected failed extraction');
+    const result = await scope.retryFailedRecoverableJobs({
+      items: failed.map((item) => ({ id: item.id, detectedAt: item.detectedAt })),
+      expectedCount: failed.length,
+    });
+
+    expect(result).toEqual({ retried: 1, failed: 1, failedIds: [extraction.id] });
+    expect(enqueueTranscribeJob).toHaveBeenCalledWith({
+      rawEventId: RAW_ID,
+      teamId: TEAM_ID,
+      audioKey: 'audio/raw.ogg',
+    });
+    expect(enqueueExtractJob).toHaveBeenCalledWith({
+      rawEventId: FAILED_EXTRACTION_RAW_ID,
+      teamId: TEAM_ID,
+    });
+    const rows = await (db as never as Db)
+      .select({ id: rawEvents.id, meta: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(inArray(rawEvents.id, [RAW_ID, FAILED_EXTRACTION_RAW_ID]));
+    const transcriptionMeta = rows.find((row) => row.id === RAW_ID)?.meta as Record<
+      string,
+      unknown
+    >;
+    const extractionMeta = rows.find((row) => row.id === FAILED_EXTRACTION_RAW_ID)?.meta as Record<
+      string,
+      unknown
+    >;
+    expect(transcriptionMeta).not.toHaveProperty('transcription_failed_at');
+    expect(extractionMeta).toHaveProperty('extraction_failed_at');
+    expect(extractionMeta).toHaveProperty('extraction_error');
+  });
+
+  it('restores document failure state when pre-clear retry enqueue fails', async () => {
+    await seedDocumentVersionFailure(db as never);
+    const enqueueDocumentExtractJob = vi.fn().mockRejectedValue(new Error('redis down'));
+    const scope = scopeFor(ADMIN_ID, 'admin', { enqueueDocumentExtractJob });
+
+    const [item] = (await scope.listRecoverableJobs()).filter(
+      (candidate) => candidate.artifactId === DOCUMENT_VERSION_ID,
+    );
+    if (!item) throw new Error('expected failed document version');
+    const result = await scope.retryFailedRecoverableJobs({
+      items: [{ id: item.id, detectedAt: item.detectedAt }],
+      expectedCount: 1,
+    });
+
+    expect(result).toEqual({ retried: 0, failed: 1, failedIds: [item.id] });
+    expect(enqueueDocumentExtractJob).toHaveBeenCalledWith({
+      documentVersionId: DOCUMENT_VERSION_ID,
+      teamId: TEAM_ID,
+    });
+    const [version] = await (db as never as Db)
+      .select({
+        processingStatus: documentVersions.processingStatus,
+        processingError: documentVersions.processingError,
+      })
+      .from(documentVersions)
+      .where(eq(documentVersions.id, DOCUMENT_VERSION_ID));
+    expect(version).toMatchObject({
+      processingStatus: 'failed',
+      processingError: 'parser failed',
+    });
+  });
+
+  it('rejects stale bulk retry snapshots', async () => {
+    await seedTextRawEvent(pg, FAILED_EXTRACTION_RAW_ID, {
+      sourceMetadata:
+        '{"extraction_failed_at":"2026-05-27T10:00:00.000Z","extraction_error":"model failed","embedded_at":"2026-05-27T10:00:00.000Z"}',
+    });
+    const scope = scopeFor(ADMIN_ID, 'admin');
+    const [staleItem] = await scope.listRecoverableJobs();
+    if (!staleItem) throw new Error('expected recovery item');
+    await pg.exec(`
+      UPDATE raw_events
+      SET source_metadata = '{
+        "extraction_failed_at":"2099-05-27T10:00:00.000Z",
+        "extraction_error":"model failed again",
+        "embedded_at":"2099-05-27T10:00:00.000Z"
+      }'::jsonb
+      WHERE id = '${FAILED_EXTRACTION_RAW_ID}';
+    `);
+
+    await expect(
+      scope.retryFailedRecoverableJobs({
+        items: [{ id: staleItem.id, detectedAt: staleItem.detectedAt }],
+        expectedCount: 1,
+      }),
+    ).rejects.toThrow('stale_recovery_set');
   });
 
   it('does not flag successful zero-fact extraction as stuck', async () => {
@@ -424,7 +557,7 @@ describe('job recovery scope', () => {
     });
   });
 
-  it('retry clears integration sync-state errors before enqueueing', async () => {
+  it('retry clears integration sync-state errors after enqueueing', async () => {
     await pg.exec(`
       INSERT INTO integrations (id, team_id, provider, display_name, external_account_id)
       VALUES ('${INTEGRATION_ID}', '${TEAM_ID}', 'github', 'GitHub', 'gh-1');
@@ -740,4 +873,26 @@ async function seedTextRawEvent(
       '${opts.sourceMetadata}'::jsonb
     );
   `);
+}
+
+async function seedDocumentVersionFailure(db: Db): Promise<void> {
+  await db.insert(documents).values({
+    id: DOCUMENT_ID,
+    teamId: TEAM_ID,
+    name: 'Failure report.pdf',
+    ownerUserId: ADMIN_ID,
+    visibility: 'team',
+  });
+  await db.insert(documentVersions).values({
+    id: DOCUMENT_VERSION_ID,
+    teamId: TEAM_ID,
+    documentId: DOCUMENT_ID,
+    version: 1,
+    objectKey: 'documents/failure-report.pdf',
+    byteSize: 128,
+    contentType: 'application/pdf',
+    uploadedByUserId: ADMIN_ID,
+    processingStatus: 'failed',
+    processingError: 'parser failed',
+  });
 }

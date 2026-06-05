@@ -135,6 +135,13 @@ describe('processEmbedJobForTests', () => {
         data: { scope: 'fact', rawEventId: 'raw-1', factId: 'fact-1', teamId: TEAM_ID },
       }),
     ).toEqual({ scope: 'fact', rawEventId: 'raw-1', factId: 'fact-1', teamId: TEAM_ID });
+    expect(
+      embedWorkerInternals.embedFailureMessage(
+        Object.assign(new Error('llm.embed failed'), {
+          causeMessage: 'OpenRouter 503 temporarily unavailable',
+        }),
+      ),
+    ).toBe('OpenRouter 503 temporarily unavailable');
   });
 
   it('embeds rendered raw event text and upserts a stable Qdrant payload', async () => {

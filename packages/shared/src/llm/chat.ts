@@ -7,12 +7,16 @@ import {
   type StreamTextResult,
   type ToolSet,
 } from 'ai';
-import { type z } from 'zod';
+import { z } from 'zod';
 
 import { getEnv } from '#src/env.js';
 import { TimelineAiError, toTimelineAiError, wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { generateObject, streamText, withLangSmithProviderOptions } from '#src/llm/tracing.js';
+
+type GenerateObjectProviderOptions = NonNullable<
+  Parameters<typeof generateObject>[0]['providerOptions']
+>;
 
 export interface ChatStructuredInput<TSchema extends z.ZodType> {
   schema: TSchema;
@@ -47,6 +51,42 @@ function structuredOutputSystem(system?: string): string {
   const jsonInstruction = 'Return JSON that matches the requested schema.';
   if (!system) return jsonInstruction;
   return system.toLowerCase().includes('json') ? system : `${system}\n\n${jsonInstruction}`;
+}
+
+function structuredOutputFallbackSystem(schema: z.ZodType, system?: string): string {
+  const jsonSchema = JSON.stringify(z.toJSONSchema(schema));
+  return `${structuredOutputSystem(system)}
+
+Return only a JSON object matching this JSON Schema:
+${jsonSchema}`;
+}
+
+function openRouterRequireParametersOptions(): GenerateObjectProviderOptions {
+  return {
+    openrouter: {
+      provider: {
+        require_parameters: true,
+      },
+    },
+  };
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof AggregateError) return err.errors.map(errorMessage).join('\n');
+  if (err instanceof Error) return `${err.name}: ${err.message}`;
+  return String(err);
+}
+
+function shouldFallbackToJsonObject(err: unknown): boolean {
+  const message = errorMessage(err).toLowerCase();
+  return (
+    message.includes('json_schema') ||
+    message.includes('structured output') ||
+    (message.includes('response_format') &&
+      (message.includes('not supported') ||
+        message.includes('unsupported') ||
+        message.includes('rejected')))
+  );
 }
 
 function repairKnownStructuredOutput(schema: z.ZodType): RepairTextFunction {
@@ -86,6 +126,7 @@ function repairKnownStructuredOutput(schema: z.ZodType): RepairTextFunction {
 export function buildOpenRouterLanguageModel(
   modelId: string,
   deps: Pick<ChatDeps, 'fetch'> = {},
+  options: { supportsStructuredOutputs?: boolean } = {},
 ): LanguageModel {
   const env = getEnv();
   if (!env.OPENROUTER_API_KEY) {
@@ -96,10 +137,45 @@ export function buildOpenRouterLanguageModel(
     name: 'openrouter',
     apiKey: env.OPENROUTER_API_KEY,
     baseURL,
-    supportsStructuredOutputs: true,
+    supportsStructuredOutputs: options.supportsStructuredOutputs ?? true,
     ...(deps.fetch ? { fetch: deps.fetch } : {}),
   });
   return provider(modelId);
+}
+
+async function generateStructuredObject<TSchema extends z.ZodType>({
+  schema,
+  prompt,
+  system,
+  model,
+  modelId,
+  operation,
+}: {
+  schema: TSchema;
+  prompt: string;
+  system: string;
+  model: LanguageModel;
+  modelId: string;
+  operation: 'chat_structured' | 'chat_structured_json_object_fallback';
+}) {
+  // generateObject is the right primitive for structured-output extraction;
+  // the "use generateText with output" deprecation guidance applies to chat
+  // surfaces where streaming matters. Revisit once ai v6 stabilises.
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
+  return generateObject({
+    model,
+    schema,
+    prompt,
+    system,
+    experimental_repairText: repairKnownStructuredOutput(schema),
+    providerOptions: withLangSmithProviderOptions(openRouterRequireParametersOptions(), {
+      name: 'llm.chatStructured',
+      model: modelId,
+      metadata: {
+        operation,
+      },
+    }),
+  });
 }
 
 /**
@@ -118,25 +194,36 @@ export async function chatStructured<TSchema extends z.ZodType>(
   const modelId = input.model ?? resolveDefaultModelId();
   return wrapAiFailure({ operation: 'llm.chatStructured', model: modelId }, async () => {
     const model = deps.model ?? buildOpenRouterLanguageModel(modelId, deps);
-    // generateObject is the right primitive for structured-output extraction;
-    // the "use generateText with output" deprecation guidance applies to chat
-    // surfaces where streaming matters. Revisit once ai v6 stabilises.
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    const result = await generateObject({
-      model,
-      schema: input.schema,
-      prompt: input.prompt,
-      system: structuredOutputSystem(input.system),
-      experimental_repairText: repairKnownStructuredOutput(input.schema),
-      providerOptions: withLangSmithProviderOptions(undefined, {
-        name: 'llm.chatStructured',
-        model: modelId,
-        metadata: {
-          operation: 'chat_structured',
-        },
-      }),
-    });
-    return { object: result.object as z.infer<TSchema>, model: modelId };
+    try {
+      const result = await generateStructuredObject({
+        schema: input.schema,
+        prompt: input.prompt,
+        system: structuredOutputSystem(input.system),
+        model,
+        modelId,
+        operation: 'chat_structured',
+      });
+      return { object: result.object as z.infer<TSchema>, model: modelId };
+    } catch (err) {
+      if (deps.model || !shouldFallbackToJsonObject(err)) throw err;
+      const fallbackModel = buildOpenRouterLanguageModel(modelId, deps, {
+        supportsStructuredOutputs: false,
+      });
+      const result = await generateStructuredObject({
+        schema: input.schema,
+        prompt: input.prompt,
+        system: structuredOutputFallbackSystem(input.schema, input.system),
+        model: fallbackModel,
+        modelId,
+        operation: 'chat_structured_json_object_fallback',
+      }).catch((fallbackErr: unknown) => {
+        throw new AggregateError(
+          [err, fallbackErr],
+          'llm.chatStructured failed with json_schema and json_object response formats',
+        );
+      });
+      return { object: result.object as z.infer<TSchema>, model: modelId };
+    }
   });
 }
 

@@ -11,6 +11,7 @@ import {
   meetingUsage,
   rawEvents,
 } from '@timeline/db';
+import { TimelineAiError } from '@timeline/shared/llm';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -409,6 +410,92 @@ describe('processMeetingFinalizeJob', () => {
     expect((row?.metadata as Record<string, unknown>).failure_code).toBe(
       'recording_permission_denied',
     );
+    const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+    expect(events).toHaveLength(0);
+  });
+
+  it('finalizes transcript-only when structured summary generation fails', async () => {
+    await seedMeeting(db as never);
+    await seedChunk(db as never, 0, 'We should follow up on the launch plan.', 'Alice');
+    const cause = new Error('model returned no structured object');
+    cause.name = 'AI_NoObjectGeneratedError';
+    const chat = vi.fn().mockRejectedValue(cause);
+
+    const result = await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+
+    expect(result.meetingId).toBe(MEETING_ID);
+    expect(result.actionItems).toBe(0);
+    const meeting = (
+      await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID))
+    )[0];
+    expect(meeting?.status).toBe('completed');
+    expect(meeting?.metadata).toMatchObject({
+      summary_error: 'model returned no structured object',
+      summary_error_cause: 'AI_NoObjectGeneratedError',
+    });
+    const event = (await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting')))[0];
+    expect(event?.contentText).toContain('We should follow up on the launch plan.');
+    expect(event?.sourceMetadata).toMatchObject({
+      summary_error: 'model returned no structured object',
+      summary_error_cause: 'AI_NoObjectGeneratedError',
+    });
+  });
+
+  it('keeps transient summary failures retryable instead of completing transcript-only', async () => {
+    await seedMeeting(db as never);
+    await seedChunk(db as never, 0, 'We should follow up on the launch plan.', 'Alice');
+    const cause = new Error('provider unavailable');
+    cause.name = 'AI_APICallError';
+    const chat = vi.fn().mockRejectedValue(cause);
+
+    await expect(
+      processMeetingFinalizeJob(
+        { db: db as never },
+        { meetingId: MEETING_ID, teamId: TEAM_ID },
+        { chatStructured: chat as never },
+      ),
+    ).rejects.toThrow('provider unavailable');
+
+    const meeting = (
+      await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID))
+    )[0];
+    expect(meeting?.status).toBe('processing');
+    const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+    expect(events).toHaveLength(0);
+  });
+
+  it('keeps aggregate structured-output fallback provider failures retryable', async () => {
+    await seedMeeting(db as never);
+    await seedChunk(db as never, 0, 'We should follow up on the launch plan.', 'Alice');
+    const cause = new AggregateError(
+      [
+        new Error('json_schema unsupported by provider'),
+        new Error('OpenRouter 503 temporarily unavailable'),
+      ],
+      'llm.chatStructured failed with json_schema and json_object response formats',
+    );
+    const chat = vi
+      .fn()
+      .mockRejectedValue(
+        new TimelineAiError({ operation: 'llm.chatStructured', model: 'test-model@1.0' }, cause),
+      );
+
+    await expect(
+      processMeetingFinalizeJob(
+        { db: db as never },
+        { meetingId: MEETING_ID, teamId: TEAM_ID },
+        { chatStructured: chat as never },
+      ),
+    ).rejects.toThrow('llm.chatStructured failed');
+
+    const meeting = (
+      await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID))
+    )[0];
+    expect(meeting?.status).toBe('processing');
     const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
     expect(events).toHaveLength(0);
   });

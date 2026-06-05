@@ -62,6 +62,18 @@ export interface DismissFailedRecoverableJobsInput {
   reason?: string;
 }
 
+export interface RetryFailedRecoverableJobsInput {
+  kind?: JobRecoveryKind;
+  items: { id: string; detectedAt: Date }[];
+  expectedCount: number;
+}
+
+export interface RetryFailedRecoverableJobsResult {
+  retried: number;
+  failed: number;
+  failedIds: string[];
+}
+
 export interface FinishedJobArchiveItem {
   id: string;
   queue: string;
@@ -138,6 +150,13 @@ interface RecoveryIdentity {
 interface EncodedRecoveryId extends RecoveryIdentity {
   embedScope?: 'object' | 'entity';
   syncKind?: 'backfill' | 'incremental';
+}
+
+interface RetryPlan {
+  clear: () => Promise<void>;
+  enqueue: () => Promise<void>;
+  restore?: () => Promise<void>;
+  clearBeforeEnqueue?: boolean;
 }
 
 const STALE_MS = 15 * 60 * 1000;
@@ -226,6 +245,85 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
     input: DismissFailedRecoverableJobsInput,
   ): Promise<{ dismissed: number }> {
     await requireAdmin();
+    const selectedFailed = await selectCurrentFailedSnapshot(input);
+    if (selectedFailed.length === 0) return { dismissed: 0 };
+    const unique = selectedFailed.map((candidate) => ({
+      kind: candidate.kind,
+      artifactKind: candidate.artifactKind,
+      artifactId: candidate.artifactId,
+      detectedAt: candidate.detectedAt,
+    }));
+    await insertDismissals(deps.db, deps.teamId, deps.userId, unique, input.reason, {
+      preserveNewerDismissals: true,
+    });
+    return { dismissed: unique.length };
+  }
+
+  async function retryFailedRecoverableJobs(
+    input: RetryFailedRecoverableJobsInput,
+  ): Promise<RetryFailedRecoverableJobsResult> {
+    await requireAdmin();
+    const selectedFailed = await selectCurrentFailedSnapshot(input);
+    if (selectedFailed.length === 0) return { retried: 0, failed: 0, failedIds: [] };
+    const retryableFailed = selectedFailed.filter((candidate) => candidate.retryable);
+    if (retryableFailed.length !== selectedFailed.length) throw new Error('not_retryable');
+    const parsedJobs = retryableFailed.map((item) => decodeRecoveryId(item.id));
+    for (const parsed of parsedJobs) {
+      await assertArtifactVisible(deps.db, deps.teamId, deps.userId, parsed);
+    }
+    let retried = 0;
+    const failedIds: string[] = [];
+    for (let index = 0; index < parsedJobs.length; index += 1) {
+      const parsed = parsedJobs[index];
+      if (!parsed) throw new Error('invalid_recovery_ids');
+      try {
+        const retryPlan = await prepareRetryParsed(deps.db, deps.teamId, parsed, q);
+        await executeRetryPlan(retryPlan);
+        await clearDismissal(deps.db, deps.teamId, parsed);
+        retried += 1;
+      } catch {
+        const item = retryableFailed[index];
+        if (item) failedIds.push(item.id);
+      }
+    }
+    return { retried, failed: failedIds.length, failedIds };
+  }
+
+  async function retryRecoverableJob(id: string): Promise<void> {
+    await requireAdmin();
+    const parsed = decodeRecoveryId(id);
+    await assertArtifactVisible(deps.db, deps.teamId, deps.userId, parsed);
+    const retryPlan = await prepareRetryParsed(deps.db, deps.teamId, parsed, q);
+    await executeRetryPlan(retryPlan);
+    await clearDismissal(deps.db, deps.teamId, parsed);
+  }
+
+  async function listFinishedJobs(
+    input: {
+      offset?: number;
+      limit?: number;
+    } = {},
+  ): Promise<FinishedJobArchivePage> {
+    await requireAdmin();
+    const offset = boundedInteger(input.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+    const limit = boundedInteger(input.limit, 20, 1, 100);
+    return collectFinishedJobs(deps.teamId, q, { offset, limit });
+  }
+
+  return {
+    listRecoverableJobs,
+    listFinishedJobs,
+    dismissRecoverableJob,
+    dismissFailedRecoverableJobs,
+    retryFailedRecoverableJobs,
+    retryRecoverableJob,
+  };
+
+  async function selectCurrentFailedSnapshot(input: {
+    kind?: JobRecoveryKind;
+    items: { id: string; detectedAt: Date }[];
+    expectedCount: number;
+  }): Promise<JobRecoveryItem[]> {
     const requestedIds = uniqueStrings(input.items.map((item) => item.id));
     if (requestedIds.length === 0 || requestedIds.length !== input.items.length) {
       throw new Error('invalid_recovery_ids');
@@ -257,46 +355,8 @@ export function createJobRecoveryScope(deps: JobRecoveryScopeDeps) {
     if (!idsMatchCurrentSet) {
       throw new Error('stale_recovery_set');
     }
-    if (failed.length === 0) return { dismissed: 0 };
-    const unique = selectedFailed.map((candidate) => ({
-      kind: candidate.kind,
-      artifactKind: candidate.artifactKind,
-      artifactId: candidate.artifactId,
-      detectedAt: candidate.detectedAt,
-    }));
-    await insertDismissals(deps.db, deps.teamId, deps.userId, unique, input.reason, {
-      preserveNewerDismissals: true,
-    });
-    return { dismissed: unique.length };
+    return selectedFailed;
   }
-
-  async function retryRecoverableJob(id: string): Promise<void> {
-    await requireAdmin();
-    const parsed = decodeRecoveryId(id);
-    await assertArtifactVisible(deps.db, deps.teamId, deps.userId, parsed);
-    await clearDismissal(deps.db, deps.teamId, parsed);
-    await retryParsed(deps.db, deps.teamId, parsed, q);
-  }
-
-  async function listFinishedJobs(
-    input: {
-      offset?: number;
-      limit?: number;
-    } = {},
-  ): Promise<FinishedJobArchivePage> {
-    await requireAdmin();
-    const offset = boundedInteger(input.offset, 0, 0, Number.MAX_SAFE_INTEGER);
-    const limit = boundedInteger(input.limit, 20, 1, 100);
-    return collectFinishedJobs(deps.teamId, q, { offset, limit });
-  }
-
-  return {
-    listRecoverableJobs,
-    listFinishedJobs,
-    dismissRecoverableJob,
-    dismissFailedRecoverableJobs,
-    retryRecoverableJob,
-  };
 }
 
 async function insertDismissals(
@@ -1000,12 +1060,12 @@ function itemFromLabel(
     : [];
 }
 
-async function retryParsed(
+async function prepareRetryParsed(
   db: Db,
   teamId: string,
   parsed: EncodedRecoveryId,
   q: Required<RecoveryQueues>,
-): Promise<void> {
+): Promise<RetryPlan> {
   if (parsed.kind === 'transcription' && parsed.artifactKind === 'raw_event') {
     const rows = await db
       .select({ audioKey: rawEvents.contentAudioUrl })
@@ -1014,59 +1074,110 @@ async function retryParsed(
       .limit(1);
     const audioKey = rows[0]?.audioKey;
     if (!audioKey) throw new Error('not_retryable');
-    await clearRawEventStage(db, parsed.artifactId, 'transcription');
-    await q.enqueueTranscribeJob({ rawEventId: parsed.artifactId, teamId, audioKey });
-    return;
+    return {
+      clear: () => clearRawEventStage(db, parsed.artifactId, 'transcription'),
+      enqueue: () => q.enqueueTranscribeJob({ rawEventId: parsed.artifactId, teamId, audioKey }),
+    };
   }
   if (parsed.kind === 'extraction' && parsed.artifactKind === 'raw_event') {
-    await clearRawEventStage(db, parsed.artifactId, 'extraction');
-    await q.enqueueExtractJob({ rawEventId: parsed.artifactId, teamId });
-    return;
+    return {
+      clear: () => clearRawEventStage(db, parsed.artifactId, 'extraction'),
+      enqueue: () => q.enqueueExtractJob({ rawEventId: parsed.artifactId, teamId }),
+    };
   }
   if (parsed.kind === 'embedding') {
-    await retryEmbedding(db, teamId, parsed, q);
-    return;
+    return prepareRetryEmbedding(db, teamId, parsed, q);
   }
   if (parsed.kind === 'document_processing' && parsed.artifactKind === 'document_version') {
-    await db
-      .update(documentVersions)
-      .set({ processingStatus: 'pending', processingError: null })
-      .where(and(eq(documentVersions.teamId, teamId), eq(documentVersions.id, parsed.artifactId)));
-    await q.enqueueDocumentExtractJob({ documentVersionId: parsed.artifactId, teamId });
-    return;
+    const rows = await db
+      .select({
+        processingStatus: documentVersions.processingStatus,
+        processingError: documentVersions.processingError,
+      })
+      .from(documentVersions)
+      .where(and(eq(documentVersions.teamId, teamId), eq(documentVersions.id, parsed.artifactId)))
+      .limit(1);
+    const previous = rows[0];
+    if (!previous) throw new Error('not_found');
+    return {
+      clear: () =>
+        db
+          .update(documentVersions)
+          .set({ processingStatus: 'pending', processingError: null })
+          .where(
+            and(eq(documentVersions.teamId, teamId), eq(documentVersions.id, parsed.artifactId)),
+          )
+          .then(() => undefined),
+      enqueue: () => q.enqueueDocumentExtractJob({ documentVersionId: parsed.artifactId, teamId }),
+      restore: () =>
+        db
+          .update(documentVersions)
+          .set({
+            processingStatus: previous.processingStatus,
+            processingError: previous.processingError,
+          })
+          .where(
+            and(eq(documentVersions.teamId, teamId), eq(documentVersions.id, parsed.artifactId)),
+          )
+          .then(() => undefined),
+      clearBeforeEnqueue: true,
+    };
   }
   if (parsed.kind === 'meeting_finalization' && parsed.artifactKind === 'meeting') {
-    await q.enqueueMeetingFinalizeJob({ meetingId: parsed.artifactId, teamId });
-    return;
+    return {
+      clear: () => Promise.resolve(),
+      enqueue: () => q.enqueueMeetingFinalizeJob({ meetingId: parsed.artifactId, teamId }),
+    };
   }
   if (parsed.kind === 'integration_sync' && parsed.artifactKind === 'integration') {
-    await db
-      .update(integrations)
-      .set({ lastError: null, updatedAt: new Date() })
-      .where(and(eq(integrations.teamId, teamId), eq(integrations.id, parsed.artifactId)));
-    await db
-      .update(integrationSyncState)
-      .set({ lastError: null, updatedAt: new Date() })
-      .where(eq(integrationSyncState.integrationId, parsed.artifactId));
-    await q.enqueueIntegrationSyncJob({
-      kind: parsed.syncKind ?? 'incremental',
-      integrationId: parsed.artifactId,
-      teamId,
-    });
-    return;
+    return {
+      clear: async () => {
+        await db
+          .update(integrations)
+          .set({ lastError: null, updatedAt: new Date() })
+          .where(and(eq(integrations.teamId, teamId), eq(integrations.id, parsed.artifactId)));
+        await db
+          .update(integrationSyncState)
+          .set({ lastError: null, updatedAt: new Date() })
+          .where(eq(integrationSyncState.integrationId, parsed.artifactId));
+      },
+      enqueue: () =>
+        q.enqueueIntegrationSyncJob({
+          kind: parsed.syncKind ?? 'incremental',
+          integrationId: parsed.artifactId,
+          teamId,
+        }),
+    };
   }
   throw new Error('not_retryable');
 }
 
-async function retryEmbedding(
+async function executeRetryPlan(plan: RetryPlan): Promise<void> {
+  if (plan.clearBeforeEnqueue) {
+    await plan.clear();
+    try {
+      await plan.enqueue();
+    } catch (err) {
+      await plan.restore?.().catch(() => undefined);
+      throw err;
+    }
+    return;
+  }
+  await plan.enqueue();
+  await plan.clear();
+}
+
+async function prepareRetryEmbedding(
   db: Db,
   teamId: string,
   parsed: EncodedRecoveryId,
   q: Required<RecoveryQueues>,
-): Promise<void> {
+): Promise<RetryPlan> {
   if (parsed.artifactKind === 'raw_event') {
-    await clearRawEventStage(db, parsed.artifactId, 'embedding');
-    await q.enqueueEmbedJob({ rawEventId: parsed.artifactId, teamId });
+    return {
+      clear: () => clearRawEventStage(db, parsed.artifactId, 'embedding'),
+      enqueue: () => q.enqueueEmbedJob({ rawEventId: parsed.artifactId, teamId }),
+    };
   } else if (parsed.artifactKind === 'fact') {
     const rows = await db
       .select({ rawEventId: facts.rawEventId })
@@ -1075,21 +1186,39 @@ async function retryEmbedding(
       .limit(1);
     const rawEventId = rows[0]?.rawEventId;
     if (!rawEventId) throw new Error('not_found');
-    await q.enqueueEmbedJob({ scope: 'fact', rawEventId, factId: parsed.artifactId, teamId });
+    return {
+      clear: () => Promise.resolve(),
+      enqueue: () =>
+        q.enqueueEmbedJob({ scope: 'fact', rawEventId, factId: parsed.artifactId, teamId }),
+    };
   } else if (parsed.artifactKind === 'object') {
     if (parsed.embedScope === 'object') {
-      await q.enqueueEmbedJob({ scope: 'object', objectId: parsed.artifactId, teamId });
+      return {
+        clear: () => Promise.resolve(),
+        enqueue: () => q.enqueueEmbedJob({ scope: 'object', objectId: parsed.artifactId, teamId }),
+      };
     } else {
-      await q.enqueueEmbedJob({ scope: 'entity', entityId: parsed.artifactId, teamId });
+      return {
+        clear: () => Promise.resolve(),
+        enqueue: () => q.enqueueEmbedJob({ scope: 'entity', entityId: parsed.artifactId, teamId }),
+      };
     }
   } else if (parsed.artifactKind === 'document_chunk') {
-    await q.enqueueEmbedJob({ scope: 'doc_chunk', documentChunkId: parsed.artifactId, teamId });
+    return {
+      clear: () => Promise.resolve(),
+      enqueue: () =>
+        q.enqueueEmbedJob({ scope: 'doc_chunk', documentChunkId: parsed.artifactId, teamId }),
+    };
   } else if (parsed.artifactKind === 'calendar_event') {
-    await q.enqueueEmbedJob({
-      scope: 'calendar_event',
-      calendarEventId: parsed.artifactId,
-      teamId,
-    });
+    return {
+      clear: () => Promise.resolve(),
+      enqueue: () =>
+        q.enqueueEmbedJob({
+          scope: 'calendar_event',
+          calendarEventId: parsed.artifactId,
+          teamId,
+        }),
+    };
   } else {
     throw new Error('not_retryable');
   }

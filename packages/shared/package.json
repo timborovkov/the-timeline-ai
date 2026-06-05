@@ -41,6 +41,12 @@
       "import": "./dist/job-recovery/index.js",
       "default": "./dist/job-recovery/index.js"
     },
+    "./conversation-review": {
+      "types": "./src/conversation-review/index.ts",
+      "development": "./src/conversation-review/index.ts",
+      "import": "./dist/conversation-review/index.js",
+      "default": "./dist/conversation-review/index.js"
+    },
     "./logger": {
       "import": "./dist/logger.js",
       "types": "./dist/logger.d.ts"

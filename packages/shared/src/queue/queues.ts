@@ -156,6 +156,51 @@ export interface SuggestionConversationReviewJobData {
 
 let _suggestionQueue: TimelineQueue<SuggestionJobData> | undefined;
 
+function bullmqCustomJobId(parts: string[]): string {
+  return parts.map((part) => encodeURIComponent(part)).join('|');
+}
+
+function suggestionJobId(data: SuggestionJobData, jobIdSuffix?: string): string | undefined {
+  return 'scope' in data
+    ? bullmqCustomJobId([
+        'conversation-review',
+        data.conversationReviewId,
+        ...(jobIdSuffix ? [jobIdSuffix] : []),
+      ])
+    : jobIdSuffix
+      ? bullmqCustomJobId(['raw-event', data.rawEventId, jobIdSuffix])
+      : undefined;
+}
+
+function legacySuggestionJobIds(data: SuggestionJobData, jobIdSuffix?: string): string[] {
+  if (!('scope' in data)) return [];
+  return [
+    `conversation-review:${data.conversationReviewId}${jobIdSuffix ? `:${jobIdSuffix}` : ''}`,
+  ];
+}
+
+function suggestionJobIdCandidates(data: SuggestionJobData, jobIdSuffix?: string): string[] {
+  const current = suggestionJobId(data, jobIdSuffix);
+  if (!current) return [];
+  return [current, ...legacySuggestionJobIds(data, jobIdSuffix).filter((id) => id !== current)];
+}
+
+interface ExistingJobLike {
+  getState?: () => Promise<string>;
+  remove?: () => Promise<void>;
+}
+
+const SUGGESTION_JOB_DEDUPE_STATES = new Set([
+  'active',
+  'delayed',
+  'paused',
+  'prioritized',
+  'waiting',
+  'waiting-children',
+]);
+
+const SUGGESTION_JOB_REPLACEABLE_STATES = new Set(['completed', 'failed']);
+
 export function getSuggestionQueue(): TimelineQueue<SuggestionJobData> {
   if (_suggestionQueue) return _suggestionQueue;
   _suggestionQueue = new Queue<
@@ -180,15 +225,52 @@ export function getSuggestionQueue(): TimelineQueue<SuggestionJobData> {
 export async function enqueueSuggestionJob(
   data: SuggestionJobData,
   opts: { delayMs?: number; jobIdSuffix?: string } = {},
-): Promise<void> {
-  const jobId =
-    'scope' in data
-      ? `conversation-review:${data.conversationReviewId}${opts.jobIdSuffix ? `:${opts.jobIdSuffix}` : ''}`
-      : undefined;
-  await getSuggestionQueue().add('suggestions', data, {
+): Promise<{ enqueued: boolean; jobId: string | null }> {
+  const jobId = suggestionJobId(data, opts.jobIdSuffix);
+  const q = getSuggestionQueue();
+  const jobIds = suggestionJobIdCandidates(data, opts.jobIdSuffix);
+  for (const existingJobId of jobIds) {
+    const existing = (await q.getJob(existingJobId)) as ExistingJobLike | null;
+    if (!existing) continue;
+    const state = await existing.getState?.().catch(() => null);
+    if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) {
+      return { enqueued: false, jobId: existingJobId };
+    }
+    if (SUGGESTION_JOB_REPLACEABLE_STATES.has(state)) {
+      if (!existing.remove) return { enqueued: false, jobId: existingJobId };
+      const removed = await existing.remove().then(
+        () => true,
+        () => false,
+      );
+      if (!removed) return { enqueued: false, jobId: existingJobId };
+    } else {
+      return { enqueued: false, jobId: existingJobId };
+    }
+  }
+  await q.add('suggestions', data, {
     ...(jobId ? { jobId } : {}),
     ...(opts.delayMs ? { delay: opts.delayMs } : {}),
   });
+  return { enqueued: true, jobId: jobId ?? null };
+}
+
+export async function removeSuggestionJob(
+  data: SuggestionJobData,
+  opts: { jobIdSuffix: string },
+): Promise<{ removed: boolean; jobId: string }> {
+  const jobId = suggestionJobId(data, opts.jobIdSuffix);
+  if (!jobId) throw new Error('suggestion job id suffix required');
+  const q = getSuggestionQueue();
+  for (const candidateJobId of suggestionJobIdCandidates(data, opts.jobIdSuffix)) {
+    const job = (await q.getJob(candidateJobId)) as ExistingJobLike | null;
+    if (!job?.remove) continue;
+    const removed = await job.remove().then(
+      () => true,
+      () => false,
+    );
+    if (removed) return { removed: true, jobId: candidateJobId };
+  }
+  return { removed: false, jobId };
 }
 
 export async function closeSuggestionQueue(): Promise<void> {

@@ -17,14 +17,37 @@ interface AddCall {
   opts?: unknown;
 }
 
+class FakeJob {
+  constructor(
+    private queue: FakeQueue,
+    public id: string,
+  ) {}
+
+  getState = vi.fn(() => Promise.resolve(this.queue.jobStates.get(this.id) ?? 'waiting'));
+  remove = vi.fn(() => {
+    this.queue.jobs.delete(this.id);
+    this.queue.jobStates.delete(this.id);
+    return Promise.resolve();
+  });
+}
+
 class FakeQueue {
   name: string;
   options: Record<string, unknown>;
-  add = vi.fn<(name: string, data: unknown, opts?: unknown) => Promise<void>>(
+  jobs = new Set<string>();
+  jobStates = new Map<string, string>();
+  add = vi.fn<(name: string, data: unknown, opts?: { jobId?: string }) => Promise<void>>(
     (name, data, opts) => {
       this.addCalls.push({ name, data, opts });
+      if (opts?.jobId) {
+        this.jobs.add(opts.jobId);
+        this.jobStates.set(opts.jobId, 'waiting');
+      }
       return Promise.resolve();
     },
+  );
+  getJob = vi.fn((jobId: string) =>
+    Promise.resolve(this.jobs.has(jobId) ? new FakeJob(this, jobId) : null),
   );
   addCalls: AddCall[] = [];
   close = vi.fn(() => Promise.resolve());
@@ -133,7 +156,15 @@ describe('queue wrappers', () => {
   it('dedupes delayed conversation review suggestion jobs by review id and suffix', async () => {
     const queues = await importQueues();
 
-    await queues.enqueueSuggestionJob(
+    const first = await queues.enqueueSuggestionJob(
+      {
+        scope: 'conversation_review',
+        conversationReviewId: '66666666-6666-4666-8666-666666666666',
+        teamId: '22222222-2222-4222-8222-222222222222',
+      },
+      { delayMs: 600_000, jobIdSuffix: '2026-05-27T10:10:00.000Z' },
+    );
+    const duplicate = await queues.enqueueSuggestionJob(
       {
         scope: 'conversation_review',
         conversationReviewId: '66666666-6666-4666-8666-666666666666',
@@ -146,9 +177,143 @@ describe('queue wrappers', () => {
       name: 'suggestions',
       opts: {
         delay: 600_000,
-        jobId: 'conversation-review:66666666-6666-4666-8666-666666666666:2026-05-27T10:10:00.000Z',
+        jobId:
+          'conversation-review|66666666-6666-4666-8666-666666666666|2026-05-27T10%3A10%3A00.000Z',
       },
     });
+    const jobId = fakes.queues[0]?.addCalls[0]?.opts as { jobId?: string };
+    expect(jobId.jobId).not.toContain(':');
+    expect(fakes.queues[0]?.addCalls).toHaveLength(1);
+    expect(first).toMatchObject({ enqueued: true });
+    expect(duplicate).toMatchObject({ enqueued: false });
+  });
+
+  it('replaces retained completed or failed suggestion jobs with the same recovery id', async () => {
+    const queues = await importQueues();
+    const data = {
+      scope: 'conversation_review' as const,
+      conversationReviewId: '66666666-6666-4666-8666-666666666666',
+      teamId: '22222222-2222-4222-8222-222222222222',
+    };
+
+    const first = await queues.enqueueSuggestionJob(data, { jobIdSuffix: 'recovery' });
+    const firstJobId = first.jobId;
+    if (!firstJobId) throw new Error('expected stable job id');
+    fakes.queues[0]?.jobStates.set(firstJobId, 'completed');
+    const completedRerun = await queues.enqueueSuggestionJob(data, { jobIdSuffix: 'recovery' });
+    fakes.queues[0]?.jobStates.set(firstJobId, 'failed');
+    const failedRerun = await queues.enqueueSuggestionJob(data, { jobIdSuffix: 'recovery' });
+
+    expect(first).toMatchObject({ enqueued: true, jobId: firstJobId });
+    expect(completedRerun).toMatchObject({ enqueued: true, jobId: firstJobId });
+    expect(failedRerun).toMatchObject({ enqueued: true, jobId: firstJobId });
+    expect(fakes.queues[0]?.addCalls).toHaveLength(3);
+  });
+
+  it('removes a delayed conversation review suggestion job by suffix', async () => {
+    const queues = await importQueues();
+    const data = {
+      scope: 'conversation_review' as const,
+      conversationReviewId: '66666666-6666-4666-8666-666666666666',
+      teamId: '22222222-2222-4222-8222-222222222222',
+    };
+
+    const queued = await queues.enqueueSuggestionJob(data, {
+      delayMs: 600_000,
+      jobIdSuffix: '2026-05-27T10:10:00.000Z',
+    });
+    const removed = await queues.removeSuggestionJob(data, {
+      jobIdSuffix: '2026-05-27T10:10:00.000Z',
+    });
+    const rerun = await queues.enqueueSuggestionJob(data, {
+      delayMs: 600_000,
+      jobIdSuffix: '2026-05-27T10:10:00.000Z',
+    });
+
+    expect(removed).toEqual({ removed: true, jobId: queued.jobId });
+    expect(rerun).toMatchObject({ enqueued: true, jobId: queued.jobId });
+    expect(fakes.queues[0]?.addCalls).toHaveLength(2);
+  });
+
+  it('dedupes delayed conversation review jobs queued with legacy colon ids', async () => {
+    const queues = await importQueues();
+    const data = {
+      scope: 'conversation_review' as const,
+      conversationReviewId: '66666666-6666-4666-8666-666666666666',
+      teamId: '22222222-2222-4222-8222-222222222222',
+    };
+    const legacyJobId =
+      'conversation-review:66666666-6666-4666-8666-666666666666:2026-05-27T10:10:00.000Z';
+    const suggestionQueue = queues.getSuggestionQueue() as unknown as FakeQueue;
+    suggestionQueue.jobs.add(legacyJobId);
+    suggestionQueue.jobStates.set(legacyJobId, 'delayed');
+
+    const duplicate = await queues.enqueueSuggestionJob(data, {
+      delayMs: 600_000,
+      jobIdSuffix: '2026-05-27T10:10:00.000Z',
+    });
+
+    expect(duplicate).toEqual({ enqueued: false, jobId: legacyJobId });
+    expect(suggestionQueue.addCalls).toHaveLength(0);
+  });
+
+  it('removes delayed conversation review jobs queued with legacy colon ids', async () => {
+    const queues = await importQueues();
+    const data = {
+      scope: 'conversation_review' as const,
+      conversationReviewId: '66666666-6666-4666-8666-666666666666',
+      teamId: '22222222-2222-4222-8222-222222222222',
+    };
+    const legacyJobId =
+      'conversation-review:66666666-6666-4666-8666-666666666666:2026-05-27T10:10:00.000Z';
+    const suggestionQueue = queues.getSuggestionQueue() as unknown as FakeQueue;
+    suggestionQueue.jobs.add(legacyJobId);
+    suggestionQueue.jobStates.set(legacyJobId, 'delayed');
+
+    const removed = await queues.removeSuggestionJob(data, {
+      jobIdSuffix: '2026-05-27T10:10:00.000Z',
+    });
+    const rerun = await queues.enqueueSuggestionJob(data, {
+      delayMs: 600_000,
+      jobIdSuffix: '2026-05-27T10:10:00.000Z',
+    });
+
+    expect(removed).toEqual({ removed: true, jobId: legacyJobId });
+    expect(rerun).toMatchObject({
+      enqueued: true,
+      jobId:
+        'conversation-review|66666666-6666-4666-8666-666666666666|2026-05-27T10%3A10%3A00.000Z',
+    });
+    expect(suggestionQueue.addCalls).toHaveLength(1);
+  });
+
+  it('dedupes raw suggestion jobs only when a suffix is provided', async () => {
+    const queues = await importQueues();
+
+    await queues.enqueueSuggestionJob({
+      rawEventId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+    });
+    await queues.enqueueSuggestionJob(
+      {
+        rawEventId: '11111111-1111-4111-8111-111111111111',
+        teamId: '22222222-2222-4222-8222-222222222222',
+      },
+      { jobIdSuffix: 'recovery:30:all' },
+    );
+
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'suggestions',
+      opts: {},
+    });
+    expect(fakes.queues[0]?.addCalls[1]).toMatchObject({
+      name: 'suggestions',
+      opts: {
+        jobId: 'raw-event|11111111-1111-4111-8111-111111111111|recovery%3A30%3Aall',
+      },
+    });
+    const jobId = fakes.queues[0]?.addCalls[1]?.opts as { jobId?: string };
+    expect(jobId.jobId).not.toContain(':');
   });
 
   it('registers repeatable jobs with stable job ids and closes singleton queues', async () => {

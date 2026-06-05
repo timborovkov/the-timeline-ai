@@ -23,11 +23,14 @@
         documents. The bot joins silently (it appears as a participant but does not speak or stream
         video). Each finalised utterance is written as a <code>meeting_transcript_chunks</code> row
         for the meeting detail UI and utterance-level search. When the call ends, the finalize
-        worker creates one consolidated <code>raw_events</code> row with the full transcript and
-        LLM-generated summary so the meeting appears as a single timeline entry, then creates a
-        native calendar event for the call with links back to the meeting detail page. The linked
-        calendar audit rows stay factual and extraction-skipped, so generated meeting notes do not
-        feed a second extraction pass.
+        worker creates one consolidated <code>raw_events</code> row with the full transcript so the
+        meeting appears as a single timeline entry, then creates a native calendar event for the
+        call with links back to the meeting detail page. When OpenRouter summary generation
+        succeeds, the row also carries the LLM-generated summary and action items. Retryable
+        provider/API failures keep the finalization job retryable; non-retryable structured-output
+        failures still finalize the transcript and record the summary error in metadata for
+        operations debugging. The linked calendar audit rows stay factual and extraction-skipped, so
+        generated meeting notes do not feed a second extraction pass.
       </p>
       <p>
         Completed meeting detail pages expose the transcript directly, with controls to download a
@@ -141,7 +144,8 @@ RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcr
       <p>
         We do <strong>not</strong> retain the raw audio. The Recall recording artifact remains on
         Recall's storage under their default retention; we explicitly do not copy it to our S3.
-        Transcript text + summary land on the timeline; audio does not.
+        Transcript text lands on the timeline; summary metadata is attached when OpenRouter
+        generation succeeds. Audio does not.
       </p>
 
       <h2 id="local-dev">Local development</h2>

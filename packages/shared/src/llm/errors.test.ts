@@ -20,6 +20,7 @@ describe('TimelineAiError', () => {
       operation: 'llm.chatStructured',
       model: TIMELINE_MODELS.extraction.id,
       causeName: 'Error',
+      causeMessage: 'provider unavailable',
     });
     await expect(
       wrapAiFailure(
@@ -42,5 +43,39 @@ describe('TimelineAiError', () => {
         throw err;
       }),
     ).rejects.toBe(err);
+  });
+
+  it('redacts likely provider payloads from bounded cause messages', async () => {
+    await expect(
+      wrapAiFailure(
+        { operation: 'llm.chatStructured', model: TIMELINE_MODELS.extraction.id },
+        () => {
+          throw new Error('OpenRouter 400 response body: {"prompt":"private timeline note"}');
+        },
+      ),
+    ).rejects.toMatchObject({
+      causeMessage: 'OpenRouter 400 response body: [redacted]',
+    });
+  });
+
+  it('keeps sanitized child messages for aggregate structured-output failures', async () => {
+    await expect(
+      wrapAiFailure(
+        { operation: 'llm.chatStructured', model: TIMELINE_MODELS.extraction.id },
+        () => {
+          throw new AggregateError(
+            [
+              new Error('json_schema unsupported by provider'),
+              new Error('OpenRouter 400 response body: {"messages":[{"content":"private"}]}'),
+            ],
+            'llm.chatStructured failed with json_schema and json_object response formats',
+          );
+        },
+      ),
+    ).rejects.toMatchObject({
+      causeName: 'AggregateError',
+      causeMessage:
+        'llm.chatStructured failed with json_schema and json_object response formats | Error: json_schema unsupported by provider | Error: OpenRouter 400 response body: [redacted]',
+    });
   });
 });

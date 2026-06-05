@@ -17,6 +17,7 @@
     "start": "node dist/index.js",
     "reextract": "NODE_OPTIONS=--conditions=development tsx src/scripts/reextract.ts",
     "reembed": "NODE_OPTIONS=--conditions=development tsx src/scripts/reembed.ts",
+    "resuggest": "NODE_OPTIONS=--conditions=development tsx src/scripts/resuggest.ts",
     "embed-coverage": "NODE_OPTIONS=--conditions=development tsx src/scripts/embed-coverage.ts",
     "redocument-extract": "NODE_OPTIONS=--conditions=development tsx src/scripts/redocument-extract.ts",
     "redocument-embed": "NODE_OPTIONS=--conditions=development tsx src/scripts/redocument-embed.ts",

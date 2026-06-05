@@ -67,6 +67,13 @@ interface ProcessResult {
 type TranscriptChunk = typeof meetingTranscriptChunks.$inferSelect;
 type MeetingRow = typeof meetingsTable.$inferSelect;
 
+interface MeetingSummaryFailure {
+  at: string;
+  message: string;
+  causeName: string | null;
+  model: string;
+}
+
 async function loadMeetingChunks(db: Db, meetingId: string, teamId: string) {
   return db
     .select()
@@ -225,6 +232,60 @@ function generatedCalendarExtractionSkipMetadata() {
   };
 }
 
+function summaryFailureFromError(err: unknown, model: string): MeetingSummaryFailure {
+  const causeName =
+    err && typeof err === 'object' && 'causeName' in err && typeof err.causeName === 'string'
+      ? err.causeName
+      : err instanceof Error
+        ? err.name
+        : null;
+  return {
+    at: new Date().toISOString(),
+    message: err instanceof Error ? err.message : String(err),
+    causeName,
+    model,
+  };
+}
+
+function isRetryableSummaryError(err: unknown): boolean {
+  const failure = summaryFailureFromError(err, '');
+  const causeName = failure.causeName ?? '';
+  const messages = summaryFailureMessages(err);
+  return (
+    causeName === 'AI_APICallError' ||
+    causeName === 'AbortError' ||
+    causeName === 'TimeoutError' ||
+    messages.some((message) => retryableSummaryMessage(message))
+  );
+}
+
+function summaryFailureMessages(err: unknown): string[] {
+  const messages = [err instanceof Error ? err.message : String(err)];
+  if (
+    err &&
+    typeof err === 'object' &&
+    'causeMessage' in err &&
+    typeof err.causeMessage === 'string'
+  ) {
+    messages.push(err.causeMessage);
+  }
+  return messages.map((message) => message.toLowerCase());
+}
+
+function retryableSummaryMessage(message: string): boolean {
+  return (
+    message.includes('429') ||
+    message.includes('5xx') ||
+    /\b5\d\d\b/.test(message) ||
+    message.includes('rate limit') ||
+    message.includes('timeout') ||
+    message.includes('temporar') ||
+    message.includes('unavailable') ||
+    message.includes('network') ||
+    message.includes('econn')
+  );
+}
+
 async function createMeetingCalendarEvent(
   tx: Db,
   args: {
@@ -347,6 +408,7 @@ async function summarizeTranscript(
       summary: null,
       actionItems: [] as { text: string; owner: string | null }[],
       modelUsed: null,
+      summaryFailure: null,
     };
   }
 
@@ -357,25 +419,37 @@ async function summarizeTranscript(
     `Meeting${meeting.title ? ` "${meeting.title}"` : ''} transcript:\n\n${transcriptText}`,
     llm.inputTokenBudgetFor(llm.TIMELINE_MODELS.extraction, { reservedOutputTokens: 3_000 }),
   );
-  const result = await chat({
-    schema: finalizeSchema,
-    model: modelId,
-    system:
-      'You are summarising a meeting transcript. Produce a concise summary (3-5 sentences) and an array of concrete action items mentioned during the meeting. If no action items are present, return an empty array. Do NOT invent owners — only set "owner" when the transcript clearly attributes the task to a named person.',
-    prompt: transcriptPrompt,
-  });
-
-  return {
-    transcriptText,
-    summary: result.object.summary,
-    actionItems: result.object.action_items.map(
-      (a: { text: string; owner?: string | null | undefined }) => ({
-        text: a.text,
-        owner: a.owner ?? null,
-      }),
-    ),
-    modelUsed: result.model,
-  };
+  try {
+    const result = await chat({
+      schema: finalizeSchema,
+      model: modelId,
+      system:
+        'You are summarising a meeting transcript. Produce a concise summary (3-5 sentences) and an array of concrete action items mentioned during the meeting. If no action items are present, return an empty array. Do NOT invent owners — only set "owner" when the transcript clearly attributes the task to a named person.',
+      prompt: transcriptPrompt,
+    });
+    return {
+      transcriptText,
+      summary: result.object.summary,
+      actionItems: result.object.action_items.map(
+        (a: { text: string; owner?: string | null | undefined }) => ({
+          text: a.text,
+          owner: a.owner ?? null,
+        }),
+      ),
+      modelUsed: result.model,
+      summaryFailure: null,
+    };
+  } catch (err) {
+    if (isRetryableSummaryError(err)) throw err;
+    log.warn({ err, meetingId: meeting.id }, 'meeting_summary_failed_transcript_only');
+    return {
+      transcriptText,
+      summary: null,
+      actionItems: [] as { text: string; owner: string | null }[],
+      modelUsed: null,
+      summaryFailure: summaryFailureFromError(err, modelId),
+    };
+  }
 }
 
 /**
@@ -472,6 +546,12 @@ export async function processMeetingFinalizeJob(
         };
         if (summarized.summary) metadataPatch.summary = summarized.summary;
         if (summarized.modelUsed) metadataPatch.summary_model = summarized.modelUsed;
+        if (summarized.summaryFailure) {
+          metadataPatch.summary_failed_at = summarized.summaryFailure.at;
+          metadataPatch.summary_error = summarized.summaryFailure.message;
+          metadataPatch.summary_error_cause = summarized.summaryFailure.causeName;
+          metadataPatch.summary_model = summarized.summaryFailure.model;
+        }
         if (summarized.actionItems.length > 0) {
           metadataPatch.action_items = summarized.actionItems;
         }
@@ -500,6 +580,12 @@ export async function processMeetingFinalizeJob(
         };
         if (meeting.title) sourceMetadata.title = meeting.title;
         if (summarized.summary) sourceMetadata.summary = summarized.summary;
+        if (summarized.summaryFailure) {
+          sourceMetadata.summary_failed_at = summarized.summaryFailure.at;
+          sourceMetadata.summary_error = summarized.summaryFailure.message;
+          sourceMetadata.summary_error_cause = summarized.summaryFailure.causeName;
+          sourceMetadata.summary_model = summarized.summaryFailure.model;
+        }
         if (summarized.actionItems.length > 0) {
           sourceMetadata.action_items = summarized.actionItems;
         }

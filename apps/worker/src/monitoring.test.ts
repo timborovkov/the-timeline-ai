@@ -3,11 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const init = vi.fn();
 const setTag = vi.fn();
 const setScopeTag = vi.fn();
+const setScopeContext = vi.fn();
 const captureException = vi.fn();
 const flush = vi.fn();
-const withScope = vi.fn((fn: (scope: { setTag: typeof setScopeTag }) => void) => {
-  fn({ setTag: setScopeTag });
-});
+const withScope = vi.fn(
+  (fn: (scope: { setTag: typeof setScopeTag; setContext: typeof setScopeContext }) => void) => {
+    fn({ setTag: setScopeTag, setContext: setScopeContext });
+  },
+);
 class MockUnrecoverableError extends Error {}
 
 interface WorkerBeforeSendEvent {
@@ -81,6 +84,8 @@ describe('worker Sentry monitoring', () => {
       timelineAi: true,
       operation: 'llm.embed',
       model: 'openrouter/embed',
+      causeName: 'AI_APICallError',
+      causeMessage: 'OpenRouter 503 temporarily unavailable',
       prompt: 'must not be tagged',
     });
 
@@ -89,6 +94,10 @@ describe('worker Sentry monitoring', () => {
     expect(captureException).toHaveBeenCalledOnce();
     expect(setScopeTag).toHaveBeenCalledWith('aiOperation', 'llm.embed');
     expect(setScopeTag).toHaveBeenCalledWith('aiModel', 'openrouter/embed');
+    expect(setScopeTag).toHaveBeenCalledWith('aiCauseName', 'AI_APICallError');
+    expect(setScopeContext).toHaveBeenCalledWith('ai', {
+      causeMessage: 'OpenRouter 503 temporarily unavailable',
+    });
     expect(setScopeTag).not.toHaveBeenCalledWith('prompt', expect.anything());
   });
 

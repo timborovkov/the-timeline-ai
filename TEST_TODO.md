@@ -12,12 +12,12 @@ from `main`. Current suite shape:
 
 - DB Vitest: 1 file / 5 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 63 files / 527 tests plus 1 skipped, including PGlite
+- Shared Vitest: 64 files / 565 tests plus 1 skipped, including PGlite
   integration/eval coverage plus queue, S3, and onboarding contracts.
-- Web Vitest: 71 files / 360 tests, including route/action/component coverage
+- Web Vitest: 74 files / 373 tests, including route/action/component coverage
   for core recovery, onboarding, object sections, and first high-value UI
   states.
-- Worker Vitest: 10 files / 94 tests, including extract, transcribe,
+- Worker Vitest: 11 files / 107 tests, including extract, transcribe,
   suggestions, embed, document extract, meeting finalize, janitor, and overdue
   processors.
 - Playwright: 13 local core E2E journeys plus 1 production-ish smoke journey.
@@ -186,7 +186,7 @@ Covered route tests include:
 - Telegram webhook.
 - Slack events webhook.
 - GitHub, Google Drive, Linear, and Recall webhooks.
-- Job recovery retry/dismiss routes.
+- Per-job and bulk job recovery retry/dismiss routes.
 - Search route auth/config/rate-limit/schema/scope behavior.
 - Timeline route auth, active-team, query parsing, cache, response shaping,
   author hydration, and audio signing behavior.
