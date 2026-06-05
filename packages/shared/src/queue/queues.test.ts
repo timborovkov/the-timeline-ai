@@ -235,6 +235,58 @@ describe('queue wrappers', () => {
     expect(fakes.queues[0]?.addCalls).toHaveLength(2);
   });
 
+  it('dedupes delayed conversation review jobs queued with legacy colon ids', async () => {
+    const queues = await importQueues();
+    const data = {
+      scope: 'conversation_review' as const,
+      conversationReviewId: '66666666-6666-4666-8666-666666666666',
+      teamId: '22222222-2222-4222-8222-222222222222',
+    };
+    const legacyJobId =
+      'conversation-review:66666666-6666-4666-8666-666666666666:2026-05-27T10:10:00.000Z';
+    const suggestionQueue = queues.getSuggestionQueue() as unknown as FakeQueue;
+    suggestionQueue.jobs.add(legacyJobId);
+    suggestionQueue.jobStates.set(legacyJobId, 'delayed');
+
+    const duplicate = await queues.enqueueSuggestionJob(data, {
+      delayMs: 600_000,
+      jobIdSuffix: '2026-05-27T10:10:00.000Z',
+    });
+
+    expect(duplicate).toEqual({ enqueued: false, jobId: legacyJobId });
+    expect(suggestionQueue.addCalls).toHaveLength(0);
+  });
+
+  it('removes delayed conversation review jobs queued with legacy colon ids', async () => {
+    const queues = await importQueues();
+    const data = {
+      scope: 'conversation_review' as const,
+      conversationReviewId: '66666666-6666-4666-8666-666666666666',
+      teamId: '22222222-2222-4222-8222-222222222222',
+    };
+    const legacyJobId =
+      'conversation-review:66666666-6666-4666-8666-666666666666:2026-05-27T10:10:00.000Z';
+    const suggestionQueue = queues.getSuggestionQueue() as unknown as FakeQueue;
+    suggestionQueue.jobs.add(legacyJobId);
+    suggestionQueue.jobStates.set(legacyJobId, 'delayed');
+
+    const removed = await queues.removeSuggestionJob(data, {
+      jobIdSuffix: '2026-05-27T10:10:00.000Z',
+    });
+    const rerun = await queues.enqueueSuggestionJob(data, {
+      delayMs: 600_000,
+      jobIdSuffix: '2026-05-27T10:10:00.000Z',
+    });
+
+    expect(removed).toEqual({ removed: true, jobId: legacyJobId });
+    expect(rerun).toMatchObject({
+      enqueued: true,
+      jobId:
+        'conversation-review|66666666-6666-4666-8666-666666666666|2026-05-27T10%3A10%3A00.000Z',
+    });
+    expect(suggestionQueue.addCalls).toHaveLength(1);
+  });
+
   it('dedupes raw suggestion jobs only when a suffix is provided', async () => {
     const queues = await importQueues();
 

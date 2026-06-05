@@ -172,6 +172,19 @@ function suggestionJobId(data: SuggestionJobData, jobIdSuffix?: string): string 
       : undefined;
 }
 
+function legacySuggestionJobIds(data: SuggestionJobData, jobIdSuffix?: string): string[] {
+  if (!('scope' in data)) return [];
+  return [
+    `conversation-review:${data.conversationReviewId}${jobIdSuffix ? `:${jobIdSuffix}` : ''}`,
+  ];
+}
+
+function suggestionJobIdCandidates(data: SuggestionJobData, jobIdSuffix?: string): string[] {
+  const current = suggestionJobId(data, jobIdSuffix);
+  if (!current) return [];
+  return [current, ...legacySuggestionJobIds(data, jobIdSuffix).filter((id) => id !== current)];
+}
+
 interface ExistingJobLike {
   getState?: () => Promise<string>;
   remove?: () => Promise<void>;
@@ -215,19 +228,23 @@ export async function enqueueSuggestionJob(
 ): Promise<{ enqueued: boolean; jobId: string | null }> {
   const jobId = suggestionJobId(data, opts.jobIdSuffix);
   const q = getSuggestionQueue();
-  const existing = jobId ? ((await q.getJob(jobId)) as ExistingJobLike | null) : null;
-  if (jobId && existing) {
+  const jobIds = suggestionJobIdCandidates(data, opts.jobIdSuffix);
+  for (const existingJobId of jobIds) {
+    const existing = (await q.getJob(existingJobId)) as ExistingJobLike | null;
+    if (!existing) continue;
     const state = await existing.getState?.().catch(() => null);
-    if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) return { enqueued: false, jobId };
+    if (!state || SUGGESTION_JOB_DEDUPE_STATES.has(state)) {
+      return { enqueued: false, jobId: existingJobId };
+    }
     if (SUGGESTION_JOB_REPLACEABLE_STATES.has(state)) {
-      if (!existing.remove) return { enqueued: false, jobId };
+      if (!existing.remove) return { enqueued: false, jobId: existingJobId };
       const removed = await existing.remove().then(
         () => true,
         () => false,
       );
-      if (!removed) return { enqueued: false, jobId };
+      if (!removed) return { enqueued: false, jobId: existingJobId };
     } else {
-      return { enqueued: false, jobId };
+      return { enqueued: false, jobId: existingJobId };
     }
   }
   await q.add('suggestions', data, {
@@ -243,13 +260,17 @@ export async function removeSuggestionJob(
 ): Promise<{ removed: boolean; jobId: string }> {
   const jobId = suggestionJobId(data, opts.jobIdSuffix);
   if (!jobId) throw new Error('suggestion job id suffix required');
-  const job = (await getSuggestionQueue().getJob(jobId)) as ExistingJobLike | null;
-  if (!job?.remove) return { removed: false, jobId };
-  const removed = await job.remove().then(
-    () => true,
-    () => false,
-  );
-  return { removed, jobId };
+  const q = getSuggestionQueue();
+  for (const candidateJobId of suggestionJobIdCandidates(data, opts.jobIdSuffix)) {
+    const job = (await q.getJob(candidateJobId)) as ExistingJobLike | null;
+    if (!job?.remove) continue;
+    const removed = await job.remove().then(
+      () => true,
+      () => false,
+    );
+    if (removed) return { removed: true, jobId: candidateJobId };
+  }
+  return { removed: false, jobId };
 }
 
 export async function closeSuggestionQueue(): Promise<void> {
