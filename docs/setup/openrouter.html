@@ -53,9 +53,17 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         key/base URL.
       </p>
       <p>
+        Structured extraction calls use Qwen as the primary route and fall back to the
+        <code>structuredFallback</code> model for retryable OpenRouter/provider failures such as
+        429s and 5xx responses. Authentication and request-shape failures still fail fast so
+        misconfiguration is not hidden.
+      </p>
+      <p>
         The embedding model remains special: changing it or its dimensions invalidates the current
-        vector index. Update the catalog and follow the re-embed procedure before switching traffic
-        to the new collection.
+        vector index. Embed jobs therefore do not model-fallback the way structured chat calls can;
+        transient provider failures are handled by the worker queue retry policy while preserving
+        the pinned <code>openai/text-embedding-3-small</code> vector contract. Update the catalog
+        and follow the re-embed procedure before switching traffic to the new collection.
       </p>
       <p>
         The default Qdrant collection is <code>QDRANT_COLLECTION=events</code>. The app creates that
@@ -152,9 +160,11 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         Re-extraction procedure (when changing the extraction prompt or model)
       </h3>
       <p>
-        The <code>model_version</code> written on each fact combines the extraction model id from
-        <code>TIMELINE_MODELS</code> with an internal code-revision tag. When either changes, replay
-        raw events:
+        The <code>model_version</code> written on each fact combines the model id that actually
+        produced the structured result with an internal code-revision tag. Under normal conditions
+        this is the extraction model from <code>TIMELINE_MODELS</code>; if the structured fallback
+        route handled a retryable provider failure, audits record that fallback model instead. When
+        the primary extraction model or prompt changes, replay raw events:
       </p>
       <ol>
         <li>Update <code>packages/shared/src/llm/models.ts</code> if the model changes.</li>
@@ -191,7 +201,9 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 </code></pre>
           A missing collection before the first write is fine. Any existing value other than
           <code>1536</code> means the collection belongs to an older embedding model and must not be
-          reused.
+          reused. Recoverable embedding API failures retry from the <code>embed</code> queue with
+          six exponential-backoff attempts; after terminal failure the source row is stamped with
+          <code>embedding_failed_at</code> and can be picked up by the coverage audit/re-embed flow.
         </li>
         <li>
           If creating the collection through the Qdrant dashboard, use:

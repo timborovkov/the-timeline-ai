@@ -16,6 +16,12 @@ describe('TIMELINE_MODELS', () => {
       contextWindowTokens: 1_000_000,
       capabilities: ['chat', 'structured', 'tools'],
     });
+    expect(TIMELINE_MODELS.structuredFallback).toMatchObject({
+      id: 'deepseek/deepseek-v4-flash',
+      provider: 'openrouter',
+      contextWindowTokens: 1_048_576,
+      capabilities: ['chat', 'structured', 'tools'],
+    });
     expect(TIMELINE_MODELS.summarization).toMatchObject({
       id: 'deepseek/deepseek-v4-flash',
       provider: 'openrouter',

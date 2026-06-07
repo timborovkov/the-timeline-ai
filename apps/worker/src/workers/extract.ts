@@ -159,6 +159,7 @@ export async function processExtractJobForTests(
     system: extract.EXTRACTION_SYSTEM_PROMPT,
     model: modelId,
   });
+  const resultModelVersion = makeExtractionModelVersion(result.model);
   const extractionResult = extract.normalizeExtractionResult(result.object);
 
   const resolvedFacts: {
@@ -190,7 +191,12 @@ export async function processExtractJobForTests(
       recheck[0]?.sourceMetadata && typeof recheck[0].sourceMetadata === 'object'
         ? (recheck[0].sourceMetadata as Record<string, unknown>)
         : {};
-    if (recheckMeta.extraction_model_version === modelVersion) return;
+    if (
+      recheckMeta.extraction_model_version === modelVersion ||
+      recheckMeta.extraction_model_version === resultModelVersion
+    ) {
+      return;
+    }
     for (const fact of resolvedFacts) {
       const insertedFacts = await tx
         .insert(factsTable)
@@ -199,7 +205,7 @@ export async function processExtractJobForTests(
           rawEventId,
           statement: fact.statement,
           confidence: fact.confidence,
-          modelVersion,
+          modelVersion: resultModelVersion,
         })
         .onConflictDoNothing()
         .returning({ id: factsTable.id });
@@ -224,7 +230,7 @@ export async function processExtractJobForTests(
 
     const patch = JSON.stringify({
       extracted_at: new Date().toISOString(),
-      extraction_model_version: modelVersion,
+      extraction_model_version: resultModelVersion,
     });
     await tx
       .update(rawEvents)
@@ -291,7 +297,7 @@ export async function processExtractJobForTests(
       });
   }
 
-  return { rawEventId, factsInserted, modelVersion };
+  return { rawEventId, factsInserted, modelVersion: resultModelVersion };
 }
 
 /**

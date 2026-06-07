@@ -306,6 +306,43 @@ describe('processExtractJobForTests', () => {
     expect(row?.sourceMetadata).toHaveProperty('extracted_at');
   });
 
+  it('stamps the actual model returned by a structured fallback', async () => {
+    const rawEventId = '45454545-4545-4545-8545-454545454545';
+    const fallbackModelId = 'fallback-structured-model';
+    const fallbackModelVersion = makeExtractionModelVersion(fallbackModelId);
+    await seedEvent(db, { id: rawEventId, text: 'Acme is evaluating Timeline for Q4.' });
+    const chatStructured = vi.fn().mockResolvedValue({
+      object: {
+        facts: [
+          {
+            statement: 'Acme is evaluating Timeline for Q4.',
+            confidence: 0.92,
+            mentions: [{ name: 'Acme', type: 'company', role: 'subject' }],
+          },
+        ],
+      },
+      model: fallbackModelId,
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, io({ chatStructured })),
+    ).resolves.toMatchObject({
+      rawEventId,
+      factsInserted: 1,
+      modelVersion: fallbackModelVersion,
+    });
+
+    const [fact] = await db.select().from(facts).where(eq(facts.rawEventId, rawEventId));
+    expect(fact?.modelVersion).toBe(fallbackModelVersion);
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, rawEventId));
+    expect(row?.sourceMetadata).toMatchObject({
+      extraction_model_version: fallbackModelVersion,
+    });
+  });
+
   it('does not send private or specific-user event bodies to the LLM', async () => {
     const privateId = '55555555-5555-4555-8555-555555555555';
     const specificId = '66666666-6666-4666-8666-666666666666';
