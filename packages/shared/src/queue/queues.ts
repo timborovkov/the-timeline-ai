@@ -398,8 +398,8 @@ export function getEmbedQueue(): TimelineQueue<EmbedJobData> {
     {
       connection: getRedisConnection(),
       defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 2000 },
+        attempts: 6,
+        backoff: { type: 'exponential', delay: 10_000 },
         removeOnComplete: { age: 3600, count: 1000 },
         removeOnFail: { age: 24 * 3600 },
       },

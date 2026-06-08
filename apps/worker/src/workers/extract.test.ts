@@ -5,7 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { facts, factEntities, rawEvents, type Db } from '@timeline/db';
 import { type queue } from '@timeline/shared';
-import { makeExtractionModelVersion } from '@timeline/shared/extraction-model-version';
+import {
+  currentExtractionModelVersions,
+  makeExtractionModelVersion,
+} from '@timeline/shared/extraction-model-version';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -304,6 +307,78 @@ describe('processExtractJobForTests', () => {
       .where(eq(rawEvents.id, rawEventId));
     expect(row?.sourceMetadata).toMatchObject({ extraction_model_version: MODEL_VERSION });
     expect(row?.sourceMetadata).toHaveProperty('extracted_at');
+  });
+
+  it('stamps the actual model returned by a structured fallback', async () => {
+    const rawEventId = '45454545-4545-4545-8545-454545454545';
+    const fallbackModelId = 'fallback-structured-model';
+    const fallbackModelVersion = makeExtractionModelVersion(fallbackModelId);
+    await seedEvent(db, { id: rawEventId, text: 'Acme is evaluating Timeline for Q4.' });
+    const chatStructured = vi.fn().mockResolvedValue({
+      object: {
+        facts: [
+          {
+            statement: 'Acme is evaluating Timeline for Q4.',
+            confidence: 0.92,
+            mentions: [{ name: 'Acme', type: 'company', role: 'subject' }],
+          },
+        ],
+      },
+      model: fallbackModelId,
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, io({ chatStructured })),
+    ).resolves.toMatchObject({
+      rawEventId,
+      factsInserted: 1,
+      modelVersion: fallbackModelVersion,
+    });
+
+    const [fact] = await db.select().from(facts).where(eq(facts.rawEventId, rawEventId));
+    expect(fact?.modelVersion).toBe(fallbackModelVersion);
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, rawEventId));
+    expect(row?.sourceMetadata).toMatchObject({
+      extraction_model_version: fallbackModelVersion,
+    });
+  });
+
+  it('skips reruns already stamped by the current structured fallback model', async () => {
+    const rawEventId = '46464646-4646-4646-8646-464646464646';
+    const fallbackModelVersion = currentExtractionModelVersions().find((version) =>
+      version.includes('deepseek/deepseek-v4-flash'),
+    );
+    if (!fallbackModelVersion) throw new Error('expected fallback extraction model version');
+    await seedEvent(db, {
+      id: rawEventId,
+      text: 'Acme is evaluating Timeline for Q4.',
+      metadata: { extraction_model_version: fallbackModelVersion },
+    });
+    const chatStructured = modelWithFacts([
+      {
+        statement: 'Acme is evaluating Timeline for Q4.',
+        confidence: 0.92,
+        mentions: [{ name: 'Acme', type: 'company', role: 'subject' }],
+      },
+    ]);
+    const testIO = io({ chatStructured });
+    delete (testIO as Partial<typeof testIO>).modelId;
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({
+      rawEventId,
+      skipped: true,
+      modelVersion: fallbackModelVersion,
+    });
+
+    expect(chatStructured).not.toHaveBeenCalled();
+    await expect(db.select().from(facts).where(eq(facts.rawEventId, rawEventId))).resolves.toEqual(
+      [],
+    );
   });
 
   it('does not send private or specific-user event bodies to the LLM', async () => {

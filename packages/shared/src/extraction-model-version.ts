@@ -9,3 +9,10 @@ export function makeExtractionModelVersion(modelId: string): string {
 export function currentExtractionModelVersion(): string {
   return makeExtractionModelVersion(TIMELINE_MODELS.extraction.id);
 }
+
+export function currentExtractionModelVersions(): string[] {
+  return [
+    makeExtractionModelVersion(TIMELINE_MODELS.extraction.id),
+    makeExtractionModelVersion(TIMELINE_MODELS.structuredFallback.id),
+  ];
+}

@@ -22,6 +22,12 @@ export const TIMELINE_MODELS = {
     contextWindowTokens: 1_000_000,
     capabilities: ['chat', 'structured', 'tools'],
   },
+  structuredFallback: {
+    id: 'deepseek/deepseek-v4-flash',
+    provider: 'openrouter',
+    contextWindowTokens: 1_048_576,
+    capabilities: ['chat', 'structured', 'tools'],
+  },
   agent: {
     id: 'qwen/qwen3.7-max',
     provider: 'openrouter',

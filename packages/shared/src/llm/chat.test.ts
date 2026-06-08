@@ -387,7 +387,7 @@ describe('chatStructured', () => {
     ).toBe(true);
   });
 
-  it('does not retry json_object fallback for transient provider failures', async () => {
+  it('does not retry with a fallback model for auth failures', async () => {
     const requests: unknown[] = [];
     const fetchStub: typeof fetch = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
@@ -414,6 +414,213 @@ describe('chatStructured', () => {
     expect(requests).toHaveLength(1);
     const primary = openRouterRequestSchema.parse(requests[0]);
     expect(primary.response_format.type).toBe('json_schema');
+  });
+
+  it('retries retryable provider failures on the structured fallback model', async () => {
+    const requests: unknown[] = [];
+    const fetchStub: typeof fetch = (_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('expected request body');
+      const parsed: unknown = JSON.parse(init.body);
+      requests.push(parsed);
+      const model = z.object({ model: z.string() }).parse(parsed).model;
+      if (model === TIMELINE_MODELS.extraction.id) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: { message: 'provider temporarily unavailable' } }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-test-fallback-model',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.structuredFallback.id,
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content: JSON.stringify({
+                    facts: [
+                      {
+                        statement: 'Acme is evaluating Timeline for Q4.',
+                        confidence: 0.92,
+                        mentions: [{ name: 'Acme', type: 'company', role: 'subject' }],
+                      },
+                    ],
+                  }),
+                },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    const result = await chatStructured(
+      {
+        schema: extractionResultSchema,
+        prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
+        system: EXTRACTION_SYSTEM_PROMPT,
+      },
+      { fetch: fetchStub },
+    );
+
+    expect(result.model).toBe(TIMELINE_MODELS.structuredFallback.id);
+    expect(openRouterRequestSchema.parse(requests[0]).model).toBe(TIMELINE_MODELS.extraction.id);
+    expect(requests.map((request) => openRouterRequestSchema.parse(request).model)).toContain(
+      TIMELINE_MODELS.structuredFallback.id,
+    );
+    expect(result.object.facts[0]).toMatchObject({
+      statement: 'Acme is evaluating Timeline for Q4.',
+      mentions: [{ name: 'Acme', type: 'company', role: 'subject' }],
+    });
+  });
+
+  it('retries request timeouts on the structured fallback model', async () => {
+    const requests: unknown[] = [];
+    const fetchStub: typeof fetch = (_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('expected request body');
+      const parsed: unknown = JSON.parse(init.body);
+      requests.push(parsed);
+      const model = z.object({ model: z.string() }).parse(parsed).model;
+      if (model === TIMELINE_MODELS.extraction.id) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: { message: 'provider request timeout' } }), {
+            status: 408,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-test-timeout-fallback',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.structuredFallback.id,
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: JSON.stringify({ facts: [] }) },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    const result = await chatStructured(
+      {
+        schema: extractionResultSchema,
+        prompt: 'Extract facts from: Heading out for lunch.',
+        system: EXTRACTION_SYSTEM_PROMPT,
+      },
+      { fetch: fetchStub },
+    );
+
+    expect(result.model).toBe(TIMELINE_MODELS.structuredFallback.id);
+    expect(requests.map((request) => openRouterRequestSchema.parse(request).model)).toEqual([
+      TIMELINE_MODELS.extraction.id,
+      TIMELINE_MODELS.structuredFallback.id,
+    ]);
+  });
+
+  it('retries the structured fallback model when json_object fallback hits a retryable provider failure', async () => {
+    const requests: unknown[] = [];
+    const fetchStub: typeof fetch = (_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('expected request body');
+      const parsed: unknown = JSON.parse(init.body);
+      requests.push(parsed);
+      const request = z
+        .object({
+          model: z.string(),
+          response_format: z.object({ type: z.string() }).optional(),
+        })
+        .parse(parsed);
+      if (
+        request.model === TIMELINE_MODELS.extraction.id &&
+        request.response_format?.type === 'json_schema'
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ error: { message: 'Provider rejected json_schema for this route' } }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      }
+      if (request.model === TIMELINE_MODELS.extraction.id) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: { message: 'OpenRouter unavailable' } }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-test-fallback-model',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.structuredFallback.id,
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: JSON.stringify({ facts: [] }) },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    const result = await chatStructured(
+      {
+        schema: extractionResultSchema,
+        prompt: 'Extract facts from: Heading out for lunch.',
+        system: EXTRACTION_SYSTEM_PROMPT,
+      },
+      { fetch: fetchStub },
+    );
+
+    expect(result.model).toBe(TIMELINE_MODELS.structuredFallback.id);
+    const requestSummaries = requests.map((request) =>
+      z
+        .object({
+          model: z.string(),
+          response_format: z.object({ type: z.string() }),
+        })
+        .parse(request),
+    );
+    expect(requestSummaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          model: TIMELINE_MODELS.extraction.id,
+          response_format: { type: 'json_schema' },
+        }),
+        expect.objectContaining({
+          model: TIMELINE_MODELS.extraction.id,
+          response_format: { type: 'json_object' },
+        }),
+        expect.objectContaining({
+          model: TIMELINE_MODELS.structuredFallback.id,
+          response_format: { type: 'json_schema' },
+        }),
+      ]),
+    );
   });
 
   liveOpenRouterIt(
