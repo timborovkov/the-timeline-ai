@@ -1,6 +1,9 @@
 import { type Db, facts as factsTable, factEntities, rawEvents } from '@timeline/db';
 import { childLogger, embedding, extract, getEnv, llm, queue } from '@timeline/shared';
-import { makeExtractionModelVersion } from '@timeline/shared/extraction-model-version';
+import {
+  currentExtractionModelVersions,
+  makeExtractionModelVersion,
+} from '@timeline/shared/extraction-model-version';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
 
@@ -59,6 +62,10 @@ export async function processExtractJobForTests(
   }
   const modelId = io.modelId ?? llm.TIMELINE_MODELS.extraction.id;
   const modelVersion = makeExtractionModelVersion(modelId);
+  const currentModelVersions =
+    io.modelId && io.modelId !== llm.TIMELINE_MODELS.extraction.id
+      ? [modelVersion]
+      : currentExtractionModelVersions();
   const lockKey = sql`hashtextextended(${rawEventId}, 0)`;
 
   const rows = (await deps.db
@@ -109,8 +116,11 @@ export async function processExtractJobForTests(
     row.sourceMetadata && typeof row.sourceMetadata === 'object'
       ? (row.sourceMetadata as Record<string, unknown>)
       : {};
-  if (meta.extraction_model_version === modelVersion) {
-    return { rawEventId, skipped: true, modelVersion };
+  if (
+    typeof meta.extraction_model_version === 'string' &&
+    currentModelVersions.includes(meta.extraction_model_version)
+  ) {
+    return { rawEventId, skipped: true, modelVersion: meta.extraction_model_version };
   }
 
   const recentRows = (await deps.db
@@ -192,7 +202,8 @@ export async function processExtractJobForTests(
         ? (recheck[0].sourceMetadata as Record<string, unknown>)
         : {};
     if (
-      recheckMeta.extraction_model_version === modelVersion ||
+      (typeof recheckMeta.extraction_model_version === 'string' &&
+        currentModelVersions.includes(recheckMeta.extraction_model_version)) ||
       recheckMeta.extraction_model_version === resultModelVersion
     ) {
       return;

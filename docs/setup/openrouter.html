@@ -166,6 +166,12 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         route handled a retryable provider failure, audits record that fallback model instead. When
         the primary extraction model or prompt changes, replay raw events:
       </p>
+      <p>
+        Re-extraction treats both the primary extraction route and the configured
+        <code>structuredFallback</code> route as current for the same code-revision tag. That keeps
+        transient fallback successes from being reprocessed into duplicate visible facts during
+        routine coverage sweeps.
+      </p>
       <ol>
         <li>Update <code>packages/shared/src/llm/models.ts</code> if the model changes.</li>
         <li>
