@@ -483,6 +483,58 @@ describe('chatStructured', () => {
     });
   });
 
+  it('retries request timeouts on the structured fallback model', async () => {
+    const requests: unknown[] = [];
+    const fetchStub: typeof fetch = (_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('expected request body');
+      const parsed: unknown = JSON.parse(init.body);
+      requests.push(parsed);
+      const model = z.object({ model: z.string() }).parse(parsed).model;
+      if (model === TIMELINE_MODELS.extraction.id) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: { message: 'provider request timeout' } }), {
+            status: 408,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-test-timeout-fallback',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.structuredFallback.id,
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: JSON.stringify({ facts: [] }) },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    const result = await chatStructured(
+      {
+        schema: extractionResultSchema,
+        prompt: 'Extract facts from: Heading out for lunch.',
+        system: EXTRACTION_SYSTEM_PROMPT,
+      },
+      { fetch: fetchStub },
+    );
+
+    expect(result.model).toBe(TIMELINE_MODELS.structuredFallback.id);
+    expect(requests.map((request) => openRouterRequestSchema.parse(request).model)).toEqual([
+      TIMELINE_MODELS.extraction.id,
+      TIMELINE_MODELS.structuredFallback.id,
+    ]);
+  });
+
   it('retries the structured fallback model when json_object fallback hits a retryable provider failure', async () => {
     const requests: unknown[] = [];
     const fetchStub: typeof fetch = (_url, init) => {

@@ -99,9 +99,11 @@ function statusCodesFromError(err: unknown): number[] {
   return typeof statusCode === 'number' ? [statusCode] : [];
 }
 
-function shouldFallbackToAlternateModel(err: unknown): boolean {
-  const statusCodes = statusCodesFromError(err);
-  if (statusCodes.length > 0) return statusCodes.some((code) => code === 429 || code >= 500);
+function isRetryableStatusCode(code: number): boolean {
+  return code === 408 || code === 429 || code >= 500;
+}
+
+function hasRetryableProviderMessage(err: unknown): boolean {
   const message = errorMessage(err).toLowerCase();
   return (
     message.includes('rate limit') ||
@@ -114,6 +116,11 @@ function shouldFallbackToAlternateModel(err: unknown): boolean {
     message.includes('502') ||
     message.includes('504')
   );
+}
+
+function shouldFallbackToAlternateModel(err: unknown): boolean {
+  const statusCodes = statusCodesFromError(err);
+  return statusCodes.some(isRetryableStatusCode) || hasRetryableProviderMessage(err);
 }
 
 function repairKnownStructuredOutput(schema: z.ZodType): RepairTextFunction {
