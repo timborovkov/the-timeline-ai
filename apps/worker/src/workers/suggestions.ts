@@ -211,15 +211,16 @@ export function fallbackBundles(args: {
   authorUserId: string | null;
 }): SuggestionBundleOutput[] {
   const text = args.text.trim();
+  const bundles: SuggestionBundleOutput[] = [];
   const decisionBundle = fallbackDecisionBundle(text);
-  if (decisionBundle) return [decisionBundle];
+  if (decisionBundle) bundles.push(decisionBundle);
   const match = COMMITMENT_TIME_PATTERN.exec(text);
-  if (!match) return [];
+  if (!match) return bundles;
   const action = commitmentActionBeforeTimePhrase(match[1] ?? '')
     .replace(/\s+/g, ' ')
     .trim();
   const phrase = match[2] ?? 'tomorrow';
-  if (!action) return [];
+  if (!action) return bundles;
   const resolved = time.resolveTimePhrase(phrase, {
     timezone: args.timezone,
     referenceDate: args.occurredAt,
@@ -256,16 +257,15 @@ export function fallbackBundles(args: {
       },
     });
   }
-  return [
-    {
-      title: `Commitment: ${String(taskPayload.canonicalName)}`,
-      summary: truncate(text, 500),
-      reason: 'A team member said they would do this work.',
-      confidence: 'medium',
-      quote: truncate(text, 500),
-      items,
-    },
-  ];
+  bundles.push({
+    title: `Commitment: ${String(taskPayload.canonicalName)}`,
+    summary: truncate(text, 500),
+    reason: 'A team member said they would do this work.',
+    confidence: 'medium',
+    quote: truncate(text, 500),
+    items,
+  });
+  return bundles;
 }
 
 export async function processSuggestionJobForTests(

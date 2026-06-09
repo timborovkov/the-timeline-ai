@@ -219,6 +219,34 @@ describe('fallbackBundles', () => {
     });
   });
 
+  it('keeps commitment proposals when decision fallback also matches', () => {
+    const bundles = fallbackBundles({
+      text: "We decided to sunset Project X. I'll send the customer notice tomorrow.",
+      timezone: 'UTC',
+      occurredAt: REFERENCE_DATE,
+      authorUserId: OWNER_ID,
+    });
+
+    expect(bundles).toHaveLength(2);
+    expect(bundles[0]).toMatchObject({
+      title: 'Decision: Sunset Project X',
+      items: [{ targetKind: 'object' }],
+    });
+    expect(bundles[1]).toMatchObject({
+      title: 'Commitment: Send the customer notice',
+      items: [
+        {
+          targetKind: 'task',
+          title: 'Send the customer notice',
+        },
+        {
+          targetKind: 'calendar_event',
+          title: 'Send the customer notice',
+        },
+      ],
+    });
+  });
+
   it('does not infer fallback decisions from vague discussion', () => {
     expect(
       fallbackBundles({
