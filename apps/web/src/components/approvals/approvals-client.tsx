@@ -44,6 +44,7 @@ interface SuggestionBundle {
 
 interface Props {
   suggestions: SuggestionBundle[];
+  allowBulkAccept?: boolean;
 }
 
 function formatPayload(payload: Record<string, unknown>): string {
@@ -61,7 +62,7 @@ function formatPayloadValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export function ApprovalsClient({ suggestions }: Props) {
+export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +115,7 @@ export function ApprovalsClient({ suggestions }: Props) {
                 ) : null}
                 {bundle.reason ? <p className="mt-1 text-xs text-fg-dim">{bundle.reason}</p> : null}
               </div>
-              {pendingItems.length > 1 ? (
+              {allowBulkAccept && pendingItems.length > 1 ? (
                 <Button
                   type="button"
                   size="sm"

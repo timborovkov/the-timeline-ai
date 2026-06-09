@@ -52,7 +52,7 @@ Legend:
 | Meeting bots and meetings | Missing E2E scheduling/finalization | Partial Recall status/transcript webhooks covered | Thin meetings action coverage | Strong meetings scope, Recall/Svix/url helpers | Strong meeting-finalize worker | Missing meeting UI states | Meeting action breadth, consent/failure E2E, meeting UI states |
 | Job recovery and failed work | Missing dashboard E2E | Strong retry/dismiss/dashboard route coverage plus cron reconcile auth/failure behavior and direct finished archive route coverage | N/A | Strong job-recovery PGlite coverage, including retained finished-job archive pagination | Janitor worker covered | Partial job recovery list component with retry status and finished archive states | Retry/dismiss E2E flow |
 | Onboarding | Missing E2E checklist/dismissal | Strong checklist route coverage | Strong onboarding action coverage | Strong PGlite checklist inference, dismiss/reopen, manual completion, and team isolation | Missing | Partial checklist static states | Checklist E2E and richer interaction states |
-| Suggestions and background agent actions | Partial: capture-to-suggestion-to-acceptance creates durable task/calendar state, and object-update approval updates an existing object without duplication | Missing route coverage if surfaced later | Strong suggestions action boundary tests | Strong PGlite suggestions scope, dedupe, accept/reject, task/object/calendar durability, and cross-team failure behavior | Partial: deterministic suggestion worker processor tests | Missing suggestions component tests | Remaining P1: richer suggestions UI states and live-model evals |
+| Suggestions and background agent actions | Partial: capture-to-suggestion-to-acceptance creates durable task/calendar state, and object-update approval updates an existing object without duplication | Missing route coverage if surfaced later | Strong suggestions action boundary tests | Strong PGlite suggestions scope, dedupe, accept/reject, task/object/calendar/decision durability, and cross-team failure behavior | Partial: deterministic suggestion worker processor tests | Missing suggestions component tests | Remaining P1: richer suggestions UI states and live-model evals |
 | Embeddings and retrieval quality | Missing E2E semantic retrieval flow | Strong search/chat route contracts with mocked boundaries | N/A | Strong deterministic retrieval ranking, PGlite hydration, visibility/team filtering, embedding source planning, Qdrant point IDs, raw-event rendering, and LLM wrapper behavior | Partial: embed worker text/payload/skip coverage | Missing retrieval UI assertions | Remaining: source rendering breadth for more providers and browser semantic retrieval assertions |
 | Support and team exports | Missing E2E | Missing direct routes if exposed | Missing support and team-export actions | Strong team-export archive integration | Team-export worker missing | Missing UI | Support validation/email failure, export enqueue/idempotency, worker failure cleanup |
 | Platform contracts: DB, queue, S3, env, rate limits | N/A | Rate-limit behavior covered through routes and token bucket | Queue degradation covered in some actions | Partial: env, crypto, rate limit, Qdrant, pagination, DB schema contracts, queue wrappers, and S3 wrappers covered | Queue/S3 wrapper behavior covered in shared tests | N/A | Deeper DB migration-compat history, queue/S3 live-emulator canaries |
@@ -432,6 +432,9 @@ tests and evals carry the branch coverage and model/tool behavior.
   - Raw event text such as "I'll send the proposal next Tuesday" produces task
     and calendar-event suggestion items with evidence linked to the source
     event.
+  - Raw event text with explicit decision language can produce approval-backed
+    decision object suggestions without creating durable state before
+    acceptance.
   - Slack/Telegram raw events schedule conversation-review jobs, and the review
     worker handles contradiction, pending proposal revision, accepted-proposal
     correction proposals, and minimal visible evidence citations.
@@ -454,7 +457,7 @@ tests and evals carry the branch coverage and model/tool behavior.
     event requested by the suggestion payload.
   - Accepting an object suggestion creates, updates, archives, or links only
     team-scoped objects.
-  - Rejection leaves durable task/object/calendar state unchanged.
+  - Rejection leaves durable task/object/calendar/decision state unchanged.
   - Duplicate acceptance is safe.
   - Acceptance writes the expected evidence/audit/change intent and revalidates
     the relevant app surfaces.
@@ -581,7 +584,7 @@ idempotency.
 Goal: every processor has integration tests for retry/idempotency/privacy
 contracts and unit tests for pure branching.
 
-- P1 suggestions worker: timeline event to task/object/calendar suggestion,
+- P1 suggestions worker: timeline event to task/object/calendar/decision suggestion,
   fallback behavior, visibility scoping, skipped-event stamping, and idempotent
   reruns.
 - P1 embed worker: source rendering, embedding calls, Qdrant payloads, stable
@@ -679,7 +682,7 @@ Once the suite is mature, split commands by layer:
 1. Build deterministic E2E fixtures and expand Playwright coverage for core app
    flows.
 2. P1 agentic core: source capture contracts, suggestion worker integration,
-   suggestion acceptance into durable task/object/calendar state, chat agent
+   suggestion acceptance into durable task/object/calendar/decision state, chat agent
    evals, and embedding/retrieval correctness.
 3. Add server action suites for `teams.ts`, `invites.ts`, `objects.ts`,
    `boards.ts`, and `calendar.ts`.
