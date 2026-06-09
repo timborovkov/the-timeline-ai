@@ -94,7 +94,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
       {calendarSuggestions.length > 0 ? (
         <section className="space-y-3">
           <h2 className="text-sm font-medium tracking-tight">Calendar approvals</h2>
-          <ApprovalsClient suggestions={calendarSuggestions} />
+          <ApprovalsClient suggestions={calendarSuggestions} allowBulkAccept={false} />
         </section>
       ) : null}
 

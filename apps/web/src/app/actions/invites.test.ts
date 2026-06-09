@@ -118,7 +118,7 @@ function invite(overrides: Record<string, unknown> = {}) {
     teamId: TEAM_ID,
     email: 'invited@example.test',
     role: 'member',
-    expiresAt: new Date('2026-06-09T00:00:00.000Z'),
+    expiresAt: new Date('2026-07-09T00:00:00.000Z'),
     ...overrides,
   };
 }

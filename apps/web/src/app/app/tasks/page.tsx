@@ -3,12 +3,14 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { KanbanBoard } from '@/components/boards/kanban-board';
 import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {
   title: 'Tasks',
@@ -24,11 +26,24 @@ export default async function TasksPage() {
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const rows = await scope.objects.listObjects({
-    type: 'task',
-    archived: false,
-    limit: 500,
+  const [rows, pendingSuggestions] = await Promise.all([
+    scope.objects.listObjects({
+      type: 'task',
+      archived: false,
+      limit: 500,
+    }),
+    scope.suggestions.listPendingSuggestions(),
+  ]);
+  const taskSuggestions = pendingSuggestions.flatMap((bundle) => {
+    const items = bundle.items.filter((item) => item.targetKind === 'task');
+    return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
+  const pendingTaskItems = taskSuggestions.reduce(
+    (sum, bundle) =>
+      sum +
+      bundle.items.filter((item) => item.status === 'pending' || item.status === 'failed').length,
+    0,
+  );
 
   const open = rows.filter((r) => r.status !== 'done' && r.status !== 'cancelled').length;
   const overdue = rows.filter(
@@ -49,12 +64,22 @@ export default async function TasksPage() {
           { value: 'TASKS' },
           { label: 'total', value: rows.length },
           { label: 'open', value: open },
+          ...(pendingTaskItems > 0
+            ? ([{ label: 'approvals', value: pendingTaskItems, signal: true }] as const)
+            : ([] as const)),
           ...(overdue > 0
             ? ([{ label: 'overdue', value: overdue, danger: true }] as const)
             : ([] as const)),
         ]}
         className="mb-5 shrink-0"
       />
+
+      {taskSuggestions.length > 0 ? (
+        <section className="mb-5 shrink-0 space-y-3">
+          <h2 className="text-sm font-medium tracking-tight">Task approvals</h2>
+          <ApprovalsClient suggestions={taskSuggestions} allowBulkAccept={false} />
+        </section>
+      ) : null}
 
       {rows.length === 0 ? (
         <EmptyAction

@@ -23,7 +23,7 @@ import { z } from 'zod';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
-const SUGGESTION_CODE_VERSION = '2026-05-a';
+const SUGGESTION_CODE_VERSION = '2026-06-a';
 const RECENT_CONTEXT_LIMIT = 5;
 const CALENDAR_CONTEXT_PAST_DAYS = 30;
 const CALENDAR_CONTEXT_FUTURE_DAYS = 180;
@@ -33,6 +33,8 @@ const COMMITMENT_TIME_PATTERN = new RegExp(
   `\\b(?:i'll|i will)\\s+(.+)\\s+(tomorrow|next\\s+(?:${NEXT_WEEKDAY_PATTERN}))\\b`,
   'i',
 );
+const DECISION_PATTERN =
+  /(?:^|[.!?\n]\s*)(?:decision\s*:\s*|(?:we|team|the team)\s+(?:decided|agreed)\s+(?:to|that)\s+)([^.!?\n]+)/i;
 
 interface SuggestionWorkerDeps {
   db: Db;
@@ -166,6 +168,34 @@ function commitmentActionBeforeTimePhrase(s: string): string {
   return fragment.replace(/^(?:and|then|also)\s+/i, '').trim();
 }
 
+function fallbackDecisionBundle(text: string): SuggestionBundleOutput | null {
+  const match = DECISION_PATTERN.exec(text.trim());
+  const decision = match?.[1]?.replace(/\s+/g, ' ').trim();
+  if (!decision) return null;
+  const canonicalName = `${decision.charAt(0).toUpperCase()}${decision.slice(1)}`;
+  const payload: Record<string, unknown> = {
+    type: 'decision',
+    canonicalName: truncate(canonicalName, 200),
+    status: 'accepted',
+    metadata: { extracted_from_decision_fallback: true },
+  };
+  return {
+    title: `Decision: ${String(payload.canonicalName)}`,
+    summary: truncate(text, 500),
+    reason: 'The source explicitly states a decision.',
+    confidence: 'medium',
+    quote: truncate(text, 500),
+    items: [
+      {
+        operation: 'create',
+        targetKind: 'object',
+        title: String(payload.canonicalName),
+        proposedPayload: payload,
+      },
+    ],
+  };
+}
+
 function calendarContextRange(occurredAt: Date): { from: Date; to: Date } {
   const from = new Date(occurredAt);
   from.setUTCDate(from.getUTCDate() - CALENDAR_CONTEXT_PAST_DAYS);
@@ -181,6 +211,8 @@ export function fallbackBundles(args: {
   authorUserId: string | null;
 }): SuggestionBundleOutput[] {
   const text = args.text.trim();
+  const decisionBundle = fallbackDecisionBundle(text);
+  if (decisionBundle) return [decisionBundle];
   const match = COMMITMENT_TIME_PATTERN.exec(text);
   if (!match) return [];
   const action = commitmentActionBeforeTimePhrase(match[1] ?? '')
@@ -408,7 +440,7 @@ async function runSuggestionExtraction(
     schema: suggestionExtractionSchema,
     model: modelId,
     system:
-      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, object updates, or calendar refinements. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, or merely conversational. For date-only scheduled commitments, create all-day calendar_event items. Use UUIDs only from the prompt when targeting existing records.',
+      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, or calendar refinements. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, or merely conversational. For date-only scheduled commitments, create all-day calendar_event items. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
     prompt,
   });
 
@@ -828,7 +860,7 @@ function buildPrompt(args: {
     '# Team members',
     ...args.members.map((m) => `- ${m.userId}: ${m.name ?? 'Unnamed'} <${m.email ?? 'no-email'}>`),
     '',
-    '# Existing objects/tasks',
+    '# Existing workspace objects',
     ...args.objects.map((o) => `- ${o.id}: ${o.type} "${o.name}" status=${o.status}`),
     '',
     '# Existing calendar events',

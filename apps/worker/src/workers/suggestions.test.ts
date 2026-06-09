@@ -193,6 +193,42 @@ describe('fallbackBundles', () => {
       metadata: { extracted_from_commitment: true, time_phrase: 'tomorrow' },
     });
   });
+
+  it('turns explicit decision language into a decision object proposal', () => {
+    const [bundle] = fallbackBundles({
+      text: 'We decided to sunset Project X.',
+      timezone: 'UTC',
+      occurredAt: REFERENCE_DATE,
+      authorUserId: OWNER_ID,
+    });
+
+    expect(bundle).toMatchObject({
+      title: 'Decision: Sunset Project X',
+      reason: 'The source explicitly states a decision.',
+    });
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'object',
+      title: 'Sunset Project X',
+      proposedPayload: {
+        type: 'decision',
+        canonicalName: 'Sunset Project X',
+        status: 'accepted',
+        metadata: { extracted_from_decision_fallback: true },
+      },
+    });
+  });
+
+  it('does not infer fallback decisions from vague discussion', () => {
+    expect(
+      fallbackBundles({
+        text: 'Maybe we should sunset Project X after legal reviews the contract.',
+        timezone: 'UTC',
+        occurredAt: REFERENCE_DATE,
+        authorUserId: OWNER_ID,
+      }),
+    ).toEqual([]);
+  });
 });
 
 describe('processSuggestionJobForTests', () => {
@@ -248,9 +284,71 @@ describe('processSuggestionJobForTests', () => {
 
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(event?.sourceMetadata).toMatchObject({
-      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-05-a`,
+      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-06-a`,
     });
     expect(event?.sourceMetadata).toHaveProperty('suggestions_pre_extracted_at');
+  });
+
+  it('stores model-backed decision object suggestions', async () => {
+    const rawEventId = '10000000-0000-0000-0000-00000000001d';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'We decided to sunset Project X.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Decision: Sunset Project X',
+            summary: 'The team decided to sunset Project X.',
+            reason: 'The source says the team decided this.',
+            confidence: 'high',
+            quote: 'We decided to sunset Project X.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Sunset Project X',
+                proposedPayload: {
+                  type: 'decision',
+                  canonicalName: 'Sunset Project X',
+                  status: 'accepted',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const call = chat.mock.calls[0]?.[0] as { prompt: string; system: string } | undefined;
+    const prompt = call?.prompt;
+    expect(prompt).toContain('# Existing workspace objects');
+    expect(call?.system).toContain('proposedPayload.type="decision"');
+    const bundle = (
+      await withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions()
+    )[0];
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'object',
+      title: 'Sunset Project X',
+      proposedPayload: {
+        type: 'decision',
+        canonicalName: 'Sunset Project X',
+        status: 'accepted',
+      },
+    });
   });
 
   it('schedules Telegram commitments for debounced conversation review', async () => {
@@ -325,7 +423,7 @@ describe('processSuggestionJobForTests', () => {
     const [event] = await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId));
     expect(event?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-05-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
     });
   });
 
@@ -1545,11 +1643,11 @@ describe('processSuggestionJobForTests', () => {
       .from(rawEvents);
     expect(skipped.find((row) => row.id === privateEventId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-05-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
     });
     expect(skipped.find((row) => row.id === specificEventId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=specific_users',
-      suggestion_model_version: `${MODEL_ID}@2026-05-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
     });
   });
 
@@ -1585,11 +1683,11 @@ describe('processSuggestionJobForTests', () => {
       .from(rawEvents);
     expect(skipped.find((row) => row.id === inactivePrivateId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-05-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
     });
     expect(skipped.find((row) => row.id === emptySpecificId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=specific_users',
-      suggestion_model_version: `${MODEL_ID}@2026-05-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
     });
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
   });
@@ -1618,7 +1716,7 @@ describe('processSuggestionJobForTests', () => {
       .update(rawEvents)
       .set({
         sourceMetadata: {
-          suggestion_pre_extract_model_version: `${MODEL_ID}@2026-05-a`,
+          suggestion_pre_extract_model_version: `${MODEL_ID}@2026-06-a`,
           suggestions_pre_extracted_at: '2026-05-27T10:00:00.000Z',
           extracted_at: '2026-05-27T10:01:00.000Z',
           extraction_model_version: 'test-extract@1',
@@ -1638,8 +1736,8 @@ describe('processSuggestionJobForTests', () => {
     );
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(event?.sourceMetadata).toMatchObject({
-      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-05-a`,
-      suggestion_model_version: `${MODEL_ID}@2026-05-a`,
+      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-06-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-06-a`,
     });
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 2 });
   });
