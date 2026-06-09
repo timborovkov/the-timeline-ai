@@ -392,7 +392,7 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
       {suggestions.length > 0 ? (
         <section className="space-y-3">
           <h2 className="text-sm font-medium tracking-tight">Pending approvals</h2>
-          <ApprovalsClient suggestions={suggestions} />
+          <ApprovalsClient suggestions={suggestions} allowBulkAccept={false} />
         </section>
       ) : null}
 

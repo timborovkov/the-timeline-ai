@@ -56,7 +56,7 @@ export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<Em
   return wrapAiFailure({ operation: 'llm.embed', model: modelId }, async () => {
     const model = deps.model ?? buildDefaultModel(modelId);
     const text = truncateTextToTokenBudget(input.text, embeddingInputTokenBudget());
-    const result = await aiEmbed({ model, value: text });
+    const result = await aiEmbed({ model, value: text, maxRetries: 0 });
     return { vector: Array.from(result.embedding), model: modelId };
   });
 }

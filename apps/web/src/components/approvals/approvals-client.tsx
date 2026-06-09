@@ -45,6 +45,7 @@ interface SuggestionBundle {
 
 interface Props {
   suggestions: SuggestionBundle[];
+  allowBulkAccept?: boolean;
 }
 
 function formatPayload(payload: Record<string, unknown>): string {
@@ -76,7 +77,7 @@ function objectMergeHref(item: SuggestionItem): string {
   return `/app/objects/merge?ids=${orderedIds.join(',')}&suggestionItemId=${item.id}`;
 }
 
-export function ApprovalsClient({ suggestions }: Props) {
+export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -130,7 +131,7 @@ export function ApprovalsClient({ suggestions }: Props) {
                 ) : null}
                 {bundle.reason ? <p className="mt-1 text-xs text-fg-dim">{bundle.reason}</p> : null}
               </div>
-              {bulkAcceptItems.length > 1 ? (
+              {allowBulkAccept && bulkAcceptItems.length > 1 ? (
                 <Button
                   type="button"
                   size="sm"

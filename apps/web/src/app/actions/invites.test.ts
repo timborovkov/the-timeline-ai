@@ -27,8 +27,16 @@ const fakes = vi.hoisted(() => ({
   fakeEnsureSoloTeam: vi.fn(),
   fakeClearPendingInvite: vi.fn(),
   fakeLoggerError: vi.fn(),
+  fakeCaptureException: vi.fn(),
+  fakeWithServerActionInstrumentation: vi.fn(
+    (_operation: string, _options: unknown, callback: () => unknown) => Promise.resolve(callback()),
+  ),
 }));
 
+vi.mock('@sentry/nextjs', () => ({
+  captureException: fakes.fakeCaptureException,
+  withServerActionInstrumentation: fakes.fakeWithServerActionInstrumentation,
+}));
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
 vi.mock('@/lib/db', () => ({
   db: {

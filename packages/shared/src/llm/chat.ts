@@ -1,5 +1,6 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import {
+  NoObjectGeneratedError,
   stepCountIs,
   type RepairTextFunction,
   type LanguageModel,
@@ -77,15 +78,61 @@ function errorMessage(err: unknown): string {
   return String(err);
 }
 
+function hasNoObjectGeneratedError(err: unknown): boolean {
+  if (NoObjectGeneratedError.isInstance(err)) return true;
+  if (err instanceof AggregateError) return err.errors.some(hasNoObjectGeneratedError);
+  if (err instanceof Error && 'cause' in err) return hasNoObjectGeneratedError(err.cause);
+  return false;
+}
+
 function shouldFallbackToJsonObject(err: unknown): boolean {
   const message = errorMessage(err).toLowerCase();
   return (
+    hasNoObjectGeneratedError(err) ||
     message.includes('json_schema') ||
     message.includes('structured output') ||
     (message.includes('response_format') &&
       (message.includes('not supported') ||
         message.includes('unsupported') ||
         message.includes('rejected')))
+  );
+}
+
+function statusCodesFromError(err: unknown): number[] {
+  if (err instanceof AggregateError) {
+    return err.errors.flatMap(statusCodesFromError);
+  }
+  if (!err || typeof err !== 'object') return [];
+  const record = err as Record<string, unknown>;
+  const statusCode = record.statusCode ?? record.status ?? record.responseStatus;
+  return typeof statusCode === 'number' ? [statusCode] : [];
+}
+
+function isRetryableStatusCode(code: number): boolean {
+  return code === 408 || code === 429 || code >= 500;
+}
+
+function hasRetryableProviderMessage(err: unknown): boolean {
+  const message = errorMessage(err).toLowerCase();
+  return (
+    message.includes('rate limit') ||
+    message.includes('temporarily unavailable') ||
+    message.includes('provider unavailable') ||
+    message.includes('overloaded') ||
+    message.includes('timeout') ||
+    message.includes('timed out') ||
+    message.includes('503') ||
+    message.includes('502') ||
+    message.includes('504')
+  );
+}
+
+function shouldFallbackToAlternateModel(err: unknown): boolean {
+  const statusCodes = statusCodesFromError(err);
+  return (
+    hasNoObjectGeneratedError(err) ||
+    statusCodes.some(isRetryableStatusCode) ||
+    hasRetryableProviderMessage(err)
   );
 }
 
@@ -167,6 +214,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
     schema,
     prompt,
     system,
+    maxRetries: 0,
     experimental_repairText: repairKnownStructuredOutput(schema),
     providerOptions: withLangSmithProviderOptions(openRouterRequireParametersOptions(), {
       name: 'llm.chatStructured',
@@ -193,36 +241,53 @@ export async function chatStructured<TSchema extends z.ZodType>(
 ): Promise<ChatStructuredResult<TSchema>> {
   const modelId = input.model ?? resolveDefaultModelId();
   return wrapAiFailure({ operation: 'llm.chatStructured', model: modelId }, async () => {
-    const model = deps.model ?? buildOpenRouterLanguageModel(modelId, deps);
+    const runModel = async (candidateModelId: string) => {
+      const model = deps.model ?? buildOpenRouterLanguageModel(candidateModelId, deps);
+      try {
+        const result = await generateStructuredObject({
+          schema: input.schema,
+          prompt: input.prompt,
+          system: structuredOutputSystem(input.system),
+          model,
+          modelId: candidateModelId,
+          operation: 'chat_structured',
+        });
+        return { object: result.object as z.infer<TSchema>, model: candidateModelId };
+      } catch (err) {
+        if (deps.model || !shouldFallbackToJsonObject(err)) throw err;
+        const fallbackModel = buildOpenRouterLanguageModel(candidateModelId, deps, {
+          supportsStructuredOutputs: false,
+        });
+        const result = await generateStructuredObject({
+          schema: input.schema,
+          prompt: input.prompt,
+          system: structuredOutputFallbackSystem(input.schema, input.system),
+          model: fallbackModel,
+          modelId: candidateModelId,
+          operation: 'chat_structured_json_object_fallback',
+        }).catch((fallbackErr: unknown) => {
+          throw new AggregateError(
+            [err, fallbackErr],
+            'llm.chatStructured failed with json_schema and json_object response formats',
+          );
+        });
+        return { object: result.object as z.infer<TSchema>, model: candidateModelId };
+      }
+    };
+
     try {
-      const result = await generateStructuredObject({
-        schema: input.schema,
-        prompt: input.prompt,
-        system: structuredOutputSystem(input.system),
-        model,
-        modelId,
-        operation: 'chat_structured',
-      });
-      return { object: result.object as z.infer<TSchema>, model: modelId };
+      return await runModel(modelId);
     } catch (err) {
-      if (deps.model || !shouldFallbackToJsonObject(err)) throw err;
-      const fallbackModel = buildOpenRouterLanguageModel(modelId, deps, {
-        supportsStructuredOutputs: false,
-      });
-      const result = await generateStructuredObject({
-        schema: input.schema,
-        prompt: input.prompt,
-        system: structuredOutputFallbackSystem(input.schema, input.system),
-        model: fallbackModel,
-        modelId,
-        operation: 'chat_structured_json_object_fallback',
-      }).catch((fallbackErr: unknown) => {
+      const fallbackModelId = TIMELINE_MODELS.structuredFallback.id;
+      if (deps.model || fallbackModelId === modelId || !shouldFallbackToAlternateModel(err)) {
+        throw err;
+      }
+      return runModel(fallbackModelId).catch((fallbackErr: unknown) => {
         throw new AggregateError(
           [err, fallbackErr],
-          'llm.chatStructured failed with json_schema and json_object response formats',
+          'llm.chatStructured failed with primary and fallback structured models',
         );
       });
-      return { object: result.object as z.infer<TSchema>, model: modelId };
     }
   });
 }

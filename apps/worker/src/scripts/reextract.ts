@@ -16,7 +16,7 @@
  */
 import { closeDb, getDb, rawEvents } from '@timeline/db';
 import { queue } from '@timeline/shared';
-import { currentExtractionModelVersion } from '@timeline/shared/extraction-model-version';
+import { currentExtractionModelVersions } from '@timeline/shared/extraction-model-version';
 import { and, asc, eq, gt, isNotNull, or, type SQL, sql } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -46,9 +46,9 @@ function parseArgs(): { teamId: string; limit: number; dryRun: boolean } {
 
 async function main(): Promise<void> {
   const { teamId, limit, dryRun } = parseArgs();
-  const modelVersion = currentExtractionModelVersion();
+  const modelVersions = currentExtractionModelVersions();
   console.log(
-    `[reextract] team=${teamId} modelVersion=${modelVersion} limit=${
+    `[reextract] team=${teamId} modelVersions=${modelVersions.join(',')} limit=${
       Number.isFinite(limit) ? limit : 'unbounded'
     } dryRun=${dryRun}`,
   );
@@ -76,10 +76,11 @@ async function main(): Promise<void> {
 
     // Filter by the metadata stamp in SQL so we never enqueue a job the
     // worker would just skip. Mirrors the worker's idempotency check: a row
-    // whose source_metadata.extraction_model_version already matches the
-    // current modelVersion does not need re-processing — including
+    // whose source_metadata.extraction_model_version already matches any
+    // current extraction route does not need re-processing — including
     // zero-fact runs, which a facts-existence check would falsely re-enqueue.
-    const stampCondition = sql`(${rawEvents.sourceMetadata} ->> 'extraction_model_version') IS DISTINCT FROM ${modelVersion}`;
+    const currentVersionValues = modelVersions.map((version) => sql`${version}`);
+    const stampCondition = sql`COALESCE(${rawEvents.sourceMetadata} ->> 'extraction_model_version', '') NOT IN (${sql.join(currentVersionValues, sql`, `)})`;
     conditions.push(stampCondition);
 
     const page: { id: string; occurredAt: Date }[] = await db

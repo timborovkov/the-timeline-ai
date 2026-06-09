@@ -147,6 +147,12 @@ describe('queue wrappers', () => {
 
     expect(fakes.queues[0]?.addCalls[0]?.opts).toBeUndefined();
     expect(fakes.queues[1]?.addCalls[0]?.opts).toBeUndefined();
+    expect(fakes.queues[1]?.options).toMatchObject({
+      defaultJobOptions: {
+        attempts: 6,
+        backoff: { type: 'exponential', delay: 10_000 },
+      },
+    });
     expect(fakes.queues[2]?.addCalls[0]).toMatchObject({
       name: 'team-export',
       opts: { jobId: '44444444-4444-4444-8444-444444444444' },
