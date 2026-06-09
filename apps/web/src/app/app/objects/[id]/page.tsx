@@ -40,7 +40,11 @@ export default async function ObjectDetailPage({ params }: PageProps) {
   // Moving markVisited above getObject would zero the banner forever
   // after the first load.
   const detail = await scope.objects.getObject(id);
-  if (!detail) notFound();
+  if (!detail) {
+    const mergedTarget = await scope.objects.getMergedObjectTarget(id);
+    if (mergedTarget) redirect(`/app/objects/${mergedTarget.id}`);
+    notFound();
+  }
 
   await scope.objects.markVisited(detail.id);
   const suggestions = (await scope.suggestions.listPendingSuggestions()).flatMap((bundle) => {

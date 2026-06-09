@@ -4,11 +4,13 @@ import {
   acceptObjectChangeAction,
   addRelationshipAction,
   archiveObjectAction,
+  bulkArchiveObjectsAction,
   createNoteAction,
   createObjectAction,
   deleteNoteAction,
   markAllNotificationsReadAction,
   markNotificationReadAction,
+  mergeObjectsAction,
   rejectObjectChangeAction,
   removeRelationshipAction,
   updateNoteAction,
@@ -30,6 +32,7 @@ const fakes = vi.hoisted(() => ({
     createObject: vi.fn(),
     updateObject: vi.fn(),
     archiveObject: vi.fn(),
+    mergeObjects: vi.fn(),
     addRelationship: vi.fn(),
     removeRelationship: vi.fn(),
     createNote: vi.fn(),
@@ -40,6 +43,10 @@ const fakes = vi.hoisted(() => ({
     acceptObjectChange: vi.fn(),
     rejectObjectChange: vi.fn(),
   },
+  fakeSuggestions: {
+    acceptObjectMergeSuggestionItem: vi.fn(),
+  },
+  fakeEnqueueSuggestionJob: vi.fn(),
 }));
 
 vi.mock('@/lib/action-scope', async () => {
@@ -51,6 +58,9 @@ vi.mock('@/lib/action-scope', async () => {
 });
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
+vi.mock('@timeline/shared/queue', () => ({
+  enqueueSuggestionJob: fakes.fakeEnqueueSuggestionJob,
+}));
 
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const OBJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -62,12 +72,17 @@ beforeEach(() => {
   vi.clearAllMocks();
   fakes.fakeResolveScope.mockResolvedValue({
     ok: true,
-    scope: { objects: fakes.fakeObjects },
+    scope: { objects: fakes.fakeObjects, suggestions: fakes.fakeSuggestions },
     userId: USER_ID,
+    teamId: '11111111-1111-4111-8111-111111111111',
   });
   fakes.fakeObjects.createObject.mockResolvedValue({ id: OBJECT_ID });
   fakes.fakeObjects.updateObject.mockResolvedValue(undefined);
   fakes.fakeObjects.archiveObject.mockResolvedValue(undefined);
+  fakes.fakeObjects.mergeObjects.mockResolvedValue({
+    survivor: { id: OBJECT_ID },
+    mergedIds: [OTHER_OBJECT_ID],
+  });
   fakes.fakeObjects.addRelationship.mockResolvedValue(undefined);
   fakes.fakeObjects.removeRelationship.mockResolvedValue(undefined);
   fakes.fakeObjects.createNote.mockResolvedValue({ id: NOTE_ID });
@@ -77,6 +92,10 @@ beforeEach(() => {
   fakes.fakeObjects.markAllNotificationsRead.mockResolvedValue(undefined);
   fakes.fakeObjects.acceptObjectChange.mockResolvedValue(true);
   fakes.fakeObjects.rejectObjectChange.mockResolvedValue(true);
+  fakes.fakeSuggestions.acceptObjectMergeSuggestionItem.mockResolvedValue({
+    survivorId: OBJECT_ID,
+  });
+  fakes.fakeEnqueueSuggestionJob.mockResolvedValue(undefined);
 });
 
 describe('object action validation and scope', () => {
@@ -176,6 +195,68 @@ describe('object CRUD actions', () => {
       userId: USER_ID,
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
+  });
+
+  it('bulk archives selected objects and refreshes cleanup surfaces', async () => {
+    await expect(bulkArchiveObjectsAction({ ids: [OBJECT_ID, OTHER_OBJECT_ID] })).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(fakes.fakeObjects.archiveObject).toHaveBeenCalledTimes(2);
+    expect(fakes.fakeObjects.archiveObject).toHaveBeenCalledWith(OBJECT_ID, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/objects');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/tasks');
+  });
+
+  it('merges selected objects with a survivor and refreshes old and new object pages', async () => {
+    await expect(
+      mergeObjectsAction({ survivorId: OBJECT_ID, mergedIds: [OTHER_OBJECT_ID] }),
+    ).resolves.toEqual({ ok: true, id: OBJECT_ID });
+
+    expect(fakes.fakeObjects.mergeObjects).toHaveBeenCalledWith({
+      survivorId: OBJECT_ID,
+      mergedIds: [OTHER_OBJECT_ID],
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OTHER_OBJECT_ID}`);
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
+  });
+
+  it('accepts merge suggestions through the merge preview action', async () => {
+    const suggestionItemId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+
+    await expect(
+      mergeObjectsAction({ survivorId: OBJECT_ID, mergedIds: [OTHER_OBJECT_ID], suggestionItemId }),
+    ).resolves.toEqual({ ok: true, id: OBJECT_ID });
+
+    expect(fakes.fakeObjects.mergeObjects).not.toHaveBeenCalled();
+    expect(fakes.fakeSuggestions.acceptObjectMergeSuggestionItem).toHaveBeenCalledWith({
+      itemId: suggestionItemId,
+      survivorId: OBJECT_ID,
+      mergedIds: [OTHER_OBJECT_ID],
+    });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+  });
+
+  it('queues a manual object cleanup suggestion scan for the active team', async () => {
+    const { findObjectCleanupSuggestionsAction } = await import('@/app/actions/objects');
+
+    await expect(findObjectCleanupSuggestionsAction()).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeEnqueueSuggestionJob).toHaveBeenCalledWith(
+      {
+        scope: 'object_cleanup',
+        teamId: '11111111-1111-4111-8111-111111111111',
+        triggeredBy: 'manual',
+      },
+      { jobIdSuffix: 'manual' },
+    );
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/objects');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
   });
 });
 

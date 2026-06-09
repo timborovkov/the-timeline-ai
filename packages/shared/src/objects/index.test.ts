@@ -4,6 +4,9 @@ import {
   chatMessages,
   chatSessions,
   entities,
+  entityRelationships,
+  factEntities,
+  facts,
   objectChanges,
   objectNotes,
   rawEvents,
@@ -417,5 +420,173 @@ describe('object scope — board and archive visibility', () => {
     await expect(ownerScope.listObjects({ archived: true })).resolves.not.toContainEqual(
       expect.objectContaining({ canonicalName: 'Merged duplicate' }),
     );
+  });
+});
+
+describe('object scope — merge cleanup', () => {
+  it('merges compatible objects, moves derived rows, dedupes edges, and hides merged rows', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const survivor = await scope.createObject({
+      type: 'company',
+      canonicalName: 'PwC',
+      aliases: ['PricewaterhouseCoopers'],
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const typo = await scope.createObject({
+      type: 'company',
+      canonicalName: 'PVC',
+      aliases: ['P.W.C.'],
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const vendor = await scope.createObject({
+      type: 'vendor',
+      canonicalName: 'PwC Finland',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const related = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Audit rollout',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Follow up with PwC',
+      parentObjectId: typo.id,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.addRelationship({
+      fromEntityId: survivor.id,
+      toEntityId: related.id,
+      kind: 'related',
+      actorUserId: USER_OWNER,
+    });
+    await scope.addRelationship({
+      fromEntityId: typo.id,
+      toEntityId: related.id,
+      kind: 'related',
+      actorUserId: USER_OWNER,
+    });
+    await scope.createNote({
+      entityId: typo.id,
+      body: 'Duplicate spelling from capture',
+      authorUserId: USER_OWNER,
+    });
+    const event = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'system',
+        contentText: 'PwC evidence',
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    const eventId = event[0]?.id;
+    if (!eventId) throw new Error('Failed to insert test raw event');
+    const fact = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: eventId,
+        statement: 'PVC is PwC',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    const factId = fact[0]?.id;
+    if (!factId) throw new Error('Failed to insert test fact');
+    await db.insert(factEntities).values({
+      factId,
+      entityId: typo.id,
+      role: 'subject',
+    });
+
+    const preview = await scope.getObjectMergePreview(
+      [survivor.id, typo.id, vendor.id],
+      survivor.id,
+    );
+    expect(preview.aliasesToAdd).toEqual(expect.arrayContaining(['PVC', 'P.W.C.', 'PwC Finland']));
+    expect(preview.counts).toMatchObject({ facts: 1, notes: 1 });
+
+    await expect(
+      scope.mergeObjects({
+        survivorId: survivor.id,
+        mergedIds: [typo.id, vendor.id],
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ).resolves.toMatchObject({ mergedIds: [typo.id, vendor.id] });
+
+    await expect(scope.listObjects({ archived: false })).resolves.not.toContainEqual(
+      expect.objectContaining({ id: typo.id }),
+    );
+    await expect(scope.getMergedObjectTarget(typo.id)).resolves.toMatchObject({ id: survivor.id });
+    const detail = await scope.getObject(survivor.id);
+    expect(detail?.aliases).toEqual(
+      expect.arrayContaining(['PricewaterhouseCoopers', 'PVC', 'P.W.C.', 'PwC Finland']),
+    );
+    expect(detail?.openTasks).toEqual([expect.objectContaining({ id: task.id })]);
+
+    const factLinks = await db.select().from(factEntities).where(eq(factEntities.factId, factId));
+    expect(factLinks).toEqual([
+      expect.objectContaining({ entityId: survivor.id, role: 'subject' }),
+    ]);
+
+    const rels = await db
+      .select()
+      .from(entityRelationships)
+      .where(inArray(entityRelationships.toEntityId, [related.id, survivor.id]));
+    expect(
+      rels.filter(
+        (rel) =>
+          rel.fromEntityId === survivor.id &&
+          rel.toEntityId === related.id &&
+          rel.kind === 'related',
+      ),
+    ).toHaveLength(1);
+    expect(rels).not.toContainEqual(expect.objectContaining({ fromEntityId: typo.id }));
+
+    const changeRows = await db
+      .select()
+      .from(objectChanges)
+      .where(eq(objectChanges.entityId, survivor.id));
+    expect(changeRows.map((row) => row.field)).toEqual(
+      expect.arrayContaining(['__merge__', '__merged_from__', '__note_create__']),
+    );
+  });
+
+  it('blocks task merges and cross-team ids', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const otherScope = withTeam(db, TEAM_B, USER_OTHER_TEAM).objects;
+    const first = await scope.createObject({
+      type: 'task',
+      canonicalName: 'One task',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const second = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Another task',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const otherTeamObject = await otherScope.createObject({
+      type: 'company',
+      canonicalName: 'Other team company',
+      actor: { kind: 'user', userId: USER_OTHER_TEAM },
+    });
+
+    await expect(
+      scope.mergeObjects({
+        survivorId: first.id,
+        mergedIds: [second.id],
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ).rejects.toThrow('Only same-type objects can be merged');
+    await expect(
+      scope.mergeObjects({
+        survivorId: first.id,
+        mergedIds: [otherTeamObject.id],
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ).rejects.toThrow('One or more objects no longer exists');
   });
 });

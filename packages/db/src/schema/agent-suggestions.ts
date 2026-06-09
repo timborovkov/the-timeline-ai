@@ -34,6 +34,7 @@ export const agentSuggestionOperation = pgEnum('agent_suggestion_operation', [
   'create',
   'update',
   'archive_or_cancel',
+  'merge',
 ]);
 
 export const agentSuggestionTargetKind = pgEnum('agent_suggestion_target_kind', [
@@ -43,6 +44,7 @@ export const agentSuggestionTargetKind = pgEnum('agent_suggestion_target_kind', 
   'identity_facet',
   'object_note',
   'object_relationship',
+  'object_merge',
 ]);
 
 export const agentSuggestions = pgTable(

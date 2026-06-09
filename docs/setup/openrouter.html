@@ -135,9 +135,9 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       <ul>
         <li>
           <strong>No fuzzy / embedding-based dedup.</strong> "Apple" and "Apple Inc" land as two
-          rows unless one already lists the other as an alias. Use the admin merge UI on
-          <code>/app/entities/[id]</code> to fold one into the other; aliases combine and all
-          <code>fact_entities</code> references rewrite atomically.
+          rows unless one already lists the other as an alias. Use select mode on
+          <code>/app/objects</code> and the merge preview at <code>/app/objects/merge</code> to fold
+          one into the other; aliases combine and derived object references move atomically.
         </li>
         <li>
           <strong>Same name, different team = different entity.</strong> Entity rows are team-scoped
@@ -145,7 +145,8 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         </li>
       </ul>
       <p>
-        Phase 5+ may add embedding similarity once vectors exist; until then, merges are manual.
+        Cleanup suggestions add conservative name/alias-based merge and archive proposals, but merge
+        suggestions still route through the manual preview before any state changes are applied.
       </p>
 
       <h3 id="reextraction-procedure">

@@ -49,6 +49,7 @@ async function main(): Promise<void> {
   // by jobId.
   await queue.scheduleIntegrationIncrementalSync();
   await queue.scheduleMcpHealthPing();
+  await queue.scheduleObjectCleanupSuggestions();
   log.info(
     'transcribe + extract + suggestions + embed + overdue + document-extract + meeting-finalize + janitor + integration-sync + mcp-health + team-export workers started',
   );

@@ -8,8 +8,10 @@ import {
   agentSuggestions,
   conversationReviews,
   entities,
+  entityRelationships,
   factEntities,
   facts,
+  objectNotes,
   rawEvents,
   type Db,
 } from '@timeline/db';
@@ -204,6 +206,139 @@ describe('processSuggestionJobForTests', () => {
     await applyMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
+  });
+
+  it('creates deduped object cleanup merge and archive suggestions across manual and daily scans', async () => {
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'AuditAI',
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'vendor',
+        canonicalName: 'Audit AI',
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'other',
+        canonicalName: 'Excel',
+      },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: '__all__', triggeredBy: 'daily' },
+    );
+
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(2);
+    expect(
+      bundles
+        .flatMap((bundle) => bundle.items)
+        .map((item) => item.targetKind)
+        .sort(),
+    ).toEqual(['object', 'object_merge']);
+  });
+
+  it('does not re-offer rejected cleanup suggestions for the same evidence hash', async () => {
+    await db.insert(entities).values([
+      { teamId: TEAM_ID, type: 'company', canonicalName: 'KPMG' },
+      { teamId: TEAM_ID, type: 'vendor', canonicalName: 'K P M G' },
+    ]);
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+    const [bundle] = await scope.suggestions.listPendingSuggestions();
+    const itemId = bundle?.items[0]?.id ?? '';
+    await expect(scope.suggestions.rejectSuggestionItem(itemId)).resolves.toBe(true);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'daily' },
+    );
+
+    await expect(scope.suggestions.listPendingSuggestions()).resolves.toEqual([]);
+    await expect(scope.suggestions.listSuggestions({ status: 'resolved' })).resolves.toHaveLength(
+      1,
+    );
+  });
+
+  it('skips archive cleanup suggestions for objects with notes, facts, or relationships', async () => {
+    const [withNote, withFact, withRelationship, related] = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'other', canonicalName: 'Excel' },
+        { teamId: TEAM_ID, type: 'other', canonicalName: 'Finder' },
+        { teamId: TEAM_ID, type: 'other', canonicalName: 'Drive' },
+        { teamId: TEAM_ID, type: 'project', canonicalName: 'Migration' },
+      ])
+      .returning({ id: entities.id });
+    if (!withNote || !withFact || !withRelationship || !related) {
+      throw new Error('expected object fixtures');
+    }
+    await db.insert(objectNotes).values({
+      teamId: TEAM_ID,
+      entityId: withNote.id,
+      authorUserId: OWNER_ID,
+      body: 'Keep this around.',
+    });
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: OWNER_ID,
+        source: 'web',
+        contentText: 'Finder matters.',
+        occurredAt: REFERENCE_DATE,
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!raw) throw new Error('expected raw event fixture');
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: raw.id,
+        statement: 'Finder matters.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('expected fact fixture');
+    await db.insert(factEntities).values({
+      factId: fact.id,
+      entityId: withFact.id,
+      role: 'subject',
+    });
+    await db.insert(entityRelationships).values({
+      teamId: TEAM_ID,
+      fromEntityId: withRelationship.id,
+      toEntityId: related.id,
+      kind: 'related',
+      createdBy: OWNER_ID,
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
   });
 
   it('turns a commitment raw event into task and calendar suggestions through fallback', async () => {

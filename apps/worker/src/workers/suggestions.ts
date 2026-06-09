@@ -1,7 +1,11 @@
 import {
+  agentSuggestions,
   conversationReviews,
   entities,
+  entityRelationships,
+  factEntities,
   facts as factsTable,
+  objectNotes,
   rawEvents,
   teamMembers,
   users,
@@ -17,7 +21,7 @@ import {
   withTeam,
 } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
-import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
@@ -241,6 +245,11 @@ export async function processSuggestionJobForTests(
   data: queue.SuggestionJobData,
   io: SuggestionWorkerIO = {},
 ): Promise<void> {
+  if ('scope' in data && data.scope === 'object_cleanup') {
+    await processObjectCleanupJob(deps, data);
+    return;
+  }
+
   const env = (io.getEnv ?? getEnv)();
   if (!env.OPENROUTER_API_KEY) {
     throw new UnrecoverableError('suggestions: OPENROUTER_API_KEY not configured');
@@ -279,6 +288,313 @@ export async function processSuggestionJobForTests(
     modelId,
     io,
   });
+}
+
+type CleanupObjectRow = Pick<
+  typeof entities.$inferSelect,
+  'id' | 'teamId' | 'type' | 'canonicalName' | 'aliases' | 'status' | 'updatedAt'
+>;
+
+const CLEANUP_MERGE_TYPES = new Set([
+  'person',
+  'company',
+  'project',
+  'topic',
+  'deal',
+  'vendor',
+  'incident',
+  'document',
+  'decision',
+  'hiring_loop',
+  'other',
+]);
+
+const GENERIC_TOOL_NAMES = new Set([
+  'calendar',
+  'clock',
+  'drive',
+  'excel',
+  'finder',
+  'github',
+  'googlemeet',
+  'googlemeet',
+  'googledrive',
+  'googlemeet',
+  'googlemeet',
+  'meet',
+  'slack',
+  'telegram',
+  'youtube',
+  'zoom',
+]);
+
+function cleanupCompatible(a: CleanupObjectRow, b: CleanupObjectRow): boolean {
+  return (
+    a.type === b.type ||
+    ((a.type === 'company' || a.type === 'vendor') && (b.type === 'company' || b.type === 'vendor'))
+  );
+}
+
+function normalizeCleanupName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\b(inc|llc|ltd|oy|corp|corporation|company|co|gmbh|plc)\b/g, '')
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+}
+
+function cleanupNames(row: CleanupObjectRow): string[] {
+  const aliases = Array.isArray(row.aliases)
+    ? row.aliases.filter((v): v is string => typeof v === 'string')
+    : [];
+  return Array.from(
+    new Set(
+      [row.canonicalName, ...aliases].map(normalizeCleanupName).filter((name) => name.length >= 2),
+    ),
+  );
+}
+
+function levenshtein(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_unused, j) => j);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      current[j] =
+        a[i - 1] === b[j - 1]
+          ? (previous[j - 1] ?? 0)
+          : Math.min(previous[j] ?? 0, current[j - 1] ?? 0, previous[j - 1] ?? 0) + 1;
+    }
+    previous = current;
+  }
+  return previous[b.length] ?? 0;
+}
+
+function cleanupMatch(a: CleanupObjectRow, b: CleanupObjectRow): 'exact' | 'near' | null {
+  if (!cleanupCompatible(a, b)) return null;
+  const aNames = cleanupNames(a);
+  const bNames = cleanupNames(b);
+  if (aNames.some((name) => bNames.includes(name))) return 'exact';
+  for (const left of aNames) {
+    for (const right of bNames) {
+      const min = Math.min(left.length, right.length);
+      const max = Math.max(left.length, right.length);
+      if (min >= 5 && (left.includes(right) || right.includes(left))) return 'near';
+      if (min >= 3 && max <= 8 && levenshtein(left, right) <= 1) return 'near';
+    }
+  }
+  return null;
+}
+
+function pickCleanupSurvivor(rows: CleanupObjectRow[]): CleanupObjectRow {
+  const [survivor] = rows
+    .slice()
+    .sort(
+      (a, b) =>
+        (Array.isArray(b.aliases) ? b.aliases.length : 0) -
+          (Array.isArray(a.aliases) ? a.aliases.length : 0) ||
+        b.canonicalName.length - a.canonicalName.length ||
+        b.updatedAt.getTime() - a.updatedAt.getTime() ||
+        a.id.localeCompare(b.id),
+    );
+  if (!survivor) throw new Error('cleanup survivor requires at least one object');
+  return survivor;
+}
+
+async function rejectedSuggestionExists(
+  db: Db,
+  teamId: string,
+  dedupeKey: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: agentSuggestions.id })
+    .from(agentSuggestions)
+    .where(
+      and(
+        eq(agentSuggestions.teamId, teamId),
+        eq(agentSuggestions.dedupeKey, dedupeKey),
+        eq(agentSuggestions.status, 'rejected'),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+async function processObjectCleanupJob(
+  deps: SuggestionWorkerDeps,
+  data: queue.SuggestionObjectCleanupJobData,
+): Promise<void> {
+  const teamIds =
+    data.teamId === '__all__'
+      ? (
+          await deps.db
+            .selectDistinct({ teamId: entities.teamId })
+            .from(entities)
+            .where(and(isNull(entities.archivedAt), isNull(entities.mergedIntoId)))
+        ).map((row) => row.teamId)
+      : [data.teamId];
+  for (const teamId of teamIds) {
+    await createObjectCleanupSuggestionsForTeam(deps.db, teamId, data.triggeredBy ?? 'daily');
+  }
+}
+
+async function createObjectCleanupSuggestionsForTeam(
+  db: Db,
+  teamId: string,
+  triggeredBy: string,
+): Promise<void> {
+  const rows = await db
+    .select({
+      id: entities.id,
+      teamId: entities.teamId,
+      type: entities.type,
+      canonicalName: entities.canonicalName,
+      aliases: entities.aliases,
+      status: entities.status,
+      updatedAt: entities.updatedAt,
+    })
+    .from(entities)
+    .where(
+      and(eq(entities.teamId, teamId), isNull(entities.archivedAt), isNull(entities.mergedIntoId)),
+    )
+    .orderBy(desc(entities.updatedAt))
+    .limit(500);
+  const scope = withTeam(db, teamId, PSEUDO_USER, { skipMembershipCheck: true });
+  const mergeCandidates = rows.filter((row) => CLEANUP_MERGE_TYPES.has(row.type));
+  const proposedMergeKeys = new Set<string>();
+
+  for (const [i, left] of mergeCandidates.entries()) {
+    for (const right of mergeCandidates.slice(i + 1)) {
+      const match = cleanupMatch(left, right);
+      if (!match) continue;
+      const objectIds = [left.id, right.id].sort();
+      const groupKey = objectIds.join('|');
+      if (proposedMergeKeys.has(groupKey)) continue;
+      proposedMergeKeys.add(groupKey);
+      const survivor = pickCleanupSurvivor([left, right]);
+      const reason =
+        match === 'exact'
+          ? 'Names or aliases match closely enough to review as a duplicate.'
+          : 'Names are similar enough to review as a possible duplicate.';
+      const dedupeKey = suggestions.suggestionDedupeKey({
+        kind: 'object_cleanup_merge',
+        teamId,
+        objectIds,
+        match,
+      });
+      if (await rejectedSuggestionExists(db, teamId, dedupeKey)) continue;
+      await scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: `Merge duplicate objects: ${left.canonicalName} / ${right.canonicalName}`,
+        summary: 'Two objects look like they may represent the same thing.',
+        reason,
+        confidence: match === 'exact' ? 'high' : 'medium',
+        dedupeKey,
+        metadata: {
+          kind: 'object_cleanup',
+          cleanup_kind: 'merge',
+          triggered_by: triggeredBy,
+          object_ids: objectIds,
+        },
+        items: [
+          {
+            operation: 'merge',
+            targetKind: 'object_merge',
+            targetId: survivor.id,
+            title: `Review merge for ${survivor.canonicalName}`,
+            description: reason,
+            dedupeKey,
+            proposedPayload: {
+              objectIds,
+              survivorId: survivor.id,
+              reason,
+            },
+          },
+        ],
+      });
+    }
+  }
+
+  const protectedIds = new Set<string>();
+  const ids = rows.map((row) => row.id);
+  if (ids.length > 0) {
+    const [noteRows, relationshipRows, factRows] = await Promise.all([
+      db
+        .select({ entityId: objectNotes.entityId, total: count() })
+        .from(objectNotes)
+        .where(
+          and(
+            eq(objectNotes.teamId, teamId),
+            inArray(objectNotes.entityId, ids),
+            isNull(objectNotes.deletedAt),
+          ),
+        )
+        .groupBy(objectNotes.entityId),
+      db
+        .select({ id: entities.id, total: count() })
+        .from(entities)
+        .innerJoin(
+          entityRelationships,
+          or(
+            eq(entityRelationships.fromEntityId, entities.id),
+            eq(entityRelationships.toEntityId, entities.id),
+          ),
+        )
+        .where(and(eq(entities.teamId, teamId), inArray(entities.id, ids)))
+        .groupBy(entities.id),
+      db
+        .select({ entityId: factEntities.entityId, total: count() })
+        .from(factEntities)
+        .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
+        .where(and(eq(factsTable.teamId, teamId), inArray(factEntities.entityId, ids)))
+        .groupBy(factEntities.entityId),
+    ]);
+    for (const row of [...noteRows, ...factRows]) {
+      if (row.total > 0) protectedIds.add(row.entityId);
+    }
+    for (const row of relationshipRows) {
+      if (row.total > 0) protectedIds.add(row.id);
+    }
+  }
+
+  for (const row of rows) {
+    const normalized = normalizeCleanupName(row.canonicalName);
+    if (!GENERIC_TOOL_NAMES.has(normalized)) continue;
+    if (row.type === 'task' || row.type === 'follow_up') continue;
+    if (protectedIds.has(row.id)) continue;
+    const dedupeKey = suggestions.suggestionDedupeKey({
+      kind: 'object_cleanup_archive',
+      teamId,
+      objectId: row.id,
+      evidenceHash: normalized,
+    });
+    if (await rejectedSuggestionExists(db, teamId, dedupeKey)) continue;
+    await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: `Archive low-signal object: ${row.canonicalName}`,
+      summary:
+        'This object looks like a generic tool or app name with no attached notes, facts, or links.',
+      reason: 'Cleanup archive candidates are limited to weak-evidence tool-like objects.',
+      confidence: 'medium',
+      dedupeKey,
+      metadata: {
+        kind: 'object_cleanup',
+        cleanup_kind: 'archive',
+        triggered_by: triggeredBy,
+        object_id: row.id,
+      },
+      items: [
+        {
+          operation: 'archive_or_cancel',
+          targetKind: 'object',
+          targetId: row.id,
+          title: `Archive ${row.canonicalName}`,
+          description: 'Archive this low-signal object.',
+          dedupeKey,
+          proposedPayload: {},
+        },
+      ],
+    });
+  }
 }
 
 async function runSuggestionExtraction(

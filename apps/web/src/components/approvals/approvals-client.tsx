@@ -1,6 +1,7 @@
 'use client';
 
-import { Check, CheckCheck, X } from 'lucide-react';
+import { Check, CheckCheck, GitMerge, X } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
@@ -61,6 +62,20 @@ function formatPayloadValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function objectMergeHref(item: SuggestionItem): string {
+  const objectIds = item.proposedPayload.objectIds;
+  const ids = Array.isArray(objectIds)
+    ? objectIds.filter((value): value is string => typeof value === 'string')
+    : [];
+  const survivorId =
+    typeof item.proposedPayload.survivorId === 'string' ? item.proposedPayload.survivorId : null;
+  const orderedIds =
+    survivorId && ids.includes(survivorId)
+      ? [survivorId, ...ids.filter((id) => id !== survivorId)]
+      : ids;
+  return `/app/objects/merge?ids=${orderedIds.join(',')}&suggestionItemId=${item.id}`;
+}
+
 export function ApprovalsClient({ suggestions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -98,6 +113,7 @@ export function ApprovalsClient({ suggestions }: Props) {
         const pendingItems = bundle.items.filter(
           (item) => item.status === 'pending' || item.status === 'failed',
         );
+        const bulkAcceptItems = pendingItems.filter((item) => item.targetKind !== 'object_merge');
         return (
           <article key={bundle.id} className="border-y border-border py-4">
             <div className="flex flex-wrap items-start gap-3">
@@ -114,7 +130,7 @@ export function ApprovalsClient({ suggestions }: Props) {
                 ) : null}
                 {bundle.reason ? <p className="mt-1 text-xs text-fg-dim">{bundle.reason}</p> : null}
               </div>
-              {pendingItems.length > 1 ? (
+              {bulkAcceptItems.length > 1 ? (
                 <Button
                   type="button"
                   size="sm"
@@ -150,17 +166,26 @@ export function ApprovalsClient({ suggestions }: Props) {
                   </div>
                   {item.status === 'pending' || item.status === 'failed' ? (
                     <div className="flex items-start gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={pending}
-                        onClick={() => {
-                          run(() => acceptSuggestionItemAction({ itemId: item.id }));
-                        }}
-                      >
-                        <Check className="size-4" />
-                        Accept
-                      </Button>
+                      {item.targetKind === 'object_merge' ? (
+                        <Button asChild size="sm" disabled={pending}>
+                          <Link href={objectMergeHref(item)}>
+                            <GitMerge className="size-4" />
+                            Review merge
+                          </Link>
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => {
+                            run(() => acceptSuggestionItemAction({ itemId: item.id }));
+                          }}
+                        >
+                          <Check className="size-4" />
+                          Accept
+                        </Button>
+                      )}
                       <Button
                         type="button"
                         size="sm"

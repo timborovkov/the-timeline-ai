@@ -1251,7 +1251,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           ? 'calendar'
           : row.targetKind === 'identity_facet' ||
               row.targetKind === 'object_note' ||
-              row.targetKind === 'object_relationship'
+              row.targetKind === 'object_relationship' ||
+              row.targetKind === 'object_merge'
             ? 'object'
             : row.targetKind;
       const objectMemoryTarget =

@@ -188,6 +188,28 @@ describe('queue wrappers', () => {
     expect(duplicate).toMatchObject({ enqueued: false });
   });
 
+  it('dedupes manual object cleanup suggestion scans by team and trigger', async () => {
+    const queues = await importQueues();
+    const data = {
+      scope: 'object_cleanup' as const,
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'manual',
+    };
+
+    const first = await queues.enqueueSuggestionJob(data, { jobIdSuffix: 'manual' });
+    const duplicate = await queues.enqueueSuggestionJob(data, { jobIdSuffix: 'manual' });
+
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'suggestions',
+      opts: {
+        jobId: 'object-cleanup|22222222-2222-4222-8222-222222222222|manual|manual',
+      },
+    });
+    expect(fakes.queues[0]?.addCalls).toHaveLength(1);
+    expect(first).toMatchObject({ enqueued: true });
+    expect(duplicate).toMatchObject({ enqueued: false });
+  });
+
   it('replaces retained completed or failed suggestion jobs with the same recovery id', async () => {
     const queues = await importQueues();
     const data = {
