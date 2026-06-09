@@ -555,6 +555,22 @@ describe('object scope — merge cleanup', () => {
     expect(changeRows.map((row) => row.field)).toEqual(
       expect.arrayContaining(['__merge__', '__merged_from__', '__note_create__']),
     );
+
+    const finalSurvivor = await scope.createObject({
+      type: 'company',
+      canonicalName: 'PwC Global',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await expect(
+      scope.mergeObjects({
+        survivorId: finalSurvivor.id,
+        mergedIds: [survivor.id],
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ).resolves.toMatchObject({ survivor: { id: finalSurvivor.id }, mergedIds: [survivor.id] });
+    await expect(scope.getMergedObjectTarget(typo.id)).resolves.toMatchObject({
+      id: finalSurvivor.id,
+    });
   });
 
   it('blocks task merges and cross-team ids', async () => {

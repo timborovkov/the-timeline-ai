@@ -780,23 +780,32 @@ export async function getMergedObjectTarget(
 ): Promise<{ id: string; canonicalName: string } | null> {
   await scope.requireMembership();
   if (!UUID_RE.test(entityId)) return null;
-  const rows = await db
-    .select({
-      id: entities.id,
-      canonicalName: entities.canonicalName,
-      mergedIntoId: entities.mergedIntoId,
-    })
-    .from(entities)
-    .where(and(eq(entities.id, entityId), eq(entities.teamId, scope.teamId)))
-    .limit(1);
-  const row = rows[0];
-  if (!row?.mergedIntoId) return null;
-  const targetRows = await db
-    .select({ id: entities.id, canonicalName: entities.canonicalName })
-    .from(entities)
-    .where(and(eq(entities.id, row.mergedIntoId), eq(entities.teamId, scope.teamId)))
-    .limit(1);
-  return targetRows[0] ?? null;
+  const seen = new Set<string>();
+  let currentId = entityId;
+  let foundMerge = false;
+
+  for (;;) {
+    if (seen.has(currentId)) return null;
+    seen.add(currentId);
+
+    const rows = await db
+      .select({
+        id: entities.id,
+        canonicalName: entities.canonicalName,
+        mergedIntoId: entities.mergedIntoId,
+      })
+      .from(entities)
+      .where(and(eq(entities.id, currentId), eq(entities.teamId, scope.teamId)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    if (!row.mergedIntoId) {
+      return foundMerge ? { id: row.id, canonicalName: row.canonicalName } : null;
+    }
+
+    foundMerge = true;
+    currentId = row.mergedIntoId;
+  }
 }
 
 export async function getObjectMergePreview(

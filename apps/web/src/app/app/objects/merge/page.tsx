@@ -10,25 +10,12 @@ import { ObjectMergeForm } from '@/components/objects/object-merge-form';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { parseObjectMergeIds } from '@/lib/object-merge';
 
 export const metadata: Metadata = {
   title: 'Merge Objects',
   description: 'Review and merge selected workspace objects.',
 };
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function parseIds(value: string | string[] | undefined): string[] {
-  const raw = Array.isArray(value) ? value.join(',') : (value ?? '');
-  return Array.from(
-    new Set(
-      raw
-        .split(',')
-        .map((part) => part.trim())
-        .filter((part) => UUID_RE.test(part)),
-    ),
-  ).slice(0, 10);
-}
 
 export default async function MergeObjectsPage({
   searchParams,
@@ -41,9 +28,9 @@ export default async function MergeObjectsPage({
   if (!active) redirect('/sign-in');
 
   const params = await searchParams;
-  const ids = parseIds(params.ids);
+  const ids = parseObjectMergeIds(params.ids);
   const suggestionItemId =
-    params.suggestionItemId && UUID_RE.test(params.suggestionItemId)
+    params.suggestionItemId && parseObjectMergeIds(params.suggestionItemId).length === 1
       ? params.suggestionItemId
       : undefined;
   if (ids.length < 2) {

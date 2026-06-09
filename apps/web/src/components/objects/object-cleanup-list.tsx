@@ -8,15 +8,11 @@ import { useMemo, useState, useTransition } from 'react';
 import type * as objects from '@timeline/shared/objects';
 
 import { bulkArchiveObjectsAction } from '@/app/actions/objects';
+import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 
 interface Props {
   rows: objects.ObjectRow[];
   typeLabels: Record<string, string>;
-}
-
-function selectedMergeHref(selectedIds: string[]): string {
-  const params = new URLSearchParams({ ids: selectedIds.join(',') });
-  return `/app/objects/merge?${params.toString()}`;
 }
 
 export function ObjectCleanupList({ rows, typeLabels }: Props) {
@@ -28,6 +24,8 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
 
   const selectedIds = useMemo(() => Array.from(selected), [selected]);
   const selectedCount = selectedIds.length;
+  const canMergeSelected =
+    selectedCount >= 2 && selectedCount <= MAX_OBJECT_MERGE_SELECTION && !isPending;
   const grouped = useMemo(() => {
     const map = new Map<string, objects.ObjectRow[]>();
     for (const row of rows) {
@@ -87,10 +85,10 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
           {selecting ? (
             <>
               <Link
-                href={selectedCount >= 2 ? selectedMergeHref(selectedIds) : '#'}
-                aria-disabled={selectedCount < 2 || isPending}
+                href={canMergeSelected ? objectMergeHref(selectedIds) : '#'}
+                aria-disabled={!canMergeSelected}
                 className={`inline-flex h-8 items-center gap-1.5 rounded-sm border px-2.5 font-mono text-[11px] uppercase tracking-[0.1em] transition-colors ${
-                  selectedCount >= 2 && !isPending
+                  canMergeSelected
                     ? 'border-border text-fg hover:bg-surface-2'
                     : 'pointer-events-none border-border text-fg-dim opacity-50'
                 }`}
@@ -133,6 +131,11 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
       {error ? (
         <p className="border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
           {error}
+        </p>
+      ) : null}
+      {selecting && selectedCount > MAX_OBJECT_MERGE_SELECTION ? (
+        <p className="border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+          Select {MAX_OBJECT_MERGE_SELECTION} or fewer objects to merge.
         </p>
       ) : null}
       <div className="space-y-8">
