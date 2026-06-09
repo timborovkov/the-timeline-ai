@@ -28,6 +28,9 @@ const fakes = vi.hoisted(() => ({
   fakeResolveScope: vi.fn(),
   fakeRevalidatePath: vi.fn(),
   fakeReportCaughtError: vi.fn(),
+  fakeTransaction: vi.fn(),
+  fakeTx: { kind: 'tx' },
+  fakeWithTeam: vi.fn(),
   fakeObjects: {
     createObject: vi.fn(),
     updateObject: vi.fn(),
@@ -46,6 +49,9 @@ const fakes = vi.hoisted(() => ({
   fakeSuggestions: {
     acceptObjectMergeSuggestionItem: vi.fn(),
   },
+  fakeTransactionObjects: {
+    archiveObject: vi.fn(),
+  },
   fakeEnqueueSuggestionJob: vi.fn(),
 }));
 
@@ -58,6 +64,8 @@ vi.mock('@/lib/action-scope', async () => {
 });
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
+vi.mock('@/lib/db', () => ({ db: { transaction: fakes.fakeTransaction } }));
+vi.mock('@timeline/shared/team-scope', () => ({ withTeam: fakes.fakeWithTeam }));
 vi.mock('@timeline/shared/queue', () => ({
   enqueueSuggestionJob: fakes.fakeEnqueueSuggestionJob,
 }));
@@ -70,6 +78,12 @@ const CHANGE_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.fakeTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
+    callback(fakes.fakeTx),
+  );
+  fakes.fakeWithTeam.mockReturnValue({
+    objects: fakes.fakeTransactionObjects,
+  });
   fakes.fakeResolveScope.mockResolvedValue({
     ok: true,
     scope: { objects: fakes.fakeObjects, suggestions: fakes.fakeSuggestions },
@@ -95,6 +109,7 @@ beforeEach(() => {
   fakes.fakeSuggestions.acceptObjectMergeSuggestionItem.mockResolvedValue({
     survivorId: OBJECT_ID,
   });
+  fakes.fakeTransactionObjects.archiveObject.mockResolvedValue(undefined);
   fakes.fakeEnqueueSuggestionJob.mockResolvedValue(undefined);
 });
 
@@ -202,13 +217,31 @@ describe('object CRUD actions', () => {
       ok: true,
     });
 
-    expect(fakes.fakeObjects.archiveObject).toHaveBeenCalledTimes(2);
-    expect(fakes.fakeObjects.archiveObject).toHaveBeenCalledWith(OBJECT_ID, {
+    expect(fakes.fakeTransaction).toHaveBeenCalledTimes(1);
+    expect(fakes.fakeWithTeam).toHaveBeenCalledWith(
+      fakes.fakeTx,
+      '11111111-1111-4111-8111-111111111111',
+      USER_ID,
+    );
+    expect(fakes.fakeTransactionObjects.archiveObject).toHaveBeenCalledTimes(2);
+    expect(fakes.fakeTransactionObjects.archiveObject).toHaveBeenCalledWith(OBJECT_ID, {
       kind: 'user',
       userId: USER_ID,
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/objects');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/tasks');
+  });
+
+  it('does not refresh cleanup surfaces when bulk archive transaction fails', async () => {
+    const err = new Error('archive failed');
+    fakes.fakeTransactionObjects.archiveObject.mockRejectedValueOnce(err);
+
+    await expect(bulkArchiveObjectsAction({ ids: [OBJECT_ID, OTHER_OBJECT_ID] })).resolves.toEqual({
+      error: 'archive failed',
+    });
+
+    expect(fakes.fakeTransaction).toHaveBeenCalledTimes(1);
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalledWith('/app/objects');
   });
 
   it('merges selected objects with a survivor and refreshes old and new object pages', async () => {

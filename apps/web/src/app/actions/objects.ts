@@ -1,11 +1,13 @@
 'use server';
 import * as objects from '@timeline/shared/objects';
 import { enqueueSuggestionJob } from '@timeline/shared/queue';
+import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
 import { trackProductEventBestEffort } from '@/lib/analytics';
+import { db } from '@/lib/db';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 
@@ -157,9 +159,12 @@ export async function bulkArchiveObjectsAction(input: unknown): Promise<ActionSt
     if (!r.ok) return { error: r.error };
     try {
       const ids = Array.from(new Set(parsed.data.ids));
-      await Promise.all(
-        ids.map((id) => r.scope.objects.archiveObject(id, { kind: 'user', userId: r.userId })),
-      );
+      await db.transaction(async (tx) => {
+        const txScope = withTeam(tx as unknown as typeof db, r.teamId, r.userId);
+        for (const id of ids) {
+          await txScope.objects.archiveObject(id, { kind: 'user', userId: r.userId });
+        }
+      });
       for (const id of ids) revalidatePath(`/app/objects/${id}`);
       revalidatePath('/app/objects');
       revalidatePath('/app/boards', 'layout');

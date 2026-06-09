@@ -12,14 +12,24 @@ import { mergeObjectsAction } from '@/app/actions/objects';
 interface Props {
   objects: objects.ObjectRow[];
   initialSurvivorId: string;
-  counts: {
-    facts: number;
-    notes: number;
-    relationships: number;
-    openTasks: number;
-  };
+  countsBySurvivorId: Record<
+    string,
+    {
+      facts: number;
+      notes: number;
+      relationships: number;
+      openTasks: number;
+    }
+  >;
   suggestionItemId?: string;
 }
+
+const emptyCounts = {
+  facts: 0,
+  notes: 0,
+  relationships: 0,
+  openTasks: 0,
+};
 
 function aliasAdditions(rows: objects.ObjectRow[], survivorId: string): string[] {
   const survivor = rows.find((row) => row.id === survivorId);
@@ -45,13 +55,19 @@ function aliasAdditions(rows: objects.ObjectRow[], survivorId: string): string[]
   );
 }
 
-export function ObjectMergeForm({ objects, initialSurvivorId, counts, suggestionItemId }: Props) {
+export function ObjectMergeForm({
+  objects,
+  initialSurvivorId,
+  countsBySurvivorId,
+  suggestionItemId,
+}: Props) {
   const router = useRouter();
   const [survivorId, setSurvivorId] = useState(initialSurvivorId);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const aliases = useMemo(() => aliasAdditions(objects, survivorId), [objects, survivorId]);
   const survivor = objects.find((row) => row.id === survivorId);
+  const counts = countsBySurvivorId[survivorId] ?? emptyCounts;
 
   function confirmMerge() {
     if (!survivor || isPending) return;

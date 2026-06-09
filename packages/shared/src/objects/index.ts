@@ -327,6 +327,7 @@ function mergeAliases(survivor: ObjectRow, losers: ObjectRow[]): string[] {
 
 export interface ObjectMergePreview {
   objects: ObjectRow[];
+  survivorId: string;
   aliasesToAdd: string[];
   counts: {
     facts: number;
@@ -334,6 +335,7 @@ export interface ObjectMergePreview {
     relationships: number;
     openTasks: number;
   };
+  countsBySurvivorId: Record<string, ObjectMergePreview['counts']>;
 }
 
 export type ObjectSection = 'events' | 'facts' | 'changes' | 'tasks' | 'relationships';
@@ -828,67 +830,85 @@ export async function getObjectMergePreview(
 
   const survivor = objects.find((row) => row.id === survivorId) ?? objects[0];
   if (!survivor) throw new Error('Survivor object not found');
-  const loserIds = ids.filter((id) => id !== survivor.id);
   const losers = objects.filter((row) => row.id !== survivor.id);
 
-  const [factCountRows, noteCountRows, relCountRows, taskCountRows] = await Promise.all([
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(factEntities)
-      .where(inArray(factEntities.entityId, loserIds)),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(objectNotes)
-      .where(
-        and(
-          eq(objectNotes.teamId, scope.teamId),
-          inArray(objectNotes.entityId, loserIds),
-          isNull(objectNotes.deletedAt),
-        ),
-      ),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(entityRelationships)
-      .where(
-        and(
-          eq(entityRelationships.teamId, scope.teamId),
-          or(
-            inArray(entityRelationships.fromEntityId, loserIds),
-            inArray(entityRelationships.toEntityId, loserIds),
+  async function countMergeImpact(loserIds: string[]): Promise<ObjectMergePreview['counts']> {
+    const [factCountRows, noteCountRows, relCountRows, taskCountRows] = await Promise.all([
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(factEntities)
+        .where(inArray(factEntities.entityId, loserIds)),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(objectNotes)
+        .where(
+          and(
+            eq(objectNotes.teamId, scope.teamId),
+            inArray(objectNotes.entityId, loserIds),
+            isNull(objectNotes.deletedAt),
           ),
         ),
-      ),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(entityRelationships)
-      .innerJoin(entities, eq(entities.id, entityRelationships.fromEntityId))
-      .where(
-        and(
-          eq(entityRelationships.teamId, scope.teamId),
-          inArray(entityRelationships.toEntityId, loserIds),
-          eq(entityRelationships.kind, 'child'),
-          eq(entities.teamId, scope.teamId),
-          eq(entities.type, 'task'),
-          isNull(entities.archivedAt),
-          isNull(entities.mergedIntoId),
-          ne(entities.status, 'done'),
-          ne(entities.status, 'cancelled'),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(entityRelationships)
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            or(
+              inArray(entityRelationships.fromEntityId, loserIds),
+              inArray(entityRelationships.toEntityId, loserIds),
+            ),
+          ),
         ),
-      ),
-  ]);
-
-  return {
-    objects,
-    aliasesToAdd: mergeAliases(survivor, losers).filter(
-      (alias) =>
-        !survivor.aliases.some((existing) => existing.toLowerCase() === alias.toLowerCase()),
-    ),
-    counts: {
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(entityRelationships)
+        .innerJoin(entities, eq(entities.id, entityRelationships.fromEntityId))
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            inArray(entityRelationships.toEntityId, loserIds),
+            eq(entityRelationships.kind, 'child'),
+            eq(entities.teamId, scope.teamId),
+            eq(entities.type, 'task'),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+            ne(entities.status, 'done'),
+            ne(entities.status, 'cancelled'),
+          ),
+        ),
+    ]);
+    return {
       facts: factCountRows[0]?.count ?? 0,
       notes: noteCountRows[0]?.count ?? 0,
       relationships: relCountRows[0]?.count ?? 0,
       openTasks: taskCountRows[0]?.count ?? 0,
-    },
+    };
+  }
+
+  const countEntries = await Promise.all(
+    objects.map(
+      async (object) =>
+        [object.id, await countMergeImpact(ids.filter((id) => id !== object.id))] as const,
+    ),
+  );
+  const countsBySurvivorId = Object.fromEntries(countEntries);
+  const counts = countsBySurvivorId[survivor.id] ?? {
+    facts: 0,
+    notes: 0,
+    relationships: 0,
+    openTasks: 0,
+  };
+
+  return {
+    objects,
+    survivorId: survivor.id,
+    aliasesToAdd: mergeAliases(survivor, losers).filter(
+      (alias) =>
+        !survivor.aliases.some((existing) => existing.toLowerCase() === alias.toLowerCase()),
+    ),
+    counts,
+    countsBySurvivorId,
   };
 }
 

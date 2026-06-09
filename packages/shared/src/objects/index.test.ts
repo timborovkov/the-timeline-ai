@@ -506,8 +506,10 @@ describe('object scope — merge cleanup', () => {
       [survivor.id, typo.id, vendor.id],
       survivor.id,
     );
+    expect(preview.survivorId).toBe(survivor.id);
     expect(preview.aliasesToAdd).toEqual(expect.arrayContaining(['PVC', 'P.W.C.', 'PwC Finland']));
     expect(preview.counts).toMatchObject({ facts: 1, notes: 1 });
+    expect(preview.countsBySurvivorId[survivor.id]).toMatchObject({ facts: 1, notes: 1 });
 
     await expect(
       scope.mergeObjects({

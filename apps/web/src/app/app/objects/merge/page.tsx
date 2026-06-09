@@ -93,8 +93,7 @@ export default async function MergeObjectsPage({
       </div>
     );
   }
-  const initialSurvivor = preview.objects[0];
-  if (!initialSurvivor) redirect('/app/objects');
+  if (preview.objects.length === 0) redirect('/app/objects');
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -111,8 +110,8 @@ export default async function MergeObjectsPage({
       </IndexStrip>
       <ObjectMergeForm
         objects={preview.objects}
-        initialSurvivorId={initialSurvivor.id}
-        counts={preview.counts}
+        initialSurvivorId={preview.survivorId}
+        countsBySurvivorId={preview.countsBySurvivorId}
         suggestionItemId={suggestionItemId}
       />
     </div>

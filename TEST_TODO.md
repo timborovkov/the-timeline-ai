@@ -14,7 +14,7 @@ coverage from `main`. Current suite shape:
   runs under root `pnpm test`.
 - Shared Vitest: 64 files / 578 tests plus 1 skipped, including PGlite
   integration/eval coverage plus queue, S3, and onboarding contracts.
-- Web Vitest: 75 files / 381 tests, including route/action/component coverage
+- Web Vitest: 76 files / 383 tests, including route/action/component coverage
   for core recovery, onboarding, object sections, and first high-value UI
   states.
 - Worker Vitest: 11 files / 116 tests, including extract, transcribe,
