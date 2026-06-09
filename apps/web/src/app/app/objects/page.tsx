@@ -67,6 +67,7 @@ export default async function ObjectsIndexPage({
   ]);
   const cleanupSuggestions = [];
   for (const bundle of suggestionBundles) {
+    if (bundle.metadata.kind !== 'object_cleanup') continue;
     const items = bundle.items.filter(
       (item) =>
         item.targetKind === 'object_merge' ||

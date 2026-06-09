@@ -98,6 +98,7 @@ export interface SuggestionBundle {
   visibility: Visibility;
   visibilityOwnerUserId: string | null;
   visibilityUserIds: string[] | null;
+  metadata: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
   items: SuggestionItem[];
@@ -295,6 +296,10 @@ function toBundle(
     visibility: row.visibility,
     visibilityOwnerUserId: row.visibilityOwnerUserId,
     visibilityUserIds: row.visibilityUserIds,
+    metadata:
+      row.metadata && typeof row.metadata === 'object'
+        ? (row.metadata as Record<string, unknown>)
+        : {},
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     items: items.map((item) => ({
