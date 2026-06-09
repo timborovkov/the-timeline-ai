@@ -81,4 +81,53 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Calendar conflict');
     expect(html).toContain('I will send the proposal');
   });
+
+  it('can hide bundle-level accept all for filtered approval surfaces', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        allowBulkAccept: false,
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Follow up with Acme',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send proposal',
+                description: null,
+                proposedPayload: { canonicalName: 'Send proposal' },
+                failureReason: null,
+              },
+              {
+                id: 'item-2',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Book review',
+                description: null,
+                proposedPayload: { canonicalName: 'Book review' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).not.toContain('Accept all');
+    expect(html).toContain('Send proposal');
+    expect(html).toContain('Book review');
+  });
 });

@@ -992,6 +992,79 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.count).toBe('0');
   });
 
+  it('accepts decision object suggestions as durable decision objects', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Decision: Sunset Project X',
+      dedupeKey: 'decision-object-create',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Sunset Project X',
+          dedupeKey: 'decision-object-create:item',
+          proposedPayload: {
+            type: 'decision',
+            canonicalName: 'Sunset Project X',
+            status: 'accepted',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{
+      id: string;
+      type: string;
+      status: string;
+      marker: string | null;
+    }>(
+      `SELECT id, type, status, metadata ->> 'agent_suggestion_item_id' AS marker
+       FROM entities
+       WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Sunset Project X'`,
+    );
+    expect(result.rows[0]).toMatchObject({
+      type: 'decision',
+      status: 'accepted',
+      marker: itemId,
+    });
+  });
+
+  it('rejecting a decision object suggestion leaves no durable decision', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Decision: Reject Project X',
+      dedupeKey: 'decision-object-reject',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Reject Project X',
+          dedupeKey: 'decision-object-reject:item',
+          proposedPayload: {
+            type: 'decision',
+            canonicalName: 'Reject Project X',
+            status: 'accepted',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.rejectSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ count: string }>(
+      `SELECT count(*)::text FROM entities WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Reject Project X'`,
+    );
+    expect(result.rows[0]?.count).toBe('0');
+  });
+
   it('applies object updates only inside the scoped team', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const otherScope = withTeam(db as never, OTHER_TEAM_ID, OTHER_USER_ID);
