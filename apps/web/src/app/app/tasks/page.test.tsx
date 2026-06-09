@@ -95,6 +95,48 @@ describe('TasksPage', () => {
     expect(html).toContain('Task approvals');
     expect(html).toContain('Commitment: Send proposal');
     expect(html).toContain('approvals');
+    expect(html).toContain('1 pending approval');
+    expect(html).toContain('No tasks yet');
+  });
+
+  it('does not render approvals when only resolved task suggestion items remain', async () => {
+    fakes.listPendingSuggestions.mockResolvedValue([
+      {
+        id: 'bundle-1',
+        source: 'background',
+        status: 'pending',
+        title: 'Commitment: Send proposal',
+        summary: null,
+        reason: null,
+        confidence: 'medium',
+        visibility: 'team',
+        visibilityOwnerUserId: null,
+        visibilityUserIds: null,
+        createdAt: new Date('2026-06-01T10:00:00.000Z'),
+        updatedAt: new Date('2026-06-01T10:00:00.000Z'),
+        evidence: [],
+        items: [
+          {
+            id: 'item-1',
+            status: 'accepted',
+            operation: 'create',
+            targetKind: 'task',
+            targetId: null,
+            resultId: 'task-1',
+            title: 'Send proposal',
+            description: null,
+            proposedPayload: { canonicalName: 'Send proposal' },
+            failureReason: null,
+          },
+        ],
+      },
+    ]);
+
+    const html = renderToStaticMarkup(await TasksPage());
+
+    expect(html).not.toContain('Task approvals');
+    expect(html).not.toContain('Commitment: Send proposal');
+    expect(html).not.toContain('pending approval');
     expect(html).toContain('No tasks yet');
   });
 

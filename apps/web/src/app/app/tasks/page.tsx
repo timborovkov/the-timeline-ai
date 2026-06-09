@@ -18,6 +18,7 @@ export const metadata: Metadata = {
 };
 
 const TASK_COLUMNS = ['todo', 'doing', 'done', 'blocked', 'cancelled'];
+const ACTIONABLE_SUGGESTION_STATUSES = new Set(['pending', 'failed']);
 
 export default async function TasksPage() {
   const session = await auth();
@@ -35,21 +36,27 @@ export default async function TasksPage() {
     scope.suggestions.listPendingSuggestions(),
   ]);
   const taskSuggestions = pendingSuggestions.flatMap((bundle) => {
-    const items = bundle.items.filter((item) => item.targetKind === 'task');
+    const items = bundle.items.filter(
+      (item) => item.targetKind === 'task' && ACTIONABLE_SUGGESTION_STATUSES.has(item.status),
+    );
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
-  const pendingTaskItems = taskSuggestions.reduce(
-    (sum, bundle) =>
-      sum +
-      bundle.items.filter((item) => item.status === 'pending' || item.status === 'failed').length,
-    0,
-  );
+  const pendingTaskItems = taskSuggestions.reduce((sum, bundle) => sum + bundle.items.length, 0);
 
   const open = rows.filter((r) => r.status !== 'done' && r.status !== 'cancelled').length;
   const overdue = rows.filter(
     (r) =>
       r.dueAt !== null && r.dueAt < new Date() && r.status !== 'done' && r.status !== 'cancelled',
   ).length;
+  const srSegments = [
+    'Tasks',
+    `${rows.length} total`,
+    `${open} open`,
+    ...(pendingTaskItems > 0
+      ? [`${pendingTaskItems} pending ${pendingTaskItems === 1 ? 'approval' : 'approvals'}`]
+      : []),
+    ...(overdue > 0 ? [`${overdue} overdue`] : []),
+  ];
 
   return (
     // Fixed viewport-bounded height (viewport − AppShell header − main
@@ -59,7 +66,7 @@ export default async function TasksPage() {
     // the per-column vertical scroll entirely.
     <div className="flex h-[calc(100dvh-10rem)] flex-col">
       <IndexStrip
-        srLabel={`Tasks · ${rows.length} total · ${open} open${overdue ? ` · ${overdue} overdue` : ''}`}
+        srLabel={srSegments.join(' · ')}
         segments={[
           { value: 'TASKS' },
           { label: 'total', value: rows.length },
