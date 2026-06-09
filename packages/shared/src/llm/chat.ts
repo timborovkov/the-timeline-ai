@@ -1,5 +1,6 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import {
+  NoObjectGeneratedError,
   stepCountIs,
   type RepairTextFunction,
   type LanguageModel,
@@ -77,9 +78,17 @@ function errorMessage(err: unknown): string {
   return String(err);
 }
 
+function hasNoObjectGeneratedError(err: unknown): boolean {
+  if (NoObjectGeneratedError.isInstance(err)) return true;
+  if (err instanceof AggregateError) return err.errors.some(hasNoObjectGeneratedError);
+  if (err instanceof Error && 'cause' in err) return hasNoObjectGeneratedError(err.cause);
+  return false;
+}
+
 function shouldFallbackToJsonObject(err: unknown): boolean {
   const message = errorMessage(err).toLowerCase();
   return (
+    hasNoObjectGeneratedError(err) ||
     message.includes('json_schema') ||
     message.includes('structured output') ||
     (message.includes('response_format') &&
@@ -120,7 +129,11 @@ function hasRetryableProviderMessage(err: unknown): boolean {
 
 function shouldFallbackToAlternateModel(err: unknown): boolean {
   const statusCodes = statusCodesFromError(err);
-  return statusCodes.some(isRetryableStatusCode) || hasRetryableProviderMessage(err);
+  return (
+    hasNoObjectGeneratedError(err) ||
+    statusCodes.some(isRetryableStatusCode) ||
+    hasRetryableProviderMessage(err)
+  );
 }
 
 function repairKnownStructuredOutput(schema: z.ZodType): RepairTextFunction {

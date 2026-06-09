@@ -387,6 +387,79 @@ describe('chatStructured', () => {
     ).toBe(true);
   });
 
+  it('falls back to json_object mode when structured generation returns no object', async () => {
+    const requests: unknown[] = [];
+    const fetchStub: typeof fetch = (_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('expected request body');
+      const parsed: unknown = JSON.parse(init.body);
+      requests.push(parsed);
+      if (requests.length === 1) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: 'chatcmpl-no-object',
+              object: 'chat.completion',
+              created: 0,
+              model: TIMELINE_MODELS.extraction.id,
+              choices: [
+                {
+                  index: 0,
+                  message: { role: 'assistant', content: 'I cannot produce structured JSON.' },
+                  finish_reason: 'stop',
+                },
+              ],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-json-object-recovery',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.extraction.id,
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: JSON.stringify({ facts: [] }) },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    const result = await chatStructured(
+      {
+        schema: extractionResultSchema,
+        prompt: 'Extract facts from: Heading out for lunch.',
+        system: EXTRACTION_SYSTEM_PROMPT,
+      },
+      { fetch: fetchStub },
+    );
+
+    expect(result).toEqual({ object: { facts: [] }, model: TIMELINE_MODELS.extraction.id });
+    expect(requests).toHaveLength(2);
+    const summaries = requests.map((request) =>
+      z
+        .object({
+          model: z.string(),
+          response_format: z.object({ type: z.string() }),
+        })
+        .parse(request),
+    );
+    expect(summaries).toEqual([
+      { model: TIMELINE_MODELS.extraction.id, response_format: { type: 'json_schema' } },
+      { model: TIMELINE_MODELS.extraction.id, response_format: { type: 'json_object' } },
+    ]);
+  });
+
   it('does not retry with a fallback model for auth failures', async () => {
     const requests: unknown[] = [];
     const fetchStub: typeof fetch = (_url, init) => {
@@ -621,6 +694,86 @@ describe('chatStructured', () => {
         }),
       ]),
     );
+  });
+
+  it('retries the structured fallback model when json_object fallback also returns no object', async () => {
+    const requests: unknown[] = [];
+    const fetchStub: typeof fetch = (_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('expected request body');
+      const parsed: unknown = JSON.parse(init.body);
+      requests.push(parsed);
+      const request = z
+        .object({
+          model: z.string(),
+          response_format: z.object({ type: z.string() }),
+        })
+        .parse(parsed);
+      if (request.model === TIMELINE_MODELS.extraction.id) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: `chatcmpl-no-object-${request.response_format.type}`,
+              object: 'chat.completion',
+              created: 0,
+              model: TIMELINE_MODELS.extraction.id,
+              choices: [
+                {
+                  index: 0,
+                  message: { role: 'assistant', content: 'No structured object here.' },
+                  finish_reason: 'stop',
+                },
+              ],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-fallback-model-recovery',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.structuredFallback.id,
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: JSON.stringify({ facts: [] }) },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    const result = await chatStructured(
+      {
+        schema: extractionResultSchema,
+        prompt: 'Extract facts from: Heading out for lunch.',
+        system: EXTRACTION_SYSTEM_PROMPT,
+      },
+      { fetch: fetchStub },
+    );
+
+    expect(result).toEqual({ object: { facts: [] }, model: TIMELINE_MODELS.structuredFallback.id });
+    expect(
+      requests.map((request) =>
+        z
+          .object({
+            model: z.string(),
+            response_format: z.object({ type: z.string() }),
+          })
+          .parse(request),
+      ),
+    ).toEqual([
+      { model: TIMELINE_MODELS.extraction.id, response_format: { type: 'json_schema' } },
+      { model: TIMELINE_MODELS.extraction.id, response_format: { type: 'json_object' } },
+      { model: TIMELINE_MODELS.structuredFallback.id, response_format: { type: 'json_schema' } },
+    ]);
   });
 
   liveOpenRouterIt(
