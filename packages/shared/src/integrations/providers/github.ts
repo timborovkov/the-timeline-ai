@@ -1,5 +1,3 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
-
 import type {
   IntegrationEvent,
   IntegrationProvider,
@@ -16,8 +14,7 @@ import { childLogger } from '#src/logger.js';
 //
 // OAuth App (user-to-server) for now — straightforward, full repo:read scope.
 // A future revision swaps to a GitHub App with installation tokens for
-// finer-grained perms. Webhook delivery uses HMAC-SHA256 over the raw body
-// keyed on GITHUB_WEBHOOK_SECRET.
+// finer-grained perms and first-class installation webhooks.
 //
 // Sync surface per selected repo:
 //   - Pull requests (open + closed, with merged_at)
@@ -26,8 +23,6 @@ import { childLogger } from '#src/logger.js';
 //   - Releases
 //   - Recent commits on the default branch
 //   - Workflow runs (CI state)
-// Webhook surface: pull_request, pull_request_review, issues, release,
-//   push, workflow_run.
 
 const log = childLogger('integrations:github');
 
@@ -210,12 +205,30 @@ interface GhWorkflowRun {
 }
 
 interface RepoCursor {
-  /** ISO timestamp; used for PR/issue/run since. */
+  /** Legacy ISO timestamp used before per-surface cursors existed. */
   since?: string;
+  /** ISO timestamp; used for PR + PR review polling. */
+  prs_since?: string;
+  /** ISO timestamp; used for issue polling. */
+  issues_since?: string;
+  /** ISO timestamp; used for release polling. */
+  releases_since?: string;
+  /** ISO timestamp; used for workflow run polling. */
+  workflow_runs_since?: string;
   /** Last commit sha we processed; used for commit feed. */
   last_sha?: string;
-  /** Last release id we processed; used for releases. */
+  /** Legacy release cursor; retained for old rows. */
   last_release_id?: number;
+}
+
+const MAX_SYNC_PAGES = 20;
+
+function maxIso(current: string | undefined, candidate: string): string {
+  return !current || candidate > current ? candidate : current;
+}
+
+async function saveRepoCursor(ctx: SyncContext, repo: string, cursor: RepoCursor): Promise<void> {
+  await ctx.saveCursor(`github.repo:${repo}`, cursor);
 }
 
 function buildAuthorizeUrl(input: OAuthStartInput): string {
@@ -421,120 +434,267 @@ async function syncRepo(
   ctx: SyncContext,
 ): Promise<RepoCursor> {
   const next: RepoCursor = { ...cursor };
-  const sinceParam = cursor.since ?? new Date(0).toISOString();
+  const legacySince = cursor.since ?? new Date(0).toISOString();
+  const prsSince = cursor.prs_since ?? legacySince;
+  const issuesSince = cursor.issues_since ?? legacySince;
+  const releasesSince = cursor.releases_since ?? new Date(0).toISOString();
+  const workflowRunsSince = cursor.workflow_runs_since ?? legacySince;
+  const failures: { area: string; error: string }[] = [];
 
   // ── PRs (open + closed) ─────────────────────────────────────────────
+  const prFailureCount = failures.length;
+  const prNext: RepoCursor = { ...next };
   for (const state of ['open', 'closed'] as const) {
     try {
-      const prs = await ghGet<GhPullRequest[]>(
-        tokens,
-        `/repos/${repo}/pulls?state=${state}&sort=updated&direction=desc&per_page=50`,
-      );
-      const filtered = prs.filter((p) => p.updated_at > sinceParam).slice(0, 50);
-      if (filtered.length > 0) {
-        await ctx.writeEvents(filtered.map((pr) => prToEvent(repo, pr)));
-        for (const pr of filtered)
-          if (!next.since || pr.updated_at > next.since) next.since = pr.updated_at;
-        // Also fetch reviews for these PRs.
-        for (const pr of filtered) {
-          try {
-            const reviews = await ghGet<GhReview[]>(
-              tokens,
-              `/repos/${repo}/pulls/${String(pr.number)}/reviews?per_page=50`,
-            );
-            const reviewEvents = reviews
-              .map((r) => reviewToEvent(repo, pr.number, r))
-              .filter((e): e is IntegrationEvent => e !== null);
-            if (reviewEvents.length > 0) await ctx.writeEvents(reviewEvents);
-          } catch (err) {
-            log.debug({ err, repo, pr: pr.number }, 'fetching reviews failed');
+      for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
+        const prs = await ghGet<GhPullRequest[]>(
+          tokens,
+          `/repos/${repo}/pulls?state=${state}&sort=updated&direction=desc&per_page=100&page=${String(page)}`,
+        );
+        if (prs.length === 0) break;
+        const filtered = prs.filter((p) => p.updated_at > prsSince);
+        if (filtered.length > 0) {
+          await ctx.writeEvents(filtered.map((pr) => prToEvent(repo, pr)));
+          for (const pr of filtered) {
+            prNext.prs_since = maxIso(prNext.prs_since, pr.updated_at);
+            prNext.since = maxIso(prNext.since, pr.updated_at);
           }
+          // Also fetch reviews for these PRs.
+          for (const pr of filtered) {
+            try {
+              for (let reviewPage = 1; reviewPage <= MAX_SYNC_PAGES; reviewPage++) {
+                const reviews = await ghGet<GhReview[]>(
+                  tokens,
+                  `/repos/${repo}/pulls/${String(pr.number)}/reviews?per_page=100&page=${String(reviewPage)}`,
+                );
+                if (reviews.length === 0) break;
+                const reviewEvents = reviews
+                  .map((r) => reviewToEvent(repo, pr.number, r))
+                  .filter((e): e is IntegrationEvent => e !== null);
+                if (reviewEvents.length > 0) await ctx.writeEvents(reviewEvents);
+                if (reviews.length < 100) break;
+                if (reviewPage === MAX_SYNC_PAGES) {
+                  failures.push({
+                    area: `reviews:${String(pr.number)}:page_cap`,
+                    error: `hit ${String(MAX_SYNC_PAGES)} review pages without reaching the end`,
+                  });
+                }
+              }
+            } catch (err) {
+              log.warn({ err, repo, pr: pr.number }, 'fetching reviews failed');
+              failures.push({
+                area: `reviews:${String(pr.number)}`,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
+        }
+        if (filtered.length < prs.length || prs.length < 100) break;
+        if (page === MAX_SYNC_PAGES) {
+          failures.push({
+            area: `prs:${state}:page_cap`,
+            error: `hit ${String(MAX_SYNC_PAGES)} pages without reaching cursor`,
+          });
         }
       }
     } catch (err) {
       log.warn({ err, repo, state }, 'github PR fetch failed');
+      failures.push({
+        area: `prs:${state}`,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
+  }
+  if (failures.length === prFailureCount) {
+    Object.assign(next, prNext);
+    await saveRepoCursor(ctx, repo, next);
   }
 
   // ── Issues ──────────────────────────────────────────────────────────
   try {
-    const issues = await ghGet<GhIssue[]>(
-      tokens,
-      `/repos/${repo}/issues?state=all&since=${encodeURIComponent(sinceParam)}&sort=updated&direction=desc&per_page=50`,
-    );
-    const issueEvents = issues
-      .map((i) => issueToEvent(repo, i))
-      .filter((e): e is IntegrationEvent => e !== null);
-    if (issueEvents.length > 0) {
-      await ctx.writeEvents(issueEvents);
-      for (const i of issues)
-        if (!next.since || i.updated_at > next.since) next.since = i.updated_at;
+    const issueNext: RepoCursor = { ...next };
+    for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
+      const issues = await ghGet<GhIssue[]>(
+        tokens,
+        `/repos/${repo}/issues?state=all&since=${encodeURIComponent(issuesSince)}&sort=updated&direction=desc&per_page=100&page=${String(page)}`,
+      );
+      if (issues.length === 0) break;
+      const issueEvents = issues
+        .map((i) => issueToEvent(repo, i))
+        .filter((e): e is IntegrationEvent => e !== null);
+      if (issueEvents.length > 0) {
+        await ctx.writeEvents(issueEvents);
+      }
+      for (const i of issues) {
+        issueNext.issues_since = maxIso(issueNext.issues_since, i.updated_at);
+        issueNext.since = maxIso(issueNext.since, i.updated_at);
+      }
+      if (issues.length < 100) break;
+      if (page === MAX_SYNC_PAGES) {
+        failures.push({
+          area: 'issues:page_cap',
+          error: `hit ${String(MAX_SYNC_PAGES)} pages without reaching the end`,
+        });
+      }
+    }
+    if (!failures.some((f) => f.area.startsWith('issues'))) {
+      Object.assign(next, issueNext);
+      await saveRepoCursor(ctx, repo, next);
     }
   } catch (err) {
     log.warn({ err, repo }, 'github issues fetch failed');
+    failures.push({ area: 'issues', error: err instanceof Error ? err.message : String(err) });
   }
 
   // ── Releases ────────────────────────────────────────────────────────
   try {
-    const releases = await ghGet<GhRelease[]>(tokens, `/repos/${repo}/releases?per_page=30`);
-    const lastSeen = cursor.last_release_id ?? 0;
-    const newReleases = releases.filter((r) => r.id > lastSeen);
-    if (newReleases.length > 0) {
-      await ctx.writeEvents(newReleases.map((r) => releaseToEvent(repo, r)));
-      next.last_release_id = Math.max(...releases.map((r) => r.id));
+    const releaseNext: RepoCursor = { ...next };
+    const hasReleaseSince = Boolean(cursor.releases_since);
+    const legacyLastReleaseId = cursor.last_release_id ?? 0;
+    for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
+      const releases = await ghGet<GhRelease[]>(
+        tokens,
+        `/repos/${repo}/releases?per_page=100&page=${String(page)}`,
+      );
+      if (releases.length === 0) break;
+      const newReleases = releases.filter((r) => {
+        const releaseTs = r.published_at ?? r.created_at;
+        return hasReleaseSince ? releaseTs > releasesSince : r.id > legacyLastReleaseId;
+      });
+      if (newReleases.length > 0) {
+        await ctx.writeEvents(newReleases.map((r) => releaseToEvent(repo, r)));
+        releaseNext.last_release_id = Math.max(
+          releaseNext.last_release_id ?? 0,
+          ...newReleases.map((r) => r.id),
+        );
+        for (const release of newReleases) {
+          releaseNext.releases_since = maxIso(
+            releaseNext.releases_since,
+            release.published_at ?? release.created_at,
+          );
+        }
+      }
+      if (!hasReleaseSince) {
+        for (const release of releases) {
+          if (release.id <= legacyLastReleaseId) {
+            releaseNext.releases_since = maxIso(
+              releaseNext.releases_since,
+              release.published_at ?? release.created_at,
+            );
+          }
+        }
+      }
+      if (newReleases.length < releases.length || releases.length < 100) break;
+      if (page === MAX_SYNC_PAGES) {
+        failures.push({
+          area: 'releases:page_cap',
+          error: `hit ${String(MAX_SYNC_PAGES)} pages without reaching cursor`,
+        });
+      }
+    }
+    if (!failures.some((f) => f.area.startsWith('releases'))) {
+      Object.assign(next, releaseNext);
+      await saveRepoCursor(ctx, repo, next);
     }
   } catch (err) {
     log.warn({ err, repo }, 'github releases fetch failed');
+    failures.push({ area: 'releases', error: err instanceof Error ? err.message : String(err) });
   }
 
   // ── Recent commits on default branch ────────────────────────────────
   try {
+    const commitNext: RepoCursor = { ...next };
     const meta = await ghGet<GhRepo>(tokens, `/repos/${repo}`);
-    const commits = await ghGet<GhCommit[]>(
-      tokens,
-      `/repos/${repo}/commits?sha=${encodeURIComponent(meta.default_branch)}&per_page=30`,
-    );
     const lastSha = cursor.last_sha;
     let newest: string | undefined;
-    const fresh: GhCommit[] = [];
-    for (const c of commits) {
-      newest ??= c.sha;
-      if (lastSha && c.sha === lastSha) break;
-      fresh.push(c);
+    let sawLastSha = false;
+    for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
+      const commits = await ghGet<GhCommit[]>(
+        tokens,
+        `/repos/${repo}/commits?sha=${encodeURIComponent(meta.default_branch)}&per_page=100&page=${String(page)}`,
+      );
+      if (commits.length === 0) break;
+      const fresh: GhCommit[] = [];
+      for (const c of commits) {
+        newest ??= c.sha;
+        if (lastSha && c.sha === lastSha) {
+          sawLastSha = true;
+          break;
+        }
+        fresh.push(c);
+      }
+      if (fresh.length > 0) {
+        await ctx.writeEvents(fresh.map((c) => commitToEvent(repo, c)));
+      }
+      if (sawLastSha || commits.length < 100) break;
+      if (page === MAX_SYNC_PAGES) {
+        failures.push({
+          area: 'commits:page_cap',
+          error: `hit ${String(MAX_SYNC_PAGES)} pages without reaching last_sha`,
+        });
+      }
     }
-    if (fresh.length > 0) {
-      await ctx.writeEvents(fresh.map((c) => commitToEvent(repo, c)));
+    if (newest) commitNext.last_sha = newest;
+    if (!failures.some((f) => f.area.startsWith('commits'))) {
+      Object.assign(next, commitNext);
+      await saveRepoCursor(ctx, repo, next);
     }
-    if (newest) next.last_sha = newest;
   } catch (err) {
     log.warn({ err, repo }, 'github commits fetch failed');
+    failures.push({ area: 'commits', error: err instanceof Error ? err.message : String(err) });
   }
 
   // ── Workflow runs ──────────────────────────────────────────────────
   try {
-    const runs = await ghGet<{ workflow_runs: GhWorkflowRun[] }>(
-      tokens,
-      `/repos/${repo}/actions/runs?per_page=30`,
-    );
-    const filtered = runs.workflow_runs.filter((r) => r.updated_at > sinceParam);
-    if (filtered.length > 0) {
-      await ctx.writeEvents(filtered.map((r) => workflowRunToEvent(repo, r)));
-      for (const r of filtered)
-        if (!next.since || r.updated_at > next.since) next.since = r.updated_at;
+    const workflowRunNext: RepoCursor = { ...next };
+    for (let page = 1; page <= MAX_SYNC_PAGES; page++) {
+      const runs = await ghGet<{ workflow_runs: GhWorkflowRun[] }>(
+        tokens,
+        `/repos/${repo}/actions/runs?per_page=100&page=${String(page)}`,
+      );
+      const workflowRuns = runs.workflow_runs;
+      if (workflowRuns.length === 0) break;
+      const filtered = workflowRuns.filter((r) => r.updated_at > workflowRunsSince);
+      if (filtered.length > 0) {
+        await ctx.writeEvents(filtered.map((r) => workflowRunToEvent(repo, r)));
+        for (const r of filtered) {
+          workflowRunNext.workflow_runs_since = maxIso(
+            workflowRunNext.workflow_runs_since,
+            r.updated_at,
+          );
+          workflowRunNext.since = maxIso(workflowRunNext.since, r.updated_at);
+        }
+      }
+      if (filtered.length < workflowRuns.length || workflowRuns.length < 100) break;
+      if (page === MAX_SYNC_PAGES) {
+        failures.push({
+          area: 'workflow_runs:page_cap',
+          error: `hit ${String(MAX_SYNC_PAGES)} pages without reaching cursor`,
+        });
+      }
+    }
+    if (!failures.some((f) => f.area.startsWith('workflow_runs'))) {
+      Object.assign(next, workflowRunNext);
+      await saveRepoCursor(ctx, repo, next);
     }
   } catch (err) {
     log.warn({ err, repo }, 'github workflow runs fetch failed');
+    failures.push({
+      area: 'workflow_runs',
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  if (failures.length > 0) {
+    throw new Error(
+      `github_repo_sync_partial:${repo}: ${failures
+        .map((f) => `${f.area} (${f.error.slice(0, 80)})`)
+        .join('; ')
+        .slice(0, 400)}`,
+    );
   }
 
   return next;
-}
-
-export function verifyGithubSignature(body: string, signature: string | null): boolean {
-  const env = getEnv();
-  if (!env.GITHUB_WEBHOOK_SECRET || !signature) return false;
-  const expected = `sha256=${createHmac('sha256', env.GITHUB_WEBHOOK_SECRET).update(body).digest('hex')}`;
-  if (expected.length !== signature.length) return false;
-  return timingSafeEqual(Buffer.from(expected, 'utf8'), Buffer.from(signature, 'utf8'));
 }
 
 export const githubProvider: IntegrationProvider = {
@@ -603,7 +763,7 @@ export const githubProvider: IntegrationProvider = {
   async listSyncableResources(_integration, tokens): Promise<ProviderResource[]> {
     // Paginate `/user/repos`. Without this only the first 100 repos are
     // reachable — PUT /selections rejects anything outside this set, so
-    // any repo on page 2+ can't be selected, synced, or webhook-routed.
+    // any repo on page 2+ can't be selected or synced.
     // Cap at 20 pages = 2000 repos: large enough that no real user hits
     // it, small enough that a misbehaving token can't brick a sync tick.
     const ghTokens = tokens as GithubTokens;
@@ -685,62 +845,5 @@ export const githubProvider: IntegrationProvider = {
           .slice(0, 400)}`,
       );
     }
-  },
-
-  // eslint-disable-next-line @typescript-eslint/require-await
-  async handleWebhook({ payload }) {
-    const p = payload as {
-      action?: string;
-      pull_request?: GhPullRequest;
-      review?: GhReview;
-      issue?: GhIssue;
-      release?: GhRelease;
-      workflow_run?: GhWorkflowRun;
-      commits?: {
-        id: string;
-        url: string;
-        message: string;
-        timestamp: string;
-        author?: { name?: string; email?: string; username?: string };
-      }[];
-      repository?: { full_name?: string };
-      ref?: string;
-    };
-    const repo = p.repository?.full_name;
-    if (!repo) return [];
-    const events: IntegrationEvent[] = [];
-    if (p.pull_request) events.push(prToEvent(repo, p.pull_request));
-    if (p.review && p.pull_request) {
-      const reviewEvent = reviewToEvent(repo, p.pull_request.number, p.review);
-      if (reviewEvent) events.push(reviewEvent);
-    }
-    if (p.issue) {
-      const evt = issueToEvent(repo, p.issue);
-      if (evt) events.push(evt);
-    }
-    if (p.release) events.push(releaseToEvent(repo, p.release));
-    if (p.workflow_run) events.push(workflowRunToEvent(repo, p.workflow_run));
-    if (p.commits) {
-      for (const c of p.commits) {
-        events.push({
-          dedupKey: `github:commit:${c.id}`,
-          provider: 'github',
-          externalObjectId: `${repo}#commit:${c.id}`,
-          externalEventId: c.timestamp,
-          eventType: 'commit.pushed',
-          occurredAt: new Date(c.timestamp),
-          actor: c.author
-            ? {
-                ...(c.author.username ? { externalId: c.author.username } : {}),
-                ...(c.author.name ? { name: c.author.name } : {}),
-                ...(c.author.email ? { email: c.author.email } : {}),
-              }
-            : null,
-          contentText: `GitHub commit ${repo}@${c.id.slice(0, 7)} — ${c.message}`,
-          extra: { github: { type: 'commit', repo, sha: c.id, url: c.url, ref: p.ref ?? null } },
-        });
-      }
-    }
-    return events;
   },
 };

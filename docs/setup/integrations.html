@@ -102,14 +102,12 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
         <li>
           Set:
           <pre><code>GITHUB_APP_CLIENT_ID=...
-GITHUB_APP_CLIENT_SECRET=...
-GITHUB_WEBHOOK_SECRET=...</code></pre>
+GITHUB_APP_CLIENT_SECRET=...</code></pre>
         </li>
         <li>
-          Add a webhook on each repo / org pointing at
-          <code>https://thetimeline.cc/api/webhooks/github</code>. Content type
-          <em>application/json</em>; secret matches the env var; subscribe to
-          <em>Pull requests</em> and <em>Issues</em>.
+          After connecting from <code>/app/team/integrations</code>, choose the repos to track.
+          Selected repos are synced by the integration worker poller; no repo/org webhook setup is
+          required.
         </li>
       </ol>
 
@@ -193,8 +191,9 @@ GITHUB_WEBHOOK_SECRET=...</code></pre>
       <p>
         A BullMQ repeatable enqueues an <code>integration-sync</code> tick every 5 minutes. The
         worker fans out to every enabled integration and runs <code>incrementalSync()</code> on each
-        provider, using the per-resource cursor in <code>integration_sync_state</code>. Webhook hits
-        enqueue an extra one-shot incremental for the same integration.
+        provider, using the per-resource cursor in <code>integration_sync_state</code>. Providers
+        with inbound webhooks, such as Google Drive, can enqueue an extra one-shot incremental;
+        GitHub selected repos are covered by the poller only.
       </p>
       <p>Manual full backfill from the CLI:</p>
       <pre><code>pnpm --filter @timeline/worker integration-resync -- --team=&lt;uuid&gt; --from-zero</code></pre>

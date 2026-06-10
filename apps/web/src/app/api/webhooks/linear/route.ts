@@ -37,7 +37,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // Linear webhooks are signed with `Linear-Signature` over the raw body
-// using LINEAR_WEBHOOK_SECRET. Same fanout pattern as GitHub.
+// using LINEAR_WEBHOOK_SECRET, then fanned out to matching enabled
+// Linear integrations.
 
 export async function POST(req: Request): Promise<Response> {
   const clientIp = email.clientIpFromHeaders(req.headers);
