@@ -34,14 +34,15 @@ import { localDateFromInstant, localDateSpanToUtcRange } from '#src/time/index.j
 type Visibility = 'private' | 'team' | 'specific_users';
 type SuggestionStatus = 'pending' | 'partially_resolved' | 'accepted' | 'rejected';
 type ItemStatus = 'pending' | 'accepted' | 'rejected' | 'failed';
-type Operation = 'create' | 'update' | 'archive_or_cancel';
+type Operation = 'create' | 'update' | 'archive_or_cancel' | 'merge';
 type TargetKind =
   | 'object'
   | 'task'
   | 'calendar_event'
   | 'identity_facet'
   | 'object_note'
-  | 'object_relationship';
+  | 'object_relationship'
+  | 'object_merge';
 
 export interface SuggestionScopeDeps {
   db: Db;
@@ -97,6 +98,7 @@ export interface SuggestionBundle {
   visibility: Visibility;
   visibilityOwnerUserId: string | null;
   visibilityUserIds: string[] | null;
+  metadata: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
   items: SuggestionItem[];
@@ -173,6 +175,12 @@ const objectRelationshipPayload = z.object({
   fromEntityId: uuid,
   toEntityId: uuid,
   kind: z.enum(['parent', 'child', 'related', 'blocks', 'blocked_by', 'duplicate_of', 'linked']),
+});
+
+const objectMergePayload = z.object({
+  objectIds: z.array(uuid).min(2).max(10),
+  survivorId: uuid,
+  reason: z.string().trim().max(1000).optional(),
 });
 
 const calendarCreatePayload = z.object({
@@ -288,6 +296,10 @@ function toBundle(
     visibility: row.visibility,
     visibilityOwnerUserId: row.visibilityOwnerUserId,
     visibilityUserIds: row.visibilityUserIds,
+    metadata:
+      row.metadata && typeof row.metadata === 'object'
+        ? (row.metadata as Record<string, unknown>)
+        : {},
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     items: items.map((item) => ({
@@ -519,6 +531,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   async function applyItem(item: typeof agentSuggestionItems.$inferSelect): Promise<string | null> {
     if (item.resultId) return item.resultId;
     if (item.status !== 'pending' && item.status !== 'failed') return item.resultId;
+    if (item.targetKind === 'object_merge') {
+      throw new Error('Merge suggestions must be reviewed from the merge preview');
+    }
     const existingResultId = await existingResultForItem(item);
     if (existingResultId) return existingResultId;
     const targetId = item.targetId;
@@ -756,6 +771,90 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
+  async function acceptObjectMergeSuggestionItem(input: {
+    itemId: string;
+    survivorId: string;
+    mergedIds: string[];
+  }): Promise<{ survivorId: string } | null> {
+    await ensureMember();
+    const rows = await db
+      .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
+      .from(agentSuggestionItems)
+      .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+      .where(
+        and(
+          eq(agentSuggestionItems.id, input.itemId),
+          suggestionVisibilityPredicate(teamId, userId),
+          isNull(agentSuggestionItems.resolvedAt),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    if (row.item.targetKind !== 'object_merge' || row.item.operation !== 'merge') {
+      throw new Error('Suggestion item is not an object merge');
+    }
+    const payload = objectMergePayload.parse(row.item.proposedPayload);
+    const expectedIds = new Set(payload.objectIds);
+    const chosenIds = new Set([input.survivorId, ...input.mergedIds]);
+    if (expectedIds.size !== chosenIds.size || [...expectedIds].some((id) => !chosenIds.has(id))) {
+      throw new Error('Merge selection no longer matches this suggestion');
+    }
+    if (!expectedIds.has(input.survivorId)) {
+      throw new Error('Survivor must be one of the suggested objects');
+    }
+
+    const [claimed] = await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'accepted',
+        resolvedAt: new Date(),
+        resolvedByUserId: userId,
+        updatedAt: new Date(),
+        failureReason: null,
+      })
+      .where(
+        and(
+          eq(agentSuggestionItems.id, input.itemId),
+          isNull(agentSuggestionItems.resolvedAt),
+          inArray(agentSuggestionItems.status, ['pending', 'failed']),
+        ),
+      )
+      .returning({ id: agentSuggestionItems.id });
+    if (!claimed) return null;
+
+    try {
+      const result = await objects.mergeObjects({
+        survivorId: input.survivorId,
+        mergedIds: input.mergedIds,
+        actor: { kind: 'user', userId },
+      });
+      await db
+        .update(agentSuggestionItems)
+        .set({
+          resultId: result.survivor.id,
+          updatedAt: new Date(),
+          failureReason: null,
+        })
+        .where(eq(agentSuggestionItems.id, input.itemId));
+      await refreshBundleStatus(row.suggestion.id, userId);
+      return { survivorId: result.survivor.id };
+    } catch (err) {
+      await db
+        .update(agentSuggestionItems)
+        .set({
+          status: 'failed',
+          failureReason: err instanceof Error ? err.message : 'Failed to apply merge suggestion',
+          resolvedAt: null,
+          resolvedByUserId: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(agentSuggestionItems.id, input.itemId));
+      await refreshBundleStatus(row.suggestion.id, userId);
+      throw err;
+    }
+  }
+
   async function listSuggestions(
     opts: { status?: SuggestionListStatus; limit?: number } = {},
   ): Promise<SuggestionBundle[]> {
@@ -971,6 +1070,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     acceptSuggestionItem,
 
+    acceptObjectMergeSuggestionItem,
+
     async rejectSuggestionItem(itemId: string): Promise<boolean> {
       await ensureMember();
       const rows = await db
@@ -1014,7 +1115,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       let accepted = 0;
       let failed = 0;
       for (const item of bundle.items.filter(
-        (i) => i.status === 'pending' || i.status === 'failed',
+        (i) => (i.status === 'pending' || i.status === 'failed') && i.targetKind !== 'object_merge',
       )) {
         try {
           if (await acceptSuggestionItem(item.id)) accepted += 1;

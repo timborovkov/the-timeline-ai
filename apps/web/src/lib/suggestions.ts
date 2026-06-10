@@ -10,6 +10,7 @@ interface SerializableSuggestionBundle {
   summary: string | null;
   reason: string | null;
   confidence: string;
+  metadata: Record<string, unknown>;
   createdAt: string;
   items: SuggestionBundle['items'];
   evidence: {
@@ -29,6 +30,7 @@ export function serializeSuggestionBundle(bundle: SuggestionBundle): Serializabl
     summary: bundle.summary,
     reason: bundle.reason,
     confidence: bundle.confidence,
+    metadata: bundle.metadata,
     createdAt: bundle.createdAt.toISOString(),
     items: bundle.items,
     evidence: bundle.evidence.map((ev) => ({

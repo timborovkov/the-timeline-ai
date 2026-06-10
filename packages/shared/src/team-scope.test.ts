@@ -1001,6 +1001,66 @@ describe('withTeam namespaced port', () => {
     });
   });
 
+  it('links pending object merge suggestion impact to the merge preview', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_A,
+      source: 'telegram',
+      contentText: 'Acme and ACME Inc are the same company.',
+      visibility: 'team',
+    });
+    const survivor = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Acme',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const duplicate = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'ACME Inc',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Review duplicate company objects',
+      dedupeKey: 'impact-object-merge',
+      evidence: [{ rawEventId: event.id }],
+      items: [
+        {
+          operation: 'merge',
+          targetKind: 'object_merge',
+          targetId: survivor.id,
+          title: 'Review Acme merge',
+          dedupeKey: 'impact-object-merge:item',
+          proposedPayload: {
+            objectIds: [survivor.id, duplicate.id],
+            survivorId: survivor.id,
+            reason: 'Names look equivalent.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    const impacts = await scope.timeline.listImpactItems([event.id]);
+    expect(impacts[event.id]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'object',
+          label: 'Review Acme merge',
+          href: `/app/objects/merge?ids=${survivor.id},${duplicate.id}&suggestionItemId=${itemId}`,
+          status: 'pending',
+        }),
+        expect.objectContaining({
+          kind: 'approval',
+          label: 'Review Acme merge',
+          href: '/app/approvals',
+          status: 'pending',
+        }),
+      ]),
+    );
+  });
+
   it('includes all approved facets from the current user linked person object', async () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
     const person = await scope.objects.createObject({

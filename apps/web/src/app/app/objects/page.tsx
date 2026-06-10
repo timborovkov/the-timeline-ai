@@ -7,9 +7,12 @@ import type { Metadata } from 'next';
 
 import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
+import { ObjectCleanupList } from '@/components/objects/object-cleanup-list';
+import { ObjectCleanupSuggestions } from '@/components/objects/object-cleanup-suggestions';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {
   title: 'Objects',
@@ -58,18 +61,20 @@ export default async function ObjectsIndexPage({
   if (type) filter.type = type;
   if (status) filter.status = status;
 
-  const rows = await scope.objects.listObjects(filter);
-
-  const grouped = new Map<string, typeof rows>();
-  for (const row of rows) {
-    const list = grouped.get(row.type) ?? [];
-    list.push(row);
-    grouped.set(row.type, list);
+  const [rows, suggestionBundles] = await Promise.all([
+    scope.objects.listObjects(filter),
+    scope.suggestions.listPendingSuggestions(),
+  ]);
+  const cleanupSuggestions = [];
+  for (const bundle of suggestionBundles) {
+    if (bundle.metadata.kind !== 'object_cleanup') continue;
+    const items = bundle.items.filter(
+      (item) =>
+        item.targetKind === 'object_merge' ||
+        (item.targetKind === 'object' && item.operation === 'archive_or_cancel'),
+    );
+    if (items.length > 0) cleanupSuggestions.push(serializeSuggestionBundle({ ...bundle, items }));
   }
-
-  const typeKeys = Array.from(grouped.keys()).sort((a, b) =>
-    (TYPE_LABEL[a] ?? a).localeCompare(TYPE_LABEL[b] ?? b),
-  );
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -114,6 +119,8 @@ export default async function ObjectsIndexPage({
         ))}
       </nav>
 
+      <ObjectCleanupSuggestions suggestions={cleanupSuggestions} />
+
       {rows.length === 0 ? (
         <EmptyAction
           title={type ? 'No objects match this filter' : 'No objects yet'}
@@ -122,55 +129,7 @@ export default async function ObjectsIndexPage({
           action={type ? 'Clear filter' : 'Capture first note'}
         />
       ) : (
-        <div className="space-y-8">
-          {typeKeys.map((typeKey) => {
-            const list = grouped.get(typeKey) ?? [];
-            return (
-              <section key={typeKey} aria-label={TYPE_LABEL[typeKey] ?? typeKey}>
-                <div className="mb-3 flex items-baseline justify-between border-b border-border pb-1.5">
-                  <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-                    {TYPE_LABEL[typeKey] ?? typeKey}
-                  </h2>
-                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                    {list.length}
-                  </span>
-                </div>
-                <ul className="grid grid-cols-1 gap-px overflow-hidden border border-border sm:grid-cols-2">
-                  {list.map((o) => (
-                    <li key={o.id} className="bg-bg">
-                      <Link
-                        href={`/app/objects/${o.id}`}
-                        className="flex items-center justify-between px-3 py-2.5 text-sm transition-colors hover:bg-surface"
-                      >
-                        <span className="min-w-0 flex-1 truncate font-medium text-fg">
-                          {o.canonicalName}
-                        </span>
-                        <span className="ml-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                          <span>{o.status}</span>
-                          {o.dueAt ? (
-                            <span title={o.dueAt.toISOString()}>
-                              · {o.dueAt.toLocaleDateString('en-CA')}
-                            </span>
-                          ) : null}
-                          {/* `agentSuggested` is permanent provenance; the
-                              badge should reflect the live review state,
-                              not "this was ever proposed by the agent."
-                              Once accepted/rejected, status leaves
-                              'suggested' and the badge clears. */}
-                          {o.agentSuggested && o.status === 'suggested' ? (
-                            <span className="rounded-sm border border-signal/40 bg-signal-soft px-1.5 py-0.5 text-signal">
-                              suggested
-                            </span>
-                          ) : null}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            );
-          })}
-        </div>
+        <ObjectCleanupList rows={rows} typeLabels={TYPE_LABEL} />
       )}
     </div>
   );

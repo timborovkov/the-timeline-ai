@@ -3,6 +3,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
+import { entities } from '@timeline/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -123,6 +125,101 @@ describe('suggestion scope', () => {
 
     expect(bundle.visibilityOwnerUserId).toBeNull();
     expect(bundle.items).toHaveLength(1);
+  });
+
+  it('requires merge suggestions to be confirmed through object merge preview', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const first = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'AuditAI',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const second = await scope.objects.createObject({
+      type: 'vendor',
+      canonicalName: 'Audit AI',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Merge duplicate objects',
+      dedupeKey: 'merge-preview-only',
+      items: [
+        {
+          operation: 'merge',
+          targetKind: 'object_merge',
+          targetId: first.id,
+          title: 'Review merge',
+          dedupeKey: 'merge-preview-only:item',
+          proposedPayload: {
+            objectIds: [first.id, second.id],
+            survivorId: first.id,
+            reason: 'Names are close.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).rejects.toThrow(
+      'Merge suggestions must be reviewed from the merge preview',
+    );
+
+    await expect(
+      scope.suggestions.acceptObjectMergeSuggestionItem({
+        itemId,
+        survivorId: first.id,
+        mergedIds: [second.id],
+      }),
+    ).resolves.toEqual({ survivorId: first.id });
+
+    await expect(scope.objects.getObject(second.id)).resolves.toBeNull();
+    await expect(scope.objects.getMergedObjectTarget(second.id)).resolves.toMatchObject({
+      id: first.id,
+    });
+  });
+
+  it('blocks cross-team object ids in merge suggestion confirmation', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const otherScope = withTeam(db as never, OTHER_TEAM_ID, OTHER_USER_ID);
+    const first = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Scoped Co',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const other = await otherScope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Scoped Co Other',
+      actor: { kind: 'user', userId: OTHER_USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Merge duplicate objects',
+      dedupeKey: 'merge-cross-team',
+      items: [
+        {
+          operation: 'merge',
+          targetKind: 'object_merge',
+          targetId: first.id,
+          title: 'Review merge',
+          dedupeKey: 'merge-cross-team:item',
+          proposedPayload: {
+            objectIds: [first.id, other.id],
+            survivorId: first.id,
+          },
+        },
+      ],
+    });
+
+    await expect(
+      scope.suggestions.acceptObjectMergeSuggestionItem({
+        itemId: bundle.items[0]?.id ?? '',
+        survivorId: first.id,
+        mergedIds: [other.id],
+      }),
+    ).rejects.toThrow();
+
+    const otherRows = await db.select().from(entities).where(eq(entities.id, other.id));
+    expect(otherRows[0]?.mergedIntoId).toBeNull();
   });
 
   it('preserves explicit null owner for specific-user suggestions', async () => {

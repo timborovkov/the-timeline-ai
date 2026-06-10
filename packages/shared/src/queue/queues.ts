@@ -141,7 +141,10 @@ export async function closeExtractQueue(): Promise<void> {
   await q.close().catch(() => undefined);
 }
 
-export type SuggestionJobData = SuggestionRawEventJobData | SuggestionConversationReviewJobData;
+export type SuggestionJobData =
+  | SuggestionRawEventJobData
+  | SuggestionConversationReviewJobData
+  | SuggestionObjectCleanupJobData;
 
 export interface SuggestionRawEventJobData {
   rawEventId: string;
@@ -154,6 +157,12 @@ export interface SuggestionConversationReviewJobData {
   teamId: string;
 }
 
+export interface SuggestionObjectCleanupJobData {
+  scope: 'object_cleanup';
+  teamId: string;
+  triggeredBy?: string;
+}
+
 let _suggestionQueue: TimelineQueue<SuggestionJobData> | undefined;
 
 function bullmqCustomJobId(parts: string[]): string {
@@ -161,19 +170,26 @@ function bullmqCustomJobId(parts: string[]): string {
 }
 
 function suggestionJobId(data: SuggestionJobData, jobIdSuffix?: string): string | undefined {
-  return 'scope' in data
-    ? bullmqCustomJobId([
+  if ('scope' in data) {
+    if (data.scope === 'conversation_review') {
+      return bullmqCustomJobId([
         'conversation-review',
         data.conversationReviewId,
         ...(jobIdSuffix ? [jobIdSuffix] : []),
-      ])
-    : jobIdSuffix
-      ? bullmqCustomJobId(['raw-event', data.rawEventId, jobIdSuffix])
-      : undefined;
+      ]);
+    }
+    return bullmqCustomJobId([
+      'object-cleanup',
+      data.teamId,
+      data.triggeredBy ?? 'manual',
+      ...(jobIdSuffix ? [jobIdSuffix] : []),
+    ]);
+  }
+  return jobIdSuffix ? bullmqCustomJobId(['raw-event', data.rawEventId, jobIdSuffix]) : undefined;
 }
 
 function legacySuggestionJobIds(data: SuggestionJobData, jobIdSuffix?: string): string[] {
-  if (!('scope' in data)) return [];
+  if (!('scope' in data) || data.scope !== 'conversation_review') return [];
   return [
     `conversation-review:${data.conversationReviewId}${jobIdSuffix ? `:${jobIdSuffix}` : ''}`,
   ];
@@ -271,6 +287,17 @@ export async function removeSuggestionJob(
     if (removed) return { removed: true, jobId: candidateJobId };
   }
   return { removed: false, jobId };
+}
+
+export async function scheduleObjectCleanupSuggestions(): Promise<void> {
+  await getSuggestionQueue().add(
+    'object-cleanup-daily',
+    { scope: 'object_cleanup', teamId: '__all__', triggeredBy: 'daily' },
+    {
+      repeat: { pattern: '0 3 * * *' },
+      jobId: 'object-cleanup-daily',
+    },
+  );
 }
 
 export async function closeSuggestionQueue(): Promise<void> {

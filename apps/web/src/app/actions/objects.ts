@@ -1,10 +1,13 @@
 'use server';
 import * as objects from '@timeline/shared/objects';
+import { enqueueSuggestionJob } from '@timeline/shared/queue';
+import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
 import { trackProductEventBestEffort } from '@/lib/analytics';
+import { db } from '@/lib/db';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 
@@ -140,6 +143,101 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to archive') };
+    }
+  });
+}
+
+const bulkObjectIdsSchema = z.object({
+  ids: z.array(uuidSchema).min(1).max(50),
+});
+
+export async function bulkArchiveObjectsAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('bulk_archive_objects', async () => {
+    const parsed = bulkObjectIdsSchema.safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const ids = Array.from(new Set(parsed.data.ids));
+      await db.transaction(async (tx) => {
+        const txScope = withTeam(tx as unknown as typeof db, r.teamId, r.userId);
+        for (const id of ids) {
+          await txScope.objects.archiveObject(id, { kind: 'user', userId: r.userId });
+        }
+      });
+      for (const id of ids) revalidatePath(`/app/objects/${id}`);
+      revalidatePath('/app/objects');
+      revalidatePath('/app/boards', 'layout');
+      revalidatePath('/app/tasks');
+      return { ok: true };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to archive selected objects') };
+    }
+  });
+}
+
+const mergeObjectsSchema = z.object({
+  survivorId: uuidSchema,
+  mergedIds: z.array(uuidSchema).min(1).max(9),
+  suggestionItemId: uuidSchema.optional(),
+});
+
+export async function mergeObjectsAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('merge_objects', async () => {
+    const parsed = mergeObjectsSchema.safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const result = parsed.data.suggestionItemId
+        ? await r.scope.suggestions.acceptObjectMergeSuggestionItem({
+            itemId: parsed.data.suggestionItemId,
+            survivorId: parsed.data.survivorId,
+            mergedIds: parsed.data.mergedIds,
+          })
+        : await r.scope.objects.mergeObjects({
+            survivorId: parsed.data.survivorId,
+            mergedIds: parsed.data.mergedIds,
+            actor: { kind: 'user', userId: r.userId },
+          });
+      if (!result) return { error: 'Merge suggestion is no longer pending.' };
+      const survivorId = 'survivor' in result ? result.survivor.id : result.survivorId;
+      revalidatePath('/app/objects');
+      revalidatePath('/app/approvals');
+      revalidatePath('/app/inbox');
+      revalidatePath(`/app/objects/${survivorId}`);
+      for (const id of parsed.data.mergedIds) revalidatePath(`/app/objects/${id}`);
+      revalidatePath('/app/boards', 'layout');
+      revalidatePath('/app/tasks');
+      return { ok: true, id: survivorId };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to merge objects') };
+    }
+  });
+}
+
+export async function findObjectCleanupSuggestionsAction(): Promise<ActionState> {
+  return runSentryServerAction('find_object_cleanup_suggestions', async () => {
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const result = await enqueueSuggestionJob(
+        {
+          scope: 'object_cleanup',
+          teamId: r.teamId,
+          triggeredBy: 'manual',
+        },
+        { jobIdSuffix: 'manual' },
+      );
+      revalidatePath('/app/objects');
+      revalidatePath('/app/approvals');
+      revalidatePath('/app/inbox');
+      return {
+        ok: true,
+        message: result.enqueued ? 'Scan queued' : 'Scan already queued',
+      };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to find cleanup suggestions') };
     }
   });
 }

@@ -330,7 +330,9 @@
             <td>Objects</td>
             <td>
               <code>listObjects</code>, <code>getObject</code>, <code>createObject</code>,
-              <code>updateObject</code>, <code>archiveObject</code>, <code>unarchiveObject</code>
+              <code>updateObject</code>, <code>archiveObject</code>, <code>unarchiveObject</code>,
+              <code>getObjectMergePreview</code>, <code>mergeObjects</code>,
+              <code>getMergedObjectTarget</code>
             </td>
           </tr>
           <tr>
@@ -396,7 +398,19 @@
         <tbody>
           <tr>
             <td><code>/app/objects</code></td>
-            <td>Index grouped by type. Type-filter chips along the top, "New object" CTA.</td>
+            <td>
+              Index grouped by type. Type-filter chips along the top, "New object" CTA, and select
+              mode for bulk archive or merge cleanup, plus a compact cleanup suggestions panel with
+              manual "Find suggestions" enqueue.
+            </td>
+          </tr>
+          <tr>
+            <td><code>/app/objects/merge</code></td>
+            <td>
+              Merge preview for selected objects. The user chooses the survivor, reviews aliases and
+              selected attachment counts, then confirms. AI merge suggestions deep-link here with
+              their suggestion item id so generic approval buttons cannot auto-merge objects.
+            </td>
           </tr>
           <tr>
             <td><code>/app/objects/new</code></td>
@@ -407,7 +421,7 @@
             <td>
               Optimistic status/stage/priority/due edits, notes CRUD, related objects with kind
               chips + unlink, open tasks, recent changes audit list, "since your last visit" banner,
-              archive button.
+              archive button. Merged-away object URLs redirect to their survivor.
             </td>
           </tr>
           <tr>

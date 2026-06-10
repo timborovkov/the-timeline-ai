@@ -1108,6 +1108,25 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     map.set(rawEventId, existing);
   }
 
+  function objectMergeSuggestionHref(itemId: string, proposedPayload: unknown): string | null {
+    if (!UUID_RE.test(itemId)) return null;
+    const payload =
+      proposedPayload && typeof proposedPayload === 'object'
+        ? (proposedPayload as { objectIds?: unknown; survivorId?: unknown })
+        : null;
+    const ids = Array.isArray(payload?.objectIds)
+      ? payload.objectIds.filter((value): value is string => typeof value === 'string')
+      : [];
+    const objectIds = ids.filter((id) => UUID_RE.test(id));
+    if (objectIds.length < 2) return null;
+    const survivorId = typeof payload?.survivorId === 'string' ? payload.survivorId : null;
+    const orderedIds =
+      survivorId && UUID_RE.test(survivorId) && objectIds.includes(survivorId)
+        ? [survivorId, ...objectIds.filter((id) => id !== survivorId)]
+        : objectIds;
+    return `/app/objects/merge?ids=${orderedIds.join(',')}&suggestionItemId=${itemId}`;
+  }
+
   async function listTimelineImpactItems(
     rawEventIds: string[],
   ): Promise<Record<string, TimelineImpactItem[]>> {
@@ -1153,12 +1172,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           .select({
             rawEventId: agentSuggestionEvidence.rawEventId,
             suggestionId: agentSuggestions.id,
+            itemId: agentSuggestionItems.id,
             suggestionStatus: agentSuggestions.status,
             itemStatus: agentSuggestionItems.status,
             targetKind: agentSuggestionItems.targetKind,
             targetId: agentSuggestionItems.targetId,
             resultId: agentSuggestionItems.resultId,
             title: agentSuggestionItems.title,
+            proposedPayload: agentSuggestionItems.proposedPayload,
           })
           .from(agentSuggestionEvidence)
           .innerJoin(
@@ -1251,7 +1272,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           ? 'calendar'
           : row.targetKind === 'identity_facet' ||
               row.targetKind === 'object_note' ||
-              row.targetKind === 'object_relationship'
+              row.targetKind === 'object_relationship' ||
+              row.targetKind === 'object_merge'
             ? 'object'
             : row.targetKind;
       const objectMemoryTarget =
@@ -1261,12 +1283,18 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       const targetId = objectMemoryTarget
         ? (row.targetId ?? row.resultId)
         : (row.resultId ?? row.targetId);
-      const href =
+      let href =
         kind === 'calendar'
           ? '/app/calendar'
           : targetId
             ? `/app/objects/${targetId}`
             : '/app/approvals';
+      if (
+        row.targetKind === 'object_merge' &&
+        (row.itemStatus === 'pending' || row.itemStatus === 'failed')
+      ) {
+        href = objectMergeSuggestionHref(row.itemId, row.proposedPayload) ?? '/app/approvals';
+      }
       pushTimelineImpact(impact, row.rawEventId, {
         kind,
         label: row.title,

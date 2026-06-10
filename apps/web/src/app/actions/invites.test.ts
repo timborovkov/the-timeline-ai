@@ -61,6 +61,7 @@ const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const INVITE_ID = '33333333-3333-4333-8333-333333333333';
 const TOKEN = 'invite-token';
+const FUTURE_INVITE_EXPIRY = new Date('2099-06-09T00:00:00.000Z');
 
 function form(values: Record<string, string>): FormData {
   const fd = new FormData();
@@ -126,7 +127,7 @@ function invite(overrides: Record<string, unknown> = {}) {
     teamId: TEAM_ID,
     email: 'invited@example.test',
     role: 'member',
-    expiresAt: new Date('2099-06-09T00:00:00.000Z'),
+    expiresAt: FUTURE_INVITE_EXPIRY,
     ...overrides,
   };
 }

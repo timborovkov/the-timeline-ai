@@ -10,6 +10,7 @@
 import {
   type Db,
   boardViews,
+  calendarEventEntities,
   chatMessages,
   chatSessions,
   entities,
@@ -28,8 +29,11 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 
 
 import type { TeamScopeCore } from '#src/team-scope.js';
 
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
+import { getQdrantClient } from '#src/qdrant/client.js';
+import { buildPointId } from '#src/qdrant/point-id.js';
 import * as embedQueue from '#src/queue/queues.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -47,6 +51,29 @@ function fireAndForgetEmbed(fn: () => Promise<void>, context: Record<string, unk
   void fn().catch((err: unknown) => {
     embedLog.error({ err, ...context }, 'failed to enqueue embed job');
   });
+}
+
+function uniqueIds(ids: string[]): string[] {
+  return Array.from(new Set(ids));
+}
+
+async function deleteMergedObjectEmbeddingPoints(teamId: string, entityId: string): Promise<void> {
+  try {
+    const client = getQdrantClient();
+    const models = uniqueIds([TIMELINE_MODELS.embedding.id, 'openai/text-embedding-3-small']);
+    for (const model of models) {
+      await client.deletePointsForSource({ teamId, scope: 'object', sourceId: entityId, model });
+      await client.deletePointsForSource({ teamId, scope: 'entity', sourceId: entityId, model });
+    }
+    await client.deletePoints(
+      models.flatMap((model) => [
+        buildPointId('object', entityId, model),
+        buildPointId('entity', entityId, model),
+      ]),
+    );
+  } catch (err) {
+    embedLog.error({ err, teamId, entityId }, 'failed to delete merged object embed points');
+  }
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -282,6 +309,60 @@ export interface ObjectDetail extends ObjectRow {
   /** Count of object_changes and notes since the caller's last visit. */
   newSinceLastVisit: number;
   lastVisitedAt: Date | null;
+}
+
+const MERGE_COMPATIBLE_TYPES: readonly ObjectType[] = [
+  'person',
+  'company',
+  'project',
+  'topic',
+  'deal',
+  'vendor',
+  'incident',
+  'document',
+  'decision',
+  'hiring_loop',
+  'other',
+];
+
+function canMergeTypes(rows: Pick<ObjectRow, 'type'>[]): boolean {
+  if (rows.some((row) => row.type === 'task' || row.type === 'follow_up')) return false;
+  if (rows.some((row) => !MERGE_COMPATIBLE_TYPES.includes(row.type))) return false;
+  const types = new Set(rows.map((row) => row.type));
+  if (types.size <= 1) return true;
+  return types.size === 2 && types.has('company') && types.has('vendor');
+}
+
+function mergeAliases(survivor: ObjectRow, losers: ObjectRow[]): string[] {
+  const seen = new Set<string>();
+  const aliases: string[] = [];
+  const push = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    const key = trimmed.toLowerCase();
+    if (key === survivor.canonicalName.toLowerCase() || seen.has(key)) return;
+    seen.add(key);
+    aliases.push(trimmed);
+  };
+  for (const alias of survivor.aliases) push(alias);
+  for (const loser of losers) {
+    push(loser.canonicalName);
+    for (const alias of loser.aliases) push(alias);
+  }
+  return aliases;
+}
+
+export interface ObjectMergePreview {
+  objects: ObjectRow[];
+  survivorId: string;
+  aliasesToAdd: string[];
+  counts: {
+    facts: number;
+    notes: number;
+    relationships: number;
+    openTasks: number;
+  };
+  countsBySurvivorId: Record<string, ObjectMergePreview['counts']>;
 }
 
 export type ObjectSection = 'events' | 'facts' | 'changes' | 'tasks' | 'relationships';
@@ -719,6 +800,150 @@ export async function getObject(
   };
 }
 
+export async function getMergedObjectTarget(
+  db: Db,
+  scope: TeamScopeCore,
+  entityId: string,
+): Promise<{ id: string; canonicalName: string } | null> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(entityId)) return null;
+  const seen = new Set<string>();
+  let currentId = entityId;
+  let foundMerge = false;
+
+  for (;;) {
+    if (seen.has(currentId)) return null;
+    seen.add(currentId);
+
+    const rows = await db
+      .select({
+        id: entities.id,
+        canonicalName: entities.canonicalName,
+        mergedIntoId: entities.mergedIntoId,
+      })
+      .from(entities)
+      .where(and(eq(entities.id, currentId), eq(entities.teamId, scope.teamId)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    if (!row.mergedIntoId) {
+      return foundMerge ? { id: row.id, canonicalName: row.canonicalName } : null;
+    }
+
+    foundMerge = true;
+    currentId = row.mergedIntoId;
+  }
+}
+
+export async function getObjectMergePreview(
+  db: Db,
+  scope: TeamScopeCore,
+  entityIds: string[],
+  survivorId?: string,
+): Promise<ObjectMergePreview> {
+  await scope.requireMembership();
+  const ids = Array.from(new Set(entityIds.filter((id) => UUID_RE.test(id))));
+  if (ids.length < 2) throw new Error('Select at least two objects to merge');
+  if (ids.length > 10) throw new Error('Merge at most 10 objects at once');
+
+  const rows = await db
+    .select()
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, scope.teamId),
+        inArray(entities.id, ids),
+        isNull(entities.mergedIntoId),
+      ),
+    );
+  if (rows.length !== ids.length) throw new Error('One or more objects no longer exists');
+  const objects = rows
+    .map(toObjectRow)
+    .sort((a, b) => a.canonicalName.localeCompare(b.canonicalName));
+  if (!canMergeTypes(objects)) {
+    throw new Error('Only same-type objects can be merged, except company/vendor cleanup');
+  }
+
+  const survivor = objects.find((row) => row.id === survivorId) ?? objects[0];
+  if (!survivor) throw new Error('Survivor object not found');
+  const losers = objects.filter((row) => row.id !== survivor.id);
+
+  async function countMergeImpact(mergeIds: string[]): Promise<ObjectMergePreview['counts']> {
+    const [factCountRows, noteCountRows, relCountRows, taskCountRows] = await Promise.all([
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(factEntities)
+        .where(inArray(factEntities.entityId, mergeIds)),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(objectNotes)
+        .where(
+          and(
+            eq(objectNotes.teamId, scope.teamId),
+            inArray(objectNotes.entityId, mergeIds),
+            isNull(objectNotes.deletedAt),
+          ),
+        ),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(entityRelationships)
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            or(
+              inArray(entityRelationships.fromEntityId, mergeIds),
+              inArray(entityRelationships.toEntityId, mergeIds),
+            ),
+          ),
+        ),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(entityRelationships)
+        .innerJoin(entities, eq(entities.id, entityRelationships.fromEntityId))
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            inArray(entityRelationships.toEntityId, mergeIds),
+            eq(entityRelationships.kind, 'child'),
+            eq(entities.teamId, scope.teamId),
+            eq(entities.type, 'task'),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+            ne(entities.status, 'done'),
+            ne(entities.status, 'cancelled'),
+          ),
+        ),
+    ]);
+    return {
+      facts: factCountRows[0]?.count ?? 0,
+      notes: noteCountRows[0]?.count ?? 0,
+      relationships: relCountRows[0]?.count ?? 0,
+      openTasks: taskCountRows[0]?.count ?? 0,
+    };
+  }
+
+  const mergeCounts = await countMergeImpact(ids);
+  const countEntries = objects.map((object) => [object.id, mergeCounts] as const);
+  const countsBySurvivorId = Object.fromEntries(countEntries);
+  const counts = countsBySurvivorId[survivor.id] ?? {
+    facts: 0,
+    notes: 0,
+    relationships: 0,
+    openTasks: 0,
+  };
+
+  return {
+    objects,
+    survivorId: survivor.id,
+    aliasesToAdd: mergeAliases(survivor, losers).filter(
+      (alias) =>
+        !survivor.aliases.some((existing) => existing.toLowerCase() === alias.toLowerCase()),
+    ),
+    counts,
+    countsBySurvivorId,
+  };
+}
+
 export interface CreateObjectInput {
   type: ObjectType;
   canonicalName: string;
@@ -1119,6 +1344,342 @@ export async function unarchiveObject(
 ): Promise<ObjectRow> {
   const result = await updateObject(db, scope, entityId, { archivedAt: null }, actor);
   return result.object;
+}
+
+export async function mergeObjects(
+  db: Db,
+  scope: TeamScopeCore,
+  input: { survivorId: string; mergedIds: string[]; actor: UpdateActor },
+): Promise<{ survivor: ObjectRow; mergedIds: string[] }> {
+  await scope.requireMembership();
+  const ids = Array.from(new Set([input.survivorId, ...input.mergedIds]));
+  if (!ids.every((id) => UUID_RE.test(id))) throw new Error('Invalid entity id');
+  if (ids.length < 2) throw new Error('Select at least two objects to merge');
+  if (ids.length > 10) throw new Error('Merge at most 10 objects at once');
+
+  const result = await db.transaction(async (tx) => {
+    const rows = await tx
+      .select()
+      .from(entities)
+      .where(and(eq(entities.teamId, scope.teamId), inArray(entities.id, ids)))
+      .for('update');
+    if (rows.length !== ids.length) throw new Error('One or more objects no longer exists');
+    if (rows.some((row) => row.mergedIntoId))
+      throw new Error('Merged objects cannot be merged again');
+
+    const objects = rows.map(toObjectRow);
+    if (!canMergeTypes(objects)) {
+      throw new Error('Only same-type objects can be merged, except company/vendor cleanup');
+    }
+    const survivor = objects.find((row) => row.id === input.survivorId);
+    if (!survivor) throw new Error('Survivor object not found');
+    const losers = objects.filter((row) => row.id !== survivor.id);
+    const loserIds = losers.map((row) => row.id);
+    const nextAliases = mergeAliases(survivor, losers);
+
+    const relationships = await tx
+      .select()
+      .from(entityRelationships)
+      .where(
+        and(
+          eq(entityRelationships.teamId, scope.teamId),
+          or(
+            inArray(entityRelationships.fromEntityId, loserIds),
+            inArray(entityRelationships.toEntityId, loserIds),
+          ),
+        ),
+      );
+    for (const rel of relationships) {
+      const nextFrom = loserIds.includes(rel.fromEntityId) ? survivor.id : rel.fromEntityId;
+      const nextTo = loserIds.includes(rel.toEntityId) ? survivor.id : rel.toEntityId;
+      if (nextFrom === nextTo) {
+        await tx.delete(entityRelationships).where(eq(entityRelationships.id, rel.id));
+        continue;
+      }
+      const existing = await tx
+        .select({ id: entityRelationships.id })
+        .from(entityRelationships)
+        .where(
+          and(
+            eq(entityRelationships.teamId, scope.teamId),
+            eq(entityRelationships.fromEntityId, nextFrom),
+            eq(entityRelationships.toEntityId, nextTo),
+            eq(entityRelationships.kind, rel.kind),
+            ne(entityRelationships.id, rel.id),
+          ),
+        )
+        .limit(1);
+      if (existing[0]) {
+        await tx.delete(entityRelationships).where(eq(entityRelationships.id, rel.id));
+      } else {
+        await tx
+          .update(entityRelationships)
+          .set({ fromEntityId: nextFrom, toEntityId: nextTo })
+          .where(eq(entityRelationships.id, rel.id));
+      }
+    }
+
+    await tx.execute(sql`
+      DELETE FROM ${factEntities} AS loser
+      USING ${factEntities} AS keeper
+      WHERE loser.entity_id IN (${sql.join(
+        loserIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+        AND keeper.entity_id = ${survivor.id}
+        AND keeper.fact_id = loser.fact_id
+        AND keeper.role = loser.role
+    `);
+    await tx
+      .update(factEntities)
+      .set({ entityId: survivor.id })
+      .where(inArray(factEntities.entityId, loserIds));
+
+    await tx
+      .update(objectNotes)
+      .set({ entityId: survivor.id })
+      .where(and(eq(objectNotes.teamId, scope.teamId), inArray(objectNotes.entityId, loserIds)));
+    await tx
+      .update(objectChanges)
+      .set({ entityId: survivor.id })
+      .where(
+        and(eq(objectChanges.teamId, scope.teamId), inArray(objectChanges.entityId, loserIds)),
+      );
+    await tx
+      .update(notifications)
+      .set({ entityId: survivor.id })
+      .where(
+        and(eq(notifications.teamId, scope.teamId), inArray(notifications.entityId, loserIds)),
+      );
+    await tx
+      .update(chatSessions)
+      .set({ pinnedEntityId: survivor.id })
+      .where(
+        and(eq(chatSessions.teamId, scope.teamId), inArray(chatSessions.pinnedEntityId, loserIds)),
+      );
+    await tx.execute(sql`
+      DELETE FROM ${calendarEventEntities} AS loser
+      USING ${calendarEventEntities} AS keeper
+      WHERE loser.team_id = ${scope.teamId}
+        AND loser.entity_id IN (${sql.join(
+          loserIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})
+        AND keeper.team_id = loser.team_id
+        AND keeper.calendar_event_id = loser.calendar_event_id
+        AND keeper.entity_id = ${survivor.id}
+    `);
+    await tx
+      .update(calendarEventEntities)
+      .set({ entityId: survivor.id })
+      .where(
+        and(
+          eq(calendarEventEntities.teamId, scope.teamId),
+          inArray(calendarEventEntities.entityId, loserIds),
+        ),
+      );
+
+    const views = await tx
+      .select()
+      .from(objectViews)
+      .where(and(eq(objectViews.teamId, scope.teamId), inArray(objectViews.entityId, loserIds)));
+    for (const view of views) {
+      const existing = await tx
+        .select()
+        .from(objectViews)
+        .where(
+          and(
+            eq(objectViews.teamId, scope.teamId),
+            eq(objectViews.userId, view.userId),
+            eq(objectViews.entityId, survivor.id),
+          ),
+        )
+        .limit(1);
+      if (existing[0]) {
+        const lastVisitedAt =
+          existing[0].lastVisitedAt.getTime() > view.lastVisitedAt.getTime()
+            ? existing[0].lastVisitedAt
+            : view.lastVisitedAt;
+        await tx
+          .update(objectViews)
+          .set({ lastVisitedAt })
+          .where(
+            and(
+              eq(objectViews.teamId, scope.teamId),
+              eq(objectViews.userId, view.userId),
+              eq(objectViews.entityId, survivor.id),
+            ),
+          );
+        await tx
+          .delete(objectViews)
+          .where(
+            and(
+              eq(objectViews.teamId, scope.teamId),
+              eq(objectViews.userId, view.userId),
+              eq(objectViews.entityId, view.entityId),
+            ),
+          );
+      } else {
+        await tx
+          .update(objectViews)
+          .set({ entityId: survivor.id })
+          .where(
+            and(
+              eq(objectViews.teamId, scope.teamId),
+              eq(objectViews.userId, view.userId),
+              eq(objectViews.entityId, view.entityId),
+            ),
+          );
+      }
+    }
+
+    const facets = await tx
+      .select()
+      .from(objectIdentityFacets)
+      .where(
+        and(
+          eq(objectIdentityFacets.teamId, scope.teamId),
+          inArray(objectIdentityFacets.entityId, loserIds),
+        ),
+      );
+    for (const facet of facets) {
+      const duplicateConditions = [
+        and(
+          eq(objectIdentityFacets.status, 'approved'),
+          eq(objectIdentityFacets.kind, facet.kind),
+          eq(objectIdentityFacets.normalizedValue, facet.normalizedValue),
+        ),
+      ];
+      if (facet.externalId) {
+        duplicateConditions.push(
+          and(
+            eq(objectIdentityFacets.status, 'approved'),
+            eq(objectIdentityFacets.kind, facet.kind),
+            facet.provider
+              ? eq(objectIdentityFacets.provider, facet.provider)
+              : isNull(objectIdentityFacets.provider),
+            eq(objectIdentityFacets.externalId, facet.externalId),
+          ),
+        );
+      }
+      if (facet.kind === 'timeline_user' && facet.linkedUserId) {
+        duplicateConditions.push(
+          and(
+            eq(objectIdentityFacets.status, 'approved'),
+            eq(objectIdentityFacets.kind, 'timeline_user'),
+            eq(objectIdentityFacets.linkedUserId, facet.linkedUserId),
+          ),
+        );
+      }
+      const duplicate = await tx
+        .select({ id: objectIdentityFacets.id })
+        .from(objectIdentityFacets)
+        .where(
+          and(
+            eq(objectIdentityFacets.teamId, scope.teamId),
+            eq(objectIdentityFacets.entityId, survivor.id),
+            or(...duplicateConditions),
+          ),
+        )
+        .limit(1);
+      if (duplicate[0]) {
+        await tx
+          .update(objectIdentityFacets)
+          .set({ status: 'archived', archivedAt: new Date(), updatedAt: new Date() })
+          .where(eq(objectIdentityFacets.id, facet.id));
+      } else {
+        await tx
+          .update(objectIdentityFacets)
+          .set({ entityId: survivor.id, updatedAt: new Date() })
+          .where(eq(objectIdentityFacets.id, facet.id));
+      }
+    }
+
+    const eventInsert = await tx
+      .insert(rawEvents)
+      .values({
+        teamId: scope.teamId,
+        authorUserId: input.actor.kind === 'user' ? input.actor.userId : null,
+        source: 'system',
+        contentText: `Merged ${losers.map((row) => row.canonicalName).join(', ')} into ${survivor.canonicalName}`,
+        occurredAt: new Date(),
+        visibility: 'team',
+        sourceMetadata: {
+          kind: 'object_merge',
+          entity_id: survivor.id,
+          merged_entity_ids: loserIds,
+          actor_kind: input.actor.kind,
+        },
+      })
+      .returning({ id: rawEvents.id });
+    const sourceEventId = eventInsert[0]?.id ?? null;
+
+    await tx
+      .update(entities)
+      .set({ aliases: nextAliases, updatedAt: new Date() })
+      .where(eq(entities.id, survivor.id));
+    await tx
+      .update(entities)
+      .set({ mergedIntoId: survivor.id, updatedAt: new Date() })
+      .where(and(eq(entities.teamId, scope.teamId), inArray(entities.id, loserIds)));
+
+    await tx.insert(objectChanges).values([
+      {
+        teamId: scope.teamId,
+        entityId: survivor.id,
+        actorUserId: input.actor.userId,
+        actorKind: input.actor.kind,
+        status: 'applied',
+        field: '__merge__',
+        previousValue: null,
+        newValue: {
+          survivor_id: survivor.id,
+          merged_entity_ids: loserIds,
+          aliases: nextAliases,
+        },
+        sourceEventId,
+      },
+      ...losers.map((loser) => ({
+        teamId: scope.teamId,
+        entityId: survivor.id,
+        actorUserId: input.actor.userId,
+        actorKind: input.actor.kind,
+        status: 'applied' as const,
+        field: '__merged_from__',
+        previousValue: { id: loser.id, canonicalName: loser.canonicalName, type: loser.type },
+        newValue: { mergedIntoId: survivor.id },
+        sourceEventId,
+      })),
+    ]);
+
+    const updatedRows = await tx
+      .select()
+      .from(entities)
+      .where(eq(entities.id, survivor.id))
+      .limit(1);
+    const updated = updatedRows[0];
+    if (!updated) throw new Error('Merge failed');
+    return { survivor: toObjectRow(updated), mergedIds: loserIds };
+  });
+
+  fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, result.survivor.id), {
+    teamId: scope.teamId,
+    objectId: result.survivor.id,
+    op: 'mergeObjects',
+  });
+  fireAndForgetEmbed(() => embedQueue.enqueueEntityEmbedJob(scope.teamId, result.survivor.id), {
+    teamId: scope.teamId,
+    entityId: result.survivor.id,
+    op: 'mergeObjects',
+  });
+  for (const mergedId of result.mergedIds) {
+    fireAndForgetEmbed(() => deleteMergedObjectEmbeddingPoints(scope.teamId, mergedId), {
+      teamId: scope.teamId,
+      entityId: mergedId,
+      op: 'mergeObjects:deleteMergedEmbeddings',
+    });
+  }
+  return result;
 }
 
 export async function addRelationship(
@@ -2840,6 +3401,9 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
   return {
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
     getObject: (idOrName: string) => getObject(db, scope, idOrName),
+    getMergedObjectTarget: (entityId: string) => getMergedObjectTarget(db, scope, entityId),
+    getObjectMergePreview: (entityIds: string[], survivorId?: string) =>
+      getObjectMergePreview(db, scope, entityIds, survivorId),
     getObjectSectionPage: (
       entityId: string,
       section: ObjectSection,
@@ -2852,6 +3416,7 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
       archiveObject(db, scope, entityId, actor),
     unarchiveObject: (entityId: string, actor: UpdateActor) =>
       unarchiveObject(db, scope, entityId, actor),
+    mergeObjects: (input: Parameters<typeof mergeObjects>[2]) => mergeObjects(db, scope, input),
     addRelationship: (input: Parameters<typeof addRelationship>[2]) =>
       addRelationship(db, scope, input),
     createIdentityFacet: (input: IdentityFacetInput) => createIdentityFacet(db, scope, input),
