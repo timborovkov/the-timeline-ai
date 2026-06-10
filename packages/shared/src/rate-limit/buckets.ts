@@ -5,6 +5,8 @@
 export const RATE_LIMITS = {
   /** Email/password signup: 5/min per source IP and per submitted email. */
   signup: { capacity: 5, refillPerSec: 5 / 60 },
+  /** Email/password signin: 10/min per source IP and per submitted email. */
+  signIn: { capacity: 10, refillPerSec: 10 / 60 },
   /** Public support/contact form: 3/min per source IP and per submitted email. */
   supportForm: { capacity: 3, refillPerSec: 3 / 60 },
   /** /api/search: 30/min per userId. */

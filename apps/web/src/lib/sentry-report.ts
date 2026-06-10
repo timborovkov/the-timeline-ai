@@ -21,13 +21,27 @@ const handledEventBuckets = new Map<
   { count: number; suppressed: number; windowStart: number }
 >();
 
-export function shouldReportToSentry(err: unknown): boolean {
-  void err;
+export function shouldReportToSentry(
+  err: unknown,
+  options?: Pick<ReportOptions, 'surface' | 'operation'>,
+): boolean {
+  if (isExpectedAuthCredentialsRateLimitError(err, options)) return false;
+  if (isExpectedAuthCredentialsSigninError(err, options)) return false;
   return true;
 }
 
 export function reportCaughtError(err: unknown, options: ReportOptions): void {
-  if (!shouldReportToSentry(err)) return;
+  if (isExpectedAuthCredentialsRateLimitError(err, options)) return;
+  if (isExpectedAuthCredentialsSigninError(err, options)) {
+    reportHandledEvent({
+      message: 'auth_credentials_signin_failed',
+      surface: options.surface,
+      operation: options.operation,
+      tags: { reason: 'invalid_credentials' },
+    });
+    return;
+  }
+  if (!shouldReportToSentry(err, options)) return;
   Sentry.captureException(err, {
     level: options.level ?? 'error',
     tags: {
@@ -110,4 +124,30 @@ function aiErrorTags(err: unknown): Record<string, string> {
     aiOperation: typeof row.operation === 'string' ? row.operation : undefined,
     aiModel: typeof row.model === 'string' ? row.model : undefined,
   });
+}
+
+function isExpectedAuthCredentialsSigninError(
+  err: unknown,
+  options: Pick<ReportOptions, 'surface' | 'operation'> | undefined,
+): boolean {
+  if (!err || typeof err !== 'object') return false;
+  return (
+    (err as { type?: unknown }).type === 'CredentialsSignin' &&
+    (err as { code?: unknown }).code === 'credentials' &&
+    options?.surface === 'server_action' &&
+    options.operation === 'sign_in'
+  );
+}
+
+function isExpectedAuthCredentialsRateLimitError(
+  err: unknown,
+  options: Pick<ReportOptions, 'surface' | 'operation'> | undefined,
+): boolean {
+  if (!err || typeof err !== 'object') return false;
+  return (
+    (err as { type?: unknown }).type === 'CredentialsSignin' &&
+    (err as { code?: unknown }).code === 'rate_limited' &&
+    options?.surface === 'server_action' &&
+    options.operation === 'sign_in'
+  );
 }
