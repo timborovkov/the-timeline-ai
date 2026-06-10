@@ -6,22 +6,45 @@ import { useFormStatus } from 'react-dom';
 
 declare global {
   interface Window {
-    turnstile?: {
-      ready(callback: () => void): void;
-      render(
-        container: HTMLElement,
-        options: {
-          sitekey: string;
-          action?: string;
-          theme?: 'light' | 'dark' | 'auto';
-          'error-callback'?: () => void;
-          'expired-callback'?: () => void;
-        },
-      ): string;
-      remove(widgetId: string): void;
-      reset(widgetId: string): void;
-    };
+    turnstile?: TurnstileApi;
   }
+}
+
+interface TurnstileApi {
+  render(
+    container: HTMLElement,
+    options: {
+      sitekey: string;
+      action?: string;
+      theme?: 'light' | 'dark' | 'auto';
+      'error-callback'?: () => void;
+      'expired-callback'?: () => void;
+    },
+  ): string;
+  remove(widgetId: string): void;
+  reset(widgetId: string): void;
+}
+
+export function renderTurnstileWidget({
+  action,
+  container,
+  reset,
+  siteKey,
+  turnstile,
+}: {
+  action: string;
+  container: HTMLElement;
+  reset: () => void;
+  siteKey: string;
+  turnstile: TurnstileApi;
+}) {
+  return turnstile.render(container, {
+    sitekey: siteKey,
+    action,
+    theme: 'light',
+    'error-callback': reset,
+    'expired-callback': reset,
+  });
 }
 
 export function TurnstileWidget({ action, siteKey }: { action: string; siteKey?: string }) {
@@ -36,15 +59,12 @@ export function TurnstileWidget({ action, siteKey }: { action: string; siteKey?:
 
   const render = useCallback(() => {
     if (!siteKey || !containerRef.current || widgetIdRef.current || !window.turnstile) return;
-    window.turnstile.ready(() => {
-      if (!siteKey || !containerRef.current || widgetIdRef.current || !window.turnstile) return;
-      widgetIdRef.current = window.turnstile.render(containerRef.current, {
-        sitekey: siteKey,
-        action,
-        theme: 'light',
-        'error-callback': reset,
-        'expired-callback': reset,
-      });
+    widgetIdRef.current = renderTurnstileWidget({
+      action,
+      container: containerRef.current,
+      reset,
+      siteKey,
+      turnstile: window.turnstile,
     });
   }, [action, reset, siteKey]);
 
