@@ -12,6 +12,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { authConfig } from '@/lib/auth.config';
 import { ensureSoloTeam } from '@/lib/default-team';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { checkCredentialsSignInRateLimit } from '@/lib/sign-in-rate-limit';
 
 const db = getDb();
 const log = childLogger('web:auth');
@@ -21,7 +22,7 @@ const log = childLogger('web:auth');
 // mixed-case email would never match the stored lowercase row.
 const credentialsSchema = z.object({
   email: z.email().toLowerCase(),
-  password: z.string().min(8),
+  password: z.string(),
 });
 
 const providers: NextAuthConfig['providers'] = [
@@ -31,10 +32,13 @@ const providers: NextAuthConfig['providers'] = [
       email: { label: 'Email', type: 'email' },
       password: { label: 'Password', type: 'password' },
     },
-    async authorize(raw) {
+    async authorize(raw, request) {
       const parsed = credentialsSchema.safeParse(raw);
       if (!parsed.success) return null;
       const { email, password } = parsed.data;
+      const rateLimitOk = await checkCredentialsSignInRateLimit(email, request.headers);
+      if (!rateLimitOk) return null;
+      if (password.length < 8 || password.length > 200) return null;
       const rows = await db.select().from(users).where(eq(users.email, email)).limit(1);
       const user = rows[0];
       if (!user?.passwordHash) return null;

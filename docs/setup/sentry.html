@@ -57,8 +57,10 @@ SENTRY_PROFILES_SAMPLE_RATE=0
       </p>
       <p>
         Server action catch blocks that convert exceptions into returned action errors call Sentry
-        before returning. Plain validation, signed-out, not-found, and permission-denied branches
-        that do not throw remain product control flow.
+        before returning. Expected Auth.js credentials failures for invalid email/password sign-in
+        attempts are rate-limited per source IP and submitted email, then emit throttled handled
+        warning events instead of exception alerts. Plain validation, signed-out, not-found, and
+        permission-denied branches that do not throw remain product control flow.
       </p>
       <p>
         Server actions run through <code>runSentryServerAction</code>, which delegates to Sentry's
