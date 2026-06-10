@@ -842,19 +842,19 @@ export async function getObjectMergePreview(
   if (!survivor) throw new Error('Survivor object not found');
   const losers = objects.filter((row) => row.id !== survivor.id);
 
-  async function countMergeImpact(loserIds: string[]): Promise<ObjectMergePreview['counts']> {
+  async function countMergeImpact(mergeIds: string[]): Promise<ObjectMergePreview['counts']> {
     const [factCountRows, noteCountRows, relCountRows, taskCountRows] = await Promise.all([
       db
         .select({ count: sql<number>`count(*)::int` })
         .from(factEntities)
-        .where(inArray(factEntities.entityId, loserIds)),
+        .where(inArray(factEntities.entityId, mergeIds)),
       db
         .select({ count: sql<number>`count(*)::int` })
         .from(objectNotes)
         .where(
           and(
             eq(objectNotes.teamId, scope.teamId),
-            inArray(objectNotes.entityId, loserIds),
+            inArray(objectNotes.entityId, mergeIds),
             isNull(objectNotes.deletedAt),
           ),
         ),
@@ -865,8 +865,8 @@ export async function getObjectMergePreview(
           and(
             eq(entityRelationships.teamId, scope.teamId),
             or(
-              inArray(entityRelationships.fromEntityId, loserIds),
-              inArray(entityRelationships.toEntityId, loserIds),
+              inArray(entityRelationships.fromEntityId, mergeIds),
+              inArray(entityRelationships.toEntityId, mergeIds),
             ),
           ),
         ),
@@ -877,7 +877,7 @@ export async function getObjectMergePreview(
         .where(
           and(
             eq(entityRelationships.teamId, scope.teamId),
-            inArray(entityRelationships.toEntityId, loserIds),
+            inArray(entityRelationships.toEntityId, mergeIds),
             eq(entityRelationships.kind, 'child'),
             eq(entities.teamId, scope.teamId),
             eq(entities.type, 'task'),
@@ -896,12 +896,8 @@ export async function getObjectMergePreview(
     };
   }
 
-  const countEntries = await Promise.all(
-    objects.map(
-      async (object) =>
-        [object.id, await countMergeImpact(ids.filter((id) => id !== object.id))] as const,
-    ),
-  );
+  const mergeCounts = await countMergeImpact(ids);
+  const countEntries = objects.map((object) => [object.id, mergeCounts] as const);
   const countsBySurvivorId = Object.fromEntries(countEntries);
   const counts = countsBySurvivorId[survivor.id] ?? {
     facts: 0,

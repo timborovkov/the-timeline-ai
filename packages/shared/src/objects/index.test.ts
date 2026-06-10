@@ -474,6 +474,11 @@ describe('object scope — merge cleanup', () => {
       body: 'Duplicate spelling from capture',
       authorUserId: USER_OWNER,
     });
+    await scope.createNote({
+      entityId: survivor.id,
+      body: 'Existing survivor note',
+      authorUserId: USER_OWNER,
+    });
     const event = await db
       .insert(rawEvents)
       .values({
@@ -503,6 +508,23 @@ describe('object scope — merge cleanup', () => {
       entityId: typo.id,
       role: 'subject',
     });
+    const survivorFact = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: eventId,
+        statement: 'PwC is already known',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    const survivorFactId = survivorFact[0]?.id;
+    if (!survivorFactId) throw new Error('Failed to insert survivor test fact');
+    await db.insert(factEntities).values({
+      factId: survivorFactId,
+      entityId: survivor.id,
+      role: 'subject',
+    });
 
     const preview = await scope.getObjectMergePreview(
       [survivor.id, typo.id, vendor.id],
@@ -510,8 +532,14 @@ describe('object scope — merge cleanup', () => {
     );
     expect(preview.survivorId).toBe(survivor.id);
     expect(preview.aliasesToAdd).toEqual(expect.arrayContaining(['PVC', 'P.W.C.', 'PwC Finland']));
-    expect(preview.counts).toMatchObject({ facts: 1, notes: 1 });
-    expect(preview.countsBySurvivorId[survivor.id]).toMatchObject({ facts: 1, notes: 1 });
+    expect(preview.counts).toMatchObject({ facts: 2, notes: 2, relationships: 3, openTasks: 1 });
+    expect(preview.countsBySurvivorId[survivor.id]).toMatchObject({
+      facts: 2,
+      notes: 2,
+      relationships: 3,
+      openTasks: 1,
+    });
+    expect(preview.countsBySurvivorId[typo.id]).toEqual(preview.countsBySurvivorId[survivor.id]);
 
     await expect(
       scope.mergeObjects({
