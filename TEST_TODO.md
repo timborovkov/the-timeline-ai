@@ -12,7 +12,7 @@ coverage from `main`. Current suite shape:
 
 - DB Vitest: 1 file / 5 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 64 files / 578 tests plus 1 skipped, including PGlite
+- Shared Vitest: 64 files / 579 tests plus 1 skipped, including PGlite
   integration/eval coverage plus queue, S3, and onboarding contracts.
 - Web Vitest: 77 files / 388 tests, including route/action/component coverage
   for core recovery, onboarding, object sections, and first high-value UI
