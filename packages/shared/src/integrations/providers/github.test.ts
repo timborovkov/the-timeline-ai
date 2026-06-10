@@ -533,6 +533,59 @@ describe('githubProvider.incrementalSync', () => {
     );
   });
 
+  it('continues release pagination when a full page mixes old and new releases', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/releases')) {
+        const page = url.searchParams.get('page');
+        return Promise.resolve(
+          jsonResponse(
+            page === '1'
+              ? [
+                  release(200, '2026-06-10T12:00:00Z'),
+                  ...Array.from({ length: 99 }, (_, index) =>
+                    release(199 - index, '2026-06-09T12:00:00Z'),
+                  ),
+                ]
+              : [release(50, '2026-06-10T13:00:00Z')],
+          ),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor: vi.fn().mockResolvedValue({ releases_since: '2026-06-10T00:00:00Z' }),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    const events = writeEvents.mock.calls.flatMap(([batch]) => batch);
+    expect(events.filter((event) => event.eventType === 'release.published')).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/repos/acme/app/releases?per_page=100&page=2'),
+      expect.any(Object),
+    );
+    expect(saveCursor).toHaveBeenCalledWith(
+      'github.repo:acme/app',
+      expect.objectContaining({ releases_since: '2026-06-10T13:00:00Z' }),
+    );
+  });
+
   it('continues workflow run pagination even when an early full page contains old runs', async () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =

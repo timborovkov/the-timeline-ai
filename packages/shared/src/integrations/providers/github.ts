@@ -581,11 +581,11 @@ async function syncRepo(
           }
         }
       }
-      if (newReleases.length < releases.length || releases.length < 100) break;
+      if (releases.length < 100) break;
       if (page === MAX_SYNC_PAGES) {
         failures.push({
           area: 'releases:page_cap',
-          error: `hit ${String(MAX_SYNC_PAGES)} pages without reaching cursor`,
+          error: `hit ${String(MAX_SYNC_PAGES)} pages without reaching the end`,
         });
       }
     }
