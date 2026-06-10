@@ -479,7 +479,6 @@ describe('processSuggestionJobForTests', () => {
                 title: 'Sunset Project X',
                 proposedPayload: {
                   type: 'decision',
-                  canonicalName: 'Sunset Project X',
                   status: 'accepted',
                 },
               },

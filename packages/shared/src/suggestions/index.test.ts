@@ -1202,6 +1202,43 @@ describe('suggestion scope', () => {
     expect(item.rows[0]?.failure_reason).toBeTruthy();
   });
 
+  it('uses the suggestion item title as the canonical name for object creates missing payload canonicalName', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Pilot Case Scoping Criteria',
+      dedupeKey: 'object-create-title-fallback',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Exclude companies with inventory from pilot scope',
+          dedupeKey: 'object-create-title-fallback:item',
+          proposedPayload: {
+            type: 'decision',
+            status: 'accepted',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ canonical_name: string; type: string; status: string }>(
+      `SELECT canonical_name, type, status
+       FROM entities
+       WHERE team_id = '${TEAM_ID}'
+         AND canonical_name = 'Exclude companies with inventory from pilot scope'`,
+    );
+    expect(result.rows[0]).toEqual({
+      canonical_name: 'Exclude companies with inventory from pilot scope',
+      type: 'decision',
+      status: 'accepted',
+    });
+  });
+
   it('accepts calendar cancellation suggestions by soft-deleting the event', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const event = await scope.calendar.createCalendarEvent({
