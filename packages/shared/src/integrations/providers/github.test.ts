@@ -11,6 +11,7 @@ interface TestGithubCursor {
   prs_since?: string;
   issues_since?: string;
   releases_since?: string;
+  workflow_runs_since?: string;
   last_sha?: string;
 }
 
@@ -262,6 +263,39 @@ describe('githubProvider.incrementalSync', () => {
     };
   }
 
+  function workflowRun(
+    id: number,
+    updatedAt: string,
+  ): {
+    id: number;
+    name: string | null;
+    workflow_id: number;
+    run_number: number;
+    html_url: string;
+    status: string | null;
+    conclusion: string | null;
+    updated_at: string;
+    head_branch: string | null;
+    head_sha: string;
+    event: string;
+    actor: { login: string } | null;
+  } {
+    return {
+      id,
+      name: 'CI',
+      workflow_id: 1,
+      run_number: id,
+      html_url: `https://github.com/acme/app/actions/runs/${String(id)}`,
+      status: 'completed',
+      conclusion: 'success',
+      updated_at: updatedAt,
+      head_branch: 'main',
+      head_sha: `sha-${String(id)}`,
+      event: 'push',
+      actor: { login: 'alice' },
+    };
+  }
+
   function emptyGithubFetch(input: string | URL | Request): Response | undefined {
     const requestUrl =
       typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -458,6 +492,103 @@ describe('githubProvider.incrementalSync', () => {
     );
   });
 
+  it('captures a published release during legacy id cursor migration', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/releases')) {
+        return Promise.resolve(jsonResponse([release(1, '2026-06-10T12:00:00Z')]));
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor: vi.fn().mockResolvedValue({ last_release_id: 1 }),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(writeEvents.mock.calls.flatMap(([events]) => events)).toEqual([
+      expect.objectContaining({ eventType: 'release.published' }),
+    ]);
+    expect(saveCursor).toHaveBeenCalledWith(
+      'github.repo:acme/app',
+      expect.objectContaining({
+        last_release_id: 1,
+        releases_since: '2026-06-10T12:00:00Z',
+      }),
+    );
+  });
+
+  it('continues workflow run pagination even when an early full page contains old runs', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/actions/runs')) {
+        const page = url.searchParams.get('page');
+        return Promise.resolve(
+          jsonResponse({
+            workflow_runs:
+              page === '1'
+                ? [
+                    workflowRun(1, '2026-06-10T09:00:00Z'),
+                    ...Array.from({ length: 99 }, (_, index) =>
+                      workflowRun(index + 2, '2026-06-10T11:00:00Z'),
+                    ),
+                  ]
+                : [workflowRun(101, '2026-06-10T12:00:00Z')],
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents,
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor: vi.fn().mockResolvedValue({
+          workflow_runs_since: '2026-06-10T10:00:00Z',
+        }),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    const events = writeEvents.mock.calls.flatMap(([batch]) => batch);
+    expect(events.filter((event) => event.eventType === 'workflow_run.success')).toHaveLength(100);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/repos/acme/app/actions/runs?per_page=100&page=2'),
+      expect.any(Object),
+    );
+    expect(saveCursor).toHaveBeenCalledWith(
+      'github.repo:acme/app',
+      expect.objectContaining({ workflow_runs_since: '2026-06-10T12:00:00Z' }),
+    );
+  });
+
   it('advances the issue cursor when fetched rows are PRs filtered out of issue events', async () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =
@@ -494,13 +625,13 @@ describe('githubProvider.incrementalSync', () => {
     );
   });
 
-  it('uses legacy release ids until the new release timestamp cursor is seeded', async () => {
+  it('seeds the release timestamp cursor from a legacy draft release', async () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
       if (url.pathname.endsWith('/releases')) {
-        return Promise.resolve(jsonResponse([release(1, '2026-06-01T12:00:00Z')]));
+        return Promise.resolve(jsonResponse([release(1, null)]));
       }
       if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
       const base = emptyGithubFetch(input);
@@ -523,12 +654,14 @@ describe('githubProvider.incrementalSync', () => {
       },
     });
 
-    expect(writeEvents.mock.calls.flatMap(([events]) => events)).toEqual([]);
+    expect(writeEvents.mock.calls.flatMap(([events]) => events)).toEqual([
+      expect.objectContaining({ eventType: 'release.draft' }),
+    ]);
     expect(saveCursor).toHaveBeenCalledWith(
       'github.repo:acme/app',
       expect.objectContaining({
         last_release_id: 1,
-        releases_since: '2026-06-01T12:00:00Z',
+        releases_since: '2026-06-01T00:00:00Z',
       }),
     );
   });

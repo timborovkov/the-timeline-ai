@@ -559,7 +559,7 @@ async function syncRepo(
       if (releases.length === 0) break;
       const newReleases = releases.filter((r) => {
         const releaseTs = r.published_at ?? r.created_at;
-        return hasReleaseSince ? releaseTs > releasesSince : r.id > legacyLastReleaseId;
+        return hasReleaseSince ? releaseTs > releasesSince : r.id >= legacyLastReleaseId;
       });
       if (newReleases.length > 0) {
         await ctx.writeEvents(newReleases.map((r) => releaseToEvent(repo, r)));
@@ -577,10 +577,7 @@ async function syncRepo(
       if (!hasReleaseSince) {
         for (const release of releases) {
           if (release.id <= legacyLastReleaseId) {
-            releaseNext.releases_since = maxIso(
-              releaseNext.releases_since,
-              release.published_at ?? release.created_at,
-            );
+            releaseNext.releases_since = maxIso(releaseNext.releases_since, release.created_at);
           }
         }
       }
@@ -665,11 +662,11 @@ async function syncRepo(
           workflowRunNext.since = maxIso(workflowRunNext.since, r.updated_at);
         }
       }
-      if (filtered.length < workflowRuns.length || workflowRuns.length < 100) break;
+      if (workflowRuns.length < 100) break;
       if (page === MAX_SYNC_PAGES) {
         failures.push({
           area: 'workflow_runs:page_cap',
-          error: `hit ${String(MAX_SYNC_PAGES)} pages without reaching cursor`,
+          error: `hit ${String(MAX_SYNC_PAGES)} pages without reaching the end`,
         });
       }
     }
