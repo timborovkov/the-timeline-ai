@@ -138,6 +138,20 @@ function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }
 
+function normalizeSuggestionItemPayload(
+  item: z.infer<typeof suggestionItemSchema>,
+): Record<string, unknown> {
+  if (
+    item.operation === 'create' &&
+    (item.targetKind === 'task' || item.targetKind === 'object') &&
+    (typeof item.proposedPayload.canonicalName !== 'string' ||
+      item.proposedPayload.canonicalName.trim() === '')
+  ) {
+    return { ...item.proposedPayload, canonicalName: item.title };
+  }
+  return item.proposedPayload;
+}
+
 function extractionSettled(meta: Record<string, unknown>): boolean {
   return (
     typeof meta.extraction_model_version === 'string' ||
@@ -756,7 +770,7 @@ async function runSuggestionExtraction(
     schema: suggestionExtractionSchema,
     model: modelId,
     system:
-      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, or calendar refinements. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, or merely conversational. For date-only scheduled commitments, create all-day calendar_event items. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
+      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, or calendar refinements. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, or merely conversational. For create task/object items, include proposedPayload.canonicalName matching the item title. For date-only scheduled commitments, create all-day calendar_event items. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
     prompt,
   });
 
@@ -840,7 +854,7 @@ async function runSuggestionExtraction(
           title: item.title,
           item: args.conversation ? null : item,
         }),
-        proposedPayload: item.proposedPayload,
+        proposedPayload: normalizeSuggestionItemPayload(item),
       })),
     });
     if (suggestion.status === 'pending' || suggestion.status === 'partially_resolved') {
