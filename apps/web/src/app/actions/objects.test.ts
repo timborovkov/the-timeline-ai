@@ -110,7 +110,7 @@ beforeEach(() => {
     survivorId: OBJECT_ID,
   });
   fakes.fakeTransactionObjects.archiveObject.mockResolvedValue(undefined);
-  fakes.fakeEnqueueSuggestionJob.mockResolvedValue(undefined);
+  fakes.fakeEnqueueSuggestionJob.mockResolvedValue({ enqueued: true, jobId: 'cleanup-job' });
 });
 
 describe('object action validation and scope', () => {
@@ -278,7 +278,10 @@ describe('object CRUD actions', () => {
   it('queues a manual object cleanup suggestion scan for the active team', async () => {
     const { findObjectCleanupSuggestionsAction } = await import('@/app/actions/objects');
 
-    await expect(findObjectCleanupSuggestionsAction()).resolves.toEqual({ ok: true });
+    await expect(findObjectCleanupSuggestionsAction()).resolves.toEqual({
+      ok: true,
+      message: 'Scan queued',
+    });
 
     expect(fakes.fakeEnqueueSuggestionJob).toHaveBeenCalledWith(
       {
@@ -288,6 +291,22 @@ describe('object CRUD actions', () => {
       },
       { jobIdSuffix: 'manual' },
     );
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/objects');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+  });
+
+  it('reports when a manual object cleanup scan is already queued', async () => {
+    fakes.fakeEnqueueSuggestionJob.mockResolvedValueOnce({
+      enqueued: false,
+      jobId: 'object-cleanup|team|manual|manual',
+    });
+    const { findObjectCleanupSuggestionsAction } = await import('@/app/actions/objects');
+
+    await expect(findObjectCleanupSuggestionsAction()).resolves.toEqual({
+      ok: true,
+      message: 'Scan already queued',
+    });
+
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/objects');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
   });

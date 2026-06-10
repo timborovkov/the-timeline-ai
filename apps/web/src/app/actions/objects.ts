@@ -221,7 +221,7 @@ export async function findObjectCleanupSuggestionsAction(): Promise<ActionState>
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      await enqueueSuggestionJob(
+      const result = await enqueueSuggestionJob(
         {
           scope: 'object_cleanup',
           teamId: r.teamId,
@@ -232,7 +232,10 @@ export async function findObjectCleanupSuggestionsAction(): Promise<ActionState>
       revalidatePath('/app/objects');
       revalidatePath('/app/approvals');
       revalidatePath('/app/inbox');
-      return { ok: true };
+      return {
+        ok: true,
+        message: result.enqueued ? 'Scan queued' : 'Scan already queued',
+      };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to find cleanup suggestions') };
     }

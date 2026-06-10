@@ -56,11 +56,11 @@ export function ObjectCleanupSuggestions({ suggestions }: Props) {
     return items;
   }, [suggestions]);
 
-  function run(action: () => Promise<{ ok?: boolean; error?: string }>, success?: string) {
+  function run(action: () => Promise<{ ok?: boolean; error?: string; message?: string }>) {
     setMessage(null);
     startTransition(async () => {
       const result = await action();
-      setMessage(result.error ?? success ?? null);
+      setMessage(result.error ?? result.message ?? null);
       router.refresh();
     });
   }
@@ -84,7 +84,7 @@ export function ObjectCleanupSuggestions({ suggestions }: Props) {
           variant="outline"
           disabled={pending}
           onClick={() => {
-            run(findObjectCleanupSuggestionsAction, 'Scan queued');
+            run(findObjectCleanupSuggestionsAction);
           }}
         >
           <RefreshCw className="size-4" />
