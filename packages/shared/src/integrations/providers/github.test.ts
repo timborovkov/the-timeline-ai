@@ -586,6 +586,43 @@ describe('githubProvider.incrementalSync', () => {
     );
   });
 
+  it('stops release pagination on a full stale page without a page-cap failure', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/releases')) {
+        return Promise.resolve(
+          jsonResponse(
+            Array.from({ length: 100 }, (_, index) => release(200 - index, '2026-06-09T12:00:00Z')),
+          ),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents: vi.fn().mockResolvedValue([]),
+        recordAudit: vi.fn(),
+        saveCursor: vi.fn().mockResolvedValue(undefined),
+        loadCursor: vi.fn().mockResolvedValue({ releases_since: '2026-06-10T00:00:00Z' }),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/repos/acme/app/releases?per_page=100&page=2'),
+      expect.any(Object),
+    );
+  });
+
   it('continues workflow run pagination even when an early full page contains old runs', async () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =
@@ -639,6 +676,47 @@ describe('githubProvider.incrementalSync', () => {
     expect(saveCursor).toHaveBeenCalledWith(
       'github.repo:acme/app',
       expect.objectContaining({ workflow_runs_since: '2026-06-10T12:00:00Z' }),
+    );
+  });
+
+  it('stops workflow run pagination on a full stale page without a page-cap failure', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname.endsWith('/actions/runs')) {
+        return Promise.resolve(
+          jsonResponse({
+            workflow_runs: Array.from({ length: 100 }, (_, index) =>
+              workflowRun(index + 1, '2026-06-10T09:00:00Z'),
+            ),
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+      ctx: {
+        writeEvents: vi.fn().mockResolvedValue([]),
+        recordAudit: vi.fn(),
+        saveCursor: vi.fn().mockResolvedValue(undefined),
+        loadCursor: vi.fn().mockResolvedValue({
+          workflow_runs_since: '2026-06-10T10:00:00Z',
+        }),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/repos/acme/app/actions/runs?per_page=100&page=2'),
+      expect.any(Object),
     );
   });
 

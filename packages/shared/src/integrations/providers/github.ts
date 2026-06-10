@@ -581,7 +581,7 @@ async function syncRepo(
           }
         }
       }
-      if (releases.length < 100) break;
+      if (newReleases.length === 0 || releases.length < 100) break;
       if (page === MAX_SYNC_PAGES) {
         failures.push({
           area: 'releases:page_cap',
@@ -662,7 +662,7 @@ async function syncRepo(
           workflowRunNext.since = maxIso(workflowRunNext.since, r.updated_at);
         }
       }
-      if (workflowRuns.length < 100) break;
+      if (filtered.length === 0 || workflowRuns.length < 100) break;
       if (page === MAX_SYNC_PAGES) {
         failures.push({
           area: 'workflow_runs:page_cap',
