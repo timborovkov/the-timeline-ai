@@ -1,6 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
   type Db,
+  calendarEventEntities,
+  calendarEvents,
   chatMessages,
   chatSessions,
   entities,
@@ -561,6 +563,50 @@ describe('object scope — merge cleanup', () => {
       canonicalName: 'PwC Global',
       actor: { kind: 'user', userId: USER_OWNER },
     });
+    const [calendarLinkedToLoser, calendarLinkedToBoth] = await db
+      .insert(calendarEvents)
+      .values([
+        {
+          teamId: TEAM_A,
+          createdByUserId: USER_OWNER,
+          title: 'PwC cleanup review',
+          startAt: new Date('2026-06-12T09:00:00Z'),
+          endAt: new Date('2026-06-12T10:00:00Z'),
+          timezone: 'UTC',
+          metadata: {},
+        },
+        {
+          teamId: TEAM_A,
+          createdByUserId: USER_OWNER,
+          title: 'PwC duplicate link review',
+          startAt: new Date('2026-06-13T09:00:00Z'),
+          endAt: new Date('2026-06-13T10:00:00Z'),
+          timezone: 'UTC',
+          metadata: {},
+        },
+      ])
+      .returning({ id: calendarEvents.id });
+    if (!calendarLinkedToLoser || !calendarLinkedToBoth) {
+      throw new Error('Failed to insert calendar events');
+    }
+    await db.insert(calendarEventEntities).values([
+      {
+        calendarEventId: calendarLinkedToLoser.id,
+        entityId: survivor.id,
+        teamId: TEAM_A,
+      },
+      {
+        calendarEventId: calendarLinkedToBoth.id,
+        entityId: survivor.id,
+        teamId: TEAM_A,
+      },
+      {
+        calendarEventId: calendarLinkedToBoth.id,
+        entityId: finalSurvivor.id,
+        teamId: TEAM_A,
+      },
+    ]);
+
     await expect(
       scope.mergeObjects({
         survivorId: finalSurvivor.id,
@@ -571,6 +617,31 @@ describe('object scope — merge cleanup', () => {
     await expect(scope.getMergedObjectTarget(typo.id)).resolves.toMatchObject({
       id: finalSurvivor.id,
     });
+
+    const calendarLinks = await db
+      .select()
+      .from(calendarEventEntities)
+      .where(
+        inArray(calendarEventEntities.calendarEventId, [
+          calendarLinkedToLoser.id,
+          calendarLinkedToBoth.id,
+        ]),
+      );
+    expect(calendarLinks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          calendarEventId: calendarLinkedToLoser.id,
+          entityId: finalSurvivor.id,
+        }),
+        expect.objectContaining({
+          calendarEventId: calendarLinkedToBoth.id,
+          entityId: finalSurvivor.id,
+        }),
+      ]),
+    );
+    expect(
+      calendarLinks.filter((link) => link.calendarEventId === calendarLinkedToBoth.id),
+    ).toHaveLength(1);
   });
 
   it('blocks task merges and cross-team ids', async () => {

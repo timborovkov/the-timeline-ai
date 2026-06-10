@@ -14,6 +14,11 @@ export function parseObjectMergeIds(value: string | string[] | undefined): strin
   );
 }
 
+export function parseSingleObjectMergeId(value: string | string[] | undefined): string | undefined {
+  const ids = parseObjectMergeIds(value);
+  return ids.length === 1 ? ids[0] : undefined;
+}
+
 export function objectMergeHref(selectedIds: string[]): string {
   const params = new URLSearchParams({ ids: selectedIds.join(',') });
   return `/app/objects/merge?${params.toString()}`;

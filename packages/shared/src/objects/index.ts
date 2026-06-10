@@ -10,6 +10,7 @@
 import {
   type Db,
   boardViews,
+  calendarEventEntities,
   chatMessages,
   chatSessions,
   entities,
@@ -1433,6 +1434,27 @@ export async function mergeObjects(
       .set({ pinnedEntityId: survivor.id })
       .where(
         and(eq(chatSessions.teamId, scope.teamId), inArray(chatSessions.pinnedEntityId, loserIds)),
+      );
+    await tx.execute(sql`
+      DELETE FROM ${calendarEventEntities} AS loser
+      USING ${calendarEventEntities} AS keeper
+      WHERE loser.team_id = ${scope.teamId}
+        AND loser.entity_id IN (${sql.join(
+          loserIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})
+        AND keeper.team_id = loser.team_id
+        AND keeper.calendar_event_id = loser.calendar_event_id
+        AND keeper.entity_id = ${survivor.id}
+    `);
+    await tx
+      .update(calendarEventEntities)
+      .set({ entityId: survivor.id })
+      .where(
+        and(
+          eq(calendarEventEntities.teamId, scope.teamId),
+          inArray(calendarEventEntities.entityId, loserIds),
+        ),
       );
 
     const views = await tx

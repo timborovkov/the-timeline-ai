@@ -4,6 +4,7 @@ import {
   MAX_OBJECT_MERGE_SELECTION,
   objectMergeHref,
   parseObjectMergeIds,
+  parseSingleObjectMergeId,
 } from '@/lib/object-merge';
 
 const ids = Array.from(
@@ -20,6 +21,11 @@ describe('object merge URL helpers', () => {
 
   it('deduplicates ids while preserving selection order', () => {
     expect(parseObjectMergeIds([firstId, `${secondId},${firstId}`])).toEqual([firstId, secondId]);
+  });
+
+  it('normalizes a single id from a string array query param', () => {
+    expect(parseSingleObjectMergeId([firstId])).toBe(firstId);
+    expect(parseSingleObjectMergeId([firstId, secondId])).toBeUndefined();
   });
 
   it('builds the merge URL from the complete selection', () => {

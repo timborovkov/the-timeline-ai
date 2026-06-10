@@ -10,7 +10,7 @@ import { ObjectMergeForm } from '@/components/objects/object-merge-form';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { parseObjectMergeIds } from '@/lib/object-merge';
+import { parseObjectMergeIds, parseSingleObjectMergeId } from '@/lib/object-merge';
 
 export const metadata: Metadata = {
   title: 'Merge Objects',
@@ -29,10 +29,7 @@ export default async function MergeObjectsPage({
 
   const params = await searchParams;
   const ids = parseObjectMergeIds(params.ids);
-  const suggestionItemId =
-    params.suggestionItemId && parseObjectMergeIds(params.suggestionItemId).length === 1
-      ? params.suggestionItemId
-      : undefined;
+  const suggestionItemId = parseSingleObjectMergeId(params.suggestionItemId);
   if (ids.length < 2) {
     return (
       <div className="mx-auto max-w-4xl space-y-6">
