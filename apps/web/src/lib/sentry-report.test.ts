@@ -56,6 +56,28 @@ describe('Sentry caught-error reporting', () => {
     });
   });
 
+  it('does not relabel rate-limited credentials sign-in as invalid credentials', () => {
+    const err = Object.assign(new Error('Rate limited'), {
+      type: 'CredentialsSignin',
+      code: 'rate_limited',
+    });
+
+    expect(
+      shouldReportToSentry(err, {
+        surface: 'server_action',
+        operation: 'sign_in',
+      }),
+    ).toBe(false);
+
+    reportCaughtError(err, {
+      surface: 'server_action',
+      operation: 'sign_in',
+    });
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(Sentry.captureMessage).not.toHaveBeenCalled();
+  });
+
   it('reports credentials sign-in failures outside the expected invalid-login path', () => {
     const err = Object.assign(
       new Error('Read more at https://errors.authjs.dev#credentialssignin'),

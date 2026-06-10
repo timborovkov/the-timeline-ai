@@ -25,11 +25,13 @@ export function shouldReportToSentry(
   err: unknown,
   options?: Pick<ReportOptions, 'surface' | 'operation'>,
 ): boolean {
+  if (isExpectedAuthCredentialsRateLimitError(err, options)) return false;
   if (isExpectedAuthCredentialsSigninError(err, options)) return false;
   return true;
 }
 
 export function reportCaughtError(err: unknown, options: ReportOptions): void {
+  if (isExpectedAuthCredentialsRateLimitError(err, options)) return;
   if (isExpectedAuthCredentialsSigninError(err, options)) {
     reportHandledEvent({
       message: 'auth_credentials_signin_failed',
@@ -132,6 +134,19 @@ function isExpectedAuthCredentialsSigninError(
   return (
     (err as { type?: unknown }).type === 'CredentialsSignin' &&
     (err as { code?: unknown }).code === 'credentials' &&
+    options?.surface === 'server_action' &&
+    options.operation === 'sign_in'
+  );
+}
+
+function isExpectedAuthCredentialsRateLimitError(
+  err: unknown,
+  options: Pick<ReportOptions, 'surface' | 'operation'> | undefined,
+): boolean {
+  if (!err || typeof err !== 'object') return false;
+  return (
+    (err as { type?: unknown }).type === 'CredentialsSignin' &&
+    (err as { code?: unknown }).code === 'rate_limited' &&
     options?.surface === 'server_action' &&
     options.operation === 'sign_in'
   );
