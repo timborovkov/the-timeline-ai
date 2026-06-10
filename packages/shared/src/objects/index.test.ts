@@ -27,11 +27,20 @@ import { applyDbMigrations } from '#src/test/pglite.js';
  * persisted behavior through `withTeam(...).objects`, not private helpers.
  */
 
+const qdrantFakes = vi.hoisted(() => ({
+  deletePoints: vi.fn().mockResolvedValue(undefined),
+  deletePointsForSource: vi.fn().mockResolvedValue(undefined),
+  getQdrantClient: vi.fn(),
+}));
+
 vi.mock('#src/queue/queues.js', () => ({
   enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectNoteEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('#src/qdrant/client.js', () => ({
+  getQdrantClient: qdrantFakes.getQdrantClient,
 }));
 
 type AnyDb = Db;
@@ -68,6 +77,10 @@ async function seedWorkspace(): Promise<void> {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  qdrantFakes.getQdrantClient.mockReturnValue({
+    deletePoints: qdrantFakes.deletePoints,
+    deletePointsForSource: qdrantFakes.deletePointsForSource,
+  });
   pg = new PGlite();
   await applyDbMigrations(pg);
   await seedWorkspace();
@@ -548,6 +561,37 @@ describe('object scope — merge cleanup', () => {
         actor: { kind: 'user', userId: USER_OWNER },
       }),
     ).resolves.toMatchObject({ mergedIds: [typo.id, vendor.id] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(qdrantFakes.deletePointsForSource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: TEAM_A,
+        scope: 'object',
+        sourceId: typo.id,
+      }),
+    );
+    expect(qdrantFakes.deletePointsForSource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: TEAM_A,
+        scope: 'entity',
+        sourceId: typo.id,
+      }),
+    );
+    expect(qdrantFakes.deletePointsForSource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: TEAM_A,
+        scope: 'object',
+        sourceId: vendor.id,
+      }),
+    );
+    expect(qdrantFakes.deletePointsForSource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: TEAM_A,
+        scope: 'entity',
+        sourceId: vendor.id,
+      }),
+    );
+    expect(qdrantFakes.deletePoints).toHaveBeenCalledTimes(2);
 
     await expect(scope.listObjects({ archived: false })).resolves.not.toContainEqual(
       expect.objectContaining({ id: typo.id }),

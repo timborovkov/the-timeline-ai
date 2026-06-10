@@ -29,8 +29,11 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 
 
 import type { TeamScopeCore } from '#src/team-scope.js';
 
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
+import { getQdrantClient } from '#src/qdrant/client.js';
+import { buildPointId } from '#src/qdrant/point-id.js';
 import * as embedQueue from '#src/queue/queues.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -48,6 +51,29 @@ function fireAndForgetEmbed(fn: () => Promise<void>, context: Record<string, unk
   void fn().catch((err: unknown) => {
     embedLog.error({ err, ...context }, 'failed to enqueue embed job');
   });
+}
+
+function uniqueIds(ids: string[]): string[] {
+  return Array.from(new Set(ids));
+}
+
+async function deleteMergedObjectEmbeddingPoints(teamId: string, entityId: string): Promise<void> {
+  try {
+    const client = getQdrantClient();
+    const models = uniqueIds([TIMELINE_MODELS.embedding.id, 'openai/text-embedding-3-small']);
+    for (const model of models) {
+      await client.deletePointsForSource({ teamId, scope: 'object', sourceId: entityId, model });
+      await client.deletePointsForSource({ teamId, scope: 'entity', sourceId: entityId, model });
+    }
+    await client.deletePoints(
+      models.flatMap((model) => [
+        buildPointId('object', entityId, model),
+        buildPointId('entity', entityId, model),
+      ]),
+    );
+  } catch (err) {
+    embedLog.error({ err, teamId, entityId }, 'failed to delete merged object embed points');
+  }
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1646,6 +1672,13 @@ export async function mergeObjects(
     entityId: result.survivor.id,
     op: 'mergeObjects',
   });
+  for (const mergedId of result.mergedIds) {
+    fireAndForgetEmbed(() => deleteMergedObjectEmbeddingPoints(scope.teamId, mergedId), {
+      teamId: scope.teamId,
+      entityId: mergedId,
+      op: 'mergeObjects:deleteMergedEmbeddings',
+    });
+  }
   return result;
 }
 
