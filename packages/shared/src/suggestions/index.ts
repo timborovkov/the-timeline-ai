@@ -131,7 +131,7 @@ const uuid = z.string().regex(UUID_RE);
 
 const objectCreatePayload = z.object({
   type: z.string().optional(),
-  canonicalName: z.string().trim().min(1).max(200).optional(),
+  canonicalName: z.string().trim().max(200).optional(),
   aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
   status: z.string().trim().min(1).max(40).optional(),
   stage: z.string().trim().max(40).nullable().optional(),
@@ -542,7 +542,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (item.targetKind === 'task' || item.targetKind === 'object') {
       if (item.operation === 'create') {
         const parsed = objectCreatePayload.parse(payload);
-        const canonicalName = parsed.canonicalName ?? item.title;
+        const canonicalName =
+          parsed.canonicalName !== undefined && parsed.canonicalName.length > 0
+            ? parsed.canonicalName
+            : item.title;
         const input: CreateObjectInput = {
           type: (item.targetKind === 'task' ? 'task' : (parsed.type ?? 'other')) as ObjectType,
           canonicalName,

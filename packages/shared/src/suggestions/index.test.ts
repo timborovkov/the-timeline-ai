@@ -1202,7 +1202,7 @@ describe('suggestion scope', () => {
     expect(item.rows[0]?.failure_reason).toBeTruthy();
   });
 
-  it('uses the suggestion item title as the canonical name for object creates missing payload canonicalName', async () => {
+  it('uses the suggestion item title as the canonical name for object creates with unusable payload canonicalName', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
@@ -1216,6 +1216,7 @@ describe('suggestion scope', () => {
           dedupeKey: 'object-create-title-fallback:item',
           proposedPayload: {
             type: 'decision',
+            canonicalName: '   ',
             status: 'accepted',
           },
         },

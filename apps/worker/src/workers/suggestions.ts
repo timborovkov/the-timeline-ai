@@ -144,7 +144,8 @@ function normalizeSuggestionItemPayload(
   if (
     item.operation === 'create' &&
     (item.targetKind === 'task' || item.targetKind === 'object') &&
-    typeof item.proposedPayload.canonicalName !== 'string'
+    (typeof item.proposedPayload.canonicalName !== 'string' ||
+      item.proposedPayload.canonicalName.trim() === '')
   ) {
     return { ...item.proposedPayload, canonicalName: item.title };
   }
