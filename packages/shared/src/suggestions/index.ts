@@ -291,9 +291,7 @@ function suggestionVisibilityPredicate(teamId: string, userId: string) {
 }
 
 function itemPayloadKeys(item: typeof agentSuggestionItems.$inferSelect): Set<string> {
-  const payload = item.proposedPayload;
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return new Set();
-  return new Set(Object.keys(payload));
+  return new Set(Object.keys(normalizeLifecyclePayload(item)));
 }
 
 function payloadKeysOverlap(
@@ -314,9 +312,7 @@ function itemArtifactIds(item: typeof agentSuggestionItems.$inferSelect): Set<st
 }
 
 function artifactExternalKey(item: typeof agentSuggestionItems.$inferSelect): string | null {
-  const payload = item.proposedPayload;
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
-  const record = payload as Record<string, unknown>;
+  const record = normalizeLifecyclePayload(item);
   const metadata =
     record.metadata && typeof record.metadata === 'object' && !Array.isArray(record.metadata)
       ? (record.metadata as Record<string, unknown>)
@@ -372,6 +368,94 @@ const APPROVAL_TOKEN_STOPWORDS = new Set([
   'viel',
 ]);
 
+const OBJECT_TYPES: readonly ObjectType[] = [
+  'person',
+  'company',
+  'project',
+  'topic',
+  'other',
+  'deal',
+  'vendor',
+  'incident',
+  'document',
+  'decision',
+  'hiring_loop',
+  'task',
+  'follow_up',
+];
+const OBJECT_TYPE_SET = new Set<string>(OBJECT_TYPES);
+type LifecycleStatusType = 'task' | 'follow_up' | 'project';
+
+function objectTypeFromValue(value: unknown): ObjectType | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return OBJECT_TYPE_SET.has(trimmed) ? (trimmed as ObjectType) : null;
+}
+
+function lifecycleStatusTypeForPayload(
+  item: Pick<typeof agentSuggestionItems.$inferSelect, 'targetKind'>,
+  payload: Record<string, unknown>,
+  objectType?: ObjectType | null,
+): LifecycleStatusType | null {
+  if (item.targetKind === 'task') return 'task';
+  if (item.targetKind !== 'object') return null;
+  const type = objectType ?? objectTypeFromValue(payload.type);
+  return type === 'task' || type === 'follow_up' || type === 'project' ? type : null;
+}
+
+function normalizeLifecycleStatus(value: unknown, type: LifecycleStatusType): unknown {
+  if (typeof value !== 'string') return value;
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (type === 'project') {
+    if (
+      normalized === 'in progress' ||
+      normalized === 'in_progress' ||
+      normalized === 'in-progress'
+    ) {
+      return 'active';
+    }
+    if (normalized === 'started' || normalized === 'doing') return 'active';
+    if (normalized === 'complete' || normalized === 'completed' || normalized === 'finished') {
+      return 'shipped';
+    }
+    if (normalized === 'done') return 'shipped';
+    if (normalized === 'canceled') return 'cancelled';
+    return normalized;
+  }
+  if (
+    normalized === 'in progress' ||
+    normalized === 'in_progress' ||
+    normalized === 'in-progress' ||
+    normalized === 'started'
+  ) {
+    return 'doing';
+  }
+  if (normalized === 'complete' || normalized === 'completed' || normalized === 'finished') {
+    return 'done';
+  }
+  if (normalized === 'open') return 'todo';
+  if (normalized === 'canceled') return 'cancelled';
+  return normalized;
+}
+
+function normalizeLifecyclePayload(
+  item: Pick<typeof agentSuggestionItems.$inferSelect, 'targetKind' | 'proposedPayload'> & {
+    objectType?: ObjectType | null;
+  },
+): Record<string, unknown> {
+  const payload =
+    item.proposedPayload &&
+    typeof item.proposedPayload === 'object' &&
+    !Array.isArray(item.proposedPayload)
+      ? { ...(item.proposedPayload as Record<string, unknown>) }
+      : {};
+  const lifecycleType = lifecycleStatusTypeForPayload(item, payload, item.objectType);
+  if (lifecycleType && Object.hasOwn(payload, 'status')) {
+    payload.status = normalizeLifecycleStatus(payload.status, lifecycleType);
+  }
+  return payload;
+}
+
 function normalizedApprovalText(value: unknown): string {
   return typeof value === 'string'
     ? value
@@ -384,12 +468,7 @@ function normalizedApprovalText(value: unknown): string {
 }
 
 function approvalTextForItem(item: typeof agentSuggestionItems.$inferSelect): string {
-  const payload =
-    item.proposedPayload &&
-    typeof item.proposedPayload === 'object' &&
-    !Array.isArray(item.proposedPayload)
-      ? (item.proposedPayload as Record<string, unknown>)
-      : {};
+  const payload = normalizeLifecyclePayload(item);
   return [
     item.title,
     item.description,
@@ -446,12 +525,7 @@ function sharesDistinctiveApprovalSubject(
 }
 
 function normalizedPrimaryApprovalName(item: typeof agentSuggestionItems.$inferSelect): string {
-  const payload =
-    item.proposedPayload &&
-    typeof item.proposedPayload === 'object' &&
-    !Array.isArray(item.proposedPayload)
-      ? (item.proposedPayload as Record<string, unknown>)
-      : {};
+  const payload = normalizeLifecyclePayload(item);
   return (
     normalizedApprovalText(payload.canonicalName) ||
     normalizedApprovalText(payload.title) ||
@@ -1108,6 +1182,35 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return rows[0]?.id ?? null;
   }
 
+  async function objectTypeForTarget(targetId: string | null): Promise<ObjectType | null> {
+    if (!targetId) return null;
+    const [row] = await db
+      .select({ type: entities.type })
+      .from(entities)
+      .where(and(eq(entities.teamId, teamId), eq(entities.id, targetId)))
+      .limit(1);
+    return row?.type ?? null;
+  }
+
+  async function objectTypesForItems(
+    items: readonly SuggestionItemInput[],
+  ): Promise<Map<string, ObjectType>> {
+    const ids = [
+      ...new Set(
+        items
+          .filter((item) => item.targetKind === 'object' && item.operation !== 'create')
+          .map((item) => item.targetId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    if (ids.length === 0) return new Map();
+    const rows = await db
+      .select({ id: entities.id, type: entities.type })
+      .from(entities)
+      .where(and(eq(entities.teamId, teamId), inArray(entities.id, ids)));
+    return new Map(rows.map((row) => [row.id, row.type]));
+  }
+
   async function applyItem(item: typeof agentSuggestionItems.$inferSelect): Promise<string | null> {
     if (item.resultId) return item.resultId;
     if (item.status !== 'pending' && item.status !== 'failed') return item.resultId;
@@ -1117,7 +1220,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const existingResultId = await existingResultForItem(item);
     if (existingResultId) return existingResultId;
     const targetId = item.targetId;
-    const payload = item.proposedPayload as Record<string, unknown>;
+    const payload = normalizeLifecyclePayload({
+      ...item,
+      objectType:
+        item.targetKind === 'object' && item.operation !== 'create'
+          ? await objectTypeForTarget(targetId)
+          : null,
+    });
 
     if (item.targetKind === 'task' || item.targetKind === 'object') {
       if (item.operation === 'create') {
@@ -1503,6 +1612,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       for (const uid of input.visibilityUserIds ?? []) await deps.requireTeamMember(uid);
       const metadata = input.metadata ?? {};
       await validateEvidenceVisible((input.evidence ?? []).map((ev) => ev.rawEventId));
+      const objectTypeByTargetId = await objectTypesForItems(input.items);
       const correctionDedupeKey = `${input.dedupeKey}:correction:${suggestionDedupeKey({
         title: input.title,
         summary: input.summary ?? null,
@@ -1637,18 +1747,28 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         await tx
           .insert(agentSuggestionItems)
           .values(
-            input.items.map((item) => ({
-              suggestionId: inserted.id,
-              teamId,
-              status: 'pending' as const,
-              operation: item.operation,
-              targetKind: item.targetKind,
-              targetId: item.targetId ?? null,
-              title: item.title,
-              description: item.description ?? null,
-              dedupeKey: item.dedupeKey,
-              proposedPayload: item.proposedPayload,
-            })),
+            input.items.map((item) => {
+              const proposedPayload = normalizeLifecyclePayload({
+                targetKind: item.targetKind,
+                proposedPayload: item.proposedPayload,
+                objectType:
+                  item.targetKind === 'object' && item.operation !== 'create'
+                    ? (objectTypeByTargetId.get(item.targetId ?? '') ?? null)
+                    : null,
+              });
+              return {
+                suggestionId: inserted.id,
+                teamId,
+                status: 'pending' as const,
+                operation: item.operation,
+                targetKind: item.targetKind,
+                targetId: item.targetId ?? null,
+                title: item.title,
+                description: item.description ?? null,
+                dedupeKey: item.dedupeKey,
+                proposedPayload,
+              };
+            }),
           )
           .onConflictDoUpdate({
             target: [agentSuggestionItems.suggestionId, agentSuggestionItems.dedupeKey],

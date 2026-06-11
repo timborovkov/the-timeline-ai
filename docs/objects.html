@@ -386,6 +386,14 @@
         accepts or rejects from the object page. The system prompt is at
         <code>agent-v3-2026-05</code>.
       </p>
+      <p>
+        Background conversation review also proposes approval-backed lifecycle updates for
+        lifecycle-capable artifacts. Status aliases normalize into the target object's vocabulary
+        before reconciliation, so "completed" becomes <code>done</code> for tasks and
+        <code>shipped</code> for projects. Newer evidence can skip intermediate states, and stale
+        pending lifecycle approvals are superseded at item level while unrelated approval items stay
+        actionable.
+      </p>
 
       <h2 id="routes">Web routes</h2>
       <table>

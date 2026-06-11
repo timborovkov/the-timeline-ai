@@ -58,15 +58,28 @@ _Avoid_: Cleanup, removal, sync, extraction
 **Lifecycle Update**:
 A workspace reconciliation outcome that changes the state of a derived artifact
 because timeline evidence shows progress, completion, cancellation, blocking,
-or another status change. Lifecycle updates to canonical artifacts require
-approval unless they come from an authoritative source.
+rescheduling, or another workflow-state change. Lifecycle updates are not
+task-board-specific; they apply to any canonical artifact with meaningful
+lifecycle state. They may skip intermediate states when newer evidence clearly
+shows the artifact's current state. Lifecycle updates require clear resolution
+to one artifact cluster; ambiguous evidence should not guess between plausible
+artifacts. Progress updates require explicit workflow movement, not mere
+attention or discussion. Completion evidence can come from any credible source
+when the statement is assertive and the artifact match is clear; hedged guesses
+remain evidence only. Cancellation, blocking, and unblocking are lifecycle
+updates when they map cleanly to the artifact's supported state vocabulary.
+Each artifact type has one canonical lifecycle vocabulary; conversational and
+display aliases such as "in progress" normalize to that vocabulary before
+reconciliation. Lifecycle updates to canonical artifacts require approval unless
+they come from an authoritative source.
 _Avoid_: Contradiction when the evidence is progress rather than disagreement
 
 **Authoritative Source**:
 A capture surface or integration allowed to directly update the canonical
 artifact it owns through a stable external identity, such as a provider event
 id or external object id. Authoritative sources do not get broad permission to
-rewrite unrelated workspace state.
+rewrite unrelated workspace state; related Timeline-owned artifacts still need
+approval unless they are explicitly part of the same owned artifact cluster.
 _Avoid_: Trusted source when it implies general authority
 
 **Artifact Cluster**:
@@ -74,6 +87,11 @@ A set of derived workspace artifacts that represent the same real-world
 commitment, object, schedule, decision, or follow-up across product surfaces.
 An artifact cluster can include pending approvals, workspace objects, tasks,
 calendar events, and other impact context that should stay mutually consistent.
+An artifact cluster can exist before a canonical artifact exists; newer evidence
+may update or supersede a pending create approval when it clearly refers to the
+same real-world artifact. Meaningful completed commitments may still become
+canonical artifacts even when completion arrives before the create approval is
+accepted; trivial completed work can remain raw evidence with no active proposal.
 _Avoid_: Conversation, thread, timeline moment when discussing the consistency boundary
 
 **Workspace Object**:
@@ -112,8 +130,14 @@ _Avoid_: Automatic fix, silent update
 **Superseded Approval**:
 A pending approval that is no longer actionable because newer evidence or a
 newer proposal has replaced it before the team accepted or rejected it.
-Superseded approvals leave the active approval queue but remain available as
-history with their evidence and replacement relationship.
+Supersession is limited to the stale lifecycle dimension, approval item, or
+incoherent proposed outcome inside an artifact cluster; unrelated pending
+proposals for the same artifact remain actionable even when they appear in the
+same review bundle. A pending approval is also superseded when canonical state
+already reflects the proposed outcome, including after a direct edit or an
+accepted approval. Narrower or private evidence does not supersede a broader
+approval queue. Superseded approvals leave the active approval queue but remain
+available as history with their evidence and replacement relationship.
 _Avoid_: Rejected approval, deleted approval, failed approval
 
 **Rejected Approval**:

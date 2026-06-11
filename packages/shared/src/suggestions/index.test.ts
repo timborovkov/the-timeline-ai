@@ -549,6 +549,202 @@ describe('suggestion scope', () => {
     );
   });
 
+  it('normalizes lifecycle aliases before storing and reconciling approvals', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Draft Acme deck',
+      status: 'todo',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const inProgress = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Start Acme deck',
+      dedupeKey: 'lifecycle-alias:start',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Mark task in progress',
+          dedupeKey: 'lifecycle-alias:start:item',
+          proposedPayload: { status: 'in_progress' },
+        },
+      ],
+    });
+
+    expect(inProgress.items[0]?.proposedPayload).toMatchObject({ status: 'doing' });
+
+    await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Complete Acme deck',
+      dedupeKey: 'lifecycle-alias:done',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Mark task completed',
+          dedupeKey: 'lifecycle-alias:done:item',
+          proposedPayload: { status: 'completed' },
+        },
+      ],
+    });
+
+    const loaded = await scope.suggestions.getSuggestion(inProgress.id);
+    expect(loaded?.status).toBe('superseded');
+    expect(loaded?.items[0]).toMatchObject({
+      status: 'superseded',
+      proposedPayload: { status: 'doing' },
+    });
+  });
+
+  it('normalizes object lifecycle aliases into the target object vocabulary', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Acme rollout',
+      status: 'planning',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    const started = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Start Acme rollout',
+      dedupeKey: 'project-lifecycle-alias:active',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: project.id,
+          title: 'Mark project in progress',
+          dedupeKey: 'project-lifecycle-alias:active:item',
+          proposedPayload: { status: 'in progress' },
+        },
+      ],
+    });
+
+    expect(started.items[0]?.proposedPayload).toMatchObject({ status: 'active' });
+
+    const shipped = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Ship Acme rollout',
+      dedupeKey: 'project-lifecycle-alias:shipped',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: project.id,
+          title: 'Mark project completed',
+          dedupeKey: 'project-lifecycle-alias:shipped:item',
+          proposedPayload: { status: 'completed' },
+        },
+      ],
+    });
+
+    expect(shipped.items[0]?.proposedPayload).toMatchObject({ status: 'shipped' });
+    const loadedStarted = await scope.suggestions.getSuggestion(started.id);
+    expect(loadedStarted?.status).toBe('superseded');
+  });
+
+  it('replaces a pending create proposal with create-as-done for the same artifact cluster', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const older = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Send Acme deck',
+      dedupeKey: 'pending-create-lifecycle:todo',
+      visibility: 'team',
+      metadata: { conversation_review_id: 'review-pending-create-lifecycle' },
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send Acme deck',
+          dedupeKey: 'pending-create-lifecycle:todo:item',
+          proposedPayload: { canonicalName: 'Send Acme deck', status: 'todo' },
+        },
+      ],
+    });
+    const newer = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Send Acme deck',
+      dedupeKey: 'pending-create-lifecycle:done',
+      visibility: 'team',
+      metadata: { conversation_review_id: 'review-pending-create-lifecycle' },
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Send Acme deck',
+          dedupeKey: 'pending-create-lifecycle:done:item',
+          proposedPayload: { canonicalName: 'Send Acme deck', status: 'done' },
+        },
+      ],
+    });
+
+    const loadedOlder = await scope.suggestions.getSuggestion(older.id);
+    const loadedNewer = await scope.suggestions.getSuggestion(newer.id);
+    expect(loadedOlder?.status).toBe('superseded');
+    expect(loadedOlder?.items[0]).toMatchObject({
+      status: 'superseded',
+      supersededByItemId: newer.items[0]?.id,
+    });
+    expect(loadedNewer?.items[0]).toMatchObject({
+      status: 'pending',
+      proposedPayload: { status: 'done' },
+    });
+  });
+
+  it('does not let a private lifecycle approval supersede a team-visible approval', async () => {
+    const owner = withTeam(db as never, TEAM_ID, USER_ID);
+    const reviewer = withTeam(db as never, TEAM_ID, REVIEWER_ID);
+    const task = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Send public Acme deck',
+      status: 'todo',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const teamBundle = await owner.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Start public deck',
+      dedupeKey: 'private-does-not-supersede-team:start',
+      visibility: 'team',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Mark public deck doing',
+          dedupeKey: 'private-does-not-supersede-team:start:item',
+          proposedPayload: { status: 'doing' },
+        },
+      ],
+    });
+
+    await reviewer.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Privately complete public deck',
+      dedupeKey: 'private-does-not-supersede-team:done',
+      visibility: 'private',
+      visibilityOwnerUserId: REVIEWER_ID,
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Mark public deck done privately',
+          dedupeKey: 'private-does-not-supersede-team:done:item',
+          proposedPayload: { status: 'done' },
+        },
+      ],
+    });
+
+    await expect(owner.suggestions.getSuggestion(teamBundle.id)).resolves.toMatchObject({
+      status: 'pending',
+      items: [expect.objectContaining({ status: 'pending' })],
+    });
+  });
+
   it('supersedes conflicting same-target pending items after accepting an update', async () => {
     const creator = withTeam(db as never, TEAM_ID, USER_ID);
     const reviewer = withTeam(db as never, TEAM_ID, REVIEWER_ID);
