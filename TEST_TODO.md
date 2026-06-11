@@ -39,7 +39,7 @@ Legend:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Auth, sessions, redirects | Partial: real credentials login, saved auth state, sign-out flow | Thin: Auth.js route itself untested | Thin: sign-up/sign-in actions not directly covered in this plan | Thin: env/auth redirect helpers | Missing | Thin: auth redirect helpers | Expired/invalid session flows, OAuth login E2E, sign-up action tests |
 | Team switching and membership | Partial: app shell, team switcher, invite/resend/revoke, invite acceptance, role change, member removal, cross-team isolation | Covered indirectly through active-team gates on many routes | Strong for teams/invites/member role/remove | Strong PGlite team isolation and membership scope | Missing | Missing team admin component tests | Deeper team settings component states and edge-case invite UI |
-| Timeline capture and visibility | Partial: create team event, private/team/specific-user/cross-team visibility | Strong for timeline list/search contracts and audio signing | Strong for capture and visibility actions | Strong PGlite team scope, visibility defaults, tombstones, embedding-source visibility | Strong extract/transcribe/embed contracts for text/audio handoff and privacy skips | Partial: capture composer static states plus timeline controls/page helpers | E2E timeline edit/delete/filtering, feed/list component states |
+| Timeline capture and visibility | Partial: create team event, private/team/specific-user/cross-team visibility | Strong for timeline list/search contracts and audio signing | Strong for capture and visibility actions | Strong PGlite team scope, visibility defaults, tombstones, embedding-source visibility | Strong extract/transcribe/embed contracts for text/audio handoff and privacy skips | Partial: capture composer static states plus timeline controls/page helpers and feed pagination dedupe | E2E timeline edit/delete/filtering and richer feed/list component states |
 | Objects, notes, and boards | Partial: object create/update/detail/archive, notes, board create/list/detail/filtering | Partial: object sections route covered | Strong for objects and boards actions | Strong PGlite object CRUD, notes, chat sessions, suggestions, board views, isolation | Suggestions worker covered | Partial: object detail static sections/approvals | E2E relationships and richer object/board component interaction states |
 | Documents and folders | Partial: folder create, upload/list/detail, rename/delete, team/private visibility | Strong list/search route contracts | Strong document actions | Strong PGlite document scope, object keys, folder ancestry, restore/delete semantics | Strong document-extract worker | Partial: document drive static empty/list states | Semantic search E2E, extracted chunk citations, worker-backed search, richer document UI states |
 | Chat and agent UI | Partial: browser timeline question, tool activity, Event citation, session reload, degraded answer, visibility fences, and accepted task/calendar/object state | Strong chat route streaming/session/tool contract, including deterministic E2E seam coverage for durable workspace state | Missing chat action tests | Partial: deterministic agent tool evals, `askAgent` wrapper tests, MCP safety evals, structural tools, and LLM wrappers | Fast deterministic evals for timeline citation, task/calendar state, visibility fences, and tool failure honesty | Partial: chat pane static empty/message/pinned states | Remaining: live-model evals, broader chat UI states, and provider-backed retrieval |
@@ -56,7 +56,7 @@ Legend:
 | Embeddings and retrieval quality | Missing E2E semantic retrieval flow | Strong search/chat route contracts with mocked boundaries | N/A | Strong deterministic retrieval ranking, PGlite hydration, visibility/team filtering, embedding source planning, Qdrant point IDs, raw-event rendering, and LLM wrapper behavior | Partial: embed worker text/payload/skip coverage | Missing retrieval UI assertions | Remaining: source rendering breadth for more providers and browser semantic retrieval assertions |
 | Support and team exports | Missing E2E | Missing direct routes if exposed | Missing support and team-export actions | Strong team-export archive integration | Team-export worker missing | Missing UI | Support validation/email failure, export enqueue/idempotency, worker failure cleanup |
 | Platform contracts: DB, queue, S3, env, rate limits | N/A | Rate-limit behavior covered through routes and token bucket | Queue degradation covered in some actions | Partial: env, crypto, rate limit, Qdrant, pagination, DB schema contracts, queue wrappers, and S3 wrappers covered | Queue/S3 wrapper behavior covered in shared tests | N/A | Deeper DB migration-compat history, queue/S3 live-emulator canaries |
-| Frontend components and UI states | Partial only where E2E crosses real pages | N/A | N/A | N/A | N/A | Partial: nav, job recovery list, capture composer, approvals, chat pane, document drive, object detail, onboarding checklist, timeline controls/page helpers, hub/status/error helpers | Timeline feed/list, document detail/search, boards, team settings, integrations, MCP, richer empty/error/loading states |
+| Frontend components and UI states | Partial only where E2E crosses real pages | N/A | N/A | N/A | N/A | Partial: nav, job recovery list, capture composer, approvals, chat pane, document drive, object detail, onboarding checklist, timeline controls/page helpers, timeline feed dedupe, hub/status/error helpers | Timeline list cards, document detail/search, boards, team settings, integrations, MCP, richer empty/error/loading states |
 
 ## High-Level Read
 
@@ -286,14 +286,14 @@ Covered frontend pieces are still narrow:
 
 - Navigation items.
 - Job recovery list copy/behavior, retry status, and finished archive display.
-- Timeline controls and timeline page helpers.
+- Timeline controls, timeline page helpers, and timeline feed pagination dedupe.
 - Hub status, timeline moments, safe redirects, auth redirects, site URL,
   Turnstile, and UX error helpers.
 
 Important uncovered UI areas:
 
 - Capture composer.
-- Timeline feed/list cards.
+- Timeline list cards and richer timeline feed states.
 - Document drive/search/detail views.
 - Chat pane.
 - Object forms/detail pages.

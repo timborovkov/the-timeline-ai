@@ -58,6 +58,7 @@ export function useTimelineInfiniteQuery(
     to?: string | null;
     source?: string | null;
     impact?: string | null;
+    event?: string | null;
   },
   initialPage: TimelinePage,
   options: { enabled?: boolean } = {},
@@ -71,8 +72,9 @@ export function useTimelineInfiniteQuery(
       to: filters.to,
       source: filters.source,
       impact: filters.impact,
+      event: filters.event,
     }),
-    [filters.author, filters.from, filters.to, filters.source, filters.impact],
+    [filters.author, filters.from, filters.to, filters.source, filters.impact, filters.event],
   );
   const queryKey = useMemo(() => queryKeys.timeline(stableFilters), [stableFilters]);
   useEffect(() => {
@@ -97,6 +99,7 @@ export function useTimelineInfiniteQuery(
       if (stableFilters.to) params.set('to', stableFilters.to);
       if (stableFilters.source) params.set('source', stableFilters.source);
       if (stableFilters.impact) params.set('impact', stableFilters.impact);
+      if (stableFilters.event) params.set('event', stableFilters.event);
       if (pageParam) params.set('cursor', pageParam);
       return readJson<{
         items: TimelineEvent[];

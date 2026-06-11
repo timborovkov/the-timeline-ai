@@ -92,11 +92,11 @@ describe('TasksPage', () => {
 
     const html = renderToStaticMarkup(await TasksPage());
 
-    expect(html).toContain('Task approvals');
+    expect(html).toContain('Pending task proposals');
     expect(html).toContain('Commitment: Send proposal');
     expect(html).toContain('approvals');
     expect(html).toContain('1 pending approval');
-    expect(html).toContain('No tasks yet');
+    expect(html).toContain('No active tasks');
   });
 
   it('does not render approvals when only resolved task suggestion items remain', async () => {
@@ -134,16 +134,16 @@ describe('TasksPage', () => {
 
     const html = renderToStaticMarkup(await TasksPage());
 
-    expect(html).not.toContain('Task approvals');
+    expect(html).not.toContain('Pending task proposals');
     expect(html).not.toContain('Commitment: Send proposal');
     expect(html).not.toContain('pending approval');
-    expect(html).toContain('No tasks yet');
+    expect(html).toContain('No active tasks');
   });
 
   it('renders the empty state when there are no tasks or task suggestions', async () => {
     const html = renderToStaticMarkup(await TasksPage());
 
-    expect(html).toContain('No tasks yet');
-    expect(html).not.toContain('Task approvals');
+    expect(html).toContain('No active tasks');
+    expect(html).not.toContain('Pending task proposals');
   });
 });

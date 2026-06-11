@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, CheckCheck, GitMerge, X } from 'lucide-react';
+import { Check, CheckCheck, ExternalLink, GitMerge, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
@@ -50,10 +50,41 @@ interface Props {
 
 function formatPayload(payload: Record<string, unknown>): string {
   return Object.entries(payload)
-    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .filter(
+      ([key, value]) =>
+        value !== null &&
+        value !== undefined &&
+        value !== '' &&
+        !key.toLowerCase().endsWith('id') &&
+        !key.toLowerCase().endsWith('ids'),
+    )
     .slice(0, 6)
     .map(([key, value]) => `${key}: ${formatPayloadValue(value)}`)
     .join(' · ');
+}
+
+function itemActionLabel(item: SuggestionItem): string {
+  const operation = item.operation.replace(/_/g, ' ');
+  const kind = itemKindLabel(item.targetKind);
+  return `${operation} ${kind}`;
+}
+
+function itemKindLabel(kind: string): string {
+  if (kind === 'task') return 'task';
+  if (kind === 'calendar_event') return 'calendar event';
+  if (kind === 'object_merge') return 'duplicate records';
+  if (kind === 'object') return 'workspace memory';
+  if (kind === 'document') return 'document record';
+  return kind.replace(/_/g, ' ');
+}
+
+function itemStatusLabel(status: string): string {
+  if (status === 'failed') return 'needs retry';
+  return status.replace(/_/g, ' ');
+}
+
+function evidenceHref(rawEventId: string): string {
+  return `/app/timeline?event=${rawEventId}#ev-${rawEventId}`;
 }
 
 function formatPayloadValue(value: unknown): string {
@@ -103,7 +134,7 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {error ? (
         <div className="border border-danger/40 px-3 py-2 font-mono text-xs uppercase tracking-[0.12em] text-danger">
           {error}
@@ -129,7 +160,9 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
                 {bundle.summary ? (
                   <p className="mt-1 text-sm text-fg-muted">{bundle.summary}</p>
                 ) : null}
-                {bundle.reason ? <p className="mt-1 text-xs text-fg-dim">{bundle.reason}</p> : null}
+                {bundle.reason ? (
+                  <p className="mt-1 max-w-3xl text-xs leading-5 text-fg-dim">{bundle.reason}</p>
+                ) : null}
               </div>
               {allowBulkAccept && bulkAcceptItems.length > 1 ? (
                 <Button
@@ -146,21 +179,23 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
               ) : null}
             </div>
 
-            <ul className="mt-4 divide-y divide-border border border-border">
+            <ul className="mt-4 divide-y divide-border border border-border bg-bg">
               {bundle.items.map((item) => (
-                <li key={item.id} className="grid gap-3 bg-bg p-3 md:grid-cols-[1fr_auto]">
+                <li key={item.id} className="grid gap-3 p-3 md:grid-cols-[1fr_auto]">
                   <div className="min-w-0">
                     <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                      {item.operation.replace(/_/g, ' ')} · {item.targetKind.replace(/_/g, ' ')} ·{' '}
-                      {item.status}
+                      Proposal · {itemStatusLabel(item.status)}
                     </div>
                     <div className="mt-1 font-medium text-fg">{item.title}</div>
+                    <div className="mt-1 text-xs text-fg-muted">{itemActionLabel(item)}</div>
                     {item.description ? (
                       <p className="mt-1 text-sm text-fg-muted">{item.description}</p>
                     ) : null}
-                    <p className="mt-1 truncate font-mono text-[11px] text-fg-dim">
-                      {formatPayload(item.proposedPayload)}
-                    </p>
+                    {formatPayload(item.proposedPayload) ? (
+                      <p className="mt-1 truncate font-mono text-[11px] text-fg-dim">
+                        {formatPayload(item.proposedPayload)}
+                      </p>
+                    ) : null}
                     {item.failureReason ? (
                       <p className="mt-1 text-xs text-danger">{item.failureReason}</p>
                     ) : null}
@@ -206,12 +241,24 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
             </ul>
 
             {bundle.evidence.length > 0 ? (
-              <div className="mt-3 space-y-1 text-xs text-fg-dim">
+              <div className="mt-3 border-l border-border pl-3">
+                <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                  Evidence
+                </div>
                 {bundle.evidence.map((ev) => (
-                  <p key={ev.rawEventId}>
-                    <span className="font-mono">[ev:{ev.rawEventId.slice(0, 8)}]</span>{' '}
-                    {ev.quote ?? ev.source ?? 'source event'}
-                  </p>
+                  <Link
+                    key={ev.rawEventId}
+                    href={evidenceHref(ev.rawEventId)}
+                    className="group grid gap-1 py-1 text-xs text-fg-dim transition-colors hover:text-fg"
+                  >
+                    <span className="inline-flex items-center gap-1.5 font-mono uppercase tracking-[0.1em]">
+                      <ExternalLink className="size-3" />
+                      Timeline evidence · {ev.source ?? 'source'} · {ev.rawEventId.slice(0, 8)}
+                    </span>
+                    <span className="line-clamp-2 text-fg-muted group-hover:text-fg">
+                      {ev.quote ?? 'Open the source event on the timeline.'}
+                    </span>
+                  </Link>
                 ))}
               </div>
             ) : null}

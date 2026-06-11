@@ -58,6 +58,8 @@ export async function GET(req: Request): Promise<Response> {
   const cursor = url.searchParams.get('cursor');
   const source = parseTimelineSource(url.searchParams.get('source') ?? undefined);
   const impact = parseTimelineImpact(url.searchParams.get('impact') ?? undefined);
+  const event = url.searchParams.get('event');
+  const focusEventId = event && UUID_RE.test(event) ? event : null;
   const from = parseDate(url.searchParams.get('from'));
   const toRaw = parseDate(url.searchParams.get('to'));
   const to = toRaw ? new Date(toRaw.getTime() + 24 * 60 * 60 * 1000) : undefined;
@@ -74,12 +76,14 @@ export async function GET(req: Request): Promise<Response> {
     to?.toISOString(),
     source,
     impact,
+    focusEventId,
     cursor,
   ]);
   const page = await cachedJson(key, 30, async () => {
     const result = await collectTimelinePage({
       cursor,
       impact,
+      focusEventId: cursor ? null : focusEventId,
       fetchPage: async ({ cursor: pageCursor, limit }) => {
         const eventsPage = await scope.timeline.listEventsPage({
           authorUserId,
@@ -94,6 +98,8 @@ export async function GET(req: Request): Promise<Response> {
           nextCursor: eventsPage.nextCursor,
         };
       },
+      fetchEventsByIds: async (eventIds) =>
+        (await scope.timeline.getEventsByIds(eventIds)).map(serializeTimelineEvent),
       hydrateImpact: (eventIds) => scope.timeline.listImpactItems(eventIds),
     });
     const authorIds = Array.from(

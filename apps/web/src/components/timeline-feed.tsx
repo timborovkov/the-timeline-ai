@@ -21,6 +21,7 @@ interface Props {
     to?: string | null;
     source?: string | null;
     impact?: string | null;
+    event?: string | null;
   };
   currentUserId: string;
   isAdmin: boolean;
@@ -30,6 +31,7 @@ interface Props {
   emptyLabel?: string;
   emptyAction?: { href: string; label: string; body: string };
   impactFilter?: ImpactKind | 'all';
+  focusEventId?: string | null;
   live?: boolean;
 }
 
@@ -44,11 +46,21 @@ export function TimelineFeed({
   emptyLabel,
   emptyAction,
   impactFilter = 'all',
+  focusEventId = null,
   live = true,
 }: Props) {
   const query = useTimelineInfiniteQuery(filters, initialPage, { enabled: live });
   const pages = query.data.pages;
-  const events = pages.flatMap((page) => page.items);
+  const events = useMemo(() => {
+    const seen = new Set<string>();
+    return pages.flatMap((page) =>
+      page.items.filter((event) => {
+        if (seen.has(event.id)) return false;
+        seen.add(event.id);
+        return true;
+      }),
+    );
+  }, [pages]);
   const authorMap = useMemo(
     () =>
       new Map(
@@ -89,6 +101,7 @@ export function TimelineFeed({
         emptyAction={emptyAction}
         impactFilter={impactFilter}
         impactItemsByEventId={impactItemsByEventId}
+        focusEventId={focusEventId}
       />
       <div className={compact ? 'hidden' : 'flex justify-center'}>
         <button

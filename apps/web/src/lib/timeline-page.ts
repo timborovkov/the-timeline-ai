@@ -16,11 +16,13 @@ interface TimelinePageWindow {
 
 interface CollectTimelinePageOptions {
   cursor?: string | null;
+  focusEventId?: string | null;
   impact?: ImpactKind | null;
   limit?: number;
   maxScanPages?: number;
   pageSize?: number;
   fetchPage: (input: { cursor: string | null; limit: number }) => Promise<TimelinePageWindow>;
+  fetchEventsByIds?: (eventIds: string[]) => Promise<TimelineEvent[]>;
   hydrateImpact: (eventIds: string[]) => Promise<Record<string, ImpactItem[]>>;
 }
 
@@ -52,18 +54,22 @@ export function serializeTimelineEvent(event: SerializableTimelineEvent): Timeli
 
 export async function collectTimelinePage({
   cursor = null,
+  focusEventId = null,
   impact = null,
   limit = DEFAULT_PAGE_SIZE,
   maxScanPages = DEFAULT_MAX_SCAN_PAGES,
   pageSize = DEFAULT_PAGE_SIZE,
   fetchPage,
+  fetchEventsByIds,
   hydrateImpact,
 }: CollectTimelinePageOptions): Promise<TimelinePageData> {
   if (!impact) {
     const page = await fetchPage({ cursor, limit });
+    const items = await includeFocusedEvents(page.items, focusEventId, fetchEventsByIds);
     return {
-      ...page,
-      impactItems: await hydrateImpact(page.items.map((event) => event.id)),
+      items,
+      nextCursor: page.nextCursor,
+      impactItems: await hydrateImpact(items.map((event) => event.id)),
     };
   }
 
@@ -95,6 +101,13 @@ export async function collectTimelinePage({
   for (const moment of matchingMoments) {
     for (const event of moment.rawEvents) collected.set(event.id, event);
   }
+  const focusedEvents = await includeFocusedEvents([], focusEventId, fetchEventsByIds);
+  for (const event of focusedEvents) {
+    collected.set(event.id, event);
+  }
+  if (focusedEvents.length > 0) {
+    Object.assign(impactItems, await hydrateImpact(focusedEvents.map((event) => event.id)));
+  }
 
   return {
     items: Array.from(collected.values()).sort(
@@ -104,4 +117,19 @@ export async function collectTimelinePage({
     nextCursor,
     impactItems,
   };
+}
+
+async function includeFocusedEvents(
+  items: TimelineEvent[],
+  focusEventId: string | null,
+  fetchEventsByIds: CollectTimelinePageOptions['fetchEventsByIds'],
+): Promise<TimelineEvent[]> {
+  if (!focusEventId || items.some((event) => event.id === focusEventId) || !fetchEventsByIds) {
+    return items;
+  }
+  const focused = await fetchEventsByIds([focusEventId]);
+  if (focused.length === 0) return items;
+  return [...focused, ...items].sort(
+    (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+  );
 }

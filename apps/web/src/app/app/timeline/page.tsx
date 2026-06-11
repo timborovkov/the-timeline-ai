@@ -36,6 +36,7 @@ interface Props {
     to?: string;
     source?: string;
     impact?: string;
+    event?: string;
     /** Prefilled by the ⌘K command bar. SearchBar reads it and auto-runs. */
     q?: string;
   }>;
@@ -91,6 +92,7 @@ export default async function TimelinePage({ searchParams }: Props) {
   const authorFilter = parseUuid(sp.author);
   const sourceFilter = parseTimelineSource(sp.source);
   const impactFilter = parseTimelineImpact(sp.impact);
+  const focusEventId = parseUuid(sp.event);
   const fromFilter = parseDate(sp.from);
   const toFilter = parseDate(sp.to);
   const toQueryFilter = parseEndOfDay(sp.to);
@@ -98,6 +100,7 @@ export default async function TimelinePage({ searchParams }: Props) {
   const [timelinePage, members] = await Promise.all([
     collectTimelinePage({
       impact: impactFilter,
+      focusEventId,
       fetchPage: async ({ cursor, limit }) => {
         const page = await scope.timeline.listEventsPage({
           authorUserId: authorFilter,
@@ -112,6 +115,8 @@ export default async function TimelinePage({ searchParams }: Props) {
           nextCursor: page.nextCursor,
         };
       },
+      fetchEventsByIds: async (eventIds) =>
+        (await scope.timeline.getEventsByIds(eventIds)).map(serializeTimelineEvent),
       hydrateImpact: (eventIds) => scope.timeline.listImpactItems(eventIds),
     }),
     scope.timeline.listMembers(),
@@ -168,6 +173,7 @@ export default async function TimelinePage({ searchParams }: Props) {
     author: authorFilter ?? null,
     from: sp.from ?? null,
     to: sp.to ?? null,
+    event: focusEventId ?? null,
   };
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -201,6 +207,7 @@ export default async function TimelinePage({ searchParams }: Props) {
         hasPanelFilters={hasPanelFilters}
         sourceFilter={sourceFilter}
         impactFilter={impactFilter}
+        focusEventId={focusEventId}
         authorFilter={authorFilter}
         fromFilter={fromFilter}
         toFilter={toFilter}
@@ -225,6 +232,7 @@ function TimelineBrowserSection({
   hasPanelFilters,
   sourceFilter,
   impactFilter,
+  focusEventId,
   authorFilter,
   fromFilter,
   toFilter,
@@ -244,6 +252,7 @@ function TimelineBrowserSection({
   hasPanelFilters: boolean;
   sourceFilter: ReturnType<typeof parseTimelineSource>;
   impactFilter: ReturnType<typeof parseTimelineImpact>;
+  focusEventId: string | undefined;
   authorFilter: string | undefined;
   fromFilter: Date | undefined;
   toFilter: Date | undefined;
@@ -289,6 +298,7 @@ function TimelineBrowserSection({
           to: sp.to ?? null,
           source: sourceFilter ?? null,
           impact: impactFilter ?? null,
+          event: focusEventId ?? null,
         }}
         currentUserId={currentUserId}
         isAdmin={isAdmin}
@@ -297,6 +307,7 @@ function TimelineBrowserSection({
           return { id: member.userId, label: user?.name ?? user?.email ?? member.userId };
         })}
         impactFilter={impactFilter ?? 'all'}
+        focusEventId={focusEventId ?? null}
         emptyLabel={hasFilters ? 'NO EVENTS MATCH THIS VIEW' : 'NO EVENTS YET'}
         emptyAction={{
           href: hasFilters ? '/app/timeline' : '/app#capture',

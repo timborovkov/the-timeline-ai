@@ -51,6 +51,7 @@ interface Props {
   emptyAction?: { href: string; label: string; body: string };
   impactFilter?: TimelineImpactFilter;
   impactItemsByEventId?: Record<string, ImpactItem[]>;
+  focusEventId?: string | null;
 }
 
 const EMPTY_MEMBERS: NonNullable<Props['members']> = [];
@@ -79,7 +80,8 @@ const IMPACT_LABEL: Record<ImpactItem['kind'], string> = {
 
 const INSPECTOR_RAW_EVENT_LIMIT = 8;
 
-function eventDate(input: string): Date {
+function eventDate(input: Date | string): Date {
+  if (input instanceof Date) return input;
   return new Date(input);
 }
 
@@ -637,6 +639,7 @@ export function TimelineList({
   emptyAction,
   impactFilter = 'all',
   impactItemsByEventId,
+  focusEventId = null,
 }: Props) {
   const moments = useMemo(
     () =>
@@ -647,7 +650,14 @@ export function TimelineList({
       ),
     [events, authorMap, impactItemsByEventId],
   );
-  const filteredMoments = filterTimelineMomentsByImpact(moments, impactFilter);
+  const focusedMoments =
+    focusEventId === null
+      ? []
+      : moments.filter((moment) => moment.rawEvents.some((event) => event.id === focusEventId));
+  const filteredMoments = mergeTimelineMoments(
+    filterTimelineMomentsByImpact(moments, impactFilter),
+    focusedMoments,
+  );
   const visibleMoments =
     typeof maxMoments === 'number' ? filteredMoments.slice(0, maxMoments) : filteredMoments;
   const dateGroups = groupedByDate(visibleMoments);
@@ -698,4 +708,23 @@ export function TimelineList({
       ))}
     </div>
   );
+}
+
+function mergeTimelineMoments(
+  primary: TimelineMoment[],
+  additional: TimelineMoment[],
+): TimelineMoment[] {
+  if (additional.length === 0) return primary;
+  const seen = new Set<string>();
+  return [...primary, ...additional]
+    .filter((moment) => {
+      if (seen.has(moment.id)) return false;
+      seen.add(moment.id);
+      return true;
+    })
+    .sort(
+      (a, b) =>
+        eventDate(b.rawEvents[0]?.occurredAt ?? new Date(0)).getTime() -
+        eventDate(a.rawEvents[0]?.occurredAt ?? new Date(0)).getTime(),
+    );
 }

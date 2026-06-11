@@ -59,12 +59,7 @@ export default async function TasksPage() {
   ];
 
   return (
-    // Fixed viewport-bounded height (viewport − AppShell header − main
-    // py padding ≈ 10rem) so KanbanBoard can fill the remaining space
-    // and each column gets its own internal scroll. Without a known
-    // parent height the kanban would size to content and you'd lose
-    // the per-column vertical scroll entirely.
-    <div className="flex h-[calc(100dvh-10rem)] flex-col">
+    <div className="space-y-5">
       <IndexStrip
         srLabel={srSegments.join(' · ')}
         segments={[
@@ -78,28 +73,37 @@ export default async function TasksPage() {
             ? ([{ label: 'overdue', value: overdue, danger: true }] as const)
             : ([] as const)),
         ]}
-        className="mb-5 shrink-0"
+        className="shrink-0"
       />
-
-      {taskSuggestions.length > 0 ? (
-        <section className="mb-5 shrink-0 space-y-3">
-          <h2 className="text-sm font-medium tracking-tight">Task approvals</h2>
-          <ApprovalsClient suggestions={taskSuggestions} allowBulkAccept={false} />
-        </section>
-      ) : null}
 
       {rows.length === 0 ? (
         <EmptyAction
-          title="No tasks yet"
-          body="Tasks are proposed from captured decisions, meetings, and follow-ups. Capture one commitment to start the task board."
+          title="No active tasks"
+          body={
+            pendingTaskItems > 0
+              ? 'Pending task proposals are waiting below. Accepted proposals will appear on the board.'
+              : 'Tasks are proposed from captured decisions, meetings, and follow-ups. Capture one commitment to start the task board.'
+          }
           href="/app#capture"
           action="Capture a follow-up"
         />
       ) : (
-        <div className="min-h-0 flex-1">
+        <div className="h-[calc(100dvh-16rem)] min-h-[24rem]">
           <KanbanBoard rows={rows} groupBy="status" columns={TASK_COLUMNS} />
         </div>
       )}
+
+      {taskSuggestions.length > 0 ? (
+        <section className="space-y-3 border-t border-border pt-4">
+          <div>
+            <h2 className="text-sm font-medium tracking-tight">Pending task proposals</h2>
+            <p className="mt-1 text-sm text-fg-muted">
+              Review these before they become active tasks on the board.
+            </p>
+          </div>
+          <ApprovalsClient suggestions={taskSuggestions} allowBulkAccept={false} />
+        </section>
+      ) : null}
     </div>
   );
 }

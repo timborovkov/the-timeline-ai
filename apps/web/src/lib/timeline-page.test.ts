@@ -127,4 +127,21 @@ describe('collectTimelinePage', () => {
     expect(page.items.map((item) => item.id)).toEqual(['email-newer', 'email-older']);
     expect(page.nextCursor).toBe('next');
   });
+
+  it('includes a focused event outside the normal page window', async () => {
+    const page = await collectTimelinePage({
+      focusEventId: 'focused',
+      fetchPage: () =>
+        Promise.resolve({
+          items: [event('newest', '2026-05-28T12:00:00.000Z')],
+          nextCursor: null,
+        }),
+      fetchEventsByIds: (ids) =>
+        Promise.resolve(ids.map((id) => event(id, '2026-05-27T12:00:00.000Z'))),
+      hydrateImpact: (ids) => Promise.resolve(Object.fromEntries(ids.map((id) => [id, []]))),
+    });
+
+    expect(page.items.map((item) => item.id)).toEqual(['newest', 'focused']);
+    expect(page.impactItems).toEqual({ newest: [], focused: [] });
+  });
 });
