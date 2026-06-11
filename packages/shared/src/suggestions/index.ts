@@ -208,6 +208,27 @@ const calendarCreatePayload = z.object({
 
 const calendarUpdatePayload = calendarCreatePayload.partial();
 
+function normalizeCalendarPayload(
+  item: typeof agentSuggestionItems.$inferSelect,
+  opts: { fallbackTitle: boolean },
+): Record<string, unknown> {
+  const payload = item.proposedPayload as Record<string, unknown>;
+  const normalized = { ...payload };
+  if (!Object.hasOwn(normalized, 'title') && opts.fallbackTitle) normalized.title = item.title;
+  if (!Object.hasOwn(normalized, 'startAt')) {
+    if (typeof payload.startTime === 'string') normalized.startAt = payload.startTime;
+    else if (typeof payload.start_at === 'string') normalized.startAt = payload.start_at;
+  }
+  if (!Object.hasOwn(normalized, 'endAt')) {
+    if (typeof payload.endTime === 'string') normalized.endAt = payload.endTime;
+    else if (typeof payload.end_at === 'string') normalized.endAt = payload.end_at;
+  }
+  if (!Object.hasOwn(normalized, 'allDay') && typeof payload.all_day === 'boolean') {
+    normalized.allDay = payload.all_day;
+  }
+  return normalized;
+}
+
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
   if (value && typeof value === 'object') {
@@ -643,7 +664,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
 
     if (item.operation === 'create') {
-      const parsed = calendarCreatePayload.parse(payload);
+      const parsed = calendarCreatePayload.parse(
+        normalizeCalendarPayload(item, { fallbackTitle: true }),
+      );
       const normalizedRange = parsed.allDay
         ? normalizeAllDayRange({
             startAt: parsed.startAt,
@@ -676,7 +699,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
     if (!targetId) throw new Error('Target id is required');
     if (item.operation === 'update') {
-      const parsed = calendarUpdatePayload.parse(payload);
+      const parsed = calendarUpdatePayload.parse(
+        normalizeCalendarPayload(item, { fallbackTitle: false }),
+      );
       const patch: UpdateCalendarEventInput = {};
       if (parsed.title !== undefined) patch.title = parsed.title;
       if (parsed.description !== undefined) patch.description = parsed.description;
