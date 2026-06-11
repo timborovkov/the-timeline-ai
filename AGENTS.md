@@ -74,8 +74,11 @@ tool. When in doubt, invoke the skill.
   rather than deep relative paths; root scripts should also consume exported
   `@timeline/*` subpaths instead of reaching into `packages/*/src`.
 - **Run `pnpm validate` before declaring work complete.** Runs
-  `format:check`, `typecheck`, `lint`, `test`, and `knip` in sequence — the same
-  gates CI enforces. Fix failures at the root cause; do not skip.
+  `format:check`, `typecheck`, `lint`, and `knip` in sequence — the same static
+  gates CI enforces. Run the relevant test command separately for the behavior
+  you touched (`pnpm test:ci`, `pnpm test`, a package-filtered Vitest command,
+  `pnpm test:eval`, or an e2e command). Fix failures at the root cause; do not
+  skip.
 - **Meeting bots are silent + consent-gated.** Phase 10 ships transcript
   capture only — no voice/agent mode. `team_meeting_settings
   .require_host_consent` (default true) blocks scheduling unless the

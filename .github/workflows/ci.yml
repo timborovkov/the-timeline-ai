@@ -8,7 +8,7 @@ on:
 
 jobs:
   ci:
-    name: Validate
+    name: Static checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -40,8 +40,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate
+      - name: Static checks
         env:
           AUTH_SECRET: ci_dummy_secret_at_least_16_chars
           DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
         run: pnpm validate
+
+      - name: Focused tests
+        env:
+          AUTH_SECRET: ci_dummy_secret_at_least_16_chars
+          DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
+        run: pnpm test:ci

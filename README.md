@@ -99,8 +99,9 @@ For the full walkthrough, see
 
 ```bash
 pnpm dev                  # Next.js app + worker in watch mode
-pnpm validate             # format check, typecheck, lint, tests, knip
+pnpm validate             # format check, typecheck, lint, knip
 pnpm test                 # unit and integration tests (package suites run sequentially)
+pnpm test:ci              # focused CI test lane
 pnpm test:eval            # fast deterministic agent and retrieval evals
 pnpm e2e                  # Playwright core journey tests
 pnpm run doctor           # React Doctor scan for React/Next health regressions
@@ -109,12 +110,15 @@ pnpm db:migrate           # apply database migrations
 pnpm check:web-bundle     # inspect built Next server chunks
 ```
 
-`pnpm validate` is the main pre-merge gate and includes the unit/integration test suite.
+`pnpm validate` is the main static pre-merge gate. Run tests separately with the
+smallest command that proves the behavior you changed: `pnpm test:ci`,
+`pnpm test`, a package-filtered Vitest command, `pnpm test:eval`, or an e2e
+command.
 GitHub PR CI intentionally does not run `pnpm build` or `pnpm check:web-bundle`;
-TypeScript compilation, linting, tests, formatting, and Knip are the required
-proof before merge. Run the build and bundle hygiene checks manually when a
-change touches production bundling, deployment output, or server/client import
-boundaries.
+TypeScript compilation, linting, formatting, Knip, and the focused
+`pnpm test:ci` lane are the required CI proof. Run broader tests, build, and
+bundle hygiene checks manually when a change touches behavior, production
+bundling, deployment output, or server/client import boundaries.
 
 ## Documentation
 
