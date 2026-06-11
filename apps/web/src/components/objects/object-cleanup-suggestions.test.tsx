@@ -1,0 +1,90 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type * as objects from '@timeline/shared/objects';
+
+const fakes = vi.hoisted(() => ({ refresh: vi.fn() }));
+
+vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
+vi.mock('@/app/actions/objects', () => ({
+  findObjectCleanupSuggestionsAction: vi.fn(),
+  mergeObjectsAction: vi.fn(),
+}));
+vi.mock('@/app/actions/suggestions', () => ({
+  acceptSuggestionItemAction: vi.fn(),
+  rejectSuggestionItemAction: vi.fn(),
+}));
+
+const { ObjectCleanupSuggestions } = await import('./object-cleanup-suggestions.js');
+
+const baseObject = {
+  type: 'topic',
+  aliases: [],
+  metadata: {},
+  status: 'open',
+  stage: null,
+  priority: null,
+  ownerUserId: null,
+  assigneeUserId: null,
+  dueAt: null,
+  agentSuggested: false,
+  archivedAt: null,
+  createdAt: new Date('2026-06-01T10:00:00.000Z'),
+  updatedAt: new Date('2026-06-01T10:00:00.000Z'),
+} satisfies Omit<objects.ObjectRow, 'id' | 'canonicalName'>;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe('ObjectCleanupSuggestions', () => {
+  it('opens merge review from the cleanup list instead of linking to the merge page', () => {
+    const itemId = 'item-1';
+    const survivorId = 'object-a';
+    const duplicateId = 'object-b';
+    const html = renderToStaticMarkup(
+      createElement(ObjectCleanupSuggestions, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            title: 'Object cleanup',
+            summary: null,
+            confidence: 'medium',
+            items: [
+              {
+                id: itemId,
+                status: 'pending',
+                operation: 'merge',
+                targetKind: 'object_merge',
+                targetId: survivorId,
+                title: 'Review merge for Trade register extract',
+                description: 'Names are similar enough to review as a possible duplicate.',
+                proposedPayload: { objectIds: [survivorId, duplicateId], survivorId },
+              },
+            ],
+          },
+        ],
+        mergePreviewsByItemId: {
+          [itemId]: {
+            objects: [
+              { ...baseObject, id: survivorId, canonicalName: 'Trade register extract' },
+              { ...baseObject, id: duplicateId, canonicalName: 'trade register extracts' },
+            ],
+            survivorId,
+            aliasesToAdd: ['trade register extracts'],
+            counts: { facts: 2, notes: 0, relationships: 0, openTasks: 0 },
+            countsBySurvivorId: {
+              [survivorId]: { facts: 2, notes: 0, relationships: 0, openTasks: 0 },
+              [duplicateId]: { facts: 2, notes: 0, relationships: 0, openTasks: 0 },
+            },
+          },
+        },
+      }),
+    );
+
+    expect(html).toContain('Review merge for Trade register extract');
+    expect(html).toContain('Review');
+    expect(html).not.toContain('/app/objects/merge');
+  });
+});

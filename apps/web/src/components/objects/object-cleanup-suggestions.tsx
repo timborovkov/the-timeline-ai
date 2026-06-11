@@ -1,13 +1,22 @@
 'use client';
 
 import { Archive, GitMerge, RefreshCw, X } from 'lucide-react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 
+import type * as objects from '@timeline/shared/objects';
+
 import { findObjectCleanupSuggestionsAction } from '@/app/actions/objects';
 import { acceptSuggestionItemAction, rejectSuggestionItemAction } from '@/app/actions/suggestions';
+import { ObjectMergeForm } from '@/components/objects/object-merge-form';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface SuggestionItem {
   id: string;
@@ -30,7 +39,10 @@ interface SuggestionBundle {
 
 interface Props {
   suggestions: SuggestionBundle[];
+  mergePreviewsByItemId?: Record<string, objects.ObjectMergePreview>;
 }
+
+const EMPTY_MERGE_PREVIEWS: Record<string, objects.ObjectMergePreview> = {};
 
 function objectIdsForMerge(item: SuggestionItem): string[] {
   const objectIds = item.proposedPayload.objectIds;
@@ -42,24 +54,56 @@ function objectIdsForMerge(item: SuggestionItem): string[] {
   return [survivorId, ...ids.filter((id) => id !== survivorId)];
 }
 
-export function ObjectCleanupSuggestions({ suggestions }: Props) {
+export function ObjectCleanupSuggestions({
+  suggestions,
+  mergePreviewsByItemId = EMPTY_MERGE_PREVIEWS,
+}: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
+  const [resolvedItemIds, setResolvedItemIds] = useState<Set<string>>(() => new Set());
+  const [reviewingItemId, setReviewingItemId] = useState<string | null>(null);
   const pendingItems = useMemo(() => {
     const items: { bundle: SuggestionBundle; item: SuggestionItem }[] = [];
     for (const bundle of suggestions) {
       for (const item of bundle.items) {
-        if (item.status === 'pending' || item.status === 'failed') items.push({ bundle, item });
+        if (
+          (item.status === 'pending' || item.status === 'failed') &&
+          !resolvedItemIds.has(item.id)
+        ) {
+          items.push({ bundle, item });
+        }
       }
     }
     return items;
-  }, [suggestions]);
+  }, [resolvedItemIds, suggestions]);
+  const reviewingEntry = reviewingItemId
+    ? pendingItems.find(({ item }) => item.id === reviewingItemId)
+    : undefined;
+  const reviewingPreview = reviewingItemId ? mergePreviewsByItemId[reviewingItemId] : undefined;
 
-  function run(action: () => Promise<{ ok?: boolean; error?: string; message?: string }>) {
+  function resolveItem(itemId: string) {
+    setResolvedItemIds((current) => new Set(current).add(itemId));
+    if (reviewingItemId === itemId) setReviewingItemId(null);
+  }
+
+  function restoreItem(itemId: string) {
+    setResolvedItemIds((current) => {
+      const next = new Set(current);
+      next.delete(itemId);
+      return next;
+    });
+  }
+
+  function run(
+    action: () => Promise<{ ok?: boolean; error?: string; message?: string }>,
+    optimisticItemId?: string,
+  ) {
     setMessage(null);
+    if (optimisticItemId) resolveItem(optimisticItemId);
     startTransition(async () => {
       const result = await action();
+      if (result.error && optimisticItemId) restoreItem(optimisticItemId);
       setMessage(result.error ?? result.message ?? null);
       router.refresh();
     });
@@ -111,13 +155,17 @@ export function ObjectCleanupSuggestions({ suggestions }: Props) {
                 </div>
                 <div className="flex flex-wrap items-start gap-2">
                   {item.targetKind === 'object_merge' ? (
-                    <Button asChild size="sm" disabled={pending || mergeIds.length < 2}>
-                      <Link
-                        href={`/app/objects/merge?ids=${mergeIds.join(',')}&suggestionItemId=${item.id}`}
-                      >
-                        <GitMerge className="size-4" />
-                        Review
-                      </Link>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={pending || mergeIds.length < 2 || !mergePreviewsByItemId[item.id]}
+                      onClick={() => {
+                        setMessage(null);
+                        setReviewingItemId(item.id);
+                      }}
+                    >
+                      <GitMerge className="size-4" />
+                      Review
                     </Button>
                   ) : (
                     <Button
@@ -126,7 +174,7 @@ export function ObjectCleanupSuggestions({ suggestions }: Props) {
                       disabled={pending || !item.targetId}
                       onClick={() => {
                         if (!item.targetId) return;
-                        run(() => acceptSuggestionItemAction({ itemId: item.id }));
+                        run(() => acceptSuggestionItemAction({ itemId: item.id }), item.id);
                       }}
                     >
                       <Archive className="size-4" />
@@ -139,7 +187,7 @@ export function ObjectCleanupSuggestions({ suggestions }: Props) {
                     variant="outline"
                     disabled={pending}
                     onClick={() => {
-                      run(() => rejectSuggestionItemAction({ itemId: item.id }));
+                      run(() => rejectSuggestionItemAction({ itemId: item.id }), item.id);
                     }}
                   >
                     <X className="size-4" />
@@ -151,6 +199,43 @@ export function ObjectCleanupSuggestions({ suggestions }: Props) {
           })}
         </ul>
       ) : null}
+
+      <Dialog
+        open={Boolean(reviewingItemId)}
+        onOpenChange={(open) => {
+          if (!open) setReviewingItemId(null);
+        }}
+      >
+        <DialogContent className="max-h-[min(760px,calc(100vh-2rem))] overflow-y-auto border-border bg-bg sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Review merge</DialogTitle>
+            <DialogDescription>
+              Choose the object to keep, then merge the duplicate into it.
+            </DialogDescription>
+          </DialogHeader>
+          {reviewingEntry && reviewingPreview ? (
+            <ObjectMergeForm
+              objects={reviewingPreview.objects}
+              initialSurvivorId={reviewingPreview.survivorId}
+              countsBySurvivorId={reviewingPreview.countsBySurvivorId}
+              suggestionItemId={reviewingEntry.item.id}
+              onCancel={() => {
+                setReviewingItemId(null);
+              }}
+              onMerged={() => {
+                resolveItem(reviewingEntry.item.id);
+                setMessage('Objects merged.');
+                router.refresh();
+              }}
+            />
+          ) : (
+            <p className="text-sm text-fg-muted">
+              This merge suggestion is no longer available. Close this dialog and refresh
+              suggestions.
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
