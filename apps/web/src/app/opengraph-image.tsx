@@ -1,6 +1,5 @@
 import { ImageResponse } from 'next/og';
 
-export const runtime = 'edge';
 export const alt = 'The Timeline — the operations log your team can talk to';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';

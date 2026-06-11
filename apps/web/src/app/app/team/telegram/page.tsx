@@ -13,6 +13,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { revokeLinkTokenAction, unbindChatAction } from '@/app/actions/telegram';
+import { HistoryBackLink } from '@/components/history-back-link';
 import { IndexStrip } from '@/components/index-strip';
 import { GenerateGroupTokenForm, GeneratePersonalTokenForm } from '@/components/telegram-forms';
 import { Badge } from '@/components/ui/badge';
@@ -102,6 +103,7 @@ export default async function TelegramSettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
+      <HistoryBackLink fallbackHref="/app/team" label="Back" />
       <IndexStrip
         srLabel={`Telegram integration for ${active.teamName} · ${bindings.length} bound groups · ${linkedTgUsers.length} linked users`}
         segments={[

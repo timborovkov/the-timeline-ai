@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { HistoryBackLink } from '@/components/history-back-link';
 import { MeetingExportButtons } from '@/components/meeting-export-buttons';
 import { CancelMeetingButton } from '@/components/meeting-forms';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -52,6 +53,7 @@ export default async function MeetingDetailPage({ params }: Props) {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
+      <HistoryBackLink fallbackHref="/app/meetings" label="Back" />
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold">{title}</h1>
         <p className="text-xs text-muted-foreground">

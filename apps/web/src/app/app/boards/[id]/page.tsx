@@ -1,6 +1,5 @@
 import * as objects from '@timeline/shared/objects';
 import { withTeam } from '@timeline/shared/team-scope';
-import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { z } from 'zod';
 
@@ -10,6 +9,7 @@ import { DeleteBoardButton } from '@/components/boards/delete-board-button';
 import { KanbanBoard } from '@/components/boards/kanban-board';
 import { ObjectList } from '@/components/boards/object-list';
 import { ObjectTable } from '@/components/boards/object-table';
+import { HistoryBackLink } from '@/components/history-back-link';
 import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -118,12 +118,7 @@ export default async function BoardDetailPage({ params }: { params: Promise<{ id
         className="mb-6 shrink-0"
       >
         <span className="inline-flex items-center gap-3">
-          <Link
-            href="/app/boards"
-            className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg hover:underline"
-          >
-            ← all boards
-          </Link>
+          <HistoryBackLink fallbackHref="/app/boards" label="Back" />
           <DeleteBoardButton id={board.id} />
         </span>
       </IndexStrip>

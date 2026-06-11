@@ -1,7 +1,6 @@
-import Link from 'next/link';
-
 import type { Metadata } from 'next';
 
+import { HistoryBackLink } from '@/components/history-back-link';
 import { IndexStrip } from '@/components/index-strip';
 import { NewObjectForm } from '@/components/objects/new-object-form';
 
@@ -17,12 +16,7 @@ export default function NewObjectPage() {
         srLabel="Create a new workspace object"
         segments={[{ value: 'OBJECTS / NEW' }, { label: 'mode', value: 'create', signal: true }]}
       >
-        <Link
-          href="/app/objects"
-          className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg hover:underline"
-        >
-          ← all objects
-        </Link>
+        <HistoryBackLink fallbackHref="/app/objects" label="Back" />
       </IndexStrip>
       <NewObjectForm />
     </div>

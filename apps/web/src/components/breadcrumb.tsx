@@ -1,5 +1,7 @@
 import Link from 'next/link';
 
+import { HistoryBackLink } from '@/components/history-back-link';
+
 interface BreadcrumbItem {
   label: string;
   href?: string;
@@ -11,8 +13,14 @@ interface BreadcrumbItem {
  * of bespoke "← Back to X" links per page.
  */
 export function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
+  const fallback = items
+    .slice(0, -1)
+    .reverse()
+    .find((item): item is BreadcrumbItem & { href: string } => Boolean(item.href));
+
   return (
-    <nav aria-label="Breadcrumb" className="pb-2 pt-1">
+    <nav aria-label="Breadcrumb" className="space-y-1 pb-2 pt-1">
+      {fallback ? <HistoryBackLink fallbackHref={fallback.href} label="Back" /> : null}
       <ol className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
         {items.map((item, i) => {
           const isLast = i === items.length - 1;

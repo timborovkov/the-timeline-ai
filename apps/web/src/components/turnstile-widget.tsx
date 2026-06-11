@@ -4,47 +4,12 @@ import Script from 'next/script';
 import { useCallback, useEffect, useRef } from 'react';
 import { useFormStatus } from 'react-dom';
 
+import { renderTurnstileWidget, type TurnstileApi } from '@/lib/turnstile-widget';
+
 declare global {
   interface Window {
     turnstile?: TurnstileApi;
   }
-}
-
-interface TurnstileApi {
-  render(
-    container: HTMLElement,
-    options: {
-      sitekey: string;
-      action?: string;
-      theme?: 'light' | 'dark' | 'auto';
-      'error-callback'?: () => void;
-      'expired-callback'?: () => void;
-    },
-  ): string;
-  remove(widgetId: string): void;
-  reset(widgetId: string): void;
-}
-
-export function renderTurnstileWidget({
-  action,
-  container,
-  reset,
-  siteKey,
-  turnstile,
-}: {
-  action: string;
-  container: HTMLElement;
-  reset: () => void;
-  siteKey: string;
-  turnstile: TurnstileApi;
-}) {
-  return turnstile.render(container, {
-    sitekey: siteKey,
-    action,
-    theme: 'light',
-    'error-callback': reset,
-    'expired-callback': reset,
-  });
 }
 
 export function TurnstileWidget({ action, siteKey }: { action: string; siteKey?: string }) {

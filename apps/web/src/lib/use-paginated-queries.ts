@@ -233,7 +233,7 @@ export function useFinishedJobsInfiniteQuery() {
 
 export function useOnboardingChecklistQuery() {
   const queryClient = useQueryClient();
-  const query = useQuery({
+  const { data, isPending } = useQuery({
     queryKey: queryKeys.onboarding(),
     queryFn: async () =>
       readJson<{
@@ -282,7 +282,12 @@ export function useOnboardingChecklistQuery() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.onboarding() });
     },
   });
-  return { ...query, mutateChecklist: mutation.mutate, checklistPending: mutation.isPending };
+  return {
+    data,
+    isPending,
+    mutateChecklist: mutation.mutate,
+    checklistPending: mutation.isPending,
+  };
 }
 
 export interface TimelineEvent {

@@ -32,6 +32,21 @@ interface Candidate {
   identity: conversationReview.ConversationIdentity;
 }
 
+interface RecoveryResult {
+  recovered: number;
+  enqueued: number;
+}
+
+function combineRecoveryResults(results: RecoveryResult[]): RecoveryResult {
+  return results.reduce(
+    (total, result) => ({
+      recovered: total.recovered + result.recovered,
+      enqueued: total.enqueued + result.enqueued,
+    }),
+    { recovered: 0, enqueued: 0 },
+  );
+}
+
 function recoverableAnchorCondition(candidate: Candidate): SQL {
   return sql`COALESCE(${conversationReviews.metadata} ->> 'review_outcome', '') <> 'superseded_by_thread_review'
     AND (
@@ -115,7 +130,7 @@ async function recoverAndEnqueueConversationReview(
     source: 'all' | 'telegram' | 'slack';
     requestedAt: Date;
   },
-): Promise<{ recovered: number; enqueued: number }> {
+): Promise<RecoveryResult> {
   const review = await recoverConversationReview(candidate, args);
   if (!review) return { recovered: 0, enqueued: 0 };
   if (review.previousQuietUntil) {
@@ -139,21 +154,88 @@ async function recoverAndEnqueueInBatches(
     source: 'all' | 'telegram' | 'slack';
     requestedAt: Date;
   },
-): Promise<{ recovered: number; enqueued: number }> {
-  let recovered = 0;
-  let enqueued = 0;
-  for (let start = 0; start < jobs.length; start += RECOVER_CONCURRENCY) {
-    const results = await Promise.all(
-      jobs
-        .slice(start, start + RECOVER_CONCURRENCY)
-        .map((job) => recoverAndEnqueueConversationReview(queue, job, args)),
+): Promise<RecoveryResult> {
+  function recoverWorker(index: number): Promise<RecoveryResult> {
+    const job = jobs[index];
+    if (!job) return Promise.resolve({ recovered: 0, enqueued: 0 });
+    return recoverAndEnqueueConversationReview(queue, job, args).then((result) =>
+      recoverWorker(index + RECOVER_CONCURRENCY).then((next) =>
+        combineRecoveryResults([result, next]),
+      ),
     );
-    for (const result of results) {
-      recovered += result.recovered;
-      enqueued += result.enqueued;
-    }
   }
-  return { recovered, enqueued };
+
+  const results = await Promise.all(
+    Array.from({ length: Math.min(RECOVER_CONCURRENCY, jobs.length) }, (_value, index) =>
+      recoverWorker(index),
+    ),
+  );
+  return combineRecoveryResults(results);
+}
+
+async function collectCandidates(args: {
+  teamId: string;
+  since: Date;
+  source: 'all' | 'telegram' | 'slack';
+}): Promise<{ scanned: number; conversations: Map<string, Candidate> }> {
+  async function scan(
+    cursor: { occurredAt: Date; id: string } | null,
+    scanned: number,
+    conversations: Map<string, Candidate>,
+  ): Promise<{ scanned: number; conversations: Map<string, Candidate> }> {
+    if (conversations.size >= MAX_CONVERSATIONS) return { scanned, conversations };
+    const conditions: SQL[] = [
+      eq(rawEvents.teamId, args.teamId),
+      eq(rawEvents.visibility, 'team'),
+      isNotNull(rawEvents.contentText),
+      sql`${rawEvents.occurredAt} >= ${args.since.toISOString()}::timestamptz`,
+      sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+    ];
+    if (args.source === 'all') {
+      conditions.push(sql`${rawEvents.source} IN ('telegram', 'slack')`);
+    } else {
+      conditions.push(eq(rawEvents.source, args.source));
+    }
+    if (cursor) {
+      const cursorClause = or(
+        sql`${rawEvents.occurredAt} < ${cursor.occurredAt.toISOString()}::timestamptz`,
+        and(
+          sql`${rawEvents.occurredAt} = ${cursor.occurredAt.toISOString()}::timestamptz`,
+          lt(rawEvents.id, cursor.id),
+        ),
+      );
+      if (cursorClause) conditions.push(cursorClause);
+    }
+
+    const page = await db
+      .select({
+        id: rawEvents.id,
+        teamId: rawEvents.teamId,
+        source: rawEvents.source,
+        sourceMetadata: rawEvents.sourceMetadata,
+        occurredAt: rawEvents.occurredAt,
+      })
+      .from(rawEvents)
+      .where(and(...conditions))
+      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+      .limit(PAGE_SIZE);
+    if (page.length === 0) return { scanned, conversations };
+
+    let nextScanned = scanned;
+    for (const row of page) {
+      nextScanned += 1;
+      const identity = conversationReview.conversationIdentityForRawEvent(row);
+      if (!identity) continue;
+      if (!conversations.has(identity.key)) conversations.set(identity.key, { ...row, identity });
+      if (conversations.size >= MAX_CONVERSATIONS) break;
+    }
+
+    const last = page[page.length - 1];
+    if (!last || page.length < PAGE_SIZE) return { scanned: nextScanned, conversations };
+    return scan({ occurredAt: last.occurredAt, id: last.id }, nextScanned, conversations);
+  }
+
+  return scan(null, 0, new Map());
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -183,60 +265,11 @@ export async function POST(req: Request): Promise<Response> {
   const queue = await requireRedisQueue();
   const since = new Date(Date.now() - parsed.data.windowDays * 24 * 60 * 60 * 1000);
   const requestedAt = new Date();
-  let cursor: { occurredAt: Date; id: string } | null = null;
-  let scanned = 0;
-  const conversations = new Map<string, Candidate>();
-
-  while (conversations.size < MAX_CONVERSATIONS) {
-    const conditions: SQL[] = [
-      eq(rawEvents.teamId, active.teamId),
-      eq(rawEvents.visibility, 'team'),
-      isNotNull(rawEvents.contentText),
-      sql`${rawEvents.occurredAt} >= ${since.toISOString()}::timestamptz`,
-      sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
-    ];
-    if (parsed.data.source === 'all') {
-      conditions.push(sql`${rawEvents.source} IN ('telegram', 'slack')`);
-    } else {
-      conditions.push(eq(rawEvents.source, parsed.data.source));
-    }
-    if (cursor) {
-      const cursorClause = or(
-        sql`${rawEvents.occurredAt} < ${cursor.occurredAt.toISOString()}::timestamptz`,
-        and(
-          sql`${rawEvents.occurredAt} = ${cursor.occurredAt.toISOString()}::timestamptz`,
-          lt(rawEvents.id, cursor.id),
-        ),
-      );
-      if (cursorClause) conditions.push(cursorClause);
-    }
-
-    const page = await db
-      .select({
-        id: rawEvents.id,
-        teamId: rawEvents.teamId,
-        source: rawEvents.source,
-        sourceMetadata: rawEvents.sourceMetadata,
-        occurredAt: rawEvents.occurredAt,
-      })
-      .from(rawEvents)
-      .where(and(...conditions))
-      .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
-      .limit(PAGE_SIZE);
-    if (page.length === 0) break;
-
-    for (const row of page) {
-      scanned += 1;
-      const identity = conversationReview.conversationIdentityForRawEvent(row);
-      if (!identity) continue;
-      if (!conversations.has(identity.key)) conversations.set(identity.key, { ...row, identity });
-      if (conversations.size >= MAX_CONVERSATIONS) break;
-    }
-
-    const last = page[page.length - 1];
-    if (!last || page.length < PAGE_SIZE) break;
-    cursor = { occurredAt: last.occurredAt, id: last.id };
-  }
+  const { scanned, conversations } = await collectCandidates({
+    teamId: active.teamId,
+    since,
+    source: parsed.data.source,
+  });
 
   const jobs = [...conversations.values()].sort(
     (a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || a.id.localeCompare(b.id),

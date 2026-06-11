@@ -16,6 +16,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { bindSlackConversationAction, unbindSlackConversationAction } from '@/app/actions/slack';
+import { HistoryBackLink } from '@/components/history-back-link';
 import { IndexStrip } from '@/components/index-strip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -97,6 +98,7 @@ export default async function SlackSettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
+      <HistoryBackLink fallbackHref="/app/team" label="Back" />
       <IndexStrip
         srLabel={`Slack capture for ${active.teamName} · ${bindings.length} bound conversations · ${linkedSlackUsers.length} linked users`}
         segments={[
