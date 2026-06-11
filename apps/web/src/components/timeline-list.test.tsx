@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TimelineEvent } from '@/lib/use-paginated-queries';
+import type { ComponentProps } from 'react';
 
 const fakes = vi.hoisted(() => ({
   showInspector: vi.fn(),
@@ -44,13 +45,17 @@ function timelineEvent(input: {
   };
 }
 
-function renderTimeline(events: TimelineEvent[]): string {
+function renderTimeline(
+  events: TimelineEvent[],
+  options: Partial<ComponentProps<typeof TimelineList>> = {},
+): string {
   return renderToStaticMarkup(
     createElement(TimelineList, {
       events,
       authorMap: new Map(),
       currentUserId: 'user-1',
       isAdmin: false,
+      ...options,
     }),
   );
 }
@@ -78,5 +83,28 @@ describe('TimelineList event anchors', () => {
     expect(html).toContain(`<li id="ev-${secondEventId}"`);
     expect(html.match(new RegExp(`id="ev-${firstEventId}"`, 'g'))).toHaveLength(1);
     expect(html.match(new RegExp(`id="ev-${secondEventId}"`, 'g'))).toHaveLength(1);
+  });
+
+  it('keeps a focused event anchor visible through impact filters', () => {
+    const focusedEventId = '44444444-4444-4444-8444-444444444444';
+    const taskEventId = '55555555-5555-4555-8555-555555555555';
+    const html = renderTimeline(
+      [
+        timelineEvent({ id: taskEventId, occurredAt: '2026-06-03T13:05:00.000Z' }),
+        timelineEvent({ id: focusedEventId, occurredAt: '2026-06-03T13:04:00.000Z' }),
+      ],
+      {
+        focusEventId: focusedEventId,
+        impactFilter: 'task',
+        impactItemsByEventId: {
+          [taskEventId]: [{ kind: 'task', label: 'Follow up' }],
+          [focusedEventId]: [],
+        },
+      },
+    );
+
+    expect(html).toContain(`<li id="ev-${focusedEventId}"`);
+    expect(html).toContain(`<li id="ev-${taskEventId}"`);
+    expect(html.match(new RegExp(`id="ev-${focusedEventId}"`, 'g'))).toHaveLength(1);
   });
 });

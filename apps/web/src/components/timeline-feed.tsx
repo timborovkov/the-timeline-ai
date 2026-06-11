@@ -31,6 +31,7 @@ interface Props {
   emptyLabel?: string;
   emptyAction?: { href: string; label: string; body: string };
   impactFilter?: ImpactKind | 'all';
+  focusEventId?: string | null;
   live?: boolean;
 }
 
@@ -45,6 +46,7 @@ export function TimelineFeed({
   emptyLabel,
   emptyAction,
   impactFilter = 'all',
+  focusEventId = null,
   live = true,
 }: Props) {
   const query = useTimelineInfiniteQuery(filters, initialPage, { enabled: live });
@@ -99,6 +101,7 @@ export function TimelineFeed({
         emptyAction={emptyAction}
         impactFilter={impactFilter}
         impactItemsByEventId={impactItemsByEventId}
+        focusEventId={focusEventId}
       />
       <div className={compact ? 'hidden' : 'flex justify-center'}>
         <button

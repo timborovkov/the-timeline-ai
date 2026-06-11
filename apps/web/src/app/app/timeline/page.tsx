@@ -307,6 +307,7 @@ function TimelineBrowserSection({
           return { id: member.userId, label: user?.name ?? user?.email ?? member.userId };
         })}
         impactFilter={impactFilter ?? 'all'}
+        focusEventId={focusEventId ?? null}
         emptyLabel={hasFilters ? 'NO EVENTS MATCH THIS VIEW' : 'NO EVENTS YET'}
         emptyAction={{
           href: hasFilters ? '/app/timeline' : '/app#capture',
