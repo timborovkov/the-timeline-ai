@@ -31,7 +31,7 @@ export const dynamic = 'force-dynamic';
  *   2. IndexStrip header
  *   3. Top action bar: secondary nav chips + "+ Add custom MCP server"
  *   4. Connected list (native + MCP) when anything is connected
- *   5. Native catalog (Drive/Linear/GitHub) when env-configured
+ *   5. Native catalog (GitHub/Linear/Drive) when env-configured
  *   6. MCP catalog (Notion, Slack, Atlassian, Figma, Sentry, Stripe…)
  *
  * Secondary actions (Expose-as-MCP, Personal MCP, Audit log) live in the
@@ -157,7 +157,10 @@ export default async function IntegrationsPage({
 
       {nativeCatalog.length > 0 ? (
         <section className="space-y-3">
-          <SectionHeader>Drive · Linear · GitHub</SectionHeader>
+          <SectionHeader>Native integrations</SectionHeader>
+          <p className="text-sm text-fg-muted">
+            GitHub, Linear, and Google Drive sync directly into Timeline as first-party providers.
+          </p>
           <IntegrationsCatalog catalog={nativeCatalog} />
         </section>
       ) : null}
@@ -184,7 +187,8 @@ export default async function IntegrationsPage({
         <div className="rounded-sm border border-dashed border-border bg-surface p-6 text-sm text-fg-muted">
           <p className="mb-1 font-medium text-fg">No integrations configured.</p>
           <p>
-            Add the provider credentials in env to enable Drive, Linear, or GitHub; see{' '}
+            Add the provider credentials in env to enable native GitHub, Linear, or Google Drive
+            sync; see{' '}
             <Link className="text-signal underline" href="/docs/setup/integrations.html">
               setup
             </Link>

@@ -142,9 +142,11 @@
           else.
         </li>
         <li>
-          <strong>Third-party integrations</strong>: Linear, GitHub, Google Drive, and CRM-style
-          tools sync activity and changes into the same event stream. Teams can also connect
-          arbitrary <strong>custom MCP servers</strong> — their own internal tools or any
+          <strong>Native integrations</strong>: GitHub, Linear, and Google Drive sync activity and
+          changes into the same event stream. GitHub is optional for teams that do not live in
+          engineering workflows, but it is a first-party connector: repo selection, PRs, issues,
+          reviews, commits, releases, and CI activity become cited timeline events. Teams can also
+          connect arbitrary <strong>custom MCP servers</strong> — their own internal tools or any
           third-party MCP — to extend the agent's reach without us shipping a bespoke connector per
           provider.
         </li>
@@ -448,8 +450,9 @@
           versions files; it does not replace Google Docs-style live editing.
         </li>
         <li>
-          <strong>System integrations</strong> (Linear, GitHub, Google Drive, HubSpot/CRM tools).
-          Later, likely through MCPs first where they fit, then native APIs/webhooks for scale.
+          <strong>Additional bespoke integrations</strong> beyond the native GitHub, Linear, and
+          Google Drive providers. HubSpot/CRM tools can start through MCP where they fit, then move
+          to native APIs/webhooks when volume or product polish justifies it.
         </li>
         <li><strong>Real-time collaboration</strong> on entity pages. Later.</li>
         <li><strong>Mobile native apps.</strong> PWA covers this for v1.</li>
@@ -475,10 +478,11 @@
           incidents, documents, and team-defined object types.
         </li>
         <li>
-          <strong>System integrations</strong>: pull events from Linear, GitHub, Google Drive, and
-          HubSpot/CRM tools. Same pipeline, more sources. MCPs are a useful adapter layer for early
-          integrations; native sync/webhooks can replace them for high-volume paths. Teams can
-          additionally connect arbitrary custom MCP servers to extend the agent's reach.
+          <strong>More native integrations</strong>: GitHub, Linear, and Google Drive already use
+          native sync into the shared event pipeline. Add CRM and finance systems the same way once
+          they prove core to daily workflow; MCP remains the adapter layer for long-tail and
+          experimental tools. Teams can additionally connect arbitrary custom MCP servers to extend
+          the agent's reach.
         </li>
         <li>
           <strong>Meeting bots</strong>: join Google Meet, Microsoft Teams, and Zoom calls (default
