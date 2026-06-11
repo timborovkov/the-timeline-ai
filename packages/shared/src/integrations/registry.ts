@@ -12,7 +12,7 @@ import { linearProvider } from '#src/integrations/providers/linear.js';
 //   - `_registry` maps native-provider ids to their adapter
 //     implementations. The settings flow / worker resolve providers via
 //     `getProvider(id)`. Only natives we actually drive sync for live
-//     here (Drive, Linear, GitHub).
+//     here (GitHub, Linear, Drive).
 //
 //   - `CATALOG` is the marketing + UX surface. It includes the natives
 //     above PLUS featured MCP-backed integrations the team can connect
@@ -102,7 +102,8 @@ const CATALOG_SEEDS: CatalogSeed[] = [
   {
     id: 'github',
     label: 'GitHub',
-    description: 'PRs, issues, reviews, merged commits, releases, and CI runs become cited events.',
+    description:
+      'Native repo sync: PRs, issues, reviews, merged commits, releases, and CI runs become cited events.',
     logo: '/connectors/github.svg',
     category: 'dev-tools',
     kind: 'native',

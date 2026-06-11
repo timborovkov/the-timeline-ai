@@ -1,4 +1,4 @@
-import { CalendarDays, Mail, MessageCircle, Send, Video } from 'lucide-react';
+import { CalendarDays, GitPullRequest, Mail, MessageCircle, Send, Video } from 'lucide-react';
 import Link from 'next/link';
 
 import type { Metadata } from 'next';
@@ -70,6 +70,7 @@ const CONTACT_HREF = '/help/support';
 const NATIVE_INGEST = [
   { label: 'Telegram', icon: Send },
   { label: 'Slack', icon: MessageCircle },
+  { label: 'GitHub', icon: GitPullRequest },
   { label: 'Google Meet', icon: Video },
   { label: 'Zoom', icon: Video },
   { label: 'Microsoft Teams', icon: Video },
@@ -205,7 +206,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How is capture done?',
-    a: 'Native surfaces feed one pipeline. Telegram and Slack capture chat, voice, files, /ask, and @Timeline context. Google Meet, Zoom, and Microsoft Teams land through meeting bots. Email, calendar events, web notes, drive uploads, MCP servers, and third-party integrations all become cited timeline events.',
+    a: 'Native surfaces feed one pipeline. Telegram and Slack capture chat, voice, files, /ask, and @Timeline context. GitHub, Linear, and Google Drive sync as native integrations. Google Meet, Zoom, and Microsoft Teams land through meeting bots. Email, calendar events, web notes, MCP servers, and long-tail third-party integrations all become cited timeline events.',
   },
   {
     q: 'What models power the agent?',
@@ -516,10 +517,11 @@ const INPUTS = [
   'GOOGLE MEET / ZOOM / TEAMS',
   'EMAIL',
   'CALENDAR',
+  'GITHUB / LINEAR / DRIVE',
   'WEB APP',
   'TEAM DOCUMENT DRIVE',
   'MCP SERVERS',
-  '3RD PARTY INTEGRATIONS',
+  'LONG-TAIL INTEGRATIONS',
 ] as const;
 
 const WORKSPACE_OUTPUTS = [
@@ -756,6 +758,10 @@ function Surfaces() {
           body="Scheduled work, all-day events, and time-aware context appear in the same timeline."
         />
         <SurfaceTile
+          label="GITHUB / LINEAR / DRIVE"
+          body="Native connectors sync repos, issues, PRs, releases, CI, project updates, and Drive changes."
+        />
+        <SurfaceTile
           label="WEB APP"
           body="Typed notes, audio uploads, drag-drop files, approvals, and cited agent chat."
         />
@@ -765,7 +771,7 @@ function Surfaces() {
         />
         <SurfaceTile
           label="MCP + INTEGRATIONS"
-          body="Connect MCP servers and third-party systems like CRMs, ERPs, issue trackers, and docs."
+          body="Connect long-tail MCP servers and additional third-party systems like CRMs, ERPs, and docs."
         />
       </div>
     </Section>
@@ -798,17 +804,20 @@ function Integrations() {
             Every system the team works in feeds the same timeline.
           </h2>
           <p className="text-base leading-[1.55] text-fg-muted">
-            Native sync for Drive, Linear, and GitHub. Anything else plugs in as an{' '}
+            GitHub is a native integration alongside Linear and Google Drive: repos, PRs, issues,
+            reviews, releases, commits, and CI runs become cited events. Slack and Telegram stay the
+            fastest daily capture surfaces; GitHub is there when engineering context matters.
+            Long-tail tools plug in as{' '}
             <a
               href="https://modelcontextprotocol.io"
               target="_blank"
               rel="noopener noreferrer"
               className="text-fg underline-offset-4 hover:underline"
             >
-              MCP server
+              MCP servers
             </a>{' '}
-            : Notion, Slack, Jira, Figma, Sentry, Stripe, your internal tool, anything that speaks
-            the protocol. The agent gets the tools; you don&apos;t write a connector.
+            : Notion, Jira, Figma, Sentry, Stripe, your internal tool, anything that speaks the
+            protocol. The agent gets the tools; you don&apos;t write a bespoke connector.
           </p>
         </div>
         <IntegrationCloud />
