@@ -103,7 +103,7 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
-  const allCols = Array.from(new Set([...cols, ...visibleItems.map((r) => colValue(r, groupBy))]));
+  const allCols = Array.from(new Set([...cols, ...items.map((r) => colValue(r, groupBy))]));
   const byCol = new Map<string, objects.ObjectRow[]>();
   for (const c of allCols) byCol.set(c, []);
   for (const r of visibleItems) {
