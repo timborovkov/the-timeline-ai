@@ -8,6 +8,8 @@ import { useMemo, useState, useTransition } from 'react';
 import type * as objects from '@timeline/shared/objects';
 
 import { bulkArchiveObjectsAction } from '@/app/actions/objects';
+import { ObjectTextFilter } from '@/components/boards/object-text-filter';
+import { filterObjectsByText } from '@/lib/object-filter';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 
 interface Props {
@@ -20,21 +22,30 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
+  const [filterQuery, setFilterQuery] = useState('');
   const [isPending, startTransition] = useTransition();
+  const visibleRows = useMemo(
+    () => filterObjectsByText(rows, filterQuery, { typeLabels }),
+    [rows, filterQuery, typeLabels],
+  );
+  const visibleIds = useMemo(() => new Set(visibleRows.map((row) => row.id)), [visibleRows]);
 
-  const selectedIds = useMemo(() => Array.from(selected), [selected]);
+  const selectedIds = useMemo(
+    () => Array.from(selected).filter((id) => visibleIds.has(id)),
+    [selected, visibleIds],
+  );
   const selectedCount = selectedIds.length;
   const canMergeSelected =
     selectedCount >= 2 && selectedCount <= MAX_OBJECT_MERGE_SELECTION && !isPending;
   const grouped = useMemo(() => {
     const map = new Map<string, objects.ObjectRow[]>();
-    for (const row of rows) {
+    for (const row of visibleRows) {
       const list = map.get(row.type) ?? [];
       list.push(row);
       map.set(row.type, list);
     }
     return map;
-  }, [rows]);
+  }, [visibleRows]);
   const typeKeys = useMemo(
     () =>
       Array.from(grouped.keys()).sort((a, b) =>
@@ -42,7 +53,6 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
       ),
     [grouped, typeLabels],
   );
-
   function toggle(id: string) {
     setSelected((current) => {
       const next = new Set(current);
@@ -78,10 +88,21 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-          {selecting ? `${selectedCount} selected` : `${rows.length} visible`}
-        </div>
+        <ObjectTextFilter
+          query={filterQuery}
+          onQueryChange={(query) => {
+            setFilterQuery(query);
+            setSelected(new Set());
+          }}
+          resultCount={visibleRows.length}
+          totalCount={rows.length}
+        />
         <div className="flex items-center gap-1.5">
+          {selecting ? (
+            <div className="mr-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+              {selectedCount} selected
+            </div>
+          ) : null}
           {selecting ? (
             <>
               <Link
@@ -138,68 +159,74 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
           Select {MAX_OBJECT_MERGE_SELECTION} or fewer objects to merge.
         </p>
       ) : null}
-      <div className="space-y-8">
-        {typeKeys.map((typeKey) => {
-          const list = grouped.get(typeKey) ?? [];
-          return (
-            <section key={typeKey} aria-label={typeLabels[typeKey] ?? typeKey}>
-              <div className="mb-3 flex items-baseline justify-between border-b border-border pb-1.5">
-                <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-                  {typeLabels[typeKey] ?? typeKey}
-                </h2>
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                  {list.length}
-                </span>
-              </div>
-              <ul className="grid grid-cols-1 gap-px overflow-hidden border border-border sm:grid-cols-2">
-                {list.map((object) => {
-                  const isSelected = selected.has(object.id);
-                  return (
-                    <li key={object.id} className="bg-bg">
-                      <div
-                        className={`flex min-h-10 items-center px-3 py-2.5 text-sm transition-colors ${
-                          isSelected ? 'bg-signal-soft' : 'hover:bg-surface'
-                        }`}
-                      >
-                        {selecting ? (
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => {
-                              toggle(object.id);
-                            }}
-                            aria-label={`Select ${object.canonicalName}`}
-                            className="mr-2.5 h-4 w-4 accent-[var(--signal)]"
-                          />
-                        ) : null}
-                        <Link
-                          href={`/app/objects/${object.id}`}
-                          className="min-w-0 flex-1 truncate font-medium text-fg"
+      {visibleRows.length === 0 ? (
+        <p className="py-10 text-center font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
+          NOTHING MATCHES THIS FILTER
+        </p>
+      ) : (
+        <div className="space-y-8">
+          {typeKeys.map((typeKey) => {
+            const list = grouped.get(typeKey) ?? [];
+            return (
+              <section key={typeKey} aria-label={typeLabels[typeKey] ?? typeKey}>
+                <div className="mb-3 flex items-baseline justify-between border-b border-border pb-1.5">
+                  <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+                    {typeLabels[typeKey] ?? typeKey}
+                  </h2>
+                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                    {list.length}
+                  </span>
+                </div>
+                <ul className="grid grid-cols-1 gap-px overflow-hidden border border-border sm:grid-cols-2">
+                  {list.map((object) => {
+                    const isSelected = selected.has(object.id);
+                    return (
+                      <li key={object.id} className="bg-bg">
+                        <div
+                          className={`flex min-h-10 items-center px-3 py-2.5 text-sm transition-colors ${
+                            isSelected ? 'bg-signal-soft' : 'hover:bg-surface'
+                          }`}
                         >
-                          {object.canonicalName}
-                        </Link>
-                        <span className="ml-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                          <span>{object.status}</span>
-                          {object.dueAt ? (
-                            <span title={object.dueAt.toISOString()}>
-                              · {object.dueAt.toLocaleDateString('en-CA')}
-                            </span>
+                          {selecting ? (
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                toggle(object.id);
+                              }}
+                              aria-label={`Select ${object.canonicalName}`}
+                              className="mr-2.5 h-4 w-4 accent-[var(--signal)]"
+                            />
                           ) : null}
-                          {object.agentSuggested && object.status === 'suggested' ? (
-                            <span className="rounded-sm border border-signal/40 bg-signal-soft px-1.5 py-0.5 text-signal">
-                              suggested
-                            </span>
-                          ) : null}
-                        </span>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          );
-        })}
-      </div>
+                          <Link
+                            href={`/app/objects/${object.id}`}
+                            className="min-w-0 flex-1 truncate font-medium text-fg"
+                          >
+                            {object.canonicalName}
+                          </Link>
+                          <span className="ml-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                            <span>{object.status}</span>
+                            {object.dueAt ? (
+                              <span title={object.dueAt.toISOString()}>
+                                · {object.dueAt.toLocaleDateString('en-CA')}
+                              </span>
+                            ) : null}
+                            {object.agentSuggested && object.status === 'suggested' ? (
+                              <span className="rounded-sm border border-signal/40 bg-signal-soft px-1.5 py-0.5 text-signal">
+                                suggested
+                              </span>
+                            ) : null}
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
