@@ -49,6 +49,7 @@ const fakes = vi.hoisted(() => ({
   fakeSuggestions: {
     acceptObjectMergeSuggestionItem: vi.fn(),
     reconcileCanonicalChange: vi.fn(),
+    reconcileObjectMerge: vi.fn(),
   },
   fakeTransactionObjects: {
     archiveObject: vi.fn(),
@@ -126,6 +127,7 @@ beforeEach(() => {
     survivorId: OBJECT_ID,
   });
   fakes.fakeSuggestions.reconcileCanonicalChange.mockResolvedValue(1);
+  fakes.fakeSuggestions.reconcileObjectMerge.mockResolvedValue(1);
   fakes.fakeTransactionObjects.archiveObject.mockImplementation((id: string) =>
     Promise.resolve({
       id,
@@ -394,6 +396,11 @@ describe('object CRUD actions', () => {
       mergedIds: [OTHER_OBJECT_ID],
       actor: { kind: 'user', userId: USER_ID },
     });
+    expect(fakes.fakeSuggestions.reconcileObjectMerge).toHaveBeenCalledWith({
+      survivorId: OBJECT_ID,
+      mergedIds: [OTHER_OBJECT_ID],
+      reason: 'A teammate merged these objects directly.',
+    });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OTHER_OBJECT_ID}`);
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
@@ -412,6 +419,7 @@ describe('object CRUD actions', () => {
       survivorId: OBJECT_ID,
       mergedIds: [OTHER_OBJECT_ID],
     });
+    expect(fakes.fakeSuggestions.reconcileObjectMerge).not.toHaveBeenCalled();
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
   });
 

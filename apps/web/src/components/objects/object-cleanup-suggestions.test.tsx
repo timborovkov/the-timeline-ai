@@ -141,4 +141,32 @@ describe('ObjectCleanupSuggestions', () => {
     expect(html).toContain(`suggestionItemId=${itemId}`);
     expect(html).not.toContain('disabled=""');
   });
+
+  it('renders paged cleanup suggestions when more than one page is pending', () => {
+    const suggestions = Array.from({ length: 12 }, (_, index) => ({
+      id: `bundle-${index}`,
+      title: 'Object cleanup',
+      summary: null,
+      confidence: 'medium',
+      items: [
+        {
+          id: `item-${index}`,
+          status: 'pending',
+          operation: 'archive_or_cancel',
+          targetKind: 'object',
+          targetId: `object-${index}`,
+          title: `Archive object ${index + 1}`,
+          description: 'Archive this low-signal object.',
+          proposedPayload: {},
+        },
+      ],
+    }));
+
+    const html = renderToStaticMarkup(createElement(ObjectCleanupSuggestions, { suggestions }));
+
+    expect(html).toContain('1-10 of 12');
+    expect(html).toContain('Page 1 / 2');
+    expect(html).toContain('Archive object 10');
+    expect(html).not.toContain('Archive object 11');
+  });
 });
