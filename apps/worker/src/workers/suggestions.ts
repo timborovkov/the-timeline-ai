@@ -144,16 +144,64 @@ function truncate(s: string, max: number): string {
 
 function normalizeSuggestionItemPayload(
   item: z.infer<typeof suggestionItemSchema>,
+  objectType?: EntityType | null,
 ): Record<string, unknown> {
+  const payload = { ...item.proposedPayload };
+  const lifecycleType = lifecycleStatusTypeForPayload(item, payload, objectType);
+  if (lifecycleType && typeof payload.status === 'string') {
+    payload.status = normalizeLifecycleStatus(payload.status, lifecycleType);
+  }
   if (
     item.operation === 'create' &&
     (item.targetKind === 'task' || item.targetKind === 'object') &&
-    (typeof item.proposedPayload.canonicalName !== 'string' ||
-      item.proposedPayload.canonicalName.trim() === '')
+    (typeof payload.canonicalName !== 'string' || payload.canonicalName.trim() === '')
   ) {
-    return { ...item.proposedPayload, canonicalName: item.title };
+    return { ...payload, canonicalName: item.title };
   }
-  return item.proposedPayload;
+  return payload;
+}
+
+type LifecycleStatusType = 'task' | 'follow_up' | 'project';
+
+function lifecycleStatusTypeForPayload(
+  item: Pick<z.infer<typeof suggestionItemSchema>, 'targetKind'>,
+  payload: Record<string, unknown>,
+  objectType?: EntityType | null,
+): LifecycleStatusType | null {
+  if (item.targetKind === 'task') return 'task';
+  if (item.targetKind !== 'object') return null;
+  const type =
+    objectType ??
+    (typeof payload.type === 'string' && ENTITY_TYPES.has(payload.type.trim() as EntityType)
+      ? (payload.type.trim() as EntityType)
+      : null);
+  return type === 'task' || type === 'follow_up' || type === 'project' ? type : null;
+}
+
+function normalizeLifecycleStatus(value: string, type: LifecycleStatusType): string {
+  const status = value.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (type === 'project') {
+    if (status === 'in progress' || status === 'in_progress' || status === 'in-progress') {
+      return 'active';
+    }
+    if (status === 'started' || status === 'doing') return 'active';
+    if (status === 'completed' || status === 'complete' || status === 'finished') return 'shipped';
+    if (status === 'done') return 'shipped';
+    if (status === 'canceled') return 'cancelled';
+    return status;
+  }
+  if (
+    status === 'in progress' ||
+    status === 'in_progress' ||
+    status === 'in-progress' ||
+    status === 'started'
+  ) {
+    return 'doing';
+  }
+  if (status === 'completed' || status === 'complete' || status === 'finished') return 'done';
+  if (status === 'open') return 'todo';
+  if (status === 'canceled') return 'cancelled';
+  return status;
 }
 
 function extractionSettled(meta: Record<string, unknown>): boolean {
@@ -967,7 +1015,7 @@ async function runSuggestionExtraction(
     schema: suggestionExtractionSchema,
     model: modelId,
     system:
-      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, calendar refinements, or clear lifecycle updates to existing tasks/calendar events. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, merely conversational, could match multiple existing artifacts, or only says someone shared/sent/forwarded a link, post, file, reaction, app mention, or platform handle. Prefer updating an existing workspace object over creating a new one whenever the name, alias, person nickname, handle, company suffix variant, or conversation context plausibly matches an object in the prompt. Create a task/object only when the evidence contains durable information and no plausible existing or pending object matches. For create task/object items, include proposedPayload.canonicalName matching the item title. For clear task completion/cancellation/blocking, return an update item targeting the existing task UUID with proposedPayload.status set to done/cancelled/blocked. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
+      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, calendar refinements, or clear lifecycle updates to existing lifecycle-capable artifacts. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, merely conversational, could match multiple existing artifacts, or only says someone shared/sent/forwarded a link, post, file, reaction, app mention, or platform handle. Prefer updating an existing workspace object over creating one whenever the name, alias, person nickname, handle, company suffix variant, or conversation context plausibly matches exactly one object in the prompt. Create a task/object only when the evidence contains durable information and no plausible existing or pending object matches. For create task/object items, include proposedPayload.canonicalName matching the item title. Use canonical lifecycle statuses for the target type: task todo/doing/done/blocked/cancelled, follow_up todo/doing/done/cancelled, project planning/active/on_hold/shipped/cancelled. Normalize aliases into that target vocabulary: for task/follow_up, "in progress" means doing and "completed" means done; for project, "started" or "in progress" means active and "completed" or "done" means shipped; "canceled" means cancelled only when the target type supports cancelled. For clear lifecycle movement, return an update item targeting the existing artifact UUID; progress/doing/active requires explicit workflow movement such as "started" or "working on", not "looked at" or "thinking about". Completion can come from any credible assertive source; hedged guesses like "I think it is done" are evidence only. Cancellation, blocking, and unblocking must map cleanly to the target artifact vocabulary. If multiple plausible artifacts match, return no lifecycle proposal. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
     prompt,
   });
 
@@ -991,6 +1039,7 @@ async function runSuggestionExtraction(
             occurredAt: row.occurredAt,
             authorUserId: activeAuthorUserId,
           });
+  const objectTypeById = new Map(entityRows.map((entity) => [entity.id, entity.type]));
 
   let proposalsCreated = 0;
   for (const bundle of bundles) {
@@ -1053,7 +1102,12 @@ async function runSuggestionExtraction(
           title: item.title,
           item,
         }),
-        proposedPayload: normalizeSuggestionItemPayload(item),
+        proposedPayload: normalizeSuggestionItemPayload(
+          item,
+          item.targetKind === 'object' && item.operation !== 'create'
+            ? (objectTypeById.get(item.targetId ?? '') ?? null)
+            : null,
+        ),
       })),
     });
     if (suggestion.status === 'pending' || suggestion.status === 'partially_resolved') {

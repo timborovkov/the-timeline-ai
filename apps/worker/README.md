@@ -23,6 +23,10 @@ pnpm --filter @timeline/worker redocument-embed   -- --team=<teamId> [--target-c
 
 `resuggest` scans the requested window before applying `--limit`; conversational sources recover
 the latest anchor per conversation, and limited runs keep the latest candidate anchors.
+The suggestion worker normalizes lifecycle status aliases into the target artifact vocabulary
+(`in progress` → `doing` for tasks/follow-ups, but `active` for projects), proposes
+cross-artifact lifecycle updates only when evidence resolves to one artifact, and supersedes stale
+pending lifecycle approvals while preserving unrelated approval items in the same bundle.
 `dedupe-approvals` defaults to dry-run and supersedes stale duplicate pending approval items only
 when the same conservative workspace reconciliation predicate can identify a survivor.
 
