@@ -184,4 +184,85 @@ describe('ChatPane', () => {
     expect(html).toContain('list-decimal');
     expect(html).toContain('Second step');
   });
+
+  it('renders markdown tables with inline formatting and citations', () => {
+    const eventId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    fakes.useChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'text',
+              text: [
+                'Action Points',
+                '',
+                '| # | Action | Owner | When |',
+                '|---|--------|-------|------|',
+                `| 1 | **Register domains** [ev:${eventId}] | Otto | ASAP |`,
+              ].join('\n'),
+            },
+          ],
+        },
+      ],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(ChatPane, {
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    expect(html).toContain('<table');
+    expect(html).toContain('<thead');
+    expect(html).toContain('<tbody');
+    expect(html).toContain('<th');
+    expect(html).toContain('<td');
+    expect(html).toContain('<strong');
+    expect(html).toContain('Register domains');
+    expect(html).toContain('[ev:aaaaaaaa]');
+    expect(html).not.toContain('|---|--------|-------|------|');
+  });
+
+  it('renders markdown tables without optional outer pipes', () => {
+    fakes.useChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'text',
+              text: ['Action | Owner', '--- | ---', 'Register domains | Otto'].join('\n'),
+            },
+          ],
+        },
+      ],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(ChatPane, {
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    expect(html).toContain('<table');
+    expect(html).toContain('Register domains');
+    expect(html).not.toContain('--- | ---');
+  });
 });
