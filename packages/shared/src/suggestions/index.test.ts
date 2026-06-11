@@ -1022,6 +1022,51 @@ describe('suggestion scope', () => {
     expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-02T15:00:00.000Z');
   });
 
+  it('accepts legacy model-shaped calendar create payloads', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create meeting event',
+      dedupeKey: 'calendar-create-legacy-payload',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Nexia Oy etätapaaminen',
+          dedupeKey: 'calendar-create-legacy-payload:item',
+          proposedPayload: {
+            startTime: '2026-06-17T14:00:00.000Z',
+            endTime: '2026-06-17T15:00:00.000Z',
+            all_day: false,
+            timezone: 'Europe/Helsinki',
+            visibility: 'team',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{
+      title: string;
+      start_at: Date;
+      end_at: Date;
+      all_day: boolean;
+    }>(
+      `SELECT title, start_at, end_at, all_day
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}' AND title = 'Nexia Oy etätapaaminen'`,
+    );
+    expect(result.rows[0]).toMatchObject({
+      title: 'Nexia Oy etätapaaminen',
+      all_day: false,
+    });
+    expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-17T14:00:00.000Z');
+    expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-17T15:00:00.000Z');
+  });
+
   it('normalizes all-day calendar updates when allDay is omitted from the patch', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const event = await scope.calendar.createCalendarEvent({
@@ -1060,6 +1105,48 @@ describe('suggestion scope', () => {
     );
     expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-02T15:00:00.000Z');
     expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-03T15:00:00.000Z');
+  });
+
+  it('does not silently ignore invalid canonical calendar update fields', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const event = await scope.calendar.createCalendarEvent({
+      title: 'Existing timed event',
+      startAt: new Date('2026-06-17T14:00:00.000Z'),
+      endAt: new Date('2026-06-17T15:00:00.000Z'),
+      timezone: 'Europe/Helsinki',
+      allDay: false,
+      visibility: 'team',
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update meeting event',
+      dedupeKey: 'calendar-update-invalid-canonical-payload',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'calendar_event',
+          targetId: event.id,
+          title: 'Move timed event',
+          dedupeKey: 'calendar-update-invalid-canonical-payload:item',
+          proposedPayload: {
+            startAt: null,
+            endAt: '2026-06-17T16:00:00.000Z',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).rejects.toThrow(
+      /expected string/i,
+    );
+
+    const result = await pg.query<{ start_at: Date; end_at: Date }>(
+      `SELECT start_at, end_at FROM calendar_events WHERE id = '${event.id}'`,
+    );
+    expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-17T14:00:00.000Z');
+    expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-17T15:00:00.000Z');
   });
 
   it('rejecting a create suggestion leaves durable state unchanged', async () => {
