@@ -256,6 +256,37 @@ describe('withTeam namespaced port', () => {
     ).rejects.toThrow('specific_users visibility is not supported for email events');
   });
 
+  it('threads email replies with scalar Message-IDs without malformed array literals', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const parent = await scope.timeline.createEmailEvent({
+      authorUserId: USER_A,
+      messageId: 'FRWP191MB3001FC5DB2A53F79176AA7D4981C2@FRWP191MB3001.EURP191.PROD.OUTLOOK.COM',
+      contentText: 'parent email',
+      occurredAt: new Date('2026-06-11T00:30:00Z'),
+      sourceMetadata: {},
+    });
+
+    const child = await scope.timeline.createEmailEvent({
+      authorUserId: USER_A,
+      messageId: 'child-message@example.com',
+      inReplyTo: 'FRWP191MB3001FC5DB2A53F79176AA7D4981C2@FRWP191MB3001.EURP191.PROD.OUTLOOK.COM',
+      references: ['FRWP191MB3001FC5DB2A53F79176AA7D4981C2@FRWP191MB3001.EURP191.PROD.OUTLOOK.COM'],
+      contentText: 'reply email',
+      occurredAt: new Date('2026-06-11T00:32:00Z'),
+      sourceMetadata: {},
+    });
+
+    expect(child?.threadRootId).toBe(parent?.id);
+    const [row] = await db
+      .select({ sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, child?.id ?? ''));
+    expect(row?.sourceMetadata).toMatchObject({
+      thread_root_id: parent?.id,
+      in_reply_to: 'FRWP191MB3001FC5DB2A53F79176AA7D4981C2@FRWP191MB3001.EURP191.PROD.OUTLOOK.COM',
+    });
+  });
+
   it('materializes all visibility defaults from one settings fetch', async () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
     await scope.timeline.setVisibilityDefault({

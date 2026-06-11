@@ -4,6 +4,7 @@ import {
   chooseContentText,
   getHeader,
   isAudioAttachment,
+  MAX_EMAIL_REFERENCES,
   normalizeMessageId,
   parseAuthenticationResults,
   parseForwardedFrom,
@@ -57,6 +58,29 @@ describe('parseReferences', () => {
 
   it('handles multi-line References folding', () => {
     expect(parseReferences('<a@x>\n <b@y>\r\n\t<c@z>')).toEqual(['a@x', 'b@y', 'c@z']);
+  });
+
+  it('bounds bracketed References to the newest unique ids', () => {
+    const refs = Array.from({ length: MAX_EMAIL_REFERENCES + 5 }, (_, i) => `<m${i}@x>`);
+    refs.push('<m54@x>', '<m53@x>');
+
+    const parsed = parseReferences(refs.join(' '));
+
+    expect(parsed).toHaveLength(MAX_EMAIL_REFERENCES);
+    expect(parsed[0]).toBe('m5@x');
+    expect(parsed.at(-1)).toBe('m53@x');
+    expect(new Set(parsed).size).toBe(MAX_EMAIL_REFERENCES);
+  });
+
+  it('bounds bare References and drops oversized ids', () => {
+    const oversized = 'x'.repeat(999);
+    const refs = Array.from({ length: MAX_EMAIL_REFERENCES + 2 }, (_, i) => `m${i}@x`);
+
+    const parsed = parseReferences([oversized, ...refs].join(' '));
+
+    expect(parsed).toHaveLength(MAX_EMAIL_REFERENCES);
+    expect(parsed).not.toContain(oversized);
+    expect(parsed[0]).toBe('m2@x');
   });
 
   it('returns empty array on undefined / empty input', () => {
