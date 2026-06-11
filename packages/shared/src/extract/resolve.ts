@@ -28,6 +28,7 @@ export interface ResolveEntityInput {
   /** Fact statement used as disambiguation context when ambiguous. */
   factStatement?: string;
   createIfMissing?: boolean;
+  updateAliases?: boolean;
 }
 
 interface EntityRow {
@@ -219,23 +220,25 @@ export async function resolveEntity(
   }
   if (!chosen) throw new Error('resolveEntity: no candidate selected');
 
-  const existingAliases = aliasesArray(chosen.aliases);
-  const incoming = [
-    ...(input.aliases ?? []),
-    // If we matched on a name different from the canonical, keep the variant.
-    input.name === chosen.canonicalName ? null : input.name,
-  ].filter((s): s is string => typeof s === 'string' && s.length > 0);
-  const newAliases = incoming.filter(
-    (a) => !existingAliases.some((e) => e.toLowerCase() === a.toLowerCase()),
-  );
-  if (newAliases.length > 0) {
-    const merged = [...existingAliases, ...newAliases];
-    await (tx as unknown as Db)
-      .update(entities)
-      .set({ aliases: merged, updatedAt: new Date() })
-      .where(eq(entities.id, chosen.id));
-    // Re-embed: alias additions change the entity disambiguation text.
-    fireAndForgetEntityEmbed(input.teamId, chosen.id);
+  if (input.updateAliases !== false) {
+    const existingAliases = aliasesArray(chosen.aliases);
+    const incoming = [
+      ...(input.aliases ?? []),
+      // If we matched on a name different from the canonical, keep the variant.
+      input.name === chosen.canonicalName ? null : input.name,
+    ].filter((s): s is string => typeof s === 'string' && s.length > 0);
+    const newAliases = incoming.filter(
+      (a) => !existingAliases.some((e) => e.toLowerCase() === a.toLowerCase()),
+    );
+    if (newAliases.length > 0) {
+      const merged = [...existingAliases, ...newAliases];
+      await (tx as unknown as Db)
+        .update(entities)
+        .set({ aliases: merged, updatedAt: new Date() })
+        .where(eq(entities.id, chosen.id));
+      // Re-embed: alias additions change the entity disambiguation text.
+      fireAndForgetEntityEmbed(input.teamId, chosen.id);
+    }
   }
   return chosen.id;
 }
@@ -250,7 +253,7 @@ export async function resolveMentions(
   mentions: EntityMention[],
   factStatement: string,
   llmDeps: ChatDeps = {},
-  opts: { createIfMissing?: boolean } = {},
+  opts: { createIfMissing?: boolean; updateAliases?: boolean } = {},
 ): Promise<(string | null)[]> {
   const cache = new Map<string, string | null>();
   const out: (string | null)[] = [];
@@ -269,6 +272,7 @@ export async function resolveMentions(
           ...(m.aliases ? { aliases: m.aliases } : {}),
           factStatement,
           ...(opts.createIfMissing === undefined ? {} : { createIfMissing: opts.createIfMissing }),
+          ...(opts.updateAliases === undefined ? {} : { updateAliases: opts.updateAliases }),
         },
         llmDeps,
       );

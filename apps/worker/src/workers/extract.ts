@@ -189,7 +189,7 @@ export async function processExtractJobForTests(
       fact.mentions,
       fact.statement,
       {},
-      { createIfMissing: false },
+      { createIfMissing: false, updateAliases: false },
     );
     resolvedFacts.push({
       statement: fact.statement,

@@ -646,7 +646,7 @@ describe('processSuggestionJobForTests', () => {
     expect(aliases).toEqual(expect.arrayContaining(['Tim', 'timbo0']));
   });
 
-  it('preserves durable payload fields when rewriting duplicate creates into updates', async () => {
+  it('preserves durable scalar fields without carrying metadata when rewriting duplicate creates into updates', async () => {
     const rawEventId = '10000000-0000-0000-0000-00000000002f';
     const [deal] = await db
       .insert(entities)
@@ -656,6 +656,7 @@ describe('processSuggestionJobForTests', () => {
         canonicalName: 'Acme renewal',
         stage: 'discovery',
         priority: 4,
+        metadata: { integration_id: 'crm-123' },
       })
       .returning({ id: entities.id });
     if (!deal) throw new Error('expected deal fixture');
@@ -716,10 +717,10 @@ describe('processSuggestionJobForTests', () => {
       proposedPayload: {
         stage: 'negotiation',
         priority: 2,
-        metadata: { source: 'crm-review' },
         aliases: ['Acme'],
       },
     });
+    expect(bundle?.items[0]?.proposedPayload).not.toHaveProperty('metadata');
   });
 
   it('rewrites duplicate creates using objects outside the prompt context window', async () => {
@@ -861,6 +862,136 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it('does not rewrite numbered non-person objects as duplicate updates', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000033';
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'project',
+      canonicalName: 'Phase 1',
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Phase 2 is now blocked.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track Phase 2',
+            summary: 'Phase 2 status changed.',
+            reason: 'The source gives a durable project update.',
+            confidence: 'high',
+            quote: 'Phase 2 is now blocked.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Phase 2',
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: 'Phase 2',
+                  status: 'blocked',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'object',
+      targetId: null,
+      title: 'Phase 2',
+      proposedPayload: {
+        canonicalName: 'Phase 2',
+        status: 'blocked',
+      },
+    });
+  });
+
+  it('does not rewrite duplicate creates into archived objects', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000034';
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'project',
+      canonicalName: 'Dormant migration',
+      archivedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Dormant migration is now blocked.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track Dormant migration',
+            summary: 'The project status changed.',
+            reason: 'The source gives a durable project update.',
+            confidence: 'high',
+            quote: 'Dormant migration is now blocked.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Dormant migration',
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: 'Dormant migration',
+                  status: 'blocked',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'object',
+      targetId: null,
+      proposedPayload: {
+        canonicalName: 'Dormant migration',
+        status: 'blocked',
+      },
+    });
+  });
+
   it('drops model-backed low-signal platform object creates', async () => {
     const rawEventId = '10000000-0000-0000-0000-00000000002e';
     await seedRawEvent(db as never, {
@@ -890,6 +1021,54 @@ describe('processSuggestionJobForTests', () => {
                   type: 'company',
                   canonicalName: 'X',
                   aliases: ['Twitter'],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
+  it('drops metadata-only low-signal platform object creates', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000035';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Otto shared a link to an X post by asaadmahmood5.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track X',
+            summary: 'Otto shared an X link.',
+            reason: 'The source mentions X.',
+            confidence: 'medium',
+            quote: 'Otto shared a link to an X post by asaadmahmood5.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'X',
+                proposedPayload: {
+                  type: 'company',
+                  canonicalName: 'X',
+                  metadata: { model_reason: 'platform mention' },
                 },
               },
             ],

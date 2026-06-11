@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { entities, type Db } from '@timeline/db';
 import { MockLanguageModelV3 } from 'ai/test';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -74,5 +75,39 @@ describe('resolveMentions', () => {
       ),
     ).resolves.toEqual([null, null]);
     expect(doGenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it('can resolve existing mentions without mutating aliases', async () => {
+    const pg = new PGlite();
+    await applyMigrations(pg);
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name)
+      VALUES ('${TEAM_ID}', 'agentic', 'Agentic Core');
+    `);
+    const db = drizzle(pg) as unknown as Db;
+    const [inserted] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Acme',
+        aliases: ['Acme Inc'],
+      })
+      .returning({ id: entities.id });
+    if (!inserted) throw new Error('expected fixture entity');
+
+    await expect(
+      resolveMentions(
+        db,
+        TEAM_ID,
+        [{ name: 'Acme', type: 'company', role: 'subject', aliases: ['ACME CRM'] }],
+        'Acme was mentioned with a model-suggested alias.',
+        {},
+        { createIfMissing: false, updateAliases: false },
+      ),
+    ).resolves.toEqual([inserted.id]);
+
+    const [row] = await db.select().from(entities).where(eq(entities.id, inserted.id));
+    expect(row?.aliases).toEqual(['Acme Inc']);
   });
 });

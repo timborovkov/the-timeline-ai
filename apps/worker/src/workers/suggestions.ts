@@ -409,22 +409,23 @@ function normalizeCleanupName(value: string): string {
   return value
     .toLowerCase()
     .replace(/^@/, '')
-    .replace(/0/g, 'o')
-    .replace(/\d+$/g, '')
     .replace(/\b(inc|llc|ltd|oy|corp|corporation|company|co|gmbh|plc)\b/g, '')
     .replace(/[^a-z0-9]+/g, '')
     .trim();
+}
+
+function normalizePersonHandle(value: string): string {
+  return normalizeCleanupName(value).replace(/0/g, 'o').replace(/\d+$/g, '');
 }
 
 function cleanupNames(row: CleanupObjectRow): string[] {
   const aliases = Array.isArray(row.aliases)
     ? row.aliases.filter((v): v is string => typeof v === 'string')
     : [];
-  return Array.from(
-    new Set(
-      [row.canonicalName, ...aliases].map(normalizeCleanupName).filter((name) => name.length >= 2),
-    ),
-  );
+  const rawNames = [row.canonicalName, ...aliases];
+  const names = rawNames.map(normalizeCleanupName);
+  if (row.type === 'person') names.push(...rawNames.map(normalizePersonHandle));
+  return Array.from(new Set(names.filter((name) => name.length >= 2)));
 }
 
 function levenshtein(a: string, b: string): number {
@@ -442,19 +443,28 @@ function levenshtein(a: string, b: string): number {
   return previous[b.length] ?? 0;
 }
 
+function hasConflictingNumberSuffix(a: string, b: string): boolean {
+  const left = /^(.+?)(\d+)$/.exec(a);
+  const right = /^(.+?)(\d+)$/.exec(b);
+  return Boolean(left && right && left[1] === right[1] && left[2] !== right[2]);
+}
+
 function cleanupMatch(a: CleanupObjectRow, b: CleanupObjectRow): 'exact' | 'near' | null {
   if (!cleanupCompatible(a, b)) return null;
   const aNames = cleanupNames(a);
   const bNames = cleanupNames(b);
   if (aNames.some((name) => bNames.includes(name))) return 'exact';
   if (a.type === 'person' && b.type === 'person') {
-    const aFirst = normalizeCleanupName(a.canonicalName.split(/\s+/)[0] ?? '');
-    const bFirst = normalizeCleanupName(b.canonicalName.split(/\s+/)[0] ?? '');
+    const aFirst = normalizePersonHandle(a.canonicalName.split(/\s+/)[0] ?? '');
+    const bFirst = normalizePersonHandle(b.canonicalName.split(/\s+/)[0] ?? '');
     if (aFirst.length >= 3 && bNames.some((name) => name.startsWith(aFirst))) return 'near';
     if (bFirst.length >= 3 && aNames.some((name) => name.startsWith(bFirst))) return 'near';
   }
   for (const left of aNames) {
     for (const right of bNames) {
+      if ((a.type !== 'person' || b.type !== 'person') && hasConflictingNumberSuffix(left, right)) {
+        continue;
+      }
       const min = Math.min(left.length, right.length);
       const max = Math.max(left.length, right.length);
       if (min >= 5 && (left.includes(right) || right.includes(left))) return 'near';
@@ -498,15 +508,25 @@ function hasDurableCreatePayload(payload: Record<string, unknown>): boolean {
   );
 }
 
+function hasDurableNonMetadataCreatePayload(payload: Record<string, unknown>): boolean {
+  return ['status', 'stage', 'priority', 'ownerUserId', 'assigneeUserId', 'dueAt'].some((key) =>
+    payloadHasKey(payload, key),
+  );
+}
+
 function lowSignalCreateObject(item: SuggestionItemOutput): boolean {
   if (item.operation !== 'create' || item.targetKind !== 'object') return false;
-  if (hasDurableCreatePayload(item.proposedPayload)) return false;
   const normalized = normalizeCleanupName(itemCanonicalName(item));
   if (!normalized) return true;
   const type = itemCreateType(item);
-  return (
+  const lowSignal =
     (type === 'company' || type === 'topic' || type === 'other') &&
-    (GENERIC_TOOL_NAMES.has(normalized) || LOW_SIGNAL_OBJECT_NAMES.has(normalized))
+    (GENERIC_TOOL_NAMES.has(normalized) || LOW_SIGNAL_OBJECT_NAMES.has(normalized));
+  if (!lowSignal) return false;
+  if (hasDurableNonMetadataCreatePayload(item.proposedPayload)) return false;
+  return (
+    payloadHasKey(item.proposedPayload, 'metadata') ||
+    !hasDurableCreatePayload(item.proposedPayload)
   );
 }
 
@@ -543,15 +563,7 @@ function updatePayloadFromCreate(
   aliases: string[],
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
-  for (const key of [
-    'status',
-    'stage',
-    'priority',
-    'ownerUserId',
-    'assigneeUserId',
-    'dueAt',
-    'metadata',
-  ]) {
+  for (const key of ['status', 'stage', 'priority', 'ownerUserId', 'assigneeUserId', 'dueAt']) {
     if (payloadHasKey(item.proposedPayload, key)) payload[key] = item.proposedPayload[key];
   }
   if (aliases.length > 0) payload.aliases = aliases;
@@ -857,7 +869,9 @@ async function runSuggestionExtraction(
       updatedAt: entities.updatedAt,
     })
     .from(entities)
-    .where(and(eq(entities.teamId, teamId), isNull(entities.mergedIntoId)))
+    .where(
+      and(eq(entities.teamId, teamId), isNull(entities.mergedIntoId), isNull(entities.archivedAt)),
+    )
     .orderBy(desc(entities.updatedAt))
     .limit(OBJECT_PROMPT_LIMIT);
 
@@ -872,7 +886,9 @@ async function runSuggestionExtraction(
       updatedAt: entities.updatedAt,
     })
     .from(entities)
-    .where(and(eq(entities.teamId, teamId), isNull(entities.mergedIntoId)))
+    .where(
+      and(eq(entities.teamId, teamId), isNull(entities.mergedIntoId), isNull(entities.archivedAt)),
+    )
     .orderBy(desc(entities.updatedAt))
     .limit(OBJECT_MATCHING_LIMIT);
 
