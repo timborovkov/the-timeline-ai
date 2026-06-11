@@ -92,6 +92,7 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
     () => filterObjectsByText(items, filterQuery, { groupBy }),
     [groupBy, items, filterQuery],
   );
+  const moveErrors = Object.values(cardErrors);
 
   function activeSavingCardIds() {
     savingCardIdsRef.current ??= new Set();
@@ -207,6 +208,16 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
             </output>
           )}
         </div>
+        {moveErrors.length > 0 ? (
+          <p
+            className="shrink-0 rounded-sm border border-danger/30 bg-danger/10 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.1em] text-danger"
+            role="alert"
+          >
+            {moveErrors.length === 1
+              ? moveErrors[0]
+              : `${moveErrors.length} board moves failed. Clear the filter to inspect affected cards.`}
+          </p>
+        ) : null}
         {/* Flex row with FIXED column widths. The previous
           `grid auto-cols-[minmax(240px,1fr)]` made each column compete for
           a 1fr share of the container — five columns squeezed below their
