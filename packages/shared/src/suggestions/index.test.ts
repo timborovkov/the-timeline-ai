@@ -1029,6 +1029,58 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.count).toBe('1');
   });
 
+  it('supersedes pending updates that target an accepted create result', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const createBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Create linked task',
+      dedupeKey: 'accepted-create-links-target',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create linked task',
+          dedupeKey: 'accepted-create-links-target:create',
+          proposedPayload: { canonicalName: 'Create linked task', status: 'open' },
+        },
+      ],
+    });
+    const createItemId = createBundle.items[0]?.id;
+    expect(createItemId).toBeDefined();
+
+    const existing = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Create linked task',
+      status: 'open',
+      metadata: { agent_suggestion_item_id: createItemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const updateBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Update linked task',
+      dedupeKey: 'accepted-create-links-target:update',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: existing.id,
+          title: 'Mark linked task done',
+          dedupeKey: 'accepted-create-links-target:update:item',
+          proposedPayload: { status: 'done' },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(createItemId ?? '')).resolves.toBe(true);
+
+    const loadedUpdate = await scope.suggestions.getSuggestion(updateBundle.id);
+    expect(loadedUpdate).toMatchObject({ status: 'superseded' });
+    expect(loadedUpdate?.items[0]).toMatchObject({
+      status: 'superseded',
+      supersededByItemId: createItemId,
+    });
+  });
+
   it('does not recreate object notes when retrying after result bookkeeping was lost', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const object = await scope.objects.createObject({

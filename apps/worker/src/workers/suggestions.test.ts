@@ -145,6 +145,32 @@ async function seedConversationReview(
   });
 }
 
+async function seedTelegramConversationReview(
+  db: Db,
+  args: {
+    rawEventId: string;
+    reviewId: string;
+    chatId: string;
+    text: string;
+    messageId?: string;
+    occurredAt?: Date;
+  },
+): Promise<void> {
+  await seedRawEvent(db, {
+    id: args.rawEventId,
+    source: 'telegram',
+    text: args.text,
+    sourceMetadata: { tg_chat_id: args.chatId, tg_message_id: args.messageId ?? '1' },
+    ...(args.occurredAt ? { occurredAt: args.occurredAt } : {}),
+  });
+  await seedConversationReview(db, {
+    id: args.reviewId,
+    conversationKey: `telegram:${TEAM_ID}:chat:${args.chatId}`,
+    lastRawEventId: args.rawEventId,
+    quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+  });
+}
+
 describe('fallbackBundles', () => {
   it('does not treat next inside the action text as the time phrase', () => {
     const [bundle] = fallbackBundles({
@@ -1517,19 +1543,12 @@ describe('processSuggestionJobForTests', () => {
     const firstId = '10000000-0000-0000-0000-0000000000e1';
     const secondId = '10000000-0000-0000-0000-0000000000e2';
     const reviewId = '20000000-0000-0000-0000-0000000000e1';
-    const conversationKey = `telegram:${TEAM_ID}:chat:321`;
-    await seedRawEvent(db as never, {
-      id: firstId,
-      source: 'telegram',
+    await seedTelegramConversationReview(db as never, {
+      rawEventId: firstId,
+      reviewId,
+      chatId: '321',
       text: 'Move the Acme kickoff to Monday at 3.',
       occurredAt: new Date('2026-05-27T10:00:00.000Z'),
-      sourceMetadata: { tg_chat_id: '321', tg_message_id: '1' },
-    });
-    await seedConversationReview(db as never, {
-      id: reviewId,
-      conversationKey,
-      lastRawEventId: firstId,
-      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
     });
     const chat = vi
       .fn()
@@ -1623,6 +1642,7 @@ describe('processSuggestionJobForTests', () => {
 
   it('creates a lifecycle update proposal when evidence clearly completes an existing task', async () => {
     const rawEventId = '10000000-0000-0000-0000-0000000000e3';
+    const reviewId = '20000000-0000-0000-0000-0000000000e3';
     await db.insert(entities).values({
       id: OBJECT_ID,
       teamId: TEAM_ID,
@@ -1631,17 +1651,11 @@ describe('processSuggestionJobForTests', () => {
       status: 'open',
       metadata: {},
     });
-    await seedRawEvent(db as never, {
-      id: rawEventId,
-      source: 'telegram',
+    await seedTelegramConversationReview(db as never, {
+      rawEventId,
+      reviewId,
+      chatId: '654',
       text: 'I sent the Acme deck.',
-      sourceMetadata: { tg_chat_id: '654', tg_message_id: '1' },
-    });
-    await seedConversationReview(db as never, {
-      id: '20000000-0000-0000-0000-0000000000e3',
-      conversationKey: `telegram:${TEAM_ID}:chat:654`,
-      lastRawEventId: rawEventId,
-      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
     });
     const chat = vi.fn().mockResolvedValue({
       model: MODEL_ID,
@@ -1671,7 +1685,7 @@ describe('processSuggestionJobForTests', () => {
       { db: db as never },
       {
         scope: 'conversation_review',
-        conversationReviewId: '20000000-0000-0000-0000-0000000000e3',
+        conversationReviewId: reviewId,
         teamId: TEAM_ID,
       },
       { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
@@ -1691,6 +1705,7 @@ describe('processSuggestionJobForTests', () => {
 
   it('creates no lifecycle proposal when completion evidence is ambiguous', async () => {
     const rawEventId = '10000000-0000-0000-0000-0000000000e4';
+    const reviewId = '20000000-0000-0000-0000-0000000000e4';
     await db.insert(entities).values([
       {
         id: OBJECT_ID,
@@ -1709,17 +1724,11 @@ describe('processSuggestionJobForTests', () => {
         metadata: {},
       },
     ]);
-    await seedRawEvent(db as never, {
-      id: rawEventId,
-      source: 'telegram',
+    await seedTelegramConversationReview(db as never, {
+      rawEventId,
+      reviewId,
+      chatId: '655',
       text: 'Done with the deck.',
-      sourceMetadata: { tg_chat_id: '655', tg_message_id: '1' },
-    });
-    await seedConversationReview(db as never, {
-      id: '20000000-0000-0000-0000-0000000000e4',
-      conversationKey: `telegram:${TEAM_ID}:chat:655`,
-      lastRawEventId: rawEventId,
-      quietUntil: new Date('2026-05-27T09:00:00.000Z'),
     });
     const chat = emptyModel();
 
@@ -1727,7 +1736,7 @@ describe('processSuggestionJobForTests', () => {
       { db: db as never },
       {
         scope: 'conversation_review',
-        conversationReviewId: '20000000-0000-0000-0000-0000000000e4',
+        conversationReviewId: reviewId,
         teamId: TEAM_ID,
       },
       { getEnv: env, chatStructured: chat, modelId: MODEL_ID },

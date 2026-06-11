@@ -43,6 +43,14 @@ const USER_ID = '22222222-2222-4222-8222-222222222222';
 const MEMBER_ID = '33333333-3333-4333-8333-333333333333';
 const EVENT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
+function expectCanonicalReconciliation(input: Record<string, unknown>): void {
+  expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledWith(input);
+}
+
+function expectApprovalsRevalidated(): void {
+  expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.fakeAuth.mockResolvedValue({ user: { id: USER_ID } });
@@ -138,7 +146,7 @@ describe('calendar create/update/delete behavior', () => {
       startAt: new Date('2026-06-03T12:00:00.000Z'),
       visibility: 'private',
     });
-    expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+    expectCanonicalReconciliation({
       targetKind: 'calendar_event',
       targetId: EVENT_ID,
       operation: 'update',
@@ -147,7 +155,7 @@ describe('calendar create/update/delete behavior', () => {
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/calendar');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/calendar/${EVENT_ID}`);
-    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+    expectApprovalsRevalidated();
   });
 
   it('does not supersede approvals for a no-op update', async () => {
@@ -162,7 +170,7 @@ describe('calendar create/update/delete behavior', () => {
     });
 
     expect(fakes.fakeSuggestions.reconcileCanonicalChange).not.toHaveBeenCalled();
-    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+    expectApprovalsRevalidated();
   });
 
   it('returns not-found when update or delete misses', async () => {
@@ -182,13 +190,13 @@ describe('calendar create/update/delete behavior', () => {
   it('supersedes pending approvals when deleting an event directly', async () => {
     await expect(deleteCalendarEventAction(EVENT_ID)).resolves.toEqual({ ok: true, id: EVENT_ID });
 
-    expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+    expectCanonicalReconciliation({
       targetKind: 'calendar_event',
       targetId: EVENT_ID,
       operation: 'archive_or_cancel',
       reason: 'A teammate cancelled this calendar event directly.',
     });
-    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+    expectApprovalsRevalidated();
   });
 
   it('maps dependency failures to action errors', async () => {

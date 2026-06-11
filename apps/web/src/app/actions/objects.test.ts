@@ -77,6 +77,14 @@ const OTHER_OBJECT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const NOTE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const CHANGE_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
+function expectCanonicalReconciliation(input: Record<string, unknown>): void {
+  expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledWith(input);
+}
+
+function expectApprovalsRevalidated(): void {
+  expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.fakeTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
@@ -96,7 +104,11 @@ beforeEach(() => {
     object: { id: OBJECT_ID, type: 'task' },
     changedFields: ['status', 'dueAt'],
   });
-  fakes.fakeObjects.archiveObject.mockResolvedValue({ id: OBJECT_ID, type: 'task' });
+  fakes.fakeObjects.archiveObject.mockResolvedValue({
+    id: OBJECT_ID,
+    type: 'task',
+    changedFields: ['archivedAt'],
+  });
   fakes.fakeObjects.mergeObjects.mockResolvedValue({
     survivor: { id: OBJECT_ID },
     mergedIds: [OTHER_OBJECT_ID],
@@ -118,6 +130,7 @@ beforeEach(() => {
     Promise.resolve({
       id,
       type: id === OBJECT_ID ? 'task' : 'person',
+      changedFields: ['archivedAt'],
     }),
   );
   fakes.fakeEnqueueSuggestionJob.mockResolvedValue({ enqueued: true, jobId: 'cleanup-job' });
@@ -206,7 +219,7 @@ describe('object CRUD actions', () => {
       { status: 'doing', dueAt: null },
       { kind: 'user', userId: USER_ID },
     );
-    expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+    expectCanonicalReconciliation({
       targetKind: 'task',
       targetId: OBJECT_ID,
       operation: 'update',
@@ -217,7 +230,7 @@ describe('object CRUD actions', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/tasks');
-    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+    expectApprovalsRevalidated();
   });
 
   it('archives an object and refreshes surfaces that hide archived rows', async () => {
@@ -227,14 +240,28 @@ describe('object CRUD actions', () => {
       kind: 'user',
       userId: USER_ID,
     });
-    expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+    expectCanonicalReconciliation({
       targetKind: 'task',
       targetId: OBJECT_ID,
       operation: 'archive_or_cancel',
       reason: 'A teammate archived this object directly.',
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
-    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+    expectApprovalsRevalidated();
+  });
+
+  it('does not supersede approvals when archiving is a no-op', async () => {
+    fakes.fakeObjects.archiveObject.mockResolvedValueOnce({
+      id: OBJECT_ID,
+      type: 'task',
+      changedFields: [],
+    });
+
+    await expect(archiveObjectAction({ id: OBJECT_ID })).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeSuggestions.reconcileCanonicalChange).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
+    expectApprovalsRevalidated();
   });
 
   it('bulk archives selected objects and refreshes cleanup surfaces', async () => {
@@ -268,7 +295,30 @@ describe('object CRUD actions', () => {
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/objects');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/tasks');
-    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+    expectApprovalsRevalidated();
+  });
+
+  it('skips reconciliation for already-archived objects in bulk archive', async () => {
+    fakes.fakeTransactionObjects.archiveObject.mockImplementation((id: string) =>
+      Promise.resolve({
+        id,
+        type: id === OBJECT_ID ? 'task' : 'person',
+        changedFields: id === OBJECT_ID ? [] : ['archivedAt'],
+      }),
+    );
+
+    await expect(bulkArchiveObjectsAction({ ids: [OBJECT_ID, OTHER_OBJECT_ID] })).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledTimes(1);
+    expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+      targetKind: 'object',
+      targetId: OTHER_OBJECT_ID,
+      operation: 'archive_or_cancel',
+      reason: 'A teammate archived this object directly.',
+    });
+    expectApprovalsRevalidated();
   });
 
   it('does not refresh cleanup surfaces when bulk archive transaction fails', async () => {

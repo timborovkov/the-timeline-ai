@@ -436,6 +436,28 @@ describe('object scope — board and archive visibility', () => {
       expect.objectContaining({ canonicalName: 'Merged duplicate' }),
     );
   });
+
+  it('does not rewrite archivedAt when archiving an already archived object', async () => {
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await ownerScope.createObject({
+      type: 'task',
+      canonicalName: 'Archive once',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const first = await ownerScope.archiveObject(object.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    const second = await ownerScope.archiveObject(object.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+
+    expect(first.changedFields).toEqual(['archivedAt']);
+    expect(second.changedFields).toEqual([]);
+    expect(second.archivedAt?.getTime()).toBe(first.archivedAt?.getTime());
+  });
 });
 
 describe('object scope — merge cleanup', () => {

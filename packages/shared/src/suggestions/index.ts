@@ -85,14 +85,6 @@ export interface CreateSuggestionInput {
   items: SuggestionItemInput[];
 }
 
-export interface CanonicalReconciliationInput {
-  targetKind: Extract<TargetKind, 'object' | 'task' | 'calendar_event'>;
-  targetId: string;
-  operation?: Extract<Operation, 'update' | 'archive_or_cancel'>;
-  patch?: Record<string, unknown>;
-  reason?: string;
-}
-
 export type SuggestionListStatus = 'pending' | 'resolved' | 'failed' | 'all';
 
 export interface SuggestionBundle {
@@ -279,6 +271,10 @@ function payloadKeysOverlap(
   return false;
 }
 
+function itemArtifactIds(item: typeof agentSuggestionItems.$inferSelect): Set<string> {
+  return new Set([item.targetId, item.resultId].filter((id): id is string => Boolean(id)));
+}
+
 function artifactExternalKey(item: typeof agentSuggestionItems.$inferSelect): string | null {
   const payload = item.proposedPayload;
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
@@ -352,19 +348,20 @@ function shouldSupersedePendingItem(args: {
   if (olderItem.id === newerItem.id) return false;
   if (olderItem.targetKind !== newerItem.targetKind) return false;
 
-  if (olderItem.resultId && newerItem.resultId && olderItem.resultId === newerItem.resultId) {
-    return true;
-  }
-
   const olderExternalKey = artifactExternalKey(olderItem);
   if (olderExternalKey && olderExternalKey === artifactExternalKey(newerItem)) return true;
 
-  if (olderItem.targetId && newerItem.targetId && olderItem.targetId === newerItem.targetId) {
+  const newerArtifactIds = itemArtifactIds(newerItem);
+  const sameArtifact = [...itemArtifactIds(olderItem)].some((id) => newerArtifactIds.has(id));
+  if (sameArtifact) {
     if (
       olderItem.operation === 'archive_or_cancel' ||
       newerItem.operation === 'archive_or_cancel'
     ) {
       return true;
+    }
+    if (olderItem.operation === 'create' || newerItem.operation === 'create') {
+      return payloadKeysOverlap(olderItem, newerItem);
     }
     return olderItem.operation === newerItem.operation && payloadKeysOverlap(olderItem, newerItem);
   }
@@ -560,7 +557,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function supersedeItem(
     itemId: string,
-    supersededByItemId: string,
+    supersededByItemId: string | null,
     reason: string,
   ): Promise<boolean> {
     const [row] = await db
@@ -682,7 +679,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
-  async function reconcileCanonicalChange(input: CanonicalReconciliationInput): Promise<number> {
+  async function reconcileCanonicalChange(input: {
+    targetKind: Extract<TargetKind, 'object' | 'task' | 'calendar_event'>;
+    targetId: string;
+    operation?: Extract<Operation, 'update' | 'archive_or_cancel'>;
+    patch?: Record<string, unknown>;
+    reason?: string;
+  }): Promise<number> {
     await ensureMember();
     const operation = input.operation ?? 'update';
     const patchKeys = new Set(Object.keys(input.patch ?? {}));
@@ -710,28 +713,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         candidateKeys.size === 0 ||
         [...patchKeys].some((key) => candidateKeys.has(key));
       if (!conflicts) continue;
-      const [row] = await db
-        .update(agentSuggestionItems)
-        .set({
-          status: 'superseded',
-          supersededByItemId: null,
-          supersededReason:
-            input.reason ?? 'Canonical state changed outside this pending approval.',
-          resolvedAt: new Date(),
-          resolvedByUserId: null,
-          updatedAt: new Date(),
-          failureReason: null,
-        })
-        .where(
-          and(
-            eq(agentSuggestionItems.id, candidate.item.id),
-            inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
-          ),
+      if (
+        await supersedeItem(
+          candidate.item.id,
+          null,
+          input.reason ?? 'Canonical state changed outside this pending approval.',
         )
-        .returning({ suggestionId: agentSuggestionItems.suggestionId });
-      if (!row) continue;
-      superseded += 1;
-      await refreshBundleStatus(row.suggestionId);
+      ) {
+        superseded += 1;
+      }
     }
     return superseded;
   }

@@ -15,6 +15,59 @@ import { reportCaughtError } from '@/lib/sentry-report';
 // require synchronizing this schema with the drizzle enum by hand.
 const objectTypeSchema = z.enum(objects.OBJECT_TYPES);
 
+type ObjectSuggestionTargetKind = 'object' | 'task';
+
+interface ObjectReconciliationScope {
+  reconcileCanonicalChange(input: {
+    targetKind: ObjectSuggestionTargetKind;
+    targetId: string;
+    operation?: 'update' | 'archive_or_cancel';
+    patch?: Record<string, unknown>;
+    reason?: string;
+  }): Promise<number>;
+}
+
+function objectSuggestionTargetKind(type: string): ObjectSuggestionTargetKind {
+  return type === 'task' ? 'task' : 'object';
+}
+
+async function reconcileObjectUpdate(
+  suggestions: ObjectReconciliationScope,
+  args: { id: string; type: string; changedFields: string[] },
+): Promise<void> {
+  if (args.changedFields.length === 0) return;
+  await suggestions.reconcileCanonicalChange({
+    targetKind: objectSuggestionTargetKind(args.type),
+    targetId: args.id,
+    operation: 'update',
+    patch: Object.fromEntries(args.changedFields.map((field) => [field, true])),
+    reason: 'A teammate updated this object directly.',
+  });
+}
+
+async function reconcileArchivedObject(
+  suggestions: ObjectReconciliationScope,
+  archived: { id: string; type: string; changedFields?: string[] },
+): Promise<void> {
+  if (archived.changedFields && !archived.changedFields.includes('archivedAt')) return;
+  await suggestions.reconcileCanonicalChange({
+    targetKind: objectSuggestionTargetKind(archived.type),
+    targetId: archived.id,
+    operation: 'archive_or_cancel',
+    reason: 'A teammate archived this object directly.',
+  });
+}
+
+function revalidateObjectMutationSurfaces(ids: string | string[]): void {
+  for (const id of Array.isArray(ids) ? ids : [ids]) revalidatePath(`/app/objects/${id}`);
+  revalidatePath('/app/objects');
+  // Board pages receive object rows through layout data; refresh the layout so
+  // optimistic updates do not snap back to stale cards.
+  revalidatePath('/app/boards', 'layout');
+  revalidatePath('/app/tasks');
+  revalidatePath('/app/approvals');
+}
+
 /**
  * Map opaque Postgres error codes to UI-friendly messages. drizzle/postgres-js
  * exposes `err.code` (the 5-char SQLSTATE) on driver errors. Without this
@@ -110,25 +163,12 @@ export async function updateObjectAction(input: unknown): Promise<ActionState> {
         kind: 'user',
         userId: r.userId,
       });
-      if (result.changedFields.length > 0) {
-        await r.scope.suggestions.reconcileCanonicalChange({
-          targetKind: result.object.type === 'task' ? 'task' : 'object',
-          targetId: id,
-          operation: 'update',
-          patch: Object.fromEntries(result.changedFields.map((field) => [field, true])),
-          reason: 'A teammate updated this object directly.',
-        });
-      }
-      revalidatePath('/app/objects');
-      revalidatePath(`/app/objects/${id}`);
-      // Kanban drag-to-move triggers updateObjectAction from a board page.
-      // Without these the optimistic update snaps back to the stale rows
-      // prop on `router.refresh()` and the card visibly jumps back to its
-      // original column. `layout` scope covers all `/app/boards/[id]`
-      // permutations without needing the id here.
-      revalidatePath('/app/boards', 'layout');
-      revalidatePath('/app/tasks');
-      revalidatePath('/app/approvals');
+      await reconcileObjectUpdate(r.scope.suggestions, {
+        id,
+        type: result.object.type,
+        changedFields: result.changedFields,
+      });
+      revalidateObjectMutationSurfaces(id);
       return { ok: true, id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to update object') };
@@ -147,19 +187,8 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
         kind: 'user',
         userId: r.userId,
       });
-      await r.scope.suggestions.reconcileCanonicalChange({
-        targetKind: archived.type === 'task' ? 'task' : 'object',
-        targetId: parsed.data.id,
-        operation: 'archive_or_cancel',
-        reason: 'A teammate archived this object directly.',
-      });
-      revalidatePath('/app/objects');
-      revalidatePath(`/app/objects/${parsed.data.id}`);
-      // Archived objects must drop out of any board/kanban view that was
-      // surfacing them. Matches the revalidation set in updateObjectAction.
-      revalidatePath('/app/boards', 'layout');
-      revalidatePath('/app/tasks');
-      revalidatePath('/app/approvals');
+      await reconcileArchivedObject(r.scope.suggestions, archived);
+      revalidateObjectMutationSurfaces(parsed.data.id);
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to archive') };
@@ -190,18 +219,9 @@ export async function bulkArchiveObjectsAction(input: unknown): Promise<ActionSt
         return archived;
       });
       for (const archived of archivedObjects) {
-        await r.scope.suggestions.reconcileCanonicalChange({
-          targetKind: archived.type === 'task' ? 'task' : 'object',
-          targetId: archived.id,
-          operation: 'archive_or_cancel',
-          reason: 'A teammate archived this object directly.',
-        });
+        await reconcileArchivedObject(r.scope.suggestions, archived);
       }
-      for (const id of ids) revalidatePath(`/app/objects/${id}`);
-      revalidatePath('/app/objects');
-      revalidatePath('/app/boards', 'layout');
-      revalidatePath('/app/tasks');
-      revalidatePath('/app/approvals');
+      revalidateObjectMutationSurfaces(ids);
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to archive selected objects') };
