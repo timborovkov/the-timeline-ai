@@ -8,6 +8,7 @@ import { useMemo, useState, useTransition } from 'react';
 import type * as objects from '@timeline/shared/objects';
 
 import { mergeObjectsAction } from '@/app/actions/objects';
+import { Button } from '@/components/ui/button';
 
 interface Props {
   objects: objects.ObjectRow[];
@@ -22,6 +23,8 @@ interface Props {
     }
   >;
   suggestionItemId?: string;
+  onCancel?: () => void;
+  onMerged?: (survivorId: string) => void;
 }
 
 const emptyCounts = {
@@ -60,6 +63,8 @@ export function ObjectMergeForm({
   initialSurvivorId,
   countsBySurvivorId,
   suggestionItemId,
+  onCancel,
+  onMerged,
 }: Props) {
   const router = useRouter();
   const [survivorId, setSurvivorId] = useState(initialSurvivorId);
@@ -84,6 +89,10 @@ export function ObjectMergeForm({
       });
       if (result.error) {
         setError(result.error);
+        return;
+      }
+      if (onMerged) {
+        onMerged(result.id ?? survivorId);
         return;
       }
       router.push('/app/objects');
@@ -163,22 +172,30 @@ export function ObjectMergeForm({
       ) : null}
 
       <div className="flex flex-wrap justify-end gap-2">
-        <Link
-          href="/app/objects"
-          className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-border px-3 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
-        >
-          <X className="h-3.5 w-3.5" aria-hidden />
-          Cancel
-        </Link>
-        <button
+        {onCancel ? (
+          <Button type="button" size="sm" variant="outline" onClick={onCancel}>
+            <X className="size-4" />
+            Close
+          </Button>
+        ) : (
+          <Link
+            href="/app/objects"
+            className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-border px-3 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden />
+            Cancel
+          </Link>
+        )}
+        <Button
           type="button"
+          size="sm"
           onClick={confirmMerge}
           disabled={isPending}
-          className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-signal/40 bg-signal-soft px-3 font-mono text-[11px] uppercase tracking-[0.1em] text-signal transition-colors hover:bg-signal-soft/80 disabled:cursor-not-allowed disabled:opacity-50"
+          className="border border-signal/40 bg-signal-soft font-mono text-[11px] uppercase tracking-[0.1em] text-signal hover:bg-signal-soft/80"
         >
-          <GitMerge className="h-3.5 w-3.5" aria-hidden />
-          Merge
-        </button>
+          <GitMerge className="size-4" />
+          {isPending ? 'Merging' : 'Merge'}
+        </Button>
       </div>
     </div>
   );
