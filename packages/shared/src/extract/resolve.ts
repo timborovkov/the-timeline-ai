@@ -27,6 +27,8 @@ export interface ResolveEntityInput {
   aliases?: string[];
   /** Fact statement used as disambiguation context when ambiguous. */
   factStatement?: string;
+  createIfMissing?: boolean;
+  updateAliases?: boolean;
 }
 
 interface EntityRow {
@@ -140,6 +142,7 @@ async function insertEntityRow(tx: DbOrTx, input: ResolveEntityInput): Promise<s
         eq(entities.teamId, input.teamId),
         eq(entities.type, input.type),
         isNull(entities.mergedIntoId),
+        isNull(entities.archivedAt),
         sql`lower(${entities.canonicalName}) = ${input.name.toLowerCase()}`,
       ),
     )
@@ -172,7 +175,7 @@ export async function resolveEntity(
   tx: DbOrTx,
   input: ResolveEntityInput,
   llmDeps: ChatDeps = {},
-): Promise<string> {
+): Promise<string | null> {
   const lowerName = input.name.toLowerCase();
   // Case-insensitive alias match. Using @> with the raw-cased input would
   // miss "John" vs "john" mismatches and silently create duplicate entities.
@@ -192,6 +195,7 @@ export async function resolveEntity(
       and(
         eq(entities.teamId, input.teamId),
         isNull(entities.mergedIntoId),
+        isNull(entities.archivedAt),
         sql`(${lowerCanonical} = ${lowerName} OR ${aliasMatch})`,
       ),
     )) as EntityRow[];
@@ -201,6 +205,7 @@ export async function resolveEntity(
   const candidates = matches.filter((m) => m.type === input.type);
 
   if (candidates.length === 0) {
+    if (input.createIfMissing === false) return null;
     return insertEntityRow(tx, input);
   }
 
@@ -211,28 +216,31 @@ export async function resolveEntity(
     chosen = await disambiguate(candidates, input, llmDeps);
     if (!chosen) {
       // LLM said "none of these" — create a new entity (race-safe).
+      if (input.createIfMissing === false) return null;
       return insertEntityRow(tx, input);
     }
   }
   if (!chosen) throw new Error('resolveEntity: no candidate selected');
 
-  const existingAliases = aliasesArray(chosen.aliases);
-  const incoming = [
-    ...(input.aliases ?? []),
-    // If we matched on a name different from the canonical, keep the variant.
-    input.name === chosen.canonicalName ? null : input.name,
-  ].filter((s): s is string => typeof s === 'string' && s.length > 0);
-  const newAliases = incoming.filter(
-    (a) => !existingAliases.some((e) => e.toLowerCase() === a.toLowerCase()),
-  );
-  if (newAliases.length > 0) {
-    const merged = [...existingAliases, ...newAliases];
-    await (tx as unknown as Db)
-      .update(entities)
-      .set({ aliases: merged, updatedAt: new Date() })
-      .where(eq(entities.id, chosen.id));
-    // Re-embed: alias additions change the entity disambiguation text.
-    fireAndForgetEntityEmbed(input.teamId, chosen.id);
+  if (input.updateAliases !== false) {
+    const existingAliases = aliasesArray(chosen.aliases);
+    const incoming = [
+      ...(input.aliases ?? []),
+      // If we matched on a name different from the canonical, keep the variant.
+      input.name === chosen.canonicalName ? null : input.name,
+    ].filter((s): s is string => typeof s === 'string' && s.length > 0);
+    const newAliases = incoming.filter(
+      (a) => !existingAliases.some((e) => e.toLowerCase() === a.toLowerCase()),
+    );
+    if (newAliases.length > 0) {
+      const merged = [...existingAliases, ...newAliases];
+      await (tx as unknown as Db)
+        .update(entities)
+        .set({ aliases: merged, updatedAt: new Date() })
+        .where(eq(entities.id, chosen.id));
+      // Re-embed: alias additions change the entity disambiguation text.
+      fireAndForgetEntityEmbed(input.teamId, chosen.id);
+    }
   }
   return chosen.id;
 }
@@ -247,13 +255,16 @@ export async function resolveMentions(
   mentions: EntityMention[],
   factStatement: string,
   llmDeps: ChatDeps = {},
-): Promise<string[]> {
-  const cache = new Map<string, string>();
-  const out: string[] = [];
+  opts: { createIfMissing?: boolean; updateAliases?: boolean } = {},
+): Promise<(string | null)[]> {
+  const cache = new Map<string, string | null>();
+  const out: (string | null)[] = [];
   for (const m of mentions) {
     const key = `${m.type}:${m.name.toLowerCase()}`;
-    let id = cache.get(key);
-    if (!id) {
+    let id: string | null;
+    if (cache.has(key)) {
+      id = cache.get(key) ?? null;
+    } else {
       id = await resolveEntity(
         tx,
         {
@@ -262,6 +273,8 @@ export async function resolveMentions(
           type: m.type,
           ...(m.aliases ? { aliases: m.aliases } : {}),
           factStatement,
+          ...(opts.createIfMissing === undefined ? {} : { createIfMissing: opts.createIfMissing }),
+          ...(opts.updateAliases === undefined ? {} : { updateAliases: opts.updateAliases }),
         },
         llmDeps,
       );

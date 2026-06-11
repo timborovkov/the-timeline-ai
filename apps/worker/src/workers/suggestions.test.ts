@@ -366,6 +366,94 @@ describe('processSuggestionJobForTests', () => {
     );
   });
 
+  it('suggests approval-backed person merges for full-name and short-name variants', async () => {
+    const inserted = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'person', canonicalName: 'Tim Borovkov' },
+        { teamId: TEAM_ID, type: 'person', canonicalName: 'Tim' },
+      ])
+      .returning({ id: entities.id });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    const coveredObjectIds = new Set(
+      bundles.flatMap((bundle) =>
+        bundle.items.flatMap((item) => {
+          const objectIds = item.proposedPayload.objectIds;
+          return Array.isArray(objectIds)
+            ? objectIds.filter((value): value is string => typeof value === 'string')
+            : [];
+        }),
+      ),
+    );
+    expect(coveredObjectIds).toEqual(new Set(inserted.map((row) => row.id)));
+    expect(
+      bundles.flatMap((bundle) => bundle.items).every((item) => item.targetKind === 'object_merge'),
+    ).toBe(true);
+  });
+
+  it('suggests approval-backed person merges for explicit handle aliases', async () => {
+    const inserted = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'person', canonicalName: 'Tim Borovkov', aliases: ['timb0'] },
+        { teamId: TEAM_ID, type: 'person', canonicalName: 'timb0' },
+      ])
+      .returning({ id: entities.id });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    const coveredObjectIds = new Set(
+      bundles.flatMap((bundle) =>
+        bundle.items.flatMap((item) => {
+          const objectIds = item.proposedPayload.objectIds;
+          return Array.isArray(objectIds)
+            ? objectIds.filter((value): value is string => typeof value === 'string')
+            : [];
+        }),
+      ),
+    );
+    expect(coveredObjectIds).toEqual(new Set(inserted.map((row) => row.id)));
+    expect(
+      bundles.flatMap((bundle) => bundle.items).every((item) => item.targetKind === 'object_merge'),
+    ).toBe(true);
+  });
+
+  it('does not suggest person merges from first-name prefixes or numbered handle variants', async () => {
+    await db.insert(entities).values([
+      { teamId: TEAM_ID, type: 'person', canonicalName: 'Tim' },
+      { teamId: TEAM_ID, type: 'person', canonicalName: 'Timothy' },
+      { teamId: TEAM_ID, type: 'person', canonicalName: 'timbo1' },
+      { teamId: TEAM_ID, type: 'person', canonicalName: 'timbo2' },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
   it('skips archive cleanup suggestions for objects with notes, facts, or relationships', async () => {
     const [withNote, withFact, withRelationship, related] = await db
       .insert(entities)
@@ -534,6 +622,650 @@ describe('processSuggestionJobForTests', () => {
       proposedPayload: {
         type: 'decision',
         canonicalName: 'Sunset Project X',
+        status: 'accepted',
+      },
+    });
+  });
+
+  it('rewrites model-backed duplicate object creates into updates for existing objects', async () => {
+    const rawEventId = '10000000-0000-0000-0000-00000000002d';
+    const [person] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'person',
+        canonicalName: 'Tim Borovkov',
+      })
+      .returning({ id: entities.id });
+    if (!person) throw new Error('expected person fixture');
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Tim is also timbo0.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Remember Tim identity',
+            summary: 'Tim is also timbo0.',
+            reason: 'The source gives a person identity variant.',
+            confidence: 'high',
+            quote: 'Tim is also timbo0.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Tim',
+                proposedPayload: {
+                  type: 'person',
+                  canonicalName: 'Tim',
+                  aliases: ['timbo0'],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    const item = bundle?.items[0];
+    expect(item).toMatchObject({
+      operation: 'update',
+      targetKind: 'object',
+      targetId: person.id,
+      title: 'Update Tim Borovkov',
+    });
+    const aliases = Array.isArray(item?.proposedPayload.aliases)
+      ? item.proposedPayload.aliases
+      : [];
+    expect(aliases).toEqual(expect.arrayContaining(['Tim', 'timbo0']));
+  });
+
+  it('does not rewrite person creates from first-name prefixes or numbered handle variants', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000036';
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'person',
+        canonicalName: 'Timothy',
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'person',
+        canonicalName: 'timbo1',
+      },
+    ]);
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Tim is also timbo2.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Remember Tim identity',
+            summary: 'Tim is also timbo2.',
+            reason: 'The source gives a person identity variant.',
+            confidence: 'high',
+            quote: 'Tim is also timbo2.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Tim',
+                proposedPayload: {
+                  type: 'person',
+                  canonicalName: 'Tim',
+                  aliases: ['timbo2'],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'object',
+      targetId: null,
+      title: 'Tim',
+      proposedPayload: {
+        canonicalName: 'Tim',
+        aliases: ['timbo2'],
+      },
+    });
+  });
+
+  it('preserves durable scalar fields without carrying metadata when rewriting duplicate creates into updates', async () => {
+    const rawEventId = '10000000-0000-0000-0000-00000000002f';
+    const [deal] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'deal',
+        canonicalName: 'Acme renewal',
+        stage: 'discovery',
+        priority: 4,
+        metadata: { integration_id: 'crm-123' },
+      })
+      .returning({ id: entities.id });
+    if (!deal) throw new Error('expected deal fixture');
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Move Acme renewal to negotiation and mark it priority 2.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Update Acme renewal',
+            summary: 'The deal stage and priority changed.',
+            reason: 'The source gives durable deal updates.',
+            confidence: 'high',
+            quote: 'Move Acme renewal to negotiation and mark it priority 2.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Acme renewal',
+                proposedPayload: {
+                  type: 'deal',
+                  canonicalName: 'Acme renewal',
+                  aliases: ['Acme'],
+                  stage: 'negotiation',
+                  priority: 2,
+                  metadata: { source: 'crm-review' },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'update',
+      targetKind: 'object',
+      targetId: deal.id,
+      title: 'Update Acme renewal',
+      proposedPayload: {
+        stage: 'negotiation',
+        priority: 2,
+        aliases: ['Acme'],
+      },
+    });
+    expect(bundle?.items[0]?.proposedPayload).not.toHaveProperty('metadata');
+  });
+
+  it('rewrites duplicate creates using objects outside the prompt context window', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000031';
+    const [oldObject] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: 'Legacy migration',
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      })
+      .returning({ id: entities.id });
+    if (!oldObject) throw new Error('expected old object fixture');
+    await db.insert(entities).values(
+      Array.from({ length: 45 }, (_unused, index) => ({
+        teamId: TEAM_ID,
+        type: 'project' as const,
+        canonicalName: `Recent project ${index}`,
+        updatedAt: new Date(`2026-02-${String((index % 28) + 1).padStart(2, '0')}T00:00:00.000Z`),
+      })),
+    );
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Legacy migration is now blocked.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Update Legacy migration',
+            summary: 'The project status changed.',
+            reason: 'The source gives a durable project update.',
+            confidence: 'high',
+            quote: 'Legacy migration is now blocked.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Legacy migration',
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: 'Legacy migration',
+                  status: 'blocked',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'update',
+      targetKind: 'object',
+      targetId: oldObject.id,
+      proposedPayload: { status: 'blocked' },
+    });
+  });
+
+  it('keeps duplicate creates when non-person matching is ambiguous', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000032';
+    await db.insert(entities).values([
+      { teamId: TEAM_ID, type: 'company', canonicalName: 'KPMG' },
+      { teamId: TEAM_ID, type: 'vendor', canonicalName: 'KPMG' },
+    ]);
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'KPMG is now shortlisted.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track KPMG',
+            summary: 'KPMG has a durable status update.',
+            reason: 'The source gives status but existing matches are ambiguous.',
+            confidence: 'medium',
+            quote: 'KPMG is now shortlisted.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'KPMG',
+                proposedPayload: {
+                  type: 'company',
+                  canonicalName: 'KPMG',
+                  status: 'shortlisted',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'object',
+      targetId: null,
+      title: 'KPMG',
+      proposedPayload: {
+        type: 'company',
+        canonicalName: 'KPMG',
+        status: 'shortlisted',
+      },
+    });
+  });
+
+  it('does not rewrite numbered non-person objects as duplicate updates', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000033';
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'project',
+      canonicalName: 'Phase 1',
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Phase 2 is now blocked.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track Phase 2',
+            summary: 'Phase 2 status changed.',
+            reason: 'The source gives a durable project update.',
+            confidence: 'high',
+            quote: 'Phase 2 is now blocked.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Phase 2',
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: 'Phase 2',
+                  status: 'blocked',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'object',
+      targetId: null,
+      title: 'Phase 2',
+      proposedPayload: {
+        canonicalName: 'Phase 2',
+        status: 'blocked',
+      },
+    });
+  });
+
+  it('does not rewrite duplicate creates into archived objects', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000034';
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'project',
+      canonicalName: 'Dormant migration',
+      archivedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Dormant migration is now blocked.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track Dormant migration',
+            summary: 'The project status changed.',
+            reason: 'The source gives a durable project update.',
+            confidence: 'high',
+            quote: 'Dormant migration is now blocked.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Dormant migration',
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: 'Dormant migration',
+                  status: 'blocked',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'object',
+      targetId: null,
+      proposedPayload: {
+        canonicalName: 'Dormant migration',
+        status: 'blocked',
+      },
+    });
+  });
+
+  it('drops model-backed low-signal platform object creates', async () => {
+    const rawEventId = '10000000-0000-0000-0000-00000000002e';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Otto shared a link to an X post by asaadmahmood5.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track X',
+            summary: 'Otto shared an X link.',
+            reason: 'The source mentions X.',
+            confidence: 'medium',
+            quote: 'Otto shared a link to an X post by asaadmahmood5.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'X',
+                proposedPayload: {
+                  type: 'company',
+                  canonicalName: 'X',
+                  aliases: ['Twitter'],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
+  it('drops metadata-only low-signal platform object creates', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000035';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Otto shared a link to an X post by asaadmahmood5.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track X',
+            summary: 'Otto shared an X link.',
+            reason: 'The source mentions X.',
+            confidence: 'medium',
+            quote: 'Otto shared a link to an X post by asaadmahmood5.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'X',
+                proposedPayload: {
+                  type: 'company',
+                  canonicalName: 'X',
+                  metadata: { model_reason: 'platform mention' },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
+  it('keeps durable platform object creates even when the name is usually low-signal', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000030';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'We decided to move GitHub procurement to accepted.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track GitHub procurement decision',
+            summary: 'GitHub procurement is now accepted.',
+            reason: 'The source gives durable status for the vendor.',
+            confidence: 'high',
+            quote: 'We decided to move GitHub procurement to accepted.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'GitHub',
+                proposedPayload: {
+                  type: 'company',
+                  canonicalName: 'GitHub',
+                  status: 'accepted',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'object',
+      title: 'GitHub',
+      proposedPayload: {
+        type: 'company',
+        canonicalName: 'GitHub',
         status: 'accepted',
       },
     });

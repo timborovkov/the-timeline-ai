@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import { facts, factEntities, rawEvents, type Db } from '@timeline/db';
+import { entities, facts, factEntities, rawEvents, type Db } from '@timeline/db';
 import { type queue } from '@timeline/shared';
 import {
   currentExtractionModelVersions,
@@ -129,6 +129,10 @@ describe('processExtractJobForTests', () => {
   it('extracts team-visible raw events into facts, entities, suggestion work, and embed fanout', async () => {
     const rawEventId = '33333333-3333-4333-8333-333333333333';
     await seedEvent(db, { id: rawEventId, text: 'Acme is evaluating Timeline for Q4.' });
+    await db.insert(entities).values([
+      { teamId: TEAM_ID, type: 'company', canonicalName: 'Acme' },
+      { teamId: TEAM_ID, type: 'project', canonicalName: 'Timeline' },
+    ]);
     const testIO = io({
       chatStructured: modelWithFacts([
         {
@@ -161,6 +165,68 @@ describe('processExtractJobForTests', () => {
       teamId: TEAM_ID,
       factId,
     });
+  });
+
+  it('does not create workspace objects for unmatched extracted mentions', async () => {
+    const rawEventId = '33333333-3333-4333-8333-333333333334';
+    await seedEvent(db, { id: rawEventId, text: 'Tecci is evaluating Timeline for Q4.' });
+    const testIO = io({
+      chatStructured: modelWithFacts([
+        {
+          statement: 'Tecci is evaluating Timeline for Q4.',
+          confidence: 0.92,
+          mentions: [
+            { name: 'Tecci', type: 'company', role: 'subject' },
+            { name: 'Timeline', type: 'project', role: 'object' },
+          ],
+        },
+      ]),
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({ rawEventId, factsInserted: 1, modelVersion: MODEL_VERSION });
+
+    const [fact] = await db.select().from(facts).where(eq(facts.rawEventId, rawEventId));
+    if (!fact) throw new Error('expected extracted fact');
+    await expect(
+      db.select().from(factEntities).where(eq(factEntities.factId, fact.id)),
+    ).resolves.toEqual([]);
+    await expect(db.select().from(entities).where(eq(entities.teamId, TEAM_ID))).resolves.toEqual(
+      [],
+    );
+  });
+
+  it('drops noisy message-mechanics facts before persistence', async () => {
+    const rawEventId = '33333333-3333-4333-8333-333333333335';
+    await seedEvent(db, {
+      id: rawEventId,
+      text: 'Otto shared a link to an X post by asaadmahmood5.',
+    });
+    const testIO = io({
+      chatStructured: modelWithFacts([
+        {
+          statement: 'Otto shared a link to an X post by asaadmahmood5.',
+          confidence: 1,
+          mentions: [
+            { name: 'Otto', type: 'person', role: 'subject' },
+            { name: 'X', type: 'company', role: 'object', aliases: ['Twitter'] },
+            { name: 'asaadmahmood5', type: 'person', role: 'object' },
+          ],
+        },
+      ]),
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({ rawEventId, factsInserted: 0, modelVersion: MODEL_VERSION });
+
+    await expect(db.select().from(facts).where(eq(facts.rawEventId, rawEventId))).resolves.toEqual(
+      [],
+    );
+    await expect(db.select().from(entities).where(eq(entities.teamId, TEAM_ID))).resolves.toEqual(
+      [],
+    );
   });
 
   it('normalizes legacy text/entities model output before writing facts', async () => {

@@ -70,11 +70,12 @@
       <p>
         One ingest pipeline, many capture surfaces. Voice notes, written notes, forwarded emails,
         Telegram messages, team documents, and later third-party systems all flow into the same
-        event stream. An LLM extracts objects (people, companies, projects, deals, tasks, documents,
-        incidents), facts ("Tim discussed SaaS licensing with John Ternus at Apple"), relationships,
-        and changes. Documents are processed into searchable chunks with version-aware citations.
-        Everything important is embedded and indexed. An agent answers questions over the timeline
-        and knowledge base: <em>what did the team work on yesterday</em>,
+        event stream. An LLM extracts useful facts ("Tim discussed SaaS licensing with John Ternus
+        at Apple"), links them to existing objects when possible, and proposes approval-backed
+        object changes only when the evidence is durable. Documents are processed into searchable
+        chunks with version-aware citations. Everything important is embedded and indexed. An agent
+        answers questions over the timeline and knowledge base:
+        <em>what did the team work on yesterday</em>,
         <em>what changed on the Apple licensing deal</em>, <em>what's outstanding for Acme</em>,
         <em>what are our office rules</em>, <em>which projects have gone stale</em>.
       </p>
@@ -169,13 +170,15 @@
           meaningful changes, and record document activity on the timeline.
         </li>
         <li>
-          <strong>Extraction.</strong> LLM pulls objects/entities, facts, relationships, tasks, and
-          changes from the transcribed/raw/document text. Output is structured JSON linked back to
-          the raw event or document version.
+          <strong>Extraction.</strong> LLM pulls useful facts and durable-work signals from the
+          transcribed/raw/document text. Output is structured JSON linked back to the raw event or
+          document version; noisy message mechanics and first-mention link targets stay raw
+          evidence.
         </li>
         <li>
-          <strong>Object resolution.</strong> New objects/entities are matched against existing ones
-          ("Apple" vs "Apple Inc" vs "AAPL") with LLM-assisted deduplication and human override.
+          <strong>Object resolution.</strong> Facts link to existing objects when names or aliases
+          match. New object memory goes through approval-backed proposals, and plausible duplicates
+          are merged through human-reviewed cleanup.
         </li>
         <li>
           <strong>Embedding.</strong> Raw text, extracted facts, document chunks, and document
@@ -321,12 +324,13 @@
         </li>
         <li>
           <strong>Extracted facts</strong> — LLM-derived, regenerable. Each fact links to the raw
-          event(s) or document version(s) it came from and the entities it references.
+          event(s) or document version(s) it came from and the existing objects it references.
         </li>
         <li>
           <strong>Objects/entities</strong> — Apple, John Ternus, "SaaS licensing deal Q2", "Office
           rules", "Website redesign", "Renew SOC2". Stable IDs, type, status/stage, owner,
-          relationships, deduplication, human override.
+          relationships, deduplication, human override. They are created intentionally or through
+          approved durable-memory proposals, not from every raw mention.
         </li>
         <li>
           <strong>Object changes and tasks</strong> — structured status changes, field edits, tasks,

@@ -590,10 +590,10 @@ contracts and unit tests for pure branching.
 - P1 embed worker: source rendering, embedding calls, Qdrant payloads, stable
   point IDs, visibility filters, failure stamping, and deterministic retrieval
   smoke coverage.
-- Extract worker: team-visible extraction to facts/entities, private and
-  specific-user skip stamping, missing row/team mismatch/no-text failures,
-  zero-fact idempotency, recent-context privacy filtering, suggestion enqueue,
-  embed fanout, and embed enqueue failure stamping.
+- Extract worker: team-visible extraction to facts with existing-object links,
+  private and specific-user skip stamping, missing row/team mismatch/no-text
+  failures, zero-fact idempotency, recent-context privacy filtering, suggestion
+  enqueue, embed fanout, and embed enqueue failure stamping.
 - Transcribe: retry behavior and provider-backed transcription canary.
 - Integration sync: provider pagination, dedupe keys, visibility defaults,
   encrypted credential usage, and partial failures.

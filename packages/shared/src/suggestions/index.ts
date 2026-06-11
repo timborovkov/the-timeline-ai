@@ -156,6 +156,7 @@ const objectUpdatePayload = z.object({
   assigneeUserId: uuid.nullable().optional(),
   dueAt: z.iso.datetime().nullable().optional(),
   aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const identityFacetPayload = z.object({
@@ -937,6 +938,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         if (parsed.assigneeUserId !== undefined) patch.assigneeUserId = parsed.assigneeUserId;
         if (parsed.dueAt !== undefined) patch.dueAt = parsed.dueAt ? new Date(parsed.dueAt) : null;
         if (parsed.aliases !== undefined) patch.aliases = parsed.aliases;
+        if (parsed.metadata !== undefined) patch.metadata = parsed.metadata;
         await objects.updateObject(targetId, patch, { kind: 'agent', userId: null });
         return targetId;
       }

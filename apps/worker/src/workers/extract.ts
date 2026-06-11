@@ -170,16 +170,27 @@ export async function processExtractJobForTests(
     model: modelId,
   });
   const resultModelVersion = makeExtractionModelVersion(result.model);
-  const extractionResult = extract.normalizeExtractionResult(result.object);
+  const extractionResult = {
+    facts: extract
+      .normalizeExtractionResult(result.object)
+      .facts.filter((fact) => !extract.isNoisyExtractedFact(fact)),
+  };
 
   const resolvedFacts: {
     statement: string;
     confidence: number;
-    entityIds: string[];
+    entityIds: (string | null)[];
     mentions: (typeof extractionResult.facts)[number]['mentions'];
   }[] = [];
   for (const fact of extractionResult.facts) {
-    const entityIds = await extract.resolveMentions(deps.db, teamId, fact.mentions, fact.statement);
+    const entityIds = await extract.resolveMentions(
+      deps.db,
+      teamId,
+      fact.mentions,
+      fact.statement,
+      {},
+      { createIfMissing: false, updateAliases: false },
+    );
     resolvedFacts.push({
       statement: fact.statement,
       confidence: fact.confidence,
