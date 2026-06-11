@@ -10,6 +10,9 @@ const fakes = vi.hoisted(() => ({
 }));
 
 vi.mock('@/app/actions/events', () => ({ removeConversationalEventAction: vi.fn() }));
+vi.mock('@/components/documents/document-preview', () => ({
+  DocumentPreview: () => createElement('button', { type: 'button' }, 'Preview'),
+}));
 vi.mock('@/components/event-visibility-form', () => ({
   EventVisibilityForm: () => createElement('div', null),
 }));
@@ -27,13 +30,14 @@ function timelineEvent(input: {
   id: string;
   occurredAt: string;
   contentText?: string;
+  source?: TimelineEvent['source'];
   sourceMetadata?: Record<string, unknown>;
 }): TimelineEvent {
   return {
     id: input.id,
     teamId: 'team-1',
     authorUserId: null,
-    source: 'meeting',
+    source: input.source ?? 'meeting',
     contentText: input.contentText ?? 'Daily call notes',
     contentAudioUrl: null,
     occurredAt: input.occurredAt,
@@ -106,5 +110,41 @@ describe('TimelineList event anchors', () => {
     expect(html).toContain(`<li id="ev-${focusedEventId}"`);
     expect(html).toContain(`<li id="ev-${taskEventId}"`);
     expect(html.match(new RegExp(`id="ev-${focusedEventId}"`, 'g'))).toHaveLength(1);
+  });
+});
+
+describe('TimelineList document attachments', () => {
+  it('shows previews for upload events but not other document lifecycle events', () => {
+    const uploadId = '66666666-6666-4666-8666-666666666666';
+    const renameId = '77777777-7777-4777-8777-777777777777';
+    const html = renderTimeline([
+      timelineEvent({
+        id: uploadId,
+        occurredAt: '2026-06-03T13:04:00.000Z',
+        source: 'document',
+        contentText: 'Uploaded photo.jpg',
+        sourceMetadata: {
+          action: 'upload',
+          document_id: '88888888-8888-4888-8888-888888888888',
+          document_name: 'photo.jpg',
+          document_version_id: '99999999-9999-4999-8999-999999999999',
+        },
+      }),
+      timelineEvent({
+        id: renameId,
+        occurredAt: '2026-06-03T13:05:00.000Z',
+        source: 'document',
+        contentText: 'Renamed notes.txt',
+        sourceMetadata: {
+          action: 'rename',
+          document_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          document_name: 'notes.txt',
+        },
+      }),
+    ]);
+
+    expect(html).toContain('Attachment · photo.jpg');
+    expect(html).toContain('Attachment · notes.txt');
+    expect(html.match(/Preview/g)).toHaveLength(1);
   });
 });

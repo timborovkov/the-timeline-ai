@@ -20,6 +20,7 @@ import { useMemo } from 'react';
 import type { TimelineEvent } from '@/lib/use-paginated-queries';
 
 import { removeConversationalEventAction } from '@/app/actions/events';
+import { DocumentPreview } from '@/components/documents/document-preview';
 import { EmptyAction } from '@/components/empty-action';
 import { EventVisibilityForm } from '@/components/event-visibility-form';
 import { useInspector } from '@/components/inspector-context';
@@ -285,13 +286,23 @@ function rawEventContextLabel(event: TimelineEvent): string | null {
   return null;
 }
 
-function rawEventDocumentLink(event: TimelineEvent): { href: string; label: string } | null {
+function rawEventDocumentLink(event: TimelineEvent): {
+  href: string;
+  label: string;
+  documentId: string;
+  versionId: string | null;
+  canPreview: boolean;
+} | null {
   const meta = metaObject(event.sourceMetadata);
   const documentId = stringMeta(meta, 'document_id') ?? stringMeta(meta, 'documentId');
   if (!documentId) return null;
+  const action = stringMeta(meta, 'action');
   return {
     href: `/app/documents/${documentId}`,
     label: stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name') ?? 'Attachment',
+    documentId,
+    versionId: stringMeta(meta, 'document_version_id') ?? stringMeta(meta, 'documentVersionId'),
+    canPreview: action === 'upload' || action === 'new_version',
   };
 }
 
@@ -318,9 +329,9 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
         <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
           Source truth
         </h3>
-        <p className="text-sm font-medium leading-6 text-fg">{summary.title}</p>
+        <p className="break-words text-sm font-medium leading-6 text-fg">{summary.title}</p>
         {summary.body ? (
-          <p className="mt-1 text-sm leading-6 text-fg-muted">{summary.body}</p>
+          <p className="mt-1 break-words text-sm leading-6 text-fg-muted">{summary.body}</p>
         ) : null}
         <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
           Visibility · {formatVisibilitySummary(moment.rawEvents)}
@@ -338,13 +349,13 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
                 className="rounded-sm border border-border bg-surface-2 px-2 py-1.5"
               >
                 {item.href ? (
-                  <Link href={item.href} className="text-fg hover:text-signal">
+                  <Link href={item.href} className="break-words text-fg hover:text-signal">
                     {IMPACT_LABEL[item.kind]} · {item.label}
                   </Link>
                 ) : (
-                  <>
+                  <span className="break-words">
                     {IMPACT_LABEL[item.kind]} · {item.label}
-                  </>
+                  </span>
                 )}
                 {item.status ? <span> · {item.status}</span> : null}
               </li>
@@ -358,7 +369,10 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
         </h3>
         <ol className="space-y-2">
           {visibleRawEvents.map((event) => (
-            <li key={event.id} className="rounded-sm border border-border bg-bg px-2.5 py-2">
+            <li
+              key={event.id}
+              className="min-w-0 overflow-hidden rounded-sm border border-border bg-bg px-2.5 py-2"
+            >
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                 <span className="text-fg-muted">
                   {rawEventActorLabel(event, actorByTelegramUserId)}
@@ -366,7 +380,7 @@ function InspectorBody({ moment }: { moment: TimelineMoment }) {
                 {rawEventContextLabel(event) ? <span>{rawEventContextLabel(event)}</span> : null}
                 <time dateTime={event.occurredAt}>{formatTimestamp(event.occurredAt)}</time>
               </div>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
+              <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-fg-muted">
                 {rawEventBody(event)}
               </p>
             </li>
@@ -438,12 +452,26 @@ function RawEventExpansion({
                 {event.visibility === 'private' ? <span>Private</span> : null}
               </div>
               {documentLink ? (
-                <Link
-                  href={documentLink.href}
-                  className="mt-2 inline-flex min-h-7 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:text-signal"
-                >
-                  Attachment · {documentLink.label}
-                </Link>
+                <div className="mt-2 flex min-w-0 flex-wrap items-start gap-2">
+                  <Link
+                    href={documentLink.href}
+                    title={documentLink.label}
+                    className="inline-flex min-h-7 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:text-signal"
+                  >
+                    <span className="min-w-0 truncate">Attachment · {documentLink.label}</span>
+                  </Link>
+                  {documentLink.canPreview ? (
+                    <DocumentPreview
+                      target={{
+                        documentId: documentLink.documentId,
+                        versionId: documentLink.versionId,
+                      }}
+                      label="Preview"
+                      compact
+                      className="w-full sm:w-auto sm:min-w-72"
+                    />
+                  ) : null}
+                </div>
               ) : null}
               {event.contentAudioUrl ? (
                 audioUrlMap?.get(event.id) ? (
@@ -468,7 +496,7 @@ function RawEventExpansion({
                 )
               ) : null}
               {event.contentText?.trim() ? (
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
+                <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-fg-muted">
                   {event.contentText}
                 </p>
               ) : event.contentAudioUrl ? (
@@ -525,14 +553,14 @@ function ImpactStrip({ items }: { items: ImpactItem[] }) {
         const status = item.status ? ` · ${item.status}` : '';
         const label = `${IMPACT_LABEL[item.kind]} · ${item.label}${count}${status}`;
         const className =
-          'inline-flex min-h-6 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted';
+          'inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted';
         return item.href ? (
           <Link key={`${item.kind}:${item.label}:${index}`} href={item.href} className={className}>
-            {label}
+            <span className="min-w-0 truncate">{label}</span>
           </Link>
         ) : (
           <span key={`${item.kind}:${item.label}:${index}`} className={className}>
-            {label}
+            <span className="min-w-0 truncate">{label}</span>
           </span>
         );
       })}
@@ -597,7 +625,10 @@ function TimelineMomentRow({
             </span>
           </div>
           <p
-            className={cn('mt-2 text-sm leading-relaxed text-fg-muted', compact && 'line-clamp-2')}
+            className={cn(
+              'mt-2 break-words text-sm leading-relaxed text-fg-muted',
+              compact && 'line-clamp-2',
+            )}
           >
             {moment.summary}
           </p>
