@@ -78,6 +78,22 @@ describe('DocumentDrive', () => {
           visibility: 'private',
           updatedAt: '2026-06-01T10:00:00.000Z',
           ownerUserId: 'user-1',
+          currentVersion: {
+            id: 'version-1',
+            version: 1,
+            byteSize: 1536,
+            contentType: 'application/pdf',
+            processingStatus: 'embedded',
+            sourceEventId: 'event-1',
+            createdAt: '2026-06-01T10:00:00.000Z',
+          },
+          provenance: {
+            source: 'telegram',
+            sourceEventId: 'event-1',
+            parentEventId: 'parent-event-1',
+            occurredAt: '2026-06-01T09:59:00.000Z',
+            summary: 'Uploaded Proposal.pdf',
+          },
         },
       ],
       defaultVisibility: 'specific_users',
@@ -90,6 +106,8 @@ describe('DocumentDrive', () => {
     expect(html).toContain('Acme');
     expect(html).toContain('Documents');
     expect(html).toContain('Proposal.pdf');
+    expect(html).toContain('Telegram');
+    expect(html).toContain('/app/timeline?event=parent-event-1#ev-parent-event-1');
     expect(html).toContain('New item visibility');
     expect(html).toContain('Ada');
   });

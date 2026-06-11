@@ -41,7 +41,7 @@ export default async function DocumentsPage({ searchParams }: Props) {
   const folderId = currentFolder?.id ?? null;
   const [folders, documentPage, ancestry, defaults, members] = await Promise.all([
     scope.documents.listFolders({ parentFolderId: folderId }),
-    scope.documents.listDocumentsPage({ folderId, limit: 30 }),
+    scope.documents.listDocumentsWithProvenancePage({ folderId, limit: 30 }),
     scope.documents.folderAncestry(folderId),
     scope.timeline.resolveVisibilityDefault('document'),
     scope.timeline.listMembers(),
@@ -87,6 +87,19 @@ export default async function DocumentsPage({ searchParams }: Props) {
           visibility: d.visibility,
           updatedAt: d.updatedAt.toISOString(),
           ownerUserId: d.ownerUserId,
+          currentVersion: d.currentVersion
+            ? {
+                ...d.currentVersion,
+                createdAt: d.currentVersion.createdAt.toISOString(),
+              }
+            : null,
+          provenance: {
+            source: d.provenance.source,
+            sourceEventId: d.provenance.sourceEventId,
+            parentEventId: d.provenance.parentEventId,
+            occurredAt: d.provenance.occurredAt?.toISOString() ?? null,
+            summary: d.provenance.summary,
+          },
         }))}
         documentsNextCursor={documentPage.nextCursor}
       />

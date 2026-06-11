@@ -29,6 +29,22 @@ export interface DocumentListPage {
     visibility: string;
     updatedAt: string;
     ownerUserId: string | null;
+    currentVersion: {
+      id: string;
+      version: number;
+      byteSize: number | null;
+      contentType: string | null;
+      processingStatus: string;
+      sourceEventId: string | null;
+      createdAt: string;
+    } | null;
+    provenance: {
+      source: string;
+      sourceEventId: string | null;
+      parentEventId: string | null;
+      occurredAt: string | null;
+      summary: string | null;
+    };
     optimistic?: boolean;
   }[];
   nextCursor: string | null;
@@ -175,6 +191,22 @@ export function useDocumentListQuery(folderId: string | null, initialPage: Docum
           visibility: string;
           updatedAt: string;
           ownerUserId: string | null;
+          currentVersion: {
+            id: string;
+            version: number;
+            byteSize: number | null;
+            contentType: string | null;
+            processingStatus: string;
+            sourceEventId: string | null;
+            createdAt: string;
+          } | null;
+          provenance: {
+            source: string;
+            sourceEventId: string | null;
+            parentEventId: string | null;
+            occurredAt: string | null;
+            summary: string | null;
+          };
           optimistic?: boolean;
         }[];
         nextCursor: string | null;

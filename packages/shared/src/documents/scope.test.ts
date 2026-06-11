@@ -215,6 +215,95 @@ describe('document scope — visibility filter', () => {
     expect(await B.getDocument(created.document.id)).not.toBeNull();
   });
 
+  it('listDocumentsWithProvenancePage does not leak hidden raw-event provenance', async () => {
+    const A = withTeam(db, TEAM_ID, USER_A).documents;
+    const created = await A.createDocument({
+      name: 'telegram-image.png',
+      folderId: null,
+      filename: 'telegram-image.png',
+      contentType: 'image/png',
+      visibility: 'team',
+    });
+    const finalized = await A.finalizeDocumentVersion({
+      versionId: created.version.id,
+      byteSize: 2048,
+      contentType: 'image/png',
+    });
+    await pg.query(
+      `UPDATE raw_events
+       SET visibility = 'private',
+           visibility_owner_user_id = $1,
+           author_user_id = $1,
+           content_text = 'Hidden Telegram upload',
+           source_metadata = jsonb_build_object(
+             'source', 'telegram',
+             'parent_raw_event_id', 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+           )
+       WHERE id = $2`,
+      [USER_A, finalized.eventId],
+    );
+
+    const B = withTeam(db, TEAM_ID, USER_B).documents;
+    const page = await B.listDocumentsWithProvenancePage({ folderId: null });
+    const visibleDocument = page.items.find((document) => document.id === created.document.id);
+
+    expect(visibleDocument).toBeTruthy();
+    expect(visibleDocument?.currentVersion?.sourceEventId).toBeNull();
+    expect(visibleDocument?.provenance.sourceEventId).toBeNull();
+    expect(visibleDocument?.provenance.parentEventId).toBeNull();
+    expect(visibleDocument?.provenance.summary).toBeNull();
+    expect(visibleDocument?.provenance.metadata).not.toHaveProperty('parent_raw_event_id');
+  });
+
+  it('listDocumentsWithProvenancePage ignores deleted parent timeline events', async () => {
+    const parent = await pg.query<{ id: string }>(
+      `INSERT INTO raw_events (
+         team_id,
+         author_user_id,
+         source,
+         content_text,
+         visibility,
+         source_metadata
+       )
+       VALUES (
+         $1,
+         $2,
+         'telegram',
+         'Deleted parent message',
+         'team',
+         jsonb_build_object('deleted', 'true')
+       )
+      RETURNING id`,
+      [TEAM_ID, USER_A],
+    );
+    const parentId = parent.rows[0]?.id;
+    if (!parentId) throw new Error('deleted_parent_insert_failed');
+    const A = withTeam(db, TEAM_ID, USER_A).documents;
+    const created = await A.createDocument({
+      name: 'telegram-parent.png',
+      folderId: null,
+      filename: 'telegram-parent.png',
+      contentType: 'image/png',
+      visibility: 'team',
+      metadata: {
+        source: 'telegram',
+        parent_raw_event_id: parentId,
+      },
+    });
+    await A.finalizeDocumentVersion({
+      versionId: created.version.id,
+      byteSize: 2048,
+      contentType: 'image/png',
+    });
+
+    const page = await A.listDocumentsWithProvenancePage({ folderId: null });
+    const visibleDocument = page.items.find((document) => document.id === created.document.id);
+
+    expect(visibleDocument).toBeTruthy();
+    expect(visibleDocument?.provenance.parentEventId).toBeNull();
+    expect(visibleDocument?.provenance.metadata).not.toHaveProperty('parent_raw_event_id');
+  });
+
   it('specific_users visibility honors the visibility_user_ids array', async () => {
     const A = withTeam(db, TEAM_ID, USER_A).documents;
     const created = await A.createDocument({

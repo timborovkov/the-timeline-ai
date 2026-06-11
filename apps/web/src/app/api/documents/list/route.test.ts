@@ -10,7 +10,7 @@ const fakes = vi.hoisted(() => ({
   fakeAuth: vi.fn(),
   fakeResolveActiveTeam: vi.fn(),
   fakeRequireMembership: vi.fn(),
-  fakeListDocumentsPage: vi.fn(),
+  fakeListDocumentsWithProvenancePage: vi.fn(),
   fakeCacheKey: vi.fn((parts: unknown[]) => `cache:${parts.map((p) => String(p)).join('|')}`),
   fakeCachedJson: vi.fn((_key: string, _ttl: number, load: () => unknown) => load()),
 }));
@@ -25,7 +25,7 @@ vi.mock('@timeline/shared/cache', () => ({
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
-    documents: { listDocumentsPage: fakes.fakeListDocumentsPage },
+    documents: { listDocumentsWithProvenancePage: fakes.fakeListDocumentsWithProvenancePage },
   }),
 }));
 
@@ -46,7 +46,7 @@ beforeEach(() => {
     active: { teamId: TEAM_ID, teamName: 'Timeline E2E' },
   });
   fakes.fakeRequireMembership.mockResolvedValue('member');
-  fakes.fakeListDocumentsPage.mockResolvedValue({
+  fakes.fakeListDocumentsWithProvenancePage.mockResolvedValue({
     items: [
       {
         id: 'doc-1',
@@ -54,6 +54,27 @@ beforeEach(() => {
         visibility: 'team',
         updatedAt: new Date('2026-06-01T10:00:00.000Z'),
         ownerUserId: USER_ID,
+        currentVersion: {
+          id: 'version-1',
+          version: 1,
+          byteSize: 1024,
+          contentType: 'application/pdf',
+          processingStatus: 'embedded',
+          sourceEventId: '44444444-4444-4444-8444-444444444444',
+          createdAt: new Date('2026-06-01T09:55:00.000Z'),
+        },
+        provenance: {
+          source: 'telegram',
+          sourceEventId: '44444444-4444-4444-8444-444444444444',
+          parentEventId: '55555555-5555-4555-8555-555555555555',
+          occurredAt: new Date('2026-06-01T09:54:00.000Z'),
+          summary: 'Uploaded Plan.pdf from Telegram',
+          metadata: {
+            source: 'telegram',
+            tg_file_id: 'upstream-file-id',
+            parent_raw_event_id: '55555555-5555-4555-8555-555555555555',
+          },
+        },
       },
     ],
     nextCursor: 'next-docs',
@@ -72,14 +93,14 @@ describe('GET /api/documents/list', () => {
     const noTeam = await GET(request());
     expect(noTeam.status).toBe(400);
     await expect(noTeam.json()).resolves.toEqual({ error: 'no_active_team' });
-    expect(fakes.fakeListDocumentsPage).not.toHaveBeenCalled();
+    expect(fakes.fakeListDocumentsWithProvenancePage).not.toHaveBeenCalled();
   });
 
   it('propagates membership failures before listing documents', async () => {
     fakes.fakeRequireMembership.mockRejectedValue(new Error('not member'));
 
     await expect(GET(request())).rejects.toThrow('not member');
-    expect(fakes.fakeListDocumentsPage).not.toHaveBeenCalled();
+    expect(fakes.fakeListDocumentsWithProvenancePage).not.toHaveBeenCalled();
   });
 
   it('forwards folder and cursor filters, caches by caller, and serializes dates', async () => {
@@ -94,6 +115,22 @@ describe('GET /api/documents/list', () => {
           visibility: 'team',
           updatedAt: '2026-06-01T10:00:00.000Z',
           ownerUserId: USER_ID,
+          currentVersion: {
+            id: 'version-1',
+            version: 1,
+            byteSize: 1024,
+            contentType: 'application/pdf',
+            processingStatus: 'embedded',
+            sourceEventId: '44444444-4444-4444-8444-444444444444',
+            createdAt: '2026-06-01T09:55:00.000Z',
+          },
+          provenance: {
+            source: 'telegram',
+            sourceEventId: '44444444-4444-4444-8444-444444444444',
+            parentEventId: '55555555-5555-4555-8555-555555555555',
+            occurredAt: '2026-06-01T09:54:00.000Z',
+            summary: 'Uploaded Plan.pdf from Telegram',
+          },
         },
       ],
       nextCursor: 'next-docs',
@@ -105,7 +142,7 @@ describe('GET /api/documents/list', () => {
       FOLDER_ID,
       'abc',
     ]);
-    expect(fakes.fakeListDocumentsPage).toHaveBeenCalledWith({
+    expect(fakes.fakeListDocumentsWithProvenancePage).toHaveBeenCalledWith({
       folderId: FOLDER_ID,
       cursor: 'abc',
       limit: 30,
@@ -115,7 +152,7 @@ describe('GET /api/documents/list', () => {
   it('treats malformed folder ids as the root folder', async () => {
     await GET(request('/api/documents/list?folder=not-a-uuid'));
 
-    expect(fakes.fakeListDocumentsPage).toHaveBeenCalledWith({
+    expect(fakes.fakeListDocumentsWithProvenancePage).toHaveBeenCalledWith({
       folderId: null,
       cursor: null,
       limit: 30,
