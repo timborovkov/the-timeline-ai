@@ -23,6 +23,8 @@ interface SuggestionItem {
   description: string | null;
   proposedPayload: Record<string, unknown>;
   failureReason: string | null;
+  supersededByItemId?: string | null;
+  supersededReason?: string | null;
 }
 
 interface SuggestionBundle {

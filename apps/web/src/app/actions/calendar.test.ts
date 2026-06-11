@@ -22,6 +22,9 @@ const fakes = vi.hoisted(() => ({
     updateCalendarEvent: vi.fn(),
     deleteCalendarEvent: vi.fn(),
   },
+  fakeSuggestions: {
+    reconcileCanonicalChange: vi.fn(),
+  },
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -29,7 +32,7 @@ vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActive
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
 vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({ calendar: fakes.fakeCalendar }),
+  withTeam: () => ({ calendar: fakes.fakeCalendar, suggestions: fakes.fakeSuggestions }),
 }));
 vi.mock('@timeline/shared/logger', () => ({
   childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
@@ -45,8 +48,12 @@ beforeEach(() => {
   fakes.fakeAuth.mockResolvedValue({ user: { id: USER_ID } });
   fakes.fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakes.fakeCalendar.createCalendarEvent.mockResolvedValue({ id: EVENT_ID });
-  fakes.fakeCalendar.updateCalendarEvent.mockResolvedValue({ id: EVENT_ID });
+  fakes.fakeCalendar.updateCalendarEvent.mockResolvedValue({
+    id: EVENT_ID,
+    changedFields: ['title', 'startAt', 'visibility'],
+  });
   fakes.fakeCalendar.deleteCalendarEvent.mockResolvedValue(true);
+  fakes.fakeSuggestions.reconcileCanonicalChange.mockResolvedValue(1);
 });
 
 describe('calendar action auth and validation', () => {
@@ -131,8 +138,31 @@ describe('calendar create/update/delete behavior', () => {
       startAt: new Date('2026-06-03T12:00:00.000Z'),
       visibility: 'private',
     });
+    expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+      targetKind: 'calendar_event',
+      targetId: EVENT_ID,
+      operation: 'update',
+      patch: { title: true, startAt: true, visibility: true },
+      reason: 'A teammate updated this calendar event directly.',
+    });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/calendar');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/calendar/${EVENT_ID}`);
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+  });
+
+  it('does not supersede approvals for a no-op update', async () => {
+    fakes.fakeCalendar.updateCalendarEvent.mockResolvedValueOnce({
+      id: EVENT_ID,
+      changedFields: [],
+    });
+
+    await expect(updateCalendarEventAction({ id: EVENT_ID, title: 'Updated' })).resolves.toEqual({
+      ok: true,
+      id: EVENT_ID,
+    });
+
+    expect(fakes.fakeSuggestions.reconcileCanonicalChange).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
   });
 
   it('returns not-found when update or delete misses', async () => {
@@ -147,6 +177,18 @@ describe('calendar create/update/delete behavior', () => {
       ok: false,
       error: 'Event not found',
     });
+  });
+
+  it('supersedes pending approvals when deleting an event directly', async () => {
+    await expect(deleteCalendarEventAction(EVENT_ID)).resolves.toEqual({ ok: true, id: EVENT_ID });
+
+    expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+      targetKind: 'calendar_event',
+      targetId: EVENT_ID,
+      operation: 'archive_or_cancel',
+      reason: 'A teammate cancelled this calendar event directly.',
+    });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
   });
 
   it('maps dependency failures to action errors', async () => {

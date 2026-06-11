@@ -48,6 +48,7 @@ const fakes = vi.hoisted(() => ({
   },
   fakeSuggestions: {
     acceptObjectMergeSuggestionItem: vi.fn(),
+    reconcileCanonicalChange: vi.fn(),
   },
   fakeTransactionObjects: {
     archiveObject: vi.fn(),
@@ -91,8 +92,11 @@ beforeEach(() => {
     teamId: '11111111-1111-4111-8111-111111111111',
   });
   fakes.fakeObjects.createObject.mockResolvedValue({ id: OBJECT_ID });
-  fakes.fakeObjects.updateObject.mockResolvedValue(undefined);
-  fakes.fakeObjects.archiveObject.mockResolvedValue(undefined);
+  fakes.fakeObjects.updateObject.mockResolvedValue({
+    object: { id: OBJECT_ID, type: 'task' },
+    changedFields: ['status', 'dueAt'],
+  });
+  fakes.fakeObjects.archiveObject.mockResolvedValue({ id: OBJECT_ID, type: 'task' });
   fakes.fakeObjects.mergeObjects.mockResolvedValue({
     survivor: { id: OBJECT_ID },
     mergedIds: [OTHER_OBJECT_ID],
@@ -109,6 +113,7 @@ beforeEach(() => {
   fakes.fakeSuggestions.acceptObjectMergeSuggestionItem.mockResolvedValue({
     survivorId: OBJECT_ID,
   });
+  fakes.fakeSuggestions.reconcileCanonicalChange.mockResolvedValue(1);
   fakes.fakeTransactionObjects.archiveObject.mockResolvedValue(undefined);
   fakes.fakeEnqueueSuggestionJob.mockResolvedValue({ enqueued: true, jobId: 'cleanup-job' });
 });
@@ -196,10 +201,18 @@ describe('object CRUD actions', () => {
       { status: 'doing', dueAt: null },
       { kind: 'user', userId: USER_ID },
     );
+    expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+      targetKind: 'task',
+      targetId: OBJECT_ID,
+      operation: 'update',
+      patch: { status: true, dueAt: true },
+      reason: 'A teammate updated this object directly.',
+    });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/objects');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/tasks');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
   });
 
   it('archives an object and refreshes surfaces that hide archived rows', async () => {
@@ -209,7 +222,14 @@ describe('object CRUD actions', () => {
       kind: 'user',
       userId: USER_ID,
     });
+    expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+      targetKind: 'task',
+      targetId: OBJECT_ID,
+      operation: 'archive_or_cancel',
+      reason: 'A teammate archived this object directly.',
+    });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
   });
 
   it('bulk archives selected objects and refreshes cleanup surfaces', async () => {

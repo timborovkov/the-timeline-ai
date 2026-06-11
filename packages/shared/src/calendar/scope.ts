@@ -96,6 +96,10 @@ export interface UpdateCalendarEventInput {
   metadata?: Record<string, unknown>;
 }
 
+export interface CalendarEventUpdateResult extends CalendarEventWithRedaction {
+  changedFields: (keyof UpdateCalendarEventInput)[];
+}
+
 export interface ListCalendarEventsInput {
   from?: Date;
   to?: Date;
@@ -452,7 +456,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     async updateCalendarEvent(
       id: string,
       patch: UpdateCalendarEventInput,
-    ): Promise<CalendarEventWithRedaction | null> {
+    ): Promise<CalendarEventUpdateResult | null> {
       await ensureMember();
 
       const result = await db.transaction(async (tx) => {
@@ -512,7 +516,11 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         }
 
         if (changedFields.size === 0) {
-          return { event: redactIfNeeded(row as CalendarEventRow), qdrantAction: null };
+          return {
+            event: redactIfNeeded(row as CalendarEventRow),
+            changedFields: [],
+            qdrantAction: null,
+          };
         }
 
         const effectiveStart = patch.startAt ?? row.startAt;
@@ -661,7 +669,11 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           qdrantAction = newVis === 'team' ? 'embed' : 'delete';
         }
 
-        return { event: redactIfNeeded(updated as CalendarEventRow), qdrantAction };
+        return {
+          event: redactIfNeeded(updated as CalendarEventRow),
+          changedFields: [...changedFields],
+          qdrantAction,
+        };
       });
 
       if (!result) return null;
@@ -671,7 +683,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         await deleteCalendarEventPoints(teamId, id);
       }
 
-      return result.event;
+      return { ...result.event, changedFields: result.changedFields };
     },
 
     async deleteCalendarEvent(id: string): Promise<boolean> {

@@ -191,4 +191,37 @@ describe('database schema contracts', () => {
 
     expect(remaining.rows[0]).toEqual({ raw_count: '0', suggestion_count: '0' });
   });
+
+  it('supports superseded approval state and replacement links', async () => {
+    const suggestionId = '77777777-7777-4777-8777-777777777701';
+    const olderItemId = '88888888-8888-4888-8888-888888888801';
+    const newerItemId = '88888888-8888-4888-8888-888888888802';
+    await pg.exec(`
+      INSERT INTO agent_suggestions (id, team_id, source, status, title, dedupe_key)
+      VALUES ('${suggestionId}', '${TEAM_ID}', 'background', 'superseded', 'Proposal task', 'proposal-task-superseded');
+      INSERT INTO agent_suggestion_items
+        (id, suggestion_id, team_id, status, operation, target_kind, title, dedupe_key, proposed_payload)
+      VALUES
+        ('${newerItemId}', '${suggestionId}', '${TEAM_ID}', 'pending', 'create', 'task', 'New task', 'item-new', '{"canonicalName":"New task"}'::jsonb),
+        ('${olderItemId}', '${suggestionId}', '${TEAM_ID}', 'superseded', 'create', 'task', 'Old task', 'item-old', '{"canonicalName":"Old task"}'::jsonb);
+      UPDATE agent_suggestion_items
+      SET superseded_by_item_id = '${newerItemId}', superseded_reason = 'newer evidence'
+      WHERE id = '${olderItemId}';
+    `);
+
+    const rows = await pg.query<{
+      status: string;
+      superseded_by_item_id: string | null;
+      superseded_reason: string | null;
+    }>(`
+      SELECT status, superseded_by_item_id, superseded_reason
+      FROM agent_suggestion_items
+      WHERE id = '${olderItemId}'
+    `);
+    expect(rows.rows[0]).toEqual({
+      status: 'superseded',
+      superseded_by_item_id: newerItemId,
+      superseded_reason: 'newer evidence',
+    });
+  });
 });

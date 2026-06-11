@@ -102,14 +102,23 @@ export async function updateObjectAction(input: unknown): Promise<ActionState> {
 
     const { id, dueAt, ...rest } = parsed.data;
     try {
-      await r.scope.objects.updateObject(
-        id,
-        {
-          ...rest,
-          ...(dueAt !== undefined ? { dueAt: dueAt ? new Date(dueAt) : null } : {}),
-        },
-        { kind: 'user', userId: r.userId },
-      );
+      const patch = {
+        ...rest,
+        ...(dueAt !== undefined ? { dueAt: dueAt ? new Date(dueAt) : null } : {}),
+      };
+      const result = await r.scope.objects.updateObject(id, patch, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      if (result.changedFields.length > 0) {
+        await r.scope.suggestions.reconcileCanonicalChange({
+          targetKind: result.object.type === 'task' ? 'task' : 'object',
+          targetId: id,
+          operation: 'update',
+          patch: Object.fromEntries(result.changedFields.map((field) => [field, true])),
+          reason: 'A teammate updated this object directly.',
+        });
+      }
       revalidatePath('/app/objects');
       revalidatePath(`/app/objects/${id}`);
       // Kanban drag-to-move triggers updateObjectAction from a board page.
@@ -119,6 +128,7 @@ export async function updateObjectAction(input: unknown): Promise<ActionState> {
       // permutations without needing the id here.
       revalidatePath('/app/boards', 'layout');
       revalidatePath('/app/tasks');
+      revalidatePath('/app/approvals');
       return { ok: true, id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to update object') };
@@ -133,13 +143,23 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      await r.scope.objects.archiveObject(parsed.data.id, { kind: 'user', userId: r.userId });
+      const archived = await r.scope.objects.archiveObject(parsed.data.id, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      await r.scope.suggestions.reconcileCanonicalChange({
+        targetKind: archived.type === 'task' ? 'task' : 'object',
+        targetId: parsed.data.id,
+        operation: 'archive_or_cancel',
+        reason: 'A teammate archived this object directly.',
+      });
       revalidatePath('/app/objects');
       revalidatePath(`/app/objects/${parsed.data.id}`);
       // Archived objects must drop out of any board/kanban view that was
       // surfacing them. Matches the revalidation set in updateObjectAction.
       revalidatePath('/app/boards', 'layout');
       revalidatePath('/app/tasks');
+      revalidatePath('/app/approvals');
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to archive') };

@@ -122,8 +122,18 @@ export async function updateCalendarEventAction(
 
       const updated = await got.scope.calendar.updateCalendarEvent(parsed.data.id, patch);
       if (!updated) return { ok: false, error: 'Event not found' };
+      if (updated.changedFields.length > 0) {
+        await got.scope.suggestions.reconcileCanonicalChange({
+          targetKind: 'calendar_event',
+          targetId: parsed.data.id,
+          operation: 'update',
+          patch: Object.fromEntries(updated.changedFields.map((field) => [field, true])),
+          reason: 'A teammate updated this calendar event directly.',
+        });
+      }
       revalidatePath('/app/calendar');
       revalidatePath(`/app/calendar/${parsed.data.id}`);
+      revalidatePath('/app/approvals');
       return { ok: true, id: updated.id };
     } catch (err) {
       log.error({ err }, 'update_calendar_event_failed');
@@ -142,7 +152,14 @@ export async function deleteCalendarEventAction(id: string): Promise<Result> {
     try {
       const deleted = await got.scope.calendar.deleteCalendarEvent(id);
       if (!deleted) return { ok: false, error: 'Event not found' };
+      await got.scope.suggestions.reconcileCanonicalChange({
+        targetKind: 'calendar_event',
+        targetId: id,
+        operation: 'archive_or_cancel',
+        reason: 'A teammate cancelled this calendar event directly.',
+      });
       revalidatePath('/app/calendar');
+      revalidatePath('/app/approvals');
       return { ok: true, id };
     } catch (err) {
       log.error({ err }, 'delete_calendar_event_failed');
