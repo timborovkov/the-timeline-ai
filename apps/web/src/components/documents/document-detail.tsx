@@ -1,7 +1,6 @@
 'use client';
 
-import { ArrowLeft, Download, Trash2 } from 'lucide-react';
-import Link from 'next/link';
+import { Download, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
@@ -11,6 +10,7 @@ import {
   getDocumentDownloadUrlAction,
   renameDocumentAction,
 } from '@/app/actions/documents';
+import { HistoryBackLink } from '@/components/history-back-link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -124,19 +124,14 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link
-          href={
-            currentDocument.folderId
-              ? `/app/documents?folder=${currentDocument.folderId}`
-              : '/app/documents'
-          }
-          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="mr-1 size-3.5" />
-          Back to {currentDocument.folderPath}
-        </Link>
-      </div>
+      <HistoryBackLink
+        fallbackHref={
+          currentDocument.folderId
+            ? `/app/documents?folder=${currentDocument.folderId}`
+            : '/app/documents'
+        }
+        label="Back"
+      />
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">

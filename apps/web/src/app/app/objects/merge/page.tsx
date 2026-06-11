@@ -1,10 +1,10 @@
 import { withTeam } from '@timeline/shared/team-scope';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
 import { EmptyAction } from '@/components/empty-action';
+import { HistoryBackLink } from '@/components/history-back-link';
 import { IndexStrip } from '@/components/index-strip';
 import { ObjectMergeForm } from '@/components/objects/object-merge-form';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -34,12 +34,7 @@ export default async function MergeObjectsPage({
     return (
       <div className="mx-auto max-w-4xl space-y-6">
         <IndexStrip srLabel="Merge objects" segments={[{ value: 'MERGE' }]}>
-          <Link
-            href="/app/objects"
-            className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg"
-          >
-            back
-          </Link>
+          <HistoryBackLink fallbackHref="/app/objects" label="Back" />
         </IndexStrip>
         <EmptyAction
           title="Select objects first"
@@ -59,12 +54,7 @@ export default async function MergeObjectsPage({
     return (
       <div className="mx-auto max-w-4xl space-y-6">
         <IndexStrip srLabel="Merge objects" segments={[{ value: 'MERGE' }]}>
-          <Link
-            href="/app/objects"
-            className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg"
-          >
-            back
-          </Link>
+          <HistoryBackLink fallbackHref="/app/objects" label="Back" />
         </IndexStrip>
         <EmptyAction
           title="These objects cannot be merged"
@@ -85,12 +75,7 @@ export default async function MergeObjectsPage({
         srLabel={`Merge objects · ${preview.objects.length} selected`}
         segments={[{ value: 'MERGE' }, { label: 'selected', value: preview.objects.length }]}
       >
-        <Link
-          href="/app/objects"
-          className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg"
-        >
-          cancel
-        </Link>
+        <HistoryBackLink fallbackHref="/app/objects" label="Back" />
       </IndexStrip>
       <ObjectMergeForm
         objects={preview.objects}

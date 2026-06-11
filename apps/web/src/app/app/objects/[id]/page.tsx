@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { HistoryBackLink } from '@/components/history-back-link';
 import { ObjectDetailClient } from '@/components/objects/object-detail-client';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -56,7 +57,8 @@ export default async function ObjectDetailPage({ params }: PageProps) {
   });
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="mx-auto max-w-4xl space-y-4">
+      <HistoryBackLink fallbackHref="/app/objects" label="Back" />
       <ObjectDetailClient detail={detail} userId={session.user.id} suggestions={suggestions} />
     </div>
   );

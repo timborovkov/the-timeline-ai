@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { renderTurnstileWidget } from '@/components/turnstile-widget';
+import { renderTurnstileWidget } from '@/lib/turnstile-widget';
 
 describe('renderTurnstileWidget', () => {
   it('renders directly without using turnstile.ready', () => {

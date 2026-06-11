@@ -228,20 +228,23 @@ export async function bulkArchiveObjectsAction(input: unknown): Promise<ActionSt
       const ids = Array.from(new Set(parsed.data.ids));
       const archivedObjects = await db.transaction(async (tx) => {
         const txScope = withTeam(tx as unknown as typeof db, r.teamId, r.userId);
-        const archived = [];
-        for (const id of ids) {
-          archived.push(
-            await txScope.objects.archiveObject(id, { kind: 'user', userId: r.userId }),
-          );
-        }
-        return archived;
-      });
-      for (const archived of archivedObjects) {
-        await reconcileCanonicalChangeBestEffort(
-          'reconcile_object_archive_after_bulk_archive',
-          () => reconcileArchivedObject(r.scope.suggestions, archived),
+        return ids.reduce(
+          (previous, id) =>
+            previous.then((archived) =>
+              txScope.objects
+                .archiveObject(id, { kind: 'user', userId: r.userId })
+                .then((object) => [...archived, object]),
+            ),
+          Promise.resolve([] as Awaited<ReturnType<typeof txScope.objects.archiveObject>>[]),
         );
-      }
+      });
+      await Promise.all(
+        archivedObjects.map((archived) =>
+          reconcileCanonicalChangeBestEffort('reconcile_object_archive_after_bulk_archive', () =>
+            reconcileArchivedObject(r.scope.suggestions, archived),
+          ),
+        ),
+      );
       revalidateObjectMutationSurfaces(ids);
       return { ok: true };
     } catch (err) {
