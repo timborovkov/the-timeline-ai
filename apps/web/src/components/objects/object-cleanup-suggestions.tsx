@@ -1,6 +1,7 @@
 'use client';
 
 import { Archive, GitMerge, RefreshCw, X } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 
@@ -52,6 +53,11 @@ function objectIdsForMerge(item: SuggestionItem): string[] {
     typeof item.proposedPayload.survivorId === 'string' ? item.proposedPayload.survivorId : null;
   if (!survivorId || !ids.includes(survivorId)) return ids;
   return [survivorId, ...ids.filter((id) => id !== survivorId)];
+}
+
+function objectMergeSuggestionHref(item: SuggestionItem, ids: string[]): string {
+  const params = new URLSearchParams({ ids: ids.join(','), suggestionItemId: item.id });
+  return `/app/objects/merge?${params.toString()}`;
 }
 
 export function ObjectCleanupSuggestions({
@@ -155,18 +161,32 @@ export function ObjectCleanupSuggestions({
                 </div>
                 <div className="flex flex-wrap items-start gap-2">
                   {item.targetKind === 'object_merge' ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={pending || mergeIds.length < 2 || !mergePreviewsByItemId[item.id]}
-                      onClick={() => {
-                        setMessage(null);
-                        setReviewingItemId(item.id);
-                      }}
-                    >
-                      <GitMerge className="size-4" />
-                      Review
-                    </Button>
+                    mergePreviewsByItemId[item.id] ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={pending || mergeIds.length < 2}
+                        onClick={() => {
+                          setMessage(null);
+                          setReviewingItemId(item.id);
+                        }}
+                      >
+                        <GitMerge className="size-4" />
+                        Review
+                      </Button>
+                    ) : pending || mergeIds.length < 2 ? (
+                      <Button type="button" size="sm" disabled>
+                        <GitMerge className="size-4" />
+                        Review
+                      </Button>
+                    ) : (
+                      <Button asChild size="sm">
+                        <Link href={objectMergeSuggestionHref(item, mergeIds)}>
+                          <GitMerge className="size-4" />
+                          Review
+                        </Link>
+                      </Button>
+                    )
                   ) : (
                     <Button
                       type="button"

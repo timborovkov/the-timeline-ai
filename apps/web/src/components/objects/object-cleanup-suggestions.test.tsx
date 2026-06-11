@@ -87,4 +87,38 @@ describe('ObjectCleanupSuggestions', () => {
     expect(html).toContain('Review');
     expect(html).not.toContain('/app/objects/merge');
   });
+
+  it('keeps merge suggestions reviewable when the modal preview was not preloaded', () => {
+    const itemId = 'item-1';
+    const survivorId = 'object-a';
+    const duplicateId = 'object-b';
+    const html = renderToStaticMarkup(
+      createElement(ObjectCleanupSuggestions, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            title: 'Object cleanup',
+            summary: null,
+            confidence: 'medium',
+            items: [
+              {
+                id: itemId,
+                status: 'pending',
+                operation: 'merge',
+                targetKind: 'object_merge',
+                targetId: survivorId,
+                title: 'Review merge for Trade register extract',
+                description: 'Names are similar enough to review as a possible duplicate.',
+                proposedPayload: { objectIds: [survivorId, duplicateId], survivorId },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('/app/objects/merge?');
+    expect(html).toContain(`suggestionItemId=${itemId}`);
+    expect(html).not.toContain('disabled=""');
+  });
 });
