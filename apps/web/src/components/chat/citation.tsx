@@ -16,7 +16,7 @@ interface Props {
 /**
  * Splits the assistant's text into runs and citation chips. Each chip is
  * a {@link CitationChip} in `href` mode:
- *  - `[ev:<id>]` → `/app/timeline#ev-<id>` (URL hash scrolls to the row)
+ *  - `[ev:<id>]` → `/app/timeline?event=<id>#ev-<id>` (loads + scrolls to the row)
  *  - `[ent:<id>]` → `/app/objects/<id>`
  *  - `[doc:<id>#v<n>:chunk:<id>]` →
  *    `/app/documents/<id>?version=<n>#chunk-<id>`
@@ -196,7 +196,7 @@ function InlineText({ text, keyPrefix }: { text: string; keyPrefix: string }) {
               <CitationChip
                 id={`ev:${p.value.slice(0, 8)}`}
                 source="Event"
-                href={`/app/timeline#ev-${p.value}`}
+                href={`/app/timeline?event=${p.value}#ev-${p.value}`}
               />
             </span>
           );

@@ -12,6 +12,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveActiveTeam: vi.fn(),
   fakeRequireMembership: vi.fn(),
   fakeListEventsPage: vi.fn(),
+  fakeGetEventsByIds: vi.fn(),
   fakeListImpactItems: vi.fn(),
   fakeCacheKey: vi.fn((parts: unknown[]) => `cache:${parts.map((p) => String(p)).join('|')}`),
   fakeCachedJson: vi.fn((_key: string, _ttl: number, load: () => unknown) => load()),
@@ -38,6 +39,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     requireMembership: fakes.fakeRequireMembership,
     timeline: {
       listEventsPage: fakes.fakeListEventsPage,
+      getEventsByIds: fakes.fakeGetEventsByIds,
       listImpactItems: fakes.fakeListImpactItems,
     },
   }),
@@ -87,6 +89,7 @@ beforeEach(() => {
   });
   fakes.fakeRequireMembership.mockResolvedValue('member');
   fakes.fakeListEventsPage.mockResolvedValue({ items: [event()], nextCursor: 'next-page' });
+  fakes.fakeGetEventsByIds.mockResolvedValue([]);
   fakes.fakeListImpactItems.mockResolvedValue({
     'event-1': [{ kind: 'task', label: 'Follow up' }],
   });
@@ -172,6 +175,7 @@ describe('GET /api/timeline', () => {
         AUTHOR_ID,
         'slack',
         'task',
+        null,
         'abc',
       ]),
     );
@@ -227,5 +231,44 @@ describe('GET /api/timeline', () => {
     expect(response.status).toBe(200);
     const payload = (await response.json()) as { audioUrls: Record<string, string> };
     expect(payload.audioUrls).toEqual({});
+  });
+
+  it('includes a focused event target even when it is outside the current page', async () => {
+    const focusedId = '44444444-4444-4444-8444-444444444444';
+    fakes.fakeListEventsPage.mockResolvedValue({
+      items: [event({ id: 'event-1', contentText: 'Newest note' })],
+      nextCursor: null,
+    });
+    fakes.fakeGetEventsByIds.mockResolvedValue([
+      event({
+        id: focusedId,
+        contentText: 'Older evidence',
+        occurredAt: new Date('2026-05-30T10:00:00.000Z'),
+      }),
+    ]);
+    fakes.fakeListImpactItems.mockResolvedValue({});
+
+    const response = await GET(request(`/api/timeline?event=${focusedId}`));
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      items: { id: string; contentText: string | null }[];
+    };
+    expect(payload.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: focusedId, contentText: 'Older evidence' }),
+        expect.objectContaining({ id: 'event-1', contentText: 'Newest note' }),
+      ]),
+    );
+    expect(fakes.fakeGetEventsByIds).toHaveBeenCalledWith([focusedId]);
+  });
+
+  it('does not re-inject the focused event on later cursor pages', async () => {
+    const focusedId = '44444444-4444-4444-8444-444444444444';
+
+    const response = await GET(request(`/api/timeline?cursor=next-page&event=${focusedId}`));
+
+    expect(response.status).toBe(200);
+    expect(fakes.fakeGetEventsByIds).not.toHaveBeenCalled();
   });
 });

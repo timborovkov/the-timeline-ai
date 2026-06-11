@@ -80,6 +80,10 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Send proposal');
     expect(html).toContain('Calendar conflict');
     expect(html).toContain('I will send the proposal');
+    expect(html).toContain(
+      '/app/timeline?event=11111111-1111-4111-8111-111111111111#ev-11111111-1111-4111-8111-111111111111',
+    );
+    expect(html).toContain('create task');
   });
 
   it('can hide bundle-level accept all for filtered approval surfaces', () => {

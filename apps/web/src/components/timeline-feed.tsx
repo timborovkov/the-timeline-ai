@@ -21,6 +21,7 @@ interface Props {
     to?: string | null;
     source?: string | null;
     impact?: string | null;
+    event?: string | null;
   };
   currentUserId: string;
   isAdmin: boolean;
