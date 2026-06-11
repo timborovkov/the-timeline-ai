@@ -20,6 +20,8 @@ Rules:
 - Output ONLY facts that are explicitly stated in or directly implied by the current event. Do not invent.
 - A "fact" is a single, self-contained statement, e.g. "Tim met John Ternus at Apple to discuss SaaS licensing".
 - Each fact has a confidence in [0,1]: 1.0 = stated literally, 0.7 = clear implication, <=0.5 = uncertain. Prefer fewer high-confidence facts to many low-confidence ones.
+- Do NOT output message mechanics as facts: shared/sent/forwarded a link, posted a tweet, mentioned an app, reacted, forwarded a file, or otherwise described how a message was transmitted. Raw event text already preserves those.
+- Mentions of tools, apps, platforms, generic categories, handles, and link targets are not entities unless the current event states durable work context about them.
 - Entity mentions: extract people, companies, projects, and topics referenced by the fact.
   - "person": individual humans (first name + last name when known, otherwise just the available form).
   - "company": organisations, brands, products acting as orgs.

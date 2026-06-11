@@ -51,7 +51,10 @@ _Avoid_: Related items when discussing what changed because of source evidence
 A durable team memory item that represents something the team wants to track,
 such as a person, company, project, task, decision, deal, or follow-up.
 Workspace objects can be referenced by raw events, edited by teammates, and
-changed through approval-backed agent suggestions.
+changed through approval-backed agent suggestions. A raw mention or link target
+is not a workspace object unless it carries durable information for the team.
+Across object types, updating or merging a plausible existing object is
+preferred over creating a new one.
 _Avoid_: Entity when discussing the user-facing team memory item
 
 **Object Memory**:
@@ -65,7 +68,9 @@ _Avoid_: Agent memory when it implies opaque private state
 An approval-backed agent suggestion to create or update object memory, such as
 adding an alias, identity facet, relationship, note, field value, or missing
 workspace object. Object memory proposals become canonical only when a teammate
-accepts them.
+accepts them; weak mentions should remain evidence rather than proposed memory.
+Creation proposals should be the last resort after checking existing objects
+and pending proposals.
 _Avoid_: Memory write when it hides the approval step
 
 **Durable Information**:
@@ -73,22 +78,34 @@ Information worth preserving because it changes future retrieval,
 interpretation, workflow, identity resolution, ownership, status, scheduling,
 or relationships for the team. Durable information is distinct from one-off
 chat preferences, acknowledgements, unsupported guesses, or facts already
-represented canonically without a meaningful correction.
+represented canonically without a meaningful correction. New object memory
+requires a strong signal, such as a durable attribute, commitment, workflow
+role, repeated consistent evidence, or an explicit request to remember or
+correct it.
 _Avoid_: Memory when it is too vague about what should persist
+
+**Noise**:
+Captured content that should remain raw evidence but should not become durable
+facts or object memory, such as message mechanics, incidental tool mentions,
+generic categories, reactions, forwarded links, or unsupported guesses.
+_Avoid_: Fact when the statement only repeats how a message was sent
 
 **Person Object**:
 A workspace object for a real-world person, whether or not that person belongs
 to the Timeline team. A person object can carry names, nicknames, external
 identity facets such as handles and contact details, roles, company
 relationships, open-ended facts or notes, and an optional link to a Timeline
-team member when the person is also a product user.
+team member when the person is also a product user. A new person object should
+be created only after plausible existing person matches have been resolved or
+ruled out.
 _Avoid_: Team Member when discussing identity outside product access
 
 **Identity Facet**:
 A structured identifier on a person object, such as an email address, phone
 number, Telegram handle, Slack user id, GitHub username, or linked Timeline
 team member. Identity facets are distinct from nicknames and freeform facts
-because they help resolve senders across capture surfaces.
+because they help resolve senders across capture surfaces; strong facet
+matches should update the existing person rather than create another one.
 _Avoid_: Alias when referring to an external account or contact detail
 
 **Capture Surface**:
@@ -409,7 +426,9 @@ _Avoid_: Suggested task as task, suggested event as event
 **Suggestion Operation**:
 The action an agent suggestion would perform if accepted: create, update, or
 archive/cancel canonical workspace state. Deletion-like suggestions preserve
-audit history rather than erasing source evidence.
+audit history rather than erasing source evidence. Cleanup of existing noisy or
+duplicate objects should happen through archive or merge suggestions rather
+than silent deletion.
 _Avoid_: Hard delete suggestion
 
 **Suggestion Dedupe Key**:

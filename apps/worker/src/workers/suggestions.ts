@@ -74,6 +74,8 @@ const suggestionExtractionSchema = z.object({
 });
 
 type SuggestionBundleOutput = z.infer<typeof suggestionBundleSchema>;
+type SuggestionItemOutput = z.infer<typeof suggestionItemSchema>;
+type EntityType = (typeof entities.$inferSelect)['type'];
 
 function tokenizeEvidence(text: string): string[] {
   return text
@@ -355,6 +357,22 @@ const CLEANUP_MERGE_TYPES = new Set([
   'other',
 ]);
 
+const ENTITY_TYPES = new Set<EntityType>([
+  'person',
+  'company',
+  'project',
+  'topic',
+  'other',
+  'deal',
+  'vendor',
+  'incident',
+  'document',
+  'decision',
+  'hiring_loop',
+  'task',
+  'follow_up',
+]);
+
 const GENERIC_TOOL_NAMES = new Set([
   'calendar',
   'clock',
@@ -362,17 +380,21 @@ const GENERIC_TOOL_NAMES = new Set([
   'excel',
   'finder',
   'github',
-  'googlemeet',
-  'googlemeet',
   'googledrive',
   'googlemeet',
-  'googlemeet',
+  'linkedin',
   'meet',
   'slack',
   'telegram',
+  'tiktok',
+  'twitter',
+  'whatsapp',
+  'x',
   'youtube',
   'zoom',
 ]);
+
+const LOW_SIGNAL_OBJECT_NAMES = new Set(['auditfirms', 'bigfour', 'link', 'post', 'tweet', 'url']);
 
 function cleanupCompatible(a: CleanupObjectRow, b: CleanupObjectRow): boolean {
   return (
@@ -384,6 +406,9 @@ function cleanupCompatible(a: CleanupObjectRow, b: CleanupObjectRow): boolean {
 function normalizeCleanupName(value: string): string {
   return value
     .toLowerCase()
+    .replace(/^@/, '')
+    .replace(/0/g, 'o')
+    .replace(/\d+$/g, '')
     .replace(/\b(inc|llc|ltd|oy|corp|corporation|company|co|gmbh|plc)\b/g, '')
     .replace(/[^a-z0-9]+/g, '')
     .trim();
@@ -420,6 +445,12 @@ function cleanupMatch(a: CleanupObjectRow, b: CleanupObjectRow): 'exact' | 'near
   const aNames = cleanupNames(a);
   const bNames = cleanupNames(b);
   if (aNames.some((name) => bNames.includes(name))) return 'exact';
+  if (a.type === 'person' && b.type === 'person') {
+    const aFirst = normalizeCleanupName(a.canonicalName.split(/\s+/)[0] ?? '');
+    const bFirst = normalizeCleanupName(b.canonicalName.split(/\s+/)[0] ?? '');
+    if (aFirst.length >= 3 && bNames.some((name) => name.startsWith(aFirst))) return 'near';
+    if (bFirst.length >= 3 && aNames.some((name) => name.startsWith(bFirst))) return 'near';
+  }
   for (const left of aNames) {
     for (const right of bNames) {
       const min = Math.min(left.length, right.length);
@@ -429,6 +460,128 @@ function cleanupMatch(a: CleanupObjectRow, b: CleanupObjectRow): 'exact' | 'near
     }
   }
   return null;
+}
+
+function aliasesForRow(row: Pick<CleanupObjectRow, 'aliases'>): string[] {
+  return Array.isArray(row.aliases)
+    ? row.aliases.filter((value): value is string => typeof value === 'string')
+    : [];
+}
+
+function itemCreateType(item: SuggestionItemOutput): EntityType {
+  if (item.targetKind === 'task') return 'task';
+  const type = item.proposedPayload.type;
+  return typeof type === 'string' && ENTITY_TYPES.has(type.trim() as EntityType)
+    ? (type.trim() as EntityType)
+    : 'other';
+}
+
+function itemCanonicalName(item: SuggestionItemOutput): string {
+  const name = item.proposedPayload.canonicalName;
+  return typeof name === 'string' && name.trim() ? name.trim() : item.title.trim();
+}
+
+function payloadHasKey(payload: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(payload, key);
+}
+
+function hasDurableCreatePayload(payload: Record<string, unknown>): boolean {
+  const durableKeys = [
+    'status',
+    'stage',
+    'priority',
+    'ownerUserId',
+    'assigneeUserId',
+    'dueAt',
+    'parentObjectId',
+  ];
+  if (durableKeys.some((key) => payloadHasKey(payload, key))) return true;
+  return (
+    payload.metadata !== null &&
+    typeof payload.metadata === 'object' &&
+    !Array.isArray(payload.metadata) &&
+    Object.keys(payload.metadata).length > 0
+  );
+}
+
+function lowSignalCreateObject(item: SuggestionItemOutput): boolean {
+  if (item.operation !== 'create' || item.targetKind !== 'object') return false;
+  if (hasDurableCreatePayload(item.proposedPayload)) return false;
+  const normalized = normalizeCleanupName(itemCanonicalName(item));
+  if (!normalized) return true;
+  const type = itemCreateType(item);
+  return (
+    (type === 'company' || type === 'topic' || type === 'other') &&
+    (GENERIC_TOOL_NAMES.has(normalized) || LOW_SIGNAL_OBJECT_NAMES.has(normalized))
+  );
+}
+
+function existingMatchForCreate(
+  item: SuggestionItemOutput,
+  rows: CleanupObjectRow[],
+): CleanupObjectRow | null {
+  if (item.operation !== 'create' || (item.targetKind !== 'object' && item.targetKind !== 'task')) {
+    return null;
+  }
+  const candidate: CleanupObjectRow = {
+    id: 'candidate',
+    teamId: rows[0]?.teamId ?? '',
+    type: itemCreateType(item),
+    canonicalName: itemCanonicalName(item),
+    aliases: Array.isArray(item.proposedPayload.aliases) ? item.proposedPayload.aliases : [],
+    status: 'suggested',
+    updatedAt: new Date(0),
+  };
+  const matches = rows
+    .map((row) => ({ row, match: cleanupMatch(candidate, row) }))
+    .filter((entry): entry is { row: CleanupObjectRow; match: 'exact' | 'near' } =>
+      Boolean(entry.match),
+    );
+  if (matches.length === 0) return null;
+  const exact = matches.filter((entry) => entry.match === 'exact');
+  const pool = exact.length > 0 ? exact : matches;
+  if (pool.length !== 1 && candidate.type === 'person') return null;
+  return pickCleanupSurvivor(pool.map((entry) => entry.row));
+}
+
+function updatePayloadFromCreate(
+  item: SuggestionItemOutput,
+  aliases: string[],
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const key of ['status', 'stage', 'priority', 'ownerUserId', 'assigneeUserId', 'dueAt']) {
+    if (payloadHasKey(item.proposedPayload, key)) payload[key] = item.proposedPayload[key];
+  }
+  if (aliases.length > 0) payload.aliases = aliases;
+  return payload;
+}
+
+function normalizeBundleAgainstExistingObjects(
+  bundle: SuggestionBundleOutput,
+  rows: CleanupObjectRow[],
+): SuggestionBundleOutput {
+  const items = bundle.items
+    .filter((item) => !lowSignalCreateObject(item))
+    .map((item) => {
+      const match = existingMatchForCreate(item, rows);
+      if (!match) return item;
+      const aliases = Array.from(
+        new Set([
+          ...aliasesForRow(match),
+          itemCanonicalName(item),
+          ...aliasesForRow({ aliases: item.proposedPayload.aliases }),
+        ]),
+      ).filter((alias) => alias.toLowerCase() !== match.canonicalName.toLowerCase());
+      return {
+        ...item,
+        operation: 'update' as const,
+        targetKind: match.type === 'task' ? ('task' as const) : ('object' as const),
+        targetId: match.id,
+        title: `Update ${match.canonicalName}`,
+        proposedPayload: updatePayloadFromCreate(item, aliases),
+      };
+    });
+  return { ...bundle, items };
 }
 
 function pickCleanupSurvivor(rows: CleanupObjectRow[]): CleanupObjectRow {
@@ -694,9 +847,12 @@ async function runSuggestionExtraction(
   const entityRows = await deps.db
     .select({
       id: entities.id,
+      teamId: entities.teamId,
       type: entities.type,
       name: entities.canonicalName,
+      aliases: entities.aliases,
       status: entities.status,
+      updatedAt: entities.updatedAt,
     })
     .from(entities)
     .where(and(eq(entities.teamId, teamId), isNull(entities.mergedIntoId)))
@@ -737,6 +893,16 @@ async function runSuggestionExtraction(
     limit: 40,
   });
 
+  const objectRowsForMatching: CleanupObjectRow[] = entityRows.map((entity) => ({
+    id: entity.id,
+    teamId: entity.teamId,
+    type: entity.type,
+    canonicalName: entity.name,
+    aliases: entity.aliases,
+    status: entity.status,
+    updatedAt: entity.updatedAt,
+  }));
+
   const prompt = llm.truncateTextToTokenBudget(
     buildPrompt({
       text,
@@ -748,6 +914,7 @@ async function runSuggestionExtraction(
         id: e.id,
         type: e.type,
         name: e.name,
+        aliases: aliasesForRow({ aliases: e.aliases }),
         status: e.status,
       })),
       calendar: calendarRows
@@ -770,7 +937,7 @@ async function runSuggestionExtraction(
     schema: suggestionExtractionSchema,
     model: modelId,
     system:
-      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, or calendar refinements. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, or merely conversational. For create task/object items, include proposedPayload.canonicalName matching the item title. For date-only scheduled commitments, create all-day calendar_event items. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
+      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, or calendar refinements. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, merely conversational, or only says someone shared/sent/forwarded a link, post, file, reaction, app mention, or platform handle. Prefer updating an existing workspace object over creating a new one whenever the name, alias, person nickname, handle, company suffix variant, or conversation context plausibly matches an object in the prompt. Create a task/object only when the evidence contains durable information and no plausible existing or pending object matches. For create task/object items, include proposedPayload.canonicalName matching the item title. For date-only scheduled commitments, create all-day calendar_event items. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
     prompt,
   });
 
@@ -783,7 +950,9 @@ async function runSuggestionExtraction(
 
   const bundles =
     result.object.bundles.length > 0
-      ? result.object.bundles
+      ? result.object.bundles.map((bundle) =>
+          normalizeBundleAgainstExistingObjects(bundle, objectRowsForMatching),
+        )
       : args.conversation
         ? []
         : fallbackBundles({
@@ -1175,7 +1344,7 @@ function buildPrompt(args: {
   workspaceTime: time.WorkspaceTimeContext;
   facts: string[];
   members: { userId: string; name: string | null; email: string | null }[];
-  objects: { id: string; type: string; name: string; status: string }[];
+  objects: { id: string; type: string; name: string; aliases: string[]; status: string }[];
   calendar: { id: string; title: string; startAt: string; allDay: boolean }[];
   recent: { occurredAt: Date; text: string | null }[];
   conversationWindow: conversationReview.ConversationEvidenceEvent[] | null;
@@ -1191,7 +1360,12 @@ function buildPrompt(args: {
     ...args.members.map((m) => `- ${m.userId}: ${m.name ?? 'Unnamed'} <${m.email ?? 'no-email'}>`),
     '',
     '# Existing workspace objects',
-    ...args.objects.map((o) => `- ${o.id}: ${o.type} "${o.name}" status=${o.status}`),
+    ...args.objects.map(
+      (o) =>
+        `- ${o.id}: ${o.type} "${o.name}" status=${o.status} aliases=${
+          o.aliases.join(', ') || 'none'
+        }`,
+    ),
     '',
     '# Existing calendar events',
     ...args.calendar.map((ev) => `- ${ev.id}: "${ev.title}" ${ev.startAt} all_day=${ev.allDay}`),

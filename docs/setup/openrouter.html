@@ -26,7 +26,7 @@
           <li><a href="#model-pins">2. Model pins</a></li>
           <li><a href="#smoke-test">3. Quick smoke test</a></li>
           <li><a href="#phase-3">Phase 3 — transcription</a></li>
-          <li><a href="#phase-4">Phase 4 — extraction + entities</a></li>
+          <li><a href="#phase-4">Phase 4 — extraction + object links</a></li>
           <li><a href="#phase-5">Phase 5 — embeddings + search</a></li>
           <li><a href="#phase-6">Phase 6 — agent chat</a></li>
           <li><a href="#reembed">Re-embed procedure</a></li>
@@ -105,7 +105,7 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         until the key is available (BullMQ default exponential backoff, 3 attempts).
       </p>
 
-      <h2 id="phase-4">Phase 4 verification (extraction + entities)</h2>
+      <h2 id="phase-4">Phase 4 verification (extraction + object links)</h2>
       <p>
         After <code>OPENROUTER_API_KEY</code> and <code>REDIS_URL</code> are set, with
         <code>pnpm dev</code> (web) and the worker process running:
@@ -116,17 +116,18 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
           <code>Met with John Ternus at Apple about SaaS licensing.</code>
         </li>
         <li>
-          Within a few seconds the extract worker should write rows into the new
-          <code>facts</code> and <code>entities</code> tables.
+          Within a few seconds the extract worker should write a row into the
+          <code>facts</code> table. It links mentions only to existing workspace objects; it does
+          not create new objects from a first mention.
         </li>
         <li>
-          Visit <code>/app/entities</code> — <code>John Ternus</code> (person),
-          <code>Apple</code> (company), and <code>SaaS licensing</code> (topic) appear, grouped by
-          type.
+          Visit <code>/app/approvals</code> for any object-memory proposal the suggestion worker can
+          support with durable evidence. Weak link targets or app mentions should stay raw evidence
+          rather than becoming objects.
         </li>
         <li>
-          Click into any of them to see the aggregated source events, the confidence-scored fact
-          statements, and the co-occurring entity sidebar.
+          If the fact references an existing object, click into that object to see the aggregated
+          source events, confidence-scored fact statements, and co-occurring object sidebar.
         </li>
       </ol>
       <p>
@@ -139,8 +140,10 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 
       <h3 id="entity-resolution-scope">Entity resolution scope (Phase 4)</h3>
       <p>
-        Resolution is deterministic name + alias matching within a team. Two limitations to know
-        about:
+        Resolution is deterministic name + alias matching within a team. Extraction links to an
+        existing object when it can, but unmatched mentions remain unlinked evidence until an
+        approval-backed object-memory proposal creates or updates a workspace object. Two
+        limitations to know about:
       </p>
       <ul>
         <li>

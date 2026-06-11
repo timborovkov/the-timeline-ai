@@ -27,6 +27,7 @@ export interface ResolveEntityInput {
   aliases?: string[];
   /** Fact statement used as disambiguation context when ambiguous. */
   factStatement?: string;
+  createIfMissing?: boolean;
 }
 
 interface EntityRow {
@@ -172,7 +173,7 @@ export async function resolveEntity(
   tx: DbOrTx,
   input: ResolveEntityInput,
   llmDeps: ChatDeps = {},
-): Promise<string> {
+): Promise<string | null> {
   const lowerName = input.name.toLowerCase();
   // Case-insensitive alias match. Using @> with the raw-cased input would
   // miss "John" vs "john" mismatches and silently create duplicate entities.
@@ -201,6 +202,7 @@ export async function resolveEntity(
   const candidates = matches.filter((m) => m.type === input.type);
 
   if (candidates.length === 0) {
+    if (input.createIfMissing === false) return null;
     return insertEntityRow(tx, input);
   }
 
@@ -211,6 +213,7 @@ export async function resolveEntity(
     chosen = await disambiguate(candidates, input, llmDeps);
     if (!chosen) {
       // LLM said "none of these" — create a new entity (race-safe).
+      if (input.createIfMissing === false) return null;
       return insertEntityRow(tx, input);
     }
   }
@@ -247,9 +250,10 @@ export async function resolveMentions(
   mentions: EntityMention[],
   factStatement: string,
   llmDeps: ChatDeps = {},
-): Promise<string[]> {
-  const cache = new Map<string, string>();
-  const out: string[] = [];
+  opts: { createIfMissing?: boolean } = {},
+): Promise<(string | null)[]> {
+  const cache = new Map<string, string | null>();
+  const out: (string | null)[] = [];
   for (const m of mentions) {
     const key = `${m.type}:${m.name.toLowerCase()}`;
     let id = cache.get(key);
@@ -262,6 +266,7 @@ export async function resolveMentions(
           type: m.type,
           ...(m.aliases ? { aliases: m.aliases } : {}),
           factStatement,
+          ...(opts.createIfMissing === undefined ? {} : { createIfMissing: opts.createIfMissing }),
         },
         llmDeps,
       );
