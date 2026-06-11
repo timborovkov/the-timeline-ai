@@ -101,6 +101,10 @@ export function ObjectCleanupSuggestions({
     });
   }
 
+  function rejectItem(itemId: string) {
+    run(() => rejectSuggestionItemAction({ itemId }), itemId);
+  }
+
   function run(
     action: () => Promise<{ ok?: boolean; error?: string; message?: string }>,
     optimisticItemId?: string,
@@ -207,7 +211,7 @@ export function ObjectCleanupSuggestions({
                     variant="outline"
                     disabled={pending}
                     onClick={() => {
-                      run(() => rejectSuggestionItemAction({ itemId: item.id }), item.id);
+                      rejectItem(item.id);
                     }}
                   >
                     <X className="size-4" />
@@ -238,9 +242,13 @@ export function ObjectCleanupSuggestions({
               objects={reviewingPreview.objects}
               initialSurvivorId={reviewingPreview.survivorId}
               countsBySurvivorId={reviewingPreview.countsBySurvivorId}
+              factSamplesByObjectId={reviewingPreview.factSamplesByObjectId}
               suggestionItemId={reviewingEntry.item.id}
               onCancel={() => {
                 setReviewingItemId(null);
+              }}
+              onReject={() => {
+                rejectItem(reviewingEntry.item.id);
               }}
               onMerged={() => {
                 resolveItem(reviewingEntry.item.id);

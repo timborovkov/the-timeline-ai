@@ -78,6 +78,26 @@ describe('ObjectCleanupSuggestions', () => {
               [survivorId]: { facts: 2, notes: 0, relationships: 0, openTasks: 0 },
               [duplicateId]: { facts: 2, notes: 0, relationships: 0, openTasks: 0 },
             },
+            factSamplesByObjectId: {
+              [survivorId]: [
+                {
+                  id: 'fact-a',
+                  statement: 'Trade register extract belongs to AuditAI.',
+                  confidence: 0.9,
+                  rawEventId: 'event-a',
+                  extractedAt: new Date('2026-06-01T10:00:00.000Z'),
+                },
+              ],
+              [duplicateId]: [
+                {
+                  id: 'fact-b',
+                  statement: 'trade register extracts are pending import.',
+                  confidence: 0.8,
+                  rawEventId: 'event-b',
+                  extractedAt: new Date('2026-06-01T10:00:00.000Z'),
+                },
+              ],
+            },
           },
         },
       }),

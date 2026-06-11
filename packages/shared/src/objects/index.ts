@@ -356,6 +356,16 @@ export interface ObjectMergePreview {
   objects: ObjectRow[];
   survivorId: string;
   aliasesToAdd: string[];
+  factSamplesByObjectId: Record<
+    string,
+    {
+      id: string;
+      statement: string;
+      confidence: number;
+      rawEventId: string;
+      extractedAt: Date;
+    }[]
+  >;
   counts: {
     facts: number;
     notes: number;
@@ -868,6 +878,62 @@ export async function getObjectMergePreview(
   if (!survivor) throw new Error('Survivor object not found');
   const losers = objects.filter((row) => row.id !== survivor.id);
 
+  async function getFactSamples(
+    objectIds: string[],
+  ): Promise<ObjectMergePreview['factSamplesByObjectId']> {
+    const rankedFacts = db
+      .select({
+        entityId: factEntities.entityId,
+        id: factsTable.id,
+        statement: factsTable.statement,
+        confidence: factsTable.confidence,
+        rawEventId: factsTable.rawEventId,
+        extractedAt: factsTable.extractedAt,
+        rank: sql<number>`row_number() over (partition by ${factEntities.entityId} order by ${factsTable.extractedAt} desc, ${factsTable.id} desc)`.as(
+          'fact_sample_rank',
+        ),
+      })
+      .from(factEntities)
+      .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
+      .innerJoin(rawEvents, eq(rawEvents.id, factsTable.rawEventId))
+      .where(
+        and(
+          inArray(factEntities.entityId, objectIds),
+          eq(factsTable.teamId, scope.teamId),
+          eq(rawEvents.teamId, scope.teamId),
+          rawEventVisibility(scope),
+        ),
+      )
+      .as('ranked_object_facts');
+
+    const rows = await db
+      .select({
+        entityId: rankedFacts.entityId,
+        id: rankedFacts.id,
+        statement: rankedFacts.statement,
+        confidence: rankedFacts.confidence,
+        rawEventId: rankedFacts.rawEventId,
+        extractedAt: rankedFacts.extractedAt,
+      })
+      .from(rankedFacts)
+      .where(sql`${rankedFacts.rank} <= 6`)
+      .orderBy(rankedFacts.entityId, rankedFacts.rank);
+
+    const samplesByObjectId: ObjectMergePreview['factSamplesByObjectId'] = Object.fromEntries(
+      objectIds.map((id) => [id, []]),
+    );
+    for (const row of rows) {
+      samplesByObjectId[row.entityId]?.push({
+        id: row.id,
+        statement: row.statement,
+        confidence: row.confidence,
+        rawEventId: row.rawEventId,
+        extractedAt: row.extractedAt,
+      });
+    }
+    return samplesByObjectId;
+  }
+
   async function countMergeImpact(mergeIds: string[]): Promise<ObjectMergePreview['counts']> {
     const [factCountRows, noteCountRows, relCountRows, taskCountRows] = await Promise.all([
       db
@@ -931,6 +997,7 @@ export async function getObjectMergePreview(
     relationships: 0,
     openTasks: 0,
   };
+  const factSamplesByObjectId = await getFactSamples(ids);
 
   return {
     objects,
@@ -939,6 +1006,7 @@ export async function getObjectMergePreview(
       (alias) =>
         !survivor.aliases.some((existing) => existing.toLowerCase() === alias.toLowerCase()),
     ),
+    factSamplesByObjectId,
     counts,
     countsBySurvivorId,
   };

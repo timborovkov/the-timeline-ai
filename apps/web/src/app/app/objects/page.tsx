@@ -103,7 +103,7 @@ export default async function ObjectsIndexPage({
     if (items.length > 0) cleanupSuggestions.push(serializeSuggestionBundle({ ...bundle, items }));
   }
   const mergePreviewEntries = await Promise.all(
-    mergeSuggestionItems.map(async (item) => {
+    mergeSuggestionItems.slice(0, 5).map(async (item) => {
       const ids = objectIdsForMergeSuggestion(item);
       if (ids.length < 2) return null;
       try {

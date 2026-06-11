@@ -575,6 +575,12 @@ describe('object scope — merge cleanup', () => {
       openTasks: 1,
     });
     expect(preview.countsBySurvivorId[typo.id]).toEqual(preview.countsBySurvivorId[survivor.id]);
+    expect(preview.factSamplesByObjectId[survivor.id]).toEqual([
+      expect.objectContaining({ statement: 'PwC is already known' }),
+    ]);
+    expect(preview.factSamplesByObjectId[typo.id]).toEqual([
+      expect.objectContaining({ statement: 'PVC is PwC' }),
+    ]);
 
     await expect(
       scope.mergeObjects({
