@@ -81,6 +81,7 @@ export default async function MergeObjectsPage({
         objects={preview.objects}
         initialSurvivorId={preview.survivorId}
         countsBySurvivorId={preview.countsBySurvivorId}
+        factSamplesByObjectId={preview.factSamplesByObjectId}
         suggestionItemId={suggestionItemId}
       />
     </div>

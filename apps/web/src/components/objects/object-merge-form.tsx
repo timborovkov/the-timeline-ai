@@ -22,8 +22,10 @@ interface Props {
       openTasks: number;
     }
   >;
+  factSamplesByObjectId?: objects.ObjectMergePreview['factSamplesByObjectId'];
   suggestionItemId?: string;
   onCancel?: () => void;
+  onReject?: () => void;
   onMerged?: (survivorId: string) => void;
 }
 
@@ -62,8 +64,10 @@ export function ObjectMergeForm({
   objects,
   initialSurvivorId,
   countsBySurvivorId,
+  factSamplesByObjectId = {},
   suggestionItemId,
   onCancel,
+  onReject,
   onMerged,
 }: Props) {
   const router = useRouter();
@@ -103,35 +107,60 @@ export function ObjectMergeForm({
   return (
     <div className="space-y-6">
       <div className="grid gap-px overflow-hidden border border-border">
-        {objects.map((object) => (
-          <label
-            key={object.id}
-            className={`flex min-h-12 items-center gap-3 bg-bg px-3 py-2.5 text-sm transition-colors ${
-              survivorId === object.id ? 'bg-signal-soft' : 'hover:bg-surface'
-            }`}
-          >
-            <input
-              type="radio"
-              name="survivor"
-              checked={survivorId === object.id}
-              onChange={() => {
-                setSurvivorId(object.id);
-              }}
-              className="h-4 w-4 accent-[var(--signal)]"
-            />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium text-fg">{object.canonicalName}</span>
-              <span className="block font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                {object.type} · {object.status}
-              </span>
-            </span>
-            {survivorId === object.id ? (
-              <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-signal">
-                Keep
-              </span>
-            ) : null}
-          </label>
-        ))}
+        {objects.map((object) => {
+          const factSamples = factSamplesByObjectId[object.id] ?? [];
+          return (
+            <div key={object.id} className={survivorId === object.id ? 'bg-signal-soft' : 'bg-bg'}>
+              <label
+                className={`flex min-h-12 items-center gap-3 px-3 py-2.5 text-sm transition-colors ${
+                  survivorId === object.id ? '' : 'hover:bg-surface'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="survivor"
+                  checked={survivorId === object.id}
+                  onChange={() => {
+                    setSurvivorId(object.id);
+                  }}
+                  className="h-4 w-4 accent-[var(--signal)]"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-fg">{object.canonicalName}</span>
+                  <span className="block font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                    {object.type} · {object.status}
+                  </span>
+                </span>
+                {survivorId === object.id ? (
+                  <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-signal">
+                    Keep
+                  </span>
+                ) : null}
+              </label>
+              <details className="border-t border-border/70 px-3 py-2 text-sm">
+                <summary className="cursor-pointer select-none font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted hover:text-fg">
+                  Related facts ({factSamples.length})
+                </summary>
+                {factSamples.length > 0 ? (
+                  <ul className="mt-2 space-y-2 text-fg-muted">
+                    {factSamples.map((fact) => (
+                      <li key={fact.id} className="border-l border-border pl-3">
+                        <p>{fact.statement}</p>
+                        <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
+                          Confidence {Math.round(fact.confidence * 100)}%
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-fg-dim">
+                    No visible facts are linked to this object yet.
+                  </p>
+                )}
+              </details>
+            </div>
+          );
+        })}
       </div>
 
       <section className="space-y-3 border-y border-border py-4">
@@ -172,6 +201,12 @@ export function ObjectMergeForm({
       ) : null}
 
       <div className="flex flex-wrap justify-end gap-2">
+        {onReject ? (
+          <Button type="button" size="sm" variant="outline" onClick={onReject} disabled={isPending}>
+            <X className="size-4" />
+            Reject
+          </Button>
+        ) : null}
         {onCancel ? (
           <Button type="button" size="sm" variant="outline" onClick={onCancel}>
             <X className="size-4" />
