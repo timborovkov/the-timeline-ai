@@ -179,16 +179,29 @@ export async function bulkArchiveObjectsAction(input: unknown): Promise<ActionSt
     if (!r.ok) return { error: r.error };
     try {
       const ids = Array.from(new Set(parsed.data.ids));
-      await db.transaction(async (tx) => {
+      const archivedObjects = await db.transaction(async (tx) => {
         const txScope = withTeam(tx as unknown as typeof db, r.teamId, r.userId);
+        const archived = [];
         for (const id of ids) {
-          await txScope.objects.archiveObject(id, { kind: 'user', userId: r.userId });
+          archived.push(
+            await txScope.objects.archiveObject(id, { kind: 'user', userId: r.userId }),
+          );
         }
+        return archived;
       });
+      for (const archived of archivedObjects) {
+        await r.scope.suggestions.reconcileCanonicalChange({
+          targetKind: archived.type === 'task' ? 'task' : 'object',
+          targetId: archived.id,
+          operation: 'archive_or_cancel',
+          reason: 'A teammate archived this object directly.',
+        });
+      }
       for (const id of ids) revalidatePath(`/app/objects/${id}`);
       revalidatePath('/app/objects');
       revalidatePath('/app/boards', 'layout');
       revalidatePath('/app/tasks');
+      revalidatePath('/app/approvals');
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to archive selected objects') };
