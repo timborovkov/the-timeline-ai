@@ -412,20 +412,25 @@ const documentPreviewSchema = z
   .object({
     documentId: documentIdSchema.optional(),
     versionId: versionIdSchema.optional(),
+    versionNumber: z.number().int().positive().optional(),
   })
   .refine((input) => (input.documentId ?? input.versionId) !== undefined, {
     message: 'documentId or versionId is required',
+  })
+  .refine((input) => input.versionNumber === undefined || input.documentId !== undefined, {
+    message: 'documentId is required with versionNumber',
   });
 
 /**
  * Return a short-lived signed GET URL for media previews. Accepts either an
- * exact version id or a document id; document-id previews use the current
- * version so older Telegram attachment events that only recorded document_id
- * still open inline.
+ * exact version id, a document id plus version number from source metadata, or
+ * a document id alone. The document-id fallback uses the current version only
+ * for old events that did not record a version.
  */
 export async function getDocumentPreviewUrlAction(input: {
   documentId?: string;
   versionId?: string;
+  versionNumber?: number;
 }): Promise<{
   ok: boolean;
   error?: string;
@@ -455,8 +460,14 @@ export async function getDocumentPreviewUrlAction(input: {
         auditDetailRead: false,
       });
       if (!document) return { ok: false, error: 'Document not found' };
-      if (!document.currentVersionId) return { ok: false, error: 'No current version' };
-      version = await got.scope.documents.getDocumentVersion(document.currentVersionId);
+      if (parsed.data.versionNumber !== undefined) {
+        const versions = await got.scope.documents.listDocumentVersions(document.id);
+        version =
+          versions.find((candidate) => candidate.version === parsed.data.versionNumber) ?? null;
+      } else {
+        if (!document.currentVersionId) return { ok: false, error: 'No current version' };
+        version = await got.scope.documents.getDocumentVersion(document.currentVersionId);
+      }
     }
 
     if (!document) return { ok: false, error: 'Document not found' };

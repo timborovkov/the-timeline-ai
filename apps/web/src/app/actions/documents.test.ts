@@ -42,6 +42,7 @@ const fakes = vi.hoisted(() => ({
     createDocument: vi.fn(),
     addDocumentVersion: vi.fn(),
     getDocumentVersion: vi.fn(),
+    listDocumentVersions: vi.fn(),
     finalizeDocumentVersion: vi.fn(),
     getDocument: vi.fn(),
     renameDocument: vi.fn(),
@@ -111,6 +112,7 @@ const {
 
 const DOC_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const VERSION_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+const VERSION_2_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = '22222222-2222-2222-2222-222222222222';
 
@@ -420,6 +422,44 @@ describe('getDocumentPreviewUrlAction', () => {
         targetId: DOC_ID,
         metadata: { version: 1, purpose: 'preview' },
       }),
+    );
+  });
+
+  it('resolves numeric source metadata to the original document version', async () => {
+    fakeScope.getDocument.mockResolvedValue({
+      id: DOC_ID,
+      currentVersionId: VERSION_2_ID,
+      visibility: 'team',
+      ownerUserId: USER_ID,
+      visibilityUserIds: null,
+      name: 'photo.jpg',
+    });
+    fakeScope.listDocumentVersions.mockResolvedValue([
+      {
+        id: VERSION_2_ID,
+        documentId: DOC_ID,
+        version: 2,
+        objectKey: `${TEAM_ID}/${DOC_ID}/v2/photo.jpg`,
+        contentType: 'image/jpeg',
+      },
+      {
+        id: VERSION_ID,
+        documentId: DOC_ID,
+        version: 1,
+        objectKey: `${TEAM_ID}/${DOC_ID}/v1/photo.jpg`,
+        contentType: 'image/jpeg',
+      },
+    ]);
+
+    const r = await getDocumentPreviewUrlAction({ documentId: DOC_ID, versionNumber: 1 });
+
+    expect(r.ok).toBe(true);
+    expect(fakeScope.getDocumentVersion).not.toHaveBeenCalledWith(VERSION_2_ID);
+    expect(fakeGetSignedGetUrl).toHaveBeenCalledWith(
+      expect.anything(),
+      'test-documents',
+      `${TEAM_ID}/${DOC_ID}/v1/photo.jpg`,
+      3600,
     );
   });
 

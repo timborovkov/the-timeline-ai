@@ -113,6 +113,11 @@ function stringMeta(meta: Record<string, unknown>, key: string): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
+function positiveIntegerMeta(meta: Record<string, unknown>, key: string): number | null {
+  const value = meta[key];
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
+}
+
 function friendlyMeta(meta: Record<string, unknown>, key: string): string | null {
   const value = formatMetadataValue(meta[key]).trim();
   return value.length > 0 ? value : null;
@@ -291,6 +296,7 @@ function rawEventDocumentLink(event: TimelineEvent): {
   label: string;
   documentId: string;
   versionId: string | null;
+  versionNumber: number | null;
   canPreview: boolean;
 } | null {
   const meta = metaObject(event.sourceMetadata);
@@ -302,6 +308,7 @@ function rawEventDocumentLink(event: TimelineEvent): {
     label: stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name') ?? 'Attachment',
     documentId,
     versionId: stringMeta(meta, 'document_version_id') ?? stringMeta(meta, 'documentVersionId'),
+    versionNumber: positiveIntegerMeta(meta, 'document_version'),
     canPreview: action === 'upload' || action === 'new_version',
   };
 }
@@ -465,6 +472,7 @@ function RawEventExpansion({
                       target={{
                         documentId: documentLink.documentId,
                         versionId: documentLink.versionId,
+                        versionNumber: documentLink.versionNumber,
                       }}
                       label="Preview"
                       compact

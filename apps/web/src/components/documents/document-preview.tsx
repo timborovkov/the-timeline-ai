@@ -9,8 +9,8 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 type DocumentPreviewHandle =
-  | { documentId: string; versionId?: string | null }
-  | { documentId?: string | null; versionId: string };
+  | { documentId: string; versionId?: string | null; versionNumber?: number | null }
+  | { documentId?: string | null; versionId: string; versionNumber?: number | null };
 
 interface PreviewState {
   url: string;
@@ -35,6 +35,7 @@ export function DocumentPreview({ target, label = 'Preview', className, compact 
       const res = await getDocumentPreviewUrlAction({
         documentId: target.documentId ?? undefined,
         versionId: target.versionId ?? undefined,
+        versionNumber: target.versionNumber ?? undefined,
       });
       if (!res.ok || !res.url || !res.mediaKind) {
         toast.error(res.error ?? 'Preview unavailable');
