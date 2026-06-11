@@ -3,7 +3,7 @@
 import { Archive, ChevronLeft, ChevronRight, GitMerge, RefreshCw, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useReducer } from 'react';
 
 import type * as objects from '@timeline/shared/objects';
 
@@ -46,6 +46,75 @@ interface Props {
 const EMPTY_MERGE_PREVIEWS: Record<string, objects.ObjectMergePreview> = {};
 const PAGE_SIZE = 10;
 
+interface CleanupReviewState {
+  message: string | null;
+  resolvedItemIds: Set<string>;
+  busyItemIds: Set<string>;
+  findingSuggestions: boolean;
+  reviewingItemId: string | null;
+  page: number;
+}
+
+type CleanupReviewAction =
+  | { type: 'message'; message: string | null }
+  | { type: 'resolve_item'; itemId: string }
+  | { type: 'restore_item'; itemId: string }
+  | { type: 'start_item_action'; itemId: string }
+  | { type: 'finish_item_action'; itemId: string }
+  | { type: 'start_find' }
+  | { type: 'finish_find' }
+  | { type: 'review_item'; itemId: string | null }
+  | { type: 'page'; page: number };
+
+function cleanupReviewReducer(
+  state: CleanupReviewState,
+  action: CleanupReviewAction,
+): CleanupReviewState {
+  switch (action.type) {
+    case 'message':
+      return { ...state, message: action.message };
+    case 'resolve_item': {
+      const resolvedItemIds = new Set(state.resolvedItemIds).add(action.itemId);
+      return {
+        ...state,
+        resolvedItemIds,
+        reviewingItemId: state.reviewingItemId === action.itemId ? null : state.reviewingItemId,
+      };
+    }
+    case 'restore_item': {
+      const resolvedItemIds = new Set(state.resolvedItemIds);
+      resolvedItemIds.delete(action.itemId);
+      return { ...state, resolvedItemIds };
+    }
+    case 'start_item_action':
+      return { ...state, busyItemIds: new Set(state.busyItemIds).add(action.itemId) };
+    case 'finish_item_action': {
+      const busyItemIds = new Set(state.busyItemIds);
+      busyItemIds.delete(action.itemId);
+      return { ...state, busyItemIds };
+    }
+    case 'start_find':
+      return { ...state, findingSuggestions: true };
+    case 'finish_find':
+      return { ...state, findingSuggestions: false };
+    case 'review_item':
+      return { ...state, message: null, reviewingItemId: action.itemId };
+    case 'page':
+      return { ...state, page: action.page };
+  }
+}
+
+function initialCleanupReviewState(): CleanupReviewState {
+  return {
+    message: null,
+    resolvedItemIds: new Set(),
+    busyItemIds: new Set(),
+    findingSuggestions: false,
+    reviewingItemId: null,
+    page: 0,
+  };
+}
+
 function objectIdsForMerge(item: SuggestionItem): string[] {
   const objectIds = item.proposedPayload.objectIds;
   if (!Array.isArray(objectIds)) return [];
@@ -66,63 +135,71 @@ export function ObjectCleanupSuggestions({
   mergePreviewsByItemId = EMPTY_MERGE_PREVIEWS,
 }: Props) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
-  const [message, setMessage] = useState<string | null>(null);
-  const [resolvedItemIds, setResolvedItemIds] = useState<Set<string>>(() => new Set());
-  const [reviewingItemId, setReviewingItemId] = useState<string | null>(null);
-  const [page, setPage] = useState(0);
+  const [state, dispatch] = useReducer(cleanupReviewReducer, undefined, initialCleanupReviewState);
   const pendingItems = useMemo(() => {
     const items: { bundle: SuggestionBundle; item: SuggestionItem }[] = [];
     for (const bundle of suggestions) {
       for (const item of bundle.items) {
         if (
           (item.status === 'pending' || item.status === 'failed') &&
-          !resolvedItemIds.has(item.id)
+          !state.resolvedItemIds.has(item.id)
         ) {
           items.push({ bundle, item });
         }
       }
     }
     return items;
-  }, [resolvedItemIds, suggestions]);
-  const reviewingEntry = reviewingItemId
-    ? pendingItems.find(({ item }) => item.id === reviewingItemId)
+  }, [state.resolvedItemIds, suggestions]);
+  const reviewingEntry = state.reviewingItemId
+    ? pendingItems.find(({ item }) => item.id === state.reviewingItemId)
     : undefined;
-  const reviewingPreview = reviewingItemId ? mergePreviewsByItemId[reviewingItemId] : undefined;
+  const reviewingPreview = state.reviewingItemId
+    ? mergePreviewsByItemId[state.reviewingItemId]
+    : undefined;
   const pageCount = Math.max(1, Math.ceil(pendingItems.length / PAGE_SIZE));
-  const effectivePage = Math.min(page, pageCount - 1);
+  const effectivePage = Math.min(state.page, pageCount - 1);
   const pageStart = effectivePage * PAGE_SIZE;
   const visibleItems = pendingItems.slice(pageStart, pageStart + PAGE_SIZE);
 
   function resolveItem(itemId: string) {
-    setResolvedItemIds((current) => new Set(current).add(itemId));
-    if (reviewingItemId === itemId) setReviewingItemId(null);
+    dispatch({ type: 'resolve_item', itemId });
   }
 
   function restoreItem(itemId: string) {
-    setResolvedItemIds((current) => {
-      const next = new Set(current);
-      next.delete(itemId);
-      return next;
-    });
+    dispatch({ type: 'restore_item', itemId });
   }
 
   function rejectItem(itemId: string) {
-    run(() => rejectSuggestionItemAction({ itemId }), itemId);
+    void run(() => rejectSuggestionItemAction({ itemId }), itemId);
   }
 
-  function run(
+  async function run(
     action: () => Promise<{ ok?: boolean; error?: string; message?: string }>,
     optimisticItemId?: string,
   ) {
-    setMessage(null);
+    dispatch({ type: 'message', message: null });
+    if (optimisticItemId && state.busyItemIds.has(optimisticItemId)) return;
     if (optimisticItemId) resolveItem(optimisticItemId);
-    startTransition(async () => {
+    if (optimisticItemId) {
+      dispatch({ type: 'start_item_action', itemId: optimisticItemId });
+    } else {
+      dispatch({ type: 'start_find' });
+    }
+    try {
       const result = await action();
       if (result.error && optimisticItemId) restoreItem(optimisticItemId);
-      setMessage(result.error ?? result.message ?? null);
+      dispatch({ type: 'message', message: result.error ?? result.message ?? null });
       router.refresh();
-    });
+    } catch (err) {
+      if (optimisticItemId) restoreItem(optimisticItemId);
+      dispatch({ type: 'message', message: err instanceof Error ? err.message : 'Action failed' });
+    } finally {
+      if (optimisticItemId) {
+        dispatch({ type: 'finish_item_action', itemId: optimisticItemId });
+      } else {
+        dispatch({ type: 'finish_find' });
+      }
+    }
   }
 
   return (
@@ -142,9 +219,9 @@ export function ObjectCleanupSuggestions({
           type="button"
           size="sm"
           variant="outline"
-          disabled={pending}
+          disabled={state.findingSuggestions}
           onClick={() => {
-            run(findObjectCleanupSuggestionsAction);
+            void run(findObjectCleanupSuggestionsAction);
           }}
         >
           <RefreshCw className="size-4" />
@@ -152,12 +229,13 @@ export function ObjectCleanupSuggestions({
         </Button>
       </div>
 
-      {message ? <p className="mt-3 text-sm text-fg-muted">{message}</p> : null}
+      {state.message ? <p className="mt-3 text-sm text-fg-muted">{state.message}</p> : null}
 
       {pendingItems.length > 0 ? (
         <ul className="mt-4 divide-y divide-border border border-border">
           {visibleItems.map(({ bundle, item }) => {
             const mergeIds = item.targetKind === 'object_merge' ? objectIdsForMerge(item) : [];
+            const itemBusy = state.busyItemIds.has(item.id);
             return (
               <li key={item.id} className="grid gap-3 bg-bg p-3 md:grid-cols-[1fr_auto]">
                 <div className="min-w-0">
@@ -175,16 +253,15 @@ export function ObjectCleanupSuggestions({
                       <Button
                         type="button"
                         size="sm"
-                        disabled={pending || mergeIds.length < 2}
+                        disabled={itemBusy || mergeIds.length < 2}
                         onClick={() => {
-                          setMessage(null);
-                          setReviewingItemId(item.id);
+                          dispatch({ type: 'review_item', itemId: item.id });
                         }}
                       >
                         <GitMerge className="size-4" />
                         Review
                       </Button>
-                    ) : pending || mergeIds.length < 2 ? (
+                    ) : itemBusy || mergeIds.length < 2 ? (
                       <Button type="button" size="sm" disabled>
                         <GitMerge className="size-4" />
                         Review
@@ -201,10 +278,10 @@ export function ObjectCleanupSuggestions({
                     <Button
                       type="button"
                       size="sm"
-                      disabled={pending || !item.targetId}
+                      disabled={itemBusy || !item.targetId}
                       onClick={() => {
                         if (!item.targetId) return;
-                        run(() => acceptSuggestionItemAction({ itemId: item.id }), item.id);
+                        void run(() => acceptSuggestionItemAction({ itemId: item.id }), item.id);
                       }}
                     >
                       <Archive className="size-4" />
@@ -215,7 +292,7 @@ export function ObjectCleanupSuggestions({
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={pending}
+                    disabled={itemBusy}
                     onClick={() => {
                       rejectItem(item.id);
                     }}
@@ -244,7 +321,7 @@ export function ObjectCleanupSuggestions({
               disabled={effectivePage === 0}
               title="Previous suggestions"
               onClick={() => {
-                setPage((current) => Math.max(0, current - 1));
+                dispatch({ type: 'page', page: Math.max(0, state.page - 1) });
               }}
             >
               <ChevronLeft className="size-4" />
@@ -259,7 +336,7 @@ export function ObjectCleanupSuggestions({
               disabled={effectivePage >= pageCount - 1}
               title="Next suggestions"
               onClick={() => {
-                setPage((current) => Math.min(pageCount - 1, current + 1));
+                dispatch({ type: 'page', page: Math.min(pageCount - 1, state.page + 1) });
               }}
             >
               <ChevronRight className="size-4" />
@@ -269,9 +346,9 @@ export function ObjectCleanupSuggestions({
       ) : null}
 
       <Dialog
-        open={Boolean(reviewingItemId)}
+        open={Boolean(state.reviewingItemId)}
         onOpenChange={(open) => {
-          if (!open) setReviewingItemId(null);
+          if (!open) dispatch({ type: 'review_item', itemId: null });
         }}
       >
         <DialogContent className="max-h-[min(760px,calc(100vh-2rem))] overflow-y-auto border-border bg-bg sm:max-w-4xl">
@@ -289,14 +366,14 @@ export function ObjectCleanupSuggestions({
               factSamplesByObjectId={reviewingPreview.factSamplesByObjectId}
               suggestionItemId={reviewingEntry.item.id}
               onCancel={() => {
-                setReviewingItemId(null);
+                dispatch({ type: 'review_item', itemId: null });
               }}
               onReject={() => {
                 rejectItem(reviewingEntry.item.id);
               }}
               onMerged={() => {
                 resolveItem(reviewingEntry.item.id);
-                setMessage('Objects merged.');
+                dispatch({ type: 'message', message: 'Objects merged.' });
                 router.refresh();
               }}
             />
