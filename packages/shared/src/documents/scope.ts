@@ -7,7 +7,7 @@ import {
   folders,
   rawEvents,
 } from '@timeline/db';
-import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
@@ -87,9 +87,30 @@ export interface DocumentRow {
   ownerUserId: string | null;
   visibility: Visibility;
   visibilityUserIds: string[] | null;
+  metadata: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+}
+
+export interface DocumentListEntry extends DocumentRow {
+  currentVersion: {
+    id: string;
+    version: number;
+    byteSize: number | null;
+    contentType: string | null;
+    processingStatus: DocumentVersionRow['processingStatus'];
+    sourceEventId: string | null;
+    createdAt: Date;
+  } | null;
+  provenance: {
+    source: string;
+    sourceEventId: string | null;
+    parentEventId: string | null;
+    occurredAt: Date | null;
+    summary: string | null;
+    metadata: Record<string, unknown>;
+  };
 }
 
 export interface DocumentListArgs {
@@ -207,6 +228,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export function createDocumentScope(deps: DocumentScopeDeps) {
   const { db, teamId, userId, ensureMember, requireTeamMember } = deps;
+  const activeRawEventFilter = sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`;
 
   // Visibility predicates per-table — same shape as raw_events' visibility
   // filter. Documents/folders carry their own visibility columns so we
@@ -382,23 +404,16 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
   async function listDocuments(args: DocumentListArgs = {}): Promise<DocumentRow[]> {
     await ensureMember();
-    const conditions = [eq(documents.teamId, teamId), documentVisibility];
-    if (!args.includeDeleted) conditions.push(isNull(documents.deletedAt));
-    if (args.folderId === null || args.folderId === undefined) {
-      conditions.push(isNull(documents.folderId));
-    } else {
-      conditions.push(eq(documents.folderId, args.folderId));
-    }
+    const conditions = documentListConditions(args);
     const cursor = decodeCursor(args.cursor);
     if (args.cursor && !cursor) throw new Error('Invalid cursor');
     if (cursor) {
       const cursorDate = new Date(cursor.at);
-      conditions.push(
-        or(
-          lt(documents.updatedAt, cursorDate),
-          and(eq(documents.updatedAt, cursorDate), lt(documents.id, cursor.id)),
-        ),
+      const cursorCondition = or(
+        lt(documents.updatedAt, cursorDate),
+        and(eq(documents.updatedAt, cursorDate), lt(documents.id, cursor.id)),
       );
+      if (cursorCondition) conditions.push(cursorCondition);
     }
     const rows = await db
       .select()
@@ -406,7 +421,164 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       .where(and(...conditions))
       .orderBy(desc(documents.updatedAt), desc(documents.id))
       .limit(args.limit ?? 200);
-    return rows;
+    return rows.map(normalizeDocumentRow);
+  }
+
+  function documentListConditions(args: DocumentListArgs): SQL[] {
+    const conditions: SQL[] = [eq(documents.teamId, teamId)];
+    if (documentVisibility) conditions.push(documentVisibility);
+    if (!args.includeDeleted) conditions.push(isNull(documents.deletedAt));
+    if (args.folderId === null || args.folderId === undefined) {
+      conditions.push(isNull(documents.folderId));
+    } else {
+      conditions.push(eq(documents.folderId, args.folderId));
+    }
+    return conditions;
+  }
+
+  function metadataRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  function normalizeDocumentRow(row: typeof documents.$inferSelect): DocumentRow {
+    return { ...row, metadata: metadataRecord(row.metadata) };
+  }
+
+  async function listDocumentsWithProvenance(
+    args: DocumentListArgs = {},
+  ): Promise<DocumentListEntry[]> {
+    await ensureMember();
+    const conditions = documentListConditions(args);
+    const cursor = decodeCursor(args.cursor);
+    if (args.cursor && !cursor) throw new Error('Invalid cursor');
+    if (cursor) {
+      const cursorDate = new Date(cursor.at);
+      const cursorCondition = or(
+        lt(documents.updatedAt, cursorDate),
+        and(eq(documents.updatedAt, cursorDate), lt(documents.id, cursor.id)),
+      );
+      if (cursorCondition) conditions.push(cursorCondition);
+    }
+    const rows = await db
+      .select({
+        document: documents,
+        version: {
+          id: documentVersions.id,
+          version: documentVersions.version,
+          byteSize: documentVersions.byteSize,
+          contentType: documentVersions.contentType,
+          processingStatus: documentVersions.processingStatus,
+          sourceEventId: documentVersions.sourceEventId,
+          createdAt: documentVersions.createdAt,
+        },
+        sourceEvent: {
+          id: rawEvents.id,
+          occurredAt: rawEvents.occurredAt,
+          contentText: rawEvents.contentText,
+          metadata: rawEvents.sourceMetadata,
+        },
+      })
+      .from(documents)
+      .leftJoin(documentVersions, eq(documentVersions.id, documents.currentVersionId))
+      .leftJoin(
+        rawEvents,
+        and(
+          eq(rawEvents.id, documentVersions.sourceEventId),
+          eq(rawEvents.teamId, teamId),
+          rawEventVisibleToUser(userId),
+          activeRawEventFilter,
+        ),
+      )
+      .where(and(...conditions))
+      .orderBy(desc(documents.updatedAt), desc(documents.id))
+      .limit(args.limit ?? 200);
+    const mapped = rows.map((row) => {
+      const documentMetadata = metadataRecord(row.document.metadata);
+      const sourceEventMetadata = metadataRecord(row.sourceEvent?.metadata);
+      const source =
+        stringMetadata(documentMetadata, 'source') ??
+        stringMetadata(sourceEventMetadata, 'source') ??
+        stringMetadata(documentMetadata, 'integration_provider') ??
+        'manual';
+      const parentEventCandidate =
+        stringMetadata(documentMetadata, 'parent_raw_event_id') ??
+        stringMetadata(sourceEventMetadata, 'parent_raw_event_id');
+      return {
+        document: normalizeDocumentRow(row.document),
+        version: row.version?.id
+          ? {
+              id: row.version.id,
+              version: row.version.version,
+              byteSize: row.version.byteSize,
+              contentType: row.version.contentType,
+              processingStatus: row.version.processingStatus,
+              sourceEventId: row.sourceEvent?.id ?? null,
+              createdAt: row.version.createdAt,
+            }
+          : null,
+        provenance: {
+          source,
+          sourceEventId: row.sourceEvent?.id ?? null,
+          parentEventCandidate,
+          occurredAt: row.sourceEvent?.occurredAt ?? null,
+          summary: row.sourceEvent?.contentText ?? null,
+          metadata: { ...documentMetadata, ...sourceEventMetadata },
+        },
+      };
+    });
+    const parentEventCandidates = [
+      ...new Set(
+        mapped
+          .map((row) => row.provenance.parentEventCandidate)
+          .filter((id): id is string => typeof id === 'string' && UUID_RE.test(id)),
+      ),
+    ];
+    const visibleParentEventIds =
+      parentEventCandidates.length > 0
+        ? new Set(
+            (
+              await db
+                .select({ id: rawEvents.id })
+                .from(rawEvents)
+                .where(
+                  and(
+                    eq(rawEvents.teamId, teamId),
+                    inArray(rawEvents.id, parentEventCandidates),
+                    rawEventVisibleToUser(userId),
+                    activeRawEventFilter,
+                  ),
+                )
+            ).map((event) => event.id),
+          )
+        : new Set<string>();
+    return mapped.map((row) => {
+      const parentEventId =
+        row.provenance.parentEventCandidate &&
+        visibleParentEventIds.has(row.provenance.parentEventCandidate)
+          ? row.provenance.parentEventCandidate
+          : null;
+      const metadata = { ...row.provenance.metadata };
+      if (!parentEventId) delete metadata.parent_raw_event_id;
+      return {
+        ...row.document,
+        currentVersion: row.version,
+        provenance: {
+          source: row.provenance.source,
+          sourceEventId: row.provenance.sourceEventId,
+          parentEventId,
+          occurredAt: row.provenance.occurredAt,
+          summary: row.provenance.summary,
+          metadata,
+        },
+      };
+    });
+  }
+
+  function stringMetadata(record: Record<string, unknown>, key: string): string | null {
+    const value = record[key];
+    return typeof value === 'string' && value.length > 0 ? value : null;
   }
 
   async function searchDocumentChunksPage(
@@ -658,6 +830,19 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     ): Promise<{ items: DocumentRow[]; nextCursor: string | null }> {
       const limit = Math.min(Math.max(args.limit ?? 30, 1), 100);
       const rows = await listDocuments({ ...args, limit: limit + 1 });
+      return pageWindow(rows, limit, (row) => ({ at: row.updatedAt.toISOString(), id: row.id }));
+    },
+
+    async listDocumentsWithProvenancePage(
+      args: {
+        folderId?: string | null;
+        includeDeleted?: boolean;
+        limit?: number;
+        cursor?: string | null;
+      } = {},
+    ): Promise<{ items: DocumentListEntry[]; nextCursor: string | null }> {
+      const limit = Math.min(Math.max(args.limit ?? 30, 1), 100);
+      const rows = await listDocumentsWithProvenance({ ...args, limit: limit + 1 });
       return pageWindow(rows, limit, (row) => ({ at: row.updatedAt.toISOString(), id: row.id }));
     },
 
@@ -1164,7 +1349,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       const r = rows[0];
       if (!r) return null;
       return {
-        document: r.document,
+        document: normalizeDocumentRow(r.document),
         version: r.version,
       };
     },

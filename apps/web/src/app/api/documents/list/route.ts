@@ -24,7 +24,11 @@ export async function GET(req: Request): Promise<Response> {
   await scope.requireMembership();
   const key = cacheKey(['document-list', active.teamId, session.user.id, folderId, cursor]);
   const page = await cachedJson(key, 30, async () => {
-    const result = await scope.documents.listDocumentsPage({ folderId, cursor, limit: 30 });
+    const result = await scope.documents.listDocumentsWithProvenancePage({
+      folderId,
+      cursor,
+      limit: 30,
+    });
     return {
       items: result.items.map((document) => ({
         id: document.id,
@@ -32,6 +36,19 @@ export async function GET(req: Request): Promise<Response> {
         visibility: document.visibility,
         updatedAt: document.updatedAt.toISOString(),
         ownerUserId: document.ownerUserId,
+        currentVersion: document.currentVersion
+          ? {
+              ...document.currentVersion,
+              createdAt: document.currentVersion.createdAt.toISOString(),
+            }
+          : null,
+        provenance: {
+          source: document.provenance.source,
+          sourceEventId: document.provenance.sourceEventId,
+          parentEventId: document.provenance.parentEventId,
+          occurredAt: document.provenance.occurredAt?.toISOString() ?? null,
+          summary: document.provenance.summary,
+        },
       })),
       nextCursor: result.nextCursor,
     };

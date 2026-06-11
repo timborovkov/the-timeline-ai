@@ -1,7 +1,18 @@
 'use client';
 
 import { type InfiniteData, useQueryClient } from '@tanstack/react-query';
-import { Folder as FolderIcon, FolderPlus, Upload } from 'lucide-react';
+import {
+  Clock3,
+  FileText,
+  Folder as FolderIcon,
+  FolderPlus,
+  HardDrive,
+  Image as ImageIcon,
+  Link2,
+  MessageCircle,
+  Upload,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -41,6 +52,22 @@ interface DocumentItem {
   visibility: string;
   updatedAt: string;
   ownerUserId: string | null;
+  currentVersion: {
+    id: string;
+    version: number;
+    byteSize: number | null;
+    contentType: string | null;
+    processingStatus: string;
+    sourceEventId: string | null;
+    createdAt: string;
+  } | null;
+  provenance: {
+    source: string;
+    sourceEventId: string | null;
+    parentEventId: string | null;
+    occurredAt: string | null;
+    summary: string | null;
+  };
   optimistic?: boolean;
 }
 
@@ -199,6 +226,14 @@ export function DocumentDrive({
           visibility,
           updatedAt: new Date().toISOString(),
           ownerUserId: null,
+          currentVersion: null,
+          provenance: {
+            source: 'manual',
+            sourceEventId: null,
+            parentEventId: null,
+            occurredAt: null,
+            summary: null,
+          },
           optimistic: true,
         });
       }
@@ -580,34 +615,211 @@ function DocumentList({
 }
 
 function DocumentListItem({ document }: { document: DocumentItem }) {
+  const version = document.currentVersion;
+  const sourceEventId = document.provenance.parentEventId ?? document.provenance.sourceEventId;
+  const source = sourceDetails(document.provenance.source);
+  const fileKind = fileKindDetails(document.name, version?.contentType ?? null);
+  const updatedAt = formatDate(document.updatedAt);
+  const capturedAt = document.provenance.occurredAt
+    ? formatDate(document.provenance.occurredAt)
+    : null;
+  const size = formatBytes(version?.byteSize ?? null);
+  const status = version?.processingStatus ?? (document.optimistic ? 'uploading' : null);
+
   return (
-    <li className="flex items-center justify-between rounded-sm border border-border bg-card p-3 hover:border-fg/20">
+    <li className="grid gap-3 rounded-sm border border-border bg-card p-3 transition-colors hover:border-border-strong md:grid-cols-[minmax(0,1fr)_auto]">
       {document.optimistic ? (
-        <span className="flex items-center gap-3 text-sm">
-          <span className="font-medium">{document.name}</span>
-          <Badge variant="outline" className="text-[10px]">
-            uploading
-          </Badge>
-          <VisibilityBadge visibility={document.visibility} />
-        </span>
+        <div className="min-w-0">
+          <DocumentTitleRow document={document} fileKind={fileKind} />
+          <DocumentMetaLine
+            items={[
+              { icon: source.icon, label: source.label },
+              { icon: Clock3, label: 'Uploading now' },
+            ]}
+          />
+        </div>
       ) : (
-        <Link href={`/app/documents/${document.id}`} className="flex items-center gap-3 text-sm">
-          <span className="font-medium">{document.name}</span>
-          <VisibilityBadge visibility={document.visibility} />
-        </Link>
+        <div className="min-w-0">
+          <DocumentTitleRow document={document} fileKind={fileKind} />
+          <DocumentMetaLine
+            items={[
+              { icon: source.icon, label: source.label },
+              capturedAt ? { icon: Clock3, label: capturedAt } : null,
+              size ? { icon: HardDrive, label: size } : null,
+              version ? { icon: FileText, label: `v${String(version.version)}` } : null,
+            ]}
+          />
+          {document.provenance.summary ? (
+            <p className="mt-2 line-clamp-1 text-xs text-muted-foreground">
+              {document.provenance.summary}
+            </p>
+          ) : null}
+        </div>
       )}
-      <span className="text-xs text-muted-foreground">
-        {new Date(document.updatedAt).toLocaleDateString()}
-      </span>
+      <div className="flex items-center justify-between gap-2 md:justify-end">
+        <div className="flex flex-wrap items-center gap-2">
+          <SourceBadge source={source} />
+          <ProcessingBadge status={status} optimistic={document.optimistic === true} />
+          <VisibilityBadge visibility={document.visibility} />
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {sourceEventId ? (
+            <Link
+              href={`/app/timeline?event=${sourceEventId}#ev-${sourceEventId}`}
+              className="inline-flex h-8 items-center gap-1 rounded-sm border border-border px-2 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+            >
+              <Link2 className="size-3.5" />
+              Event
+            </Link>
+          ) : null}
+          <span className="hidden font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim sm:inline">
+            {updatedAt}
+          </span>
+        </div>
+      </div>
     </li>
+  );
+}
+
+function DocumentTitleRow({
+  document,
+  fileKind,
+}: {
+  document: DocumentItem;
+  fileKind: { icon: LucideIcon; label: string };
+}) {
+  const Icon = fileKind.icon;
+  const content = (
+    <>
+      <span className="grid size-9 shrink-0 place-items-center rounded-sm border border-border bg-surface-2 text-muted-foreground">
+        <Icon className="size-4" />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold text-foreground">
+          {document.name}
+        </span>
+        <span className="mt-0.5 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          {fileKind.label}
+        </span>
+      </span>
+    </>
+  );
+  if (document.optimistic) {
+    return <div className="flex min-w-0 items-center gap-3">{content}</div>;
+  }
+  return (
+    <Link href={`/app/documents/${document.id}`} className="flex min-w-0 items-center gap-3">
+      {content}
+    </Link>
+  );
+}
+
+function DocumentMetaLine({ items }: { items: ({ icon: LucideIcon; label: string } | null)[] }) {
+  const visibleItems = items.filter((item): item is { icon: LucideIcon; label: string } =>
+    Boolean(item),
+  );
+  if (visibleItems.length === 0) return null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      {visibleItems.map((item) => {
+        const Icon = item.icon;
+        return (
+          <span key={item.label} className="inline-flex min-w-0 items-center gap-1.5">
+            <Icon className="size-3.5 shrink-0" />
+            <span className="truncate">{item.label}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function SourceBadge({
+  source,
+}: {
+  source: { label: string; shortLabel: string; icon: LucideIcon };
+}) {
+  const Icon = source.icon;
+  return (
+    <Badge variant="secondary" className="gap-1 rounded-sm px-1.5 font-mono text-[10px] uppercase">
+      <Icon className="size-3" />
+      {source.shortLabel}
+    </Badge>
+  );
+}
+
+function ProcessingBadge({ status, optimistic }: { status: string | null; optimistic: boolean }) {
+  if (!status || status === 'embedded') return null;
+  const label = optimistic ? 'uploading' : status.replace(/_/g, ' ');
+  return (
+    <Badge variant="outline" className="rounded-sm font-mono text-[10px] uppercase">
+      {label}
+    </Badge>
   );
 }
 
 function VisibilityBadge({ visibility }: { visibility: string }) {
   if (visibility === 'team') return null;
   return (
-    <Badge variant="outline" className="text-[10px]">
+    <Badge variant="outline" className="rounded-sm font-mono text-[10px] uppercase">
       {visibility}
     </Badge>
   );
+}
+
+function sourceDetails(source: string): {
+  label: string;
+  shortLabel: string;
+  icon: LucideIcon;
+} {
+  if (source === 'telegram') {
+    return { label: 'Telegram capture', shortLabel: 'Telegram', icon: MessageCircle };
+  }
+  if (source === 'slack') {
+    return { label: 'Slack capture', shortLabel: 'Slack', icon: MessageCircle };
+  }
+  if (source === 'google_drive') {
+    return { label: 'Google Drive sync', shortLabel: 'Drive', icon: HardDrive };
+  }
+  if (source === 'github') {
+    return { label: 'GitHub sync', shortLabel: 'GitHub', icon: Link2 };
+  }
+  if (source === 'linear') {
+    return { label: 'Linear sync', shortLabel: 'Linear', icon: Link2 };
+  }
+  return { label: 'Manual upload', shortLabel: 'Manual', icon: Upload };
+}
+
+function fileKindDetails(
+  name: string,
+  contentType: string | null,
+): { icon: LucideIcon; label: string } {
+  const lowerName = name.toLowerCase();
+  if (contentType?.startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|avif)$/.test(lowerName)) {
+    return { icon: ImageIcon, label: contentType ?? 'image' };
+  }
+  if (contentType === 'application/pdf' || lowerName.endsWith('.pdf')) {
+    return { icon: FileText, label: 'PDF' };
+  }
+  return { icon: FileText, label: contentType ?? 'document' };
+}
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(
+    new Date(value),
+  );
+}
+
+function formatBytes(bytes: number | null): string | null {
+  if (bytes === null) return null;
+  if (bytes < 1024) return `${String(bytes)} B`;
+  const units = ['KB', 'MB', 'GB'];
+  let value = bytes / 1024;
+  let unit = units[0] ?? 'KB';
+  for (let i = 0; i < units.length; i++) {
+    unit = units[i] ?? unit;
+    if (value < 1024 || i === units.length - 1) break;
+    value /= 1024;
+  }
+  return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${unit}`;
 }
