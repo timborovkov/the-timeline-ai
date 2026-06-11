@@ -70,6 +70,43 @@ export function CitationText({ text }: Props) {
                 <InlineText keyPrefix={key} text={block.text} />
               </p>
             );
+          case 'table':
+            return (
+              <div key={key} className="overflow-x-auto rounded-sm border border-border bg-surface">
+                <table className="w-full min-w-[680px] border-collapse text-left text-[0.95em]">
+                  <thead className="border-b border-border bg-bg font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                    <tr>
+                      {block.headers.map((cell, cellIndex) => (
+                        <th
+                          key={`${key}:head:${String(cellIndex)}`}
+                          scope="col"
+                          className="px-3 py-2 align-top font-medium"
+                        >
+                          <InlineText keyPrefix={`${key}:head:${String(cellIndex)}`} text={cell} />
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {block.rows.map((row, rowIndex) => (
+                      <tr key={`${key}:row:${String(rowIndex)}`}>
+                        {block.headers.map((_, cellIndex) => (
+                          <td
+                            key={`${key}:cell:${String(rowIndex)}:${String(cellIndex)}`}
+                            className="px-3 py-2 align-top"
+                          >
+                            <InlineText
+                              keyPrefix={`${key}:cell:${String(rowIndex)}:${String(cellIndex)}`}
+                              text={row[cellIndex] ?? ''}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
           case 'paragraph':
             return (
               <p key={key}>
@@ -85,6 +122,7 @@ export function CitationText({ text }: Props) {
 type MarkdownBlock =
   | { type: 'paragraph'; key: string; text: string }
   | { type: 'heading'; key: string; text: string }
+  | { type: 'table'; key: string; headers: string[]; rows: string[][] }
   | { type: 'ul'; key: string; items: MarkdownListItem[] }
   | { type: 'ol'; key: string; items: OrderedMarkdownListItem[] };
 
@@ -135,6 +173,20 @@ function parseMarkdownBlocks(text: string): MarkdownBlock[] {
       continue;
     }
 
+    const nextLine = lines[index + 1] ?? '';
+    if (isTableRow(line) && isTableDivider(nextLine)) {
+      const start = index;
+      const headers = splitTableRow(line);
+      index += 2;
+      const rows: string[][] = [];
+      while (index < lines.length && isTableRow(lines[index] ?? '')) {
+        rows.push(splitTableRow(lines[index] ?? ''));
+        index += 1;
+      }
+      blocks.push({ type: 'table', key: blockKey('table', start, line), headers, rows });
+      continue;
+    }
+
     if (/^1[.)]\s+/.test(line)) {
       const start = index;
       const items: OrderedMarkdownListItem[] = [];
@@ -171,6 +223,26 @@ function parseMarkdownBlocks(text: string): MarkdownBlock[] {
   }
 
   return blocks;
+}
+
+function isTableRow(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.split('|').length > 1;
+}
+
+function isTableDivider(line: string): boolean {
+  if (!isTableRow(line)) return false;
+  const cells = splitTableRow(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function splitTableRow(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim());
 }
 
 function blockKey(type: string, line: number, text: string): string {
