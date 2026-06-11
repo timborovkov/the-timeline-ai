@@ -12,12 +12,14 @@ import {
 } from '@dnd-kit/core';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useOptimistic, useRef, useState, useTransition } from 'react';
+import { useEffect, useId, useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
 
 import type { SaveState } from '@/lib/utils';
 import type * as objects from '@timeline/shared/objects';
 
 import { updateObjectAction } from '@/app/actions/objects';
+import { ObjectTextFilter } from '@/components/boards/object-text-filter';
+import { filterObjectsByText } from '@/lib/object-filter';
 import { cn, errorMessage } from '@/lib/utils';
 
 type GroupKey = 'status' | 'stage' | 'priority';
@@ -81,10 +83,12 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
   const [savingCount, setSavingCount] = useState(0);
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const [savingCardIds, setSavingCardIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [filterQuery, setFilterQuery] = useState('');
   const savingCountRef = useRef(0);
   const savingCardIdsRef = useRef<Set<string> | null>(null);
   const batchHadFailureRef = useRef(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const visibleItems = useMemo(() => filterObjectsByText(items, filterQuery), [items, filterQuery]);
 
   function activeSavingCardIds() {
     savingCardIdsRef.current ??= new Set();
@@ -99,10 +103,10 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
-  const allCols = Array.from(new Set([...cols, ...items.map((r) => colValue(r, groupBy))]));
+  const allCols = Array.from(new Set([...cols, ...visibleItems.map((r) => colValue(r, groupBy))]));
   const byCol = new Map<string, objects.ObjectRow[]>();
   for (const c of allCols) byCol.set(c, []);
-  for (const r of items) {
+  for (const r of visibleItems) {
     const c = colValue(r, groupBy);
     const list = byCol.get(c) ?? [];
     list.push(r);
@@ -181,33 +185,43 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
       collisionDetection={closestCenter}
       onDragEnd={onDragEnd}
     >
-      {saveState !== 'idle' && (
-        <output
-          className="mb-2 text-right font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-          aria-live="polite"
-        >
-          {saveState === 'saving'
-            ? `Saving${savingCount > 1 ? ` ${savingCount} moves` : ''}…`
-            : 'Saved'}
-        </output>
-      )}
-      {/* Flex row with FIXED column widths. The previous
+      <div className="flex h-full min-h-0 flex-col gap-3">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+          <ObjectTextFilter
+            query={filterQuery}
+            onQueryChange={setFilterQuery}
+            resultCount={visibleItems.length}
+            totalCount={items.length}
+          />
+          {saveState !== 'idle' && (
+            <output
+              className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
+              aria-live="polite"
+            >
+              {saveState === 'saving'
+                ? `Saving${savingCount > 1 ? ` ${savingCount} moves` : ''}...`
+                : 'Saved'}
+            </output>
+          )}
+        </div>
+        {/* Flex row with FIXED column widths. The previous
           `grid auto-cols-[minmax(240px,1fr)]` made each column compete for
           a 1fr share of the container — five columns squeezed below their
           min-width and the last one clipped on narrow viewports. Fixed
           width + horizontal overflow gives every column its full size and
           a normal scroll fallback. `h-full` propagates the parent's
           height so each column can host its own vertical scroll. */}
-      <div className="flex h-full gap-3 overflow-x-auto pb-2">
-        {allCols.map((c) => (
-          <Column
-            key={c}
-            id={c}
-            rows={byCol.get(c) ?? []}
-            cardErrors={cardErrors}
-            savingCardIds={savingCardIds}
-          />
-        ))}
+        <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto pb-2">
+          {allCols.map((c) => (
+            <Column
+              key={c}
+              id={c}
+              rows={byCol.get(c) ?? []}
+              cardErrors={cardErrors}
+              savingCardIds={savingCardIds}
+            />
+          ))}
+        </div>
       </div>
     </DndContext>
   );
