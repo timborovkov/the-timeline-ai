@@ -17,6 +17,7 @@ export const metadata: Metadata = {
 };
 
 const STATUS_FILTERS = ['pending', 'failed', 'resolved', 'all'] as const;
+const ACTIONABLE_SUGGESTION_STATUSES = new Set(['pending', 'failed']);
 
 interface PageProps {
   searchParams: Promise<{ status?: string }>;
@@ -34,19 +35,29 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
     ? (params.status as (typeof STATUS_FILTERS)[number])
     : 'pending';
   const suggestions = await scope.suggestions.listSuggestions({ status });
-  const itemCount = suggestions.reduce(
-    (sum, s) => sum + s.items.filter((i) => i.status === 'pending' || i.status === 'failed').length,
-    0,
-  );
+  const visibleSuggestions = suggestions.flatMap((bundle) => {
+    const items = bundle.items.filter((item) => {
+      if (status === 'pending') return ACTIONABLE_SUGGESTION_STATUSES.has(item.status);
+      if (status === 'failed') return item.status === 'failed';
+      if (status === 'resolved') return !ACTIONABLE_SUGGESTION_STATUSES.has(item.status);
+      return true;
+    });
+    return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
+  });
+  const itemCount = visibleSuggestions.reduce((sum, s) => sum + s.items.length, 0);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <IndexStrip
-        srLabel={`Approvals · ${status} · ${suggestions.length} suggestion bundles · ${itemCount} actionable items`}
+        srLabel={`Approvals · ${status} · ${visibleSuggestions.length} suggestion bundles · ${itemCount} items`}
         segments={[
           { value: 'APPROVALS' },
           { label: 'filter', value: status.toUpperCase() },
-          { label: 'bundles', value: suggestions.length, signal: suggestions.length > 0 },
+          {
+            label: 'bundles',
+            value: visibleSuggestions.length,
+            signal: visibleSuggestions.length > 0,
+          },
           { label: 'items', value: itemCount, signal: itemCount > 0 },
         ]}
       />
@@ -65,7 +76,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
           </Link>
         ))}
       </nav>
-      <ApprovalsClient suggestions={suggestions.map(serializeSuggestionBundle)} />
+      <ApprovalsClient suggestions={visibleSuggestions} />
     </div>
   );
 }

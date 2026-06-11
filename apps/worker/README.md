@@ -16,12 +16,15 @@ pnpm --filter @timeline/worker build
 pnpm --filter @timeline/worker reextract -- --team=<teamId>
 pnpm --filter @timeline/worker reembed   -- --team=<teamId> --target-collection=events_v2
 pnpm --filter @timeline/worker resuggest -- --team=<teamId> [--since=2026-06-01] [--until=2026-06-04] [--source=all|telegram|slack] [--limit=N] [--all] [--dry-run]
+pnpm --filter @timeline/worker dedupe-approvals -- --team=<teamId> [--limit=N] [--apply]
 pnpm --filter @timeline/worker redocument-extract -- --team=<teamId> [--status=failed,pending] [--force]
 pnpm --filter @timeline/worker redocument-embed   -- --team=<teamId> [--target-collection=docs_v2]
 ```
 
 `resuggest` scans the requested window before applying `--limit`; conversational sources recover
 the latest anchor per conversation, and limited runs keep the latest candidate anchors.
+`dedupe-approvals` defaults to dry-run and supersedes stale duplicate pending approval items only
+when the same conservative workspace reconciliation predicate can identify a survivor.
 
 Production starts the combined worker entry point (see [docs/railway.html](../../docs/railway.html)):
 
