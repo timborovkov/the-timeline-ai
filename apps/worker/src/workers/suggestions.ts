@@ -415,7 +415,7 @@ function normalizeCleanupName(value: string): string {
 }
 
 function normalizePersonHandle(value: string): string {
-  return normalizeCleanupName(value).replace(/0/g, 'o').replace(/\d+$/g, '');
+  return normalizeCleanupName(value).replace(/0/g, 'o');
 }
 
 function cleanupNames(row: CleanupObjectRow): string[] {
@@ -457,14 +457,11 @@ function cleanupMatch(a: CleanupObjectRow, b: CleanupObjectRow): 'exact' | 'near
   if (a.type === 'person' && b.type === 'person') {
     const aFirst = normalizePersonHandle(a.canonicalName.split(/\s+/)[0] ?? '');
     const bFirst = normalizePersonHandle(b.canonicalName.split(/\s+/)[0] ?? '');
-    if (aFirst.length >= 3 && bNames.some((name) => name.startsWith(aFirst))) return 'near';
-    if (bFirst.length >= 3 && aNames.some((name) => name.startsWith(bFirst))) return 'near';
+    if (aFirst.length >= 3 && aFirst === bFirst) return 'near';
   }
   for (const left of aNames) {
     for (const right of bNames) {
-      if ((a.type !== 'person' || b.type !== 'person') && hasConflictingNumberSuffix(left, right)) {
-        continue;
-      }
+      if (hasConflictingNumberSuffix(left, right)) continue;
       const min = Math.min(left.length, right.length);
       const max = Math.max(left.length, right.length);
       if (min >= 5 && (left.includes(right) || right.includes(left))) return 'near';

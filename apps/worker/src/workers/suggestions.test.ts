@@ -366,13 +366,12 @@ describe('processSuggestionJobForTests', () => {
     );
   });
 
-  it('suggests approval-backed person merges for names, nicknames, and handle variants', async () => {
+  it('suggests approval-backed person merges for full-name and short-name variants', async () => {
     const inserted = await db
       .insert(entities)
       .values([
         { teamId: TEAM_ID, type: 'person', canonicalName: 'Tim Borovkov' },
         { teamId: TEAM_ID, type: 'person', canonicalName: 'Tim' },
-        { teamId: TEAM_ID, type: 'person', canonicalName: 'timbo0' },
       ])
       .returning({ id: entities.id });
 
@@ -386,7 +385,6 @@ describe('processSuggestionJobForTests', () => {
       TEAM_ID,
       OWNER_ID,
     ).suggestions.listPendingSuggestions();
-    expect(bundles.length).toBeGreaterThanOrEqual(2);
     const coveredObjectIds = new Set(
       bundles.flatMap((bundle) =>
         bundle.items.flatMap((item) => {
@@ -401,6 +399,59 @@ describe('processSuggestionJobForTests', () => {
     expect(
       bundles.flatMap((bundle) => bundle.items).every((item) => item.targetKind === 'object_merge'),
     ).toBe(true);
+  });
+
+  it('suggests approval-backed person merges for explicit handle aliases', async () => {
+    const inserted = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'person', canonicalName: 'Tim Borovkov', aliases: ['timb0'] },
+        { teamId: TEAM_ID, type: 'person', canonicalName: 'timb0' },
+      ])
+      .returning({ id: entities.id });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    const coveredObjectIds = new Set(
+      bundles.flatMap((bundle) =>
+        bundle.items.flatMap((item) => {
+          const objectIds = item.proposedPayload.objectIds;
+          return Array.isArray(objectIds)
+            ? objectIds.filter((value): value is string => typeof value === 'string')
+            : [];
+        }),
+      ),
+    );
+    expect(coveredObjectIds).toEqual(new Set(inserted.map((row) => row.id)));
+    expect(
+      bundles.flatMap((bundle) => bundle.items).every((item) => item.targetKind === 'object_merge'),
+    ).toBe(true);
+  });
+
+  it('does not suggest person merges from first-name prefixes or numbered handle variants', async () => {
+    await db.insert(entities).values([
+      { teamId: TEAM_ID, type: 'person', canonicalName: 'Tim' },
+      { teamId: TEAM_ID, type: 'person', canonicalName: 'Timothy' },
+      { teamId: TEAM_ID, type: 'person', canonicalName: 'timbo1' },
+      { teamId: TEAM_ID, type: 'person', canonicalName: 'timbo2' },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
   });
 
   it('skips archive cleanup suggestions for objects with notes, facts, or relationships', async () => {
@@ -644,6 +695,78 @@ describe('processSuggestionJobForTests', () => {
       ? item.proposedPayload.aliases
       : [];
     expect(aliases).toEqual(expect.arrayContaining(['Tim', 'timbo0']));
+  });
+
+  it('does not rewrite person creates from first-name prefixes or numbered handle variants', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000036';
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'person',
+        canonicalName: 'Timothy',
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'person',
+        canonicalName: 'timbo1',
+      },
+    ]);
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Tim is also timbo2.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Remember Tim identity',
+            summary: 'Tim is also timbo2.',
+            reason: 'The source gives a person identity variant.',
+            confidence: 'high',
+            quote: 'Tim is also timbo2.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Tim',
+                proposedPayload: {
+                  type: 'person',
+                  canonicalName: 'Tim',
+                  aliases: ['timbo2'],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'object',
+      targetId: null,
+      title: 'Tim',
+      proposedPayload: {
+        canonicalName: 'Tim',
+        aliases: ['timbo2'],
+      },
+    });
   });
 
   it('preserves durable scalar fields without carrying metadata when rewriting duplicate creates into updates', async () => {
