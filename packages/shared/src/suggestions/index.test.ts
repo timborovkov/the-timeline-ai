@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import { agentSuggestionItems, entities } from '@timeline/db';
+import { agentSuggestionItems, agentSuggestions, entities } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -399,6 +399,90 @@ describe('suggestion scope', () => {
     });
     expect(materiallyNew.id).not.toBe(older.id);
     expect(materiallyNew.status).toBe('pending');
+  });
+
+  it('supersedes duplicate create-task items from the same approval bundle', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Call Talousvahvistus',
+      dedupeKey: 'conversation:talousvahvistus',
+      visibility: 'team',
+      metadata: { conversation_review_id: 'review-talousvahvistus' },
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Call Talousvahvistus to ask about subcontracting percentage splits',
+          dedupeKey: 'conversation:talousvahvistus:english',
+          proposedPayload: {
+            canonicalName: 'Call Talousvahvistus to ask about subcontracting percentage splits',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Soita Talousvahvistukselle',
+          description: 'Kysy Talousvahvistukselta heidän alihankintapalveluiden jakoa.',
+          dedupeKey: 'conversation:talousvahvistus:finnish',
+          proposedPayload: { canonicalName: 'Soita Talousvahvistukselle' },
+        },
+      ],
+    });
+
+    expect(bundle.items.map((item) => item.status).sort()).toEqual(['pending', 'superseded']);
+    await expect(scope.suggestions.listPendingSuggestions()).resolves.toHaveLength(1);
+    await expect(scope.suggestions.countPendingSuggestions()).resolves.toBe(1);
+  });
+
+  it('can sweep existing duplicate pending create-task items', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const [suggestion] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_ID,
+        source: 'background',
+        title: 'Call Talousvahvistus',
+        dedupeKey: 'manual-duplicate-sweep',
+        visibility: 'team',
+        metadata: { conversation_review_id: 'review-talousvahvistus-sweep' },
+      })
+      .returning();
+    expect(suggestion).toBeDefined();
+    await db.insert(agentSuggestionItems).values([
+      {
+        suggestionId: suggestion?.id ?? '',
+        teamId: TEAM_ID,
+        operation: 'create',
+        targetKind: 'task',
+        title: 'Call Talousvahvistus to ask about subcontracting percentage splits',
+        dedupeKey: 'manual-duplicate-sweep:english',
+        proposedPayload: {
+          canonicalName: 'Call Talousvahvistus to ask about subcontracting percentage splits',
+        },
+      },
+      {
+        suggestionId: suggestion?.id ?? '',
+        teamId: TEAM_ID,
+        operation: 'create',
+        targetKind: 'task',
+        title: 'Soita Talousvahvistukselle',
+        description: 'Kysy Talousvahvistukselta heidän alihankintapalveluiden jakoa.',
+        dedupeKey: 'manual-duplicate-sweep:finnish',
+        proposedPayload: { canonicalName: 'Soita Talousvahvistukselle' },
+      },
+    ]);
+
+    const dryRun = await scope.suggestions.reconcileDuplicatePendingApprovals({ dryRun: true });
+    expect(dryRun).toMatchObject({ scanned: 2, superseded: 1 });
+    await expect(
+      db.select().from(agentSuggestionItems).where(eq(agentSuggestionItems.status, 'pending')),
+    ).resolves.toHaveLength(2);
+
+    const applied = await scope.suggestions.reconcileDuplicatePendingApprovals();
+    expect(applied).toMatchObject({ scanned: 2, superseded: 1 });
+    const rows = await db.select().from(agentSuggestionItems);
+    expect(rows.map((row) => row.status).sort()).toEqual(['pending', 'superseded']);
   });
 
   it('keeps mixed bundles active with only non-superseded items actionable', async () => {

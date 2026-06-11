@@ -17,6 +17,8 @@ export const metadata: Metadata = {
   description: 'Review team calendar events and suggestions.',
 };
 
+const ACTIONABLE_SUGGESTION_STATUSES = new Set(['pending', 'failed']);
+
 interface PageProps {
   searchParams: Promise<{ date?: string; view?: string }>;
 }
@@ -78,7 +80,10 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     visibilityUserIds: e.visibilityUserIds,
   }));
   const calendarSuggestions = pendingSuggestions.flatMap((bundle) => {
-    const items = bundle.items.filter((item) => item.targetKind === 'calendar_event');
+    const items = bundle.items.filter(
+      (item) =>
+        item.targetKind === 'calendar_event' && ACTIONABLE_SUGGESTION_STATUSES.has(item.status),
+    );
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
 

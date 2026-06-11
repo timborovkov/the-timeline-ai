@@ -34,6 +34,7 @@ const TYPE_LABEL: Record<string, string> = {
   follow_up: 'Follow-ups',
   other: 'Other',
 };
+const ACTIONABLE_SUGGESTION_STATUSES = new Set(['pending', 'failed']);
 
 function objectIdsForMergeSuggestion(item: { proposedPayload: unknown }): string[] {
   if (!item.proposedPayload || typeof item.proposedPayload !== 'object') return [];
@@ -87,8 +88,9 @@ export default async function ObjectsIndexPage({
     if (bundle.metadata.kind !== 'object_cleanup') continue;
     const items = bundle.items.filter(
       (item) =>
-        item.targetKind === 'object_merge' ||
-        (item.targetKind === 'object' && item.operation === 'archive_or_cancel'),
+        ACTIONABLE_SUGGESTION_STATUSES.has(item.status) &&
+        (item.targetKind === 'object_merge' ||
+          (item.targetKind === 'object' && item.operation === 'archive_or_cancel')),
     );
     for (const item of items) {
       if (

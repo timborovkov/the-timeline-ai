@@ -15,6 +15,7 @@ export const metadata: Metadata = {
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ACTIONABLE_SUGGESTION_STATUSES = new Set(['pending', 'failed']);
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -48,7 +49,9 @@ export default async function ObjectDetailPage({ params }: PageProps) {
 
   await scope.objects.markVisited(detail.id);
   const suggestions = (await scope.suggestions.listPendingSuggestions()).flatMap((bundle) => {
-    const items = bundle.items.filter((item) => item.targetId === detail.id);
+    const items = bundle.items.filter(
+      (item) => item.targetId === detail.id && ACTIONABLE_SUGGESTION_STATUSES.has(item.status),
+    );
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
 

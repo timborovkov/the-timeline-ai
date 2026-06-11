@@ -129,6 +129,20 @@ export interface SuggestionEvidence {
   source: string | null;
 }
 
+export interface DuplicatePendingApprovalPair {
+  supersededItemId: string;
+  supersededSuggestionId: string;
+  survivorItemId: string;
+  survivorSuggestionId: string;
+  reason: string;
+}
+
+export interface DuplicatePendingApprovalReconcileResult {
+  scanned: number;
+  superseded: number;
+  pairs: DuplicatePendingApprovalPair[];
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uuid = z.string().regex(UUID_RE);
 
@@ -332,6 +346,140 @@ function artifactExternalKey(item: typeof agentSuggestionItems.$inferSelect): st
   return null;
 }
 
+const APPROVAL_TOKEN_STOPWORDS = new Set([
+  'about',
+  'after',
+  'again',
+  'ask',
+  'call',
+  'create',
+  'from',
+  'have',
+  'into',
+  'make',
+  'next',
+  'please',
+  'task',
+  'that',
+  'their',
+  'this',
+  'with',
+  'would',
+  'kysy',
+  'luo',
+  'soita',
+  'tehtava',
+  'viel',
+]);
+
+function normalizedApprovalText(value: unknown): string {
+  return typeof value === 'string'
+    ? value
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+    : '';
+}
+
+function approvalTextForItem(item: typeof agentSuggestionItems.$inferSelect): string {
+  const payload =
+    item.proposedPayload &&
+    typeof item.proposedPayload === 'object' &&
+    !Array.isArray(item.proposedPayload)
+      ? (item.proposedPayload as Record<string, unknown>)
+      : {};
+  return [
+    item.title,
+    item.description,
+    payload.canonicalName,
+    payload.title,
+    payload.name,
+    payload.description,
+  ]
+    .map(normalizedApprovalText)
+    .filter(Boolean)
+    .join(' ');
+}
+
+function distinctiveApprovalTokens(item: typeof agentSuggestionItems.$inferSelect): string[] {
+  return [
+    ...new Set(
+      approvalTextForItem(item)
+        .split(/\s+/)
+        .filter((token) => token.length >= 8 && !APPROVAL_TOKEN_STOPWORDS.has(token)),
+    ),
+  ];
+}
+
+function sameLongTokenFamily(left: string, right: string): boolean {
+  const leftVariants = tokenFamilyVariants(left);
+  const rightVariants = tokenFamilyVariants(right);
+  return leftVariants.some((leftVariant) =>
+    rightVariants.some((rightVariant) => {
+      if (leftVariant === rightVariant) return true;
+      const shortest = Math.min(leftVariant.length, rightVariant.length);
+      return shortest >= 10 && leftVariant.slice(0, shortest) === rightVariant.slice(0, shortest);
+    }),
+  );
+}
+
+function tokenFamilyVariants(token: string): string[] {
+  const variants = new Set([token]);
+  for (const suffix of ['kselle', 'kselta', 'ksessa', 'ksesta', 'ksella']) {
+    if (token.endsWith(suffix) && token.length > suffix.length + 6) {
+      variants.add(`${token.slice(0, -suffix.length)}s`);
+    }
+  }
+  return [...variants];
+}
+
+function sharesDistinctiveApprovalSubject(
+  left: typeof agentSuggestionItems.$inferSelect,
+  right: typeof agentSuggestionItems.$inferSelect,
+): boolean {
+  const rightTokens = distinctiveApprovalTokens(right);
+  return distinctiveApprovalTokens(left).some((leftToken) =>
+    rightTokens.some((rightToken) => sameLongTokenFamily(leftToken, rightToken)),
+  );
+}
+
+function normalizedPrimaryApprovalName(item: typeof agentSuggestionItems.$inferSelect): string {
+  const payload =
+    item.proposedPayload &&
+    typeof item.proposedPayload === 'object' &&
+    !Array.isArray(item.proposedPayload)
+      ? (item.proposedPayload as Record<string, unknown>)
+      : {};
+  return (
+    normalizedApprovalText(payload.canonicalName) ||
+    normalizedApprovalText(payload.title) ||
+    normalizedApprovalText(item.title)
+  );
+}
+
+function samePendingCreateApprovalSubject(args: {
+  olderItem: typeof agentSuggestionItems.$inferSelect;
+  olderSuggestion: typeof agentSuggestions.$inferSelect;
+  newerItem: typeof agentSuggestionItems.$inferSelect;
+  newerSuggestion: typeof agentSuggestions.$inferSelect;
+}): boolean {
+  const { olderItem, olderSuggestion, newerItem, newerSuggestion } = args;
+  if (olderItem.operation !== 'create' || newerItem.operation !== 'create') return false;
+  if (olderItem.targetId || newerItem.targetId) return false;
+  if (!sameConversationReview(olderSuggestion, newerSuggestion)) return false;
+
+  const olderName = normalizedPrimaryApprovalName(olderItem);
+  const newerName = normalizedPrimaryApprovalName(newerItem);
+  if (olderName && olderName === newerName) return true;
+
+  return (
+    olderSuggestion.id === newerSuggestion.id &&
+    sharesDistinctiveApprovalSubject(olderItem, newerItem)
+  );
+}
+
 function sameAudience(
   left: typeof agentSuggestions.$inferSelect,
   right: typeof agentSuggestions.$inferSelect,
@@ -394,7 +542,9 @@ function shouldSupersedePendingItem(args: {
     !olderItem.targetId &&
     !newerItem.targetId &&
     olderItem.operation === newerItem.operation &&
-    (olderItem.dedupeKey === newerItem.dedupeKey || olderItem.title === newerItem.title) &&
+    (olderItem.dedupeKey === newerItem.dedupeKey ||
+      olderItem.title === newerItem.title ||
+      samePendingCreateApprovalSubject(args)) &&
     sameConversationReview(olderSuggestion, newerSuggestion)
   );
 }
@@ -609,6 +759,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return true;
   }
 
+  function isOlderPendingItem(
+    candidate: typeof agentSuggestionItems.$inferSelect,
+    newerItem: typeof agentSuggestionItems.$inferSelect,
+  ): boolean {
+    if (candidate.id === newerItem.id) return false;
+    const candidateTime = candidate.createdAt.getTime();
+    const newerTime = newerItem.createdAt.getTime();
+    return (
+      candidateTime < newerTime || (candidateTime === newerTime && candidate.id < newerItem.id)
+    );
+  }
+
   async function reconcileNewSuggestionItems(suggestionId: string): Promise<void> {
     const [newerSuggestion] = await db
       .select()
@@ -643,7 +805,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     for (const newerItem of newerItems) {
       for (const candidate of candidateRows) {
-        if (candidate.item.createdAt.getTime() >= newerItem.createdAt.getTime()) continue;
+        if (!isOlderPendingItem(candidate.item, newerItem)) continue;
         if (
           shouldSupersedePendingItem({
             olderItem: candidate.item,
@@ -769,6 +931,68 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
     }
     return superseded;
+  }
+
+  async function reconcileDuplicatePendingApprovals(
+    opts: { dryRun?: boolean; limit?: number } = {},
+  ): Promise<DuplicatePendingApprovalReconcileResult> {
+    await ensureMember();
+    const limit = Math.min(Math.max(opts.limit ?? 2000, 1), 5000);
+    const rows = await db
+      .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
+      .from(agentSuggestionItems)
+      .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+          inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+        ),
+      )
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id))
+      .limit(limit);
+
+    const pairs: DuplicatePendingApprovalPair[] = [];
+    const supersededIds = new Set<string>();
+    for (let newerIndex = 0; newerIndex < rows.length; newerIndex += 1) {
+      const newer = rows[newerIndex];
+      if (!newer || supersededIds.has(newer.item.id)) continue;
+      for (let olderIndex = 0; olderIndex < newerIndex; olderIndex += 1) {
+        const older = rows[olderIndex];
+        if (!older || supersededIds.has(older.item.id)) continue;
+        if (!isOlderPendingItem(older.item, newer.item)) continue;
+        if (
+          !shouldSupersedePendingItem({
+            olderItem: older.item,
+            olderSuggestion: older.suggestion,
+            newerItem: newer.item,
+            newerSuggestion: newer.suggestion,
+          })
+        ) {
+          continue;
+        }
+        const pair = {
+          supersededItemId: older.item.id,
+          supersededSuggestionId: older.suggestion.id,
+          survivorItemId: newer.item.id,
+          survivorSuggestionId: newer.suggestion.id,
+          reason: 'Replaced by duplicate pending approval cleanup.',
+        };
+        pairs.push(pair);
+        supersededIds.add(older.item.id);
+        if (!opts.dryRun) {
+          await supersedeItem(older.item.id, newer.item.id, pair.reason);
+        }
+      }
+    }
+
+    if (!opts.dryRun) {
+      for (const suggestionId of new Set(pairs.map((pair) => pair.survivorSuggestionId))) {
+        await refreshBundleStatus(suggestionId);
+      }
+    }
+
+    return { scanned: rows.length, superseded: pairs.length, pairs };
   }
 
   async function notifySuggestion(row: typeof agentSuggestions.$inferSelect): Promise<void> {
@@ -1476,6 +1700,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     acceptObjectMergeSuggestionItem,
 
     reconcileCanonicalChange,
+
+    reconcileDuplicatePendingApprovals,
 
     async rejectSuggestionItem(itemId: string): Promise<boolean> {
       await ensureMember();
