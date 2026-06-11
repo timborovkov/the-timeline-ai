@@ -1331,9 +1331,24 @@ export async function archiveObject(
   scope: TeamScopeCore,
   entityId: string,
   actor: UpdateActor,
-): Promise<ObjectRow> {
+): Promise<ObjectRow & { changedFields: string[] }> {
+  await scope.requireMembership();
+  const [current] = await db
+    .select()
+    .from(entities)
+    .where(
+      and(
+        eq(entities.id, entityId),
+        eq(entities.teamId, scope.teamId),
+        isNull(entities.mergedIntoId),
+      ),
+    )
+    .limit(1);
+  if (!current) throw new Error('Object not found');
+  if (current.archivedAt) return { ...toObjectRow(current), changedFields: [] };
+
   const result = await updateObject(db, scope, entityId, { archivedAt: new Date() }, actor);
-  return result.object;
+  return { ...result.object, changedFields: result.changedFields };
 }
 
 export async function unarchiveObject(

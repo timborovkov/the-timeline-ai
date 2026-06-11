@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   index,
   jsonb,
   pgEnum,
@@ -21,6 +22,7 @@ export const agentSuggestionStatus = pgEnum('agent_suggestion_status', [
   'partially_resolved',
   'accepted',
   'rejected',
+  'superseded',
 ]);
 
 export const agentSuggestionItemStatus = pgEnum('agent_suggestion_item_status', [
@@ -28,6 +30,7 @@ export const agentSuggestionItemStatus = pgEnum('agent_suggestion_item_status', 
   'accepted',
   'rejected',
   'failed',
+  'superseded',
 ]);
 
 export const agentSuggestionOperation = pgEnum('agent_suggestion_operation', [
@@ -104,6 +107,11 @@ export const agentSuggestionItems = pgTable(
     dedupeKey: text('dedupe_key').notNull(),
     proposedPayload: jsonb('proposed_payload').notNull(),
     failureReason: text('failure_reason'),
+    supersededByItemId: uuid('superseded_by_item_id').references(
+      (): AnyPgColumn => agentSuggestionItems.id,
+      { onDelete: 'set null' },
+    ),
+    supersededReason: text('superseded_reason'),
     resolvedByUserId: uuid('resolved_by_user_id').references(() => users.id, {
       onDelete: 'set null',
     }),

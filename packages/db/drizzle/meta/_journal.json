@@ -232,6 +232,13 @@
       "when": 1795652280000,
       "tag": "0032_object_cleanup_suggestions",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1795652340000,
+      "tag": "0033_workspace_reconciliation",
+      "breakpoints": true
     }
   ]
 }

@@ -30,6 +30,11 @@ implementation detail.
       useful retry or rejoin path. Failed meetings are already captured as
       `meetings.status='failed'`.
 
+## Workspace Reconciliation
+
+- [ ] Wire workspace reconciliation into future authoritative external sync
+      paths when calendar/provider imports directly update artifacts they own.
+
 ## Calendar
 
 ### Recurrence
