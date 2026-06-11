@@ -1,6 +1,6 @@
 'use client';
 
-import { Archive, GitMerge, RefreshCw, X } from 'lucide-react';
+import { Archive, ChevronLeft, ChevronRight, GitMerge, RefreshCw, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
@@ -44,6 +44,7 @@ interface Props {
 }
 
 const EMPTY_MERGE_PREVIEWS: Record<string, objects.ObjectMergePreview> = {};
+const PAGE_SIZE = 10;
 
 function objectIdsForMerge(item: SuggestionItem): string[] {
   const objectIds = item.proposedPayload.objectIds;
@@ -69,6 +70,7 @@ export function ObjectCleanupSuggestions({
   const [message, setMessage] = useState<string | null>(null);
   const [resolvedItemIds, setResolvedItemIds] = useState<Set<string>>(() => new Set());
   const [reviewingItemId, setReviewingItemId] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
   const pendingItems = useMemo(() => {
     const items: { bundle: SuggestionBundle; item: SuggestionItem }[] = [];
     for (const bundle of suggestions) {
@@ -87,6 +89,10 @@ export function ObjectCleanupSuggestions({
     ? pendingItems.find(({ item }) => item.id === reviewingItemId)
     : undefined;
   const reviewingPreview = reviewingItemId ? mergePreviewsByItemId[reviewingItemId] : undefined;
+  const pageCount = Math.max(1, Math.ceil(pendingItems.length / PAGE_SIZE));
+  const effectivePage = Math.min(page, pageCount - 1);
+  const pageStart = effectivePage * PAGE_SIZE;
+  const visibleItems = pendingItems.slice(pageStart, pageStart + PAGE_SIZE);
 
   function resolveItem(itemId: string) {
     setResolvedItemIds((current) => new Set(current).add(itemId));
@@ -146,7 +152,7 @@ export function ObjectCleanupSuggestions({
 
       {pendingItems.length > 0 ? (
         <ul className="mt-4 divide-y divide-border border border-border">
-          {pendingItems.slice(0, 5).map(({ bundle, item }) => {
+          {visibleItems.map(({ bundle, item }) => {
             const mergeIds = item.targetKind === 'object_merge' ? objectIdsForMerge(item) : [];
             return (
               <li key={item.id} className="grid gap-3 bg-bg p-3 md:grid-cols-[1fr_auto]">
@@ -218,6 +224,44 @@ export function ObjectCleanupSuggestions({
             );
           })}
         </ul>
+      ) : null}
+
+      {pendingItems.length > PAGE_SIZE ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+          <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+            {pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, pendingItems.length)} of{' '}
+            {pendingItems.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              disabled={effectivePage === 0}
+              title="Previous suggestions"
+              onClick={() => {
+                setPage((current) => Math.max(0, current - 1));
+              }}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+              Page {effectivePage + 1} / {pageCount}
+            </p>
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              disabled={effectivePage >= pageCount - 1}
+              title="Next suggestions"
+              onClick={() => {
+                setPage((current) => Math.min(pageCount - 1, current + 1));
+              }}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+        </div>
       ) : null}
 
       <Dialog

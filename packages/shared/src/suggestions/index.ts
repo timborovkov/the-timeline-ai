@@ -594,6 +594,16 @@ function shouldSupersedePendingItem(args: {
   if (olderItem.id === newerItem.id) return false;
   if (olderItem.targetKind !== newerItem.targetKind) return false;
 
+  if (olderItem.targetKind === 'object_merge' && newerItem.targetKind === 'object_merge') {
+    const olderPayload = objectMergePayload.safeParse(olderItem.proposedPayload);
+    const newerPayload = objectMergePayload.safeParse(newerItem.proposedPayload);
+    if (!olderPayload.success || !newerPayload.success) return false;
+    return (
+      stableStringify([...olderPayload.data.objectIds].sort()) ===
+      stableStringify([...newerPayload.data.objectIds].sort())
+    );
+  }
+
   const olderExternalKey = artifactExternalKey(olderItem);
   if (olderExternalKey && olderExternalKey === artifactExternalKey(newerItem)) return true;
 
@@ -711,6 +721,34 @@ function toBundle(
 
 export function createSuggestionScope(deps: SuggestionScopeDeps) {
   const { db, teamId, userId, ensureMember, objects, calendar } = deps;
+
+  async function resolveCurrentObjectId(entityId: string): Promise<string | null> {
+    if (!UUID_RE.test(entityId)) return null;
+    const seen = new Set<string>();
+    let currentId = entityId;
+    for (;;) {
+      if (seen.has(currentId)) return null;
+      seen.add(currentId);
+      const rows = await db
+        .select({ id: entities.id, mergedIntoId: entities.mergedIntoId })
+        .from(entities)
+        .where(and(eq(entities.id, currentId), eq(entities.teamId, teamId)))
+        .limit(1);
+      const row = rows[0];
+      if (!row) return null;
+      if (!row.mergedIntoId) return row.id;
+      currentId = row.mergedIntoId;
+    }
+  }
+
+  async function resolveCurrentObjectIds(entityIds: string[]): Promise<string[]> {
+    const resolved: string[] = [];
+    for (const entityId of entityIds) {
+      const currentId = await resolveCurrentObjectId(entityId);
+      if (currentId && !resolved.includes(currentId)) resolved.push(currentId);
+    }
+    return resolved;
+  }
 
   async function loadBundle(id: string): Promise<SuggestionBundle | null> {
     await ensureMember();
@@ -1005,6 +1043,135 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
     }
     return superseded;
+  }
+
+  async function reconcileObjectMerge(input: {
+    survivorId: string;
+    mergedIds: string[];
+    reason?: string;
+  }): Promise<number> {
+    await ensureMember();
+    const affectedIds = new Set([input.survivorId, ...input.mergedIds]);
+    const candidateRows = await db
+      .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
+      .from(agentSuggestionItems)
+      .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          eq(agentSuggestionItems.targetKind, 'object_merge'),
+          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+          inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+        ),
+      )
+      .orderBy(asc(agentSuggestionItems.createdAt), asc(agentSuggestionItems.id));
+
+    let changed = 0;
+    const survivingItemByPairKey = new Map<string, typeof agentSuggestionItems.$inferSelect>();
+    const refreshIds = new Set<string>();
+    for (const candidate of candidateRows) {
+      const parsed = objectMergePayload.safeParse(candidate.item.proposedPayload);
+      if (!parsed.success) continue;
+      const mentionsMergedObject = parsed.data.objectIds.some((id) => affectedIds.has(id));
+      if (!mentionsMergedObject) {
+        const key = stableStringify([...parsed.data.objectIds].sort());
+        const duplicateItem = survivingItemByPairKey.get(key);
+        if (!duplicateItem) {
+          survivingItemByPairKey.set(key, candidate.item);
+        } else if (isOlderPendingItem(duplicateItem, candidate.item)) {
+          if (
+            await supersedeItem(
+              duplicateItem.id,
+              candidate.item.id,
+              'Replaced by an identical pending object cleanup suggestion.',
+            )
+          ) {
+            changed += 1;
+          }
+          survivingItemByPairKey.set(key, candidate.item);
+        } else if (
+          await supersedeItem(
+            candidate.item.id,
+            duplicateItem.id,
+            'Replaced by an identical pending object cleanup suggestion.',
+          )
+        ) {
+          changed += 1;
+        }
+        continue;
+      }
+
+      const objectIds = await resolveCurrentObjectIds(parsed.data.objectIds);
+      if (objectIds.length < 2) {
+        if (
+          await supersedeItem(
+            candidate.item.id,
+            null,
+            input.reason ?? 'Objects in this merge suggestion were already merged.',
+          )
+        ) {
+          changed += 1;
+        }
+        continue;
+      }
+
+      const fallbackSurvivorId = objectIds[0];
+      if (!fallbackSurvivorId) continue;
+      const resolvedSurvivorId =
+        (await resolveCurrentObjectId(parsed.data.survivorId)) ?? fallbackSurvivorId;
+      const survivorId = objectIds.includes(resolvedSurvivorId)
+        ? resolvedSurvivorId
+        : fallbackSurvivorId;
+      const pairKey = stableStringify([...objectIds].sort());
+      const duplicateItem = survivingItemByPairKey.get(pairKey);
+      if (duplicateItem) {
+        if (isOlderPendingItem(duplicateItem, candidate.item)) {
+          if (
+            await supersedeItem(
+              duplicateItem.id,
+              candidate.item.id,
+              'Replaced by an identical pending object cleanup suggestion.',
+            )
+          ) {
+            changed += 1;
+          }
+          survivingItemByPairKey.set(pairKey, candidate.item);
+        } else {
+          if (
+            await supersedeItem(
+              candidate.item.id,
+              duplicateItem.id,
+              'Replaced by an identical pending object cleanup suggestion.',
+            )
+          ) {
+            changed += 1;
+          }
+          continue;
+        }
+      }
+      if (!duplicateItem) survivingItemByPairKey.set(pairKey, candidate.item);
+
+      const payloadChanged =
+        stableStringify(parsed.data.objectIds) !== stableStringify(objectIds) ||
+        parsed.data.survivorId !== survivorId ||
+        candidate.item.targetId !== survivorId;
+      if (!payloadChanged) continue;
+
+      await db
+        .update(agentSuggestionItems)
+        .set({
+          targetId: survivorId,
+          proposedPayload: { ...parsed.data, objectIds, survivorId },
+          updatedAt: new Date(),
+          failureReason: null,
+        })
+        .where(eq(agentSuggestionItems.id, candidate.item.id));
+      refreshIds.add(candidate.suggestion.id);
+      changed += 1;
+    }
+
+    for (const suggestionId of refreshIds) await refreshBundleStatus(suggestionId);
+    return changed;
   }
 
   async function reconcileDuplicatePendingApprovals(
@@ -1495,14 +1662,35 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       throw new Error('Suggestion item is not an object merge');
     }
     const payload = objectMergePayload.parse(row.item.proposedPayload);
-    const expectedIds = new Set(payload.objectIds);
-    const chosenIds = new Set([input.survivorId, ...input.mergedIds]);
+    const expectedResolvedIds = await Promise.all(
+      payload.objectIds.map((objectId) => resolveCurrentObjectId(objectId)),
+    );
+    if (expectedResolvedIds.some((objectId) => !objectId)) {
+      throw new Error('One or more objects no longer exists');
+    }
+    const expectedObjectIds = [
+      ...new Set(expectedResolvedIds.filter((objectId): objectId is string => Boolean(objectId))),
+    ];
+    if (expectedObjectIds.length < 2) {
+      await supersedeItem(
+        row.item.id,
+        null,
+        'Objects in this merge suggestion were already merged.',
+      );
+      return null;
+    }
+    const inputSurvivorId = await resolveCurrentObjectId(input.survivorId);
+    const inputMergedIds = await resolveCurrentObjectIds(input.mergedIds);
+    if (!inputSurvivorId) throw new Error('Survivor object not found');
+    const expectedIds = new Set(expectedObjectIds);
+    const chosenIds = new Set([inputSurvivorId, ...inputMergedIds]);
     if (expectedIds.size !== chosenIds.size || [...expectedIds].some((id) => !chosenIds.has(id))) {
       throw new Error('Merge selection no longer matches this suggestion');
     }
-    if (!expectedIds.has(input.survivorId)) {
+    if (!expectedIds.has(inputSurvivorId)) {
       throw new Error('Survivor must be one of the suggested objects');
     }
+    const mergedIds = expectedObjectIds.filter((id) => id !== inputSurvivorId);
 
     const [claimed] = await db
       .update(agentSuggestionItems)
@@ -1526,8 +1714,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     let survivorId: string;
     try {
       const result = await objects.mergeObjects({
-        survivorId: input.survivorId,
-        mergedIds: input.mergedIds,
+        survivorId: inputSurvivorId,
+        mergedIds,
         actor: { kind: 'user', userId },
       });
       survivorId = result.survivor.id;
@@ -1554,6 +1742,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       })
       .where(eq(agentSuggestionItems.id, input.itemId));
     await refreshBundleStatus(row.suggestion.id, userId);
+    await reconcileObjectMerge({
+      survivorId,
+      mergedIds,
+      reason: 'Objects were merged from another cleanup suggestion.',
+    });
     await reconcileAcceptedItemBestEffort({ ...row.item, resultId: survivorId });
     return { survivorId };
   }
@@ -1820,6 +2013,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     acceptObjectMergeSuggestionItem,
 
     reconcileCanonicalChange,
+    reconcileObjectMerge,
 
     reconcileDuplicatePendingApprovals,
 

@@ -25,6 +25,11 @@ interface ObjectReconciliationScope {
     patch?: Record<string, unknown>;
     reason?: string;
   }): Promise<number>;
+  reconcileObjectMerge(input: {
+    survivorId: string;
+    mergedIds: string[];
+    reason?: string;
+  }): Promise<number>;
 }
 
 function objectSuggestionTargetKind(type: string): ObjectSuggestionTargetKind {
@@ -279,6 +284,15 @@ export async function mergeObjectsAction(input: unknown): Promise<ActionState> {
           });
       if (!result) return { error: 'Merge suggestion is no longer pending.' };
       const survivorId = 'survivor' in result ? result.survivor.id : result.survivorId;
+      if (!parsed.data.suggestionItemId) {
+        await reconcileCanonicalChangeBestEffort('reconcile_object_merge', async () => {
+          await r.scope.suggestions.reconcileObjectMerge({
+            survivorId,
+            mergedIds: parsed.data.mergedIds,
+            reason: 'A teammate merged these objects directly.',
+          });
+        });
+      }
       revalidatePath('/app/objects');
       revalidatePath('/app/approvals');
       revalidatePath('/app/inbox');

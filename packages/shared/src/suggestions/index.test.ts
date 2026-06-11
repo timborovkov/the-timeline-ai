@@ -178,6 +178,184 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('rewrites and dedupes pending merge suggestions after an object merge', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const first = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'AuditAI',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const second = await scope.objects.createObject({
+      type: 'vendor',
+      canonicalName: 'Audit AI',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const third = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'AuditAI Ltd',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Merge duplicate objects: AuditAI / AuditAI Ltd',
+      dedupeKey: 'merge-first-third',
+      metadata: { kind: 'object_cleanup' },
+      items: [
+        {
+          operation: 'merge',
+          targetKind: 'object_merge',
+          targetId: first.id,
+          title: 'Review merge for AuditAI',
+          dedupeKey: 'merge-first-third:item',
+          proposedPayload: {
+            objectIds: [first.id, third.id],
+            survivorId: first.id,
+          },
+        },
+      ],
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Merge duplicate objects: Audit AI / AuditAI Ltd',
+      dedupeKey: 'merge-second-third',
+      metadata: { kind: 'object_cleanup' },
+      items: [
+        {
+          operation: 'merge',
+          targetKind: 'object_merge',
+          targetId: second.id,
+          title: 'Review merge for Audit AI',
+          dedupeKey: 'merge-second-third:item',
+          proposedPayload: {
+            objectIds: [second.id, third.id],
+            survivorId: second.id,
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+
+    await scope.objects.mergeObjects({
+      survivorId: first.id,
+      mergedIds: [second.id],
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    await expect(
+      scope.suggestions.reconcileObjectMerge({
+        survivorId: first.id,
+        mergedIds: [second.id],
+      }),
+    ).resolves.toBeGreaterThan(0);
+
+    const pendingItems = (await scope.suggestions.listPendingSuggestions()).flatMap(
+      (pendingBundle) => pendingBundle.items,
+    );
+    expect(pendingItems).toHaveLength(1);
+    expect(pendingItems[0]?.id).toBe(itemId);
+    expect(pendingItems[0]?.proposedPayload).toMatchObject({
+      objectIds: [first.id, third.id],
+      survivorId: first.id,
+    });
+
+    const staleRows = await db
+      .select({
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    expect(staleRows[0]).toMatchObject({ status: 'pending' });
+  });
+
+  it('dedupes an older stale merge suggestion when a current duplicate appears later', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const first = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'AuditAI',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const second = await scope.objects.createObject({
+      type: 'vendor',
+      canonicalName: 'Audit AI',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const third = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'AuditAI Ltd',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const staleBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Merge duplicate objects: Audit AI / AuditAI Ltd',
+      dedupeKey: 'merge-stale-second-third',
+      metadata: { kind: 'object_cleanup' },
+      items: [
+        {
+          operation: 'merge',
+          targetKind: 'object_merge',
+          targetId: second.id,
+          title: 'Review merge for Audit AI',
+          dedupeKey: 'merge-stale-second-third:item',
+          proposedPayload: {
+            objectIds: [second.id, third.id],
+            survivorId: second.id,
+          },
+        },
+      ],
+    });
+    const currentBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Merge duplicate objects: AuditAI / AuditAI Ltd',
+      dedupeKey: 'merge-current-first-third',
+      metadata: { kind: 'object_cleanup' },
+      items: [
+        {
+          operation: 'merge',
+          targetKind: 'object_merge',
+          targetId: first.id,
+          title: 'Review merge for AuditAI',
+          dedupeKey: 'merge-current-first-third:item',
+          proposedPayload: {
+            objectIds: [first.id, third.id],
+            survivorId: first.id,
+          },
+        },
+      ],
+    });
+    const staleItemId = staleBundle.items[0]?.id ?? '';
+    const currentItemId = currentBundle.items[0]?.id ?? '';
+
+    await scope.objects.mergeObjects({
+      survivorId: first.id,
+      mergedIds: [second.id],
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    await expect(
+      scope.suggestions.reconcileObjectMerge({
+        survivorId: first.id,
+        mergedIds: [second.id],
+      }),
+    ).resolves.toBeGreaterThan(0);
+
+    const pendingItems = (await scope.suggestions.listPendingSuggestions()).flatMap(
+      (pendingBundle) => pendingBundle.items,
+    );
+    expect(pendingItems).toHaveLength(1);
+    expect(pendingItems[0]?.id).toBe(currentItemId);
+
+    const staleRows = await db
+      .select({
+        status: agentSuggestionItems.status,
+        supersededByItemId: agentSuggestionItems.supersededByItemId,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, staleItemId));
+    expect(staleRows[0]).toMatchObject({
+      status: 'superseded',
+      supersededByItemId: currentItemId,
+    });
+  });
+
   it('blocks cross-team object ids in merge suggestion confirmation', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const otherScope = withTeam(db as never, OTHER_TEAM_ID, OTHER_USER_ID);

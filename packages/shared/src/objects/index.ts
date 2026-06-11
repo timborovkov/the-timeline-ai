@@ -835,6 +835,21 @@ export async function getMergedObjectTarget(
   }
 }
 
+async function resolveCurrentObjectIds(
+  db: Db,
+  scope: TeamScopeCore,
+  entityIds: string[],
+): Promise<string[]> {
+  const resolved: string[] = [];
+  for (const entityId of entityIds) {
+    if (!UUID_RE.test(entityId)) continue;
+    const target = await getMergedObjectTarget(db, scope, entityId);
+    const currentId = target?.id ?? entityId;
+    if (!resolved.includes(currentId)) resolved.push(currentId);
+  }
+  return resolved;
+}
+
 export async function getObjectMergePreview(
   db: Db,
   scope: TeamScopeCore,
@@ -842,7 +857,10 @@ export async function getObjectMergePreview(
   survivorId?: string,
 ): Promise<ObjectMergePreview> {
   await scope.requireMembership();
-  const ids = Array.from(new Set(entityIds.filter((id) => UUID_RE.test(id))));
+  const ids = await resolveCurrentObjectIds(db, scope, entityIds);
+  const resolvedSurvivorId = survivorId
+    ? ((await getMergedObjectTarget(db, scope, survivorId))?.id ?? survivorId)
+    : undefined;
   if (ids.length < 2) throw new Error('Select at least two objects to merge');
   if (ids.length > 10) throw new Error('Merge at most 10 objects at once');
 
@@ -864,7 +882,7 @@ export async function getObjectMergePreview(
     throw new Error('Only same-type objects can be merged, except company/vendor cleanup');
   }
 
-  const survivor = objects.find((row) => row.id === survivorId) ?? objects[0];
+  const survivor = objects.find((row) => row.id === resolvedSurvivorId) ?? objects[0];
   if (!survivor) throw new Error('Survivor object not found');
   const losers = objects.filter((row) => row.id !== survivor.id);
 

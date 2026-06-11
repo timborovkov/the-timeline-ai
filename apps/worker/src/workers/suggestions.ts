@@ -737,7 +737,6 @@ async function createObjectCleanupSuggestionsForTeam(
         kind: 'object_cleanup_merge',
         teamId,
         objectIds,
-        match,
       });
       if (await rejectedSuggestionExists(db, teamId, dedupeKey)) continue;
       await scope.suggestions.createOrMergeSuggestionBundle({
