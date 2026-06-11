@@ -93,11 +93,8 @@ export async function PUT(
   // Validate every proposed selection against `listSyncableResources` —
   // i.e. the integration's actual OAuth scope. Without this, an admin
   // could PUT an arbitrary externalId (a repo, project, folder, etc.
-  // they don't actually have access to). On shared webhook URLs that's
-  // a tenant-isolation hole: any team that adds "tenantA/private-repo"
-  // to its selections receives tenantA's webhook payloads because the
-  // delivery router matches selections alone. Validate here once so the
-  // webhook + sync paths can trust the selection set.
+  // they don't actually have access to). Validate here once so the sync
+  // paths can trust the selection set.
   const tokens = await scope.integrations.getIntegrationTokens(id);
   if (!tokens) {
     return NextResponse.json({ error: 'no_tokens — reconnect required' }, { status: 400 });

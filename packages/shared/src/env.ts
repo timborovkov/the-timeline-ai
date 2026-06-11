@@ -201,19 +201,16 @@ const baseSchema = z.object({
   //   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
   SECRETS_ENCRYPTION_KEY: z.string().optional(),
 
-  // Per-team integrations. The catalog hides any provider whose
-  // credentials aren't set; webhook secrets gate signature verification
-  // on the corresponding /api/webhooks/* endpoint.
+  // Per-team integrations. The catalog hides any native provider whose
+  // OAuth credentials aren't set; provider-specific webhook secrets only
+  // apply to providers that expose inbound webhooks.
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   LINEAR_CLIENT_ID: z.string().optional(),
   LINEAR_CLIENT_SECRET: z.string().optional(),
   LINEAR_WEBHOOK_SECRET: z.string().optional(),
-  GITHUB_APP_ID: z.string().optional(),
-  GITHUB_APP_PRIVATE_KEY: z.string().optional(),
   GITHUB_APP_CLIENT_ID: z.string().optional(),
   GITHUB_APP_CLIENT_SECRET: z.string().optional(),
-  GITHUB_WEBHOOK_SECRET: z.string().optional(),
   // HMAC secret for Google Drive push-channel tokens. The Drive watch
   // registration sets channel_token = HMAC-SHA256(secret, integration.id)
   // so the /api/webhooks/google-drive handler can verify the inbound

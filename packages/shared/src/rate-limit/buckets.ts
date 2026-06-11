@@ -44,7 +44,7 @@ export const RATE_LIMITS = {
    *  Recall delivers from a small IP pool; the per-bot bucket handles
    *  per-meeting burst. */
   recallTranscriptIp: { capacity: 200, refillPerSec: 200 / 60 },
-  /** Phase 11 integration webhooks (GitHub, Linear, Google Drive):
+  /** Phase 11 integration webhooks (Linear, Google Drive):
    *  300/min per source IP. Sits in front of the HMAC verify + DB lookup
    *  so a bogus-payload flood can't burn the worker's DB capacity. The
    *  cap is high enough to handle real bursts (a noisy monorepo can emit

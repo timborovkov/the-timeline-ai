@@ -184,7 +184,7 @@ export default async function IntegrationsPage({
         <div className="rounded-sm border border-dashed border-border bg-surface p-6 text-sm text-fg-muted">
           <p className="mb-1 font-medium text-fg">No integrations configured.</p>
           <p>
-            Add OAuth client + webhook secret env vars to enable Drive, Linear, or GitHub; see{' '}
+            Add the provider credentials in env to enable Drive, Linear, or GitHub; see{' '}
             <Link className="text-signal underline" href="/docs/setup/integrations.html">
               setup
             </Link>

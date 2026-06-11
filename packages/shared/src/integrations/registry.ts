@@ -329,7 +329,9 @@ export function listCatalog(): CatalogEntry[] {
 }
 
 export function listFeaturedCatalog(): CatalogEntry[] {
-  return listCatalog().filter((c) => c.featured);
+  return listCatalog().filter(
+    (c) => c.featured && !(c.kind === 'native' && c.status !== 'native_available'),
+  );
 }
 
 /**
