@@ -110,4 +110,32 @@ describe('resolveMentions', () => {
     const [row] = await db.select().from(entities).where(eq(entities.id, inserted.id));
     expect(row?.aliases).toEqual(['Acme Inc']);
   });
+
+  it('does not resolve mentions to archived objects', async () => {
+    const pg = new PGlite();
+    await applyMigrations(pg);
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name)
+      VALUES ('${TEAM_ID}', 'agentic', 'Agentic Core');
+    `);
+    const db = drizzle(pg) as unknown as Db;
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'company',
+      canonicalName: 'Dormant migration',
+      aliases: ['Dormant'],
+      archivedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    await expect(
+      resolveMentions(
+        db,
+        TEAM_ID,
+        [{ name: 'Dormant migration', type: 'company', role: 'subject' }],
+        'Dormant migration was mentioned.',
+        {},
+        { createIfMissing: false, updateAliases: false },
+      ),
+    ).resolves.toEqual([null]);
+  });
 });

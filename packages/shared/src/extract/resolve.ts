@@ -142,6 +142,7 @@ async function insertEntityRow(tx: DbOrTx, input: ResolveEntityInput): Promise<s
         eq(entities.teamId, input.teamId),
         eq(entities.type, input.type),
         isNull(entities.mergedIntoId),
+        isNull(entities.archivedAt),
         sql`lower(${entities.canonicalName}) = ${input.name.toLowerCase()}`,
       ),
     )
@@ -194,6 +195,7 @@ export async function resolveEntity(
       and(
         eq(entities.teamId, input.teamId),
         isNull(entities.mergedIntoId),
+        isNull(entities.archivedAt),
         sql`(${lowerCanonical} = ${lowerName} OR ${aliasMatch})`,
       ),
     )) as EntityRow[];
