@@ -67,6 +67,25 @@ describe('objectMatchesTextFilter', () => {
     expect(objectMatchesTextFilter(object, '2026-06-12')).toBe(true);
     expect(objectMatchesTextFilter(object, '09:30')).toBe(true);
   });
+
+  it('matches the displayed unset bucket for nullable group fields', () => {
+    const object = row({ stage: null, priority: null });
+
+    expect(objectMatchesTextFilter(object, 'unset', { groupBy: 'stage' })).toBe(true);
+    expect(objectMatchesTextFilter(object, 'unset', { groupBy: 'priority' })).toBe(true);
+    expect(objectMatchesTextFilter(object, 'unset')).toBe(false);
+  });
+
+  it('matches human-readable type labels when provided by the view', () => {
+    const person = row({ type: 'person', canonicalName: 'Ada Lovelace' });
+
+    expect(
+      objectMatchesTextFilter(person, 'people', {
+        typeLabels: { person: 'People', company: 'Companies' },
+      }),
+    ).toBe(true);
+    expect(objectMatchesTextFilter(person, 'people')).toBe(false);
+  });
 });
 
 describe('filterObjectsByText', () => {

@@ -1,5 +1,12 @@
 import type * as objects from '@timeline/shared/objects';
 
+type GroupKey = 'status' | 'stage' | 'priority' | 'type';
+
+interface ObjectFilterOptions {
+  groupBy?: GroupKey;
+  typeLabels?: Record<string, string>;
+}
+
 function normalize(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
@@ -37,13 +44,23 @@ function dateSearchValues(value: unknown): string[] {
   return raw === formatted ? [formatted] : [raw, formatted];
 }
 
-function searchableObjectText(row: objects.ObjectRow): string {
+function displayedGroupValue(row: objects.ObjectRow, groupBy: GroupKey | undefined): string | null {
+  if (!groupBy) return null;
+  const value = row[groupBy];
+  return value === null ? 'unset' : String(value);
+}
+
+function searchableObjectText(row: objects.ObjectRow, options: ObjectFilterOptions = {}): string {
+  const typeLabel = options.typeLabels?.[row.type] ?? null;
+  const groupValue = displayedGroupValue(row, options.groupBy);
   const values = [
     row.canonicalName,
     row.type,
+    typeLabel,
     row.status,
     row.stage,
     row.priority,
+    groupValue,
     row.ownerUserId,
     row.assigneeUserId,
     ...dateSearchValues(row.dueAt),
@@ -54,14 +71,22 @@ function searchableObjectText(row: objects.ObjectRow): string {
   return [...values.map(String), ...metadataValues].join(' ').toLocaleLowerCase();
 }
 
-export function objectMatchesTextFilter(row: objects.ObjectRow, query: string): boolean {
+export function objectMatchesTextFilter(
+  row: objects.ObjectRow,
+  query: string,
+  options?: ObjectFilterOptions,
+): boolean {
   const tokens = normalize(query).split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return true;
-  const text = searchableObjectText(row);
+  const text = searchableObjectText(row, options);
   return tokens.every((token) => text.includes(token));
 }
 
-export function filterObjectsByText<T extends objects.ObjectRow>(rows: T[], query: string): T[] {
+export function filterObjectsByText<T extends objects.ObjectRow>(
+  rows: T[],
+  query: string,
+  options?: ObjectFilterOptions,
+): T[] {
   if (!normalize(query)) return rows;
-  return rows.filter((row) => objectMatchesTextFilter(row, query));
+  return rows.filter((row) => objectMatchesTextFilter(row, query, options));
 }

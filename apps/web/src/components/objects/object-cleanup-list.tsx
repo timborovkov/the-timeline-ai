@@ -24,7 +24,10 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [filterQuery, setFilterQuery] = useState('');
   const [isPending, startTransition] = useTransition();
-  const visibleRows = useMemo(() => filterObjectsByText(rows, filterQuery), [rows, filterQuery]);
+  const visibleRows = useMemo(
+    () => filterObjectsByText(rows, filterQuery, { typeLabels }),
+    [rows, filterQuery, typeLabels],
+  );
   const visibleIds = useMemo(() => new Set(visibleRows.map((row) => row.id)), [visibleRows]);
 
   const selectedIds = useMemo(

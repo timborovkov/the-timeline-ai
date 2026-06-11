@@ -23,7 +23,10 @@ function colValue(row: objects.ObjectRow, key: GroupKey): string {
 
 export function ObjectList({ rows, groupBy = 'status' }: Props) {
   const [filterQuery, setFilterQuery] = useState('');
-  const visibleRows = useMemo(() => filterObjectsByText(rows, filterQuery), [rows, filterQuery]);
+  const visibleRows = useMemo(
+    () => filterObjectsByText(rows, filterQuery, { groupBy }),
+    [groupBy, rows, filterQuery],
+  );
 
   if (rows.length === 0) {
     return (

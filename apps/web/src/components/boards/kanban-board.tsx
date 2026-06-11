@@ -88,7 +88,10 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
   const savingCardIdsRef = useRef<Set<string> | null>(null);
   const batchHadFailureRef = useRef(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const visibleItems = useMemo(() => filterObjectsByText(items, filterQuery), [items, filterQuery]);
+  const visibleItems = useMemo(
+    () => filterObjectsByText(items, filterQuery, { groupBy }),
+    [groupBy, items, filterQuery],
+  );
 
   function activeSavingCardIds() {
     savingCardIdsRef.current ??= new Set();
