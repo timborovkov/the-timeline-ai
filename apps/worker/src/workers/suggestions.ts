@@ -954,7 +954,7 @@ async function runSuggestionExtraction(
     schema: suggestionExtractionSchema,
     model: modelId,
     system:
-      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, or calendar refinements. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, merely conversational, or only says someone shared/sent/forwarded a link, post, file, reaction, app mention, or platform handle. Prefer updating an existing workspace object over creating a new one whenever the name, alias, person nickname, handle, company suffix variant, or conversation context plausibly matches an object in the prompt. Create a task/object only when the evidence contains durable information and no plausible existing or pending object matches. For create task/object items, include proposedPayload.canonicalName matching the item title. For date-only scheduled commitments, create all-day calendar_event items. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
+      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, calendar refinements, or clear lifecycle updates to existing tasks/calendar events. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, merely conversational, could match multiple existing artifacts, or only says someone shared/sent/forwarded a link, post, file, reaction, app mention, or platform handle. Prefer updating an existing workspace object over creating a new one whenever the name, alias, person nickname, handle, company suffix variant, or conversation context plausibly matches an object in the prompt. Create a task/object only when the evidence contains durable information and no plausible existing or pending object matches. For create task/object items, include proposedPayload.canonicalName matching the item title. For clear task completion/cancellation/blocking, return an update item targeting the existing task UUID with proposedPayload.status set to done/cancelled/blocked. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
     prompt,
   });
 
@@ -1038,7 +1038,7 @@ async function runSuggestionExtraction(
           targetKind: item.targetKind,
           targetId: item.targetId ?? null,
           title: item.title,
-          item: args.conversation ? null : item,
+          item,
         }),
         proposedPayload: normalizeSuggestionItemPayload(item),
       })),

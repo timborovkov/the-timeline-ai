@@ -145,6 +145,32 @@ async function seedConversationReview(
   });
 }
 
+async function seedTelegramConversationReview(
+  db: Db,
+  args: {
+    rawEventId: string;
+    reviewId: string;
+    chatId: string;
+    text: string;
+    messageId?: string;
+    occurredAt?: Date;
+  },
+): Promise<void> {
+  await seedRawEvent(db, {
+    id: args.rawEventId,
+    source: 'telegram',
+    text: args.text,
+    sourceMetadata: { tg_chat_id: args.chatId, tg_message_id: args.messageId ?? '1' },
+    ...(args.occurredAt ? { occurredAt: args.occurredAt } : {}),
+  });
+  await seedConversationReview(db, {
+    id: args.reviewId,
+    conversationKey: `telegram:${TEAM_ID}:chat:${args.chatId}`,
+    lastRawEventId: args.rawEventId,
+    quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+  });
+}
+
 describe('fallbackBundles', () => {
   it('does not treat next inside the action text as the time phrase', () => {
     const [bundle] = fallbackBundles({
@@ -341,11 +367,14 @@ describe('processSuggestionJobForTests', () => {
   });
 
   it('suggests approval-backed person merges for names, nicknames, and handle variants', async () => {
-    await db.insert(entities).values([
-      { teamId: TEAM_ID, type: 'person', canonicalName: 'Tim Borovkov' },
-      { teamId: TEAM_ID, type: 'person', canonicalName: 'Tim' },
-      { teamId: TEAM_ID, type: 'person', canonicalName: 'timbo0' },
-    ]);
+    const inserted = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'person', canonicalName: 'Tim Borovkov' },
+        { teamId: TEAM_ID, type: 'person', canonicalName: 'Tim' },
+        { teamId: TEAM_ID, type: 'person', canonicalName: 'timbo0' },
+      ])
+      .returning({ id: entities.id });
 
     await processSuggestionJobForTests(
       { db: db as never },
@@ -358,13 +387,17 @@ describe('processSuggestionJobForTests', () => {
       OWNER_ID,
     ).suggestions.listPendingSuggestions();
     expect(bundles.length).toBeGreaterThanOrEqual(2);
-    const titles = bundles.map((bundle) => bundle.title);
-    expect(titles).toEqual(
-      expect.arrayContaining([expect.stringMatching(/Tim Borovkov.*Tim|Tim.*Tim Borovkov/)]),
+    const coveredObjectIds = new Set(
+      bundles.flatMap((bundle) =>
+        bundle.items.flatMap((item) => {
+          const objectIds = item.proposedPayload.objectIds;
+          return Array.isArray(objectIds)
+            ? objectIds.filter((value): value is string => typeof value === 'string')
+            : [];
+        }),
+      ),
     );
-    expect(titles).toEqual(
-      expect.arrayContaining([expect.stringMatching(/Tim Borovkov.*timbo0|timbo0.*Tim Borovkov/)]),
-    );
+    expect(coveredObjectIds).toEqual(new Set(inserted.map((row) => row.id)));
     expect(
       bundles.flatMap((bundle) => bundle.items).every((item) => item.targetKind === 'object_merge'),
     ).toBe(true);
@@ -1929,9 +1962,259 @@ describe('processSuggestionJobForTests', () => {
       { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
     );
 
-    expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 1 });
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 2 });
+    const rows = await db.select().from(agentSuggestionItems);
+    expect(rows.map((row) => row.status).sort()).toEqual(['pending', 'superseded']);
+    const pending = rows.find((row) => row.status === 'pending');
+    expect(pending?.proposedPayload).toMatchObject({ ownerName: 'John' });
+  });
+
+  it('supersedes a stale meeting move approval when the conversation moves it again', async () => {
+    const firstId = '10000000-0000-0000-0000-0000000000e1';
+    const secondId = '10000000-0000-0000-0000-0000000000e2';
+    const reviewId = '20000000-0000-0000-0000-0000000000e1';
+    await seedTelegramConversationReview(db as never, {
+      rawEventId: firstId,
+      reviewId,
+      chatId: '321',
+      text: 'Move the Acme kickoff to Monday at 3.',
+      occurredAt: new Date('2026-05-27T10:00:00.000Z'),
+    });
+    const chat = vi
+      .fn()
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: 'Move Acme kickoff',
+              summary: 'The kickoff moved to Monday.',
+              reason: 'The conversation gives a concrete time.',
+              confidence: 'high',
+              quote: 'Move the Acme kickoff to Monday at 3.',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'calendar_event',
+                  title: 'Acme kickoff',
+                  proposedPayload: {
+                    title: 'Acme kickoff',
+                    startAt: '2026-06-15T15:00:00.000Z',
+                    endAt: '2026-06-15T16:00:00.000Z',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: 'Move Acme kickoff',
+              summary: 'The kickoff moved to Wednesday.',
+              reason: 'The follow-up changes the concrete time.',
+              confidence: 'high',
+              quote: 'Actually make that Wednesday at 3.',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'calendar_event',
+                  title: 'Acme kickoff',
+                  proposedPayload: {
+                    title: 'Acme kickoff',
+                    startAt: '2026-06-17T15:00:00.000Z',
+                    endAt: '2026-06-17T16:00:00.000Z',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    await seedRawEvent(db as never, {
+      id: secondId,
+      source: 'telegram',
+      text: 'Actually make that Wednesday at 3.',
+      occurredAt: new Date('2026-05-27T10:05:00.000Z'),
+      sourceMetadata: { tg_chat_id: '321', tg_message_id: '2' },
+    });
+    await db
+      .update(conversationReviews)
+      .set({
+        status: 'pending',
+        lastRawEventId: secondId,
+        quietUntil: new Date('2026-05-27T09:00:00.000Z'),
+      })
+      .where(eq(conversationReviews.id, reviewId));
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const rows = await db.select().from(agentSuggestionItems);
+    expect(rows.map((row) => row.status).sort()).toEqual(['pending', 'superseded']);
+    const current = rows.find((row) => row.status === 'pending');
+    expect(current?.proposedPayload).toMatchObject({
+      startAt: '2026-06-17T15:00:00.000Z',
+    });
+  });
+
+  it('creates a lifecycle update proposal when evidence clearly completes an existing task', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000e3';
+    const reviewId = '20000000-0000-0000-0000-0000000000e3';
+    await db.insert(entities).values({
+      id: OBJECT_ID,
+      teamId: TEAM_ID,
+      type: 'task',
+      canonicalName: 'Send Acme deck',
+      status: 'open',
+      metadata: {},
+    });
+    await seedTelegramConversationReview(db as never, {
+      rawEventId,
+      reviewId,
+      chatId: '654',
+      text: 'I sent the Acme deck.',
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Mark Acme deck sent',
+            summary: 'The task appears complete.',
+            reason: 'The speaker says they sent the deck.',
+            confidence: 'high',
+            quote: 'I sent the Acme deck.',
+            items: [
+              {
+                operation: 'update',
+                targetKind: 'task',
+                targetId: OBJECT_ID,
+                title: 'Mark Send Acme deck done',
+                proposedPayload: { status: 'done' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'conversation_review',
+        conversationReviewId: reviewId,
+        teamId: TEAM_ID,
+      },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
     const [item] = await db.select().from(agentSuggestionItems);
-    expect(item?.proposedPayload).toMatchObject({ ownerName: 'John' });
+    expect(item).toMatchObject({
+      operation: 'update',
+      targetKind: 'task',
+      targetId: OBJECT_ID,
+      status: 'pending',
+    });
+    expect(item?.proposedPayload).toMatchObject({ status: 'done' });
+    const [task] = await db.select().from(entities).where(eq(entities.id, OBJECT_ID));
+    expect(task?.status).toBe('open');
+  });
+
+  it('creates no lifecycle proposal when completion evidence is ambiguous', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000e4';
+    const reviewId = '20000000-0000-0000-0000-0000000000e4';
+    await db.insert(entities).values([
+      {
+        id: OBJECT_ID,
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Send Acme deck',
+        status: 'open',
+        metadata: {},
+      },
+      {
+        id: 'dddddddd-dddd-dddd-dddd-dddddddddde1',
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: 'Review Acme deck',
+        status: 'open',
+        metadata: {},
+      },
+    ]);
+    await seedTelegramConversationReview(db as never, {
+      rawEventId,
+      reviewId,
+      chatId: '655',
+      text: 'Done with the deck.',
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      {
+        scope: 'conversation_review',
+        conversationReviewId: reviewId,
+        teamId: TEAM_ID,
+      },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
+  });
+
+  it('does not let private evidence supersede broader approval queues', async () => {
+    const privateRawEventId = '10000000-0000-0000-0000-0000000000e5';
+    await withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Move team-visible meeting',
+      dedupeKey: 'private-does-not-supersede',
+      visibility: 'team',
+      metadata: { conversation_review_id: 'private-review' },
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Team kickoff',
+          dedupeKey: 'private-does-not-supersede:item',
+          proposedPayload: {
+            title: 'Team kickoff',
+            startAt: '2026-06-15T15:00:00.000Z',
+            endAt: '2026-06-15T16:00:00.000Z',
+          },
+        },
+      ],
+    });
+    await seedRawEvent(db as never, {
+      id: privateRawEventId,
+      source: 'telegram',
+      visibility: 'private',
+      text: 'Actually move the team kickoff to Wednesday.',
+      sourceMetadata: { tg_chat_id: '999', tg_message_id: '1' },
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: privateRawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(chat).not.toHaveBeenCalled();
+    const [item] = await db.select().from(agentSuggestionItems);
+    expect(item?.status).toBe('pending');
   });
 
   it('includes only explicit object-backed cross-source context in conversation reviews', async () => {

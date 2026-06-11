@@ -12,7 +12,7 @@ import {
   teamMembers,
   type Db,
 } from '@timeline/db';
-import { and, asc, count, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type {
@@ -29,11 +29,12 @@ import type {
 } from '#src/objects/index.js';
 import type { TeamRole } from '#src/team-scope.js';
 
+import { childLogger } from '#src/logger.js';
 import { localDateFromInstant, localDateSpanToUtcRange } from '#src/time/index.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
-type SuggestionStatus = 'pending' | 'partially_resolved' | 'accepted' | 'rejected';
-type ItemStatus = 'pending' | 'accepted' | 'rejected' | 'failed';
+type SuggestionStatus = 'pending' | 'partially_resolved' | 'accepted' | 'rejected' | 'superseded';
+type ItemStatus = 'pending' | 'accepted' | 'rejected' | 'failed' | 'superseded';
 type Operation = 'create' | 'update' | 'archive_or_cancel' | 'merge';
 type TargetKind =
   | 'object'
@@ -116,6 +117,8 @@ export interface SuggestionItem {
   description: string | null;
   proposedPayload: Record<string, unknown>;
   failureReason: string | null;
+  supersededByItemId: string | null;
+  supersededReason: string | null;
 }
 
 export interface SuggestionEvidence {
@@ -245,6 +248,17 @@ export function suggestionDedupeKey(parts: unknown): string {
   return createHash('sha256').update(stableStringify(parts)).digest('hex');
 }
 
+const ACTIONABLE_ITEM_STATUSES: ItemStatus[] = ['pending', 'failed'];
+const log = childLogger('suggestions');
+
+function actionableItemExistsPredicate() {
+  return sql`EXISTS (
+    SELECT 1 FROM ${agentSuggestionItems}
+    WHERE ${agentSuggestionItems.suggestionId} = ${agentSuggestions.id}
+      AND ${agentSuggestionItems.status} IN ('pending', 'failed')
+  )`;
+}
+
 function suggestionVisibilityPredicate(teamId: string, userId: string) {
   return and(
     eq(agentSuggestions.teamId, teamId),
@@ -259,6 +273,129 @@ function suggestionVisibilityPredicate(teamId: string, userId: string) {
         sql`${userId}::uuid = ANY(${agentSuggestions.visibilityUserIds})`,
       ),
     ),
+  );
+}
+
+function itemPayloadKeys(item: typeof agentSuggestionItems.$inferSelect): Set<string> {
+  const payload = item.proposedPayload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return new Set();
+  return new Set(Object.keys(payload));
+}
+
+function payloadKeysOverlap(
+  left: typeof agentSuggestionItems.$inferSelect,
+  right: typeof agentSuggestionItems.$inferSelect,
+): boolean {
+  const leftKeys = itemPayloadKeys(left);
+  const rightKeys = itemPayloadKeys(right);
+  if (leftKeys.size === 0 || rightKeys.size === 0) return true;
+  for (const key of leftKeys) {
+    if (rightKeys.has(key)) return true;
+  }
+  return false;
+}
+
+function itemArtifactIds(item: typeof agentSuggestionItems.$inferSelect): Set<string> {
+  return new Set([item.targetId, item.resultId].filter((id): id is string => Boolean(id)));
+}
+
+function artifactExternalKey(item: typeof agentSuggestionItems.$inferSelect): string | null {
+  const payload = item.proposedPayload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const record = payload as Record<string, unknown>;
+  const metadata =
+    record.metadata && typeof record.metadata === 'object' && !Array.isArray(record.metadata)
+      ? (record.metadata as Record<string, unknown>)
+      : {};
+  const provider =
+    typeof metadata.integration_provider === 'string'
+      ? metadata.integration_provider
+      : typeof record.provider === 'string'
+        ? record.provider
+        : null;
+  const externalObjectId =
+    typeof metadata.integration_external_id === 'string'
+      ? metadata.integration_external_id
+      : typeof record.externalObjectId === 'string'
+        ? record.externalObjectId
+        : null;
+  if (provider && externalObjectId)
+    return `${item.targetKind}:integration:${provider}:${externalObjectId}`;
+
+  const externalCalendarId =
+    typeof record.externalCalendarId === 'string' ? record.externalCalendarId : null;
+  const externalEventId =
+    typeof record.externalEventId === 'string' ? record.externalEventId : null;
+  if (externalCalendarId && externalEventId) {
+    return `${item.targetKind}:calendar:${externalCalendarId}:${externalEventId}`;
+  }
+  return null;
+}
+
+function sameAudience(
+  left: typeof agentSuggestions.$inferSelect,
+  right: typeof agentSuggestions.$inferSelect,
+): boolean {
+  return (
+    left.visibility === right.visibility &&
+    left.visibilityOwnerUserId === right.visibilityOwnerUserId &&
+    stableStringify(left.visibilityUserIds ?? []) === stableStringify(right.visibilityUserIds ?? [])
+  );
+}
+
+function sameConversationReview(
+  left: typeof agentSuggestions.$inferSelect,
+  right: typeof agentSuggestions.$inferSelect,
+): boolean {
+  const leftMetadata =
+    left.metadata && typeof left.metadata === 'object'
+      ? (left.metadata as Record<string, unknown>)
+      : {};
+  const rightMetadata =
+    right.metadata && typeof right.metadata === 'object'
+      ? (right.metadata as Record<string, unknown>)
+      : {};
+  return (
+    typeof leftMetadata.conversation_review_id === 'string' &&
+    leftMetadata.conversation_review_id === rightMetadata.conversation_review_id
+  );
+}
+
+function shouldSupersedePendingItem(args: {
+  olderItem: typeof agentSuggestionItems.$inferSelect;
+  olderSuggestion: typeof agentSuggestions.$inferSelect;
+  newerItem: typeof agentSuggestionItems.$inferSelect;
+  newerSuggestion: typeof agentSuggestions.$inferSelect;
+}): boolean {
+  const { olderItem, olderSuggestion, newerItem, newerSuggestion } = args;
+  if (!sameAudience(olderSuggestion, newerSuggestion)) return false;
+  if (olderItem.id === newerItem.id) return false;
+  if (olderItem.targetKind !== newerItem.targetKind) return false;
+
+  const olderExternalKey = artifactExternalKey(olderItem);
+  if (olderExternalKey && olderExternalKey === artifactExternalKey(newerItem)) return true;
+
+  const newerArtifactIds = itemArtifactIds(newerItem);
+  const sameArtifact = [...itemArtifactIds(olderItem)].some((id) => newerArtifactIds.has(id));
+  if (sameArtifact) {
+    if (
+      olderItem.operation === 'archive_or_cancel' ||
+      newerItem.operation === 'archive_or_cancel'
+    ) {
+      return true;
+    }
+    if (olderItem.operation === 'create' || newerItem.operation === 'create') {
+      return payloadKeysOverlap(olderItem, newerItem);
+    }
+    return olderItem.operation === newerItem.operation && payloadKeysOverlap(olderItem, newerItem);
+  }
+
+  return (
+    !olderItem.targetId &&
+    !newerItem.targetId &&
+    olderItem.operation === newerItem.operation &&
+    (olderItem.dedupeKey === newerItem.dedupeKey || olderItem.title === newerItem.title) &&
+    sameConversationReview(olderSuggestion, newerSuggestion)
   );
 }
 
@@ -335,6 +472,8 @@ function toBundle(
       description: item.description,
       proposedPayload: item.proposedPayload as Record<string, unknown>,
       failureReason: item.failureReason,
+      supersededByItemId: item.supersededByItemId,
+      supersededReason: item.supersededReason,
     })),
     evidence: evidence.map((ev) => ({
       id: ev.id,
@@ -412,29 +551,224 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .select({ status: agentSuggestionItems.status })
       .from(agentSuggestionItems)
       .where(eq(agentSuggestionItems.suggestionId, suggestionId));
-    const pending = items.filter((i) => i.status === 'pending' || i.status === 'failed').length;
+    const actionable = items.filter((i) => ACTIONABLE_ITEM_STATUSES.includes(i.status)).length;
     const accepted = items.filter((i) => i.status === 'accepted').length;
     const rejected = items.filter((i) => i.status === 'rejected').length;
+    const superseded = items.filter((i) => i.status === 'superseded').length;
     const status: SuggestionStatus =
-      pending > 0
-        ? accepted > 0 || rejected > 0
+      actionable > 0
+        ? accepted > 0 || rejected > 0 || superseded > 0
           ? 'partially_resolved'
           : 'pending'
-        : accepted > 0 && rejected === 0
-          ? 'accepted'
-          : rejected > 0 && accepted === 0
-            ? 'rejected'
-            : 'partially_resolved';
+        : superseded > 0 && accepted === 0 && rejected === 0
+          ? 'superseded'
+          : accepted > 0 && rejected === 0 && superseded === 0
+            ? 'accepted'
+            : rejected > 0 && accepted === 0 && superseded === 0
+              ? 'rejected'
+              : 'partially_resolved';
     await db
       .update(agentSuggestions)
       .set({
         status,
         updatedAt: new Date(),
-        ...(pending === 0
+        ...(actionable === 0
           ? { resolvedAt: new Date(), resolvedByUserId: resolvedByUserId ?? null }
           : {}),
       })
       .where(eq(agentSuggestions.id, suggestionId));
+  }
+
+  async function supersedeItem(
+    itemId: string,
+    supersededByItemId: string | null,
+    reason: string,
+  ): Promise<boolean> {
+    const [row] = await db
+      .update(agentSuggestionItems)
+      .set({
+        status: 'superseded',
+        supersededByItemId,
+        supersededReason: reason,
+        resolvedAt: new Date(),
+        resolvedByUserId: null,
+        updatedAt: new Date(),
+        failureReason: null,
+      })
+      .where(
+        and(
+          eq(agentSuggestionItems.id, itemId),
+          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+        ),
+      )
+      .returning({
+        suggestionId: agentSuggestionItems.suggestionId,
+      });
+    if (!row) return false;
+    await refreshBundleStatus(row.suggestionId);
+    return true;
+  }
+
+  async function reconcileNewSuggestionItems(suggestionId: string): Promise<void> {
+    const [newerSuggestion] = await db
+      .select()
+      .from(agentSuggestions)
+      .where(eq(agentSuggestions.id, suggestionId))
+      .limit(1);
+    if (!newerSuggestion) return;
+    const newerItems = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(
+        and(
+          eq(agentSuggestionItems.suggestionId, suggestionId),
+          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+        ),
+      );
+    if (newerItems.length === 0) return;
+    const newerTargetKinds = [...new Set(newerItems.map((item) => item.targetKind))];
+
+    const candidateRows = await db
+      .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
+      .from(agentSuggestionItems)
+      .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+          inArray(agentSuggestionItems.targetKind, newerTargetKinds),
+          inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+        ),
+      );
+
+    for (const newerItem of newerItems) {
+      for (const candidate of candidateRows) {
+        if (candidate.item.createdAt.getTime() >= newerItem.createdAt.getTime()) continue;
+        if (
+          shouldSupersedePendingItem({
+            olderItem: candidate.item,
+            olderSuggestion: candidate.suggestion,
+            newerItem,
+            newerSuggestion,
+          })
+        ) {
+          await supersedeItem(
+            candidate.item.id,
+            newerItem.id,
+            'Replaced by newer workspace reconciliation evidence.',
+          );
+        }
+      }
+    }
+    await refreshBundleStatus(suggestionId);
+  }
+
+  async function reconcileAcceptedItem(
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<void> {
+    const [acceptedSuggestion] = await db
+      .select()
+      .from(agentSuggestions)
+      .where(eq(agentSuggestions.id, item.suggestionId))
+      .limit(1);
+    if (!acceptedSuggestion) return;
+    const candidateRows = await db
+      .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
+      .from(agentSuggestionItems)
+      .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+          eq(agentSuggestionItems.targetKind, item.targetKind),
+          inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+        ),
+      );
+
+    for (const candidate of candidateRows) {
+      if (
+        shouldSupersedePendingItem({
+          olderItem: candidate.item,
+          olderSuggestion: candidate.suggestion,
+          newerItem: item,
+          newerSuggestion: acceptedSuggestion,
+        })
+      ) {
+        await supersedeItem(
+          candidate.item.id,
+          item.id,
+          'Canonical state changed through an accepted approval.',
+        );
+      }
+    }
+  }
+
+  async function reconcileAcceptedItemBestEffort(
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<void> {
+    try {
+      await reconcileAcceptedItem(item);
+    } catch (err) {
+      log.error(
+        {
+          err,
+          teamId,
+          suggestionItemId: item.id,
+          suggestionId: item.suggestionId,
+          targetKind: item.targetKind,
+          targetId: item.targetId,
+          resultId: item.resultId,
+        },
+        'post_accept_reconciliation_failed',
+      );
+    }
+  }
+
+  async function reconcileCanonicalChange(input: {
+    targetKind: Extract<TargetKind, 'object' | 'task' | 'calendar_event'>;
+    targetId: string;
+    operation?: Extract<Operation, 'update' | 'archive_or_cancel'>;
+    patch?: Record<string, unknown>;
+    reason?: string;
+  }): Promise<number> {
+    await ensureMember();
+    const operation = input.operation ?? 'update';
+    const patchKeys = new Set(Object.keys(input.patch ?? {}));
+    const candidateRows = await db
+      .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
+      .from(agentSuggestionItems)
+      .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          eq(agentSuggestionItems.targetKind, input.targetKind),
+          eq(agentSuggestionItems.targetId, input.targetId),
+          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+          inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+        ),
+      );
+
+    let superseded = 0;
+    for (const candidate of candidateRows) {
+      const candidateKeys = itemPayloadKeys(candidate.item);
+      const conflicts =
+        operation === 'archive_or_cancel' ||
+        candidate.item.operation === 'archive_or_cancel' ||
+        patchKeys.size === 0 ||
+        candidateKeys.size === 0 ||
+        [...patchKeys].some((key) => candidateKeys.has(key));
+      if (!conflicts) continue;
+      if (
+        await supersedeItem(
+          candidate.item.id,
+          null,
+          input.reason ?? 'Canonical state changed outside this pending approval.',
+        )
+      ) {
+        superseded += 1;
+      }
+    }
+    return superseded;
   }
 
   async function notifySuggestion(row: typeof agentSuggestions.$inferSelect): Promise<void> {
@@ -774,18 +1108,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       )
       .returning({ id: agentSuggestionItems.id });
     if (!claimed) return false;
+    let resultId: string | null;
     try {
-      const resultId = await applyItem(row.item);
-      await db
-        .update(agentSuggestionItems)
-        .set({
-          resultId,
-          updatedAt: new Date(),
-          failureReason: null,
-        })
-        .where(eq(agentSuggestionItems.id, itemId));
-      await refreshBundleStatus(row.suggestion.id, userId);
-      return true;
+      resultId = await applyItem(row.item);
     } catch (err) {
       await db
         .update(agentSuggestionItems)
@@ -800,6 +1125,17 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       await refreshBundleStatus(row.suggestion.id, userId);
       throw err;
     }
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        resultId,
+        updatedAt: new Date(),
+        failureReason: null,
+      })
+      .where(eq(agentSuggestionItems.id, itemId));
+    await refreshBundleStatus(row.suggestion.id, userId);
+    await reconcileAcceptedItemBestEffort({ ...row.item, resultId });
+    return true;
   }
 
   async function acceptObjectMergeSuggestionItem(input: {
@@ -854,22 +1190,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .returning({ id: agentSuggestionItems.id });
     if (!claimed) return null;
 
+    let survivorId: string;
     try {
       const result = await objects.mergeObjects({
         survivorId: input.survivorId,
         mergedIds: input.mergedIds,
         actor: { kind: 'user', userId },
       });
-      await db
-        .update(agentSuggestionItems)
-        .set({
-          resultId: result.survivor.id,
-          updatedAt: new Date(),
-          failureReason: null,
-        })
-        .where(eq(agentSuggestionItems.id, input.itemId));
-      await refreshBundleStatus(row.suggestion.id, userId);
-      return { survivorId: result.survivor.id };
+      survivorId = result.survivor.id;
     } catch (err) {
       await db
         .update(agentSuggestionItems)
@@ -884,6 +1212,17 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       await refreshBundleStatus(row.suggestion.id, userId);
       throw err;
     }
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        resultId: survivorId,
+        updatedAt: new Date(),
+        failureReason: null,
+      })
+      .where(eq(agentSuggestionItems.id, input.itemId));
+    await refreshBundleStatus(row.suggestion.id, userId);
+    await reconcileAcceptedItemBestEffort({ ...row.item, resultId: survivorId });
+    return { survivorId };
   }
 
   async function listSuggestions(
@@ -893,9 +1232,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const status = opts.status ?? 'pending';
     const conditions = [suggestionVisibilityPredicate(teamId, userId)];
     if (status === 'pending') {
-      conditions.push(inArray(agentSuggestions.status, ['pending', 'partially_resolved']));
+      conditions.push(
+        inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+        actionableItemExistsPredicate(),
+      );
     } else if (status === 'resolved') {
-      conditions.push(inArray(agentSuggestions.status, ['accepted', 'rejected']));
+      conditions.push(
+        or(
+          inArray(agentSuggestions.status, ['accepted', 'rejected', 'superseded']),
+          and(
+            eq(agentSuggestions.status, 'partially_resolved'),
+            isNotNull(agentSuggestions.resolvedAt),
+          ),
+        ),
+      );
     } else if (status === 'failed') {
       conditions.push(
         sql`EXISTS (
@@ -943,8 +1293,23 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         )
         .limit(1);
       const existing = existingRows[0];
+      if (existing?.status === 'superseded') {
+        const existingItems = await db
+          .select({ dedupeKey: agentSuggestionItems.dedupeKey })
+          .from(agentSuggestionItems)
+          .where(eq(agentSuggestionItems.suggestionId, existing.id));
+        const existingItemDedupeKeys = new Set(existingItems.map((item) => item.dedupeKey));
+        if (input.items.every((item) => existingItemDedupeKeys.has(item.dedupeKey))) {
+          const loaded = await loadBundle(existing.id);
+          if (!loaded) throw new Error('Suggestion was not visible after creation');
+          return loaded;
+        }
+      }
       const dedupeKey =
-        existing && (existing.status === 'accepted' || existing.status === 'rejected')
+        existing &&
+        (existing.status === 'accepted' ||
+          existing.status === 'rejected' ||
+          existing.status === 'superseded')
           ? correctionDedupeKey
           : input.dedupeKey;
 
@@ -979,7 +1344,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 metadata: sql`${agentSuggestions.metadata} || ${JSON.stringify(metadata)}::jsonb`,
                 updatedAt: new Date(),
               },
-              where: sql`${agentSuggestions.status} NOT IN ('accepted', 'rejected')`,
+              where: sql`${agentSuggestions.status} NOT IN ('accepted', 'rejected', 'superseded')`,
             })
             .returning();
           return row;
@@ -998,6 +1363,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             )
             .limit(1);
           if (resolvedDuplicate?.status === 'accepted') {
+            return { row: resolvedDuplicate, changed: false };
+          }
+          if (resolvedDuplicate?.status === 'superseded') {
             return { row: resolvedDuplicate, changed: false };
           }
           if (resolvedDuplicate?.status === 'rejected') {
@@ -1071,7 +1439,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
         return { row: inserted, changed: true };
       });
-      if (result.changed) await notifySuggestion(result.row);
+      if (result.changed) {
+        await reconcileNewSuggestionItems(result.row.id);
+        await notifySuggestion(result.row);
+      }
       const loaded = await loadBundle(result.row.id);
       if (!loaded) throw new Error('Suggestion was not visible after creation');
       return loaded;
@@ -1094,6 +1465,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           and(
             suggestionVisibilityPredicate(teamId, userId),
             inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+            actionableItemExistsPredicate(),
           ),
         );
       return rows[0]?.total ?? 0;
@@ -1102,6 +1474,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     acceptSuggestionItem,
 
     acceptObjectMergeSuggestionItem,
+
+    reconcileCanonicalChange,
 
     async rejectSuggestionItem(itemId: string): Promise<boolean> {
       await ensureMember();

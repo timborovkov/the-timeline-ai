@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import { entities } from '@timeline/db';
+import { agentSuggestionItems, entities } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -274,6 +274,327 @@ describe('suggestion scope', () => {
       `SELECT count(*)::text FROM notifications WHERE team_id = '${TEAM_ID}' AND agent_suggestion_id IS NOT NULL`,
     );
     expect(result.rows[0]?.count).toBe('2');
+  });
+
+  it('supersedes older same-conversation pending items and removes them from active approvals', async () => {
+    const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
+    const older = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Move Acme kickoff',
+      dedupeKey: 'conversation:move-acme:old',
+      visibility: 'team',
+      metadata: { conversation_review_id: 'review-acme-move' },
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Acme kickoff Monday',
+          dedupeKey: 'conversation:move-acme:item',
+          proposedPayload: {
+            title: 'Acme kickoff',
+            startAt: '2026-06-15T15:00:00.000Z',
+            endAt: '2026-06-15T16:00:00.000Z',
+          },
+        },
+      ],
+    });
+    const newer = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Move Acme kickoff',
+      dedupeKey: 'conversation:move-acme:new',
+      visibility: 'team',
+      metadata: { conversation_review_id: 'review-acme-move' },
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Acme kickoff Wednesday',
+          dedupeKey: 'conversation:move-acme:item',
+          proposedPayload: {
+            title: 'Acme kickoff',
+            startAt: '2026-06-17T15:00:00.000Z',
+            endAt: '2026-06-17T16:00:00.000Z',
+          },
+        },
+      ],
+    });
+
+    const rows = await pg.query<{
+      suggestion_id: string;
+      status: string;
+      superseded_by_item_id: string | null;
+    }>(`
+      SELECT suggestion_id, status, superseded_by_item_id
+      FROM agent_suggestion_items
+      WHERE suggestion_id IN ('${older.id}', '${newer.id}')
+      ORDER BY created_at, id
+    `);
+    expect(rows.rows).toEqual([
+      {
+        suggestion_id: older.id,
+        status: 'superseded',
+        superseded_by_item_id: newer.items[0]?.id ?? null,
+      },
+      { suggestion_id: newer.id, status: 'pending', superseded_by_item_id: null },
+    ]);
+
+    await expect(scope.suggestions.acceptSuggestionItem(older.items[0]?.id ?? '')).resolves.toBe(
+      false,
+    );
+    await expect(scope.suggestions.rejectSuggestionItem(older.items[0]?.id ?? '')).resolves.toBe(
+      false,
+    );
+    const pending = await scope.suggestions.listPendingSuggestions();
+    expect(pending.map((bundle) => bundle.id)).toEqual([newer.id]);
+    const resolved = await scope.suggestions.listSuggestions({ status: 'resolved' });
+    expect(resolved.map((bundle) => bundle.id)).toContain(older.id);
+
+    const retriedOlder = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Stale Monday retry',
+      dedupeKey: 'conversation:move-acme:old',
+      visibility: 'team',
+      metadata: { conversation_review_id: 'review-acme-move' },
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Acme kickoff Monday',
+          dedupeKey: 'conversation:move-acme:item',
+          proposedPayload: {
+            title: 'Acme kickoff',
+            startAt: '2026-06-15T15:00:00.000Z',
+            endAt: '2026-06-15T16:00:00.000Z',
+          },
+        },
+      ],
+    });
+    expect(retriedOlder.id).toBe(older.id);
+    expect(retriedOlder.status).toBe('superseded');
+    const afterRetry = await db
+      .select({ id: agentSuggestionItems.id })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.suggestionId, older.id));
+    expect(afterRetry).toHaveLength(1);
+
+    const materiallyNew = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Move Acme kickoff',
+      dedupeKey: 'conversation:move-acme:old',
+      visibility: 'team',
+      metadata: { conversation_review_id: 'review-acme-move' },
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Acme kickoff Friday',
+          dedupeKey: 'conversation:move-acme:item:friday',
+          proposedPayload: {
+            title: 'Acme kickoff',
+            startAt: '2026-06-19T15:00:00.000Z',
+            endAt: '2026-06-19T16:00:00.000Z',
+          },
+        },
+      ],
+    });
+    expect(materiallyNew.id).not.toBe(older.id);
+    expect(materiallyNew.status).toBe('pending');
+  });
+
+  it('keeps mixed bundles active with only non-superseded items actionable', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Prepare Acme kickoff',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const oldBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Update Acme task',
+      dedupeKey: 'mixed-superseded-old',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Mark task blocked',
+          dedupeKey: 'mixed-superseded-old:status',
+          proposedPayload: { status: 'blocked' },
+        },
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Assign task',
+          dedupeKey: 'mixed-superseded-old:assignee',
+          proposedPayload: { assigneeUserId: REVIEWER_ID },
+        },
+      ],
+    });
+    await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Complete Acme task',
+      dedupeKey: 'mixed-superseded-new',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Mark task done',
+          dedupeKey: 'mixed-superseded-new:status',
+          proposedPayload: { status: 'done' },
+        },
+      ],
+    });
+
+    const loaded = await scope.suggestions.getSuggestion(oldBundle.id);
+    expect(loaded?.status).toBe('partially_resolved');
+    expect(loaded?.items.map((item) => item.status).sort()).toEqual(['pending', 'superseded']);
+
+    const accepted = await scope.suggestions.acceptAll(oldBundle.id);
+    expect(accepted).toEqual({ accepted: 1, failed: 0 });
+    const after = await scope.suggestions.getSuggestion(oldBundle.id);
+    expect(after?.status).toBe('partially_resolved');
+    expect(after?.items.map((item) => item.status).sort()).toEqual(['accepted', 'superseded']);
+    await expect(scope.suggestions.listPendingSuggestions()).resolves.not.toContainEqual(
+      expect.objectContaining({ id: oldBundle.id }),
+    );
+    await expect(scope.suggestions.countPendingSuggestions()).resolves.toBe(1);
+    await expect(scope.suggestions.listSuggestions({ status: 'resolved' })).resolves.toContainEqual(
+      expect.objectContaining({ id: oldBundle.id }),
+    );
+  });
+
+  it('supersedes conflicting same-target pending items after accepting an update', async () => {
+    const creator = withTeam(db as never, TEAM_ID, USER_ID);
+    const reviewer = withTeam(db as never, TEAM_ID, REVIEWER_ID);
+    const task = await creator.objects.createObject({
+      type: 'task',
+      canonicalName: 'Send Acme deck',
+      status: 'open',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const first = await creator.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Complete deck task',
+      dedupeKey: 'accept-supersedes:first',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Mark deck sent',
+          dedupeKey: 'accept-supersedes:first:item',
+          proposedPayload: { status: 'done' },
+        },
+      ],
+    });
+    const secondSuggestionId = '77777777-7777-4777-8777-777777777702';
+    const secondItemId = '88888888-8888-4888-8888-888888888803';
+    await pg.query(
+      `INSERT INTO agent_suggestions (id, team_id, source, title, dedupe_key)
+       VALUES ($1, $2, 'chat', 'Cancel deck task', 'accept-supersedes:second')`,
+      [secondSuggestionId, TEAM_ID],
+    );
+    await pg.query(
+      `INSERT INTO agent_suggestion_items
+         (id, suggestion_id, team_id, operation, target_kind, target_id, title, dedupe_key, proposed_payload)
+       VALUES ($1, $2, $3, 'update', 'task', $4, 'Cancel deck task', 'accept-supersedes:second:item', $5::jsonb)`,
+      [secondItemId, secondSuggestionId, TEAM_ID, task.id, JSON.stringify({ status: 'cancelled' })],
+    );
+
+    await expect(reviewer.suggestions.acceptSuggestionItem(first.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    const loadedSecond = await creator.suggestions.getSuggestion(secondSuggestionId);
+    expect(loadedSecond?.status).toBe('superseded');
+    expect(loadedSecond?.items[0]).toMatchObject({
+      status: 'superseded',
+      supersededByItemId: first.items[0]?.id,
+    });
+  });
+
+  it('supersedes visible pending items after a direct canonical object change', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Follow up with Acme',
+      status: 'open',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Complete Acme follow-up',
+      dedupeKey: 'canonical-change-supersedes',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Mark follow-up done',
+          dedupeKey: 'canonical-change-supersedes:item',
+          proposedPayload: { status: 'done' },
+        },
+      ],
+    });
+
+    const superseded = await scope.suggestions.reconcileCanonicalChange({
+      targetKind: 'task',
+      targetId: task.id,
+      operation: 'update',
+      patch: { status: true },
+      reason: 'Manual task update.',
+    });
+
+    expect(superseded).toBe(1);
+    const loaded = await scope.suggestions.getSuggestion(bundle.id);
+    expect(loaded).toMatchObject({ status: 'superseded' });
+    expect(loaded?.items[0]).toMatchObject({
+      status: 'superseded',
+      supersededByItemId: null,
+      supersededReason: 'Manual task update.',
+    });
+  });
+
+  it('supersedes hidden same-target pending items after a direct canonical object change', async () => {
+    const owner = withTeam(db as never, TEAM_ID, USER_ID);
+    const reviewer = withTeam(db as never, TEAM_ID, REVIEWER_ID);
+    const task = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Send private Acme deck',
+      status: 'open',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const hiddenBundle = await reviewer.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Privately complete Acme deck',
+      dedupeKey: 'canonical-change-hidden-supersedes',
+      visibility: 'private',
+      visibilityOwnerUserId: REVIEWER_ID,
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: task.id,
+          title: 'Mark private deck task done',
+          dedupeKey: 'canonical-change-hidden-supersedes:item',
+          proposedPayload: { status: 'done' },
+        },
+      ],
+    });
+
+    const superseded = await owner.suggestions.reconcileCanonicalChange({
+      targetKind: 'task',
+      targetId: task.id,
+      operation: 'update',
+      patch: { status: true },
+      reason: 'Manual task update.',
+    });
+
+    expect(superseded).toBe(1);
+    const loaded = await reviewer.suggestions.getSuggestion(hiddenBundle.id);
+    expect(loaded).toMatchObject({ status: 'superseded' });
   });
 
   it('keeps accepted suggestion rows immutable and creates a correction bundle', async () => {
@@ -706,6 +1027,58 @@ describe('suggestion scope', () => {
       `SELECT count(*)::text FROM entities WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Task with marker'`,
     );
     expect(result.rows[0]?.count).toBe('1');
+  });
+
+  it('supersedes pending updates that target an accepted create result', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const createBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Create linked task',
+      dedupeKey: 'accepted-create-links-target',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Create linked task',
+          dedupeKey: 'accepted-create-links-target:create',
+          proposedPayload: { canonicalName: 'Create linked task', status: 'open' },
+        },
+      ],
+    });
+    const createItemId = createBundle.items[0]?.id;
+    expect(createItemId).toBeDefined();
+
+    const existing = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Create linked task',
+      status: 'open',
+      metadata: { agent_suggestion_item_id: createItemId },
+      actor: { kind: 'agent', userId: null },
+    });
+    const updateBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Update linked task',
+      dedupeKey: 'accepted-create-links-target:update',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'task',
+          targetId: existing.id,
+          title: 'Mark linked task done',
+          dedupeKey: 'accepted-create-links-target:update:item',
+          proposedPayload: { status: 'done' },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(createItemId ?? '')).resolves.toBe(true);
+
+    const loadedUpdate = await scope.suggestions.getSuggestion(updateBundle.id);
+    expect(loadedUpdate).toMatchObject({ status: 'superseded' });
+    expect(loadedUpdate?.items[0]).toMatchObject({
+      status: 'superseded',
+      supersededByItemId: createItemId,
+    });
   });
 
   it('does not recreate object notes when retrying after result bookkeeping was lost', async () => {

@@ -47,6 +47,35 @@ hydrate it from existing metadata, suggestion evidence, object/task changes,
 document versions, and calendar rows without inventing missing graph links.
 _Avoid_: Related items when discussing what changed because of source evidence
 
+**Workspace Reconciliation**:
+The process of keeping derived workspace artifacts aligned when newer raw-event
+evidence confirms, revises, supersedes, or invalidates earlier derived state.
+Workspace reconciliation never edits raw events; it updates, cancels, archives,
+supersedes, or proposes corrections to approvals, workspace objects, tasks,
+calendar events, and other impact context.
+_Avoid_: Cleanup, removal, sync, extraction
+
+**Lifecycle Update**:
+A workspace reconciliation outcome that changes the state of a derived artifact
+because timeline evidence shows progress, completion, cancellation, blocking,
+or another status change. Lifecycle updates to canonical artifacts require
+approval unless they come from an authoritative source.
+_Avoid_: Contradiction when the evidence is progress rather than disagreement
+
+**Authoritative Source**:
+A capture surface or integration allowed to directly update the canonical
+artifact it owns through a stable external identity, such as a provider event
+id or external object id. Authoritative sources do not get broad permission to
+rewrite unrelated workspace state.
+_Avoid_: Trusted source when it implies general authority
+
+**Artifact Cluster**:
+A set of derived workspace artifacts that represent the same real-world
+commitment, object, schedule, decision, or follow-up across product surfaces.
+An artifact cluster can include pending approvals, workspace objects, tasks,
+calendar events, and other impact context that should stay mutually consistent.
+_Avoid_: Conversation, thread, timeline moment when discussing the consistency boundary
+
 **Workspace Object**:
 A durable team memory item that represents something the team wants to track,
 such as a person, company, project, task, decision, deal, or follow-up.
@@ -72,6 +101,27 @@ accepts them; weak mentions should remain evidence rather than proposed memory.
 Creation proposals should be the last resort after checking existing objects
 and pending proposals.
 _Avoid_: Memory write when it hides the approval step
+
+**Correction Proposal**:
+An approval-backed suggestion created when newer evidence disagrees with
+already accepted or otherwise canonical workspace state. A correction proposal
+does not rewrite the earlier decision by itself; it asks the team to approve
+the replacement, cancellation, archive, or field update.
+_Avoid_: Automatic fix, silent update
+
+**Superseded Approval**:
+A pending approval that is no longer actionable because newer evidence or a
+newer proposal has replaced it before the team accepted or rejected it.
+Superseded approvals leave the active approval queue but remain available as
+history with their evidence and replacement relationship.
+_Avoid_: Rejected approval, deleted approval, failed approval
+
+**Rejected Approval**:
+A proposal the team has explicitly declined. Rejected approvals are human
+decisions, not stale machine output; workspace reconciliation may re-offer a
+similar approval only when newer evidence materially changes the proposal,
+target, confidence, or support.
+_Avoid_: Superseded approval, hidden approval
 
 **Durable Information**:
 Information worth preserving because it changes future retrieval,
@@ -573,6 +623,27 @@ pending approval?"
 
 Domain expert: "No. The suggestion dedupe key should point it back to the same
 agent suggestion."
+
+Developer: "If a later message moves the meeting from Monday to Wednesday,
+should both pending approvals stay active?"
+
+Domain expert: "No. Workspace reconciliation should supersede the stale Monday
+approval and keep only the Wednesday proposal actionable, while preserving the
+old approval as history."
+
+Developer: "If a teammate says they sent the deck, should the open deck task be
+marked done automatically?"
+
+Domain expert: "Conversation evidence should create a lifecycle update proposal
+for the canonical task. It should not silently mark the task done unless the
+change comes from an authoritative source for that artifact."
+
+Developer: "If Google Calendar moves an imported meeting, does that need a
+team approval?"
+
+Domain expert: "No. Google Calendar is authoritative for the external calendar
+event it owns, but it cannot directly rewrite unrelated workspace tasks or
+objects."
 
 Developer: "Can more than one raw event support the same suggestion?"
 

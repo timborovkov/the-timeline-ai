@@ -35,6 +35,17 @@ const TYPE_LABEL: Record<string, string> = {
   other: 'Other',
 };
 
+function objectIdsForMergeSuggestion(item: { proposedPayload: unknown }): string[] {
+  if (!item.proposedPayload || typeof item.proposedPayload !== 'object') return [];
+  const payload = item.proposedPayload as Record<string, unknown>;
+  const objectIds = payload.objectIds;
+  if (!Array.isArray(objectIds)) return [];
+  const ids = objectIds.filter((value): value is string => typeof value === 'string');
+  const survivorId = typeof payload.survivorId === 'string' ? payload.survivorId : null;
+  if (!survivorId || !ids.includes(survivorId)) return ids;
+  return [survivorId, ...ids.filter((id) => id !== survivorId)];
+}
+
 export default async function ObjectsIndexPage({
   searchParams,
 }: {
@@ -65,7 +76,13 @@ export default async function ObjectsIndexPage({
     scope.objects.listObjects(filter),
     scope.suggestions.listPendingSuggestions(),
   ]);
-  const cleanupSuggestions = [];
+  const cleanupSuggestions: ReturnType<typeof serializeSuggestionBundle>[] = [];
+  const mergeSuggestionItems: {
+    id: string;
+    status: string;
+    targetKind: string;
+    proposedPayload: unknown;
+  }[] = [];
   for (const bundle of suggestionBundles) {
     if (bundle.metadata.kind !== 'object_cleanup') continue;
     const items = bundle.items.filter(
@@ -73,8 +90,30 @@ export default async function ObjectsIndexPage({
         item.targetKind === 'object_merge' ||
         (item.targetKind === 'object' && item.operation === 'archive_or_cancel'),
     );
+    for (const item of items) {
+      if (
+        item.targetKind === 'object_merge' &&
+        (item.status === 'pending' || item.status === 'failed')
+      ) {
+        mergeSuggestionItems.push(item);
+      }
+    }
     if (items.length > 0) cleanupSuggestions.push(serializeSuggestionBundle({ ...bundle, items }));
   }
+  const mergePreviewEntries = await Promise.all(
+    mergeSuggestionItems.map(async (item) => {
+      const ids = objectIdsForMergeSuggestion(item);
+      if (ids.length < 2) return null;
+      try {
+        return [item.id, await scope.objects.getObjectMergePreview(ids, ids[0])] as const;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const mergePreviewsByItemId = Object.fromEntries(
+    mergePreviewEntries.filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
+  );
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -119,7 +158,10 @@ export default async function ObjectsIndexPage({
         ))}
       </nav>
 
-      <ObjectCleanupSuggestions suggestions={cleanupSuggestions} />
+      <ObjectCleanupSuggestions
+        suggestions={cleanupSuggestions}
+        mergePreviewsByItemId={mergePreviewsByItemId}
+      />
 
       {rows.length === 0 ? (
         <EmptyAction
