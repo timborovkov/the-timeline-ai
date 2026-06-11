@@ -8,7 +8,7 @@ on:
 
 jobs:
   ci:
-    name: Lint · Typecheck · Tests · Format · Knip
+    name: Validate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -40,22 +40,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Format check
-        run: pnpm format:check
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Unit and integration tests
+      - name: Validate
         env:
           AUTH_SECRET: ci_dummy_secret_at_least_16_chars
           DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
-        run: pnpm test
-
-      - name: Knip (dead code / unused deps)
-        env:
-          DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
-        run: pnpm knip
+        run: pnpm validate
