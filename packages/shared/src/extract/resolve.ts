@@ -256,8 +256,10 @@ export async function resolveMentions(
   const out: (string | null)[] = [];
   for (const m of mentions) {
     const key = `${m.type}:${m.name.toLowerCase()}`;
-    let id = cache.get(key);
-    if (!id) {
+    let id: string | null;
+    if (cache.has(key)) {
+      id = cache.get(key) ?? null;
+    } else {
       id = await resolveEntity(
         tx,
         {

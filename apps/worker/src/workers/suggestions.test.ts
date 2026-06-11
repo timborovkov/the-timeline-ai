@@ -655,6 +655,7 @@ describe('processSuggestionJobForTests', () => {
                   aliases: ['Acme'],
                   stage: 'negotiation',
                   priority: 2,
+                  metadata: { source: 'crm-review' },
                 },
               },
             ],
@@ -682,7 +683,147 @@ describe('processSuggestionJobForTests', () => {
       proposedPayload: {
         stage: 'negotiation',
         priority: 2,
+        metadata: { source: 'crm-review' },
         aliases: ['Acme'],
+      },
+    });
+  });
+
+  it('rewrites duplicate creates using objects outside the prompt context window', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000031';
+    const [oldObject] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: 'Legacy migration',
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      })
+      .returning({ id: entities.id });
+    if (!oldObject) throw new Error('expected old object fixture');
+    await db.insert(entities).values(
+      Array.from({ length: 45 }, (_unused, index) => ({
+        teamId: TEAM_ID,
+        type: 'project' as const,
+        canonicalName: `Recent project ${index}`,
+        updatedAt: new Date(`2026-02-${String((index % 28) + 1).padStart(2, '0')}T00:00:00.000Z`),
+      })),
+    );
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Legacy migration is now blocked.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Update Legacy migration',
+            summary: 'The project status changed.',
+            reason: 'The source gives a durable project update.',
+            confidence: 'high',
+            quote: 'Legacy migration is now blocked.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Legacy migration',
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: 'Legacy migration',
+                  status: 'blocked',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'update',
+      targetKind: 'object',
+      targetId: oldObject.id,
+      proposedPayload: { status: 'blocked' },
+    });
+  });
+
+  it('keeps duplicate creates when non-person matching is ambiguous', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000032';
+    await db.insert(entities).values([
+      { teamId: TEAM_ID, type: 'company', canonicalName: 'KPMG' },
+      { teamId: TEAM_ID, type: 'vendor', canonicalName: 'KPMG' },
+    ]);
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'KPMG is now shortlisted.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track KPMG',
+            summary: 'KPMG has a durable status update.',
+            reason: 'The source gives status but existing matches are ambiguous.',
+            confidence: 'medium',
+            quote: 'KPMG is now shortlisted.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'KPMG',
+                proposedPayload: {
+                  type: 'company',
+                  canonicalName: 'KPMG',
+                  status: 'shortlisted',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'object',
+      targetId: null,
+      title: 'KPMG',
+      proposedPayload: {
+        type: 'company',
+        canonicalName: 'KPMG',
+        status: 'shortlisted',
       },
     });
   });

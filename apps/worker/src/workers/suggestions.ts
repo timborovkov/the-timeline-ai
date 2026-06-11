@@ -29,6 +29,8 @@ import { captureWorkerJobFailure } from '#src/monitoring.js';
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const SUGGESTION_CODE_VERSION = '2026-06-a';
 const RECENT_CONTEXT_LIMIT = 5;
+const OBJECT_PROMPT_LIMIT = 40;
+const OBJECT_MATCHING_LIMIT = 500;
 const CALENDAR_CONTEXT_PAST_DAYS = 30;
 const CALENDAR_CONTEXT_FUTURE_DAYS = 180;
 const NEXT_WEEKDAY_PATTERN =
@@ -486,15 +488,7 @@ function payloadHasKey(payload: Record<string, unknown>, key: string): boolean {
 }
 
 function hasDurableCreatePayload(payload: Record<string, unknown>): boolean {
-  const durableKeys = [
-    'status',
-    'stage',
-    'priority',
-    'ownerUserId',
-    'assigneeUserId',
-    'dueAt',
-    'parentObjectId',
-  ];
+  const durableKeys = ['status', 'stage', 'priority', 'ownerUserId', 'assigneeUserId', 'dueAt'];
   if (durableKeys.some((key) => payloadHasKey(payload, key))) return true;
   return (
     payload.metadata !== null &&
@@ -540,7 +534,7 @@ function existingMatchForCreate(
   if (matches.length === 0) return null;
   const exact = matches.filter((entry) => entry.match === 'exact');
   const pool = exact.length > 0 ? exact : matches;
-  if (pool.length !== 1 && candidate.type === 'person') return null;
+  if (pool.length !== 1) return null;
   return pickCleanupSurvivor(pool.map((entry) => entry.row));
 }
 
@@ -549,7 +543,15 @@ function updatePayloadFromCreate(
   aliases: string[],
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
-  for (const key of ['status', 'stage', 'priority', 'ownerUserId', 'assigneeUserId', 'dueAt']) {
+  for (const key of [
+    'status',
+    'stage',
+    'priority',
+    'ownerUserId',
+    'assigneeUserId',
+    'dueAt',
+    'metadata',
+  ]) {
     if (payloadHasKey(item.proposedPayload, key)) payload[key] = item.proposedPayload[key];
   }
   if (aliases.length > 0) payload.aliases = aliases;
@@ -857,7 +859,22 @@ async function runSuggestionExtraction(
     .from(entities)
     .where(and(eq(entities.teamId, teamId), isNull(entities.mergedIntoId)))
     .orderBy(desc(entities.updatedAt))
-    .limit(40);
+    .limit(OBJECT_PROMPT_LIMIT);
+
+  const matchingEntityRows = await deps.db
+    .select({
+      id: entities.id,
+      teamId: entities.teamId,
+      type: entities.type,
+      name: entities.canonicalName,
+      aliases: entities.aliases,
+      status: entities.status,
+      updatedAt: entities.updatedAt,
+    })
+    .from(entities)
+    .where(and(eq(entities.teamId, teamId), isNull(entities.mergedIntoId)))
+    .orderBy(desc(entities.updatedAt))
+    .limit(OBJECT_MATCHING_LIMIT);
 
   const memberRows = await deps.db
     .select({ userId: teamMembers.userId, name: users.name, email: users.email })
@@ -893,7 +910,7 @@ async function runSuggestionExtraction(
     limit: 40,
   });
 
-  const objectRowsForMatching: CleanupObjectRow[] = entityRows.map((entity) => ({
+  const objectRowsForMatching: CleanupObjectRow[] = matchingEntityRows.map((entity) => ({
     id: entity.id,
     teamId: entity.teamId,
     type: entity.type,
