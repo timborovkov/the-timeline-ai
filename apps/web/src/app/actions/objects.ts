@@ -45,6 +45,20 @@ async function reconcileObjectUpdate(
   });
 }
 
+async function reconcileCanonicalChangeBestEffort(
+  operation: string,
+  task: () => Promise<void>,
+): Promise<void> {
+  try {
+    await task();
+  } catch (err) {
+    reportCaughtError(err, {
+      surface: 'server_action',
+      operation,
+    });
+  }
+}
+
 async function reconcileArchivedObject(
   suggestions: ObjectReconciliationScope,
   archived: { id: string; type: string; changedFields?: string[] },
@@ -163,11 +177,13 @@ export async function updateObjectAction(input: unknown): Promise<ActionState> {
         kind: 'user',
         userId: r.userId,
       });
-      await reconcileObjectUpdate(r.scope.suggestions, {
-        id,
-        type: result.object.type,
-        changedFields: result.changedFields,
-      });
+      await reconcileCanonicalChangeBestEffort('reconcile_object_update_after_update', () =>
+        reconcileObjectUpdate(r.scope.suggestions, {
+          id,
+          type: result.object.type,
+          changedFields: result.changedFields,
+        }),
+      );
       revalidateObjectMutationSurfaces(id);
       return { ok: true, id };
     } catch (err) {
@@ -187,7 +203,9 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
         kind: 'user',
         userId: r.userId,
       });
-      await reconcileArchivedObject(r.scope.suggestions, archived);
+      await reconcileCanonicalChangeBestEffort('reconcile_object_archive_after_archive', () =>
+        reconcileArchivedObject(r.scope.suggestions, archived),
+      );
       revalidateObjectMutationSurfaces(parsed.data.id);
       return { ok: true };
     } catch (err) {
@@ -219,7 +237,10 @@ export async function bulkArchiveObjectsAction(input: unknown): Promise<ActionSt
         return archived;
       });
       for (const archived of archivedObjects) {
-        await reconcileArchivedObject(r.scope.suggestions, archived);
+        await reconcileCanonicalChangeBestEffort(
+          'reconcile_object_archive_after_bulk_archive',
+          () => reconcileArchivedObject(r.scope.suggestions, archived),
+        );
       }
       revalidateObjectMutationSurfaces(ids);
       return { ok: true };

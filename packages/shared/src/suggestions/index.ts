@@ -29,6 +29,7 @@ import type {
 } from '#src/objects/index.js';
 import type { TeamRole } from '#src/team-scope.js';
 
+import { childLogger } from '#src/logger.js';
 import { localDateFromInstant, localDateSpanToUtcRange } from '#src/time/index.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
@@ -226,6 +227,7 @@ export function suggestionDedupeKey(parts: unknown): string {
 }
 
 const ACTIONABLE_ITEM_STATUSES: ItemStatus[] = ['pending', 'failed'];
+const log = childLogger('suggestions');
 
 function actionableItemExistsPredicate() {
   return sql`EXISTS (
@@ -679,6 +681,27 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
+  async function reconcileAcceptedItemBestEffort(
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<void> {
+    try {
+      await reconcileAcceptedItem(item);
+    } catch (err) {
+      log.error(
+        {
+          err,
+          teamId,
+          suggestionItemId: item.id,
+          suggestionId: item.suggestionId,
+          targetKind: item.targetKind,
+          targetId: item.targetId,
+          resultId: item.resultId,
+        },
+        'post_accept_reconciliation_failed',
+      );
+    }
+  }
+
   async function reconcileCanonicalChange(input: {
     targetKind: Extract<TargetKind, 'object' | 'task' | 'calendar_event'>;
     targetId: string;
@@ -1084,7 +1107,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       })
       .where(eq(agentSuggestionItems.id, itemId));
     await refreshBundleStatus(row.suggestion.id, userId);
-    await reconcileAcceptedItem({ ...row.item, resultId });
+    await reconcileAcceptedItemBestEffort({ ...row.item, resultId });
     return true;
   }
 
@@ -1171,7 +1194,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       })
       .where(eq(agentSuggestionItems.id, input.itemId));
     await refreshBundleStatus(row.suggestion.id, userId);
-    await reconcileAcceptedItem({ ...row.item, resultId: survivorId });
+    await reconcileAcceptedItemBestEffort({ ...row.item, resultId: survivorId });
     return { survivorId };
   }
 

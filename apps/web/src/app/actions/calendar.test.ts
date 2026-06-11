@@ -17,6 +17,7 @@ const fakes = vi.hoisted(() => ({
   fakeAuth: vi.fn(),
   fakeResolveActiveTeam: vi.fn(),
   fakeRevalidatePath: vi.fn(),
+  fakeReportCaughtError: vi.fn(),
   fakeCalendar: {
     createCalendarEvent: vi.fn(),
     updateCalendarEvent: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
+vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({ calendar: fakes.fakeCalendar, suggestions: fakes.fakeSuggestions }),
 }));
@@ -173,6 +175,23 @@ describe('calendar create/update/delete behavior', () => {
     expectApprovalsRevalidated();
   });
 
+  it('returns success when post-update reconciliation fails after the event was saved', async () => {
+    const err = new Error('reconcile down');
+    fakes.fakeSuggestions.reconcileCanonicalChange.mockRejectedValueOnce(err);
+
+    await expect(updateCalendarEventAction({ id: EVENT_ID, title: 'Updated' })).resolves.toEqual({
+      ok: true,
+      id: EVENT_ID,
+    });
+
+    expect(fakes.fakeCalendar.updateCalendarEvent).toHaveBeenCalled();
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
+      surface: 'server_action',
+      operation: 'reconcile_calendar_update_after_update',
+    });
+    expectApprovalsRevalidated();
+  });
+
   it('returns not-found when update or delete misses', async () => {
     fakes.fakeCalendar.updateCalendarEvent.mockResolvedValue(null);
     await expect(updateCalendarEventAction({ id: EVENT_ID, title: 'Missing' })).resolves.toEqual({
@@ -195,6 +214,20 @@ describe('calendar create/update/delete behavior', () => {
       targetId: EVENT_ID,
       operation: 'archive_or_cancel',
       reason: 'A teammate cancelled this calendar event directly.',
+    });
+    expectApprovalsRevalidated();
+  });
+
+  it('returns success when post-delete reconciliation fails after the event was deleted', async () => {
+    const err = new Error('reconcile down');
+    fakes.fakeSuggestions.reconcileCanonicalChange.mockRejectedValueOnce(err);
+
+    await expect(deleteCalendarEventAction(EVENT_ID)).resolves.toEqual({ ok: true, id: EVENT_ID });
+
+    expect(fakes.fakeCalendar.deleteCalendarEvent).toHaveBeenCalledWith(EVENT_ID);
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
+      surface: 'server_action',
+      operation: 'reconcile_calendar_delete_after_delete',
     });
     expectApprovalsRevalidated();
   });

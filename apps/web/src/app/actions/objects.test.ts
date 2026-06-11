@@ -233,6 +233,23 @@ describe('object CRUD actions', () => {
     expectApprovalsRevalidated();
   });
 
+  it('returns success when post-update reconciliation fails after the object was saved', async () => {
+    const err = new Error('reconcile down');
+    fakes.fakeSuggestions.reconcileCanonicalChange.mockRejectedValueOnce(err);
+
+    await expect(updateObjectAction({ id: OBJECT_ID, status: 'doing' })).resolves.toEqual({
+      ok: true,
+      id: OBJECT_ID,
+    });
+
+    expect(fakes.fakeObjects.updateObject).toHaveBeenCalled();
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
+      surface: 'server_action',
+      operation: 'reconcile_object_update_after_update',
+    });
+    expectApprovalsRevalidated();
+  });
+
   it('archives an object and refreshes surfaces that hide archived rows', async () => {
     await expect(archiveObjectAction({ id: OBJECT_ID })).resolves.toEqual({ ok: true });
 
@@ -247,6 +264,23 @@ describe('object CRUD actions', () => {
       reason: 'A teammate archived this object directly.',
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
+    expectApprovalsRevalidated();
+  });
+
+  it('returns success when post-archive reconciliation fails after the object was archived', async () => {
+    const err = new Error('reconcile down');
+    fakes.fakeSuggestions.reconcileCanonicalChange.mockRejectedValueOnce(err);
+
+    await expect(archiveObjectAction({ id: OBJECT_ID })).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeObjects.archiveObject).toHaveBeenCalledWith(OBJECT_ID, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
+      surface: 'server_action',
+      operation: 'reconcile_object_archive_after_archive',
+    });
     expectApprovalsRevalidated();
   });
 
@@ -295,6 +329,23 @@ describe('object CRUD actions', () => {
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/objects');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/tasks');
+    expectApprovalsRevalidated();
+  });
+
+  it('returns success when one bulk post-archive reconciliation fails after archive commits', async () => {
+    const err = new Error('reconcile down');
+    fakes.fakeSuggestions.reconcileCanonicalChange.mockRejectedValueOnce(err);
+
+    await expect(bulkArchiveObjectsAction({ ids: [OBJECT_ID, OTHER_OBJECT_ID] })).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(fakes.fakeTransactionObjects.archiveObject).toHaveBeenCalledTimes(2);
+    expect(fakes.fakeSuggestions.reconcileCanonicalChange).toHaveBeenCalledTimes(2);
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
+      surface: 'server_action',
+      operation: 'reconcile_object_archive_after_bulk_archive',
+    });
     expectApprovalsRevalidated();
   });
 
