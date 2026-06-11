@@ -133,8 +133,9 @@ pnpm db:migrate
 
       <h2 id="useful-commands">Useful commands</h2>
       <pre><code>pnpm dev                              # next + worker, watch mode
-pnpm validate                         # format, typecheck, lint, tests, knip
+pnpm validate                         # format, typecheck, lint, knip
 pnpm test                             # unit + integration tests (package suites run sequentially)
+pnpm test:ci                          # focused CI test lane
 pnpm test:eval                        # fast deterministic agent and retrieval evals
 pnpm check:web-bundle                 # scan built Next server chunks after a web build
 pnpm e2e                              # Playwright core journeys; requires compose infra + migrations
@@ -149,8 +150,9 @@ docker compose down -v                # nuke local data
 </code></pre>
       <p>
         GitHub PR CI intentionally skips <code>pnpm build</code> and
-        <code>pnpm check:web-bundle</code>. The required merge proof is formatting, TypeScript
-        compilation, linting, tests, and Knip. Run the production build and bundle hygiene checks
+        <code>pnpm check:web-bundle</code>. The required CI proof is formatting, TypeScript
+        compilation, linting, Knip, and the focused <code>pnpm test:ci</code> lane. Run broader
+        relevant test commands separately, and run the production build and bundle hygiene checks
         manually when changing deploy output, bundling, or server/client import boundaries.
       </p>
 
