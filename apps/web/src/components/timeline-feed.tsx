@@ -49,7 +49,16 @@ export function TimelineFeed({
 }: Props) {
   const query = useTimelineInfiniteQuery(filters, initialPage, { enabled: live });
   const pages = query.data.pages;
-  const events = pages.flatMap((page) => page.items);
+  const events = useMemo(() => {
+    const seen = new Set<string>();
+    return pages.flatMap((page) =>
+      page.items.filter((event) => {
+        if (seen.has(event.id)) return false;
+        seen.add(event.id);
+        return true;
+      }),
+    );
+  }, [pages]);
   const authorMap = useMemo(
     () =>
       new Map(
