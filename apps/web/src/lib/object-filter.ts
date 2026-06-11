@@ -19,6 +19,24 @@ function addMetadataValues(values: string[], value: unknown, depth = 0): void {
   }
 }
 
+function dateSearchValues(value: unknown): string[] {
+  if (value === null || value === undefined) return [];
+  if (
+    !(value instanceof Date) &&
+    typeof value !== 'string' &&
+    typeof value !== 'number' &&
+    typeof value !== 'boolean'
+  ) {
+    return [];
+  }
+  const raw = value instanceof Date ? value.toISOString() : String(value).trim();
+  if (!raw) return [];
+  const date = value instanceof Date ? value : new Date(raw);
+  if (Number.isNaN(date.getTime())) return [raw];
+  const formatted = date.toLocaleDateString('en-CA');
+  return raw === formatted ? [formatted] : [raw, formatted];
+}
+
 function searchableObjectText(row: objects.ObjectRow): string {
   const values = [
     row.canonicalName,
@@ -28,9 +46,9 @@ function searchableObjectText(row: objects.ObjectRow): string {
     row.priority,
     row.ownerUserId,
     row.assigneeUserId,
-    row.dueAt?.toLocaleDateString('en-CA'),
+    ...dateSearchValues(row.dueAt),
     ...row.aliases,
-  ].filter((value): value is string | number => value !== null && value !== undefined);
+  ].filter((value): value is string | number => value !== null);
   const metadataValues: string[] = [];
   addMetadataValues(metadataValues, row.metadata);
   return [...values.map(String), ...metadataValues].join(' ').toLocaleLowerCase();

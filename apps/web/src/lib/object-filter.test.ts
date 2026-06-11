@@ -58,6 +58,15 @@ describe('objectMatchesTextFilter', () => {
     expect(objectMatchesTextFilter(object, '2026-06-11')).toBe(true);
     expect(objectMatchesTextFilter(object, 'linkedin')).toBe(true);
   });
+
+  it('handles serialized due dates without throwing', () => {
+    const object = row({
+      dueAt: '2026-06-12T09:30:00.000Z' as unknown as Date,
+    });
+
+    expect(objectMatchesTextFilter(object, '2026-06-12')).toBe(true);
+    expect(objectMatchesTextFilter(object, '09:30')).toBe(true);
+  });
 });
 
 describe('filterObjectsByText', () => {
