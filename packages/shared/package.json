@@ -149,6 +149,12 @@
       "import": "./dist/objects/index.js",
       "default": "./dist/objects/index.js"
     },
+    "./boards": {
+      "types": "./src/boards/index.ts",
+      "development": "./src/boards/index.ts",
+      "import": "./dist/boards/index.js",
+      "default": "./dist/boards/index.js"
+    },
     "./onboarding": {
       "types": "./src/onboarding/index.ts",
       "development": "./src/onboarding/index.ts",

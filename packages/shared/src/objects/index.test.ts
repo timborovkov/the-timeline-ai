@@ -396,10 +396,9 @@ describe('object scope — chat session isolation', () => {
   });
 });
 
-describe('object scope — board and archive visibility', () => {
-  it('hides archived objects when requested and keeps board views inside their team', async () => {
+describe('object scope — archive visibility', () => {
+  it('hides archived objects when requested', async () => {
     const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
-    const otherScope = withTeam(db, TEAM_B, USER_OTHER_TEAM).objects;
     const object = await ownerScope.createObject({
       type: 'task',
       canonicalName: 'Archive me',
@@ -413,17 +412,6 @@ describe('object scope — board and archive visibility', () => {
     await expect(ownerScope.listObjects({ archived: true })).resolves.toContainEqual(
       expect.objectContaining({ id: object.id }),
     );
-
-    const board = await ownerScope.saveBoardView({
-      name: 'Team A board',
-      kind: 'kanban',
-      filter: { status: 'todo' },
-    });
-
-    await expect(ownerScope.getBoardView(board.id)).resolves.toMatchObject({
-      name: 'Team A board',
-    });
-    await expect(otherScope.getBoardView(board.id)).resolves.toBeNull();
 
     await db.insert(entities).values({
       id: '99999999-9999-9999-9999-999999999999',

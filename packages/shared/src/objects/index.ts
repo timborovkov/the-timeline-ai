@@ -9,7 +9,6 @@
  */
 import {
   type Db,
-  boardViews,
   calendarEventEntities,
   chatMessages,
   chatSessions,
@@ -2913,142 +2912,6 @@ export async function archiveChatSession(
     );
 }
 
-// ---------- Board views ----------
-
-export interface BoardViewRow {
-  id: string;
-  name: string;
-  kind: 'kanban' | 'table' | 'list';
-  filter: Record<string, unknown>;
-  groupBy: string | null;
-  sort: Record<string, unknown>;
-  isShared: boolean;
-  createdBy: string | null;
-  updatedAt: Date;
-}
-
-export async function listBoardViews(db: Db, scope: TeamScopeCore): Promise<BoardViewRow[]> {
-  await scope.requireMembership();
-  const rows = await db
-    .select()
-    .from(boardViews)
-    .where(eq(boardViews.teamId, scope.teamId))
-    .orderBy(desc(boardViews.updatedAt));
-  return rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    kind: r.kind,
-    filter: (r.filter ?? {}) as Record<string, unknown>,
-    groupBy: r.groupBy,
-    sort: (r.sort ?? {}) as Record<string, unknown>,
-    isShared: r.isShared,
-    createdBy: r.createdBy,
-    updatedAt: r.updatedAt,
-  }));
-}
-
-export async function getBoardView(
-  db: Db,
-  scope: TeamScopeCore,
-  id: string,
-): Promise<BoardViewRow | null> {
-  await scope.requireMembership();
-  if (!UUID_RE.test(id)) return null;
-  const rows = await db
-    .select()
-    .from(boardViews)
-    .where(and(eq(boardViews.id, id), eq(boardViews.teamId, scope.teamId)))
-    .limit(1);
-  const r = rows[0];
-  if (!r) return null;
-  return {
-    id: r.id,
-    name: r.name,
-    kind: r.kind,
-    filter: (r.filter ?? {}) as Record<string, unknown>,
-    groupBy: r.groupBy,
-    sort: (r.sort ?? {}) as Record<string, unknown>,
-    isShared: r.isShared,
-    createdBy: r.createdBy,
-    updatedAt: r.updatedAt,
-  };
-}
-
-export async function saveBoardView(
-  db: Db,
-  scope: TeamScopeCore,
-  input: {
-    id?: string;
-    name: string;
-    kind: 'kanban' | 'table' | 'list';
-    filter: Record<string, unknown>;
-    groupBy?: string | null;
-    sort?: Record<string, unknown>;
-    isShared?: boolean;
-  },
-): Promise<BoardViewRow> {
-  await scope.requireMembership();
-  const name = input.name.trim();
-  if (!name) throw new Error('Board name required');
-
-  if (input.id) {
-    if (!UUID_RE.test(input.id)) throw new Error('Invalid id');
-    const rows = await db
-      .update(boardViews)
-      .set({
-        name,
-        kind: input.kind,
-        filter: input.filter,
-        groupBy: input.groupBy ?? null,
-        sort: input.sort ?? {},
-        isShared: input.isShared ?? true,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(boardViews.id, input.id), eq(boardViews.teamId, scope.teamId)))
-      .returning();
-    const r = rows[0];
-    if (!r) throw new Error('Board not found');
-    return {
-      id: r.id,
-      name: r.name,
-      kind: r.kind,
-      filter: (r.filter ?? {}) as Record<string, unknown>,
-      groupBy: r.groupBy,
-      sort: (r.sort ?? {}) as Record<string, unknown>,
-      isShared: r.isShared,
-      createdBy: r.createdBy,
-      updatedAt: r.updatedAt,
-    };
-  }
-
-  const rows = await db
-    .insert(boardViews)
-    .values({
-      teamId: scope.teamId,
-      createdBy: scope.userId,
-      name,
-      kind: input.kind,
-      filter: input.filter,
-      groupBy: input.groupBy ?? null,
-      sort: input.sort ?? {},
-      isShared: input.isShared ?? true,
-    })
-    .returning();
-  const r = rows[0];
-  if (!r) throw new Error('Failed to insert board');
-  return {
-    id: r.id,
-    name: r.name,
-    kind: r.kind,
-    filter: (r.filter ?? {}) as Record<string, unknown>,
-    groupBy: r.groupBy,
-    sort: (r.sort ?? {}) as Record<string, unknown>,
-    isShared: r.isShared,
-    createdBy: r.createdBy,
-    updatedAt: r.updatedAt,
-  };
-}
-
 // ---------- Object changes (queries + agent suggestions + review) ----------
 
 export interface ObjectChangeRow {
@@ -3402,16 +3265,6 @@ export async function rejectObjectChange(
   return result.length > 0;
 }
 
-export async function deleteBoardView(db: Db, scope: TeamScopeCore, id: string): Promise<boolean> {
-  await scope.requireMembership();
-  if (!UUID_RE.test(id)) return false;
-  const rows = await db
-    .delete(boardViews)
-    .where(and(eq(boardViews.id, id), eq(boardViews.teamId, scope.teamId)))
-    .returning({ id: boardViews.id });
-  return rows.length > 0;
-}
-
 export function createObjectScope(db: Db, scope: TeamScopeCore) {
   return {
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
@@ -3471,16 +3324,12 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     linkChatSessionToObject: (sessionId: string, entityId: string | null) =>
       linkChatSessionToObject(db, scope, sessionId, entityId),
     archiveChatSession: (sessionId: string) => archiveChatSession(db, scope, sessionId),
-    listBoardViews: () => listBoardViews(db, scope),
-    getBoardView: (id: string) => getBoardView(db, scope, id),
-    saveBoardView: (input: Parameters<typeof saveBoardView>[2]) => saveBoardView(db, scope, input),
     listObjectChanges: (filter?: Parameters<typeof listObjectChanges>[2]) =>
       listObjectChanges(db, scope, filter),
     proposeObjectChange: (input: ProposeObjectChangeInput) => proposeObjectChange(db, scope, input),
     acceptObjectChange: (changeId: string, actor: UpdateActor) =>
       acceptObjectChange(db, scope, changeId, actor),
     rejectObjectChange: (changeId: string) => rejectObjectChange(db, scope, changeId),
-    deleteBoardView: (id: string) => deleteBoardView(db, scope, id),
   };
 }
 

@@ -32,7 +32,7 @@ interface Props {
 }
 
 // Sensible defaults so a board with no configured columns still renders. The
-// user can edit board.groupBy to point at any column the rows share.
+// Generic object Kanban helper used by task-style object surfaces.
 const DEFAULT_STATUS_COLS = ['todo', 'doing', 'done', 'blocked'];
 
 function colValue(row: objects.ObjectRow, key: GroupKey): string {

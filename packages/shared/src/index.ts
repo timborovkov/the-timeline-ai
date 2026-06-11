@@ -15,6 +15,7 @@ export * as extract from '#src/extract/index.js';
 export * as qdrant from '#src/qdrant/index.js';
 export * as agent from '#src/agent/index.js';
 export * as objects from '#src/objects/index.js';
+export * as boards from '#src/boards/index.js';
 export * as rateLimit from '#src/rate-limit/index.js';
 export * from '#src/chunk.js';
 export * from '#src/citation.js';

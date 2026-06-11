@@ -48,6 +48,8 @@ export const agentSuggestionTargetKind = pgEnum('agent_suggestion_target_kind', 
   'object_note',
   'object_relationship',
   'object_merge',
+  'board_membership',
+  'board_item_update',
 ]);
 
 export const agentSuggestions = pgTable(

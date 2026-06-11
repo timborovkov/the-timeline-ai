@@ -114,14 +114,6 @@
             <td>PK <code>(team_id, user_id, entity_id)</code></td>
           </tr>
           <tr>
-            <td><code>board_views</code></td>
-            <td>Saved kanban/table/list configurations with JSON filter + groupBy.</td>
-            <td>
-              <code>kind</code>, <code>filter</code> (jsonb), <code>group_by</code>,
-              <code>is_shared</code>
-            </td>
-          </tr>
-          <tr>
             <td><code>notifications</code></td>
             <td>In-app inbox. v1 fan-out is in-process inside <code>updateObject</code>.</td>
             <td>
@@ -363,13 +355,6 @@
               <code>archiveChatSession</code>
             </td>
           </tr>
-          <tr>
-            <td>Board views</td>
-            <td>
-              <code>listBoardViews</code>, <code>getBoardView</code>, <code>saveBoardView</code>,
-              <code>deleteBoardView</code>
-            </td>
-          </tr>
         </tbody>
       </table>
 
@@ -443,24 +428,23 @@
           <tr>
             <td><code>/app/boards</code></td>
             <td>
-              List of saved boards. Inline form creates a new board (name, kind, type filter,
-              groupBy). Each row links to <code>/app/boards/[id]</code>.
+              Curated Boards 2.0 index. Template cards create explicit boards with owned lanes and
+              no automatic object flood. Each row links to <code>/app/boards/[id]</code>.
             </td>
           </tr>
           <tr>
             <td><code>/app/boards/[id]</code></td>
             <td>
-              Renders one of <code>kanban</code> / <code>table</code> / <code>list</code> per
-              <code>board.kind</code> over <code>listObjects(board.filter)</code>. Kanban supports
-              drag-to-move (<code>@dnd-kit/core</code>, optimistic), quiet board-level save
-              confirmation, and per-card failure feedback backed by <code>updateObjectAction</code>.
+              Renders kanban/table/list layouts over explicit <code>board_items</code>. Kanban
+              supports optimistic board-item moves with per-card rollback and board-local history.
             </td>
           </tr>
           <tr>
             <td><code>/app/tasks</code></td>
             <td>
               Convenience kanban over <code>{type:'task', archived:false}</code> grouped by status.
-              Hardcoded, no <code>board_views</code> row required.
+              Boards 2.0 provides curated boards separately through explicit
+              <code>boards</code>/<code>board_items</code> membership.
             </td>
           </tr>
           <tr>

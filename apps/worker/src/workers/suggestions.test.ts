@@ -627,6 +627,57 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it('includes board context and payload rules for board suggestions', async () => {
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      purpose: 'Track companies being evaluated for pilots.',
+      templateKind: 'pipeline',
+      lanes: [
+        { name: 'Discussed', kind: 'active' },
+        { name: 'Negotiation', kind: 'active' },
+      ],
+    });
+    const [company] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Revigo',
+      })
+      .returning({ id: entities.id });
+    if (!company) throw new Error('expected company fixture');
+    const item = await scope.boards.addBoardItem(board.id, {
+      entityId: company.id,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    const rawEventId = '10000000-0000-0000-0000-0000000000b0';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Revigo moved into negotiation for the pilot.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = emptyModel();
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const call = chat.mock.calls[0]?.[0] as { prompt: string; system: string } | undefined;
+    expect(call?.prompt).toContain('# Existing boards');
+    expect(call?.prompt).toContain(`board ${board.id}: "Pilot pipeline"`);
+    expect(call?.prompt).toContain(`item ${item.id}: object=${company.id} company "Revigo"`);
+    expect(call?.prompt).toContain('targetKind=board_membership');
+    expect(call?.prompt).toContain('Allowed fields: laneId, position, responsibleUserId');
+    expect(call?.system).toContain('board_membership or board_item_update');
+  });
+
   it('rewrites model-backed duplicate object creates into updates for existing objects', async () => {
     const rawEventId = '10000000-0000-0000-0000-00000000002d';
     const [person] = await db
