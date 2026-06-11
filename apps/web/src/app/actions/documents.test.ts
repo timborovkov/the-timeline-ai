@@ -6,6 +6,7 @@ import type * as RateLimitModule from '@timeline/shared/rate-limit';
 import {
   createFolderAction,
   finalizeDocumentVersionAction,
+  getDocumentPreviewUrlAction,
   renameDocumentAction,
   requestDocumentUploadAction,
 } from '@/app/actions/documents';
@@ -41,6 +42,7 @@ const fakes = vi.hoisted(() => ({
     createDocument: vi.fn(),
     addDocumentVersion: vi.fn(),
     getDocumentVersion: vi.fn(),
+    listDocumentVersions: vi.fn(),
     finalizeDocumentVersion: vi.fn(),
     getDocument: vi.fn(),
     renameDocument: vi.fn(),
@@ -53,8 +55,10 @@ const fakes = vi.hoisted(() => ({
     moveFolder: vi.fn(),
     softDeleteFolder: vi.fn(),
   },
+  fakeAuditRecord: vi.fn(),
   fakeEnqueueDocExtract: vi.fn(),
   fakeGetSignedPutUrl: vi.fn(),
+  fakeGetSignedGetUrl: vi.fn(),
   fakeHeadObject: vi.fn(),
   fakeCheckRateLimit: vi.fn(),
   fakeSafeMarkOnboardingStep: vi.fn(),
@@ -74,14 +78,14 @@ vi.mock('@/lib/onboarding', () => ({
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
 vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({ documents: fakes.fakeScope }),
+  withTeam: () => ({ documents: fakes.fakeScope, audit: { record: fakes.fakeAuditRecord } }),
 }));
 vi.mock('@timeline/shared/s3', () => ({
   getDocumentsBucket: () => 'test-documents',
   getS3Client: () => ({}) as unknown,
   getS3PresignClient: () => ({}) as unknown,
   getSignedPutObjectUrl: fakes.fakeGetSignedPutUrl,
-  getSignedGetObjectUrl: vi.fn().mockResolvedValue('https://signed-get/url'),
+  getSignedGetObjectUrl: fakes.fakeGetSignedGetUrl,
   headObject: fakes.fakeHeadObject,
 }));
 vi.mock('@timeline/shared/rate-limit', async () => {
@@ -97,8 +101,10 @@ const {
   fakeAuth,
   fakeResolveActiveTeam,
   fakeScope,
+  fakeAuditRecord,
   fakeEnqueueDocExtract,
   fakeGetSignedPutUrl,
+  fakeGetSignedGetUrl,
   fakeHeadObject,
   fakeCheckRateLimit,
   fakeSafeMarkOnboardingStep,
@@ -106,6 +112,7 @@ const {
 
 const DOC_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const VERSION_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+const VERSION_2_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = '22222222-2222-2222-2222-222222222222';
 
@@ -118,6 +125,7 @@ beforeEach(() => {
   fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakeCheckRateLimit.mockResolvedValue({ ok: true, remaining: 10 });
   fakeSafeMarkOnboardingStep.mockResolvedValue(false);
+  fakeGetSignedGetUrl.mockResolvedValue('https://signed-get/url');
 });
 
 // ---------------------------------------------------------------------------
@@ -366,5 +374,118 @@ describe('finalizeDocumentVersionAction', () => {
     expect(r.ok).toBe(false);
     expect(fakeHeadObject).not.toHaveBeenCalled();
     expect(fakeScope.finalizeDocumentVersion).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getDocumentPreviewUrlAction — inline media preview contract.
+// ---------------------------------------------------------------------------
+
+describe('getDocumentPreviewUrlAction', () => {
+  beforeEach(() => {
+    fakeScope.getDocument.mockResolvedValue({
+      id: DOC_ID,
+      currentVersionId: VERSION_ID,
+      visibility: 'team',
+      ownerUserId: USER_ID,
+      visibilityUserIds: null,
+      name: 'photo.jpg',
+    });
+    fakeScope.getDocumentVersion.mockResolvedValue({
+      id: VERSION_ID,
+      documentId: DOC_ID,
+      version: 1,
+      objectKey: `${TEAM_ID}/${DOC_ID}/v1/photo.jpg`,
+      contentType: 'image/jpeg',
+    });
+  });
+
+  it('signs a visible media document version for inline preview', async () => {
+    const r = await getDocumentPreviewUrlAction({ documentId: DOC_ID });
+
+    expect(r).toEqual({
+      ok: true,
+      url: 'https://signed-get/url',
+      filename: 'photo.jpg',
+      contentType: 'image/jpeg',
+      mediaKind: 'image',
+    });
+    expect(fakeGetSignedGetUrl).toHaveBeenCalledWith(
+      expect.anything(),
+      'test-documents',
+      `${TEAM_ID}/${DOC_ID}/v1/photo.jpg`,
+      3600,
+    );
+    expect(fakeAuditRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'document.signed_url',
+        targetId: DOC_ID,
+        metadata: { version: 1, purpose: 'preview' },
+      }),
+    );
+  });
+
+  it('resolves numeric source metadata to the original document version', async () => {
+    fakeScope.getDocument.mockResolvedValue({
+      id: DOC_ID,
+      currentVersionId: VERSION_2_ID,
+      visibility: 'team',
+      ownerUserId: USER_ID,
+      visibilityUserIds: null,
+      name: 'photo.jpg',
+    });
+    fakeScope.listDocumentVersions.mockResolvedValue([
+      {
+        id: VERSION_2_ID,
+        documentId: DOC_ID,
+        version: 2,
+        objectKey: `${TEAM_ID}/${DOC_ID}/v2/photo.jpg`,
+        contentType: 'image/jpeg',
+      },
+      {
+        id: VERSION_ID,
+        documentId: DOC_ID,
+        version: 1,
+        objectKey: `${TEAM_ID}/${DOC_ID}/v1/photo.jpg`,
+        contentType: 'image/jpeg',
+      },
+    ]);
+
+    const r = await getDocumentPreviewUrlAction({ documentId: DOC_ID, versionNumber: 1 });
+
+    expect(r.ok).toBe(true);
+    expect(fakeScope.getDocumentVersion).not.toHaveBeenCalledWith(VERSION_2_ID);
+    expect(fakeGetSignedGetUrl).toHaveBeenCalledWith(
+      expect.anything(),
+      'test-documents',
+      `${TEAM_ID}/${DOC_ID}/v1/photo.jpg`,
+      3600,
+    );
+  });
+
+  it('refuses non-media document versions', async () => {
+    fakeScope.getDocumentVersion.mockResolvedValue({
+      id: VERSION_ID,
+      documentId: DOC_ID,
+      version: 1,
+      objectKey: `${TEAM_ID}/${DOC_ID}/v1/notes.txt`,
+      contentType: 'text/plain',
+    });
+
+    const r = await getDocumentPreviewUrlAction({ versionId: VERSION_ID });
+
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('Preview is not available for this file type');
+    expect(fakeGetSignedGetUrl).not.toHaveBeenCalled();
+  });
+
+  it('refuses a visible version whose parent document is not visible', async () => {
+    fakeScope.getDocument.mockResolvedValue(null);
+
+    const r = await getDocumentPreviewUrlAction({ versionId: VERSION_ID });
+
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('Document not found');
+    expect(fakeGetSignedGetUrl).not.toHaveBeenCalled();
   });
 });

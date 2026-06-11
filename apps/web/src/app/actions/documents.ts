@@ -41,6 +41,23 @@ interface Result {
   error?: string;
 }
 
+interface PreviewDocument {
+  id: string;
+  currentVersionId: string | null;
+  name: string;
+  visibility: 'private' | 'team' | 'specific_users';
+  ownerUserId: string | null;
+  visibilityUserIds: string[] | null;
+}
+
+interface PreviewVersion {
+  id: string;
+  documentId: string;
+  version: number;
+  objectKey: string;
+  contentType: string | null;
+}
+
 async function withScopeOrError() {
   const session = await auth();
   if (!session?.user) return { error: 'Not signed in' as const };
@@ -381,5 +398,106 @@ export async function getDocumentDownloadUrlAction(input: {
       metadata: { version: version.version, purpose: 'download' },
     });
     return { ok: true, url, filename: document.name };
+  });
+}
+
+function previewKind(contentType: string | null): 'image' | 'audio' | null {
+  const base = contentType?.toLowerCase().split(';')[0]?.trim() ?? '';
+  if (base.startsWith('image/')) return 'image';
+  if (base.startsWith('audio/')) return 'audio';
+  return null;
+}
+
+const documentPreviewSchema = z
+  .object({
+    documentId: documentIdSchema.optional(),
+    versionId: versionIdSchema.optional(),
+    versionNumber: z.number().int().positive().optional(),
+  })
+  .refine((input) => (input.documentId ?? input.versionId) !== undefined, {
+    message: 'documentId or versionId is required',
+  })
+  .refine((input) => input.versionNumber === undefined || input.documentId !== undefined, {
+    message: 'documentId is required with versionNumber',
+  });
+
+/**
+ * Return a short-lived signed GET URL for media previews. Accepts either an
+ * exact version id, a document id plus version number from source metadata, or
+ * a document id alone. The document-id fallback uses the current version only
+ * for old events that did not record a version.
+ */
+export async function getDocumentPreviewUrlAction(input: {
+  documentId?: string;
+  versionId?: string;
+  versionNumber?: number;
+}): Promise<{
+  ok: boolean;
+  error?: string;
+  url?: string;
+  filename?: string;
+  contentType?: string | null;
+  mediaKind?: 'image' | 'audio';
+}> {
+  return runSentryServerAction('get_document_preview_url', async () => {
+    const got = await withScopeOrError();
+    if ('error' in got) return { ok: false, error: got.error };
+    const parsed = documentPreviewSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid id' };
+    }
+
+    let version: PreviewVersion | null = null;
+    let document: PreviewDocument | null = null;
+    if (parsed.data.versionId) {
+      version = await got.scope.documents.getDocumentVersion(parsed.data.versionId);
+      if (!version) return { ok: false, error: 'Version not found' };
+      document = await got.scope.documents.getDocument(version.documentId, {
+        auditDetailRead: false,
+      });
+    } else if (parsed.data.documentId) {
+      document = await got.scope.documents.getDocument(parsed.data.documentId, {
+        auditDetailRead: false,
+      });
+      if (!document) return { ok: false, error: 'Document not found' };
+      if (parsed.data.versionNumber !== undefined) {
+        const versions = await got.scope.documents.listDocumentVersions(document.id);
+        version =
+          versions.find((candidate) => candidate.version === parsed.data.versionNumber) ?? null;
+      } else {
+        if (!document.currentVersionId) return { ok: false, error: 'No current version' };
+        version = await got.scope.documents.getDocumentVersion(document.currentVersionId);
+      }
+    }
+
+    if (!document) return { ok: false, error: 'Document not found' };
+    if (version?.documentId !== document.id) {
+      return { ok: false, error: 'Version not found' };
+    }
+    const mediaKind = previewKind(version.contentType);
+    if (!mediaKind) return { ok: false, error: 'Preview is not available for this file type' };
+
+    const url = await getSignedGetObjectUrl(
+      getS3PresignClient(),
+      getDocumentsBucket(),
+      version.objectKey,
+      3600,
+    );
+    await got.scope.audit.record({
+      action: 'document.signed_url',
+      targetType: 'document',
+      targetId: document.id,
+      targetVisibility: document.visibility,
+      targetOwnerUserId: document.ownerUserId,
+      targetVisibilityUserIds: document.visibilityUserIds,
+      metadata: { version: version.version, purpose: 'preview' },
+    });
+    return {
+      ok: true,
+      url,
+      filename: document.name,
+      contentType: version.contentType,
+      mediaKind,
+    };
   });
 }

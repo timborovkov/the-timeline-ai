@@ -10,6 +10,7 @@ import {
   getDocumentDownloadUrlAction,
   renameDocumentAction,
 } from '@/app/actions/documents';
+import { DocumentPreview } from '@/components/documents/document-preview';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -59,6 +60,24 @@ const STATUS_BADGE: Record<string, string> = {
   failed: 'bg-rose-100 text-rose-900',
 };
 
+function mediaKind(contentType: string | null): 'image' | 'audio' | null {
+  const base = contentType?.toLowerCase().split(';')[0]?.trim() ?? '';
+  if (base.startsWith('image/')) return 'image';
+  if (base.startsWith('audio/')) return 'audio';
+  return null;
+}
+
+function isLikelyGeneratedName(name: string): boolean {
+  const withoutExtension = name.replace(/\.[^.]+$/, '');
+  return withoutExtension.length > 48 && /^[a-z0-9_-]+$/i.test(withoutExtension);
+}
+
+function displayDocumentName(name: string, contentType: string | null): string {
+  const kind = mediaKind(contentType);
+  if (!kind || !isLikelyGeneratedName(name)) return name;
+  return kind === 'image' ? 'Image attachment' : 'Audio attachment';
+}
+
 export function DocumentDetail({ document, versions, requestedVersion }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -70,6 +89,13 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
   const [downloading, setDownloading] = useState<readonly string[]>([]);
   const currentDocument =
     optimisticRename?.id === document.id ? { ...document, ...optimisticRename } : document;
+  const currentVersion =
+    versions.find((version) => version.id === currentDocument.currentVersionId) ?? versions[0];
+  const visibleDocumentName = displayDocumentName(
+    currentDocument.name,
+    currentVersion?.contentType ?? null,
+  );
+  const usingFriendlyName = visibleDocumentName !== currentDocument.name;
 
   function onRename(): void {
     const name = window.prompt('New name', currentDocument.name);
@@ -134,15 +160,25 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
       />
 
       <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4">
-          <div className="space-y-1">
-            <CardTitle className="text-2xl">{currentDocument.name}</CardTitle>
+        <CardHeader className="flex flex-row items-start justify-between gap-4 max-sm:flex-col">
+          <div className="min-w-0 space-y-1">
+            <CardTitle
+              className="max-w-full break-all text-2xl leading-tight"
+              title={currentDocument.name}
+            >
+              {visibleDocumentName}
+            </CardTitle>
             <p className="text-sm text-muted-foreground">
               {currentDocument.folderPath} · Updated{' '}
               {new Date(currentDocument.updatedAt).toLocaleString()}
             </p>
+            {usingFriendlyName ? (
+              <p className="max-w-full truncate text-xs text-muted-foreground">
+                Stored as <span title={currentDocument.name}>{currentDocument.name}</span>
+              </p>
+            ) : null}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {currentDocument.visibility !== 'team' && (
               <Badge variant="outline">{currentDocument.visibility}</Badge>
             )}
@@ -166,16 +202,17 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
             {versions.map((v) => {
               const highlight = requestedVersion === v.version;
               const isCurrent = v.id === currentDocument.currentVersionId;
+              const canPreview = mediaKind(v.contentType) !== null;
               return (
                 <li
                   key={v.id}
                   className={
-                    'flex items-center justify-between py-3 ' +
+                    'flex items-center justify-between gap-3 py-3 max-sm:flex-col max-sm:items-stretch ' +
                     (highlight ? 'bg-amber-50/30 rounded px-2 -mx-2' : '')
                   }
                 >
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
+                  <div className="min-w-0 flex flex-col gap-1">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-sm font-semibold">v{String(v.version)}</span>
                       {isCurrent && (
                         <Badge variant="outline" className="text-[10px]">
@@ -199,17 +236,27 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
                       <p className="text-xs text-rose-600">{v.processingError}</p>
                     )}
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      void onDownload(v.id);
-                    }}
-                    disabled={downloading.includes(v.id)}
-                  >
-                    <Download className="mr-1 size-3.5" />
-                    {downloading.includes(v.id) ? 'Opening…' : 'Download'}
-                  </Button>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    {canPreview ? (
+                      <DocumentPreview
+                        target={{ versionId: v.id }}
+                        label="Preview"
+                        compact
+                        className="w-full sm:w-80"
+                      />
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        void onDownload(v.id);
+                      }}
+                      disabled={downloading.includes(v.id)}
+                    >
+                      <Download className="mr-1 size-3.5" />
+                      {downloading.includes(v.id) ? 'Opening...' : 'Download'}
+                    </Button>
+                  </div>
                 </li>
               );
             })}
