@@ -1833,7 +1833,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
                 and(
                   eq(rawEvents.teamId, teamId),
                   eq(rawEvents.source, 'email'),
-                  sql`(${rawEvents.sourceMetadata} ->> 'message_id') = ANY(${probeIds})`,
+                  inArray(sql`${rawEvents.sourceMetadata} ->> 'message_id'`, probeIds),
                 ),
               );
             // Index by message_id so we can look up matches in priority order

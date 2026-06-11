@@ -1,5 +1,8 @@
 import type { PostmarkAddress, PostmarkInbound } from '#src/email/postmark-schema.js';
 
+export const MAX_EMAIL_REFERENCES = 50;
+const MAX_REFERENCE_ID_LENGTH = 998;
+
 /**
  * Parsed address pair shaped for storage in `source_metadata`. Stable JSON
  * keys (snake-friendly) so downstream consumers (UI, agent) don't need a
@@ -42,7 +45,9 @@ export function normalizeMessageId(raw: string | undefined): string | null {
 
 /**
  * Parse a References header (or any space-separated list of <message-id>s)
- * into an array of normalized ids. Empty input → empty array.
+ * into an array of normalized ids. Empty input → empty array. The header is
+ * sender-controlled, so keep only a bounded, deduped tail of the chain; email
+ * threading prefers the newest ancestors anyway.
  */
 export function parseReferences(raw: string | undefined): string[] {
   if (!raw) return [];
@@ -53,12 +58,22 @@ export function parseReferences(raw: string | undefined): string[] {
     const id = m[1]?.trim();
     if (id) out.push(id);
   }
-  if (out.length > 0) return out;
+  if (out.length > 0) return boundReferences(out);
   // Fallback: whitespace-separated bare tokens.
-  return raw
-    .split(/\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  return boundReferences(raw.split(/\s+/));
+}
+
+function boundReferences(ids: string[]): string[] {
+  const seen = new Set<string>();
+  const newestUnique: string[] = [];
+  for (let i = ids.length - 1; i >= 0; i--) {
+    const id = ids[i]?.trim();
+    if (!id || id.length > MAX_REFERENCE_ID_LENGTH || seen.has(id)) continue;
+    seen.add(id);
+    newestUnique.push(id);
+    if (newestUnique.length >= MAX_EMAIL_REFERENCES) break;
+  }
+  return newestUnique.reverse();
 }
 
 /**
