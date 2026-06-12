@@ -22,6 +22,7 @@ import { safeMarkOnboardingStep } from '@/lib/onboarding';
 import { requireRedisQueue } from '@/lib/queue';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { visibilitySchema, type Visibility } from '@/lib/visibility';
 
 const log = childLogger('web:actions:documents');
 
@@ -45,7 +46,7 @@ interface PreviewDocument {
   id: string;
   currentVersionId: string | null;
   name: string;
-  visibility: 'private' | 'team' | 'specific_users';
+  visibility: Visibility;
   ownerUserId: string | null;
   visibilityUserIds: string[] | null;
 }
@@ -70,7 +71,7 @@ async function withScopeOrError() {
 const createFolderSchema = z.object({
   name: z.string().trim().min(1).max(200),
   parentFolderId: folderIdSchema.nullable().optional(),
-  visibility: z.enum(['team', 'private', 'specific_users']).default('team'),
+  visibility: visibilitySchema.default('team'),
   visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
 });
 
@@ -126,7 +127,7 @@ const requestUploadSchema = z.object({
   name: z.string().trim().min(1).max(400),
   filename: z.string().trim().min(1).max(400),
   contentType: z.string().trim().min(1).max(200),
-  visibility: z.enum(['team', 'private', 'specific_users']).default('team'),
+  visibility: visibilitySchema.default('team'),
   visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
 });
 
@@ -322,7 +323,7 @@ const promoteCapturedFileSchema = z.object({
   id: documentIdSchema,
   name: z.string().trim().min(1).max(400).optional(),
   folderId: folderIdSchema.nullable().optional(),
-  visibility: z.enum(['team', 'private', 'specific_users']).optional(),
+  visibility: visibilitySchema.optional(),
   visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
 });
 

@@ -10,6 +10,7 @@ import { ObjectDetailClient } from '@/components/objects/object-detail-client';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {
@@ -18,7 +19,6 @@ export const metadata: Metadata = {
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ACTIONABLE_SUGGESTION_STATUSES = new Set(['pending', 'failed']);
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -59,7 +59,7 @@ export default async function ObjectDetailPage({ params }: PageProps) {
   const suggestions = pendingBundles.flatMap((bundle) => {
     const items = bundle.items.filter(
       (item) =>
-        ACTIONABLE_SUGGESTION_STATUSES.has(item.status) &&
+        isActionableSuggestionStatus(item.status) &&
         suggestionTargetsObject(item, detail.id, { boardItemIds, siblingItems: bundle.items }),
     );
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];

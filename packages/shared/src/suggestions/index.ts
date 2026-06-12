@@ -31,6 +31,7 @@ import type {
 import type { TeamRole } from '#src/team-scope.js';
 
 import { childLogger } from '#src/logger.js';
+import { OBJECT_TYPES } from '#src/objects/index.js';
 import { localDateFromInstant, localDateSpanToUtcRange } from '#src/time/index.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
@@ -154,9 +155,7 @@ const localRef = z
   .trim()
   .regex(/^[a-z0-9][a-z0-9_-]{0,79}$/);
 
-const objectCreatePayload = z.object({
-  type: z.string().optional(),
-  canonicalName: z.string().trim().max(200).optional(),
+const objectPayloadFields = {
   aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
   status: z.string().trim().min(1).max(40).optional(),
   stage: z.string().trim().max(40).nullable().optional(),
@@ -164,21 +163,20 @@ const objectCreatePayload = z.object({
   ownerUserId: uuid.nullable().optional(),
   assigneeUserId: uuid.nullable().optional(),
   dueAt: z.iso.datetime().nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+};
+
+const objectCreatePayload = z.object({
+  ...objectPayloadFields,
+  type: z.string().optional(),
+  canonicalName: z.string().trim().max(200).optional(),
   parentObjectId: uuid.nullable().optional(),
   sourceEventId: uuid.nullable().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const objectUpdatePayload = z.object({
+  ...objectPayloadFields,
   canonicalName: z.string().trim().min(1).max(200).optional(),
-  status: z.string().trim().min(1).max(40).optional(),
-  stage: z.string().trim().max(40).nullable().optional(),
-  priority: z.number().int().min(1).max(4).nullable().optional(),
-  ownerUserId: uuid.nullable().optional(),
-  assigneeUserId: uuid.nullable().optional(),
-  dueAt: z.iso.datetime().nullable().optional(),
-  aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const identityFacetPayload = z.object({
@@ -427,21 +425,6 @@ const APPROVAL_TOKEN_STOPWORDS = new Set([
   'viel',
 ]);
 
-const OBJECT_TYPES: readonly ObjectType[] = [
-  'person',
-  'company',
-  'project',
-  'topic',
-  'other',
-  'deal',
-  'vendor',
-  'incident',
-  'document',
-  'decision',
-  'hiring_loop',
-  'task',
-  'follow_up',
-];
 const OBJECT_TYPE_SET = new Set<string>(OBJECT_TYPES);
 type LifecycleStatusType = 'task' | 'follow_up' | 'project';
 

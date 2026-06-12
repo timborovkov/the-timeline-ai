@@ -12,6 +12,7 @@ import {
 } from '@/app/actions/suggestions';
 import { EmptyAction } from '@/components/empty-action';
 import { Button } from '@/components/ui/button';
+import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
 interface SuggestionItem {
   id: string;
@@ -179,8 +180,8 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
       ) : null}
 
       {suggestions.map((bundle) => {
-        const pendingItems = bundle.items.filter(
-          (item) => item.status === 'pending' || item.status === 'failed',
+        const pendingItems = bundle.items.filter((item) =>
+          isActionableSuggestionStatus(item.status),
         );
         const bulkAcceptItems = pendingItems.filter((item) => item.targetKind !== 'object_merge');
         return (
@@ -239,7 +240,7 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
                       <p className="mt-1 text-xs text-danger">{item.failureReason}</p>
                     ) : null}
                   </div>
-                  {item.status === 'pending' || item.status === 'failed' ? (
+                  {isActionableSuggestionStatus(item.status) ? (
                     <div className="flex items-start gap-2">
                       {item.targetKind === 'object_merge' ? (
                         <Button asChild size="sm" disabled={pending}>

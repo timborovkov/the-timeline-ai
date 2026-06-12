@@ -16,6 +16,7 @@ import {
   extract,
   getEnv,
   llm,
+  objects,
   queue,
   suggestions,
   time,
@@ -447,7 +448,7 @@ type CleanupObjectRow = Pick<
   'id' | 'teamId' | 'type' | 'canonicalName' | 'aliases' | 'status' | 'updatedAt'
 >;
 
-const CLEANUP_MERGE_TYPES = new Set([
+const CLEANUP_MERGE_TYPES = new Set<EntityType>([
   'person',
   'company',
   'project',
@@ -461,21 +462,7 @@ const CLEANUP_MERGE_TYPES = new Set([
   'other',
 ]);
 
-const ENTITY_TYPES = new Set<EntityType>([
-  'person',
-  'company',
-  'project',
-  'topic',
-  'other',
-  'deal',
-  'vendor',
-  'incident',
-  'document',
-  'decision',
-  'hiring_loop',
-  'task',
-  'follow_up',
-]);
+const ENTITY_TYPES = new Set<EntityType>(objects.OBJECT_TYPES);
 
 function cleanupCompatible(a: CleanupObjectRow, b: CleanupObjectRow): boolean {
   return (

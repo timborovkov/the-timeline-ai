@@ -635,37 +635,28 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
     : null;
   const size = formatBytes(version?.byteSize ?? null);
   const status = version?.processingStatus ?? (document.optimistic ? 'uploading' : null);
+  const metaItems = document.optimistic
+    ? [
+        { icon: source.icon, label: source.label },
+        { icon: Clock3, label: 'Uploading now' },
+      ]
+    : [
+        { icon: source.icon, label: source.label },
+        capturedAt ? { icon: Clock3, label: capturedAt } : null,
+        size ? { icon: HardDrive, label: size } : null,
+        version ? { icon: FileText, label: `v${String(version.version)}` } : null,
+      ];
+  const summary = document.optimistic ? null : document.provenance.summary;
 
   return (
     <li className="grid gap-3 rounded-sm border border-border bg-card p-3 transition-colors hover:border-border-strong md:grid-cols-[minmax(0,1fr)_auto]">
-      {document.optimistic ? (
-        <div className="min-w-0">
-          <DocumentTitleRow document={document} fileKind={fileKind} />
-          <DocumentMetaLine
-            items={[
-              { icon: source.icon, label: source.label },
-              { icon: Clock3, label: 'Uploading now' },
-            ]}
-          />
-        </div>
-      ) : (
-        <div className="min-w-0">
-          <DocumentTitleRow document={document} fileKind={fileKind} />
-          <DocumentMetaLine
-            items={[
-              { icon: source.icon, label: source.label },
-              capturedAt ? { icon: Clock3, label: capturedAt } : null,
-              size ? { icon: HardDrive, label: size } : null,
-              version ? { icon: FileText, label: `v${String(version.version)}` } : null,
-            ]}
-          />
-          {document.provenance.summary ? (
-            <p className="mt-2 line-clamp-1 text-xs text-muted-foreground">
-              {document.provenance.summary}
-            </p>
-          ) : null}
-        </div>
-      )}
+      <div className="min-w-0">
+        <DocumentTitleRow document={document} fileKind={fileKind} />
+        <DocumentMetaLine items={metaItems} />
+        {summary ? (
+          <p className="mt-2 line-clamp-1 text-xs text-muted-foreground">{summary}</p>
+        ) : null}
+      </div>
       <div className="flex items-center justify-between gap-2 md:justify-end">
         <div className="flex flex-wrap items-center gap-2">
           <SourceBadge source={source} />

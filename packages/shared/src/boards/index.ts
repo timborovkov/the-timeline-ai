@@ -159,6 +159,7 @@ export interface BoardReadOptions {
 type BoardSelect = typeof boards.$inferSelect;
 type LaneSelect = typeof boardLanes.$inferSelect;
 type ItemSelect = typeof boardItems.$inferSelect;
+type BoardItemChangeSelect = typeof boardItemChanges.$inferSelect;
 type EntitySelect = typeof entities.$inferSelect;
 
 function jsonObject(value: unknown): Record<string, unknown> {
@@ -244,6 +245,25 @@ function toItemRow(item: ItemSelect, object: EntitySelect): BoardItemRow {
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
     object: toObjectRow(object),
+  };
+}
+
+function toBoardItemChangeRow(row: BoardItemChangeSelect): BoardItemChangeRow {
+  return {
+    id: row.id,
+    boardId: row.boardId,
+    boardItemId: row.boardItemId,
+    entityId: row.entityId,
+    actorKind: row.actorKind,
+    actorUserId: row.actorUserId,
+    status: row.status,
+    field: row.field as BoardItemField,
+    previousValue: row.previousValue,
+    newValue: row.newValue,
+    sourceEventId: row.sourceEventId,
+    suggestionItemId: row.suggestionItemId,
+    note: row.note,
+    changedAt: row.changedAt,
   };
 }
 
@@ -458,22 +478,7 @@ export function createBoardScope({
       .returning();
     const row = rows[0];
     if (!row) throw new Error('Failed to write board history');
-    return {
-      id: row.id,
-      boardId: row.boardId,
-      boardItemId: row.boardItemId,
-      entityId: row.entityId,
-      actorKind: row.actorKind,
-      actorUserId: row.actorUserId,
-      status: row.status,
-      field: row.field as BoardItemField,
-      previousValue: row.previousValue,
-      newValue: row.newValue,
-      sourceEventId: row.sourceEventId,
-      suggestionItemId: row.suggestionItemId,
-      note: row.note,
-      changedAt: row.changedAt,
-    };
+    return toBoardItemChangeRow(row);
   }
 
   async function itemWithObject(itemId: string, query: DbOrTx = db): Promise<BoardItemRow | null> {
@@ -808,22 +813,7 @@ export function createBoardScope({
           and(eq(boardItemChanges.boardItemId, itemId), eq(boardItemChanges.teamId, scope.teamId)),
         )
         .orderBy(desc(boardItemChanges.changedAt));
-      return rows.map((row) => ({
-        id: row.id,
-        boardId: row.boardId,
-        boardItemId: row.boardItemId,
-        entityId: row.entityId,
-        actorKind: row.actorKind,
-        actorUserId: row.actorUserId,
-        status: row.status,
-        field: row.field as BoardItemField,
-        previousValue: row.previousValue,
-        newValue: row.newValue,
-        sourceEventId: row.sourceEventId,
-        suggestionItemId: row.suggestionItemId,
-        note: row.note,
-        changedAt: row.changedAt,
-      }));
+      return rows.map(toBoardItemChangeRow);
     },
 
     async listObjectBoardContext(entityId: string): Promise<ObjectBoardContextRow[]> {

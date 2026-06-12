@@ -9,6 +9,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { visibilitySchema } from '@/lib/visibility';
 
 const log = childLogger('web:actions:visibility');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -24,8 +25,6 @@ const sourceSchema = z.enum([
   'integration',
   'calendar',
 ]);
-const visibilitySchema = z.enum(['team', 'private', 'specific_users']);
-
 export interface VisibilityActionState {
   ok?: boolean;
   error?: string;

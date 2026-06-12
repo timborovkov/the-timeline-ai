@@ -9,6 +9,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { visibilitySchema } from '@/lib/visibility';
 
 const log = childLogger('web:actions:calendar');
 
@@ -52,7 +53,7 @@ const createSchema = z.object({
   timezone: z.string().max(100).default('UTC'),
   allDay: z.boolean().default(false),
   location: z.string().trim().max(500).optional(),
-  visibility: z.enum(['team', 'private', 'specific_users']).default('team'),
+  visibility: visibilitySchema.default('team'),
   visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
   reminderMinutes: z.number().int().min(0).max(1440).optional(),
   linkedEntityIds: z.array(z.string().regex(UUID_RE)).max(20).optional(),
@@ -105,7 +106,7 @@ const updateSchema = z.object({
   timezone: z.string().max(100).optional(),
   allDay: z.boolean().optional(),
   location: z.string().trim().max(500).optional(),
-  visibility: z.enum(['team', 'private', 'specific_users']).optional(),
+  visibility: visibilitySchema.optional(),
   visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
   reminderMinutes: z.number().int().min(0).max(1440).optional(),
 });

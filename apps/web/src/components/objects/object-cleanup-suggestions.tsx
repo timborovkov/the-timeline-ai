@@ -18,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
 interface SuggestionItem {
   id: string;
@@ -140,10 +141,7 @@ export function ObjectCleanupSuggestions({
     const items: { bundle: SuggestionBundle; item: SuggestionItem }[] = [];
     for (const bundle of suggestions) {
       for (const item of bundle.items) {
-        if (
-          (item.status === 'pending' || item.status === 'failed') &&
-          !state.resolvedItemIds.has(item.id)
-        ) {
+        if (isActionableSuggestionStatus(item.status) && !state.resolvedItemIds.has(item.id)) {
           items.push({ bundle, item });
         }
       }
