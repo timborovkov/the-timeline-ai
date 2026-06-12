@@ -341,6 +341,9 @@ function payloadKeysOverlap(
 }
 
 function itemArtifactIds(item: typeof agentSuggestionItems.$inferSelect): Set<string> {
+  if (item.targetKind === 'object_note' && item.operation === 'create') {
+    return new Set([item.resultId].filter((id): id is string => Boolean(id)));
+  }
   return new Set([item.targetId, item.resultId].filter((id): id is string => Boolean(id)));
 }
 

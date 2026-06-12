@@ -1689,6 +1689,66 @@ describe('suggestion scope', () => {
     ]);
   });
 
+  it('keeps distinct pending Q&A note creates on the same object actionable', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const object = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Q&A backlog project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const first = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Remember onboarding owner',
+      dedupeKey: 'qna-distinct-same-object:first',
+      metadata: { conversation_review_id: 'qna-distinct-same-object' },
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: object.id,
+          title: 'Add onboarding Q&A',
+          dedupeKey: 'qna-distinct-same-object:first:item',
+          proposedPayload: {
+            body: 'Q: Who owns onboarding?\nA: Nina owns onboarding.',
+          },
+        },
+      ],
+    });
+    const second = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Remember escalation owner',
+      dedupeKey: 'qna-distinct-same-object:second',
+      metadata: { conversation_review_id: 'qna-distinct-same-object' },
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: object.id,
+          title: 'Add escalation Q&A',
+          dedupeKey: 'qna-distinct-same-object:second:item',
+          proposedPayload: {
+            body: 'Q: Who handles escalations?\nA: Tomas handles escalations.',
+          },
+        },
+      ],
+    });
+
+    expect((await scope.suggestions.getSuggestion(first.id))?.items[0]).toMatchObject({
+      status: 'pending',
+    });
+    expect((await scope.suggestions.getSuggestion(second.id))?.items[0]).toMatchObject({
+      status: 'pending',
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(first.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    expect((await scope.suggestions.getSuggestion(second.id))?.items[0]).toMatchObject({
+      status: 'pending',
+    });
+  });
+
   it('accepts a Q&A note before its sibling topic create by applying the topic first', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
