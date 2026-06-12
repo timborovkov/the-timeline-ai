@@ -463,7 +463,7 @@ describe('buildAgentTools — team isolation', () => {
             kind: 'add_relationship',
             fromEntityId,
             toEntityId,
-            relationshipKind: 'linked',
+            relationshipKind: 'related',
           },
         ],
       },
@@ -483,7 +483,7 @@ describe('buildAgentTools — team isolation', () => {
       proposedPayload: {
         fromEntityId,
         toEntityId,
-        kind: 'linked',
+        kind: 'related',
       },
     });
   });

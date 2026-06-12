@@ -678,6 +678,338 @@ describe('processSuggestionJobForTests', () => {
     expect(call?.system).toContain('board_membership or board_item_update');
   });
 
+  it('stores model-backed bundled relationship proposals with sibling local refs', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000a1';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'John Doe from Acme Corporation will review the launch plan.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Remember John Doe and Acme Corporation',
+            summary: 'John Doe is related to Acme Corporation.',
+            reason: 'The source says John Doe is from Acme Corporation.',
+            confidence: 'high',
+            quote: 'John Doe from Acme Corporation',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'John Doe',
+                proposedPayload: {
+                  type: 'person',
+                  canonicalName: 'John Doe',
+                  localRef: 'John Doe!',
+                },
+              },
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Acme Corporation',
+                proposedPayload: {
+                  type: 'company',
+                  canonicalName: 'Acme Corporation',
+                  localRef: 'acme',
+                },
+              },
+              {
+                operation: 'create',
+                targetKind: 'object_relationship',
+                title: 'Relate John Doe and Acme Corporation',
+                proposedPayload: {
+                  fromRef: ' JOHN DOE! ',
+                  toRef: 'acme',
+                  kind: 'related',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const call = chat.mock.calls[0]?.[0] as { system: string } | undefined;
+    expect(call?.system).toContain('targetKind="object_relationship"');
+    expect(call?.system).toContain('not mere co-mention');
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    const johnItem = bundle?.items.find((item) => item.title === 'John Doe');
+    const acmeItem = bundle?.items.find((item) => item.title === 'Acme Corporation');
+    const relationshipItem = bundle?.items.find(
+      (item) => item.targetKind === 'object_relationship',
+    );
+    expect(johnItem?.proposedPayload.localRef).toBe('john-doe');
+    expect(acmeItem?.proposedPayload.localRef).toBe('acme');
+    expect(relationshipItem?.proposedPayload).toEqual({
+      fromRef: 'john-doe',
+      toRef: 'acme',
+      kind: 'related',
+    });
+  });
+
+  it('suppresses duplicate pending relationship proposals that still use sibling local refs', async () => {
+    const firstRawEventId = '10000000-0000-0000-0000-0000000000a3';
+    const secondRawEventId = '10000000-0000-0000-0000-0000000000a4';
+    await seedRawEvent(db as never, {
+      id: firstRawEventId,
+      text: 'John Doe from Acme Corporation will review the launch plan.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    await seedRawEvent(db as never, {
+      id: secondRawEventId,
+      text: 'John Doe at Acme Corporation joined the renewal call.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:02:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+      occurredAt: new Date('2026-05-27T10:02:00.000Z'),
+    });
+    const relationshipBundle = (fromRef: string, toRef: string) => ({
+      title: 'Remember John Doe and Acme Corporation',
+      summary: 'John Doe is related to Acme Corporation.',
+      reason: 'The source says John Doe is from Acme Corporation.',
+      confidence: 'high' as const,
+      quote: 'John Doe from Acme Corporation',
+      items: [
+        {
+          operation: 'create' as const,
+          targetKind: 'object' as const,
+          title: 'John Doe',
+          proposedPayload: {
+            type: 'person',
+            canonicalName: 'John Doe',
+            localRef: fromRef,
+          },
+        },
+        {
+          operation: 'create' as const,
+          targetKind: 'object' as const,
+          title: 'Acme Corporation',
+          proposedPayload: {
+            type: 'company',
+            canonicalName: 'Acme Corporation',
+            localRef: toRef,
+          },
+        },
+        {
+          operation: 'create' as const,
+          targetKind: 'object_relationship' as const,
+          title: 'Relate John Doe and Acme Corporation',
+          proposedPayload: {
+            fromRef,
+            toRef,
+            kind: 'related',
+          },
+        },
+      ],
+    });
+    const chat = vi
+      .fn()
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: { bundles: [relationshipBundle('john-doe', 'acme')] },
+      })
+      .mockResolvedValueOnce({
+        model: MODEL_ID,
+        object: { bundles: [relationshipBundle('john', 'acme-corp')] },
+      });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: firstRawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: secondRawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const relationshipItems = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.targetKind, 'object_relationship'));
+    expect(relationshipItems).toHaveLength(1);
+  });
+
+  it('suppresses model-backed relationship proposals when the existing endpoint edge is already present', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000a2';
+    const [john, acme] = await db
+      .insert(entities)
+      .values([
+        {
+          teamId: TEAM_ID,
+          type: 'person',
+          canonicalName: 'John Doe',
+        },
+        {
+          teamId: TEAM_ID,
+          type: 'company',
+          canonicalName: 'Acme Corporation',
+        },
+      ])
+      .returning({ id: entities.id });
+    if (!john || !acme) throw new Error('expected object fixtures');
+    await db.insert(entityRelationships).values({
+      teamId: TEAM_ID,
+      fromEntityId: john.id < acme.id ? john.id : acme.id,
+      toEntityId: john.id < acme.id ? acme.id : john.id,
+      kind: 'related',
+    });
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'John Doe from Acme Corporation joined the renewal call.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Relate John Doe and Acme Corporation',
+            summary: 'John Doe is related to Acme Corporation.',
+            reason: 'The source says John Doe is from Acme Corporation.',
+            confidence: 'high',
+            quote: 'John Doe from Acme Corporation',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object_relationship',
+                title: 'Relate John Doe and Acme Corporation',
+                proposedPayload: {
+                  fromEntityId: john.id,
+                  toEntityId: acme.id,
+                  kind: 'related',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
+  });
+
+  it('suppresses model-backed relationship proposals after the same edge was rejected', async () => {
+    const firstRawEventId = '10000000-0000-0000-0000-0000000000b3';
+    const secondRawEventId = '10000000-0000-0000-0000-0000000000b4';
+    const [john, acme] = await db
+      .insert(entities)
+      .values([
+        {
+          teamId: TEAM_ID,
+          type: 'person',
+          canonicalName: 'John Doe',
+        },
+        {
+          teamId: TEAM_ID,
+          type: 'company',
+          canonicalName: 'Acme Corporation',
+        },
+      ])
+      .returning({ id: entities.id });
+    if (!john || !acme) throw new Error('expected object fixtures');
+    await seedRawEvent(db as never, {
+      id: firstRawEventId,
+      text: 'John Doe from Acme Corporation joined the renewal call.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    await seedRawEvent(db as never, {
+      id: secondRawEventId,
+      text: 'John Doe at Acme Corporation joined the launch call.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:02:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+      occurredAt: new Date('2026-05-27T10:02:00.000Z'),
+    });
+    const relationshipBundle = {
+      title: 'Relate John Doe and Acme Corporation',
+      summary: 'John Doe is related to Acme Corporation.',
+      reason: 'The source says John Doe is from Acme Corporation.',
+      confidence: 'high' as const,
+      quote: 'John Doe from Acme Corporation',
+      items: [
+        {
+          operation: 'create' as const,
+          targetKind: 'object_relationship' as const,
+          title: 'Relate John Doe and Acme Corporation',
+          proposedPayload: {
+            fromEntityId: john.id,
+            toEntityId: acme.id,
+            kind: 'related',
+          },
+        },
+      ],
+    };
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: { bundles: [relationshipBundle] },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: firstRawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    const [relationshipItem] = await db
+      .select({ id: agentSuggestionItems.id })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.targetKind, 'object_relationship'));
+    expect(relationshipItem?.id).toBeDefined();
+
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.rejectSuggestionItem(
+        relationshipItem?.id ?? '',
+      ),
+    ).resolves.toBe(true);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId: secondRawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const relationshipItems = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.targetKind, 'object_relationship'));
+    expect(relationshipItems).toHaveLength(1);
+    expect(relationshipItems[0]?.status).toBe('rejected');
+  });
+
   it('rewrites model-backed duplicate object creates into updates for existing objects', async () => {
     const rawEventId = '10000000-0000-0000-0000-00000000002d';
     const [person] = await db

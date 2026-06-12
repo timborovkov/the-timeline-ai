@@ -25,6 +25,7 @@ import {
   objectNotes,
   objectViews,
   rawEvents,
+  relationshipKind,
 } from '@timeline/db';
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
@@ -78,6 +79,18 @@ async function deleteMergedObjectEmbeddingPoints(teamId: string, entityId: strin
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const RELATIONSHIP_KINDS = relationshipKind.enumValues;
+export type RelationshipKind = (typeof RELATIONSHIP_KINDS)[number];
+
+function canonicalRelationshipEndpoints(
+  fromEntityId: string,
+  toEntityId: string,
+  kind: RelationshipKind,
+): { fromEntityId: string; toEntityId: string } {
+  if (kind !== 'related') return { fromEntityId, toEntityId };
+  const [from, to] = [fromEntityId, toEntityId].sort();
+  return { fromEntityId: from ?? fromEntityId, toEntityId: to ?? toEntityId };
+}
 
 export type IdentityFacetKind =
   | 'email'
@@ -1498,8 +1511,13 @@ export async function mergeObjects(
         ),
       );
     for (const rel of relationships) {
-      const nextFrom = loserIds.includes(rel.fromEntityId) ? survivor.id : rel.fromEntityId;
-      const nextTo = loserIds.includes(rel.toEntityId) ? survivor.id : rel.toEntityId;
+      const rawNextFrom = loserIds.includes(rel.fromEntityId) ? survivor.id : rel.fromEntityId;
+      const rawNextTo = loserIds.includes(rel.toEntityId) ? survivor.id : rel.toEntityId;
+      const { fromEntityId: nextFrom, toEntityId: nextTo } = canonicalRelationshipEndpoints(
+        rawNextFrom,
+        rawNextTo,
+        rel.kind,
+      );
       if (nextFrom === nextTo) {
         await tx.delete(entityRelationships).where(eq(entityRelationships.id, rel.id));
         continue;
@@ -1844,7 +1862,7 @@ export async function addRelationship(
   input: {
     fromEntityId: string;
     toEntityId: string;
-    kind: 'parent' | 'child' | 'related' | 'blocks' | 'blocked_by' | 'duplicate_of' | 'linked';
+    kind: RelationshipKind;
     actorUserId: string | null;
     // Optional so existing user-driven callers (server actions) keep working
     // without passing an actor. Agent tools that call this helper should pass
@@ -1861,6 +1879,11 @@ export async function addRelationship(
   if (input.fromEntityId === input.toEntityId) {
     throw new Error('Cannot link an object to itself');
   }
+  const endpoints = canonicalRelationshipEndpoints(
+    input.fromEntityId,
+    input.toEntityId,
+    input.kind,
+  );
 
   return db.transaction(async (tx) => {
     // Both endpoints must belong to this team. Re-select to validate.
@@ -1870,7 +1893,7 @@ export async function addRelationship(
       .where(
         and(
           eq(entities.teamId, scope.teamId),
-          inArray(entities.id, [input.fromEntityId, input.toEntityId]),
+          inArray(entities.id, [endpoints.fromEntityId, endpoints.toEntityId]),
           isNull(entities.mergedIntoId),
         ),
       );
@@ -1880,8 +1903,8 @@ export async function addRelationship(
       .insert(entityRelationships)
       .values({
         teamId: scope.teamId,
-        fromEntityId: input.fromEntityId,
-        toEntityId: input.toEntityId,
+        fromEntityId: endpoints.fromEntityId,
+        toEntityId: endpoints.toEntityId,
         kind: input.kind,
         createdBy: input.actorUserId,
       })
@@ -1898,8 +1921,8 @@ export async function addRelationship(
         .where(
           and(
             eq(entityRelationships.teamId, scope.teamId),
-            eq(entityRelationships.fromEntityId, input.fromEntityId),
-            eq(entityRelationships.toEntityId, input.toEntityId),
+            eq(entityRelationships.fromEntityId, endpoints.fromEntityId),
+            eq(entityRelationships.toEntityId, endpoints.toEntityId),
             eq(entityRelationships.kind, input.kind),
           ),
         )
@@ -1907,9 +1930,9 @@ export async function addRelationship(
       return existing[0] ?? null;
     }
 
-    const fromEnt = ends.find((e) => e.id === input.fromEntityId);
-    const toEnt = ends.find((e) => e.id === input.toEntityId);
-    const summary = `Linked ${fromEnt?.canonicalName ?? input.fromEntityId} → ${toEnt?.canonicalName ?? input.toEntityId} (${input.kind})`;
+    const fromEnt = ends.find((e) => e.id === endpoints.fromEntityId);
+    const toEnt = ends.find((e) => e.id === endpoints.toEntityId);
+    const summary = `Linked ${fromEnt?.canonicalName ?? endpoints.fromEntityId} → ${toEnt?.canonicalName ?? endpoints.toEntityId} (${input.kind})`;
 
     const ev = await tx
       .insert(rawEvents)
@@ -1924,8 +1947,8 @@ export async function addRelationship(
           ...(input.metadata ?? {}),
           kind: 'relationship_create',
           relationship_id: row.id,
-          from_entity_id: input.fromEntityId,
-          to_entity_id: input.toEntityId,
+          from_entity_id: endpoints.fromEntityId,
+          to_entity_id: endpoints.toEntityId,
           relationship_kind: input.kind,
         },
       })
@@ -1936,24 +1959,24 @@ export async function addRelationship(
     await tx.insert(objectChanges).values([
       {
         teamId: scope.teamId,
-        entityId: input.fromEntityId,
+        entityId: endpoints.fromEntityId,
         actorUserId: input.actor?.userId ?? input.actorUserId,
         actorKind: input.actor?.kind ?? 'user',
         status: 'applied',
         field: '__relationship_create__',
         previousValue: null,
-        newValue: { relationship_id: row.id, to: input.toEntityId, kind: input.kind },
+        newValue: { relationship_id: row.id, to: endpoints.toEntityId, kind: input.kind },
         sourceEventId: ev[0]?.id ?? null,
       },
       {
         teamId: scope.teamId,
-        entityId: input.toEntityId,
+        entityId: endpoints.toEntityId,
         actorUserId: input.actor?.userId ?? input.actorUserId,
         actorKind: input.actor?.kind ?? 'user',
         status: 'applied',
         field: '__relationship_create__',
         previousValue: null,
-        newValue: { relationship_id: row.id, from: input.fromEntityId, kind: input.kind },
+        newValue: { relationship_id: row.id, from: endpoints.fromEntityId, kind: input.kind },
         sourceEventId: ev[0]?.id ?? null,
       },
     ]);

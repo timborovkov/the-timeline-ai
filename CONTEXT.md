@@ -114,11 +114,26 @@ over time. Object memory is visible and reviewable; it is not a hidden agent
 notebook.
 _Avoid_: Agent memory when it implies opaque private state
 
+**Object Relationship**:
+A durable object-memory edge between two workspace objects, such as a person
+being linked to a company, a task blocking a project, or two objects being
+otherwise connected. Object relationships use coarse relationship kinds; the
+specific meaning of the connection belongs in the supporting facts, notes, and
+source evidence. Accepted object relationships are shared team memory;
+agent-discovered object relationships are proposed memory until a teammate
+accepts them, and team-visible proposals should be supported by team-visible
+evidence. The relationship edge says which objects are connected; supporting
+facts, notes, or cited evidence explain why the connection matters. Raw co-occurrence
+in evidence is not itself a relationship.
+_Avoid_: Co-occurrence, mention, related item
+
 **Object Memory Proposal**:
 An approval-backed agent suggestion to create or update object memory, such as
 adding an alias, identity facet, relationship, note, field value, or missing
 workspace object. Object memory proposals become canonical only when a teammate
 accepts them; weak mentions should remain evidence rather than proposed memory.
+When evidence supports new related objects together, their create proposals and
+relationship proposal should be reviewed as one bundle.
 Creation proposals should be the last resort after checking existing objects
 and pending proposals.
 _Avoid_: Memory write when it hides the approval step

@@ -60,7 +60,7 @@ export default async function ObjectDetailPage({ params }: PageProps) {
     const items = bundle.items.filter(
       (item) =>
         ACTIONABLE_SUGGESTION_STATUSES.has(item.status) &&
-        suggestionTargetsObject(item, detail.id, { boardItemIds }),
+        suggestionTargetsObject(item, detail.id, { boardItemIds, siblingItems: bundle.items }),
     );
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });

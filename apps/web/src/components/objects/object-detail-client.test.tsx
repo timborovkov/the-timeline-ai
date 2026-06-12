@@ -68,6 +68,9 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Notes');
     expect(html).toContain('Open tasks');
     expect(html).toContain('Related');
+    expect(html).toContain('Search objects');
+    expect(html).not.toContain('Object id');
+    expect(html).not.toContain('value="linked"');
     expect(html).toContain('Recent changes');
     expect(html).toContain('Archive object');
   });

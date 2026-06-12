@@ -2021,7 +2021,7 @@ describe('suggestion scope', () => {
           proposedPayload: {
             fromEntityId: from.id,
             toEntityId: to.id,
-            kind: 'linked',
+            kind: 'related',
           },
         },
       ],
@@ -2039,13 +2039,14 @@ describe('suggestion scope', () => {
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
 
+    const [expectedFrom, expectedTo] = [from.id, to.id].sort();
     const result = await pg.query<{ count: string }>(
       `SELECT count(*)::text
        FROM entity_relationships
        WHERE team_id = '${TEAM_ID}'
-         AND from_entity_id = '${from.id}'
-         AND to_entity_id = '${to.id}'
-         AND kind = 'linked'`,
+         AND from_entity_id = '${expectedFrom}'
+         AND to_entity_id = '${expectedTo}'
+         AND kind = 'related'`,
     );
     expect(result.rows[0]?.count).toBe('1');
   });
@@ -2065,7 +2066,7 @@ describe('suggestion scope', () => {
     const existing = await scope.objects.addRelationship({
       fromEntityId: from.id,
       toEntityId: to.id,
-      kind: 'linked',
+      kind: 'related',
       actorUserId: USER_ID,
     });
     expect(existing?.id).toBeDefined();
@@ -2083,7 +2084,7 @@ describe('suggestion scope', () => {
           proposedPayload: {
             fromEntityId: from.id,
             toEntityId: to.id,
-            kind: 'linked',
+            kind: 'related',
           },
         },
       ],
@@ -2098,15 +2099,172 @@ describe('suggestion scope', () => {
       [itemId],
     );
     expect(itemRows.rows[0]?.result_id).toBe(existing?.id);
+    const [expectedFrom, expectedTo] = [from.id, to.id].sort();
     const relationshipRows = await pg.query<{ count: string }>(
       `SELECT count(*)::text
        FROM entity_relationships
        WHERE team_id = '${TEAM_ID}'
-         AND from_entity_id = '${from.id}'
-         AND to_entity_id = '${to.id}'
-         AND kind = 'linked'`,
+         AND from_entity_id = '${expectedFrom}'
+         AND to_entity_id = '${expectedTo}'
+         AND kind = 'related'`,
     );
     expect(relationshipRows.rows[0]?.count).toBe('1');
+  });
+
+  it('accepts bundled relationship proposals after sibling local-ref object creates', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create John, Acme, and their relationship',
+      dedupeKey: 'local-ref-relationship',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Create John Doe',
+          dedupeKey: 'local-ref-relationship:john',
+          proposedPayload: {
+            type: 'person',
+            canonicalName: 'John Doe',
+            localRef: 'John-Doe',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Create Acme Corporation',
+          dedupeKey: 'local-ref-relationship:acme',
+          proposedPayload: {
+            type: 'company',
+            canonicalName: 'Acme Corporation',
+            localRef: 'acme',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Relate John Doe and Acme Corporation',
+          dedupeKey: 'local-ref-relationship:relationship',
+          proposedPayload: {
+            fromRef: 'john-doe',
+            toRef: 'acme',
+            kind: 'related',
+          },
+        },
+      ],
+    });
+    const relationshipItem = bundle.items.find((item) => item.targetKind === 'object_relationship');
+    expect(relationshipItem).toBeDefined();
+
+    await expect(
+      scope.suggestions.acceptSuggestionItem(relationshipItem?.id ?? ''),
+    ).rejects.toThrow('has not been accepted yet');
+
+    await expect(scope.suggestions.acceptAll(bundle.id)).resolves.toEqual({
+      accepted: 3,
+      failed: 0,
+    });
+
+    const itemRows = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.suggestionId, bundle.id));
+    expect(itemRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetKind: 'object_relationship', status: 'accepted' }),
+      ]),
+    );
+    const createdObjects = await db
+      .select({ id: entities.id, canonicalName: entities.canonicalName })
+      .from(entities)
+      .where(eq(entities.teamId, TEAM_ID));
+    const john = createdObjects.find((object) => object.canonicalName === 'John Doe');
+    const acme = createdObjects.find((object) => object.canonicalName === 'Acme Corporation');
+    expect(john?.id).toBeDefined();
+    expect(acme?.id).toBeDefined();
+    const [expectedFrom, expectedTo] = [john?.id ?? '', acme?.id ?? ''].sort();
+    const relationshipRows = await pg.query<{
+      from_entity_id: string;
+      to_entity_id: string;
+      kind: string;
+    }>(
+      `SELECT from_entity_id, to_entity_id, kind
+       FROM entity_relationships
+       WHERE team_id = '${TEAM_ID}'`,
+    );
+    expect(relationshipRows.rows).toEqual([
+      {
+        from_entity_id: expectedFrom,
+        to_entity_id: expectedTo,
+        kind: 'related',
+      },
+    ]);
+  });
+
+  it('supersedes relationship proposals when a sibling local-ref dependency is rejected', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create rejected dependency bundle',
+      dedupeKey: 'local-ref-relationship-reject',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Create Maybe Person',
+          dedupeKey: 'local-ref-relationship-reject:person',
+          proposedPayload: {
+            type: 'person',
+            canonicalName: 'Maybe Person',
+            localRef: 'Maybe-Person',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Create Maybe Company',
+          dedupeKey: 'local-ref-relationship-reject:company',
+          proposedPayload: {
+            type: 'company',
+            canonicalName: 'Maybe Company',
+            localRef: 'maybe-company',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Relate Maybe Person and Maybe Company',
+          dedupeKey: 'local-ref-relationship-reject:relationship',
+          proposedPayload: {
+            fromRef: 'maybe-person',
+            toRef: 'maybe-company',
+            kind: 'related',
+          },
+        },
+      ],
+    });
+    const personItem = bundle.items.find((item) => item.title === 'Create Maybe Person');
+    expect(personItem).toBeDefined();
+
+    await expect(scope.suggestions.rejectSuggestionItem(personItem?.id ?? '')).resolves.toBe(true);
+
+    const rows = await db
+      .select({
+        targetKind: agentSuggestionItems.targetKind,
+        status: agentSuggestionItems.status,
+        supersededReason: agentSuggestionItems.supersededReason,
+      })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.suggestionId, bundle.id));
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetKind: 'object_relationship',
+          status: 'superseded',
+          supersededReason: 'Relationship endpoint "Maybe-Person" was rejected or superseded.',
+        }),
+      ]),
+    );
   });
 
   it('rejects evidence links outside the caller-visible team boundary', async () => {

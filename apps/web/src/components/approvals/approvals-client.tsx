@@ -57,6 +57,9 @@ function formatPayload(payload: Record<string, unknown>): string {
         value !== null &&
         value !== undefined &&
         value !== '' &&
+        key !== 'localRef' &&
+        key !== 'fromRef' &&
+        key !== 'toRef' &&
         !key.toLowerCase().endsWith('id') &&
         !key.toLowerCase().endsWith('ids'),
     )
@@ -75,6 +78,7 @@ function itemKindLabel(kind: string): string {
   if (kind === 'task') return 'task';
   if (kind === 'calendar_event') return 'calendar event';
   if (kind === 'object_merge') return 'duplicate records';
+  if (kind === 'object_relationship') return 'relationship';
   if (kind === 'object') return 'workspace memory';
   if (kind === 'document') return 'document record';
   return kind.replace(/_/g, ' ');
@@ -108,6 +112,37 @@ function objectMergeHref(item: SuggestionItem): string {
       ? [survivorId, ...ids.filter((id) => id !== survivorId)]
       : ids;
   return `/app/objects/merge?ids=${orderedIds.join(',')}&suggestionItemId=${item.id}`;
+}
+
+function localRefLabel(bundle: SuggestionBundle, ref: string): string {
+  const normalizedRef = ref.trim().toLowerCase();
+  const item = bundle.items.find(
+    (candidate) =>
+      typeof candidate.proposedPayload.localRef === 'string' &&
+      candidate.proposedPayload.localRef.trim().toLowerCase() === normalizedRef,
+  );
+  if (!item) return ref;
+  return typeof item.proposedPayload.canonicalName === 'string'
+    ? item.proposedPayload.canonicalName
+    : item.title;
+}
+
+function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBundle): string | null {
+  if (item.targetKind !== 'object_relationship') return null;
+  const from =
+    typeof item.proposedPayload.fromRef === 'string'
+      ? localRefLabel(bundle, item.proposedPayload.fromRef)
+      : 'existing object';
+  const to =
+    typeof item.proposedPayload.toRef === 'string'
+      ? localRefLabel(bundle, item.proposedPayload.toRef)
+      : 'existing object';
+  const kind =
+    typeof item.proposedPayload.kind === 'string' ? item.proposedPayload.kind : 'related';
+  if (from === 'existing object' && to === 'existing object') {
+    return `${item.title} · ${kind}`;
+  }
+  return `${from} ↔ ${to} · ${kind}`;
 }
 
 export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) {
@@ -193,9 +228,11 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
                     {item.description ? (
                       <p className="mt-1 text-sm text-fg-muted">{item.description}</p>
                     ) : null}
-                    {formatPayload(item.proposedPayload) ? (
+                    {(relationshipPayloadSummary(item, bundle) ??
+                    formatPayload(item.proposedPayload)) ? (
                       <p className="mt-1 truncate font-mono text-[11px] text-fg-dim">
-                        {formatPayload(item.proposedPayload)}
+                        {relationshipPayloadSummary(item, bundle) ??
+                          formatPayload(item.proposedPayload)}
                       </p>
                     ) : null}
                     {item.failureReason ? (

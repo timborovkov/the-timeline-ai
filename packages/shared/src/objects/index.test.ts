@@ -450,6 +450,105 @@ describe('object scope — archive visibility', () => {
   });
 });
 
+describe('object scope — relationships', () => {
+  it('stores related relationships in canonical endpoint order and dedupes reverse inserts', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const first = await scope.createObject({
+      type: 'person',
+      canonicalName: 'John Doe',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const second = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Acme Corporation',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [expectedFrom, expectedTo] = [first.id, second.id].sort();
+
+    const created = await scope.addRelationship({
+      fromEntityId: second.id,
+      toEntityId: first.id,
+      kind: 'related',
+      actorUserId: USER_OWNER,
+    });
+    const duplicate = await scope.addRelationship({
+      fromEntityId: first.id,
+      toEntityId: second.id,
+      kind: 'related',
+      actorUserId: USER_OWNER,
+    });
+
+    expect(duplicate?.id).toBe(created?.id);
+    const relationships = await db
+      .select()
+      .from(entityRelationships)
+      .where(eq(entityRelationships.teamId, TEAM_A));
+    expect(relationships).toEqual([
+      expect.objectContaining({
+        fromEntityId: expectedFrom,
+        toEntityId: expectedTo,
+        kind: 'related',
+      }),
+    ]);
+  });
+
+  it('collapses reverse related duplicates when transferring relationships during merge', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const survivor = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Acme',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const duplicate = await scope.createObject({
+      type: 'company',
+      canonicalName: 'ACME Ltd',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const person = await scope.createObject({
+      type: 'person',
+      canonicalName: 'John Doe',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.addRelationship({
+      fromEntityId: survivor.id,
+      toEntityId: person.id,
+      kind: 'related',
+      actorUserId: USER_OWNER,
+    });
+    await scope.addRelationship({
+      fromEntityId: person.id,
+      toEntityId: duplicate.id,
+      kind: 'related',
+      actorUserId: USER_OWNER,
+    });
+
+    await scope.mergeObjects({
+      survivorId: survivor.id,
+      mergedIds: [duplicate.id],
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const [expectedFrom, expectedTo] = [survivor.id, person.id].sort();
+    const relationships = await db
+      .select()
+      .from(entityRelationships)
+      .where(eq(entityRelationships.teamId, TEAM_A));
+    expect(
+      relationships.filter(
+        (relationship) =>
+          relationship.kind === 'related' &&
+          relationship.fromEntityId === expectedFrom &&
+          relationship.toEntityId === expectedTo,
+      ),
+    ).toHaveLength(1);
+    expect(relationships).not.toContainEqual(
+      expect.objectContaining({ fromEntityId: duplicate.id }),
+    );
+    expect(relationships).not.toContainEqual(expect.objectContaining({ toEntityId: duplicate.id }));
+  });
+});
+
 describe('object scope — merge cleanup', () => {
   it('merges compatible objects, moves derived rows, dedupes edges, and hides merged rows', async () => {
     const workspace = withTeam(db, TEAM_A, USER_OWNER);
@@ -648,12 +747,13 @@ describe('object scope — merge cleanup', () => {
     const rels = await db
       .select()
       .from(entityRelationships)
-      .where(inArray(entityRelationships.toEntityId, [related.id, survivor.id]));
+      .where(eq(entityRelationships.teamId, TEAM_A));
+    const [expectedRelFrom, expectedRelTo] = [survivor.id, related.id].sort();
     expect(
       rels.filter(
         (rel) =>
-          rel.fromEntityId === survivor.id &&
-          rel.toEntityId === related.id &&
+          rel.fromEntityId === expectedRelFrom &&
+          rel.toEntityId === expectedRelTo &&
           rel.kind === 'related',
       ),
     ).toHaveLength(1);

@@ -22,17 +22,22 @@ const MEMBER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const ENTITY_A = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const ENTITY_B = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 
-async function applyMigrations(pg: PGlite): Promise<void> {
+async function applyMigrationFile(pg: PGlite, file: string): Promise<void> {
+  const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
+  const statements = sql
+    .split('--> statement-breakpoint')
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0 && statement !== 'SELECT 1;');
+  for (const statement of statements) await pg.exec(statement);
+}
+
+async function applyMigrations(pg: PGlite, opts: { throughFile?: string } = {}): Promise<void> {
   const files = readdirSync(MIGRATIONS_DIR)
     .filter((file) => file.endsWith('.sql'))
     .sort();
   for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((statement) => statement.trim())
-      .filter((statement) => statement.length > 0 && statement !== 'SELECT 1;');
-    for (const statement of statements) await pg.exec(statement);
+    await applyMigrationFile(pg, file);
+    if (opts.throughFile === file) break;
   }
 }
 
@@ -79,6 +84,69 @@ describe('database schema contracts', () => {
       'raw_events',
       'teams',
     ]);
+  });
+
+  it('migrates pending linked relationship suggestion payloads to related', async () => {
+    const migrationPg = new PGlite();
+    try {
+      await applyMigrations(migrationPg, { throughFile: '0034_boards_2.sql' });
+      await seedBase(migrationPg);
+      await migrationPg.exec(`
+        INSERT INTO agent_suggestions (id, team_id, source, status, title, confidence, dedupe_key)
+        VALUES (
+          '11111111-1111-4111-8111-111111111113',
+          '${TEAM_ID}',
+          'background',
+          'pending',
+          'Remember a relationship',
+          'high',
+          'linked-proposal'
+        );
+      `);
+      await migrationPg.query(
+        `INSERT INTO agent_suggestion_items (
+           id,
+           suggestion_id,
+           team_id,
+           status,
+           operation,
+           target_kind,
+           title,
+           dedupe_key,
+           proposed_payload
+         )
+         VALUES (
+           '11111111-1111-4111-8111-111111111114',
+           '11111111-1111-4111-8111-111111111113',
+           $1,
+           'pending',
+           'create',
+           'object_relationship',
+           'Relate legacy objects',
+           'linked-item',
+           $2::jsonb
+         )`,
+        [
+          TEAM_ID,
+          JSON.stringify({
+            fromEntityId: ENTITY_A,
+            toEntityId: ENTITY_B,
+            kind: 'linked',
+          }),
+        ],
+      );
+
+      await applyMigrationFile(migrationPg, '0036_related_relationships.sql');
+
+      const rows = await migrationPg.query<{ kind: string }>(`
+        SELECT proposed_payload ->> 'kind' AS kind
+        FROM agent_suggestion_items
+        WHERE id = '11111111-1111-4111-8111-111111111114'
+      `);
+      expect(rows.rows[0]?.kind).toBe('related');
+    } finally {
+      await migrationPg.close();
+    }
   });
 
   it('enforces member, invite, visibility-default, and enum invariants', async () => {
