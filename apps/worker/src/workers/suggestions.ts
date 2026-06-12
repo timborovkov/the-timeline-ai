@@ -55,7 +55,7 @@ interface SuggestionWorkerIO {
 
 const suggestionItemSchema = z.object({
   operation: z.enum(['create', 'update', 'archive_or_cancel']),
-  targetKind: z.enum(['task', 'object', 'calendar_event']),
+  targetKind: z.enum(['task', 'object', 'calendar_event', 'board_membership', 'board_item_update']),
   targetId: z.uuid().nullable().optional(),
   title: z.string().min(1).max(200),
   description: z.string().max(500).nullable().optional(),
@@ -969,6 +969,13 @@ async function runSuggestionExtraction(
     ...calendarContextRange(row.occurredAt),
     limit: 40,
   });
+  const boardDetails = (
+    await Promise.all(
+      (await scope.boards.listBoards())
+        .slice(0, 8)
+        .map((board) => scope.boards.getBoard(board.id, { itemLimit: 20 })),
+    )
+  ).filter((board) => board !== null);
 
   const objectRowsForMatching: CleanupObjectRow[] = matchingEntityRows.map((entity) => ({
     id: entity.id,
@@ -1002,6 +1009,26 @@ async function runSuggestionExtraction(
           startAt: ev.startAt.toISOString(),
           allDay: ev.allDay,
         })),
+      boards: boardDetails.map((board) => ({
+        id: board.id,
+        name: board.name,
+        purpose: board.purpose,
+        templateKind: board.templateKind,
+        lanes: board.lanes
+          .filter((lane) => !lane.archivedAt)
+          .slice(0, 10)
+          .map((lane) => ({ id: lane.id, name: lane.name })),
+        items: board.items.slice(0, 20).map((item) => ({
+          id: item.id,
+          objectId: item.entityId,
+          objectType: item.object.type,
+          objectName: item.object.canonicalName,
+          laneId: item.laneId,
+          priority: item.priority,
+          dueAt: item.dueAt?.toISOString() ?? null,
+          nextStep: item.nextStep,
+        })),
+      })),
       recent: recentRows,
       conversationWindow: args.conversation?.window ?? null,
       linkedContext: args.conversation?.linkedContext ?? [],
@@ -1014,7 +1041,7 @@ async function runSuggestionExtraction(
     schema: suggestionExtractionSchema,
     model: modelId,
     system:
-      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, calendar refinements, or clear lifecycle updates to existing lifecycle-capable artifacts. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, merely conversational, could match multiple existing artifacts, or only says someone shared/sent/forwarded a link, post, file, reaction, app mention, or platform handle. Prefer updating an existing workspace object over creating one whenever the name, alias, person nickname, handle, company suffix variant, or conversation context plausibly matches exactly one object in the prompt. Create a task/object only when the evidence contains durable information and no plausible existing or pending object matches. For create task/object items, include proposedPayload.canonicalName matching the item title. Use canonical lifecycle statuses for the target type: task todo/doing/done/blocked/cancelled, follow_up todo/doing/done/cancelled, project planning/active/on_hold/shipped/cancelled. Normalize aliases into that target vocabulary: for task/follow_up, "in progress" means doing and "completed" means done; for project, "started" or "in progress" means active and "completed" or "done" means shipped; "canceled" means cancelled only when the target type supports cancelled. For clear lifecycle movement, return an update item targeting the existing artifact UUID; progress/doing/active requires explicit workflow movement such as "started" or "working on", not "looked at" or "thinking about". Completion can come from any credible assertive source; hedged guesses like "I think it is done" are evidence only. Cancellation, blocking, and unblocking must map cleanly to the target artifact vocabulary. If multiple plausible artifacts match, return no lifecycle proposal. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
+      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, calendar refinements, board membership/item updates, or clear lifecycle updates to existing lifecycle-capable artifacts. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, merely conversational, could match multiple existing artifacts, or only says someone shared/sent/forwarded a link, post, file, reaction, app mention, or platform handle. Prefer updating an existing workspace object over creating one whenever the name, alias, person nickname, handle, company suffix variant, or conversation context plausibly matches exactly one object in the prompt. Create a task/object only when the evidence contains durable information and no plausible existing or pending object matches. For create task/object items, include proposedPayload.canonicalName matching the item title. Use canonical lifecycle statuses for the target type: task todo/doing/done/blocked/cancelled, follow_up todo/doing/done/cancelled, project planning/active/on_hold/shipped/cancelled. Normalize aliases into that target vocabulary: for task/follow_up, "in progress" means doing and "completed" means done; for project, "started" or "in progress" means active and "completed" or "done" means shipped; "canceled" means cancelled only when the target type supports cancelled. For clear lifecycle movement, return an update item targeting the existing artifact UUID; progress/doing/active requires explicit workflow movement such as "started" or "working on", not "looked at" or "thinking about". Completion can come from any credible assertive source; hedged guesses like "I think it is done" are evidence only. Cancellation, blocking, and unblocking must map cleanly to the target artifact vocabulary. If multiple plausible artifacts match, return no lifecycle proposal. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For board-specific workflow evidence, use board_membership or board_item_update only against boards/items listed in the prompt; weak mentions remain evidence only. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
     prompt,
   });
 
@@ -1429,6 +1456,23 @@ function buildPrompt(args: {
   members: { userId: string; name: string | null; email: string | null }[];
   objects: { id: string; type: string; name: string; aliases: string[]; status: string }[];
   calendar: { id: string; title: string; startAt: string; allDay: boolean }[];
+  boards: {
+    id: string;
+    name: string;
+    purpose: string | null;
+    templateKind: string;
+    lanes: { id: string; name: string }[];
+    items: {
+      id: string;
+      objectId: string;
+      objectType: string;
+      objectName: string;
+      laneId: string | null;
+      priority: number | null;
+      dueAt: string | null;
+      nextStep: string | null;
+    }[];
+  }[];
   recent: { occurredAt: Date; text: string | null }[];
   conversationWindow: conversationReview.ConversationEvidenceEvent[] | null;
   linkedContext: conversationReview.ConversationLinkedContextEvent[];
@@ -1452,6 +1496,24 @@ function buildPrompt(args: {
     '',
     '# Existing calendar events',
     ...args.calendar.map((ev) => `- ${ev.id}: "${ev.title}" ${ev.startAt} all_day=${ev.allDay}`),
+    '',
+    '# Existing boards',
+    'Use board_membership only when evidence clearly says an existing object belongs on a listed board. operation=create, targetKind=board_membership, proposedPayload={ boardId, entityId, laneId?, sourceEventId?, note? }.',
+    'Use board_item_update only when evidence clearly changes one listed board item. operation=update, targetKind=board_item_update, targetId=<board item id>, proposedPayload={ boardItemId, field, newValue, sourceEventId?, note? }. Allowed fields: laneId, position, responsibleUserId, dueAt, priority, nextStep, notes, customFields.',
+    ...args.boards.flatMap((board) => [
+      `- board ${board.id}: "${board.name}" template=${board.templateKind} purpose=${
+        board.purpose ?? 'none'
+      }`,
+      ...board.lanes.map((lane) => `  lane ${lane.id}: "${lane.name}"`),
+      ...board.items.map(
+        (item) =>
+          `  item ${item.id}: object=${item.objectId} ${item.objectType} "${
+            item.objectName
+          }" lane=${item.laneId ?? 'none'} priority=${item.priority ?? 'none'} due=${
+            item.dueAt ?? 'none'
+          } next_step=${item.nextStep ?? 'none'}`,
+      ),
+    ]),
     '',
     '# Existing facts from this event',
     ...args.facts.map((f) => `- ${f}`),

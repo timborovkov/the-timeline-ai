@@ -1,4 +1,6 @@
 'use server';
+
+import * as boardDomain from '@timeline/shared/boards';
 import * as objects from '@timeline/shared/objects';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -8,68 +10,241 @@ import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 
 const objectTypeSchema = z.enum(objects.OBJECT_TYPES);
+const boardTemplateSchema = z.enum(['pipeline', 'task_board', 'catalog', 'custom']);
+const laneKindSchema = z.enum(['active', 'done', 'terminal', 'lost', 'blocked']);
 
-// Mirrors ObjectListFilter at packages/shared/src/objects/index.ts:60. Kept
-// loose (everything optional) so callers can save partial filters.
-const filterSchema = z.strictObject({
-  type: z.union([objectTypeSchema, z.array(objectTypeSchema)]).optional(),
-  status: z.union([z.string(), z.array(z.string())]).optional(),
-  stage: z.union([z.string(), z.array(z.string())]).optional(),
-  ownerUserId: uuidSchema.nullable().optional(),
-  assigneeUserId: uuidSchema.nullable().optional(),
-  archived: z.boolean().optional(),
-  limit: z.number().int().min(1).max(500).optional(),
-});
-
-const boardKindSchema = z.enum(['kanban', 'table', 'list']);
-
-const saveBoardSchema = z.object({
-  id: uuidSchema.optional(),
+const laneSchema = z.object({
   name: z.string().trim().min(1).max(120),
-  kind: boardKindSchema,
-  filter: filterSchema,
-  groupBy: z.string().trim().min(1).max(40).nullable().optional(),
-  isShared: z.boolean().optional(),
+  kind: laneKindSchema.nullable().optional(),
 });
 
-export async function saveBoardAction(input: unknown): Promise<ActionState> {
-  return runSentryServerAction('save_board', async () => {
-    const parsed = saveBoardSchema.safeParse(input);
+const createBoardSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  purpose: z.string().trim().max(1000).optional(),
+  templateKind: boardTemplateSchema,
+  recommendedObjectTypes: z.array(objectTypeSchema).max(8).optional(),
+  lanes: z.array(laneSchema).max(16).optional(),
+});
+
+const boardItemPatchSchema = z.object({
+  id: uuidSchema,
+  laneId: uuidSchema.nullable().optional(),
+  position: z.number().int().min(0).optional(),
+  responsibleUserId: uuidSchema.nullable().optional(),
+  dueAt: z.iso.datetime().nullable().optional(),
+  priority: z.number().int().min(1).max(4).nullable().optional(),
+  nextStep: z.string().trim().max(300).nullable().optional(),
+  notes: z.string().trim().max(5000).nullable().optional(),
+});
+
+const addExistingSchema = z.object({
+  boardId: uuidSchema,
+  entityId: uuidSchema,
+  laneId: uuidSchema.nullable().optional(),
+});
+
+const quickCreateSchema = z.object({
+  boardId: uuidSchema,
+  type: objectTypeSchema,
+  canonicalName: z.string().trim().min(1).max(200),
+  laneId: uuidSchema.nullable().optional(),
+});
+
+function revalidateBoardSurfaces(boardId?: string, entityId?: string): void {
+  revalidatePath('/app');
+  revalidatePath('/app/boards');
+  if (boardId) revalidatePath(`/app/boards/${boardId}`);
+  if (entityId) revalidatePath(`/app/objects/${entityId}`);
+}
+
+function friendlyError(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object' && 'code' in err) {
+    const code = (err as { code?: unknown }).code;
+    if (code === '23505') return 'That item is already on this board.';
+    if (code === '23503') return 'Linked record no longer exists.';
+  }
+  reportCaughtError(err, { surface: 'server_action', operation: fallback });
+  return err instanceof Error ? err.message : 'Board action failed';
+}
+
+function recommendedTypesFor(templateKind: boardDomain.BoardTemplateKind): objects.ObjectType[] {
+  if (templateKind === 'pipeline') return ['company', 'deal', 'project'];
+  if (templateKind === 'task_board') return ['task', 'follow_up'];
+  if (templateKind === 'catalog') return ['project', 'document', 'vendor', 'other'];
+  return [];
+}
+
+function purposeFor(templateKind: boardDomain.BoardTemplateKind): string {
+  if (templateKind === 'pipeline') {
+    return 'Track companies, deals, or projects through relationship, pilot, sales, partnership, or delivery stages.';
+  }
+  if (templateKind === 'task_board') {
+    return 'Track tasks and follow-ups through an operational workflow.';
+  }
+  if (templateKind === 'catalog') {
+    return 'Track products, services, vendors, documents, or reference objects in one curated inventory.';
+  }
+  return 'Track a curated set of workspace objects for a team-defined workflow.';
+}
+
+export async function createBoardAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('create_board', async () => {
+    const parsed = createBoardSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      const row = await r.scope.objects.saveBoardView({
-        id: parsed.data.id,
+      const templateKind = parsed.data.templateKind;
+      const board = await r.scope.boards.createBoard({
         name: parsed.data.name,
-        kind: parsed.data.kind,
-        filter: parsed.data.filter,
-        groupBy: parsed.data.groupBy ?? null,
-        isShared: parsed.data.isShared,
+        purpose: parsed.data.purpose ?? purposeFor(templateKind),
+        templateKind,
+        recommendedObjectTypes:
+          parsed.data.recommendedObjectTypes ?? recommendedTypesFor(templateKind),
+        lanes: parsed.data.lanes ?? boardDomain.defaultBoardLanes(templateKind),
       });
-      revalidatePath('/app/boards');
-      if (parsed.data.id) revalidatePath(`/app/boards/${parsed.data.id}`);
-      return { ok: true, id: row.id };
+      revalidateBoardSurfaces(board.id);
+      return { ok: true, id: board.id };
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'save_board' });
-      return { error: err instanceof Error ? err.message : 'Failed to save board' };
+      return { error: friendlyError(err, 'create_board') };
     }
   });
 }
 
 export async function deleteBoardAction(input: unknown): Promise<ActionState> {
-  return runSentryServerAction('delete_board', async () => {
+  return runSentryServerAction('archive_board', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      const ok = await r.scope.objects.deleteBoardView(parsed.data.id);
-      revalidatePath('/app/boards');
+      const ok = await r.scope.boards.archiveBoard(parsed.data.id);
+      revalidateBoardSurfaces(parsed.data.id);
       return ok ? { ok: true } : { error: 'Board not found' };
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'delete_board' });
-      return { error: err instanceof Error ? err.message : 'Failed to delete board' };
+      return { error: friendlyError(err, 'archive_board') };
+    }
+  });
+}
+
+export async function addBoardItemAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('add_board_item', async () => {
+    const parsed = addExistingSchema.safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const item = await r.scope.boards.addBoardItem(parsed.data.boardId, {
+        entityId: parsed.data.entityId,
+        laneId: parsed.data.laneId ?? null,
+        actor: { kind: 'user', userId: r.userId },
+      });
+      revalidateBoardSurfaces(parsed.data.boardId, item.entityId);
+      return { ok: true, id: item.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'add_board_item') };
+    }
+  });
+}
+
+export async function quickCreateBoardItemAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('quick_create_board_item', async () => {
+    const parsed = quickCreateSchema.safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const item = await r.scope.boards.createObjectAndAddBoardItem(
+        parsed.data.boardId,
+        {
+          type: parsed.data.type,
+          canonicalName: parsed.data.canonicalName,
+        },
+        {
+          laneId: parsed.data.laneId ?? null,
+          actor: { kind: 'user', userId: r.userId },
+        },
+      );
+      revalidateBoardSurfaces(parsed.data.boardId, item.entityId);
+      return { ok: true, id: item.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'quick_create_board_item') };
+    }
+  });
+}
+
+export async function updateBoardItemAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('update_board_item', async () => {
+    const parsed = boardItemPatchSchema.safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    const { id, dueAt, ...rest } = parsed.data;
+    try {
+      const item = await r.scope.boards.updateBoardItem(
+        id,
+        {
+          ...rest,
+          ...(dueAt !== undefined ? { dueAt: dueAt ? new Date(dueAt) : null } : {}),
+        },
+        { kind: 'user', userId: r.userId },
+      );
+      if (!item) return { error: 'Board item not found' };
+      revalidateBoardSurfaces(item.boardId, item.entityId);
+      return { ok: true, id };
+    } catch (err) {
+      return { error: friendlyError(err, 'update_board_item') };
+    }
+  });
+}
+
+export async function removeBoardItemAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('remove_board_item', async () => {
+    const parsed = z.object({ id: uuidSchema, boardId: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const item = await r.scope.boards.removeBoardItem(parsed.data.id, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      revalidateBoardSurfaces(parsed.data.boardId, item?.entityId);
+      return item ? { ok: true } : { error: 'Board item not found' };
+    } catch (err) {
+      return { error: friendlyError(err, 'remove_board_item') };
+    }
+  });
+}
+
+export async function pinBoardAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('pin_board', async () => {
+    const parsed = z.object({ id: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      await r.scope.boards.pinBoard(parsed.data.id);
+      revalidateBoardSurfaces(parsed.data.id);
+      return { ok: true };
+    } catch (err) {
+      return { error: friendlyError(err, 'pin_board') };
+    }
+  });
+}
+
+export async function unpinBoardAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('unpin_board', async () => {
+    const parsed = z.object({ id: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      await r.scope.boards.unpinBoard(parsed.data.id);
+      revalidateBoardSurfaces(parsed.data.id);
+      return { ok: true };
+    } catch (err) {
+      return { error: friendlyError(err, 'unpin_board') };
     }
   });
 }

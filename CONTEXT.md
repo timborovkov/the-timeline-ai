@@ -120,6 +120,115 @@ Creation proposals should be the last resort after checking existing objects
 and pending proposals.
 _Avoid_: Memory write when it hides the approval step
 
+**Board**:
+A curated work surface for a team-defined purpose, such as a pilot pipeline,
+development task board, marketing plan, product catalog, or management review.
+A board can use filters to find eligible workspace objects, but the board is
+not merely the filter result.
+_Avoid_: Saved search, object type view
+
+**Board Purpose**:
+The plain-language explanation of what a board is for, what kinds of objects
+belong on it, and what evidence should justify membership or board item
+updates. Board purpose guides both teammates and agent suggestions.
+_Avoid_: Internal prompt when discussing the user-facing board description
+
+**Board View**:
+One way to display the same curated board items, such as Kanban, table, list,
+or calendar. Board views do not create separate membership; they let the team
+inspect and edit the same board through different layouts.
+_Avoid_: Separate board when only the layout changed
+
+**Board Membership**:
+The intentional relationship that places a workspace object on a board for that
+board's purpose. Board membership is distinct from the object's type: not every
+company belongs on a pilot pipeline, and the same task can belong on one work
+board without belonging on every task board.
+_Avoid_: Type filter, implicit inclusion
+
+**Board Item**:
+The user-facing card or row created by a board membership. A board item combines
+one workspace object with board-local workflow context so the team can run that
+board without changing the object's meaning everywhere else.
+_Avoid_: Object when discussing the board-local work item
+
+**Board Membership Proposal**:
+An approval-backed suggestion to add, remove, or update a workspace object's
+membership on a board. A board membership proposal needs clear evidence that
+the object belongs on the board for that board's purpose; weak mentions remain
+timeline evidence only.
+_Avoid_: Automatic board add, inferred card
+
+**Board Item Properties**:
+The standard board-local fields that help a team manage a board item, such as
+lane, position, responsible team member, due date, priority, next step, and
+board-local notes. Board item properties are local to one board unless the team
+explicitly promotes the change to canonical object memory or a task object.
+_Avoid_: Object fields when the value only governs one board workflow
+
+**Board Item Update Proposal**:
+An approval-backed suggestion to change board item properties based on timeline
+evidence. Conversation, email, and meeting evidence suggest board item changes
+by default; direct user commands and authoritative sources can apply changes
+without review when the target board item is unambiguous.
+_Avoid_: Silent board update
+
+**Board Item History**:
+The preserved record of board item membership and property changes, including
+adds, removals, lane moves, assignments, due-date changes, and accepted
+suggestions. Board item history is visible from the board card detail and may
+also appear as impact context on timeline moments. The complete board item
+history is always preserved, but the main timeline surfaces only meaningful
+board activity or board changes tied to an existing timeline moment.
+_Avoid_: Ephemeral board state
+
+**Board State**:
+The board-specific workflow information attached to a board membership, such as
+the object's lane, position, or board-local stage. Board state does not redefine
+the workspace object itself, so the same object can move differently across
+different boards.
+_Avoid_: Object status when the value only matters on one board
+
+**Board Card Detail**:
+The board-context view of a workspace object on a board. It shows the object's
+canonical memory alongside board membership state, board-local notes, next
+steps, and evidence relevant to why the object belongs on that board.
+_Avoid_: Object page when the user is staying inside one board workflow
+
+**Object Board Context**:
+The compact summary of boards that currently include a workspace object,
+including each board's purpose and the object's board-local state. Object board
+context helps the object page show where durable memory is currently being used.
+_Avoid_: Duplicated object status
+
+**Pinned Board**:
+A board promoted to a primary workspace shortcut, especially on the Home
+Dashboard. Pinned boards give a team member fast access to active shared work
+surfaces without turning Home into the full board editor.
+_Avoid_: Embedded board, CRM module
+
+**Board Template**:
+A board creation starting point that explains a board's intended use through a
+plain-language purpose, example use cases, eligible object kinds, and suggested
+lanes or views. A board template teaches the user what kind of work surface
+they are creating before exposing advanced filters. Template object kinds guide
+the default add and search experience; they do not exclude other workspace
+objects unless the board is intentionally configured as strict.
+_Avoid_: Raw configuration preset, schema template
+
+**Template Defaults**:
+The editable starting lanes, board item properties, example labels, and
+recommended object kinds supplied by a board template. Template defaults help a
+new board become useful immediately but do not define a fixed schema.
+_Avoid_: Mandatory workflow
+
+**Pipeline Board**:
+A board template for tracking objects through relationship, sales, partnership,
+or delivery stages. A lightweight pipeline can track companies directly; a
+separate deal or project object is used when one company has multiple active
+commercial or delivery threads.
+_Avoid_: CRM when the board is not specifically customer relationship work
+
 **Correction Proposal**:
 An approval-backed suggestion created when newer evidence disagrees with
 already accepted or otherwise canonical workspace state. A correction proposal

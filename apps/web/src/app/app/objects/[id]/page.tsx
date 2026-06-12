@@ -3,7 +3,9 @@ import { notFound, redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { suggestionTargetsObject } from '@/app/app/objects/[id]/suggestion-targets';
 import { HistoryBackLink } from '@/components/history-back-link';
+import { ObjectBoardContext } from '@/components/objects/object-board-context';
 import { ObjectDetailClient } from '@/components/objects/object-detail-client';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -49,9 +51,16 @@ export default async function ObjectDetailPage({ params }: PageProps) {
   }
 
   await scope.objects.markVisited(detail.id);
-  const suggestions = (await scope.suggestions.listPendingSuggestions()).flatMap((bundle) => {
+  const [boardContext, pendingBundles] = await Promise.all([
+    scope.boards.listObjectBoardContext(detail.id),
+    scope.suggestions.listPendingSuggestions(),
+  ]);
+  const boardItemIds = new Set(boardContext.map((row) => row.itemId));
+  const suggestions = pendingBundles.flatMap((bundle) => {
     const items = bundle.items.filter(
-      (item) => item.targetId === detail.id && ACTIONABLE_SUGGESTION_STATUSES.has(item.status),
+      (item) =>
+        ACTIONABLE_SUGGESTION_STATUSES.has(item.status) &&
+        suggestionTargetsObject(item, detail.id, { boardItemIds }),
     );
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
@@ -59,6 +68,7 @@ export default async function ObjectDetailPage({ params }: PageProps) {
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <HistoryBackLink fallbackHref="/app/objects" label="Back" />
+      <ObjectBoardContext rows={boardContext} />
       <ObjectDetailClient detail={detail} userId={session.user.id} suggestions={suggestions} />
     </div>
   );

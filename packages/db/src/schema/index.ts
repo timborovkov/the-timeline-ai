@@ -11,7 +11,7 @@ export * from '#src/schema/object-changes.js';
 export * from '#src/schema/object-notes.js';
 export * from '#src/schema/object-identity-facets.js';
 export * from '#src/schema/object-views.js';
-export * from '#src/schema/board-views.js';
+export * from '#src/schema/boards.js';
 export * from '#src/schema/notifications.js';
 export * from '#src/schema/chat-sessions.js';
 export * from '#src/schema/chat-messages.js';

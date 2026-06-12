@@ -267,10 +267,10 @@ Linear-tight on operational surfaces. Comfortable on mobile and on forms.
 The timeline is the canonical operational surface and the redesign's most
 visible change.
 
-- **Dedicated surface.** `/app` is the Home Dashboard for capture, onboarding,
-  ingest access, pending approvals, and compact recent activity. `/app/timeline`
-  is only the full archive browser: timeline browsing, filtering, pagination,
-  inspection, and source evidence.
+- **Dedicated surface.** `/app` is the Home Dashboard for capture, pinned board
+  shortcuts, onboarding, ingest access, pending approvals, and compact recent
+  activity. `/app/timeline` is only the full archive browser: timeline
+  browsing, filtering, pagination, inspection, and source evidence.
 - **Timeline moments, not raw rows by default.** The browser is date-first:
   sticky date sections contain source clusters, and each cluster contains one
   or more raw events behind the user-facing moment.
@@ -303,10 +303,22 @@ visible change.
 
 ### Kanban / board
 
+- Boards are curated work surfaces with explicit board items, not raw saved
+  filters over every matching object. Filters and templates help users find
+  eligible objects; membership is intentional.
+- Pinned boards on Home use compact snapshots, not embedded full boards: board
+  name, item count, lane counts, and last update. Opening the snapshot enters
+  the full board.
+- Board creation starts from clear templates with icons, example use cases,
+  recommended object kinds, and editable default lanes/fields before advanced
+  filtering appears.
 - Cards `bg-bg border border-border rounded-sm p-3`. Inner padding 12px.
 - Card meta strip at the bottom: mono uppercase 11px with task ID,
-  assignee, due indicator. Due-this-week = `text-signal`; overdue =
-  `text-danger`.
+  responsible person, due indicator, priority, and next step where present.
+  Due-this-week = `text-signal`; overdue = `text-danger`.
+- Card clicks open a board-context detail panel first. The panel shows object
+  memory, board-local properties, board notes, item history, evidence, and a
+  direct link to the full object page.
 - Drag uses `@dnd-kit/core` with optimistic `updateObjectAction` calls.
 - Board moves should feel complete immediately. Show a quiet board-level
   saving state while moves are in flight, then a brief saved confirmation once
@@ -435,7 +447,7 @@ keyboard or assistive-tech users.
   - `⌘K` / `Ctrl+K` — focuses the command bar from anywhere.
   - `Esc` — closes the topmost overlay (dialog → inspector → menu → command bar).
   - `g t` / `g c` / `g o` / `g b` — jump to Timeline / Ask / Objects /
-    Boards (legacy object/board shortcuts stay available even though Work is
+    Boards (direct object/board shortcuts stay available even though Work is
     the primary sidebar parent; registered in
     [apps/web/src/components/keymap.tsx](apps/web/src/components/keymap.tsx)).
 - **Citation chip** is a `<button>` (not a link) — Enter / Space opens the
