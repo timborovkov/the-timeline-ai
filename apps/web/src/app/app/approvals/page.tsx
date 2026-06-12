@@ -9,6 +9,7 @@ import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {
@@ -17,7 +18,6 @@ export const metadata: Metadata = {
 };
 
 const STATUS_FILTERS = ['pending', 'failed', 'resolved', 'all'] as const;
-const ACTIONABLE_SUGGESTION_STATUSES = new Set(['pending', 'failed']);
 
 interface PageProps {
   searchParams: Promise<{ status?: string }>;
@@ -37,9 +37,9 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
   const suggestions = await scope.suggestions.listSuggestions({ status });
   const visibleSuggestions = suggestions.flatMap((bundle) => {
     const items = bundle.items.filter((item) => {
-      if (status === 'pending') return ACTIONABLE_SUGGESTION_STATUSES.has(item.status);
+      if (status === 'pending') return isActionableSuggestionStatus(item.status);
       if (status === 'failed') return item.status === 'failed';
-      if (status === 'resolved') return !ACTIONABLE_SUGGESTION_STATUSES.has(item.status);
+      if (status === 'resolved') return !isActionableSuggestionStatus(item.status);
       return true;
     });
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];

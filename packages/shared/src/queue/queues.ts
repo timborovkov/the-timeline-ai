@@ -1,4 +1,4 @@
-import { Queue } from 'bullmq';
+import { Queue, type JobsOptions } from 'bullmq';
 
 import { getRedisConnection } from '#src/queue/connection.js';
 
@@ -47,6 +47,25 @@ export const QUEUE_NAMES = {
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
+function createTimelineQueue<TData>(
+  name: QueueName,
+  defaultJobOptions: JobsOptions,
+): TimelineQueue<TData> {
+  return new Queue<TData, unknown, string, TData, unknown, string>(name, {
+    connection: getRedisConnection(),
+    defaultJobOptions,
+  });
+}
+
+async function closeQueue<TData>(
+  queue: TimelineQueue<TData> | undefined,
+  reset: () => void,
+): Promise<void> {
+  if (!queue) return;
+  reset();
+  await queue.close().catch(() => undefined);
+}
+
 export interface TranscribeJobData {
   rawEventId: string;
   teamId: string;
@@ -57,21 +76,11 @@ let _transcribeQueue: TimelineQueue<TranscribeJobData> | undefined;
 
 export function getTranscribeQueue(): TimelineQueue<TranscribeJobData> {
   if (_transcribeQueue) return _transcribeQueue;
-  _transcribeQueue = new Queue<
-    TranscribeJobData,
-    unknown,
-    string,
-    TranscribeJobData,
-    unknown,
-    string
-  >(QUEUE_NAMES.transcribe, {
-    connection: getRedisConnection(),
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 2000 },
-      removeOnComplete: { age: 3600, count: 1000 },
-      removeOnFail: { age: 24 * 3600 },
-    },
+  _transcribeQueue = createTimelineQueue<TranscribeJobData>(QUEUE_NAMES.transcribe, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 2000 },
+    removeOnComplete: { age: 3600, count: 1000 },
+    removeOnFail: { age: 24 * 3600 },
   });
   return _transcribeQueue;
 }
@@ -97,10 +106,9 @@ export async function enqueueTranscribeJob(data: TranscribeJobData): Promise<voi
 }
 
 export async function closeTranscribeQueue(): Promise<void> {
-  if (!_transcribeQueue) return;
-  const q = _transcribeQueue;
-  _transcribeQueue = undefined;
-  await q.close().catch(() => undefined);
+  await closeQueue(_transcribeQueue, () => {
+    _transcribeQueue = undefined;
+  });
 }
 
 export interface ExtractJobData {
@@ -112,18 +120,12 @@ let _extractQueue: TimelineQueue<ExtractJobData> | undefined;
 
 export function getExtractQueue(): TimelineQueue<ExtractJobData> {
   if (_extractQueue) return _extractQueue;
-  _extractQueue = new Queue<ExtractJobData, unknown, string, ExtractJobData, unknown, string>(
-    QUEUE_NAMES.extract,
-    {
-      connection: getRedisConnection(),
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 2000 },
-        removeOnComplete: { age: 3600, count: 1000 },
-        removeOnFail: { age: 24 * 3600 },
-      },
-    },
-  );
+  _extractQueue = createTimelineQueue<ExtractJobData>(QUEUE_NAMES.extract, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 2000 },
+    removeOnComplete: { age: 3600, count: 1000 },
+    removeOnFail: { age: 24 * 3600 },
+  });
   return _extractQueue;
 }
 
@@ -135,10 +137,9 @@ export async function enqueueExtractJob(data: ExtractJobData): Promise<void> {
 }
 
 export async function closeExtractQueue(): Promise<void> {
-  if (!_extractQueue) return;
-  const q = _extractQueue;
-  _extractQueue = undefined;
-  await q.close().catch(() => undefined);
+  await closeQueue(_extractQueue, () => {
+    _extractQueue = undefined;
+  });
 }
 
 export type SuggestionJobData =
@@ -219,21 +220,11 @@ const SUGGESTION_JOB_REPLACEABLE_STATES = new Set(['completed', 'failed']);
 
 export function getSuggestionQueue(): TimelineQueue<SuggestionJobData> {
   if (_suggestionQueue) return _suggestionQueue;
-  _suggestionQueue = new Queue<
-    SuggestionJobData,
-    unknown,
-    string,
-    SuggestionJobData,
-    unknown,
-    string
-  >(QUEUE_NAMES.suggestions, {
-    connection: getRedisConnection(),
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 3000 },
-      removeOnComplete: { age: 3600, count: 1000 },
-      removeOnFail: { age: 24 * 3600 },
-    },
+  _suggestionQueue = createTimelineQueue<SuggestionJobData>(QUEUE_NAMES.suggestions, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 3000 },
+    removeOnComplete: { age: 3600, count: 1000 },
+    removeOnFail: { age: 24 * 3600 },
   });
   return _suggestionQueue;
 }
@@ -301,10 +292,9 @@ export async function scheduleObjectCleanupSuggestions(): Promise<void> {
 }
 
 export async function closeSuggestionQueue(): Promise<void> {
-  if (!_suggestionQueue) return;
-  const q = _suggestionQueue;
-  _suggestionQueue = undefined;
-  await q.close().catch(() => undefined);
+  await closeQueue(_suggestionQueue, () => {
+    _suggestionQueue = undefined;
+  });
 }
 
 /**
@@ -420,18 +410,12 @@ let _embedQueue: TimelineQueue<EmbedJobData> | undefined;
 
 export function getEmbedQueue(): TimelineQueue<EmbedJobData> {
   if (_embedQueue) return _embedQueue;
-  _embedQueue = new Queue<EmbedJobData, unknown, string, EmbedJobData, unknown, string>(
-    QUEUE_NAMES.embed,
-    {
-      connection: getRedisConnection(),
-      defaultJobOptions: {
-        attempts: 6,
-        backoff: { type: 'exponential', delay: 10_000 },
-        removeOnComplete: { age: 3600, count: 1000 },
-        removeOnFail: { age: 24 * 3600 },
-      },
-    },
-  );
+  _embedQueue = createTimelineQueue<EmbedJobData>(QUEUE_NAMES.embed, {
+    attempts: 6,
+    backoff: { type: 'exponential', delay: 10_000 },
+    removeOnComplete: { age: 3600, count: 1000 },
+    removeOnFail: { age: 24 * 3600 },
+  });
   return _embedQueue;
 }
 
@@ -500,10 +484,9 @@ export async function enqueueCalendarEventEmbedJob(
 }
 
 export async function closeEmbedQueue(): Promise<void> {
-  if (!_embedQueue) return;
-  const q = _embedQueue;
-  _embedQueue = undefined;
-  await q.close().catch(() => undefined);
+  await closeQueue(_embedQueue, () => {
+    _embedQueue = undefined;
+  });
 }
 
 export interface OverdueScanJobData {
@@ -515,23 +498,13 @@ let _overdueScanQueue: TimelineQueue<OverdueScanJobData> | undefined;
 
 export function getOverdueScanQueue(): TimelineQueue<OverdueScanJobData> {
   if (_overdueScanQueue) return _overdueScanQueue;
-  _overdueScanQueue = new Queue<
-    OverdueScanJobData,
-    unknown,
-    string,
-    OverdueScanJobData,
-    unknown,
-    string
-  >(QUEUE_NAMES.overdueScan, {
-    connection: getRedisConnection(),
-    defaultJobOptions: {
-      // One retry — if the scan fails, the next hourly tick will pick up
-      // whatever it missed. No exponential backoff to avoid pile-up.
-      attempts: 2,
-      backoff: { type: 'fixed', delay: 60_000 },
-      removeOnComplete: { age: 3600, count: 24 },
-      removeOnFail: { age: 24 * 3600 },
-    },
+  _overdueScanQueue = createTimelineQueue<OverdueScanJobData>(QUEUE_NAMES.overdueScan, {
+    // One retry — if the scan fails, the next hourly tick will pick up
+    // whatever it missed. No exponential backoff to avoid pile-up.
+    attempts: 2,
+    backoff: { type: 'fixed', delay: 60_000 },
+    removeOnComplete: { age: 3600, count: 24 },
+    removeOnFail: { age: 24 * 3600 },
   });
   return _overdueScanQueue;
 }
@@ -555,10 +528,9 @@ export async function scheduleOverdueScan(): Promise<void> {
 }
 
 export async function closeOverdueScanQueue(): Promise<void> {
-  if (!_overdueScanQueue) return;
-  const q = _overdueScanQueue;
-  _overdueScanQueue = undefined;
-  await q.close().catch(() => undefined);
+  await closeQueue(_overdueScanQueue, () => {
+    _overdueScanQueue = undefined;
+  });
 }
 
 export interface DocumentExtractJobData {
@@ -574,21 +546,11 @@ let _documentExtractQueue: TimelineQueue<DocumentExtractJobData> | undefined;
 
 export function getDocumentExtractQueue(): TimelineQueue<DocumentExtractJobData> {
   if (_documentExtractQueue) return _documentExtractQueue;
-  _documentExtractQueue = new Queue<
-    DocumentExtractJobData,
-    unknown,
-    string,
-    DocumentExtractJobData,
-    unknown,
-    string
-  >(QUEUE_NAMES.documentExtract, {
-    connection: getRedisConnection(),
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 5000 },
-      removeOnComplete: { age: 3600, count: 1000 },
-      removeOnFail: { age: 24 * 3600 },
-    },
+  _documentExtractQueue = createTimelineQueue<DocumentExtractJobData>(QUEUE_NAMES.documentExtract, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: { age: 3600, count: 1000 },
+    removeOnFail: { age: 24 * 3600 },
   });
   return _documentExtractQueue;
 }
@@ -601,10 +563,9 @@ export async function enqueueDocumentExtractJob(data: DocumentExtractJobData): P
 }
 
 export async function closeDocumentExtractQueue(): Promise<void> {
-  if (!_documentExtractQueue) return;
-  const q = _documentExtractQueue;
-  _documentExtractQueue = undefined;
-  await q.close().catch(() => undefined);
+  await closeQueue(_documentExtractQueue, () => {
+    _documentExtractQueue = undefined;
+  });
 }
 
 // Phase 10 — Meeting finalize. Triggered by the status webhook when the
@@ -619,21 +580,11 @@ let _meetingFinalizeQueue: TimelineQueue<MeetingFinalizeJobData> | undefined;
 
 export function getMeetingFinalizeQueue(): TimelineQueue<MeetingFinalizeJobData> {
   if (_meetingFinalizeQueue) return _meetingFinalizeQueue;
-  _meetingFinalizeQueue = new Queue<
-    MeetingFinalizeJobData,
-    unknown,
-    string,
-    MeetingFinalizeJobData,
-    unknown,
-    string
-  >(QUEUE_NAMES.meetingFinalize, {
-    connection: getRedisConnection(),
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 5000 },
-      removeOnComplete: { age: 3600, count: 1000 },
-      removeOnFail: { age: 24 * 3600 },
-    },
+  _meetingFinalizeQueue = createTimelineQueue<MeetingFinalizeJobData>(QUEUE_NAMES.meetingFinalize, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: { age: 3600, count: 1000 },
+    removeOnFail: { age: 24 * 3600 },
   });
   return _meetingFinalizeQueue;
 }
@@ -645,10 +596,9 @@ export async function enqueueMeetingFinalizeJob(data: MeetingFinalizeJobData): P
 }
 
 export async function closeMeetingFinalizeQueue(): Promise<void> {
-  if (!_meetingFinalizeQueue) return;
-  const q = _meetingFinalizeQueue;
-  _meetingFinalizeQueue = undefined;
-  await q.close().catch(() => undefined);
+  await closeQueue(_meetingFinalizeQueue, () => {
+    _meetingFinalizeQueue = undefined;
+  });
 }
 
 export interface JanitorJobData {
@@ -660,21 +610,15 @@ let _janitorQueue: TimelineQueue<JanitorJobData> | undefined;
 
 export function getJanitorQueue(): TimelineQueue<JanitorJobData> {
   if (_janitorQueue) return _janitorQueue;
-  _janitorQueue = new Queue<JanitorJobData, unknown, string, JanitorJobData, unknown, string>(
-    QUEUE_NAMES.janitor,
-    {
-      connection: getRedisConnection(),
-      defaultJobOptions: {
-        // One retry — the next hourly tick covers a missed sweep, and the
-        // re-enqueue actions are themselves idempotent (worker advisory
-        // locks bail under-lock).
-        attempts: 2,
-        backoff: { type: 'fixed', delay: 60_000 },
-        removeOnComplete: { age: 3600, count: 24 },
-        removeOnFail: { age: 24 * 3600 },
-      },
-    },
-  );
+  _janitorQueue = createTimelineQueue<JanitorJobData>(QUEUE_NAMES.janitor, {
+    // One retry — the next hourly tick covers a missed sweep, and the
+    // re-enqueue actions are themselves idempotent (worker advisory
+    // locks bail under-lock).
+    attempts: 2,
+    backoff: { type: 'fixed', delay: 60_000 },
+    removeOnComplete: { age: 3600, count: 24 },
+    removeOnFail: { age: 24 * 3600 },
+  });
   return _janitorQueue;
 }
 
@@ -699,10 +643,9 @@ export async function scheduleJanitorSweep(): Promise<void> {
 }
 
 export async function closeJanitorQueue(): Promise<void> {
-  if (!_janitorQueue) return;
-  const q = _janitorQueue;
-  _janitorQueue = undefined;
-  await q.close().catch(() => undefined);
+  await closeQueue(_janitorQueue, () => {
+    _janitorQueue = undefined;
+  });
 }
 
 // Phase 11 — Integration sync. Job data is a discriminated union of
@@ -727,21 +670,11 @@ let _integrationSyncQueue: TimelineQueue<IntegrationSyncJobData> | undefined;
 
 export function getIntegrationSyncQueue(): TimelineQueue<IntegrationSyncJobData> {
   if (_integrationSyncQueue) return _integrationSyncQueue;
-  _integrationSyncQueue = new Queue<
-    IntegrationSyncJobData,
-    unknown,
-    string,
-    IntegrationSyncJobData,
-    unknown,
-    string
-  >(QUEUE_NAMES.integrationSync, {
-    connection: getRedisConnection(),
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 5000 },
-      removeOnComplete: { age: 3600, count: 1000 },
-      removeOnFail: { age: 24 * 3600 },
-    },
+  _integrationSyncQueue = createTimelineQueue<IntegrationSyncJobData>(QUEUE_NAMES.integrationSync, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: { age: 3600, count: 1000 },
+    removeOnFail: { age: 24 * 3600 },
   });
   return _integrationSyncQueue;
 }
@@ -771,10 +704,9 @@ export async function scheduleIntegrationIncrementalSync(): Promise<void> {
 }
 
 export async function closeIntegrationSyncQueue(): Promise<void> {
-  if (!_integrationSyncQueue) return;
-  const q = _integrationSyncQueue;
-  _integrationSyncQueue = undefined;
-  await q.close().catch(() => undefined);
+  await closeQueue(_integrationSyncQueue, () => {
+    _integrationSyncQueue = undefined;
+  });
 }
 
 // Phase 11 — MCP health ping. Single synthetic tick fans out to every
@@ -789,18 +721,12 @@ let _mcpHealthQueue: TimelineQueue<McpHealthJobData> | undefined;
 
 export function getMcpHealthQueue(): TimelineQueue<McpHealthJobData> {
   if (_mcpHealthQueue) return _mcpHealthQueue;
-  _mcpHealthQueue = new Queue<McpHealthJobData, unknown, string, McpHealthJobData, unknown, string>(
-    QUEUE_NAMES.mcpHealth,
-    {
-      connection: getRedisConnection(),
-      defaultJobOptions: {
-        attempts: 2,
-        backoff: { type: 'fixed', delay: 30_000 },
-        removeOnComplete: { age: 3600, count: 24 },
-        removeOnFail: { age: 24 * 3600 },
-      },
-    },
-  );
+  _mcpHealthQueue = createTimelineQueue<McpHealthJobData>(QUEUE_NAMES.mcpHealth, {
+    attempts: 2,
+    backoff: { type: 'fixed', delay: 30_000 },
+    removeOnComplete: { age: 3600, count: 24 },
+    removeOnFail: { age: 24 * 3600 },
+  });
   return _mcpHealthQueue;
 }
 
@@ -816,10 +742,9 @@ export async function scheduleMcpHealthPing(): Promise<void> {
 }
 
 export async function closeMcpHealthQueue(): Promise<void> {
-  if (!_mcpHealthQueue) return;
-  const q = _mcpHealthQueue;
-  _mcpHealthQueue = undefined;
-  await q.close().catch(() => undefined);
+  await closeQueue(_mcpHealthQueue, () => {
+    _mcpHealthQueue = undefined;
+  });
 }
 
 export interface TeamExportJobData {
@@ -832,21 +757,11 @@ let _teamExportQueue: TimelineQueue<TeamExportJobData> | undefined;
 
 export function getTeamExportQueue(): TimelineQueue<TeamExportJobData> {
   if (_teamExportQueue) return _teamExportQueue;
-  _teamExportQueue = new Queue<
-    TeamExportJobData,
-    unknown,
-    string,
-    TeamExportJobData,
-    unknown,
-    string
-  >(QUEUE_NAMES.teamExport, {
-    connection: getRedisConnection(),
-    defaultJobOptions: {
-      attempts: 2,
-      backoff: { type: 'exponential', delay: 10_000 },
-      removeOnComplete: { age: 3600, count: 1000 },
-      removeOnFail: { age: 24 * 3600 },
-    },
+  _teamExportQueue = createTimelineQueue<TeamExportJobData>(QUEUE_NAMES.teamExport, {
+    attempts: 2,
+    backoff: { type: 'exponential', delay: 10_000 },
+    removeOnComplete: { age: 3600, count: 1000 },
+    removeOnFail: { age: 24 * 3600 },
   });
   return _teamExportQueue;
 }
@@ -856,8 +771,7 @@ export async function enqueueTeamExportJob(data: TeamExportJobData): Promise<voi
 }
 
 export async function closeTeamExportQueue(): Promise<void> {
-  if (!_teamExportQueue) return;
-  const q = _teamExportQueue;
-  _teamExportQueue = undefined;
-  await q.close().catch(() => undefined);
+  await closeQueue(_teamExportQueue, () => {
+    _teamExportQueue = undefined;
+  });
 }

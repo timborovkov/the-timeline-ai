@@ -12,6 +12,7 @@ import { ObjectCleanupSuggestions } from '@/components/objects/object-cleanup-su
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {
@@ -34,8 +35,6 @@ const TYPE_LABEL: Record<string, string> = {
   follow_up: 'Follow-ups',
   other: 'Other',
 };
-const ACTIONABLE_SUGGESTION_STATUSES = new Set(['pending', 'failed']);
-
 function objectIdsForMergeSuggestion(item: { proposedPayload: unknown }): string[] {
   if (!item.proposedPayload || typeof item.proposedPayload !== 'object') return [];
   const payload = item.proposedPayload as Record<string, unknown>;
@@ -88,15 +87,12 @@ export default async function ObjectsIndexPage({
     if (bundle.metadata.kind !== 'object_cleanup') continue;
     const items = bundle.items.filter(
       (item) =>
-        ACTIONABLE_SUGGESTION_STATUSES.has(item.status) &&
+        isActionableSuggestionStatus(item.status) &&
         (item.targetKind === 'object_merge' ||
           (item.targetKind === 'object' && item.operation === 'archive_or_cancel')),
     );
     for (const item of items) {
-      if (
-        item.targetKind === 'object_merge' &&
-        (item.status === 'pending' || item.status === 'failed')
-      ) {
+      if (item.targetKind === 'object_merge' && isActionableSuggestionStatus(item.status)) {
         mergeSuggestionItems.push(item);
       }
     }

@@ -12,6 +12,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { visibilitySchema } from '@/lib/visibility';
 
 const log = childLogger('web:actions:meetings');
 
@@ -26,7 +27,7 @@ interface Result {
 const scheduleSchema = z.object({
   meetingUrl: z.url().max(2000),
   title: z.string().trim().max(200).optional(),
-  visibility: z.enum(['team', 'private', 'specific_users']).default('team'),
+  visibility: visibilitySchema.default('team'),
   visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
   consentGiven: z.boolean().default(false),
 });

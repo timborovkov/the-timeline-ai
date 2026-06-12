@@ -641,7 +641,10 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         senderResolutionStatus: 'unresolved',
       });
     }
-    const candidates = events.flatMap(senderCandidatesForEvent);
+    const candidatesByEventId = new Map(
+      events.map((event) => [event.id, senderCandidatesForEvent(event)] as const),
+    );
+    const candidates = Array.from(candidatesByEventId.values()).flat();
     if (candidates.length === 0) return result;
 
     const facetConditions = candidates
@@ -687,7 +690,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       );
 
     for (const event of events) {
-      const eventCandidates = senderCandidatesForEvent(event);
+      const eventCandidates = candidatesByEventId.get(event.id) ?? [];
       const matches = rows.filter((row) =>
         eventCandidates.some((candidate) => {
           if (candidate.kind !== row.kind) return false;

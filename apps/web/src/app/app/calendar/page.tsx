@@ -10,14 +10,13 @@ import { CalendarView } from '@/components/calendar/calendar-view';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {
   title: 'Calendar',
   description: 'Review team calendar events and suggestions.',
 };
-
-const ACTIONABLE_SUGGESTION_STATUSES = new Set(['pending', 'failed']);
 
 interface PageProps {
   searchParams: Promise<{ date?: string; view?: string }>;
@@ -81,8 +80,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   }));
   const calendarSuggestions = pendingSuggestions.flatMap((bundle) => {
     const items = bundle.items.filter(
-      (item) =>
-        item.targetKind === 'calendar_event' && ACTIONABLE_SUGGESTION_STATUSES.has(item.status),
+      (item) => item.targetKind === 'calendar_event' && isActionableSuggestionStatus(item.status),
     );
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });

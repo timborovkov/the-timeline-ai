@@ -10,6 +10,7 @@ import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {
@@ -18,7 +19,6 @@ export const metadata: Metadata = {
 };
 
 const TASK_COLUMNS = ['todo', 'doing', 'done', 'blocked', 'cancelled'];
-const ACTIONABLE_SUGGESTION_STATUSES = new Set(['pending', 'failed']);
 
 export default async function TasksPage() {
   const session = await auth();
@@ -37,7 +37,7 @@ export default async function TasksPage() {
   ]);
   const taskSuggestions = pendingSuggestions.flatMap((bundle) => {
     const items = bundle.items.filter(
-      (item) => item.targetKind === 'task' && ACTIONABLE_SUGGESTION_STATUSES.has(item.status),
+      (item) => item.targetKind === 'task' && isActionableSuggestionStatus(item.status),
     );
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
