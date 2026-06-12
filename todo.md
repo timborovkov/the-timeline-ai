@@ -35,6 +35,29 @@ implementation detail.
 - [ ] Wire workspace reconciliation into future authoritative external sync
       paths when calendar/provider imports directly update artifacts they own.
 
+## Object Relationships
+
+- [x] Implement the scoped plan in
+      [docs/object-relationships-plan.md](docs/object-relationships-plan.md).
+- [x] Have the suggestion worker propose approval-backed `related` object
+      relationships from relationship-shaped evidence, using extracted facts as
+      candidate input and bounded raw/conversation context for verification.
+- [x] Support relationship proposal bundles that create missing endpoint
+      objects and the relationship together when each object independently
+      qualifies as durable information, using bundle-local refs and ordered
+      acceptance so `Accept all` creates endpoints before applying the link.
+- [x] Surface accepted and pending relationships on both object detail pages
+      with cited evidence explaining why the objects are connected.
+- [x] Replace manual UUID relationship linking with object search/select in the
+      object detail UI.
+- [x] Collapse the generic `linked` relationship kind into `related`, migrate
+      existing rows, remove `linked` from UI/tool inputs, and dedupe symmetric
+      `related` relationships/proposals by sorted object pair while preserving
+      direction for directional relationship kinds.
+- [ ] After object relationships have real usage, design a graph/mind-map view
+      with filters, density controls, and cited edge explanations. Do not ship
+      the full graph in the first relationship implementation slice.
+
 ## Calendar
 
 ### Recurrence

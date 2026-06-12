@@ -29,6 +29,95 @@ describe('suggestionTargetsObject', () => {
     ).toBe(true);
   });
 
+  it('matches relationship suggestions by either endpoint id', () => {
+    expect(
+      suggestionTargetsObject(
+        {
+          targetId: null,
+          targetKind: 'object_relationship',
+          proposedPayload: {
+            fromEntityId: 'object-1',
+            toEntityId: 'object-2',
+            kind: 'related',
+          },
+        },
+        'object-2',
+      ),
+    ).toBe(true);
+  });
+
+  it('matches relationship local refs through accepted sibling create results', () => {
+    const siblingItems = [
+      {
+        targetId: null,
+        resultId: 'object-1',
+        targetKind: 'object',
+        proposedPayload: {
+          type: 'person',
+          canonicalName: 'John Doe',
+          localRef: 'John-Doe',
+        },
+      },
+      {
+        targetId: null,
+        resultId: 'object-2',
+        targetKind: 'object',
+        proposedPayload: {
+          type: 'company',
+          canonicalName: 'Acme Corporation',
+          localRef: 'acme',
+        },
+      },
+    ];
+
+    expect(
+      suggestionTargetsObject(
+        {
+          targetId: null,
+          targetKind: 'object_relationship',
+          proposedPayload: {
+            fromRef: 'john-doe',
+            toRef: 'acme',
+            kind: 'related',
+          },
+        },
+        'object-2',
+        { siblingItems },
+      ),
+    ).toBe(true);
+  });
+
+  it('matches mixed relationship payloads with one existing endpoint and one local ref', () => {
+    expect(
+      suggestionTargetsObject(
+        {
+          targetId: null,
+          targetKind: 'object_relationship',
+          proposedPayload: {
+            fromEntityId: 'object-1',
+            toRef: 'acme',
+            kind: 'related',
+          },
+        },
+        'object-1',
+        {
+          siblingItems: [
+            {
+              targetId: null,
+              resultId: null,
+              targetKind: 'object',
+              proposedPayload: {
+                type: 'company',
+                canonicalName: 'Acme Corporation',
+                localRef: 'acme',
+              },
+            },
+          ],
+        },
+      ),
+    ).toBe(true);
+  });
+
   it('does not match unrelated board suggestions', () => {
     expect(
       suggestionTargetsObject(

@@ -1,4 +1,5 @@
 import {
+  agentSuggestionItems,
   agentSuggestions,
   conversationReviews,
   entities,
@@ -62,6 +63,7 @@ const suggestionItemSchema = z.object({
     'object_note',
     'board_membership',
     'board_item_update',
+    'object_relationship',
   ]),
   targetId: z.uuid().nullable().optional(),
   title: z.string().min(1).max(200),
@@ -149,6 +151,19 @@ function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }
 
+function localRefSlug(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^[^a-z0-9]+/, '')
+    .replace(/[^a-z0-9]+$/, '')
+    .slice(0, 80)
+    .replace(/[^a-z0-9]+$/, '');
+  return normalized.length > 0 ? normalized : null;
+}
+
 function normalizeSuggestionItemPayload(
   item: z.infer<typeof suggestionItemSchema>,
   objectType?: EntityType | null,
@@ -158,6 +173,37 @@ function normalizeSuggestionItemPayload(
   const lifecycleType = lifecycleStatusTypeForPayload(item, payload, objectType);
   if (lifecycleType && typeof payload.status === 'string') {
     payload.status = normalizeLifecycleStatus(payload.status, lifecycleType);
+  }
+  if (
+    item.targetKind === 'object_relationship' &&
+    payload.kind === 'related' &&
+    typeof payload.fromEntityId === 'string' &&
+    typeof payload.toEntityId === 'string'
+  ) {
+    const [fromEntityId, toEntityId] = [payload.fromEntityId, payload.toEntityId].sort();
+    payload.fromEntityId = fromEntityId;
+    payload.toEntityId = toEntityId;
+  }
+  if (
+    item.operation === 'create' &&
+    (item.targetKind === 'object' || item.targetKind === 'task') &&
+    typeof payload.localRef === 'string'
+  ) {
+    const localRef = localRefSlug(payload.localRef);
+    if (localRef) payload.localRef = localRef;
+    else delete payload.localRef;
+  }
+  if (item.targetKind === 'object_relationship') {
+    if (typeof payload.fromRef === 'string') {
+      const ref = localRefSlug(payload.fromRef);
+      if (ref) payload.fromRef = ref;
+      else delete payload.fromRef;
+    }
+    if (typeof payload.toRef === 'string') {
+      const ref = localRefSlug(payload.toRef);
+      if (ref) payload.toRef = ref;
+      else delete payload.toRef;
+    }
   }
   if (
     item.operation === 'create' &&
@@ -627,11 +673,23 @@ function normalizeBundleAgainstExistingObjects(
   bundle: SuggestionBundleOutput,
   rows: CleanupObjectRow[],
 ): SuggestionBundleOutput {
-  const items = bundle.items
+  const normalizedBundle = {
+    ...bundle,
+    items: bundle.items.map((item) => ({
+      ...item,
+      proposedPayload: normalizeSuggestionItemPayload(item),
+    })),
+  };
+  const resolvedRefs = new Map<string, string>();
+  const items = normalizedBundle.items
     .filter((item) => !lowSignalCreateObject(item))
     .map((item) => {
       const match = existingMatchForCreate(item, rows);
       if (!match) return item;
+      const localRef =
+        typeof item.proposedPayload.localRef === 'string' ? item.proposedPayload.localRef : null;
+      const localRefKey = keyText(localRef);
+      if (localRefKey) resolvedRefs.set(localRefKey, match.id);
       const aliases = Array.from(
         new Set([
           ...aliasesForRow(match),
@@ -647,8 +705,202 @@ function normalizeBundleAgainstExistingObjects(
         title: `Update ${match.canonicalName}`,
         proposedPayload: updatePayloadFromCreate(item, aliases),
       };
+    })
+    .map((item) => {
+      if (item.targetKind !== 'object_relationship' || resolvedRefs.size === 0) return item;
+      const payload = { ...item.proposedPayload };
+      const fromRef = typeof payload.fromRef === 'string' ? payload.fromRef : null;
+      const toRef = typeof payload.toRef === 'string' ? payload.toRef : null;
+      const fromRefKey = keyText(fromRef);
+      const toRefKey = keyText(toRef);
+      if (fromRefKey && resolvedRefs.has(fromRefKey)) {
+        payload.fromEntityId = resolvedRefs.get(fromRefKey);
+        delete payload.fromRef;
+      }
+      if (toRefKey && resolvedRefs.has(toRefKey)) {
+        payload.toEntityId = resolvedRefs.get(toRefKey);
+        delete payload.toRef;
+      }
+      return { ...item, proposedPayload: payload };
+    })
+    .filter((item) => {
+      if (item.targetKind !== 'object_relationship') return true;
+      const payload = item.proposedPayload;
+      const refs = [payload.fromRef, payload.toRef].filter(
+        (ref): ref is string => typeof ref === 'string',
+      );
+      if (refs.length === 0) return true;
+      const remainingRefs = new Set(
+        normalizedBundle.items
+          .filter(
+            (candidate) =>
+              candidate !== item &&
+              !lowSignalCreateObject(candidate) &&
+              candidate.operation === 'create' &&
+              (candidate.targetKind === 'object' || candidate.targetKind === 'task') &&
+              typeof candidate.proposedPayload.localRef === 'string',
+          )
+          .map((candidate) => keyText(candidate.proposedPayload.localRef))
+          .filter((ref): ref is string => ref !== null),
+      );
+      return refs.every((ref) => {
+        const refKey = keyText(ref);
+        return refKey !== null && remainingRefs.has(refKey);
+      });
     });
   return { ...bundle, items };
+}
+
+interface RelationshipKeyItem {
+  targetId?: string | null | undefined;
+  resultId?: string | null;
+  targetKind: string;
+  operation: string;
+  title: string;
+  proposedPayload: Record<string, unknown>;
+}
+
+function keyText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0
+    ? value.trim().toLowerCase().replace(/\s+/g, ' ')
+    : null;
+}
+
+function endpointKeyForItem(item: RelationshipKeyItem): string | null {
+  if (typeof item.targetId === 'string') return `entity:${item.targetId}`;
+  if (typeof item.resultId === 'string') return `entity:${item.resultId}`;
+  const type =
+    keyText(item.proposedPayload.type) ?? (item.targetKind === 'task' ? 'task' : item.targetKind);
+  const name = keyText(item.proposedPayload.canonicalName) ?? keyText(item.title);
+  return name ? `create:${type}:${name}` : null;
+}
+
+function localRefResolverForItems(
+  items: readonly RelationshipKeyItem[],
+): (ref: string) => string | null {
+  const refs = new Map<string, string>();
+  for (const item of items) {
+    if (
+      item.operation !== 'create' ||
+      (item.targetKind !== 'object' && item.targetKind !== 'task')
+    ) {
+      continue;
+    }
+    const ref = keyText(item.proposedPayload.localRef);
+    const key = endpointKeyForItem(item);
+    if (ref && key) refs.set(ref, key);
+  }
+  return (ref) => refs.get(ref.trim().toLowerCase()) ?? null;
+}
+
+function relationshipEndpointKey(
+  payload: Record<string, unknown>,
+  side: 'from' | 'to',
+  resolveRef: (ref: string) => string | null,
+): string | null {
+  const idKey = `${side}EntityId`;
+  const refKey = `${side}Ref`;
+  if (typeof payload[idKey] === 'string') return `entity:${payload[idKey]}`;
+  return typeof payload[refKey] === 'string' ? resolveRef(payload[refKey]) : null;
+}
+
+function relationshipKeyFromPayload(
+  payload: Record<string, unknown>,
+  resolveRef: (ref: string) => string | null = () => null,
+): string | null {
+  if (payload.kind !== 'related') return null;
+  const from = relationshipEndpointKey(payload, 'from', resolveRef);
+  const to = relationshipEndpointKey(payload, 'to', resolveRef);
+  if (!from || !to) return null;
+  const [first, second] = [from, to].sort();
+  return `${first}:${second}:related`;
+}
+
+function filterExistingRelationshipItems(
+  bundle: SuggestionBundleOutput,
+  existingRelationshipKeys: ReadonlySet<string>,
+): SuggestionBundleOutput {
+  const resolveRef = localRefResolverForItems(bundle.items);
+  const items = bundle.items.filter((item) => {
+    if (item.targetKind !== 'object_relationship') return true;
+    const key = relationshipKeyFromPayload(item.proposedPayload, resolveRef);
+    return !key || !existingRelationshipKeys.has(key);
+  });
+  return { ...bundle, items };
+}
+
+async function existingRelationshipKeysForTeam(db: Db, teamId: string): Promise<Set<string>> {
+  const keys = new Set<string>();
+  const acceptedRows = await db
+    .select({
+      fromEntityId: entityRelationships.fromEntityId,
+      toEntityId: entityRelationships.toEntityId,
+      kind: entityRelationships.kind,
+    })
+    .from(entityRelationships)
+    .where(and(eq(entityRelationships.teamId, teamId), eq(entityRelationships.kind, 'related')));
+  for (const row of acceptedRows) {
+    const [fromEntityId, toEntityId] = [row.fromEntityId, row.toEntityId].sort();
+    keys.add(`entity:${fromEntityId}:entity:${toEntityId}:${row.kind}`);
+  }
+
+  const pendingRows = await db
+    .select({
+      suggestionId: agentSuggestionItems.suggestionId,
+      status: agentSuggestionItems.status,
+      operation: agentSuggestionItems.operation,
+      targetKind: agentSuggestionItems.targetKind,
+      targetId: agentSuggestionItems.targetId,
+      resultId: agentSuggestionItems.resultId,
+      title: agentSuggestionItems.title,
+      payload: agentSuggestionItems.proposedPayload,
+    })
+    .from(agentSuggestionItems)
+    .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+    .where(
+      and(
+        eq(agentSuggestionItems.teamId, teamId),
+        inArray(agentSuggestionItems.status, ['pending', 'failed', 'accepted', 'rejected']),
+        inArray(agentSuggestions.status, ['pending', 'partially_resolved', 'rejected']),
+      ),
+    );
+
+  const rowsBySuggestionId = new Map<string, RelationshipKeyItem[]>();
+  for (const row of pendingRows) {
+    const payload =
+      row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
+        ? (row.payload as Record<string, unknown>)
+        : {};
+    const items = rowsBySuggestionId.get(row.suggestionId) ?? [];
+    items.push({
+      targetId: row.targetId,
+      resultId: row.resultId,
+      targetKind: row.targetKind,
+      operation: row.operation,
+      title: row.title,
+      proposedPayload: payload,
+    });
+    rowsBySuggestionId.set(row.suggestionId, items);
+  }
+
+  for (const row of pendingRows) {
+    if (
+      row.targetKind !== 'object_relationship' ||
+      (row.status !== 'pending' && row.status !== 'failed' && row.status !== 'rejected')
+    ) {
+      continue;
+    }
+    const payload =
+      row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
+        ? (row.payload as Record<string, unknown>)
+        : {};
+    const key = relationshipKeyFromPayload(
+      payload,
+      localRefResolverForItems(rowsBySuggestionId.get(row.suggestionId) ?? []),
+    );
+    if (key) keys.add(key);
+  }
+  return keys;
 }
 
 function pickCleanupSurvivor(rows: CleanupObjectRow[]): CleanupObjectRow {
@@ -1079,7 +1331,7 @@ async function runSuggestionExtraction(
     schema: suggestionExtractionSchema,
     model: modelId,
     system:
-      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, calendar refinements, reusable Q&A notes, board membership/item updates, or clear lifecycle updates to existing lifecycle-capable artifacts. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, merely conversational, could match multiple existing artifacts, or only says someone shared/sent/forwarded a link, post, file, reaction, app mention, or platform handle. Prefer updating an existing workspace object over creating one whenever the name, alias, person nickname, handle, company suffix variant, or conversation context plausibly matches exactly one object in the prompt. Create a task/object only when the evidence contains durable information and no plausible existing or pending object matches. For create task/object items, include proposedPayload.canonicalName matching the item title. For reusable Q&A, create or update an object_note item only when the conversation contains an explicit question and an explicit answer likely to help future teammates; do not create Q&A notes for vague replies, handoffs, guesses, one-off lookups, or generic summaries. Q&A note bodies must use "Q: ..." then "A: ..." and may include a short "Source: ..." line only if it is supported by the evidence. Attach Q&A notes to the one clearly relevant existing object with proposedPayload.entityId and body. If no object fits but the Q&A is high-signal, include a create object item with proposedPayload.type="topic" and canonicalName, then include an object_note create item whose proposedPayload uses entityName and entityType="topic" plus body. For updating an existing Q&A note, return targetKind="object_note", operation="update", targetId=<note uuid>, proposedPayload.body=<replacement body> only when the same reusable question is clearly matched. Use canonical lifecycle statuses for the target type: task todo/doing/done/blocked/cancelled, follow_up todo/doing/done/cancelled, project planning/active/on_hold/shipped/cancelled. Normalize aliases into that target vocabulary: for task/follow_up, "in progress" means doing and "completed" means done; for project, "started" or "in progress" means active and "completed" or "done" means shipped; "canceled" means cancelled only when the target type supports cancelled. For clear lifecycle movement, return an update item targeting the existing artifact UUID; progress/doing/active requires explicit workflow movement such as "started" or "working on", not "looked at" or "thinking about". Completion can come from any credible assertive source; hedged guesses like "I think it is done" are evidence only. Cancellation, blocking, and unblocking must map cleanly to the target artifact vocabulary. If multiple plausible artifacts match, return no lifecycle proposal. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For board-specific workflow evidence, use board_membership or board_item_update only against boards/items listed in the prompt; weak mentions remain evidence only. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
+      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, calendar refinements, reusable Q&A notes, board membership/item updates, clear lifecycle updates to existing lifecycle-capable artifacts, or durable relationships between workspace objects. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, merely conversational, could match multiple existing artifacts, or only says someone shared/sent/forwarded a link, post, file, reaction, app mention, or platform handle. Prefer updating an existing workspace object over creating one whenever the name, alias, person nickname, handle, company suffix variant, or conversation context plausibly matches exactly one object in the prompt. Create a task/object only when the evidence contains durable information and no plausible existing or pending object matches. For create task/object items, include proposedPayload.canonicalName matching the item title. For create object/task items that will be referenced by a relationship in the same bundle, include proposedPayload.localRef as a short lowercase slug unique within the bundle. Relationship items must use targetKind="object_relationship", operation="create", proposedPayload.kind="related", and either fromEntityId/toEntityId for existing objects or fromRef/toRef for sibling localRefs. Propose relationships only when the text explicitly implies a meaningful connection, not mere co-mention. For reusable Q&A, create or update an object_note item only when the conversation contains an explicit question and an explicit answer likely to help future teammates; do not create Q&A notes for vague replies, handoffs, guesses, one-off lookups, or generic summaries. Q&A note bodies must use "Q: ..." then "A: ..." and may include a short "Source: ..." line only if it is supported by the evidence. Attach Q&A notes to the one clearly relevant existing object with proposedPayload.entityId and body. If no object fits but the Q&A is high-signal, include a create object item with proposedPayload.type="topic" and canonicalName, then include an object_note create item whose proposedPayload uses entityName and entityType="topic" plus body. For updating an existing Q&A note, return targetKind="object_note", operation="update", targetId=<note uuid>, proposedPayload.body=<replacement body> only when the same reusable question is clearly matched. Use canonical lifecycle statuses for the target type: task todo/doing/done/blocked/cancelled, follow_up todo/doing/done/cancelled, project planning/active/on_hold/shipped/cancelled. Normalize aliases into that target vocabulary: for task/follow_up, "in progress" means doing and "completed" means done; for project, "started" or "in progress" means active and "completed" or "done" means shipped; "canceled" means cancelled only when the target type supports cancelled. For clear lifecycle movement, return an update item targeting the existing artifact UUID; progress/doing/active requires explicit workflow movement such as "started" or "working on", not "looked at" or "thinking about". Completion can come from any credible assertive source; hedged guesses like "I think it is done" are evidence only. Cancellation, blocking, and unblocking must map cleanly to the target artifact vocabulary. If multiple plausible artifacts match, return no lifecycle proposal. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For board-specific workflow evidence, use board_membership or board_item_update only against boards/items listed in the prompt; weak mentions remain evidence only. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
     prompt,
   });
 
@@ -1090,10 +1342,14 @@ async function runSuggestionExtraction(
     return 0;
   }
 
+  const existingRelationshipKeys = await existingRelationshipKeysForTeam(deps.db, teamId);
   const bundles =
     result.object.bundles.length > 0
       ? result.object.bundles.map((bundle) =>
-          normalizeBundleAgainstExistingObjects(bundle, objectRowsForMatching),
+          filterExistingRelationshipItems(
+            normalizeBundleAgainstExistingObjects(bundle, objectRowsForMatching),
+            existingRelationshipKeys,
+          ),
         )
       : args.conversation
         ? []
@@ -1150,29 +1406,32 @@ async function runSuggestionExtraction(
             }
           : {}),
       },
-      items: bundle.items.map((item, index) => ({
-        operation: item.operation,
-        targetKind: item.targetKind,
-        targetId: item.targetId ?? null,
-        title: item.title,
-        description: item.description ?? null,
-        dedupeKey: suggestions.suggestionDedupeKey({
-          rawEventId: args.conversation ? null : rawEventId,
-          bundleDedupe,
-          index,
-          operation: item.operation,
-          targetKind: item.targetKind,
-          targetId: item.targetId ?? null,
-          title: item.title,
-          item,
-        }),
-        proposedPayload: normalizeSuggestionItemPayload(
+      items: bundle.items.map((item, index) => {
+        const proposedPayload = normalizeSuggestionItemPayload(
           item,
           item.targetKind === 'object' && item.operation !== 'create'
             ? (objectTypeById.get(item.targetId ?? '') ?? null)
             : null,
-        ),
-      })),
+        );
+        return {
+          operation: item.operation,
+          targetKind: item.targetKind,
+          targetId: item.targetId ?? null,
+          title: item.title,
+          description: item.description ?? null,
+          dedupeKey: suggestions.suggestionDedupeKey({
+            rawEventId: args.conversation ? null : rawEventId,
+            bundleDedupe,
+            index,
+            operation: item.operation,
+            targetKind: item.targetKind,
+            targetId: item.targetId ?? null,
+            title: item.title,
+            proposedPayload,
+          }),
+          proposedPayload,
+        };
+      }),
     });
     if (suggestion.status === 'pending' || suggestion.status === 'partially_resolved') {
       proposalsCreated += 1;

@@ -149,6 +149,10 @@ export interface DuplicatePendingApprovalReconcileResult {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uuid = z.string().regex(UUID_RE);
+const localRef = z
+  .string()
+  .trim()
+  .regex(/^[a-z0-9][a-z0-9_-]{0,79}$/);
 
 const objectCreatePayload = z.object({
   type: z.string().optional(),
@@ -197,11 +201,30 @@ const objectNotePayload = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-const objectRelationshipPayload = z.object({
-  fromEntityId: uuid,
-  toEntityId: uuid,
-  kind: z.enum(['parent', 'child', 'related', 'blocks', 'blocked_by', 'duplicate_of', 'linked']),
-});
+const objectRelationshipPayload = z
+  .object({
+    fromEntityId: uuid.optional(),
+    toEntityId: uuid.optional(),
+    fromRef: localRef.optional(),
+    toRef: localRef.optional(),
+    kind: z.enum(['parent', 'child', 'related', 'blocks', 'blocked_by', 'duplicate_of']),
+  })
+  .superRefine((payload, ctx) => {
+    if (Boolean(payload.fromEntityId) === Boolean(payload.fromRef)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['fromEntityId'],
+        message: 'Provide exactly one relationship source endpoint',
+      });
+    }
+    if (Boolean(payload.toEntityId) === Boolean(payload.toRef)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['toEntityId'],
+        message: 'Provide exactly one relationship target endpoint',
+      });
+    }
+  });
 
 const objectMergePayload = z.object({
   objectIds: z.array(uuid).min(2).max(10),
@@ -489,6 +512,16 @@ function normalizeLifecyclePayload(
   if (lifecycleType && Object.hasOwn(payload, 'status')) {
     payload.status = normalizeLifecycleStatus(payload.status, lifecycleType);
   }
+  if (
+    item.targetKind === 'object_relationship' &&
+    payload.kind === 'related' &&
+    typeof payload.fromEntityId === 'string' &&
+    typeof payload.toEntityId === 'string'
+  ) {
+    const [fromEntityId, toEntityId] = [payload.fromEntityId, payload.toEntityId].sort();
+    payload.fromEntityId = fromEntityId;
+    payload.toEntityId = toEntityId;
+  }
   return payload;
 }
 
@@ -501,6 +534,10 @@ function normalizedApprovalText(value: unknown): string {
         .replace(/[^a-z0-9]+/g, ' ')
         .trim()
     : '';
+}
+
+function normalizedLocalRef(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim().toLowerCase() : null;
 }
 
 function approvalTextForItem(item: typeof agentSuggestionItems.$inferSelect): string {
@@ -903,10 +940,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
         ),
       )
-      .returning({
-        suggestionId: agentSuggestionItems.suggestionId,
-      });
+      .returning();
     if (!row) return false;
+    await supersedeRelationshipDependents(row);
     await refreshBundleStatus(row.suggestionId);
     return true;
   }
@@ -1525,6 +1561,87 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return new Map(rows.map((row) => [row.id, row.type]));
   }
 
+  async function resolveLocalRef(
+    item: typeof agentSuggestionItems.$inferSelect,
+    ref: string,
+  ): Promise<string> {
+    const normalizedRef = normalizedLocalRef(ref);
+    if (!normalizedRef) throw new Error('Relationship endpoint ref was empty');
+    const rows = await db
+      .select({
+        id: agentSuggestionItems.id,
+        resultId: agentSuggestionItems.resultId,
+        status: agentSuggestionItems.status,
+      })
+      .from(agentSuggestionItems)
+      .where(
+        and(
+          eq(agentSuggestionItems.suggestionId, item.suggestionId),
+          inArray(agentSuggestionItems.targetKind, ['object', 'task']),
+          eq(agentSuggestionItems.operation, 'create'),
+          sql`lower(${agentSuggestionItems.proposedPayload} ->> 'localRef') = ${normalizedRef}`,
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row) throw new Error(`Relationship endpoint ref "${ref}" was not found`);
+    if (row.status !== 'accepted' || !row.resultId) {
+      throw new Error(`Relationship endpoint ref "${ref}" has not been accepted yet`);
+    }
+    return row.resultId;
+  }
+
+  async function resolveRelationshipPayload(
+    item: typeof agentSuggestionItems.$inferSelect,
+    payload: Record<string, unknown>,
+  ): Promise<{
+    fromEntityId: string;
+    toEntityId: string;
+    kind: 'parent' | 'child' | 'related' | 'blocks' | 'blocked_by' | 'duplicate_of';
+  }> {
+    const parsed = objectRelationshipPayload.parse(payload);
+    return {
+      fromEntityId: parsed.fromEntityId ?? (await resolveLocalRef(item, parsed.fromRef ?? '')),
+      toEntityId: parsed.toEntityId ?? (await resolveLocalRef(item, parsed.toRef ?? '')),
+      kind: parsed.kind,
+    };
+  }
+
+  async function supersedeRelationshipDependents(
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<void> {
+    const payload =
+      item.proposedPayload &&
+      typeof item.proposedPayload === 'object' &&
+      !Array.isArray(item.proposedPayload)
+        ? (item.proposedPayload as Record<string, unknown>)
+        : {};
+    const ref = typeof payload.localRef === 'string' ? payload.localRef : null;
+    const normalizedRef = normalizedLocalRef(ref);
+    if (!normalizedRef || (item.targetKind !== 'object' && item.targetKind !== 'task')) return;
+    const dependents = await db
+      .select({ id: agentSuggestionItems.id })
+      .from(agentSuggestionItems)
+      .where(
+        and(
+          eq(agentSuggestionItems.suggestionId, item.suggestionId),
+          eq(agentSuggestionItems.targetKind, 'object_relationship'),
+          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+          or(
+            sql`lower(${agentSuggestionItems.proposedPayload} ->> 'fromRef') = ${normalizedRef}`,
+            sql`lower(${agentSuggestionItems.proposedPayload} ->> 'toRef') = ${normalizedRef}`,
+          ),
+        ),
+      );
+    for (const dependent of dependents) {
+      await supersedeItem(
+        dependent.id,
+        null,
+        `Relationship endpoint "${ref}" was rejected or superseded.`,
+      );
+    }
+  }
+
   async function applyItem(item: typeof agentSuggestionItems.$inferSelect): Promise<string | null> {
     if (item.resultId) return item.resultId;
     if (item.status !== 'pending' && item.status !== 'failed') return item.resultId;
@@ -1658,7 +1775,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     if (item.targetKind === 'object_relationship') {
       if (item.operation !== 'create') throw new Error('Object relationships only support create');
-      const parsed = objectRelationshipPayload.parse(payload);
+      const parsed = await resolveRelationshipPayload(item, payload);
       const created = await objects.addRelationship({
         fromEntityId: parsed.fromEntityId,
         toEntityId: parsed.toEntityId,
@@ -2261,6 +2378,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         )
         .returning({ id: agentSuggestionItems.id });
       if (!rejected) return false;
+      await supersedeRelationshipDependents(row.item);
       await refreshBundleStatus(row.suggestion.id, userId);
       return true;
     },

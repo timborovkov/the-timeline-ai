@@ -1066,7 +1066,7 @@ describe('withTeam namespaced port', () => {
     const event = await scope.timeline.createEvent({
       authorUserId: USER_A,
       source: 'telegram',
-      contentText: 'Project Falcon is linked to Acme.',
+      contentText: 'Project Falcon is related to Acme.',
       visibility: 'team',
     });
     const project = await scope.objects.createObject({
@@ -1089,12 +1089,12 @@ describe('withTeam namespaced port', () => {
           operation: 'create',
           targetKind: 'object_relationship',
           targetId: project.id,
-          title: 'Add linked relationship',
+          title: 'Add related relationship',
           dedupeKey: 'impact-object-relationship:item',
           proposedPayload: {
             fromEntityId: project.id,
             toEntityId: company.id,
-            kind: 'linked',
+            kind: 'related',
           },
         },
       ],
@@ -1108,7 +1108,7 @@ describe('withTeam namespaced port', () => {
       [event.id]: [
         expect.objectContaining({
           kind: 'object',
-          label: 'Add linked relationship',
+          label: 'Add related relationship',
           href: `/app/objects/${project.id}`,
           status: 'accepted',
         }),

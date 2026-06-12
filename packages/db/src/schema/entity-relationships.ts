@@ -15,7 +15,6 @@ export const relationshipKind = pgEnum('relationship_kind', [
   'blocks',
   'blocked_by',
   'duplicate_of',
-  'linked',
 ]);
 
 export const entityRelationships = pgTable(

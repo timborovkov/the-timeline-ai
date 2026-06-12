@@ -336,7 +336,7 @@ export async function findObjectCleanupSuggestionsAction(): Promise<ActionState>
 const relationshipSchema = z.object({
   fromEntityId: uuidSchema,
   toEntityId: uuidSchema,
-  kind: z.enum(['parent', 'child', 'related', 'blocks', 'blocked_by', 'duplicate_of', 'linked']),
+  kind: z.enum(['parent', 'child', 'related', 'blocks', 'blocked_by', 'duplicate_of']),
 });
 
 export async function addRelationshipAction(input: unknown): Promise<ActionState> {

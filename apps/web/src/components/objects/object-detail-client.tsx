@@ -9,6 +9,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   useTransition,
 } from 'react';
 
@@ -37,7 +38,6 @@ const RELATIONSHIP_KINDS = [
   'blocks',
   'blocked_by',
   'duplicate_of',
-  'linked',
 ] as const;
 
 type ObjectDetail = objects.ObjectDetail;
@@ -62,8 +62,13 @@ interface ObjectDetailUiState {
   noteBody: string;
   editingNoteId: string | null;
   editingBody: string;
-  linkId: string;
   linkKind: (typeof RELATIONSHIP_KINDS)[number];
+}
+
+interface ObjectSearchResult {
+  id: string;
+  canonicalName: string;
+  type: string;
 }
 
 type ObjectDetailUiAction =
@@ -101,7 +106,6 @@ function initObjectDetailUiState(detail: ObjectDetail): ObjectDetailUiState {
     noteBody: '',
     editingNoteId: null,
     editingBody: '',
-    linkId: '',
     linkKind: 'related',
   };
 }
@@ -138,11 +142,13 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
       noteBody,
       editingNoteId,
       editingBody,
-      linkId,
       linkKind,
     },
     dispatchObjectUi,
   ] = useReducer(objectDetailUiReducer, detail, initObjectDetailUiState);
+  const [linkQuery, setLinkQuery] = useState('');
+  const [linkResults, setLinkResults] = useState<ObjectSearchResult[]>([]);
+  const [selectedLink, setSelectedLink] = useState<ObjectSearchResult | null>(null);
   const localDetail = useMemo(
     () => applyObjectDetailOverrides(detail, overrides),
     [detail, overrides],
@@ -189,6 +195,26 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
       if (savedTimer.current) clearTimeout(savedTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    const query = linkQuery.trim();
+    if (!query) return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({ q: query, exclude: detail.id });
+    void fetch(`/api/objects/search?${params.toString()}`, { signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('search failed'))))
+      .then((data: { results?: ObjectSearchResult[] }) => {
+        setLinkResults(Array.isArray(data.results) ? data.results : []);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setLinkResults([]);
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [detail.id, linkQuery]);
+  const visibleLinkResults = linkQuery.trim() ? linkResults : [];
 
   function patch(field: EditableField, value: EditableValue): void {
     const currentValue = localDetailRef.current[field];
@@ -327,7 +353,8 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
   }
 
   function addRelationship(): void {
-    const toId = linkId.trim();
+    const toId = selectedLink?.id;
+    if (!toId) return;
     dispatchObjectUi({ error: null });
     startTransition(async () => {
       const result = await addRelationshipAction({
@@ -338,7 +365,9 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
       if ('error' in result && result.error) {
         dispatchObjectUi({ error: result.error });
       } else {
-        dispatchObjectUi({ linkId: '' });
+        setLinkQuery('');
+        setLinkResults([]);
+        setSelectedLink(null);
         router.refresh();
       }
     });
@@ -426,8 +455,15 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
       <ObjectRelationshipsSection
         relationships={detail.relationships}
         pending={pending}
-        linkId={linkId}
+        linkQuery={linkQuery}
+        linkResults={visibleLinkResults}
+        selectedLink={selectedLink}
         linkKind={linkKind}
+        onLinkQueryChange={(value) => {
+          setLinkQuery(value);
+          setSelectedLink(null);
+        }}
+        onSelectLink={setSelectedLink}
         dispatchObjectUi={dispatchObjectUi}
         onAddRelationship={addRelationship}
         onRemoveRelationship={removeRelationship}
@@ -801,16 +837,24 @@ function ObjectOpenTasksSection({ tasks }: { tasks: ObjectDetail['openTasks'] })
 function ObjectRelationshipsSection({
   relationships,
   pending,
-  linkId,
+  linkQuery,
+  linkResults,
+  selectedLink,
   linkKind,
+  onLinkQueryChange,
+  onSelectLink,
   dispatchObjectUi,
   onAddRelationship,
   onRemoveRelationship,
 }: {
   relationships: ObjectDetail['relationships'];
   pending: boolean;
-  linkId: string;
+  linkQuery: string;
+  linkResults: ObjectSearchResult[];
+  selectedLink: ObjectSearchResult | null;
   linkKind: (typeof RELATIONSHIP_KINDS)[number];
+  onLinkQueryChange: (value: string) => void;
+  onSelectLink: (result: ObjectSearchResult) => void;
   dispatchObjectUi: Dispatch<ObjectDetailUiAction>;
   onAddRelationship: () => void;
   onRemoveRelationship: (id: string, otherEntityId: string) => void;
@@ -819,17 +863,17 @@ function ObjectRelationshipsSection({
     <section>
       <h2 className="mb-3 text-sm font-medium tracking-tight">Related</h2>
       <div className="mb-4 flex flex-wrap items-end gap-2">
-        <label className="flex-1">
+        <label className="min-w-64 flex-1">
           <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
-            Link to object id
+            Link to object
           </span>
           <input
-            value={linkId}
+            value={linkQuery}
             onChange={(e) => {
-              dispatchObjectUi({ linkId: e.target.value });
+              onLinkQueryChange(e.target.value);
             }}
-            placeholder="paste object UUID"
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono"
+            placeholder="Search objects"
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           />
         </label>
         <label>
@@ -854,13 +898,36 @@ function ObjectRelationshipsSection({
         </label>
         <button
           type="button"
-          disabled={pending || !linkId.trim()}
+          disabled={pending || !selectedLink}
           onClick={onAddRelationship}
           className="rounded-md border border-signal/40 bg-signal-soft px-3 py-2 text-sm text-signal hover:bg-signal/25 disabled:opacity-50"
         >
           Link
         </button>
       </div>
+      {selectedLink ? (
+        <p className="mb-3 text-xs text-muted-foreground">
+          Selected {selectedLink.canonicalName} · {selectedLink.type}
+        </p>
+      ) : linkResults.length > 0 ? (
+        <ul className="mb-3 grid gap-1">
+          {linkResults.map((result) => (
+            <li key={result.id}>
+              <button
+                type="button"
+                className="w-full rounded-sm border border-border px-3 py-2 text-left text-sm hover:bg-surface"
+                onClick={() => {
+                  onLinkQueryChange(result.canonicalName);
+                  onSelectLink(result);
+                }}
+              >
+                <span className="font-medium">{result.canonicalName}</span>{' '}
+                <span className="text-xs text-muted-foreground">{result.type}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {relationships.length === 0 ? (
         <p className="text-sm text-muted-foreground">No relationships yet.</p>
       ) : (
@@ -878,10 +945,14 @@ function ObjectRelationshipsSection({
               </a>
               <div className="flex items-center gap-3">
                 <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                  {relationship.direction === 'out' ? relationship.kind : `← ${relationship.kind}`}{' '}
+                  {relationship.kind === 'related'
+                    ? relationship.kind
+                    : relationship.direction === 'out'
+                      ? relationship.kind
+                      : `← ${relationship.kind}`}{' '}
                   · {relationship.otherType}
                 </span>
-                {relationship.direction === 'out' ? (
+                {relationship.direction === 'out' || relationship.kind === 'related' ? (
                   <button
                     type="button"
                     disabled={pending}

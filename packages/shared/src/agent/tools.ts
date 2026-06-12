@@ -145,7 +145,6 @@ const objectMemoryItemSchema = z.discriminatedUnion('kind', [
       'blocks',
       'blocked_by',
       'duplicate_of',
-      'linked',
     ]),
   }),
 ]);
