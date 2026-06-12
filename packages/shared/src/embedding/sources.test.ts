@@ -184,7 +184,7 @@ describe('embedding source plans', () => {
     expect(renderedSender).toHaveLength(120);
   });
 
-  it('skips document chunks unless the parent document is team-visible', async () => {
+  it('embeds private document chunks with visibility payloads for retrieval-time filtering', async () => {
     const documentId = '20000000-0000-0000-0000-000000000001';
     const versionId = '20000000-0000-0000-0000-000000000002';
     const chunkId = '20000000-0000-0000-0000-000000000003';
@@ -215,13 +215,22 @@ describe('embedding source plans', () => {
       tokenCount: 2,
     });
 
-    await expect(
-      buildEmbeddingPlan(
-        db as never,
-        { scope: 'doc_chunk', teamId: TEAM_ID, documentChunkId: chunkId },
-        'doc_chunk',
-      ),
-    ).resolves.toBeNull();
+    const plan = await buildEmbeddingPlan(
+      db as never,
+      { scope: 'doc_chunk', teamId: TEAM_ID, documentChunkId: chunkId },
+      'doc_chunk',
+    );
+    expect(plan).toMatchObject({
+      sourceKind: 'doc_chunk',
+      scope: 'doc_chunk',
+      text: 'private chunk',
+      payloadOverrides: {
+        visibility: 'private',
+        visibility_owner_user_id: USER_ID,
+        file_kind: 'document',
+        representation_kind: 'source_text',
+      },
+    });
   });
 
   it('skips meeting chunks unless the meeting is team-visible', async () => {

@@ -101,6 +101,8 @@ export function blankEmbeddingPayload(args: {
     document_version_id: null,
     document_chunk_id: null,
     folder_id: null,
+    file_kind: null,
+    representation_kind: null,
     owner_user_id: null,
     updated_at: null,
     meeting_id: null,
@@ -144,7 +146,7 @@ export function documentChunkEmbeddable(row: {
   documentVisibility: 'private' | 'team' | 'specific_users';
   text: string;
 }): boolean {
-  return !row.documentDeletedAt && row.documentVisibility === 'team' && row.text.trim().length > 0;
+  return !row.documentDeletedAt && row.text.trim().length > 0;
 }
 
 export function meetingChunkEmbeddable(row: {
@@ -434,10 +436,13 @@ async function buildDocChunkPlan(db: Db, data: EmbedJobData): Promise<EmbeddingP
       event_id: hit.version.sourceEventId,
       visibility: hit.document.visibility,
       visibility_user_ids: hit.document.visibilityUserIds,
+      visibility_owner_user_id: hit.document.ownerUserId,
       document_id: hit.document.id,
       document_version_id: hit.version.id,
       document_chunk_id: hit.chunk.id,
       folder_id: hit.document.folderId,
+      file_kind: hit.document.fileKind,
+      representation_kind: hit.chunk.representationKind,
       owner_user_id: hit.document.ownerUserId,
       updated_at: hit.version.createdAt.toISOString(),
     },

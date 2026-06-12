@@ -75,6 +75,7 @@ describe('DocumentDrive', () => {
         {
           id: 'doc-1',
           name: 'Proposal.pdf',
+          fileKind: 'document',
           visibility: 'private',
           updatedAt: '2026-06-01T10:00:00.000Z',
           ownerUserId: 'user-1',

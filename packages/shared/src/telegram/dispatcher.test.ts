@@ -690,7 +690,7 @@ describe('handleUpdate telegram edit visibility', () => {
     });
   });
 
-  it('stores Telegram attachment document names in raw event metadata', async () => {
+  it('stores Telegram attachment metadata on captured files without synthetic document events', async () => {
     const upload = vi.fn().mockResolvedValue(undefined);
     const enqueueExtract = vi.fn().mockResolvedValue(undefined);
 
@@ -723,16 +723,93 @@ describe('handleUpdate telegram edit visibility', () => {
 
     expect(upload).toHaveBeenCalledOnce();
     expect(enqueueExtract).toHaveBeenCalledOnce();
-    const rows = await pg.query<{ metadata: Record<string, unknown> }>(
-      `SELECT source_metadata AS metadata
-       FROM raw_events
-       WHERE source = 'document'`,
+    const eventRows = await pg.query(`SELECT id FROM raw_events WHERE source = 'document'`);
+    expect(eventRows.rows).toHaveLength(0);
+    const rows = await pg.query<{
+      file_kind: string;
+      folder_id: string | null;
+      source_raw_event_id: string | null;
+      metadata: Record<string, unknown>;
+    }>(
+      `SELECT file_kind, folder_id, source_raw_event_id, metadata
+       FROM documents
+       WHERE name = 'contract.pdf'`,
     );
     expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]?.file_kind).toBe('captured');
+    expect(rows.rows[0]?.folder_id).toBeNull();
+    expect(rows.rows[0]?.source_raw_event_id).toBeTruthy();
     expect(rows.rows[0]?.metadata).toMatchObject({
-      document_name: 'contract.pdf',
       source: 'telegram',
       tg_file_id: 'doc-file',
+    });
+  });
+
+  it('stores the binding owner on private captured files from unlinked Telegram senders', async () => {
+    await pg.exec(`
+      INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, bound_by_user_id, title)
+      VALUES (-100, '${TEAM_ID}', '${USER_A}', 'Private Group');
+      INSERT INTO team_visibility_defaults (
+        team_id,
+        source,
+        visibility,
+        source_owner_user_id,
+        updated_by_user_id
+      )
+      VALUES ('${TEAM_ID}', 'telegram', 'private', '${USER_A}', '${USER_A}')
+      ON CONFLICT (team_id, source) DO UPDATE
+      SET visibility = EXCLUDED.visibility,
+          source_owner_user_id = EXCLUDED.source_owner_user_id,
+          updated_by_user_id = EXCLUDED.updated_by_user_id;
+    `);
+    const upload = vi.fn().mockResolvedValue(undefined);
+    const enqueueExtract = vi.fn().mockResolvedValue(undefined);
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: {
+          ...fakeTg,
+          getFile: () => Promise.resolve({ file_id: 'group-doc', file_path: 'group.pdf' }),
+          downloadFile: () => Promise.resolve(Buffer.from('%PDF-1.7')),
+        },
+        documents: { upload, enqueueExtract },
+      },
+      {
+        update_id: 207,
+        message: {
+          message_id: 27,
+          date: 1700000000,
+          chat: { id: -100, type: 'supergroup', title: 'Private Group' },
+          from: { id: 99, username: 'unlinked' },
+          document: {
+            file_id: 'group-doc',
+            file_name: 'group.pdf',
+            mime_type: 'application/pdf',
+            file_size: 1024,
+          },
+        },
+      },
+    );
+
+    const rows = await pg.query<{
+      owner_user_id: string | null;
+      visibility: string;
+      raw_visibility_owner_user_id: string | null;
+    }>(
+      `SELECT
+         d.owner_user_id,
+         d.visibility,
+         r.visibility_owner_user_id AS raw_visibility_owner_user_id
+       FROM documents d
+       JOIN raw_events r ON r.id = d.source_raw_event_id
+       WHERE d.name = 'group.pdf'`,
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]).toMatchObject({
+      owner_user_id: USER_A,
+      visibility: 'private',
+      raw_visibility_owner_user_id: USER_A,
     });
   });
 

@@ -318,6 +318,14 @@ const renameDocumentSchema = z.object({
   name: z.string().trim().min(1).max(400),
 });
 
+const promoteCapturedFileSchema = z.object({
+  id: documentIdSchema,
+  name: z.string().trim().min(1).max(400).optional(),
+  folderId: folderIdSchema.nullable().optional(),
+  visibility: z.enum(['team', 'private', 'specific_users']).optional(),
+  visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
+});
+
 export async function renameDocumentAction(
   input: z.input<typeof renameDocumentSchema>,
 ): Promise<Result> {
@@ -355,6 +363,42 @@ export async function deleteDocumentAction(id: string): Promise<Result> {
     }
     revalidatePath('/app/documents');
     return { ok: true };
+  });
+}
+
+export async function promoteCapturedFileAction(
+  input: z.input<typeof promoteCapturedFileSchema>,
+): Promise<Result & { documentId?: string }> {
+  return runSentryServerAction('promote_captured_file', async () => {
+    const got = await withScopeOrError();
+    if ('error' in got) return { ok: false, error: got.error };
+    const parsed = promoteCapturedFileSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid' };
+    try {
+      const promoted = await got.scope.documents.promoteCapturedFile({
+        id: parsed.data.id,
+        name: parsed.data.name,
+        folderId: parsed.data.folderId ?? null,
+        visibility: parsed.data.visibility,
+        visibilityUserIds: parsed.data.visibilityUserIds ?? null,
+      });
+      if (promoted.reprocessVersionId) {
+        const queue = await requireRedisQueue();
+        await queue.enqueueDocumentExtractJob({
+          documentVersionId: promoted.reprocessVersionId,
+          teamId: got.teamId,
+        });
+      }
+      const document = promoted.document;
+      revalidatePath('/app/documents');
+      revalidatePath('/app/documents/captured');
+      revalidatePath(`/app/documents/${document.id}`);
+      revalidatePath('/app/timeline');
+      return { ok: true, documentId: document.id };
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'promote_captured_file' });
+      return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
+    }
   });
 }
 

@@ -47,7 +47,7 @@ export interface DocumentExtractIO {
     body: Buffer;
     mediaType: string;
     filename: string;
-  }) => Promise<{ text: string; model: string }>;
+  }) => Promise<{ text: string; visualDescription?: string; model: string }>;
   /**
    * Native DOCX text extraction via mammoth. Splitting this out from
    * the worker body lets tests assert routing without needing a real
@@ -124,6 +124,30 @@ interface DocumentExtractResult {
   reason?: string;
 }
 
+type RepresentationKind = 'source_text' | 'transcript' | 'visual_description' | 'metadata_preview';
+
+interface ExtractedRepresentation {
+  kind: RepresentationKind;
+  text: string;
+}
+
+function metadataPreviewText(input: {
+  label: 'Captured file' | 'Document';
+  name: string;
+  contentType: string | null;
+  byteSize: number | null;
+  reason: string;
+}): string {
+  return [
+    `${input.label}: ${input.name}`,
+    input.contentType ? `Content type: ${input.contentType}` : null,
+    input.byteSize !== null ? `Size: ${String(input.byteSize)} bytes` : null,
+    input.reason,
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join('\n');
+}
+
 /**
  * Pure-ish job handler. Called by the BullMQ Worker (production) and
  * directly by tests with injected IO. Side effects:
@@ -165,21 +189,6 @@ export async function processDocumentExtractJob(
     return { documentVersionId, skipped: true, reason: 'document_deleted' };
   }
 
-  if (document.visibility !== 'team') {
-    await deps.db
-      .update(documentVersions)
-      .set({
-        processingStatus: 'failed',
-        processingError: `visibility=${document.visibility} not processed`,
-      })
-      .where(eq(documentVersions.id, version.id));
-    return {
-      documentVersionId,
-      skipped: true,
-      reason: `visibility=${document.visibility}`,
-    };
-  }
-
   // Race-safe ownership claim: take the advisory lock, re-read the
   // status under the lock, and only flip pending → extracting if no
   // other worker beat us to it. Without the under-lock re-read, two
@@ -217,6 +226,61 @@ export async function processDocumentExtractJob(
     };
   }
 
+  if (version.byteSize !== null && version.byteSize > MAX_DOCUMENT_BYTES) {
+    const preview =
+      document.fileKind === 'captured'
+        ? metadataPreviewText({
+            label: 'Captured file',
+            name: document.name,
+            contentType: version.contentType,
+            byteSize: version.byteSize,
+            reason: 'Deep extraction deferred until promotion or targeted inspection.',
+          })
+        : metadataPreviewText({
+            label: 'Document',
+            name: document.name,
+            contentType: version.contentType,
+            byteSize: version.byteSize,
+            reason: 'Deep extraction deferred because the file exceeds the current extraction cap.',
+          });
+    const insertedIds = await deps.db.transaction(async (tx) => {
+      await tx.delete(documentChunks).where(eq(documentChunks.documentVersionId, version.id));
+      const inserted = await tx
+        .insert(documentChunks)
+        .values({
+          teamId,
+          documentId: document.id,
+          documentVersionId: version.id,
+          chunkIndex: 0,
+          representationKind: 'metadata_preview',
+          text: preview,
+          tokenCount: chunkText(preview)[0]?.tokenCount ?? Math.ceil(preview.length / 4),
+        })
+        .returning({ id: documentChunks.id });
+      await tx
+        .update(documentVersions)
+        .set({
+          processingStatus: 'deferred',
+          processingError:
+            document.fileKind === 'captured'
+              ? 'deep extraction deferred by captured-file budget'
+              : 'deep extraction deferred by document extraction cap',
+          extractionModelVersion: EXTRACT_CODE_VERSION,
+        })
+        .where(eq(documentVersions.id, version.id));
+      return inserted.map((row) => row.id);
+    });
+    for (const chunkId of insertedIds) {
+      await io.enqueueEmbed({
+        scope: 'doc_chunk',
+        teamId,
+        documentChunkId: chunkId,
+        ...(targetCollection ? { targetCollection } : {}),
+      });
+    }
+    return { documentVersionId, chunkCount: 1, skipped: true, reason: 'deferred_budget' };
+  }
+
   // Bounds-check before reading the body. RustFS HEAD is cheap and
   // surfaces oversize uploads without consuming bandwidth.
   let body: Buffer;
@@ -245,7 +309,7 @@ export async function processDocumentExtractJob(
   const objectKeyTail = version.objectKey.split('/').pop()?.trim();
   const filenameForRouting =
     objectKeyTail && objectKeyTail.length > 0 ? objectKeyTail : document.name;
-  let text: string;
+  let representations: ExtractedRepresentation[];
   let extractionModel: string = EXTRACT_CODE_VERSION;
   try {
     const routed = await routeContentToText({ contentType, body, name: filenameForRouting }, io);
@@ -263,7 +327,7 @@ export async function processDocumentExtractJob(
       // retry loop.
       throw new UnrecoverableError(routed.failure);
     }
-    text = routed.text;
+    representations = routed.representations;
     if (routed.model) extractionModel = routed.model;
   } catch (err: unknown) {
     // Already stamped above for the routed-failure branch.
@@ -278,7 +342,10 @@ export async function processDocumentExtractJob(
     throw err;
   }
 
-  if (!text.trim()) {
+  const nonEmptyRepresentations = representations
+    .map((representation) => ({ ...representation, text: representation.text.trim() }))
+    .filter((representation) => representation.text.length > 0);
+  if (nonEmptyRepresentations.length === 0) {
     const reason = 'no text extracted';
     await deps.db
       .update(documentVersions)
@@ -287,7 +354,11 @@ export async function processDocumentExtractJob(
     throw new UnrecoverableError(reason);
   }
 
-  const chunks = chunkText(text);
+  const chunks = nonEmptyRepresentations
+    .flatMap((representation) =>
+      chunkText(representation.text).map((chunk) => ({ ...chunk, kind: representation.kind })),
+    )
+    .map((chunk, index) => ({ ...chunk, index }));
   if (chunks.length === 0) {
     const reason = 'chunker produced no chunks';
     await deps.db
@@ -312,6 +383,7 @@ export async function processDocumentExtractJob(
           documentId: document.id,
           documentVersionId: version.id,
           chunkIndex: c.index,
+          representationKind: c.kind,
           text: c.text,
           tokenCount: c.tokenCount,
         })),
@@ -404,7 +476,9 @@ export function startDocumentExtractWorker(
  *         claimed text/* but has NUL bytes in the head (operator
  *         likely uploaded a binary with the wrong Content-Type)
  */
-type RouteResult = { text: string; model?: string } | { failure: string };
+type RouteResult =
+  | { representations: ExtractedRepresentation[]; model?: string }
+  | { failure: string };
 
 async function routeContentToText(
   input: { contentType: string; body: Buffer; name: string },
@@ -434,7 +508,7 @@ async function routeContentToText(
         };
       }
     }
-    return { text };
+    return { representations: [{ kind: 'source_text', text }] };
   }
   // DOCX (Office Open XML) — native extraction via mammoth. Note: the
   // MIME for .docx is the full ms-office identifier. Old-school .doc
@@ -444,7 +518,7 @@ async function routeContentToText(
     /\.docx$/i.test(input.name)
   ) {
     const { text } = await io.extractDocx(input.body);
-    return { text };
+    return { representations: [{ kind: 'source_text', text }] };
   }
   // PDF and image routes both go through the vision model. Vision can
   // also handle scanned PDFs (no text layer) and screenshots without us
@@ -455,7 +529,7 @@ async function routeContentToText(
       mediaType: 'application/pdf',
       filename: input.name,
     });
-    return { text: result.text, model: result.model };
+    return mediaRepresentations(result, true);
   }
   // Image extension fallback matches the PDF/DOCX behaviour above: when
   // RustFS loses the explicit Content-Type on PUT we still route the
@@ -484,11 +558,25 @@ async function routeContentToText(
       mediaType: ct.startsWith('image/') ? ct : (fallbackImageMime ?? 'image/png'),
       filename: input.name,
     });
-    return { text: result.text, model: result.model };
+    return mediaRepresentations(result, true);
   }
   // audio/video and anything else: out of scope for the extract worker.
   // Audio goes through the transcribe worker; video has no route yet.
   return {
     failure: `content_type=${ct || 'unknown'} not supported`,
   };
+}
+
+function mediaRepresentations(
+  result: { text: string; visualDescription?: string; model: string },
+  includeVisualDescription: boolean,
+): RouteResult {
+  const representations: ExtractedRepresentation[] = [];
+  if (result.text.trim()) {
+    representations.push({ kind: 'source_text', text: result.text });
+  }
+  if (includeVisualDescription && result.visualDescription?.trim()) {
+    representations.push({ kind: 'visual_description', text: result.visualDescription });
+  }
+  return { representations, model: result.model };
 }

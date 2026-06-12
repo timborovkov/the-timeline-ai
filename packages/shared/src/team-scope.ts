@@ -6,6 +6,7 @@ import {
   agentSuggestions,
   boardItems,
   calendarEvents,
+  documentChunks,
   documents,
   documentVersions,
   entities,
@@ -2298,12 +2299,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         const sourceFilter = input.source ?? input.senderSource;
         if (sourceFilter) searchOpts.source = sourceFilter;
         if (input.entityIds) searchOpts.entityIds = input.entityIds;
-        // Only pass through the kind filter when explicitly set. If we always
-        // defaulted to ['raw_event', 'fact'] we'd silently drop Phase 5 points
-        // that pre-date the `source_kind` payload field (Qdrant's match-any
-        // filter requires the field to exist on the point). The dedup-by-
-        // event_id step below naturally drops non-event-anchored Phase 8 hits.
-        if (input.sourceKind) searchOpts.sourceKind = input.sourceKind;
+        // Timeline search includes event-backed captured-file representations
+        // by default. Curated documents stay in search_documents.
+        if (input.sourceKind) {
+          searchOpts.sourceKind = input.sourceKind;
+        } else {
+          searchOpts.sourceKind = ['raw_event', 'fact', 'doc_chunk'];
+          searchOpts.fileKinds = ['captured'];
+        }
 
         const { hits, usedSqlSenderFilter } = await searchSenderFilteredHits({
           searchInput: input,
@@ -2315,6 +2318,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         // Dedupe by event_id. Keep highest score; collect fact_ids; merge
         // entity_ids across event-level + fact-level points on the same event.
         const dedup = new Map<string, SearchEventResult>();
+        const docChunkIdsByEvent = new Map<string, string[]>();
         for (const hit of hits) {
           // Defense in depth: Qdrant's wrapper already filters team_id, but
           // verify here so a misconfigured payload can't leak across teams.
@@ -2330,10 +2334,19 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           // the whole search. Treat each field as best-effort.
           const entityIds = Array.isArray(hit.payload.entity_ids) ? hit.payload.entity_ids : [];
           const factId = hit.payload.fact_id ?? null;
+          const docChunkId =
+            hit.payload.source_kind === 'doc_chunk' ? hit.payload.document_chunk_id : null;
           const existing = dedup.get(hit.payload.event_id);
           if (existing) {
             if (hit.score > existing.score) existing.score = hit.score;
             if (factId && !existing.factIds.includes(factId)) existing.factIds.push(factId);
+            if (docChunkId) {
+              const chunkIds = docChunkIdsByEvent.get(hit.payload.event_id) ?? [];
+              if (!chunkIds.includes(docChunkId)) {
+                chunkIds.push(docChunkId);
+                docChunkIdsByEvent.set(hit.payload.event_id, chunkIds);
+              }
+            }
             for (const entId of entityIds) {
               if (!existing.entityIds.includes(entId)) existing.entityIds.push(entId);
             }
@@ -2352,6 +2365,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             resolvedSenderObject: null,
             senderResolutionStatus: 'unresolved',
           });
+          if (docChunkId) docChunkIdsByEvent.set(hit.payload.event_id, [docChunkId]);
         }
 
         const orderedEventIds = Array.from(dedup.values())
@@ -2386,6 +2400,30 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           if (f.teamId === teamId) factMap.set(f.id, f);
         }
 
+        const allDocChunkIds = Array.from(docChunkIdsByEvent.values()).flat();
+        const docChunkRows =
+          allDocChunkIds.length > 0
+            ? await db
+                .select({
+                  id: documentChunks.id,
+                  text: documentChunks.text,
+                  representationKind: documentChunks.representationKind,
+                  documentId: documentChunks.documentId,
+                  teamId: documentChunks.teamId,
+                })
+                .from(documentChunks)
+                .innerJoin(documents, eq(documents.id, documentChunks.documentId))
+                .where(
+                  and(
+                    inArray(documentChunks.id, allDocChunkIds),
+                    eq(documentChunks.teamId, teamId),
+                    eq(documents.fileKind, 'captured'),
+                    isNull(documents.deletedAt),
+                  ),
+                )
+            : [];
+        const docChunkMap = new Map(docChunkRows.map((chunk) => [chunk.id, chunk]));
+
         const results: SearchEventResult[] = [];
         for (const eventId of orderedEventIds) {
           const ev = eventMap.get(eventId);
@@ -2414,8 +2452,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             .map((fid) => factMap.get(fid)?.statement)
             .filter((s): s is string => Boolean(s))
             .join(' · ');
+          const docSnippet = (docChunkIdsByEvent.get(eventId) ?? [])
+            .map((id) => docChunkMap.get(id))
+            .filter((chunk): chunk is NonNullable<typeof chunk> => Boolean(chunk))
+            .map((chunk) => `${chunk.representationKind.replace(/_/g, ' ')}: ${chunk.text}`)
+            .join(' · ');
           const snippet =
             factSnippet ||
+            (docSnippet ? docSnippet.slice(0, 240) : '') ||
             (ev.contentText ? ev.contentText.slice(0, 240) : '[audio event — no transcript]');
           results.push({
             eventId: ev.id,

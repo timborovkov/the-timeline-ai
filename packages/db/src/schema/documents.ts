@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   bigint,
+  check,
   index,
   integer,
   jsonb,
@@ -31,7 +32,17 @@ export const documentProcessingStatus = pgEnum('document_processing_status', [
   'extracting',
   'chunked',
   'embedded',
+  'deferred',
   'failed',
+]);
+
+export const fileKind = pgEnum('file_kind', ['captured', 'document']);
+
+export const extractedRepresentationKind = pgEnum('extracted_representation_kind', [
+  'source_text',
+  'transcript',
+  'visual_description',
+  'metadata_preview',
 ]);
 
 export const folders = pgTable(
@@ -78,6 +89,7 @@ export const documents = pgTable(
     teamId: uuid('team_id')
       .notNull()
       .references(() => teams.id, { onDelete: 'cascade' }),
+    fileKind: fileKind('file_kind').notNull().default('document'),
     folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'set null' }),
     name: text('name').notNull(),
     // FK is added in the migration's ALTER TABLE because documentVersions is
@@ -95,12 +107,25 @@ export const documents = pgTable(
      * update the same document row instead of duplicating.
      */
     metadata: jsonb('metadata').notNull().default({}),
+    sourceRawEventId: uuid('source_raw_event_id').references(() => rawEvents.id, {
+      onDelete: 'set null',
+    }),
+    promotedAt: timestamp('promoted_at', { withTimezone: true }),
+    promotedByUserId: uuid('promoted_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (table) => [
     index('documents_team_folder_idx').on(table.teamId, table.folderId),
+    index('documents_team_kind_idx').on(table.teamId, table.fileKind),
+    index('documents_source_raw_event_idx').on(table.teamId, table.sourceRawEventId),
+    check(
+      'documents_captured_folder_null_chk',
+      sql`${table.fileKind} = 'document' OR ${table.folderId} IS NULL`,
+    ),
     index('documents_team_folder_updated_id_idx').on(
       table.teamId,
       table.folderId,
@@ -124,7 +149,7 @@ export const documents = pgTable(
         sql`COALESCE(${table.folderId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
         sql`lower(${table.name})`,
       )
-      .where(sql`${table.deletedAt} IS NULL`),
+      .where(sql`${table.deletedAt} IS NULL AND ${table.fileKind} = 'document'`),
   ],
 );
 
@@ -181,6 +206,9 @@ export const documentChunks = pgTable(
       .notNull()
       .references(() => documentVersions.id, { onDelete: 'cascade' }),
     chunkIndex: integer('chunk_index').notNull(),
+    representationKind: extractedRepresentationKind('representation_kind')
+      .notNull()
+      .default('source_text'),
     text: text('text').notNull(),
     tokenCount: integer('token_count').notNull(),
     pageNumber: integer('page_number'),

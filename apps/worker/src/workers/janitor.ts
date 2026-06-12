@@ -86,7 +86,7 @@ async function sweepDocumentVersions(
     const rows: {
       id: string;
       teamId: string;
-      status: 'pending' | 'extracting' | 'chunked' | 'embedded' | 'failed';
+      status: 'pending' | 'extracting' | 'chunked' | 'embedded' | 'failed' | 'deferred';
     }[] = await db
       .select({
         id: documentVersions.id,

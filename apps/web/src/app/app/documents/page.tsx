@@ -83,6 +83,7 @@ export default async function DocumentsPage({ searchParams }: Props) {
         }))}
         documents={documentPage.items.map((d) => ({
           id: d.id,
+          fileKind: d.fileKind,
           name: d.name,
           visibility: d.visibility,
           updatedAt: d.updatedAt.toISOString(),

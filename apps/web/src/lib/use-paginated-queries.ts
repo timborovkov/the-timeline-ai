@@ -25,6 +25,7 @@ export interface TimelinePage {
 export interface DocumentListPage {
   items: {
     id: string;
+    fileKind: 'captured' | 'document';
     name: string;
     visibility: string;
     updatedAt: string;
@@ -187,6 +188,7 @@ export function useDocumentListQuery(folderId: string | null, initialPage: Docum
       return readJson<{
         items: {
           id: string;
+          fileKind: 'captured' | 'document';
           name: string;
           visibility: string;
           updatedAt: string;
@@ -350,6 +352,8 @@ interface DocumentSearchHit {
   documentId: string;
   documentVersionId: string;
   documentChunkId: string;
+  fileKind: 'captured' | 'document';
+  representationKind: 'source_text' | 'transcript' | 'visual_description' | 'metadata_preview';
   version: number;
   chunkIndex: number;
   pageNumber: number | null;
@@ -357,5 +361,6 @@ interface DocumentSearchHit {
   summary: string | null;
   documentName: string;
   folderId: string | null;
+  sourceRawEventId: string | null;
   score: number;
 }

@@ -121,8 +121,9 @@ app_mention
         </li>
         <li>
           Text-bearing Slack captures enqueue extraction, embeddings, and approval-suggestion work
-          directly. File-only messages route attachments to document extraction without inventing
-          approval suggestions before text or transcripts exist.
+          directly. File-only messages create captured files for source evidence and route those
+          files to extraction without inventing approval suggestions before text or transcripts
+          exist.
         </li>
         <li>
           Slack DMs get a best-effort <code>:eyes:</code> reaction after capture. Channels never get
@@ -133,11 +134,11 @@ app_mention
           deletes tombstone active Timeline rows while preserving immutable raw rows.
         </li>
         <li>
-          Audio/voice files are transcribed. Supported text, image, PDF, DOCX, CSV/JSON/XML/YAML,
-          Markdown, HTML, and log files become document versions and feed document extraction and
-          embeddings. Archives, executables, video, oversize files, and unknown binary files are
-          skipped. Ambiguous <code>.mp4</code>/<code>.webm</code> files require an
-          <code>audio/*</code> content type to enter transcription.
+          Voice-memo style audio is transcribed. Supported text, image, PDF, DOCX,
+          CSV/JSON/XML/YAML, Markdown, HTML, and log files become captured files that feed typed
+          extraction representations and embeddings. Archives, executables, video, oversize files,
+          and unknown binary files are skipped. Ambiguous <code>.mp4</code>/<code>.webm</code> files
+          require an <code>audio/*</code> content type to enter transcription.
         </li>
       </ul>
     </main>

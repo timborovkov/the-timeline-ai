@@ -1001,11 +1001,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             document_id: h.documentId,
             document_version_id: h.documentVersionId,
             document_chunk_id: h.documentChunkId,
+            file_kind: h.fileKind,
+            representation_kind: h.representationKind,
             version: h.version,
             chunk_index: h.chunkIndex,
             page_number: h.pageNumber,
             document_name: h.documentName,
             folder_id: h.folderId,
+            source_raw_event_id: h.sourceRawEventId,
             score: h.score,
             snippet:
               fenceExternalContent(h.summary ?? h.text.slice(0, 800), {
@@ -1067,6 +1070,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             document_id: chunk.documentId,
             document_version_id: chunk.documentVersionId,
             chunk_index: chunk.chunkIndex,
+            representation_kind: chunk.representationKind,
             page_number: chunk.pageNumber,
             token_count: chunk.tokenCount,
             text:

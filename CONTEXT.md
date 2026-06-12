@@ -35,7 +35,10 @@ _Avoid_: Message, activity, log entry
 A user-facing cluster of related raw events shown together on the timeline so
 team members can understand a meaningful slice of work before drilling into
 individual source evidence. The timeline is date-first, with source clusters
-inside each date and impact shown as attached context.
+inside each date and impact shown as attached context. Timeline lists should
+show compact signals for extracted file representations; full transcripts,
+OCR text, and visual descriptions belong in event detail, citations, and agent
+tools.
 _Avoid_: Raw Event when referring to the grouped browsing unit
 
 **Impact Context**:
@@ -410,16 +413,118 @@ _Avoid_: Channel receipt, delivery guarantee
 
 **Conversational Attachment**:
 A file attached to a message from a conversational capture surface such as
-Telegram or Slack. Audio attachments become transcribed timeline events;
-supported text, image, PDF, and document attachments become document-drive
-versions linked back to the source message.
+Telegram or Slack. Audio attachments become transcribed timeline events; other
+supported attachments become captured files linked back to the source message.
 _Avoid_: Generic blob, message metadata only
+
+**Captured File**:
+A source-backed file captured from a conversational surface or integration and
+made available for search, citation, and agent use. Captured-file text is
+retrievable by default, while workspace interpretation from that text should be
+source-aware. Captured files inherit the visibility of their source evidence
+and should never become more visible automatically; a captured file may become
+a document when the team wants to browse, version, and manage it as durable
+knowledge. Citations may reuse document-version identifiers while labeling
+unpromoted evidence as captured files.
+_Avoid_: Document when the file is only source evidence, blob
+
+**Document**:
+A durable team knowledge file that members intentionally browse, version, and
+manage in the document drive. Documents are curated workspace artifacts, not
+every file that was captured as source evidence.
+_Avoid_: Captured file when the item has not been promoted or curated
+
+**Document Drive**:
+The curated browsing surface for folders and documents. The default document
+drive view excludes unpromoted captured files, though a dedicated captured-files
+view can expose them for triage, promotion, cleanup, and source inspection.
+Folders belong to promoted documents; unpromoted captured files are organized
+by source evidence and triage filters instead of folder placement.
+_Avoid_: Attachment inbox, all files
+
+**File Promotion**:
+The act of making an existing captured file visible and manageable as a
+document without copying its source blob or severing its source evidence link.
+Promotion gives the file document-drive placement, naming, and curation
+semantics. After promotion, the original capture can be the first document
+version while later uploads extend the promoted document's version history.
+Promotion may preserve or narrow visibility by default; widening visibility is
+an explicit audited action. Promotion is recorded as a lifecycle transition,
+not inferred from whether a file happens to have extractable text. Promoted
+documents can remain active when their original source event is later
+tombstoned, while preserving tombstoned provenance. Source capture time remains
+provenance; document-drive activity uses promotion, version, and document
+update times.
+_Avoid_: Import, copy to documents
+
+**Targeted File Inspection**:
+An agent-initiated read of a specific captured file or document version to
+answer a narrow question about the original file. Targeted file inspection is a
+follow-up to known evidence, not a broad crawl over team files. Inspection
+returns an answer for the immediate question and may persist a reusable
+extracted representation when the result improves future search or agent use.
+Persisted inspection output must be representation-like, such as OCR text,
+transcript text, or visual description, not arbitrary conclusions or workspace
+interpretation.
+_Avoid_: Re-indexing, background OCR
+
+**Visual Description**:
+A model-generated description of what a visual captured file or document page
+shows, distinct from faithful source-text extraction. Visual descriptions make
+images, screenshots, scans, and visually meaningful PDFs queryable as context
+without pretending the description is source-authored text. Processing depth is
+intent-sensitive: curated documents can justify full indexing, while
+unpromoted conversational captures should receive a cheaper preview pass until
+promotion, targeted inspection, or explicit user intent warrants deeper
+analysis. Persisted visual descriptions should be neutral observations about
+what is visible; business interpretation belongs in agent answers or workspace
+suggestions, not in the extracted representation itself.
+_Avoid_: OCR when describing non-text visual context, summary when provenance matters
+
+**Extracted Representation**:
+A queryable text representation derived from a captured file or document
+version, such as source text, transcript text, visual description, or metadata
+preview. Each representation keeps its provenance so generated descriptions are
+not treated as literal source-authored text. Timeline-oriented questions should
+include source-evidence representations by default; curated documents are
+reference knowledge and should be searched when the question calls for that
+context. Creating or updating extracted representations enriches the source
+evidence; it should not create separate timeline activity unless a person takes
+an explicit workspace action such as promotion, deletion, or visibility change.
+_Avoid_: Chunk text when provenance matters
+
+**Representation Correction**:
+A user-authored correction layered over an extracted representation, such as a
+fixed transcript name or OCR phrase. Corrections do not mutate the source file
+or erase the original model output; they become the preferred representation
+for search and agent answers while preserving auditability. Corrections follow
+normal edit permissions for the visible evidence or document and do not require
+the workspace approval queue.
+_Avoid_: Editing the raw transcript when it hides provenance
+
+**Voice Memo**:
+A spoken capture sent because speaking was faster than typing, such as a
+Telegram or Slack voice note. Voice memos are timeline evidence: they keep the
+audio file as source-backed evidence and add a transcript representation that
+is searchable, vectorized, and eligible for source-aware workspace
+interpretation. Voice-memo classification follows capture semantics first and
+MIME type second: native voice-message surfaces and intentional manual uploads
+are transcribed by default, while ambiguous shared audio can defer deeper
+processing.
+_Avoid_: Generic audio file, song
 
 **Attachment Guardrails**:
 The shared limits that decide whether a conversational attachment is processed,
 skipped with metadata, or rejected before download. Guardrails cover file size,
 file type, attachment count, and expensive OCR/transcription routes.
 _Avoid_: Best-effort download
+
+**Budget Deferral**:
+A normal processing state where a captured file is indexed with lightweight
+metadata or preview context while deeper OCR, vision, transcription, or
+chunking waits for promotion, targeted inspection, or explicit user intent.
+Budget deferral is not a processing failure.
+_Avoid_: Failed processing, unsupported file
 
 **Active External Team**:
 The Timeline team selected for a linked external user when a direct-message
@@ -444,6 +549,8 @@ learns about a source deletion, the active timeline hides the affected item by
 tombstoning raw event rows rather than physically deleting source evidence.
 Source deletion is authoritative even when the deleting external actor is not
 linked to a Timeline member.
+Unpromoted captured files follow their source deletion; promoted documents can
+remain as curated artifacts with tombstoned provenance.
 _Avoid_: Hard delete, erase
 
 **Trust Audit Log**:

@@ -598,16 +598,88 @@ describe('Slack dispatcher routing', () => {
     expect(queues.extract.enqueueExtract).not.toHaveBeenCalled();
     expect(queues.embed.enqueueEmbed).not.toHaveBeenCalled();
     expect(queues.suggestions.enqueueSuggestion).not.toHaveBeenCalled();
-    const rows = await pg.query<{ metadata: Record<string, unknown> }>(
-      `SELECT source_metadata AS metadata
-       FROM raw_events
-       WHERE source = 'document'`,
+    const eventRows = await pg.query(`SELECT id FROM raw_events WHERE source = 'document'`);
+    expect(eventRows.rows).toHaveLength(0);
+    const rows = await pg.query<{
+      file_kind: string;
+      folder_id: string | null;
+      source_raw_event_id: string | null;
+      metadata: Record<string, unknown>;
+    }>(
+      `SELECT file_kind, folder_id, source_raw_event_id, metadata
+       FROM documents
+       WHERE name = 'plan.pdf'`,
     );
     expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]?.file_kind).toBe('captured');
+    expect(rows.rows[0]?.folder_id).toBeNull();
+    expect(rows.rows[0]?.source_raw_event_id).toBeTruthy();
     expect(rows.rows[0]?.metadata).toMatchObject({
-      document_name: 'plan.pdf',
       source: 'slack',
       slack_file_id: 'F1',
+    });
+  });
+
+  it('stores the binding owner on private captured files from unlinked Slack senders', async () => {
+    await seedWorkspace(db, TEAM_A);
+    await db.insert(slackConversationBindings).values({
+      workspaceId: WORKSPACE_ID,
+      teamId: TEAM_A,
+      slackConversationId: 'C_PRIVATE',
+      conversationType: 'channel',
+      title: 'private-docs',
+      boundByUserId: USER_A,
+      visibilityDefault: 'private',
+      enabled: true,
+    });
+    const upload = vi.fn().mockResolvedValue(undefined);
+    const enqueueExtract = vi.fn().mockResolvedValue(undefined);
+    const queues = textQueueDeps();
+
+    await handleSlackEnvelope(
+      {
+        db: db as never,
+        ...queues,
+        documents: { upload, enqueueExtract },
+      },
+      slackEnvelope('EvPrivateFile', {
+        type: 'message',
+        subtype: 'file_share',
+        channel: 'C_PRIVATE',
+        channel_type: 'channel',
+        user: 'U_UNLINKED',
+        text: '',
+        ts: '1700000001.000150',
+        files: [
+          {
+            id: 'F_PRIVATE',
+            name: 'private-plan.pdf',
+            mimetype: 'application/pdf',
+            size: 8,
+            url_private_download: 'https://files.example/private-plan.pdf',
+          },
+        ],
+      }),
+    );
+
+    const rows = await pg.query<{
+      owner_user_id: string | null;
+      visibility: string;
+      raw_visibility_owner_user_id: string | null;
+    }>(
+      `SELECT
+         d.owner_user_id,
+         d.visibility,
+         r.visibility_owner_user_id AS raw_visibility_owner_user_id
+       FROM documents d
+       JOIN raw_events r ON r.id = d.source_raw_event_id
+       WHERE d.name = 'private-plan.pdf'`,
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]).toMatchObject({
+      owner_user_id: USER_A,
+      visibility: 'private',
+      raw_visibility_owner_user_id: USER_A,
     });
   });
 

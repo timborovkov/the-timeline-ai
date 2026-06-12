@@ -1074,6 +1074,7 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
     const inserted = await insertEvent(ctx.db, {
       fallbackTeamId: ctx.binding.teamId,
       authorUserId: ctx.tgUserRow?.userId ?? null,
+      visibilityOwnerUserId: ctx.binding.boundByUserId ?? ctx.tgUserRow?.userId ?? null,
       text: text || null,
       message: ctx.message,
       updateId: ctx.updateId,
@@ -1459,7 +1460,13 @@ interface InsertEventInput {
 async function insertEvent(
   db: Db,
   input: InsertEventInput,
-): Promise<{ id: string; teamId: string } | null> {
+): Promise<{
+  id: string;
+  teamId: string;
+  visibility: 'private' | 'team' | 'specific_users';
+  visibilityUserIds: string[] | null;
+  visibilityOwnerUserId: string | null;
+} | null> {
   const metadata: Record<string, unknown> = {
     tg_chat_id: input.message.chat.id,
     tg_chat_type: input.message.chat.type,
@@ -1563,7 +1570,13 @@ async function insertEvent(
     sourceMetadata: metadata,
   };
 
-  async function insertRawEvent(tx: DbOrTx): Promise<{ id: string; teamId: string } | null> {
+  async function insertRawEvent(tx: DbOrTx): Promise<{
+    id: string;
+    teamId: string;
+    visibility: 'private' | 'team' | 'specific_users';
+    visibilityUserIds: string[] | null;
+    visibilityOwnerUserId: string | null;
+  } | null> {
     // ON CONFLICT DO NOTHING against the partial unique index on
     // (source_metadata->>'tg_update_id') WHERE source='telegram'. If Telegram
     // retries an update because we didn't 200 in time (or the process crashed
@@ -1573,7 +1586,13 @@ async function insertEvent(
       .insert(rawEvents)
       .values(eventValues)
       .onConflictDoNothing()
-      .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
+      .returning({
+        id: rawEvents.id,
+        teamId: rawEvents.teamId,
+        visibility: rawEvents.visibility,
+        visibilityUserIds: rawEvents.visibilityUserIds,
+        visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+      });
     return inserted[0] ?? null;
   }
 
@@ -1899,7 +1918,14 @@ async function ingestTelegramDocumentAttachment(
     message: TgMessage;
   },
   attachment: TelegramDocumentAttachment,
-  parent: { id: string; teamId: string; authorUserId: string | null } | null,
+  parent: {
+    id: string;
+    teamId: string;
+    authorUserId: string | null;
+    visibility: 'private' | 'team' | 'specific_users';
+    visibilityUserIds: string[] | null;
+    visibilityOwnerUserId: string | null;
+  } | null,
 ): Promise<void> {
   if (!parent) return;
   const sizeBytes = attachment.payload.file_size ?? null;
@@ -1954,9 +1980,12 @@ async function ingestTelegramDocumentAttachment(
       .insert(documents)
       .values({
         teamId: parent.teamId,
+        fileKind: 'captured',
         name: attachment.filename,
-        ownerUserId: parent.authorUserId,
-        visibility: 'team',
+        ownerUserId: parent.authorUserId ?? parent.visibilityOwnerUserId,
+        visibility: parent.visibility,
+        visibilityUserIds: parent.visibilityUserIds,
+        sourceRawEventId: parent.id,
         metadata: {
           source: 'telegram',
           tg_file_id: attachment.payload.file_id,
@@ -1972,27 +2001,6 @@ async function ingestTelegramDocumentAttachment(
       version: 1,
       filename: attachment.filename,
     });
-    const eventRows = await tx
-      .insert(rawEvents)
-      .values({
-        teamId: parent.teamId,
-        authorUserId: parent.authorUserId,
-        source: 'document',
-        contentText: `Uploaded ${attachment.filename}`,
-        visibility: 'team',
-        sourceMetadata: {
-          action: 'upload',
-          document_id: doc.id,
-          document_name: attachment.filename,
-          document_version: 1,
-          source: 'telegram',
-          tg_file_id: attachment.payload.file_id,
-          parent_raw_event_id: parent.id,
-        },
-      })
-      .returning({ id: rawEvents.id });
-    const event = eventRows[0];
-    if (!event) throw new Error('telegram_document_event_insert_failed');
     const versionRows = await tx
       .insert(documentVersions)
       .values({
@@ -2003,7 +2011,7 @@ async function ingestTelegramDocumentAttachment(
         byteSize: bytes.length,
         contentType,
         uploadedByUserId: parent.authorUserId,
-        sourceEventId: event.id,
+        sourceEventId: parent.id,
         processingStatus: 'pending',
       })
       .returning({ id: documentVersions.id });
@@ -2148,9 +2156,21 @@ async function recordTelegramAttachmentSkip(
 async function findEventByUpdateId(
   db: DbOrTx,
   updateId: number,
-): Promise<{ id: string; teamId: string } | null> {
+): Promise<{
+  id: string;
+  teamId: string;
+  visibility: 'private' | 'team' | 'specific_users';
+  visibilityUserIds: string[] | null;
+  visibilityOwnerUserId: string | null;
+} | null> {
   const rows = await db
-    .select({ id: rawEvents.id, teamId: rawEvents.teamId })
+    .select({
+      id: rawEvents.id,
+      teamId: rawEvents.teamId,
+      visibility: rawEvents.visibility,
+      visibilityUserIds: rawEvents.visibilityUserIds,
+      visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+    })
     .from(rawEvents)
     .where(
       and(

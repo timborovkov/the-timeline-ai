@@ -24,12 +24,13 @@ import { and, asc, eq, gt, inArray, or, type SQL, sql } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PAGE_SIZE = 500;
-type ProcessingStatus = 'pending' | 'extracting' | 'chunked' | 'embedded' | 'failed';
+type ProcessingStatus = 'pending' | 'extracting' | 'chunked' | 'embedded' | 'deferred' | 'failed';
 const VALID_STATUSES: ProcessingStatus[] = [
   'pending',
   'extracting',
   'chunked',
   'embedded',
+  'deferred',
   'failed',
 ];
 
