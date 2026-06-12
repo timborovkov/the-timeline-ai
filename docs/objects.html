@@ -65,6 +65,16 @@
         <code>archived_at=NULL</code>), and the resolver keeps using the same canonical-name lookup
         it always has.
       </p>
+      <p>
+        Extraction filters low-signal <code>topic</code> and <code>other</code> mentions before
+        linking facts to objects, so generic noun phrases such as "financial data" or "customer
+        relationships" remain ordinary fact text unless a teammate promotes them into durable object
+        memory. The same quality gate keeps everyday SaaS/tool mentions such as GitHub, Google
+        Drive, TikTok, Slack, or Zoom from becoming ordinary company objects; durable tool choices
+        should be modeled as decisions or updates to a specific existing artifact. Cleanup archive
+        suggestions can still retire existing generic objects that only have weak fact links;
+        human-authored notes and object relationships protect objects from that archive path.
+      </p>
       <table>
         <thead>
           <tr>

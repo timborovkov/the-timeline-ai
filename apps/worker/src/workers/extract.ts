@@ -173,7 +173,11 @@ export async function processExtractJobForTests(
   const extractionResult = {
     facts: extract
       .normalizeExtractionResult(result.object)
-      .facts.filter((fact) => !extract.isNoisyExtractedFact(fact)),
+      .facts.filter((fact) => !extract.isNoisyExtractedFact(fact))
+      .map((fact) => ({
+        ...fact,
+        mentions: fact.mentions.filter((mention) => !extract.isLowSignalEntityMention(mention)),
+      })),
   };
 
   const resolvedFacts: {

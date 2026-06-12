@@ -4,7 +4,6 @@ import {
   conversationReviews,
   entities,
   entityRelationships,
-  factEntities,
   facts as factsTable,
   objectNotes,
   rawEvents,
@@ -14,6 +13,7 @@ import {
 } from '@timeline/db';
 import {
   conversationReview,
+  extract,
   getEnv,
   llm,
   queue,
@@ -477,29 +477,6 @@ const ENTITY_TYPES = new Set<EntityType>([
   'follow_up',
 ]);
 
-const GENERIC_TOOL_NAMES = new Set([
-  'calendar',
-  'clock',
-  'drive',
-  'excel',
-  'finder',
-  'github',
-  'googledrive',
-  'googlemeet',
-  'linkedin',
-  'meet',
-  'slack',
-  'telegram',
-  'tiktok',
-  'twitter',
-  'whatsapp',
-  'x',
-  'youtube',
-  'zoom',
-]);
-
-const LOW_SIGNAL_OBJECT_NAMES = new Set(['auditfirms', 'bigfour', 'link', 'post', 'tweet', 'url']);
-
 function cleanupCompatible(a: CleanupObjectRow, b: CleanupObjectRow): boolean {
   return (
     a.type === b.type ||
@@ -596,37 +573,13 @@ function payloadHasKey(payload: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(payload, key);
 }
 
-function hasDurableCreatePayload(payload: Record<string, unknown>): boolean {
-  const durableKeys = ['status', 'stage', 'priority', 'ownerUserId', 'assigneeUserId', 'dueAt'];
-  if (durableKeys.some((key) => payloadHasKey(payload, key))) return true;
-  return (
-    payload.metadata !== null &&
-    typeof payload.metadata === 'object' &&
-    !Array.isArray(payload.metadata) &&
-    Object.keys(payload.metadata).length > 0
-  );
-}
-
-function hasDurableNonMetadataCreatePayload(payload: Record<string, unknown>): boolean {
-  return ['status', 'stage', 'priority', 'ownerUserId', 'assigneeUserId', 'dueAt'].some((key) =>
-    payloadHasKey(payload, key),
-  );
-}
-
 function lowSignalCreateObject(item: SuggestionItemOutput): boolean {
   if (item.operation !== 'create' || item.targetKind !== 'object') return false;
   const normalized = normalizeCleanupName(itemCanonicalName(item));
   if (!normalized) return true;
   const type = itemCreateType(item);
-  const lowSignal =
-    (type === 'company' || type === 'topic' || type === 'other') &&
-    (GENERIC_TOOL_NAMES.has(normalized) || LOW_SIGNAL_OBJECT_NAMES.has(normalized));
-  if (!lowSignal) return false;
-  if (hasDurableNonMetadataCreatePayload(item.proposedPayload)) return false;
-  return (
-    payloadHasKey(item.proposedPayload, 'metadata') ||
-    !hasDurableCreatePayload(item.proposedPayload)
-  );
+  if (!extract.isLowSignalObjectName({ name: itemCanonicalName(item), type })) return false;
+  return true;
 }
 
 function existingMatchForCreate(
@@ -1034,7 +987,7 @@ async function createObjectCleanupSuggestionsForTeam(
   const protectedIds = new Set<string>();
   const ids = rows.map((row) => row.id);
   if (ids.length > 0) {
-    const [noteRows, relationshipRows, factRows] = await Promise.all([
+    const [noteRows, relationshipRows] = await Promise.all([
       db
         .select({ entityId: objectNotes.entityId, total: count() })
         .from(objectNotes)
@@ -1058,14 +1011,8 @@ async function createObjectCleanupSuggestionsForTeam(
         )
         .where(and(eq(entities.teamId, teamId), inArray(entities.id, ids)))
         .groupBy(entities.id),
-      db
-        .select({ entityId: factEntities.entityId, total: count() })
-        .from(factEntities)
-        .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))
-        .where(and(eq(factsTable.teamId, teamId), inArray(factEntities.entityId, ids)))
-        .groupBy(factEntities.entityId),
     ]);
-    for (const row of [...noteRows, ...factRows]) {
+    for (const row of noteRows) {
       if (row.total > 0) protectedIds.add(row.entityId);
     }
     for (const row of relationshipRows) {
@@ -1075,7 +1022,7 @@ async function createObjectCleanupSuggestionsForTeam(
 
   for (const row of rows) {
     const normalized = normalizeCleanupName(row.canonicalName);
-    if (!GENERIC_TOOL_NAMES.has(normalized)) continue;
+    if (!extract.isLowSignalObjectName({ name: row.canonicalName, type: row.type })) continue;
     if (row.type === 'task' || row.type === 'follow_up') continue;
     if (protectedIds.has(row.id)) continue;
     const dedupeKey = suggestions.suggestionDedupeKey({
@@ -1089,8 +1036,8 @@ async function createObjectCleanupSuggestionsForTeam(
       source: 'background',
       title: `Archive low-signal object: ${row.canonicalName}`,
       summary:
-        'This object looks like a generic tool or app name with no attached notes, facts, or links.',
-      reason: 'Cleanup archive candidates are limited to weak-evidence tool-like objects.',
+        'This object looks like a generic tool, app name, or low-signal topic with no attached notes or relationships.',
+      reason: 'Cleanup archive candidates are limited to weak-evidence generic objects.',
       confidence: 'medium',
       dedupeKey,
       metadata: {
@@ -1331,7 +1278,7 @@ async function runSuggestionExtraction(
     schema: suggestionExtractionSchema,
     model: modelId,
     system:
-      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, calendar refinements, reusable Q&A notes, board membership/item updates, clear lifecycle updates to existing lifecycle-capable artifacts, or durable relationships between workspace objects. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, merely conversational, could match multiple existing artifacts, or only says someone shared/sent/forwarded a link, post, file, reaction, app mention, or platform handle. Prefer updating an existing workspace object over creating one whenever the name, alias, person nickname, handle, company suffix variant, or conversation context plausibly matches exactly one object in the prompt. Create a task/object only when the evidence contains durable information and no plausible existing or pending object matches. For create task/object items, include proposedPayload.canonicalName matching the item title. For create object/task items that will be referenced by a relationship in the same bundle, include proposedPayload.localRef as a short lowercase slug unique within the bundle. Relationship items must use targetKind="object_relationship", operation="create", proposedPayload.kind="related", and either fromEntityId/toEntityId for existing objects or fromRef/toRef for sibling localRefs. Propose relationships only when the text explicitly implies a meaningful connection, not mere co-mention. For reusable Q&A, create or update an object_note item only when the conversation contains an explicit question and an explicit answer likely to help future teammates; do not create Q&A notes for vague replies, handoffs, guesses, one-off lookups, or generic summaries. Q&A note bodies must use "Q: ..." then "A: ..." and may include a short "Source: ..." line only if it is supported by the evidence. Attach Q&A notes to the one clearly relevant existing object with proposedPayload.entityId and body. If no object fits but the Q&A is high-signal, include a create object item with proposedPayload.type="topic" and canonicalName, then include an object_note create item whose proposedPayload uses entityName and entityType="topic" plus body. For updating an existing Q&A note, return targetKind="object_note", operation="update", targetId=<note uuid>, proposedPayload.body=<replacement body> only when the same reusable question is clearly matched. Use canonical lifecycle statuses for the target type: task todo/doing/done/blocked/cancelled, follow_up todo/doing/done/cancelled, project planning/active/on_hold/shipped/cancelled. Normalize aliases into that target vocabulary: for task/follow_up, "in progress" means doing and "completed" means done; for project, "started" or "in progress" means active and "completed" or "done" means shipped; "canceled" means cancelled only when the target type supports cancelled. For clear lifecycle movement, return an update item targeting the existing artifact UUID; progress/doing/active requires explicit workflow movement such as "started" or "working on", not "looked at" or "thinking about". Completion can come from any credible assertive source; hedged guesses like "I think it is done" are evidence only. Cancellation, blocking, and unblocking must map cleanly to the target artifact vocabulary. If multiple plausible artifacts match, return no lifecycle proposal. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For board-specific workflow evidence, use board_membership or board_item_update only against boards/items listed in the prompt; weak mentions remain evidence only. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
+      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, calendar refinements, reusable Q&A notes, board membership/item updates, clear lifecycle updates to existing lifecycle-capable artifacts, or durable relationships between workspace objects. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, merely conversational, could match multiple existing artifacts, or only says someone shared/sent/forwarded a link, post, file, reaction, app mention, or platform handle. Prefer updating an existing workspace object over creating one whenever the name, alias, person nickname, handle, company suffix variant, or conversation context plausibly matches exactly one object in the prompt. Create a task/object only when the evidence contains durable information and no plausible existing or pending object matches. Do not create company/topic objects for broad categories such as audit firms, PE firms, healthcare providers, SaaS tools, AI in robotics, or for everyday tools/platforms such as GitHub, Google Drive, TikTok, LinkedIn, X, Slack, or Zoom; if the durable evidence is a choice about using a tool, represent it as a decision instead. For create task/object items, include proposedPayload.canonicalName matching the item title. For create object/task items that will be referenced by a relationship in the same bundle, include proposedPayload.localRef as a short lowercase slug unique within the bundle. Relationship items must use targetKind="object_relationship", operation="create", proposedPayload.kind="related", and either fromEntityId/toEntityId for existing objects or fromRef/toRef for sibling localRefs. Propose relationships only when the text explicitly implies a meaningful connection, not mere co-mention. For reusable Q&A, create or update an object_note item only when the conversation contains an explicit question and an explicit answer likely to help future teammates; do not create Q&A notes for vague replies, handoffs, guesses, one-off lookups, or generic summaries. Q&A note bodies must use "Q: ..." then "A: ..." and may include a short "Source: ..." line only if it is supported by the evidence. Attach Q&A notes to the one clearly relevant existing object with proposedPayload.entityId and body. If no object fits but the Q&A is high-signal, include a create object item with proposedPayload.type="topic" and canonicalName, then include an object_note create item whose proposedPayload uses entityName and entityType="topic" plus body. For updating an existing Q&A note, return targetKind="object_note", operation="update", targetId=<note uuid>, proposedPayload.body=<replacement body> only when the same reusable question is clearly matched. Use canonical lifecycle statuses for the target type: task todo/doing/done/blocked/cancelled, follow_up todo/doing/done/cancelled, project planning/active/on_hold/shipped/cancelled. Normalize aliases into that target vocabulary: for task/follow_up, "in progress" means doing and "completed" means done; for project, "started" or "in progress" means active and "completed" or "done" means shipped; "canceled" means cancelled only when the target type supports cancelled. For clear lifecycle movement, return an update item targeting the existing artifact UUID; progress/doing/active requires explicit workflow movement such as "started" or "working on", not "looked at" or "thinking about". Completion can come from any credible assertive source; hedged guesses like "I think it is done" are evidence only. Cancellation, blocking, and unblocking must map cleanly to the target artifact vocabulary. If multiple plausible artifacts match, return no lifecycle proposal. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For board-specific workflow evidence, use board_membership or board_item_update only against boards/items listed in the prompt; weak mentions remain evidence only. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
     prompt,
   });
 

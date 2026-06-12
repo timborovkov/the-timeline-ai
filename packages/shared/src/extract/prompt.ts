@@ -22,6 +22,9 @@ Rules:
 - Each fact has a confidence in [0,1]: 1.0 = stated literally, 0.7 = clear implication, <=0.5 = uncertain. Prefer fewer high-confidence facts to many low-confidence ones.
 - Do NOT output message mechanics as facts: shared/sent/forwarded a link, posted a tweet, mentioned an app, reacted, forwarded a file, or otherwise described how a message was transmitted. Raw event text already preserves those.
 - Mentions of tools, apps, platforms, generic categories, handles, and link targets are not entities unless the current event states durable work context about them.
+- Do NOT create entities for generic noun phrases or broad categories such as "financial data", "company financial data", "customer relationships", "audit firms", "PE firms", "healthcare providers", "AI in robotics", "SaaS tools", "link", "post", "tweet", "url", "cost", "details", or "information". Keep the fact text, but omit those generic mentions.
+- Do NOT create entities for public registries, authorities, or data sources when they are only the source of data, e.g. Verottaja, Tax Administration, KILA, or Finlex. Keep those names in the fact text and anchor the fact to the vendor, product, project, or decision that uses the data.
+- Do NOT treat everyday SaaS/tools/platforms as companies just because they are mentioned, e.g. GitHub, Google Drive, TikTok, LinkedIn, X, Slack, Zoom. If the event records a durable choice about a tool, represent the durable choice as a decision or object update instead.
 - Entity mentions: extract people, companies, projects, and topics referenced by the fact.
   - "person": individual humans (first name + last name when known, otherwise just the available form).
   - "company": organisations, brands, products acting as orgs.
