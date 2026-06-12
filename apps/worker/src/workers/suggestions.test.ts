@@ -2129,6 +2129,134 @@ describe('processSuggestionJobForTests', () => {
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
   });
 
+  it('stores high-confidence Telegram Q&A proposals as object-note suggestion items', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000fa';
+    const reviewId = '20000000-0000-0000-0000-0000000000fa';
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    const object = await scope.objects.createObject({
+      type: 'topic',
+      canonicalName: 'Support routing',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    await seedTelegramConversationReview(db as never, {
+      rawEventId,
+      reviewId,
+      chatId: 'qa-topic',
+      text: 'Q: Where do refunds go? A: Send them to finance-ops.',
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Remember refund routing answer',
+            summary: 'The conversation answered a reusable support-routing question.',
+            reason: 'The question and answer are explicit and reusable.',
+            confidence: 'high',
+            quote: 'Send them to finance-ops.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object_note',
+                targetId: object.id,
+                title: 'Add refund routing Q&A',
+                proposedPayload: {
+                  entityId: object.id,
+                  body: 'Q: Where do refunds go?\nA: Send them to finance-ops.',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await scope.suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'object_note',
+      targetId: object.id,
+      title: 'Add refund routing Q&A',
+      proposedPayload: {
+        entityId: object.id,
+        body: 'Q: Where do refunds go?\nA: Send them to finance-ops.',
+      },
+    });
+  });
+
+  it('includes existing Q&A notes in conversation review prompts for note updates', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000fb';
+    const reviewId = '20000000-0000-0000-0000-0000000000fb';
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    const object = await scope.objects.createObject({
+      type: 'topic',
+      canonicalName: 'Support routing',
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    const note = await scope.objects.createNote({
+      entityId: object.id,
+      body: 'Q: Where do refunds go?\nA: Send them to billing.',
+      authorUserId: OWNER_ID,
+      actor: { kind: 'user', userId: OWNER_ID },
+    });
+    await seedTelegramConversationReview(db as never, {
+      rawEventId,
+      reviewId,
+      chatId: 'qa-update',
+      text: 'Correction: refunds now go to finance-ops, not billing.',
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Update refund routing answer',
+            summary: 'A follow-up corrected the reusable answer.',
+            reason: 'The correction clearly matches the existing Q&A note.',
+            confidence: 'high',
+            quote: 'refunds now go to finance-ops',
+            items: [
+              {
+                operation: 'update',
+                targetKind: 'object_note',
+                targetId: note.id,
+                title: 'Update refund routing Q&A',
+                proposedPayload: {
+                  body: 'Q: Where do refunds go?\nA: Send them to finance-ops.',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'conversation_review', conversationReviewId: reviewId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const prompt = (chat.mock.calls[0]?.[0] as { prompt: string }).prompt;
+    expect(prompt).toContain('# Existing Q&A object notes');
+    expect(prompt).toContain(`note:${note.id}`);
+    const [bundle] = await scope.suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'update',
+      targetKind: 'object_note',
+      targetId: note.id,
+      proposedPayload: {
+        body: 'Q: Where do refunds go?\nA: Send them to finance-ops.',
+      },
+    });
+  });
+
   it('excludes Slack threaded replies from unthreaded channel evidence', async () => {
     const threadedId = '10000000-0000-0000-0000-0000000000f7';
     const channelId = '10000000-0000-0000-0000-0000000000f8';

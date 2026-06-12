@@ -55,7 +55,14 @@ interface SuggestionWorkerIO {
 
 const suggestionItemSchema = z.object({
   operation: z.enum(['create', 'update', 'archive_or_cancel']),
-  targetKind: z.enum(['task', 'object', 'calendar_event', 'board_membership', 'board_item_update']),
+  targetKind: z.enum([
+    'task',
+    'object',
+    'calendar_event',
+    'object_note',
+    'board_membership',
+    'board_item_update',
+  ]),
   targetId: z.uuid().nullable().optional(),
   title: z.string().min(1).max(200),
   description: z.string().max(500).nullable().optional(),
@@ -147,6 +154,7 @@ function normalizeSuggestionItemPayload(
   objectType?: EntityType | null,
 ): Record<string, unknown> {
   const payload = { ...item.proposedPayload };
+  if (item.targetKind === 'object_note') return payload;
   const lifecycleType = lifecycleStatusTypeForPayload(item, payload, objectType);
   if (lifecycleType && typeof payload.status === 'string') {
     payload.status = normalizeLifecycleStatus(payload.status, lifecycleType);
@@ -936,6 +944,29 @@ async function runSuggestionExtraction(
     .orderBy(desc(entities.updatedAt))
     .limit(OBJECT_MATCHING_LIMIT);
 
+  const qnaNoteRows = await deps.db
+    .select({
+      id: objectNotes.id,
+      entityId: objectNotes.entityId,
+      body: objectNotes.body,
+      updatedAt: objectNotes.updatedAt,
+      entityType: entities.type,
+      entityName: entities.canonicalName,
+    })
+    .from(objectNotes)
+    .innerJoin(entities, eq(entities.id, objectNotes.entityId))
+    .where(
+      and(
+        eq(objectNotes.teamId, teamId),
+        isNull(objectNotes.deletedAt),
+        isNull(entities.mergedIntoId),
+        isNull(entities.archivedAt),
+        or(sql`${objectNotes.body} ilike 'Q:%'`, sql`${objectNotes.body} ilike ${'%\nA:%'}`),
+      ),
+    )
+    .orderBy(desc(objectNotes.updatedAt))
+    .limit(40);
+
   const memberRows = await deps.db
     .select({ userId: teamMembers.userId, name: users.name, email: users.email })
     .from(teamMembers)
@@ -1001,6 +1032,13 @@ async function runSuggestionExtraction(
         aliases: aliasesForRow({ aliases: e.aliases }),
         status: e.status,
       })),
+      qnaNotes: qnaNoteRows.map((note) => ({
+        id: note.id,
+        entityId: note.entityId,
+        entityType: note.entityType,
+        entityName: note.entityName,
+        body: note.body,
+      })),
       calendar: calendarRows
         .filter((ev) => ev.visibility === 'team')
         .map((ev) => ({
@@ -1041,7 +1079,7 @@ async function runSuggestionExtraction(
     schema: suggestionExtractionSchema,
     model: modelId,
     system:
-      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, calendar refinements, board membership/item updates, or clear lifecycle updates to existing lifecycle-capable artifacts. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, merely conversational, could match multiple existing artifacts, or only says someone shared/sent/forwarded a link, post, file, reaction, app mention, or platform handle. Prefer updating an existing workspace object over creating one whenever the name, alias, person nickname, handle, company suffix variant, or conversation context plausibly matches exactly one object in the prompt. Create a task/object only when the evidence contains durable information and no plausible existing or pending object matches. For create task/object items, include proposedPayload.canonicalName matching the item title. Use canonical lifecycle statuses for the target type: task todo/doing/done/blocked/cancelled, follow_up todo/doing/done/cancelled, project planning/active/on_hold/shipped/cancelled. Normalize aliases into that target vocabulary: for task/follow_up, "in progress" means doing and "completed" means done; for project, "started" or "in progress" means active and "completed" or "done" means shipped; "canceled" means cancelled only when the target type supports cancelled. For clear lifecycle movement, return an update item targeting the existing artifact UUID; progress/doing/active requires explicit workflow movement such as "started" or "working on", not "looked at" or "thinking about". Completion can come from any credible assertive source; hedged guesses like "I think it is done" are evidence only. Cancellation, blocking, and unblocking must map cleanly to the target artifact vocabulary. If multiple plausible artifacts match, return no lifecycle proposal. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For board-specific workflow evidence, use board_membership or board_item_update only against boards/items listed in the prompt; weak mentions remain evidence only. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
+      'Extract proposed workspace changes from natural team conversation. Return only commitments that imply future work, deadlines, scheduled obligations, durable decisions, object updates, calendar refinements, reusable Q&A notes, board membership/item updates, or clear lifecycle updates to existing lifecycle-capable artifacts. Do not invent. Use proposal rows only; never claim changes are applied. Return no bundles when the evidence is ambiguous, contradicted, merely conversational, could match multiple existing artifacts, or only says someone shared/sent/forwarded a link, post, file, reaction, app mention, or platform handle. Prefer updating an existing workspace object over creating one whenever the name, alias, person nickname, handle, company suffix variant, or conversation context plausibly matches exactly one object in the prompt. Create a task/object only when the evidence contains durable information and no plausible existing or pending object matches. For create task/object items, include proposedPayload.canonicalName matching the item title. For reusable Q&A, create or update an object_note item only when the conversation contains an explicit question and an explicit answer likely to help future teammates; do not create Q&A notes for vague replies, handoffs, guesses, one-off lookups, or generic summaries. Q&A note bodies must use "Q: ..." then "A: ..." and may include a short "Source: ..." line only if it is supported by the evidence. Attach Q&A notes to the one clearly relevant existing object with proposedPayload.entityId and body. If no object fits but the Q&A is high-signal, include a create object item with proposedPayload.type="topic" and canonicalName, then include an object_note create item whose proposedPayload uses entityName and entityType="topic" plus body. For updating an existing Q&A note, return targetKind="object_note", operation="update", targetId=<note uuid>, proposedPayload.body=<replacement body> only when the same reusable question is clearly matched. Use canonical lifecycle statuses for the target type: task todo/doing/done/blocked/cancelled, follow_up todo/doing/done/cancelled, project planning/active/on_hold/shipped/cancelled. Normalize aliases into that target vocabulary: for task/follow_up, "in progress" means doing and "completed" means done; for project, "started" or "in progress" means active and "completed" or "done" means shipped; "canceled" means cancelled only when the target type supports cancelled. For clear lifecycle movement, return an update item targeting the existing artifact UUID; progress/doing/active requires explicit workflow movement such as "started" or "working on", not "looked at" or "thinking about". Completion can come from any credible assertive source; hedged guesses like "I think it is done" are evidence only. Cancellation, blocking, and unblocking must map cleanly to the target artifact vocabulary. If multiple plausible artifacts match, return no lifecycle proposal. For clear calendar reschedules/refinements/cancellations, target the existing calendar event UUID and use update or archive_or_cancel. For date-only scheduled commitments, create all-day calendar_event items. For board-specific workflow evidence, use board_membership or board_item_update only against boards/items listed in the prompt; weak mentions remain evidence only. For durable decisions, create object items with proposedPayload.type="decision"; use status="accepted" for clear accepted decisions and status="proposed" only when the evidence clearly says the decision is not final. Use UUIDs only from the prompt when targeting existing records.',
     prompt,
   });
 
@@ -1455,6 +1493,13 @@ function buildPrompt(args: {
   facts: string[];
   members: { userId: string; name: string | null; email: string | null }[];
   objects: { id: string; type: string; name: string; aliases: string[]; status: string }[];
+  qnaNotes: {
+    id: string;
+    entityId: string;
+    entityType: string;
+    entityName: string;
+    body: string;
+  }[];
   calendar: { id: string; title: string; startAt: string; allDay: boolean }[];
   boards: {
     id: string;
@@ -1492,6 +1537,15 @@ function buildPrompt(args: {
         `- ${o.id}: ${o.type} "${o.name}" status=${o.status} aliases=${
           o.aliases.join(', ') || 'none'
         }`,
+    ),
+    '',
+    '# Existing Q&A object notes',
+    ...args.qnaNotes.map(
+      (note) =>
+        `- note:${note.id} object:${note.entityId} ${note.entityType} "${note.entityName}" ${truncate(
+          note.body,
+          500,
+        )}`,
     ),
     '',
     '# Existing calendar events',

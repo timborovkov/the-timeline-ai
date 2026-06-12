@@ -21,6 +21,7 @@ vi.mock('#src/queue/queues.js', async (importOriginal) => {
     enqueueCalendarEventEmbedJob: enqueue,
     enqueueEmbedJob: enqueue,
     enqueueObjectEmbedJob: enqueue,
+    enqueueObjectNoteEmbedJob: enqueue,
   };
 });
 
@@ -1642,6 +1643,355 @@ describe('suggestion scope', () => {
       actor_user_id: null,
       note_author_user_id: null,
       event_author_user_id: null,
+    });
+  });
+
+  it('accepts object note create suggestions that store the object id on targetId', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const object = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Target id note project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember target id note',
+      dedupeKey: 'target-id-object-note',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: object.id,
+          title: 'Add note',
+          dedupeKey: 'target-id-object-note:item',
+          proposedPayload: {
+            body: 'Q: Who owns partner onboarding?\nA: Nina owns partner onboarding.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ body: string; entity_id: string }>(
+      `SELECT body, entity_id
+       FROM object_notes
+       WHERE team_id = '${TEAM_ID}'
+         AND entity_id = '${object.id}'`,
+    );
+    expect(result.rows).toEqual([
+      {
+        body: 'Q: Who owns partner onboarding?\nA: Nina owns partner onboarding.',
+        entity_id: object.id,
+      },
+    ]);
+  });
+
+  it('keeps distinct pending Q&A note creates on the same object actionable', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const object = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Q&A backlog project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const first = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Remember onboarding owner',
+      dedupeKey: 'qna-distinct-same-object:first',
+      metadata: { conversation_review_id: 'qna-distinct-same-object' },
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: object.id,
+          title: 'Add onboarding Q&A',
+          dedupeKey: 'qna-distinct-same-object:first:item',
+          proposedPayload: {
+            body: 'Q: Who owns onboarding?\nA: Nina owns onboarding.',
+          },
+        },
+      ],
+    });
+    const second = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Remember escalation owner',
+      dedupeKey: 'qna-distinct-same-object:second',
+      metadata: { conversation_review_id: 'qna-distinct-same-object' },
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: object.id,
+          title: 'Add escalation Q&A',
+          dedupeKey: 'qna-distinct-same-object:second:item',
+          proposedPayload: {
+            body: 'Q: Who handles escalations?\nA: Tomas handles escalations.',
+          },
+        },
+      ],
+    });
+
+    expect((await scope.suggestions.getSuggestion(first.id))?.items[0]).toMatchObject({
+      status: 'pending',
+    });
+    expect((await scope.suggestions.getSuggestion(second.id))?.items[0]).toMatchObject({
+      status: 'pending',
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(first.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    expect((await scope.suggestions.getSuggestion(second.id))?.items[0]).toMatchObject({
+      status: 'pending',
+    });
+  });
+
+  it('accepts a Q&A note before its sibling topic create by applying the topic first', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Remember refunds routing',
+      dedupeKey: 'qna-topic-note-dependent',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Refund routing',
+          dedupeKey: 'qna-topic-note-dependent:topic',
+          proposedPayload: {
+            type: 'topic',
+            canonicalName: 'Refund routing',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          title: 'Add Q&A note',
+          dedupeKey: 'qna-topic-note-dependent:note',
+          proposedPayload: {
+            entityName: 'Refund routing',
+            entityType: 'topic',
+            body: 'Q: Where should refund requests go?\nA: Send them to finance-ops.',
+          },
+        },
+      ],
+    });
+    const noteItemId = bundle.items.find((item) => item.targetKind === 'object_note')?.id;
+    const topicItemId = bundle.items.find((item) => item.targetKind === 'object')?.id;
+    expect(noteItemId).toBeDefined();
+    expect(topicItemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(noteItemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{
+      object_name: string;
+      object_type: string;
+      note_body: string;
+      topic_status: string;
+      note_status: string;
+    }>(
+      `SELECT
+         e.canonical_name AS object_name,
+         e.type AS object_type,
+         n.body AS note_body,
+         topic_item.status AS topic_status,
+         note_item.status AS note_status
+       FROM entities e
+       JOIN object_notes n ON n.entity_id = e.id
+       JOIN agent_suggestion_items topic_item ON topic_item.id = $1
+       JOIN agent_suggestion_items note_item ON note_item.id = $2
+       WHERE e.team_id = '${TEAM_ID}'
+         AND e.canonical_name = 'Refund routing'`,
+      [topicItemId, noteItemId],
+    );
+    expect(result.rows[0]).toEqual({
+      object_name: 'Refund routing',
+      object_type: 'topic',
+      note_body: 'Q: Where should refund requests go?\nA: Send them to finance-ops.',
+      topic_status: 'accepted',
+      note_status: 'accepted',
+    });
+  });
+
+  it('accepts topic create before dependent Q&A note during accept all', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Remember invoice routing',
+      dedupeKey: 'qna-topic-note-accept-all',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          title: 'Add invoice Q&A note',
+          dedupeKey: 'qna-topic-note-accept-all:note',
+          proposedPayload: {
+            entityName: 'Invoice routing',
+            entityType: 'topic',
+            body: 'Q: Who receives invoice issues?\nA: Send them to ap-team.',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Invoice routing',
+          dedupeKey: 'qna-topic-note-accept-all:topic',
+          proposedPayload: {
+            type: 'topic',
+            canonicalName: 'Invoice routing',
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptAll(bundle.id)).resolves.toEqual({
+      accepted: 2,
+      failed: 0,
+    });
+
+    const result = await pg.query<{ body: string }>(
+      `SELECT n.body
+       FROM object_notes n
+       JOIN entities e ON e.id = n.entity_id
+       WHERE e.team_id = '${TEAM_ID}'
+         AND e.type = 'topic'
+         AND e.canonical_name = 'Invoice routing'`,
+    );
+    expect(result.rows).toEqual([
+      { body: 'Q: Who receives invoice issues?\nA: Send them to ap-team.' },
+    ]);
+  });
+
+  it('does not attach a dependent Q&A note to an existing same-name object when sibling create fails', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const existing = await scope.objects.createObject({
+      type: 'topic',
+      canonicalName: 'Travel policy',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Remember travel policy answer',
+      dedupeKey: 'qna-topic-note-same-name',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Travel policy',
+          dedupeKey: 'qna-topic-note-same-name:topic',
+          proposedPayload: {
+            type: 'topic',
+            canonicalName: 'Travel policy',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          title: 'Add travel Q&A note',
+          dedupeKey: 'qna-topic-note-same-name:note',
+          proposedPayload: {
+            entityName: 'Travel policy',
+            entityType: 'topic',
+            body: 'Q: What hotel rate is approved?\nA: Up to 240 EUR nightly.',
+          },
+        },
+      ],
+    });
+    const topicItemId = bundle.items.find((item) => item.targetKind === 'object')?.id;
+    expect(topicItemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptAll(bundle.id)).resolves.toEqual({
+      accepted: 0,
+      failed: 2,
+    });
+
+    const result = await pg.query<{ note_count: string; entity_id: string }>(
+      `SELECT count(n.id)::text AS note_count, e.id AS entity_id
+       FROM entities e
+       LEFT JOIN object_notes n ON n.entity_id = e.id
+       WHERE e.team_id = '${TEAM_ID}'
+         AND e.canonical_name = 'Travel policy'
+       GROUP BY e.id
+       ORDER BY e.id`,
+    );
+    const existingRow = result.rows.find((row) => row.entity_id === existing.id);
+    expect(existingRow?.note_count).toBe('0');
+
+    const items = await pg.query<{ target_kind: string; status: string }>(
+      `SELECT target_kind, status
+       FROM agent_suggestion_items
+       WHERE suggestion_id = $1
+       ORDER BY target_kind`,
+      [bundle.id],
+    );
+    expect(items.rows).toEqual([
+      { target_kind: 'object', status: 'failed' },
+      { target_kind: 'object_note', status: 'failed' },
+    ]);
+  });
+
+  it('accepts object note update suggestions as agent audit changes', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const object = await scope.objects.createObject({
+      type: 'topic',
+      canonicalName: 'Support routing',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const note = await scope.objects.createNote({
+      entityId: object.id,
+      body: 'Q: Where do refunds go?\nA: Send them to billing.',
+      authorUserId: USER_ID,
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update refund routing answer',
+      dedupeKey: 'agent-note-update',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'object_note',
+          targetId: note.id,
+          title: 'Update Q&A note',
+          dedupeKey: 'agent-note-update:item',
+          proposedPayload: {
+            body: 'Q: Where do refunds go?\nA: Send them to finance-ops.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{
+      body: string;
+      actor_kind: string;
+      actor_user_id: string | null;
+      source_metadata: Record<string, unknown>;
+    }>(
+      `SELECT n.body, oc.actor_kind, oc.actor_user_id, re.source_metadata
+       FROM object_notes n
+       JOIN object_changes oc ON oc.entity_id = n.entity_id
+       LEFT JOIN raw_events re ON re.id = oc.source_event_id
+       WHERE n.id = $1 AND oc.field = '__note_update__'
+       ORDER BY oc.changed_at DESC
+       LIMIT 1`,
+      [note.id],
+    );
+    expect(result.rows[0]?.body).toBe('Q: Where do refunds go?\nA: Send them to finance-ops.');
+    expect(result.rows[0]).toMatchObject({
+      actor_kind: 'agent',
+      actor_user_id: null,
+      source_metadata: {
+        kind: 'object_note_update',
+        note_id: note.id,
+        agent_suggestion_item_id: itemId,
+      },
     });
   });
 

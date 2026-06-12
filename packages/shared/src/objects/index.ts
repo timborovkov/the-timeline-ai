@@ -2395,12 +2395,19 @@ export async function createIdentityFacet(
 export async function updateNote(
   db: Db,
   scope: TeamScopeCore,
-  input: { noteId: string; body: string; actorUserId: string },
+  input: {
+    noteId: string;
+    body: string;
+    actorUserId: string | null;
+    actor?: { kind: ActorKind; userId?: string | null };
+    metadata?: Record<string, unknown>;
+  },
 ): Promise<boolean> {
   await scope.requireMembership();
   if (!UUID_RE.test(input.noteId)) return false;
   const body = input.body.trim();
   if (!body) throw new Error('Note body cannot be empty');
+  const actor = input.actor ?? { kind: 'user' as const, userId: input.actorUserId };
 
   const updated = await db.transaction(async (tx) => {
     // Authors-only edit. The UI hides the Edit button when authorUserId
@@ -2408,17 +2415,20 @@ export async function updateNote(
     // POST — without this guard, any team member could rewrite anyone
     // else's notes. Returning false (not throw) so a hostile actor can't
     // probe note-id existence by error class.
+    const conditions = [
+      eq(objectNotes.id, input.noteId),
+      eq(objectNotes.teamId, scope.teamId),
+      isNull(objectNotes.deletedAt),
+    ];
+    if (actor.kind === 'user') {
+      if (!input.actorUserId) return false;
+      conditions.push(eq(objectNotes.authorUserId, input.actorUserId));
+    }
+
     const existing = await tx
       .select()
       .from(objectNotes)
-      .where(
-        and(
-          eq(objectNotes.id, input.noteId),
-          eq(objectNotes.teamId, scope.teamId),
-          eq(objectNotes.authorUserId, input.actorUserId),
-          isNull(objectNotes.deletedAt),
-        ),
-      )
+      .where(and(...conditions))
       .limit(1);
     const note = existing[0];
     if (!note) return false;
@@ -2439,6 +2449,7 @@ export async function updateNote(
         occurredAt: new Date(),
         visibility: 'team',
         sourceMetadata: {
+          ...(input.metadata ?? {}),
           kind: 'object_note_update',
           entity_id: note.entityId,
           note_id: note.id,
@@ -2448,8 +2459,8 @@ export async function updateNote(
     await tx.insert(objectChanges).values({
       teamId: scope.teamId,
       entityId: note.entityId,
-      actorUserId: input.actorUserId,
-      actorKind: 'user',
+      actorUserId: actor.userId ?? null,
+      actorKind: actor.kind,
       status: 'applied',
       field: '__note_update__',
       previousValue: { note_id: note.id, body: note.body },

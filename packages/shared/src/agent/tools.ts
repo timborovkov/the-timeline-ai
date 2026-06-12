@@ -71,6 +71,12 @@ const searchTimelineInput = z.object({
   limit: z.number().int().min(1).max(20).optional(),
 });
 
+const searchObjectNotesInput = z.object({
+  query: z.string().trim().min(1).max(500),
+  objectId: z.string().regex(UUID_RE).optional(),
+  limit: z.number().int().min(1).max(20).optional(),
+});
+
 const getEntityInput = z.object({
   idOrName: z.string().trim().min(1).max(200),
 });
@@ -348,6 +354,43 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             ...r,
             snippet:
               fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }) ?? '',
+          }));
+          return { count: fenced.length, results: fenced };
+        }),
+    }),
+
+    search_object_notes: tool({
+      description:
+        'Semantic search across accepted object notes, especially durable Q&A notes. Use before search_timeline for reusable answers, policies, procedures, and "what is the answer to..." questions. Returns note_id citations plus the owning object; pending proposals are not included.',
+      inputSchema: searchObjectNotesInput,
+      execute: async (raw) =>
+        runSafe('search_object_notes', async () => {
+          const input = searchObjectNotesInput.parse(raw);
+          const args: Parameters<typeof scope.timeline.searchObjectNotes>[0] = {
+            query: input.query,
+          };
+          if (input.objectId) args.objectId = input.objectId;
+          if (input.limit) args.limit = input.limit;
+          const results = await scope.timeline.searchObjectNotes(args);
+          const fenced = results.map((result) => ({
+            note_id: result.noteId,
+            object_id: result.objectId,
+            object_name: result.objectName,
+            object_type: result.objectType,
+            body:
+              fenceExternalContent(result.body, {
+                source: 'object_note',
+                eventId: result.noteId,
+              }) ?? '',
+            score: result.score,
+            updated_at: result.updatedAt,
+            evidence: result.evidence.map((ev) => ({
+              raw_event_id: ev.rawEventId,
+              quote: fenceExternalContent(ev.quote, {
+                source: 'object_note_evidence',
+                eventId: ev.rawEventId,
+              }),
+            })),
           }));
           return { count: fenced.length, results: fenced };
         }),
