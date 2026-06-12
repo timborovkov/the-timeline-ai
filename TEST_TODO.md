@@ -6,20 +6,21 @@ contracts, not private implementation structure.
 
 ## Test Status Overview
 
-Last checked in this branch: full `pnpm validate` passes after syncing object
-cleanup suggestions with the latest structured-fallback and decision-approval
-coverage from `main`. Current suite shape:
+Last checked in this branch: full `pnpm validate` and root `pnpm test` pass
+after adding DOM-backed board add-item interaction coverage. Current suite
+shape:
 
-- DB Vitest: 1 file / 5 tests, package-level PGlite schema contract suite now
+- DB Vitest: 1 file / 7 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 64 files / 579 tests plus 1 skipped, including PGlite
-  integration/eval coverage plus queue, S3, and onboarding contracts.
-- Web Vitest: 77 files / 390 tests, including route/action/component coverage
-  for core recovery, onboarding, object sections, and first high-value UI
-  states.
-- Worker Vitest: 11 files / 117 tests, including extract, transcribe,
-  suggestions, embed, document extract, meeting finalize, janitor, and overdue
-  processors.
+- Shared Vitest: 68 files / 656 passed tests plus 1 skipped, including PGlite
+  calendar, timeline, MCP, integration, meeting, document, object, assistant,
+  Slack, recovery, connection, and onboarding coverage.
+- Web Vitest: 92 files / 462 tests, including route/action/component coverage
+  for core recovery, onboarding, object sections, board add-item interactions,
+  and other high-value UI states.
+- Worker Vitest: 11 files / 154 tests, including extract, transcribe,
+  document-extract, meeting-finalize, integration-sync, overdue-scan, embedding,
+  cleanup, and janitor behavior.
 - Playwright: 13 local core E2E journeys plus 1 production-ish smoke journey.
 - E2E CI is still manual and `continue-on-error: true`; it is not a merge
   gate yet.
@@ -56,7 +57,7 @@ Legend:
 | Embeddings and retrieval quality | Missing E2E semantic retrieval flow | Strong search/chat route contracts with mocked boundaries | N/A | Strong deterministic retrieval ranking, PGlite hydration, visibility/team filtering, embedding source planning, Qdrant point IDs, raw-event rendering, and LLM wrapper behavior | Partial: embed worker text/payload/skip/stale-source coverage | Missing retrieval UI assertions | Remaining: source rendering breadth for more providers and browser semantic retrieval assertions |
 | Support and team exports | Missing E2E | Missing direct routes if exposed | Missing support and team-export actions | Strong team-export archive integration | Team-export worker missing | Missing UI | Support validation/email failure, export enqueue/idempotency, worker failure cleanup |
 | Platform contracts: DB, queue, S3, env, rate limits | N/A | Rate-limit behavior covered through routes and token bucket | Queue degradation covered in some actions | Partial: env, crypto, rate limit, Qdrant, pagination, DB schema contracts, queue wrappers, Sentry scrubbing, and S3 wrappers covered | Queue/S3 wrapper behavior covered in shared tests | N/A | Deeper DB migration-compat history, queue/S3 live-emulator canaries |
-| Frontend components and UI states | Partial only where E2E crosses real pages | N/A | N/A | N/A | N/A | Partial: nav, job recovery list, capture composer, approvals, chat pane, document drive, object detail, onboarding checklist, timeline controls/page helpers, timeline feed dedupe, hub/status/error helpers | Timeline list cards, document detail/search, boards, team settings, integrations, MCP, richer empty/error/loading states |
+| Frontend components and UI states | Partial only where E2E crosses real pages | N/A | N/A | N/A | N/A | Partial: nav, job recovery list, capture composer, approvals, chat pane, document drive, object detail, board add-item flow, onboarding checklist, timeline controls/page helpers, timeline feed dedupe, hub/status/error helpers | Timeline list cards, document detail/search, boards, team settings, integrations, MCP, richer empty/error/loading states |
 
 ## High-Level Read
 
@@ -663,7 +664,7 @@ to leave untested.
   - Chat pane message states, citations, failed response, and pinned object
     context.
   - Object forms/detail, notes, relationship editing, and archive states.
-  - Board views and filter controls.
+  - Board views, add-item flow, and filter controls.
   - Team settings/admin role controls and destructive confirmations.
   - Integrations and MCP settings forms.
   - Onboarding checklist and dismissals.
