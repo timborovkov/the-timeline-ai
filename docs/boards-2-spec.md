@@ -1,14 +1,14 @@
 # Boards 2.0 Spec
 
 Boards 2.0 makes boards curated work surfaces for running team workflows:
-pilot pipelines, task boards, product catalogs, marketing plans, management
+sales pipelines, partnership boards, task boards, product catalogs, marketing plans, management
 reviews, and similar operating views. The same workspace object can appear on
 many boards, but each board keeps its own membership, lanes, item properties,
 and history.
 
 ## Goals
 
-- Make a CRM-style pilot pipeline useful without showing every company the
+- Make a CRM-style pipeline useful without showing every company the
   team has ever mentioned.
 - Keep boards general enough for tasks, products, services, vendors, projects,
   hiring loops, and custom team workflows.
@@ -128,19 +128,18 @@ plain-language descriptions before advanced settings.
 
 ### Pipeline
 
-Use for pilot pipelines, sales, partnerships, account tracking, and delivery
-stages.
+Use for sales, partnerships, account tracking, delivery stages, and other
+relationship-style workflows.
 
 Defaults:
 
 - recommended object kinds: company, deal, project
-- lanes: Identified, Discussed, Scoping, Negotiation, Contract signed, Pilot
-  active, Won, Lost
+- lanes: New, Qualified, Scoping, Proposal, Committed, Active, Won, Lost
 - properties: responsible, due date, priority, next step, notes
 
 Creation asks what the team is tracking:
 
-- Companies themselves: best for simple pilot/account lists.
+- Companies themselves: best for simple account or relationship lists.
 - Deals or opportunities: best when one company can have multiple active
   commercial threads.
 - Projects: best for delivery or implementation work.
@@ -186,7 +185,7 @@ membership, lanes, and board item properties.
 
 Success criteria:
 
-- The user can create a Pilot pipeline without seeing raw fields like
+- The user can create a pipeline without seeing raw fields like
   `filter.type` or `group_by`.
 - The board purpose is understandable to both teammates and the agent.
 
@@ -300,8 +299,8 @@ Weak mentions remain evidence only.
 
 The agent should answer:
 
-- What changed on Pilot pipeline this week?
-- Which pilot prospects are stuck?
+- What changed on the sales pipeline this week?
+- Which opportunities are stuck?
 - Who owns the next step for Revigo?
 - What companies have contract discussions but are not on the pipeline?
 
@@ -547,7 +546,7 @@ noisy boards that showed every object matching a broad type.
 ### UI
 
 - template picker examples are visible and understandable
-- Pilot pipeline creation does not expose raw filter/group fields first
+- Pipeline creation does not expose raw filter/group fields first
 - company-type board does not show all companies by default
 - board card opens detail panel
 - failed move rolls back only affected card

@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { defaultBoardLanes } from '#src/boards/index.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -75,6 +76,19 @@ afterEach(async () => {
 });
 
 describe('board scope', () => {
+  it('uses generic pipeline lanes by default', () => {
+    expect(defaultBoardLanes('pipeline').map((lane) => lane.name)).toEqual([
+      'New',
+      'Qualified',
+      'Scoping',
+      'Proposal',
+      'Committed',
+      'Active',
+      'Won',
+      'Lost',
+    ]);
+  });
+
   it('keeps board items team-scoped and rejects objects from other teams', async () => {
     const owner = withTeam(db, TEAM_A, USER_OWNER);
     const other = withTeam(db, TEAM_B, USER_OTHER_TEAM);

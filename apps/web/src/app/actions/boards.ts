@@ -76,7 +76,7 @@ function recommendedTypesFor(templateKind: boardDomain.BoardTemplateKind): objec
 
 function purposeFor(templateKind: boardDomain.BoardTemplateKind): string {
   if (templateKind === 'pipeline') {
-    return 'Track companies, deals, or projects through relationship, pilot, sales, partnership, or delivery stages.';
+    return 'Track companies, deals, or projects through staged progress.';
   }
   if (templateKind === 'task_board') {
     return 'Track tasks and follow-ups through an operational workflow.';
@@ -200,7 +200,7 @@ export async function updateBoardItemAction(input: unknown): Promise<ActionState
 
 export async function removeBoardItemAction(input: unknown): Promise<ActionState> {
   return runSentryServerAction('remove_board_item', async () => {
-    const parsed = z.object({ id: uuidSchema, boardId: uuidSchema }).safeParse(input);
+    const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid input' };
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
@@ -209,7 +209,7 @@ export async function removeBoardItemAction(input: unknown): Promise<ActionState
         kind: 'user',
         userId: r.userId,
       });
-      revalidateBoardSurfaces(parsed.data.boardId, item?.entityId);
+      revalidateBoardSurfaces(item?.boardId, item?.entityId);
       return item ? { ok: true } : { error: 'Board item not found' };
     } catch (err) {
       return { error: friendlyError(err, 'remove_board_item') };

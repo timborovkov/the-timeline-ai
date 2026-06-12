@@ -333,12 +333,12 @@ export function defaultBoardLanes(template: BoardTemplateKind): BoardLaneInput[]
   }
   if (template === 'pipeline') {
     return [
-      { name: 'Identified', kind: 'active' },
-      { name: 'Discussed', kind: 'active' },
+      { name: 'New', kind: 'active' },
+      { name: 'Qualified', kind: 'active' },
       { name: 'Scoping', kind: 'active' },
-      { name: 'Negotiation', kind: 'active' },
-      { name: 'Contract signed', kind: 'done' },
-      { name: 'Pilot active', kind: 'active' },
+      { name: 'Proposal', kind: 'active' },
+      { name: 'Committed', kind: 'done' },
+      { name: 'Active', kind: 'active' },
       { name: 'Won', kind: 'terminal' },
       { name: 'Lost', kind: 'lost' },
     ];
@@ -766,8 +766,10 @@ export function createBoardScope({
       itemId: string,
       actor: { kind: ActorKind; userId?: string | null },
     ): Promise<BoardItemRow | null> {
+      if (!UUID_RE.test(itemId)) return null;
       const current = await itemWithObject(itemId);
       if (!current || current.archivedAt) return null;
+      await requireBoard(current.boardId);
       const now = new Date();
       await db.transaction(async (tx) => {
         const updated = await tx

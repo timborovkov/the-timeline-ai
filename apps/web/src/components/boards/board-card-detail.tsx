@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import type * as boards from '@timeline/shared/boards';
 
+import { RemoveBoardItemButton } from '@/components/boards/remove-board-item-button';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 
 export function BoardCardDetail({
@@ -77,6 +78,12 @@ export function BoardCardDetail({
         >
           Ask about object
         </Link>
+        <RemoveBoardItemButton
+          boardId={boardId}
+          itemId={item.id}
+          objectName={item.object.canonicalName}
+          view={view}
+        />
       </div>
 
       <section className="mt-5">

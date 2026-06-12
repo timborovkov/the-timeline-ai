@@ -12,9 +12,9 @@ const TEMPLATES = [
     kind: 'pipeline',
     label: 'Pipeline',
     icon: KanbanSquare,
-    example: 'Pilot pipeline, sales, partnerships',
-    description: 'Track companies, deals, or projects through relationship stages.',
-    placeholder: 'Pilot pipeline',
+    example: 'Sales, partnerships, delivery',
+    description: 'Track companies, deals, or projects through staged progress.',
+    placeholder: 'Team pipeline',
   },
   {
     kind: 'task_board',
@@ -79,7 +79,7 @@ export function BoardCreateForm() {
   const [pending, startTransition] = useTransition();
   const [{ error, name, templateKind, purpose }, dispatch] = useReducer(reducer, {
     error: null,
-    name: 'Pilot pipeline',
+    name: 'Team pipeline',
     templateKind: 'pipeline',
     purpose: '',
   });
