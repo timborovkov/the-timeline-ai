@@ -7,10 +7,10 @@ export const metadata: Metadata = {
   description: 'Review and merge selected workspace objects.',
 };
 
-export default async function MergeObjectsPage({
+export default async function MergeObjectsModalPage({
   searchParams,
 }: {
   searchParams: Promise<{ ids?: string | string[]; suggestionItemId?: string }>;
 }) {
-  return MergeObjectsRouteContent({ presentation: 'page', searchParams });
+  return MergeObjectsRouteContent({ presentation: 'modal', searchParams });
 }

@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ReactNode } from 'react';
+
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -35,6 +37,15 @@ vi.mock('@/components/objects/object-merge-form', () => ({
         .join(',')}
     </div>
   ),
+}));
+vi.mock('@/components/objects/object-merge-route-modal', () => ({
+  ObjectMergeRouteModalForm: () => <div data-testid="object-merge-modal-form" />,
+  ObjectMergeRouteModalFrame: ({ children }: { children: ReactNode }) => (
+    <div data-testid="object-merge-modal-frame">{children}</div>
+  ),
+}));
+vi.mock('@/components/history-back-link', () => ({
+  HistoryBackLink: ({ label }: { label: string }) => <a href="/app/objects">{label}</a>,
 }));
 
 const { default: MergeObjectsPage } = await import('./page.js');

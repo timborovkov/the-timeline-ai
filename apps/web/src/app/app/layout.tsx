@@ -19,7 +19,13 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function AppLayout({ children }: { children: ReactNode }) {
+export default async function AppLayout({
+  children,
+  modal,
+}: {
+  children: ReactNode;
+  modal: ReactNode;
+}) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
 
@@ -100,6 +106,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           badges={badges}
         >
           {children}
+          {modal}
         </AppShell>
       </QueryProvider>
     </AnalyticsProvider>
