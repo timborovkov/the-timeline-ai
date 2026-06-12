@@ -972,7 +972,9 @@ async function runSuggestionExtraction(
   });
   const boardDetails = (
     await Promise.all(
-      (await scope.boards.listBoards()).slice(0, 8).map((board) => scope.boards.getBoard(board.id)),
+      (await scope.boards.listBoards())
+        .slice(0, 8)
+        .map((board) => scope.boards.getBoard(board.id, { itemLimit: 20 })),
     )
   ).filter((board) => board !== null);
 

@@ -228,6 +228,68 @@ describe('board scope', () => {
     expect(change?.status).toBe('suggested');
   });
 
+  it('accepts board membership suggestions idempotently when the item was already added', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Negotiation', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Revigo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const suggestion = await scope.boards.proposeBoardMembership({
+      boardId: board.id,
+      entityId: company.id,
+      laneId: board.lanes[0]?.id ?? null,
+    });
+    const item = await scope.boards.addBoardItem(board.id, {
+      entityId: company.id,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(
+      scope.boards.acceptBoardItemChange(suggestion.id, { kind: 'user', userId: USER_OWNER }),
+    ).resolves.toBe(item.id);
+
+    const changes = await db
+      .select()
+      .from(boardItemChanges)
+      .where(eq(boardItemChanges.id, suggestion.id));
+    expect(changes[0]?.status).toBe('applied');
+    const itemRows = await db.select().from(boardItems).where(eq(boardItems.entityId, company.id));
+    expect(itemRows.filter((row) => !row.archivedAt)).toHaveLength(1);
+  });
+
+  it('returns bounded board item pages with the full active item count', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Development tasks',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+
+    for (const name of ['One', 'Two', 'Three']) {
+      const task = await scope.objects.createObject({
+        type: 'task',
+        canonicalName: name,
+        actor: { kind: 'user', userId: USER_OWNER },
+      });
+      await scope.boards.addBoardItem(board.id, {
+        entityId: task.id,
+        laneId: board.lanes[0]?.id ?? null,
+        actor: { kind: 'user', userId: USER_OWNER },
+      });
+    }
+
+    const detail = await scope.boards.getBoard(board.id, { itemLimit: 1 });
+    expect(detail?.itemCount).toBe(3);
+    expect(detail?.items).toHaveLength(1);
+  });
+
   it('keeps pins per user and exposes object board context', async () => {
     const owner = withTeam(db, TEAM_A, USER_OWNER);
     const member = withTeam(db, TEAM_A, USER_MEMBER);

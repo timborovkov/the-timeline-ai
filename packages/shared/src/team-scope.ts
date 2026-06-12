@@ -4,6 +4,7 @@ import {
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
+  boardItems,
   calendarEvents,
   documents,
   documentVersions,
@@ -1181,6 +1182,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             resultId: agentSuggestionItems.resultId,
             title: agentSuggestionItems.title,
             proposedPayload: agentSuggestionItems.proposedPayload,
+            boardItemBoardId: boardItems.boardId,
           })
           .from(agentSuggestionEvidence)
           .innerJoin(
@@ -1190,6 +1192,16 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           .innerJoin(
             agentSuggestionItems,
             eq(agentSuggestionItems.suggestionId, agentSuggestions.id),
+          )
+          .leftJoin(
+            boardItems,
+            and(
+              eq(boardItems.teamId, teamId),
+              or(
+                eq(boardItems.id, agentSuggestionItems.targetId),
+                eq(boardItems.id, agentSuggestionItems.resultId),
+              ),
+            ),
           )
           .where(
             and(
@@ -1292,6 +1304,21 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           : targetId
             ? `/app/objects/${targetId}`
             : '/app/approvals';
+      if (kind === 'board') {
+        const payload =
+          row.proposedPayload && typeof row.proposedPayload === 'object'
+            ? (row.proposedPayload as Record<string, unknown>)
+            : {};
+        const boardId =
+          row.boardItemBoardId ??
+          (typeof payload.boardId === 'string' && payload.boardId.length > 0
+            ? payload.boardId
+            : null);
+        const itemId = row.resultId ?? row.targetId;
+        href = boardId
+          ? `/app/boards/${boardId}${itemId ? `?item=${itemId}` : ''}`
+          : '/app/approvals';
+      }
       if (
         row.targetKind === 'object_merge' &&
         (row.itemStatus === 'pending' || row.itemStatus === 'failed')

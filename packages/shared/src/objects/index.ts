@@ -9,6 +9,8 @@
  */
 import {
   type Db,
+  boardItemChanges,
+  boardItems,
   calendarEventEntities,
   chatMessages,
   chatSessions,
@@ -1496,6 +1498,54 @@ export async function mergeObjects(
         and(
           eq(calendarEventEntities.teamId, scope.teamId),
           inArray(calendarEventEntities.entityId, loserIds),
+        ),
+      );
+
+    const now = new Date();
+    const loserBoardItems = await tx
+      .select()
+      .from(boardItems)
+      .where(and(eq(boardItems.teamId, scope.teamId), inArray(boardItems.entityId, loserIds)));
+    for (const item of loserBoardItems) {
+      if (item.archivedAt) {
+        await tx
+          .update(boardItems)
+          .set({ entityId: survivor.id, updatedAt: now })
+          .where(and(eq(boardItems.id, item.id), eq(boardItems.teamId, scope.teamId)));
+        continue;
+      }
+
+      const duplicateActive = await tx
+        .select({ id: boardItems.id })
+        .from(boardItems)
+        .where(
+          and(
+            eq(boardItems.teamId, scope.teamId),
+            eq(boardItems.boardId, item.boardId),
+            eq(boardItems.entityId, survivor.id),
+            isNull(boardItems.archivedAt),
+          ),
+        )
+        .limit(1);
+      if (duplicateActive[0]) {
+        await tx
+          .update(boardItems)
+          .set({ archivedAt: now, updatedAt: now })
+          .where(and(eq(boardItems.id, item.id), eq(boardItems.teamId, scope.teamId)));
+      } else {
+        await tx
+          .update(boardItems)
+          .set({ entityId: survivor.id, updatedAt: now })
+          .where(and(eq(boardItems.id, item.id), eq(boardItems.teamId, scope.teamId)));
+      }
+    }
+    await tx
+      .update(boardItemChanges)
+      .set({ entityId: survivor.id })
+      .where(
+        and(
+          eq(boardItemChanges.teamId, scope.teamId),
+          inArray(boardItemChanges.entityId, loserIds),
         ),
       );
 

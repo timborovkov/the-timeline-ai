@@ -152,6 +152,10 @@ export interface BoardItemPatch {
   customFields?: Record<string, unknown>;
 }
 
+export interface BoardReadOptions {
+  itemLimit?: number;
+}
+
 type BoardSelect = typeof boards.$inferSelect;
 type LaneSelect = typeof boardLanes.$inferSelect;
 type ItemSelect = typeof boardItems.$inferSelect;
@@ -463,8 +467,8 @@ export function createBoardScope({
     };
   }
 
-  async function itemWithObject(itemId: string): Promise<BoardItemRow | null> {
-    const rows = await db
+  async function itemWithObject(itemId: string, query: DbOrTx = db): Promise<BoardItemRow | null> {
+    const rows = await query
       .select({ item: boardItems, object: entities })
       .from(boardItems)
       .innerJoin(entities, eq(boardItems.entityId, entities.id))
@@ -498,9 +502,13 @@ export function createBoardScope({
       return boardRows.map((row) => toBoardRow(row, counts, pins));
     },
 
-    async getBoard(boardId: string): Promise<BoardDetail | null> {
+    async getBoard(boardId: string, options: BoardReadOptions = {}): Promise<BoardDetail | null> {
       await scope.requireMembership();
       if (!UUID_RE.test(boardId)) return null;
+      const itemLimit =
+        options.itemLimit === undefined || !Number.isFinite(options.itemLimit)
+          ? 500
+          : Math.max(0, Math.min(Math.floor(options.itemLimit), 500));
       const boardRows = await db
         .select()
         .from(boards)
@@ -510,7 +518,7 @@ export function createBoardScope({
         .limit(1);
       const board = boardRows[0];
       if (!board) return null;
-      const [lanes, rows, pins] = await Promise.all([
+      const [lanes, rows, countRows, pins] = await Promise.all([
         db
           .select()
           .from(boardLanes)
@@ -520,8 +528,25 @@ export function createBoardScope({
           .select({ item: boardItems, object: entities })
           .from(boardItems)
           .innerJoin(entities, eq(boardItems.entityId, entities.id))
-          .where(and(eq(boardItems.boardId, boardId), eq(boardItems.teamId, scope.teamId)))
-          .orderBy(asc(boardItems.position), asc(boardItems.createdAt)),
+          .where(
+            and(
+              eq(boardItems.boardId, boardId),
+              eq(boardItems.teamId, scope.teamId),
+              isNull(boardItems.archivedAt),
+            ),
+          )
+          .orderBy(asc(boardItems.position), asc(boardItems.createdAt))
+          .limit(itemLimit),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(boardItems)
+          .where(
+            and(
+              eq(boardItems.boardId, boardId),
+              eq(boardItems.teamId, scope.teamId),
+              isNull(boardItems.archivedAt),
+            ),
+          ),
         db
           .select({ boardId: boardPins.boardId })
           .from(boardPins)
@@ -533,15 +558,14 @@ export function createBoardScope({
             ),
           ),
       ]);
-      const activeItems = rows.filter((row) => row.item.archivedAt === null);
       return {
         ...toBoardRow(
           board,
-          new Map([[boardId, activeItems.length]]),
+          new Map([[boardId, countRows[0]?.count ?? rows.length]]),
           new Set(pins.map((pin) => pin.boardId)),
         ),
         lanes: lanes.map(toLaneRow),
-        items: activeItems.map((row) => toItemRow(row.item, row.object)),
+        items: rows.map((row) => toItemRow(row.item, row.object)),
       };
     },
 
@@ -941,49 +965,129 @@ export function createBoardScope({
         .limit(1);
       const change = rows[0];
       if (!change) return null;
-      const [claimed] = await db
-        .update(boardItemChanges)
-        .set({ status: 'applied' })
-        .where(
-          and(
-            eq(boardItemChanges.id, change.id),
-            eq(boardItemChanges.teamId, scope.teamId),
-            eq(boardItemChanges.status, 'suggested'),
-          ),
-        )
-        .returning({ id: boardItemChanges.id });
-      if (!claimed) return null;
-      let itemId = change.boardItemId;
-      try {
-        if (change.field === '__add__') {
-          const payload = jsonObject(change.newValue);
-          const laneId = payload.laneId;
-          const created = await api.addBoardItem(change.boardId, {
-            entityId: change.entityId,
-            laneId: typeof laneId === 'string' && UUID_RE.test(laneId) ? laneId : null,
+      await requireBoard(change.boardId);
+      if (change.field === '__add__') {
+        await requireObject(change.entityId);
+        const laneId = jsonObject(change.newValue).laneId;
+        const safeLaneId = typeof laneId === 'string' && UUID_RE.test(laneId) ? laneId : null;
+        await requireLane(change.boardId, safeLaneId);
+      } else if (isBoardItemPatchField(change.field)) {
+        const patch = patchFromSuggestedField(change.field, change.newValue);
+        if (patch.responsibleUserId) await scope.requireTeamMember(patch.responsibleUserId);
+      } else {
+        throw new Error('Unsupported board change field');
+      }
+
+      return db.transaction(async (tx) => {
+        const [claimedChange] = await tx
+          .update(boardItemChanges)
+          .set({ status: 'applied' })
+          .where(
+            and(
+              eq(boardItemChanges.id, change.id),
+              eq(boardItemChanges.teamId, scope.teamId),
+              eq(boardItemChanges.status, 'suggested'),
+            ),
+          )
+          .returning();
+        if (!claimedChange) return null;
+
+        if (claimedChange.field === '__add__') {
+          const existing = await tx
+            .select({ id: boardItems.id })
+            .from(boardItems)
+            .where(
+              and(
+                eq(boardItems.teamId, scope.teamId),
+                eq(boardItems.boardId, claimedChange.boardId),
+                eq(boardItems.entityId, claimedChange.entityId),
+                isNull(boardItems.archivedAt),
+              ),
+            )
+            .limit(1);
+          if (existing[0]) return existing[0].id;
+
+          const laneId = jsonObject(claimedChange.newValue).laneId;
+          const safeLaneId = typeof laneId === 'string' && UUID_RE.test(laneId) ? laneId : null;
+          const [created] = await tx
+            .insert(boardItems)
+            .values({
+              teamId: scope.teamId,
+              boardId: claimedChange.boardId,
+              entityId: claimedChange.entityId,
+              laneId: safeLaneId,
+            })
+            .returning({ id: boardItems.id });
+          if (!created) throw new Error('Failed to add board item');
+          await writeChange({
+            tx,
+            boardId: claimedChange.boardId,
+            boardItemId: created.id,
+            entityId: claimedChange.entityId,
             actor,
+            field: '__add__',
+            newValue: {
+              boardId: claimedChange.boardId,
+              entityId: claimedChange.entityId,
+              laneId: safeLaneId,
+            },
           });
-          itemId = created.id;
-        } else if (itemId && isBoardItemPatchField(change.field)) {
-          const updated = await api.updateBoardItem(
-            itemId,
-            patchFromSuggestedField(change.field, change.newValue),
-            actor,
-          );
-          if (!updated) throw new Error('Board item no longer active');
-        } else {
+          return created.id;
+        }
+
+        if (!claimedChange.boardItemId || !isBoardItemPatchField(claimedChange.field)) {
           throw new Error('Unsupported board change field');
         }
-      } catch (err) {
-        await db
-          .update(boardItemChanges)
-          .set({ status: 'suggested' })
+        const current = await itemWithObject(claimedChange.boardItemId, tx);
+        if (!current || current.archivedAt) throw new Error('Board item no longer active');
+        const patch = patchFromSuggestedField(claimedChange.field, claimedChange.newValue);
+        if (patch.laneId !== undefined) await requireLane(current.boardId, patch.laneId);
+        const changed = Object.entries(patch).filter(([key, value]) => {
+          const field = key as keyof BoardItemPatch;
+          return !stableEqual(current[field], value);
+        });
+        if (changed.length === 0) return current.id;
+
+        const updated = await tx
+          .update(boardItems)
+          .set({
+            ...(patch.laneId !== undefined ? { laneId: patch.laneId } : {}),
+            ...(patch.position !== undefined ? { position: patch.position } : {}),
+            ...(patch.responsibleUserId !== undefined
+              ? { responsibleUserId: patch.responsibleUserId }
+              : {}),
+            ...(patch.dueAt !== undefined ? { dueAt: patch.dueAt } : {}),
+            ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+            ...(patch.nextStep !== undefined ? { nextStep: patch.nextStep } : {}),
+            ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+            ...(patch.customFields !== undefined ? { customFields: patch.customFields } : {}),
+            updatedAt: new Date(),
+          })
           .where(
-            and(eq(boardItemChanges.id, change.id), eq(boardItemChanges.teamId, scope.teamId)),
-          );
-        throw err;
-      }
-      return itemId;
+            and(
+              eq(boardItems.id, current.id),
+              eq(boardItems.teamId, scope.teamId),
+              isNull(boardItems.archivedAt),
+            ),
+          )
+          .returning({ id: boardItems.id });
+        if (updated.length === 0) throw new Error('Board item no longer active');
+        await Promise.all(
+          changed.map(([field, value]) =>
+            writeChange({
+              tx,
+              boardId: current.boardId,
+              boardItemId: current.id,
+              entityId: current.entityId,
+              actor,
+              field: field as BoardItemField,
+              previousValue: current[field as keyof BoardItemPatch],
+              newValue: value,
+            }),
+          ),
+        );
+        return current.id;
+      });
     },
 
     async rejectBoardItemChange(changeId: string): Promise<boolean> {

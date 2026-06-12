@@ -1,6 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
   type Db,
+  boardItemChanges,
+  boardItems,
   calendarEventEntities,
   calendarEvents,
   chatMessages,
@@ -450,7 +452,8 @@ describe('object scope — archive visibility', () => {
 
 describe('object scope — merge cleanup', () => {
   it('merges compatible objects, moves derived rows, dedupes edges, and hides merged rows', async () => {
-    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const scope = workspace.objects;
     const survivor = await scope.createObject({
       type: 'company',
       canonicalName: 'PwC',
@@ -477,6 +480,24 @@ describe('object scope — merge cleanup', () => {
       type: 'task',
       canonicalName: 'Follow up with PwC',
       parentObjectId: typo.id,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const board = await workspace.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [
+        { name: 'Discussed', kind: 'active' },
+        { name: 'Contract signed', kind: 'done' },
+      ],
+    });
+    const survivorCard = await workspace.boards.addBoardItem(board.id, {
+      entityId: survivor.id,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const typoCard = await workspace.boards.addBoardItem(board.id, {
+      entityId: typo.id,
+      laneId: board.lanes[1]?.id ?? null,
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
@@ -639,6 +660,18 @@ describe('object scope — merge cleanup', () => {
     expect(changeRows.map((row) => row.field)).toEqual(
       expect.arrayContaining(['__merge__', '__merged_from__', '__note_create__']),
     );
+    const cardRows = await db.select().from(boardItems).where(eq(boardItems.boardId, board.id));
+    expect(cardRows.filter((row) => !row.archivedAt)).toEqual([
+      expect.objectContaining({ id: survivorCard.id, entityId: survivor.id }),
+    ]);
+    const archivedTypoCard = cardRows.find((row) => row.id === typoCard.id);
+    expect(archivedTypoCard?.entityId).toBe(typo.id);
+    expect(archivedTypoCard?.archivedAt).toBeInstanceOf(Date);
+    const boardHistoryRows = await db
+      .select()
+      .from(boardItemChanges)
+      .where(eq(boardItemChanges.boardId, board.id));
+    expect(boardHistoryRows.every((row) => row.entityId !== typo.id)).toBe(true);
 
     const finalSurvivor = await scope.createObject({
       type: 'company',
