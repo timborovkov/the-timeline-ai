@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Workspace objects</h1>
       <div class="meta">
-        <span class="kind">Architecture</span><span>Last updated 2026-05-22</span>
+        <span class="kind">Architecture</span><span>Last updated 2026-06-12</span>
       </div>
       <p class="tldr">
         Phase 8 turned <code>entities</code> from an extraction artifact into the workspace's
@@ -105,7 +105,11 @@
           </tr>
           <tr>
             <td><code>object_notes</code></td>
-            <td>Mutable, author-owned notes attached to an object.</td>
+            <td>
+              Mutable notes attached to an object. Human-authored notes remain author-owned;
+              accepted agent suggestions can create or update Q&amp;A notes as visible object
+              memory.
+            </td>
             <td><code>author_user_id</code>, <code>body</code>, soft <code>deleted_at</code></td>
           </tr>
           <tr>
@@ -364,12 +368,12 @@
         <a href="../packages/shared/src/agent/tools.ts"
           ><code>packages/shared/src/agent/tools.ts</code></a
         >. Read-side tools <code>get_object</code>, <code>list_objects</code>,
-        <code>list_tasks</code>, and <code>recent_changes</code> sit alongside the existing
-        <code>get_entity</code> / <code>search_timeline</code> / <code>list_events</code>.
-        Write-side tools <code>suggest_task</code> and <code>propose_object_change</code> never
-        mutate entities directly — they record <code>status='suggested'</code> rows that a human
-        accepts or rejects from the object page. The system prompt is at
-        <code>agent-v3-2026-05</code>.
+        <code>list_tasks</code>, <code>recent_changes</code>, and
+        <code>search_object_notes</code> sit alongside the existing <code>get_entity</code> /
+        <code>search_timeline</code> / <code>list_events</code>. Write-side tools
+        <code>suggest_task</code> and <code>propose_object_change</code> never mutate entities
+        directly — they record <code>status='suggested'</code> rows that a human accepts or rejects
+        from the object page. The system prompt is at <code>agent-v8-2026-06</code>.
       </p>
       <p>
         Background conversation review also proposes approval-backed lifecycle updates for
@@ -378,6 +382,14 @@
         <code>shipped</code> for projects. Newer evidence can skip intermediate states, and stale
         pending lifecycle approvals are superseded at item level while unrelated approval items stay
         actionable.
+      </p>
+      <p>
+        Telegram and Slack conversation reviews can also propose reusable Q&amp;A as
+        <code>object_note</code> suggestion items. Accepted notes use a simple <code>Q: ...</code> /
+        <code>A: ...</code> body convention, keep the existing suggestion evidence trail, refresh
+        the note embedding, and are searched by <code>search_object_notes</code> before falling back
+        to raw timeline events. If no object clearly fits a high-signal exchange, the proposal
+        bundle can create a <code>topic</code> object and attach the note in the same approval flow.
       </p>
 
       <h2 id="routes">Web routes</h2>

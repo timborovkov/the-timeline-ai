@@ -10,6 +10,7 @@ import {
   documentVersions,
   integrations,
   objectIdentityFacets,
+  objectNotes,
   rawEvents,
   teamVisibilityDefaults,
 } from '@timeline/db';
@@ -530,6 +531,89 @@ describe('withTeam namespaced port', () => {
       USER_A,
       [0.1],
       expect.objectContaining({ eventIds: [matchingId] }),
+    );
+  });
+
+  it('retrieves accepted object-note Q&A with owning object and suggestion evidence', async () => {
+    const writeScope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await writeScope.timeline.createEvent({
+      authorUserId: USER_A,
+      source: 'telegram',
+      contentText: 'Q: Where do refunds go? A: Send them to finance-ops.',
+      visibility: 'team',
+    });
+    const object = await writeScope.objects.createObject({
+      type: 'topic',
+      canonicalName: 'Support routing',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const bundle = await writeScope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Remember refund routing answer',
+      dedupeKey: 'qna-note-search',
+      evidence: [{ rawEventId: event.id, quote: 'Send them to finance-ops.' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: object.id,
+          title: 'Add refund routing Q&A',
+          dedupeKey: 'qna-note-search:item',
+          proposedPayload: {
+            entityId: object.id,
+            body: 'Q: Where do refunds go?\nA: Send them to finance-ops.',
+          },
+        },
+      ],
+    });
+    await expect(
+      writeScope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+    const [note] = await db
+      .select({ id: objectNotes.id })
+      .from(objectNotes)
+      .where(eq(objectNotes.entityId, object.id))
+      .limit(1);
+    expect(note?.id).toBeDefined();
+
+    const qdrantSearch = vi.fn().mockResolvedValue([
+      {
+        id: `object-note-${note?.id}`,
+        score: 0.93,
+        payload: {
+          ...qdrantRawEventHit({ id: event.id }).payload,
+          source_kind: 'object_note',
+          event_id: null,
+          object_id: object.id,
+          note_id: note?.id ?? null,
+          source: 'system',
+          source_scope: 'object_note',
+          source_id: note?.id ?? '',
+        },
+      },
+    ]);
+    const readScope = withTeam(db as never, TEAM_A, USER_A, {
+      embed: () => Promise.resolve({ vector: [0.4], model: 'test' }),
+      qdrantSearch,
+    });
+
+    await expect(
+      readScope.timeline.searchObjectNotes({ query: 'refund routing' }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        noteId: note?.id,
+        objectId: object.id,
+        objectName: 'Support routing',
+        objectType: 'topic',
+        body: 'Q: Where do refunds go?\nA: Send them to finance-ops.',
+        evidence: [{ rawEventId: event.id, quote: 'Send them to finance-ops.' }],
+      }),
+    ]);
+    expect(qdrantSearch).toHaveBeenCalledWith(
+      TEAM_A,
+      USER_A,
+      [0.4],
+      expect.objectContaining({ sourceKind: 'object_note' }),
     );
   });
 

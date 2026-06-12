@@ -120,6 +120,32 @@ Creation proposals should be the last resort after checking existing objects
 and pending proposals.
 _Avoid_: Memory write when it hides the approval step
 
+**Q&A Note**:
+An object note that preserves a reusable question-and-answer exchange from a
+message-like capture surface, such as Telegram, Slack, or email, on the most
+relevant existing workspace object, usually a topic, decision, project, or
+policy-like object. A Q&A note is not a separate object lifecycle; it is durable
+object memory backed by raw-event evidence and accepted through the existing
+object memory proposal flow. A Q&A note requires an explicit answer that is
+likely to help future teammates, not a vague reply, handoff, or one-off lookup.
+It should attach to an existing object when one clearly fits; creating a topic
+object is a fallback for high-signal Q&A with no suitable existing object.
+Later evidence should update the existing Q&A note only when it clearly answers
+the same reusable question; ambiguous corrections should remain evidence or a
+reviewable correction proposal.
+A Q&A note should preserve the user-facing question when one exists; without an
+explicit question, the exchange should remain ordinary facts or object memory
+unless the reusable question is narrow and obvious.
+When answering later questions, accepted Q&A notes are the maintained answer;
+raw events and extracted facts remain the evidence trail and fallback when no
+accepted Q&A note exists.
+Pending Q&A note proposals may be mentioned as pending context, but they are
+not the team's maintained answer until accepted.
+Email threads are in scope for Q&A notes when the product can evaluate the
+thread context; single-message extraction should not guess a Q&A note from an
+isolated email.
+_Avoid_: Durable answer, FAQ object, fact object
+
 **Board**:
 A curated work surface for a team-defined purpose, such as a pilot pipeline,
 development task board, marketing plan, product catalog, or management review.
