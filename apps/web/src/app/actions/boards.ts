@@ -205,12 +205,12 @@ export async function removeBoardItemAction(input: unknown): Promise<ActionState
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      const ok = await r.scope.boards.removeBoardItem(parsed.data.id, {
+      const item = await r.scope.boards.removeBoardItem(parsed.data.id, {
         kind: 'user',
         userId: r.userId,
       });
-      revalidateBoardSurfaces(parsed.data.boardId);
-      return ok ? { ok: true } : { error: 'Board item not found' };
+      revalidateBoardSurfaces(parsed.data.boardId, item?.entityId);
+      return item ? { ok: true } : { error: 'Board item not found' };
     } catch (err) {
       return { error: friendlyError(err, 'remove_board_item') };
     }

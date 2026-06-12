@@ -12,7 +12,16 @@ import {
 } from '@dnd-kit/core';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useOptimistic,
+  useReducer,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 
 import type { SaveState } from '@/lib/utils';
 import type * as objects from '@timeline/shared/objects';
@@ -34,6 +43,60 @@ interface Props {
 // Sensible defaults so a board with no configured columns still renders. The
 // Generic object Kanban helper used by task-style object surfaces.
 const DEFAULT_STATUS_COLS = ['todo', 'doing', 'done', 'blocked'];
+
+interface MoveUiState {
+  saveState: SaveState;
+  savingCount: number;
+  cardErrors: Record<string, string>;
+  savingCardIds: ReadonlySet<string>;
+}
+
+type MoveUiAction =
+  | { type: 'move-start'; id: string; savingCount: number; savingCardIds: ReadonlySet<string> }
+  | { type: 'move-fail'; id: string; message: string }
+  | {
+      type: 'move-complete';
+      savingCount: number;
+      savingCardIds: ReadonlySet<string>;
+      batchFailed: boolean;
+    }
+  | { type: 'saved-timeout' };
+
+const INITIAL_MOVE_UI: MoveUiState = {
+  saveState: 'idle',
+  savingCount: 0,
+  cardErrors: {},
+  savingCardIds: new Set(),
+};
+
+function moveUiReducer(state: MoveUiState, action: MoveUiAction): MoveUiState {
+  switch (action.type) {
+    case 'move-start': {
+      const { [action.id]: _cleared, ...cardErrors } = state.cardErrors;
+      return {
+        ...state,
+        saveState: 'saving',
+        savingCount: action.savingCount,
+        savingCardIds: action.savingCardIds,
+        cardErrors,
+      };
+    }
+    case 'move-fail':
+      return {
+        ...state,
+        cardErrors: { ...state.cardErrors, [action.id]: action.message },
+      };
+    case 'move-complete':
+      return {
+        ...state,
+        saveState: action.savingCount > 0 ? 'saving' : action.batchFailed ? 'idle' : 'saved',
+        savingCount: action.savingCount,
+        savingCardIds: action.savingCardIds,
+      };
+    case 'saved-timeout':
+      return { ...state, saveState: 'idle' };
+  }
+}
 
 function colValue(row: objects.ObjectRow, key: GroupKey): string {
   const v = row[key];
@@ -79,10 +142,7 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
     });
   const [items, applyMove] = useOptimistic(rows, applyOptimistic);
   const [, startTransition] = useTransition();
-  const [saveState, setSaveState] = useState<SaveState>('idle');
-  const [savingCount, setSavingCount] = useState(0);
-  const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
-  const [savingCardIds, setSavingCardIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [moveUi, dispatchMoveUi] = useReducer(moveUiReducer, INITIAL_MOVE_UI);
   const [filterQuery, setFilterQuery] = useState('');
   const savingCountRef = useRef(0);
   const savingCardIdsRef = useRef<Set<string> | null>(null);
@@ -92,7 +152,7 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
     () => filterObjectsByText(items, filterQuery, { groupBy }),
     [groupBy, items, filterQuery],
   );
-  const moveErrors = Object.values(cardErrors);
+  const moveErrors = Object.values(moveUi.cardErrors);
 
   function activeSavingCardIds() {
     savingCardIdsRef.current ??= new Set();
@@ -134,15 +194,14 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
     startTransition(async () => {
       applyMove({ id, col });
       if (savedTimer.current) clearTimeout(savedTimer.current);
-      setSaveState('saving');
       if (savingCountRef.current === 0) batchHadFailureRef.current = false;
       savingCountRef.current += 1;
       activeSavingCardIds().add(id);
-      setSavingCount(savingCountRef.current);
-      setSavingCardIds(new Set(activeSavingCardIds()));
-      setCardErrors((errors) => {
-        const { [id]: _cleared, ...rest } = errors;
-        return rest;
+      dispatchMoveUi({
+        type: 'move-start',
+        id,
+        savingCount: savingCountRef.current,
+        savingCardIds: new Set(activeSavingCardIds()),
       });
       const patch =
         groupBy === 'priority'
@@ -155,23 +214,24 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
         const failed = 'error' in result && result.error;
         if (failed) {
           batchHadFailureRef.current = true;
-          setCardErrors((errors) => ({ ...errors, [id]: result.error ?? 'Move failed' }));
+          dispatchMoveUi({ type: 'move-fail', id, message: result.error ?? 'Move failed' });
         }
       } catch (err) {
         batchHadFailureRef.current = true;
-        setCardErrors((errors) => ({ ...errors, [id]: errorMessage(err, 'Move failed') }));
+        dispatchMoveUi({ type: 'move-fail', id, message: errorMessage(err, 'Move failed') });
       } finally {
         savingCountRef.current = Math.max(0, savingCountRef.current - 1);
         activeSavingCardIds().delete(id);
-        setSavingCount(savingCountRef.current);
-        setSavingCardIds(new Set(activeSavingCardIds()));
+        dispatchMoveUi({
+          type: 'move-complete',
+          savingCount: savingCountRef.current,
+          savingCardIds: new Set(activeSavingCardIds()),
+          batchFailed: batchHadFailureRef.current,
+        });
         if (savingCountRef.current === 0) {
-          if (batchHadFailureRef.current) {
-            setSaveState('idle');
-          } else {
-            setSaveState('saved');
+          if (!batchHadFailureRef.current) {
             savedTimer.current = setTimeout(() => {
-              setSaveState('idle');
+              dispatchMoveUi({ type: 'saved-timeout' });
             }, 1600);
           }
         }
@@ -197,13 +257,13 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
             resultCount={visibleItems.length}
             totalCount={items.length}
           />
-          {saveState !== 'idle' && (
+          {moveUi.saveState !== 'idle' && (
             <output
               className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
               aria-live="polite"
             >
-              {saveState === 'saving'
-                ? `Saving${savingCount > 1 ? ` ${savingCount} moves` : ''}...`
+              {moveUi.saveState === 'saving'
+                ? `Saving${moveUi.savingCount > 1 ? ` ${moveUi.savingCount} moves` : ''}...`
                 : 'Saved'}
             </output>
           )}
@@ -231,8 +291,8 @@ export function KanbanBoard({ rows, groupBy = 'status', columns }: Props) {
               key={c}
               id={c}
               rows={byCol.get(c) ?? []}
-              cardErrors={cardErrors}
-              savingCardIds={savingCardIds}
+              cardErrors={moveUi.cardErrors}
+              savingCardIds={moveUi.savingCardIds}
             />
           ))}
         </div>

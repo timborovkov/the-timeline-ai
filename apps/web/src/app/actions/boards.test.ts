@@ -5,6 +5,7 @@ import {
   createBoardAction,
   deleteBoardAction,
   pinBoardAction,
+  removeBoardItemAction,
   updateBoardItemAction,
 } from '@/app/actions/boards';
 
@@ -16,6 +17,7 @@ const fakes = vi.hoisted(() => ({
     archiveBoard: vi.fn(),
     addBoardItem: vi.fn(),
     updateBoardItem: vi.fn(),
+    removeBoardItem: vi.fn(),
     pinBoard: vi.fn(),
   },
 }));
@@ -49,6 +51,11 @@ beforeEach(() => {
     entityId: ENTITY_ID,
   });
   fakes.fakeBoards.updateBoardItem.mockResolvedValue({
+    id: ITEM_ID,
+    boardId: BOARD_ID,
+    entityId: ENTITY_ID,
+  });
+  fakes.fakeBoards.removeBoardItem.mockResolvedValue({
     id: ITEM_ID,
     boardId: BOARD_ID,
     entityId: ENTITY_ID,
@@ -116,6 +123,21 @@ describe('updateBoardItemAction', () => {
       expect.objectContaining({ priority: 2 }),
       { kind: 'user', userId: USER_ID },
     );
+  });
+});
+
+describe('removeBoardItemAction', () => {
+  it('removes a board item and revalidates the linked object page', async () => {
+    await expect(removeBoardItemAction({ id: ITEM_ID, boardId: BOARD_ID })).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(fakes.fakeBoards.removeBoardItem).toHaveBeenCalledWith(ITEM_ID, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/boards/${BOARD_ID}`);
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${ENTITY_ID}`);
   });
 });
 

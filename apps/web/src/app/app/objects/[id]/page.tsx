@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { suggestionTargetsObject } from '@/app/app/objects/[id]/suggestion-targets';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { ObjectBoardContext } from '@/components/objects/object-board-context';
 import { ObjectDetailClient } from '@/components/objects/object-detail-client';
@@ -54,9 +55,12 @@ export default async function ObjectDetailPage({ params }: PageProps) {
     scope.boards.listObjectBoardContext(detail.id),
     scope.suggestions.listPendingSuggestions(),
   ]);
+  const boardItemIds = new Set(boardContext.map((row) => row.itemId));
   const suggestions = pendingBundles.flatMap((bundle) => {
     const items = bundle.items.filter(
-      (item) => item.targetId === detail.id && ACTIONABLE_SUGGESTION_STATUSES.has(item.status),
+      (item) =>
+        ACTIONABLE_SUGGESTION_STATUSES.has(item.status) &&
+        suggestionTargetsObject(item, detail.id, { boardItemIds }),
     );
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });

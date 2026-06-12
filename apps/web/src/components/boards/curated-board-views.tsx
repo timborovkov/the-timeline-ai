@@ -2,11 +2,15 @@ import Link from 'next/link';
 
 import type * as boards from '@timeline/shared/boards';
 
+import { boardViewHref, type BoardLayout } from '@/lib/board-links';
+
 export function CuratedBoardTable({
   boardId,
+  view,
   items,
 }: {
   boardId: string;
+  view: BoardLayout;
   items: boards.BoardItemRow[];
 }) {
   if (items.length === 0) return <EmptyBoardItems />;
@@ -28,7 +32,7 @@ export function CuratedBoardTable({
             <tr key={item.id} className="border-t border-border transition-colors hover:bg-bg">
               <td className="px-3 py-2">
                 <Link
-                  href={`/app/boards/${boardId}?item=${item.id}`}
+                  href={boardViewHref(boardId, view, item.id)}
                   className="font-medium hover:underline"
                 >
                   {item.object.canonicalName}
@@ -57,9 +61,11 @@ export function CuratedBoardTable({
 
 export function CuratedBoardList({
   boardId,
+  view,
   items,
 }: {
   boardId: string;
+  view: BoardLayout;
   items: boards.BoardItemRow[];
 }) {
   if (items.length === 0) return <EmptyBoardItems />;
@@ -68,7 +74,7 @@ export function CuratedBoardList({
       {items.map((item) => (
         <li key={item.id}>
           <Link
-            href={`/app/boards/${boardId}?item=${item.id}`}
+            href={boardViewHref(boardId, view, item.id)}
             className="flex items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-bg"
           >
             <span className="min-w-0 flex-1 truncate font-medium text-fg">

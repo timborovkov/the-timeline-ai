@@ -2,12 +2,16 @@ import Link from 'next/link';
 
 import type * as boards from '@timeline/shared/boards';
 
+import { boardViewHref, type BoardLayout } from '@/lib/board-links';
+
 export function BoardCardDetail({
   boardId,
+  view,
   item,
   history,
 }: {
   boardId: string;
+  view: BoardLayout;
   item: boards.BoardItemRow | null;
   history: boards.BoardItemChangeRow[];
 }) {
@@ -25,7 +29,7 @@ export function BoardCardDetail({
           </p>
         </div>
         <Link
-          href={`/app/boards/${boardId}`}
+          href={boardViewHref(boardId, view, null)}
           className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg"
         >
           Close

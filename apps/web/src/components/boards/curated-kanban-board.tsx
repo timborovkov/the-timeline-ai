@@ -17,7 +17,11 @@ import { useEffect, useId, useOptimistic, useRef, useState, useTransition } from
 import type * as boards from '@timeline/shared/boards';
 
 import { updateBoardItemAction } from '@/app/actions/boards';
-import { cn } from '@/lib/utils';
+import {
+  curatedKanbanSaveState,
+  type CuratedKanbanSaveState,
+} from '@/components/boards/curated-kanban-state';
+import { cn, errorMessage } from '@/lib/utils';
 
 interface Props {
   boardId: string;
@@ -37,8 +41,9 @@ export function CuratedKanbanBoard({ boardId, lanes, items }: Props) {
   const [, startTransition] = useTransition();
   const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [saveState, setSaveState] = useState<CuratedKanbanSaveState>('idle');
   const savingRef = useRef(new Set<string>());
+  const batchHadFailureRef = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -58,16 +63,28 @@ export function CuratedKanbanBoard({ boardId, lanes, items }: Props) {
     byLane.set(laneId, list);
   }
 
-  function markSaving(id: string, saving: boolean) {
-    if (saving) savingRef.current.add(id);
-    else savingRef.current.delete(id);
+  function markSaving(id: string, saving: boolean, failed = false) {
+    if (saving) {
+      if (timer.current) clearTimeout(timer.current);
+      if (savingRef.current.size === 0) batchHadFailureRef.current = false;
+      savingRef.current.add(id);
+    } else {
+      if (failed) batchHadFailureRef.current = true;
+      savingRef.current.delete(id);
+    }
     setSavingIds(new Set(savingRef.current));
-    setSaveState(savingRef.current.size > 0 ? 'saving' : 'saved');
+    const nextSaveState = curatedKanbanSaveState(
+      savingRef.current.size,
+      batchHadFailureRef.current,
+    );
+    setSaveState(nextSaveState);
     if (!saving && savingRef.current.size === 0) {
       if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => {
-        setSaveState('idle');
-      }, 1600);
+      if (!batchHadFailureRef.current) {
+        timer.current = setTimeout(() => {
+          setSaveState('idle');
+        }, 1600);
+      }
     }
   }
 
@@ -86,12 +103,20 @@ export function CuratedKanbanBoard({ boardId, lanes, items }: Props) {
         return rest;
       });
       markSaving(id, true);
-      const result = await updateBoardItemAction({ id, laneId });
-      if ('error' in result && result.error) {
-        setErrors((current) => ({ ...current, [id]: result.error ?? 'Move failed' }));
+      let failed = false;
+      try {
+        const result = await updateBoardItemAction({ id, laneId });
+        failed = 'error' in result && Boolean(result.error);
+        if ('error' in result && result.error) {
+          setErrors((current) => ({ ...current, [id]: result.error ?? 'Move failed' }));
+        }
+      } catch (err) {
+        failed = true;
+        setErrors((current) => ({ ...current, [id]: errorMessage(err, 'Move failed') }));
+      } finally {
+        markSaving(id, false, failed);
+        router.refresh();
       }
-      markSaving(id, false);
-      router.refresh();
     });
   }
 

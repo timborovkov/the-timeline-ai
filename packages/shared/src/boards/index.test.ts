@@ -50,6 +50,19 @@ async function seedWorkspace(): Promise<void> {
   `);
 }
 
+async function setBoardUpdatedAt(boardId: string, updatedAt: Date): Promise<void> {
+  await db.update(boards).set({ updatedAt }).where(eq(boards.id, boardId));
+}
+
+async function boardUpdatedAt(boardId: string): Promise<Date> {
+  const [row] = await db
+    .select({ updatedAt: boards.updatedAt })
+    .from(boards)
+    .where(eq(boards.id, boardId));
+  if (!row) throw new Error('Board not found');
+  return row.updatedAt;
+}
+
 beforeEach(async () => {
   pg = new PGlite();
   await applyDbMigrations(pg);
@@ -124,6 +137,44 @@ describe('board scope', () => {
       .from(boardItemChanges)
       .where(eq(boardItemChanges.boardItemId, item.id));
     expect(changes.map((change) => change.field).sort()).toEqual(['__add__', 'laneId', 'priority']);
+  });
+
+  it('bumps board activity when items are added, updated, and removed', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Development tasks',
+      templateKind: 'task_board',
+      lanes: [
+        { name: 'Todo', kind: 'active' },
+        { name: 'Done', kind: 'done' },
+      ],
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Keep pinned boards fresh',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const oldUpdatedAt = new Date('2026-01-01T00:00:00.000Z');
+
+    await setBoardUpdatedAt(board.id, oldUpdatedAt);
+    const item = await scope.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    expect((await boardUpdatedAt(board.id)).getTime()).toBeGreaterThan(oldUpdatedAt.getTime());
+
+    await setBoardUpdatedAt(board.id, oldUpdatedAt);
+    await scope.boards.updateBoardItem(
+      item.id,
+      { laneId: board.lanes[1]?.id ?? null },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    expect((await boardUpdatedAt(board.id)).getTime()).toBeGreaterThan(oldUpdatedAt.getTime());
+
+    await setBoardUpdatedAt(board.id, oldUpdatedAt);
+    await scope.boards.removeBoardItem(item.id, { kind: 'user', userId: USER_OWNER });
+    expect((await boardUpdatedAt(board.id)).getTime()).toBeGreaterThan(oldUpdatedAt.getTime());
   });
 
   it('rejects cross-team board item rows at the database boundary', async () => {
@@ -264,6 +315,45 @@ describe('board scope', () => {
     expect(itemRows.filter((row) => !row.archivedAt)).toHaveLength(1);
   });
 
+  it('accepts board membership suggestions without duplicate add history', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Negotiation', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Revigo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const oldUpdatedAt = new Date('2026-01-01T00:00:00.000Z');
+    const suggestion = await scope.boards.proposeBoardMembership({
+      boardId: board.id,
+      entityId: company.id,
+      laneId: board.lanes[0]?.id ?? null,
+    });
+
+    await setBoardUpdatedAt(board.id, oldUpdatedAt);
+    const itemId = await scope.boards.acceptBoardItemChange(suggestion.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+
+    expect(itemId).not.toBeNull();
+    expect((await boardUpdatedAt(board.id)).getTime()).toBeGreaterThan(oldUpdatedAt.getTime());
+    if (itemId === null) throw new Error('Expected accepted suggestion to create a board item');
+
+    const changes = await db
+      .select()
+      .from(boardItemChanges)
+      .where(eq(boardItemChanges.boardItemId, itemId));
+    expect(
+      changes.filter((change) => change.field === '__add__' && change.status === 'applied'),
+    ).toHaveLength(1);
+    expect(changes[0]?.id).toBe(suggestion.id);
+  });
+
   it('returns bounded board item pages with the full active item count', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
     const board = await scope.boards.createBoard({
@@ -288,6 +378,10 @@ describe('board scope', () => {
     const detail = await scope.boards.getBoard(board.id, { itemLimit: 1 });
     expect(detail?.itemCount).toBe(3);
     expect(detail?.items).toHaveLength(1);
+
+    const fullDetail = await scope.boards.getBoard(board.id, { itemLimit: 'all' });
+    expect(fullDetail?.itemCount).toBe(3);
+    expect(fullDetail?.items).toHaveLength(3);
   });
 
   it('keeps pins per user and exposes object board context', async () => {

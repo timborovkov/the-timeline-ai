@@ -61,7 +61,7 @@ export function BoardAddItemForm({ boardId, defaultLaneId, candidates, recommend
     canonicalName: '',
     error: null,
   });
-  const visibleCandidates = useMemo(() => {
+  const selectableCandidates = useMemo(() => {
     const q = state.query.trim().toLowerCase();
     const typeRank = new Set(recommendedTypes);
     return candidates
@@ -71,8 +71,7 @@ export function BoardAddItemForm({ boardId, defaultLaneId, candidates, recommend
           .toLowerCase()
           .includes(q);
       })
-      .sort((a, b) => Number(typeRank.has(b.type)) - Number(typeRank.has(a.type)))
-      .slice(0, 40);
+      .sort((a, b) => Number(typeRank.has(b.type)) - Number(typeRank.has(a.type)));
   }, [candidates, recommendedTypes, state.query]);
 
   function submit(): void {
@@ -145,7 +144,7 @@ export function BoardAddItemForm({ boardId, defaultLaneId, candidates, recommend
             className="rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
           >
             <option value="">Select object</option>
-            {visibleCandidates.map((row) => (
+            {selectableCandidates.map((row) => (
               <option key={row.id} value={row.id}>
                 {row.canonicalName} · {row.type}
               </option>

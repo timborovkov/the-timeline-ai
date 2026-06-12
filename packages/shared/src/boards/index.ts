@@ -153,7 +153,7 @@ export interface BoardItemPatch {
 }
 
 export interface BoardReadOptions {
-  itemLimit?: number;
+  itemLimit?: number | 'all';
 }
 
 type BoardSelect = typeof boards.$inferSelect;
@@ -414,6 +414,15 @@ export function createBoardScope({
     return row;
   }
 
+  async function touchBoard(boardId: string, query: DbOrTx = db, at = new Date()): Promise<void> {
+    await query
+      .update(boards)
+      .set({ updatedAt: at })
+      .where(
+        and(eq(boards.id, boardId), eq(boards.teamId, scope.teamId), isNull(boards.archivedAt)),
+      );
+  }
+
   async function writeChange(input: {
     tx?: DbOrTx;
     boardId: string;
@@ -506,9 +515,11 @@ export function createBoardScope({
       await scope.requireMembership();
       if (!UUID_RE.test(boardId)) return null;
       const itemLimit =
-        options.itemLimit === undefined || !Number.isFinite(options.itemLimit)
-          ? 500
-          : Math.max(0, Math.min(Math.floor(options.itemLimit), 500));
+        options.itemLimit === 'all'
+          ? 'all'
+          : options.itemLimit === undefined || !Number.isFinite(options.itemLimit)
+            ? 500
+            : Math.max(0, Math.min(Math.floor(options.itemLimit), 500));
       const boardRows = await db
         .select()
         .from(boards)
@@ -518,25 +529,25 @@ export function createBoardScope({
         .limit(1);
       const board = boardRows[0];
       if (!board) return null;
+      const itemsQuery = db
+        .select({ item: boardItems, object: entities })
+        .from(boardItems)
+        .innerJoin(entities, eq(boardItems.entityId, entities.id))
+        .where(
+          and(
+            eq(boardItems.boardId, boardId),
+            eq(boardItems.teamId, scope.teamId),
+            isNull(boardItems.archivedAt),
+          ),
+        )
+        .orderBy(asc(boardItems.position), asc(boardItems.createdAt));
       const [lanes, rows, countRows, pins] = await Promise.all([
         db
           .select()
           .from(boardLanes)
           .where(and(eq(boardLanes.boardId, boardId), eq(boardLanes.teamId, scope.teamId)))
           .orderBy(asc(boardLanes.position), asc(boardLanes.createdAt)),
-        db
-          .select({ item: boardItems, object: entities })
-          .from(boardItems)
-          .innerJoin(entities, eq(boardItems.entityId, entities.id))
-          .where(
-            and(
-              eq(boardItems.boardId, boardId),
-              eq(boardItems.teamId, scope.teamId),
-              isNull(boardItems.archivedAt),
-            ),
-          )
-          .orderBy(asc(boardItems.position), asc(boardItems.createdAt))
-          .limit(itemLimit),
+        itemLimit === 'all' ? itemsQuery : itemsQuery.limit(itemLimit),
         db
           .select({ count: sql<number>`count(*)::int` })
           .from(boardItems)
@@ -662,6 +673,7 @@ export function createBoardScope({
           field: '__add__',
           newValue: { boardId, entityId: item.entityId, laneId: item.laneId },
         });
+        await touchBoard(boardId, tx);
         return toItemRow(item, object);
       });
     },
@@ -706,6 +718,7 @@ export function createBoardScope({
       });
       if (changed.length === 0) return current;
       await db.transaction(async (tx) => {
+        const now = new Date();
         const updated = await tx
           .update(boardItems)
           .set({
@@ -719,7 +732,7 @@ export function createBoardScope({
             ...(patch.nextStep !== undefined ? { nextStep: patch.nextStep } : {}),
             ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
             ...(patch.customFields !== undefined ? { customFields: patch.customFields } : {}),
-            updatedAt: new Date(),
+            updatedAt: now,
           })
           .where(
             and(
@@ -744,6 +757,7 @@ export function createBoardScope({
             }),
           ),
         );
+        await touchBoard(current.boardId, tx, now);
       });
       return itemWithObject(itemId);
     },
@@ -751,13 +765,14 @@ export function createBoardScope({
     async removeBoardItem(
       itemId: string,
       actor: { kind: ActorKind; userId?: string | null },
-    ): Promise<boolean> {
+    ): Promise<BoardItemRow | null> {
       const current = await itemWithObject(itemId);
-      if (!current || current.archivedAt) return false;
+      if (!current || current.archivedAt) return null;
+      const now = new Date();
       await db.transaction(async (tx) => {
         const updated = await tx
           .update(boardItems)
-          .set({ archivedAt: new Date(), updatedAt: new Date() })
+          .set({ archivedAt: now, updatedAt: now })
           .where(
             and(
               eq(boardItems.id, itemId),
@@ -776,8 +791,9 @@ export function createBoardScope({
           field: '__remove__',
           previousValue: { boardId: current.boardId, laneId: current.laneId },
         });
+        await touchBoard(current.boardId, tx, now);
       });
-      return true;
+      return { ...current, archivedAt: now };
     },
 
     async listBoardItemHistory(itemId: string): Promise<BoardItemChangeRow[]> {
@@ -1019,19 +1035,16 @@ export function createBoardScope({
             })
             .returning({ id: boardItems.id });
           if (!created) throw new Error('Failed to add board item');
-          await writeChange({
-            tx,
-            boardId: claimedChange.boardId,
-            boardItemId: created.id,
-            entityId: claimedChange.entityId,
-            actor,
-            field: '__add__',
-            newValue: {
-              boardId: claimedChange.boardId,
-              entityId: claimedChange.entityId,
-              laneId: safeLaneId,
-            },
-          });
+          await tx
+            .update(boardItemChanges)
+            .set({ boardItemId: created.id })
+            .where(
+              and(
+                eq(boardItemChanges.id, claimedChange.id),
+                eq(boardItemChanges.teamId, scope.teamId),
+              ),
+            );
+          await touchBoard(claimedChange.boardId, tx);
           return created.id;
         }
 
@@ -1048,6 +1061,7 @@ export function createBoardScope({
         });
         if (changed.length === 0) return current.id;
 
+        const now = new Date();
         const updated = await tx
           .update(boardItems)
           .set({
@@ -1061,7 +1075,7 @@ export function createBoardScope({
             ...(patch.nextStep !== undefined ? { nextStep: patch.nextStep } : {}),
             ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
             ...(patch.customFields !== undefined ? { customFields: patch.customFields } : {}),
-            updatedAt: new Date(),
+            updatedAt: now,
           })
           .where(
             and(
@@ -1086,6 +1100,7 @@ export function createBoardScope({
             }),
           ),
         );
+        await touchBoard(current.boardId, tx, now);
         return current.id;
       });
     },

@@ -14,14 +14,13 @@ import { HistoryBackLink } from '@/components/history-back-link';
 import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
   title: 'Board',
   description: 'Review a curated board and its timeline context.',
 };
-
-type BoardLayout = 'kanban' | 'table' | 'list';
 
 function viewParam(value: string | string[] | undefined): BoardLayout {
   const v = Array.isArray(value) ? value[0] : value;
@@ -40,15 +39,13 @@ export default async function BoardDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const session = await auth();
+  const [session, { id }, query] = await Promise.all([auth(), params, searchParams]);
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const { id } = await params;
-  const query = await searchParams;
-  const board = await scope.boards.getBoard(id);
+  const board = await scope.boards.getBoard(id, { itemLimit: 'all' });
   if (!board) notFound();
   const view = viewParam(query.view);
   const selectedItemId = itemParam(query.item);
@@ -68,12 +65,12 @@ export default async function BoardDetailPage({
   return (
     <div className={isKanban ? 'flex h-[calc(100dvh-10rem)] flex-col' : undefined}>
       <IndexStrip
-        srLabel={`${board.name} · ${board.templateKind} · ${board.items.length} board items`}
+        srLabel={`${board.name} · ${board.templateKind} · ${board.itemCount} board items`}
         segments={[
           { value: 'BOARD' },
           { label: 'kind', value: board.templateKind.replace('_', ' ') },
           { label: 'name', value: board.name, signal: true },
-          { label: 'items', value: board.items.length },
+          { label: 'items', value: board.itemCount },
         ]}
         className="mb-4 shrink-0"
       >
@@ -92,7 +89,7 @@ export default async function BoardDetailPage({
           {(['kanban', 'table', 'list'] as const).map((v) => (
             <Link
               key={v}
-              href={`/app/boards/${board.id}?view=${v}`}
+              href={boardViewHref(board.id, v, selectedItemId)}
               className={`px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] ${
                 view === v ? 'bg-signal text-signal-fg' : 'bg-bg text-fg-muted hover:text-fg'
               }`}
@@ -125,11 +122,15 @@ export default async function BoardDetailPage({
           {view === 'kanban' && (
             <CuratedKanbanBoard boardId={board.id} lanes={board.lanes} items={board.items} />
           )}
-          {view === 'table' && <CuratedBoardTable boardId={board.id} items={board.items} />}
-          {view === 'list' && <CuratedBoardList boardId={board.id} items={board.items} />}
+          {view === 'table' && (
+            <CuratedBoardTable boardId={board.id} view={view} items={board.items} />
+          )}
+          {view === 'list' && (
+            <CuratedBoardList boardId={board.id} view={view} items={board.items} />
+          )}
         </div>
         {selectedItem ? (
-          <BoardCardDetail boardId={board.id} item={selectedItem} history={history} />
+          <BoardCardDetail boardId={board.id} view={view} item={selectedItem} history={history} />
         ) : null}
       </div>
     </div>
