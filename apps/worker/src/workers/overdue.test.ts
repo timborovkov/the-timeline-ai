@@ -1,13 +1,10 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { PGlite } from '@electric-sql/pglite';
 import { type Db, entities, notifications } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { applyDbMigrations } from '#src/test/pglite.js';
 import { processOverdueScanTick } from '#src/workers/overdue.js';
 
 /**
@@ -15,9 +12,6 @@ import { processOverdueScanTick } from '#src/workers/overdue.js';
  * behavior: one notification per overdue task/follow-up recipient, no noise for
  * done/cancelled/suggested/archived rows, and database-level same-day dedupe.
  */
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, '../../../../packages/db/drizzle');
 
 const TEAM_A = '11111111-1111-1111-1111-111111111111';
 const TEAM_B = '22222222-2222-2222-2222-222222222222';
@@ -27,20 +21,6 @@ const OWNER_B = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
 let pg: PGlite;
 let db: Db;
-
-async function applyMigrations(): Promise<void> {
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((file) => file.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((statement) => statement.trim())
-      .filter((statement) => statement.length > 0 && statement !== 'SELECT 1;');
-    for (const statement of statements) await pg.exec(statement);
-  }
-}
 
 async function seedTeams(): Promise<void> {
   await pg.exec(`
@@ -91,7 +71,7 @@ async function insertObject(input: {
 
 beforeEach(async () => {
   pg = new PGlite();
-  await applyMigrations();
+  await applyDbMigrations(pg);
   db = drizzle(pg) as unknown as Db;
   await seedTeams();
 });

@@ -1,7 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import { type Db, documentChunks, documents, documentVersions } from '@timeline/db';
@@ -10,6 +7,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { applyDbMigrations } from '#src/test/pglite.js';
 import { type DocumentExtractIO, processDocumentExtractJob } from '#src/workers/documentExtract.js';
 
 /**
@@ -33,25 +31,6 @@ import { type DocumentExtractIO, processDocumentExtractJob } from '#src/workers/
  */
 
 type AnyDb = Db;
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, '../../../../packages/db/drizzle');
-
-async function applyMigrations(pg: PGlite): Promise<void> {
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s !== 'SELECT 1;');
-    for (const stmt of statements) {
-      await pg.exec(stmt);
-    }
-  }
-}
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -83,7 +62,7 @@ async function makeHarness(
   } = {},
 ): Promise<Harness> {
   const pg = new PGlite();
-  await applyMigrations(pg);
+  await applyDbMigrations(pg);
   await seedTeam(pg);
   const db = drizzle(pg) as unknown as AnyDb;
   // vi.fn signatures kept sync — eslint flags `async` without `await` as

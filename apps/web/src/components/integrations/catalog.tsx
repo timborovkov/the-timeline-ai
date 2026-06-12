@@ -38,7 +38,6 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
       {catalog.map((c) => (
         <Card key={c.id} className="flex h-full flex-col">
           <CardHeader className="flex flex-row items-center gap-3">
-            {/* Logo via /public/connectors/<id>.svg. Falls back gracefully if missing. */}
             <Image
               src={c.logo}
               alt=""

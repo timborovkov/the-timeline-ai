@@ -146,11 +146,8 @@ interface HandleContext {
   bearer: string | null;
 }
 
-async function jsonRpcSuccess(
-  id: number | string | null,
-  result: unknown,
-): Promise<JsonRpcSuccess> {
-  return Promise.resolve({ jsonrpc: '2.0', id, result });
+function jsonRpcSuccess(id: number | string | null, result: unknown): JsonRpcSuccess {
+  return { jsonrpc: '2.0', id, result };
 }
 
 function jsonRpcError(
@@ -292,7 +289,7 @@ export async function handleMcpRequest(
   // protocol handshake happens before the client necessarily knows
   // what scopes it has.
   if (req.method === 'initialize') {
-    return await jsonRpcSuccess(id, {
+    return jsonRpcSuccess(id, {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: {}, resources: {}, prompts: {} },
       serverInfo: { name: 'the-timeline', version: '0.1.0' },
@@ -312,35 +309,35 @@ export async function handleMcpRequest(
   try {
     switch (req.method) {
       case 'tools/list':
-        return await jsonRpcSuccess(id, { tools: TOOLS });
+        return jsonRpcSuccess(id, { tools: TOOLS });
       case 'tools/call': {
         const params = (req.params ?? {}) as { name?: unknown; arguments?: unknown };
         const name = typeof params.name === 'string' ? params.name : '';
         const args = (params.arguments ?? {}) as CallToolArgs;
         const out = await callTool(ctx.db, resolved.teamId, name, args);
-        return await jsonRpcSuccess(id, {
+        return jsonRpcSuccess(id, {
           content: [{ type: 'text', text: JSON.stringify(out) }],
           isError: false,
         });
       }
       case 'resources/list':
-        return await jsonRpcSuccess(id, { resources: RESOURCES });
+        return jsonRpcSuccess(id, { resources: RESOURCES });
       case 'resources/read': {
         const params = (req.params ?? {}) as { uri?: unknown };
         const uri = typeof params.uri === 'string' ? params.uri : '';
         const out = await readResource(ctx.db, resolved.teamId, uri);
-        return await jsonRpcSuccess(id, {
+        return jsonRpcSuccess(id, {
           contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(out) }],
         });
       }
       case 'prompts/list':
-        return await jsonRpcSuccess(id, { prompts: PROMPTS });
+        return jsonRpcSuccess(id, { prompts: PROMPTS });
       case 'prompts/get': {
         const params = (req.params ?? {}) as { name?: unknown; arguments?: unknown };
         const name = typeof params.name === 'string' ? params.name : '';
         const out = buildPrompt(name, (params.arguments ?? {}) as Record<string, unknown>);
         if (!out) return jsonRpcError(id, -32602, `Unknown prompt: ${name}`);
-        return await jsonRpcSuccess(id, out);
+        return jsonRpcSuccess(id, out);
       }
       default:
         return jsonRpcError(id, -32601, `Method not found: ${req.method}`);

@@ -1,13 +1,10 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { PGlite } from '@electric-sql/pglite';
 import { type Db } from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { withTeam } from '#src/team-scope.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
 
 /**
  * Real-DB integration tests for the Phase 9 document scope. Uses pglite
@@ -33,31 +30,6 @@ import { withTeam } from '#src/team-scope.js';
 // helper only uses members both adapters expose. Cast at the test boundary.
 type AnyDb = Db;
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
-
-async function applyMigrations(pg: PGlite): Promise<void> {
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
-    // Drizzle's `--> statement-breakpoint` marker delimits individual
-    // statements. pglite's `exec()` can handle multi-statement SQL but
-    // commits at each separator boundary, which matters for
-    // `ALTER TYPE ... ADD VALUE` (the new value isn't usable in the
-    // same transaction). Splitting and executing one statement at a
-    // time mirrors what Drizzle's migrator does on real Postgres.
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s !== 'SELECT 1;');
-    for (const stmt of statements) {
-      await pg.exec(stmt);
-    }
-  }
-}
-
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const USER_B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -80,7 +52,7 @@ let db: AnyDb;
 
 beforeEach(async () => {
   pg = new PGlite();
-  await applyMigrations(pg);
+  await applyDbMigrations(pg);
   await seedTeamAndMembers(pg);
   db = drizzle(pg) as unknown as AnyDb;
 });

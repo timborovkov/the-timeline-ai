@@ -1,7 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { PGlite } from '@electric-sql/pglite';
 import {
   agentSuggestionItems,
@@ -20,6 +16,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { applyDbMigrations } from '#src/test/pglite.js';
 import { fallbackBundles, processSuggestionJobForTests } from '#src/workers/suggestions.js';
 
 /**
@@ -29,9 +26,6 @@ import { fallbackBundles, processSuggestionJobForTests } from '#src/workers/sugg
  * object, and calendar suggestions without live OpenRouter or Redis.
  */
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, '../../../../packages/db/drizzle');
-
 const REFERENCE_DATE = new Date('2026-05-27T10:00:00.000Z');
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';
@@ -40,20 +34,6 @@ const MEMBER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const INACTIVE_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const OBJECT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const MODEL_ID = 'test-suggestion-model';
-
-async function applyMigrations(pg: PGlite): Promise<void> {
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s !== 'SELECT 1;');
-    for (const stmt of statements) await pg.exec(stmt);
-  }
-}
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -293,7 +273,7 @@ describe('processSuggestionJobForTests', () => {
 
   beforeEach(async () => {
     pg = new PGlite();
-    await applyMigrations(pg);
+    await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
   });

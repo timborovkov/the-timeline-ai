@@ -155,7 +155,7 @@ export async function extractTextFromMedia(
             operation: 'extract_text_from_media',
             media_type: mediaType,
             input_bytes: input.body.byteLength,
-            has_filename: input.filename ? true : false,
+            has_filename: Boolean(input.filename),
             max_output_tokens: input.maxOutputTokens ?? 8000,
           },
         }),

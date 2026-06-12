@@ -489,7 +489,7 @@ async function handleMessageEvent(
     slack_sender_name: senderDisplayName,
     slack_sender_timeline_user_id: route.linkedUserId,
     source_owner_user_id: route.sourceOwnerUserId,
-    source_unverified: route.linkedUserId ? false : true,
+    source_unverified: !route.linkedUserId,
     attachments: files.map(fileSummary),
   };
   if (route.conversationTitle) metadata.slack_channel_name = route.conversationTitle;

@@ -84,7 +84,7 @@ export async function transcribeAudio(
         metadata: {
           operation: 'transcribe_audio',
           audio_bytes: input.audio.byteLength,
-          language_hint: input.language ? true : false,
+          language_hint: Boolean(input.language),
         },
       },
     );

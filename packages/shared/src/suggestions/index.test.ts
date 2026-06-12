@@ -1,7 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { PGlite } from '@electric-sql/pglite';
 import { agentSuggestionItems, agentSuggestions, entities } from '@timeline/db';
 import { eq } from 'drizzle-orm';
@@ -12,6 +8,7 @@ import type * as QueueModule from '#src/queue/queues.js';
 
 import { suggestionDedupeKey } from '#src/suggestions/index.js';
 import { withTeam } from '#src/team-scope.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
 
 vi.mock('#src/queue/queues.js', async (importOriginal) => {
   const actual = await importOriginal<typeof QueueModule>();
@@ -25,9 +22,6 @@ vi.mock('#src/queue/queues.js', async (importOriginal) => {
   };
 });
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
-
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -35,20 +29,6 @@ const REVIEWER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const OTHER_USER_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const OTHER_RAW_EVENT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
-
-async function applyMigrations(pg: PGlite): Promise<void> {
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s !== 'SELECT 1;');
-    for (const stmt of statements) await pg.exec(stmt);
-  }
-}
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -99,7 +79,7 @@ describe('suggestion scope', () => {
 
   beforeEach(async () => {
     pg = new PGlite();
-    await applyMigrations(pg);
+    await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
   });

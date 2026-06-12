@@ -1,7 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { PGlite } from '@electric-sql/pglite';
 import { calendarEventEntities, calendarEvents, entities, rawEvents } from '@timeline/db';
 import { eq } from 'drizzle-orm';
@@ -9,6 +5,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withTeam } from '#src/team-scope.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
 
 const fakes = vi.hoisted(() => ({
   enqueueCalendarEventEmbedJob: vi.fn(),
@@ -18,9 +15,6 @@ vi.mock('#src/queue/queues.js', () => ({
   enqueueCalendarEventEmbedJob: fakes.enqueueCalendarEventEmbedJob,
 }));
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
-
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const USER_B_ID = 'bbbbbbbb-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -28,22 +22,6 @@ const CALENDAR_EVENT_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const SCHEDULED_RAW_EVENT_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const START_RAW_EVENT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const ENTITY_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
-
-async function applyMigrations(pg: PGlite): Promise<void> {
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s !== 'SELECT 1;');
-    for (const stmt of statements) {
-      await pg.exec(stmt);
-    }
-  }
-}
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 't', 'Test');`);
@@ -63,7 +41,7 @@ describe('calendar scope', () => {
 
   beforeEach(async () => {
     pg = new PGlite();
-    await applyMigrations(pg);
+    await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
     fakes.enqueueCalendarEventEmbedJob.mockReset();

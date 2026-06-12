@@ -1,7 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { PGlite } from '@electric-sql/pglite';
 import { type Db } from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -9,11 +5,9 @@ import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildTeamExportArchive } from '#src/team-exports/index.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
 
 type AnyDb = Db;
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OWNER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -30,22 +24,6 @@ const MEETING_ID = '99999999-0000-0000-0000-000000000001';
 const PRIVATE_MEETING_ID = '99999999-0000-0000-0000-000000000002';
 const CALENDAR_EVENT_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
 const PRIVATE_CALENDAR_EVENT_ID = 'aaaaaaaa-0000-0000-0000-000000000002';
-
-async function applyMigrations(pg: PGlite): Promise<void> {
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s !== 'SELECT 1;');
-    for (const stmt of statements) {
-      await pg.exec(stmt);
-    }
-  }
-}
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -169,7 +147,7 @@ describe('team export archive', () => {
 
   beforeEach(async () => {
     pg = new PGlite();
-    await applyMigrations(pg);
+    await applyDbMigrations(pg);
     db = drizzle(pg) as unknown as AnyDb;
     await seed(pg);
   });

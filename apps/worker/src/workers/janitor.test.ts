@@ -1,13 +1,10 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { PGlite } from '@electric-sql/pglite';
 import { type Db, documentVersions, meetings as meetingsTable } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { applyDbMigrations } from '#src/test/pglite.js';
 import { processJanitorTick } from '#src/workers/janitor.js';
 
 /**
@@ -18,25 +15,6 @@ import { processJanitorTick } from '#src/workers/janitor.js';
  * The thresholds matter — we test that the age cutoffs actually gate the
  * sweep, not just that a stuck row gets requeued.
  */
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, '../../../../packages/db/drizzle');
-
-async function applyMigrations(pg: PGlite): Promise<void> {
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s !== 'SELECT 1;');
-    for (const stmt of statements) {
-      await pg.exec(stmt);
-    }
-  }
-}
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -104,7 +82,7 @@ let db: ReturnType<typeof drizzle>;
 
 beforeEach(async () => {
   pg = new PGlite();
-  await applyMigrations(pg);
+  await applyDbMigrations(pg);
   await seed(pg);
   db = drizzle(pg);
 });
