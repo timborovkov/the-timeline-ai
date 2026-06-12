@@ -80,7 +80,9 @@ SENTRY_PROFILES_SAMPLE_RATE=0
       <p>
         Keep <code>sendDefaultPii</code> disabled. Do not attach cookies, auth headers, prompts,
         transcripts, filenames, uploaded content, or raw document text to Sentry events. The
-        scrubber removes request cookies and auth headers before send.
+        scrubber removes request cookies and auth headers before send. Browser-side filtering also
+        drops known injected extension noise such as MetaMask in-page script connection errors, so
+        third-party extension failures do not page as Timeline app failures.
       </p>
       <h2 id="source-maps">3. Source maps</h2>
       <p>

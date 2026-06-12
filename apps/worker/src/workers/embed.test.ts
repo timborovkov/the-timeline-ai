@@ -570,6 +570,36 @@ describe('processEmbedJobForTests', () => {
     });
   });
 
+  it('skips stale object_change jobs when the change row is gone', async () => {
+    const embed = vi.fn();
+    const upsertVector = vi.fn();
+    const deletePointsForSource = vi.fn();
+    const deletePointsForSourceFromChunk = vi.fn();
+
+    const result = await processEmbedJobForTests(
+      { db: db as never },
+      {
+        scope: 'object_change',
+        teamId: TEAM_ID,
+        changeId: '7684315e-c736-4708-b7b0-502f1d77cc10',
+      },
+      {
+        getEnv: () =>
+          ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+        embed,
+        getQdrantClient: vi.fn(
+          () => ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+        ),
+      },
+    );
+
+    expect(result).toEqual({ skipped: true });
+    expect(embed).not.toHaveBeenCalled();
+    expect(upsertVector).not.toHaveBeenCalled();
+    expect(deletePointsForSource).not.toHaveBeenCalled();
+    expect(deletePointsForSourceFromChunk).not.toHaveBeenCalled();
+  });
+
   it('skips non-team raw events without embedding or Qdrant writes', async () => {
     const rawEventId = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
     await db.insert(rawEvents).values({
