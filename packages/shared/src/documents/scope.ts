@@ -1075,7 +1075,12 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
               and(
                 eq(documentVersions.id, row.currentVersionId),
                 eq(documentVersions.teamId, teamId),
-                inArray(documentVersions.processingStatus, ['chunked', 'embedded', 'deferred']),
+                inArray(documentVersions.processingStatus, [
+                  'chunked',
+                  'embedded',
+                  'deferred',
+                  'failed',
+                ]),
               ),
             )
             .limit(1);
