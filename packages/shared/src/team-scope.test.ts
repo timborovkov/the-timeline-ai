@@ -1176,6 +1176,56 @@ describe('withTeam namespaced port', () => {
     );
   });
 
+  it('links accepted board suggestion impact to the board card', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const event = await scope.timeline.createEvent({
+      authorUserId: USER_A,
+      source: 'telegram',
+      contentText: 'Acme is now in negotiation for the pilot.',
+      visibility: 'team',
+    });
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Negotiation', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Acme',
+      actor: { kind: 'user', userId: USER_A },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Add Acme to pilot pipeline',
+      dedupeKey: 'impact-board-membership',
+      evidence: [{ rawEventId: event.id }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'board_membership',
+          title: 'Add Acme to Pilot pipeline',
+          dedupeKey: 'impact-board-membership:item',
+          proposedPayload: {
+            boardId: board.id,
+            entityId: company.id,
+            laneId: board.lanes[0]?.id ?? null,
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const impacts = await scope.timeline.listImpactItems([event.id]);
+    const boardImpact = impacts[event.id]?.find((impact) => impact.kind === 'board');
+    expect(boardImpact?.label).toBe('Add Acme to Pilot pipeline');
+    expect(boardImpact?.href).toMatch(new RegExp(`^/app/boards/${board.id}\\?item=`));
+    expect(boardImpact?.href).not.toContain('/app/objects/');
+    expect(boardImpact?.status).toBe('accepted');
+  });
+
   it('includes all approved facets from the current user linked person object', async () => {
     const scope = withTeam(db as never, TEAM_A, USER_A);
     const person = await scope.objects.createObject({

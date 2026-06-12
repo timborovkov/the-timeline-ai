@@ -8,9 +8,11 @@ import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 
 function revalidateSuggestionSurfaces() {
+  revalidatePath('/app');
   revalidatePath('/app/approvals');
   revalidatePath('/app/timeline');
   revalidatePath('/app/objects', 'layout');
+  revalidatePath('/app/boards', 'layout');
   revalidatePath('/app/calendar');
   revalidatePath('/app/tasks');
   revalidatePath('/app/inbox');

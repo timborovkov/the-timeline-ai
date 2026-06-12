@@ -4,6 +4,7 @@ import {
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
+  boardItems,
   calendarEvents,
   documents,
   documentVersions,
@@ -26,6 +27,7 @@ import {
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import { createAuditScope } from '#src/audit/scope.js';
+import { createBoardScope } from '#src/boards/index.js';
 import { createCalendarScope } from '#src/calendar/scope.js';
 import { createDocumentScope } from '#src/documents/scope.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
@@ -1197,6 +1199,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             resultId: agentSuggestionItems.resultId,
             title: agentSuggestionItems.title,
             proposedPayload: agentSuggestionItems.proposedPayload,
+            boardItemBoardId: boardItems.boardId,
           })
           .from(agentSuggestionEvidence)
           .innerJoin(
@@ -1206,6 +1209,16 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           .innerJoin(
             agentSuggestionItems,
             eq(agentSuggestionItems.suggestionId, agentSuggestions.id),
+          )
+          .leftJoin(
+            boardItems,
+            and(
+              eq(boardItems.teamId, teamId),
+              or(
+                eq(boardItems.id, agentSuggestionItems.targetId),
+                eq(boardItems.id, agentSuggestionItems.resultId),
+              ),
+            ),
           )
           .where(
             and(
@@ -1287,12 +1300,14 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       const kind: TimelineImpactKind =
         row.targetKind === 'calendar_event'
           ? 'calendar'
-          : row.targetKind === 'identity_facet' ||
-              row.targetKind === 'object_note' ||
-              row.targetKind === 'object_relationship' ||
-              row.targetKind === 'object_merge'
-            ? 'object'
-            : row.targetKind;
+          : row.targetKind === 'board_membership' || row.targetKind === 'board_item_update'
+            ? 'board'
+            : row.targetKind === 'identity_facet' ||
+                row.targetKind === 'object_note' ||
+                row.targetKind === 'object_relationship' ||
+                row.targetKind === 'object_merge'
+              ? 'object'
+              : row.targetKind;
       const objectMemoryTarget =
         row.targetKind === 'identity_facet' ||
         row.targetKind === 'object_note' ||
@@ -1306,6 +1321,21 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           : targetId
             ? `/app/objects/${targetId}`
             : '/app/approvals';
+      if (kind === 'board') {
+        const payload =
+          row.proposedPayload && typeof row.proposedPayload === 'object'
+            ? (row.proposedPayload as Record<string, unknown>)
+            : {};
+        const boardId =
+          row.boardItemBoardId ??
+          (typeof payload.boardId === 'string' && payload.boardId.length > 0
+            ? payload.boardId
+            : null);
+        const itemId = row.resultId ?? row.targetId;
+        href = boardId
+          ? `/app/boards/${boardId}${itemId ? `?item=${itemId}` : ''}`
+          : '/app/approvals';
+      }
       if (
         row.targetKind === 'object_merge' &&
         (row.itemStatus === 'pending' || row.itemStatus === 'failed')
@@ -1378,6 +1408,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   }
 
   const objectScope = createObjectScope(db, core);
+  const boardScope = createBoardScope({ db, scope: core, objects: objectScope });
   const suggestionScope = createSuggestionScope({
     db,
     teamId,
@@ -1385,6 +1416,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     ensureMember,
     requireTeamMember,
     objects: objectScope,
+    boards: boardScope,
     calendar: calendarScope,
   });
 
@@ -2546,6 +2578,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     documents: documentScope,
     meetings: meetingScope,
     objects: objectScope,
+    boards: boardScope,
     suggestions: suggestionScope,
     integrations: integrationScope,
     mcp: mcpScope,

@@ -100,27 +100,27 @@ export const HELP_PAGES: HelpPage[] = [
   {
     slug: 'boards',
     title: 'Boards',
-    description: 'Use saved kanban, table, and list views over the objects Timeline extracts.',
+    description: 'Use curated kanban, table, and list work surfaces over Timeline objects.',
     icon: KanbanSquare,
     related: ['objects', 'capture'],
     sections: [
       {
         title: 'What boards show',
-        body: 'Boards are views over workspace objects. They do not create a second task system; they organize the same people, companies, deals, projects, and tasks that appear in search and chat.',
+        body: 'Boards are curated work surfaces over workspace objects. They do not create a second task system; they organize the same people, companies, deals, projects, and tasks that appear in search and chat.',
         items: [
-          'Kanban boards group objects by status, stage, priority, or another saved field.',
-          'Table views help scan ownership, due dates, and recent activity.',
-          'Task presets focus the board on open work without losing object history.',
+          'Kanban boards group explicit board items by board-owned lanes.',
+          'Table views help scan responsible people, due dates, priority, and recent activity.',
+          'Templates help create pipelines, task boards, catalogs, and custom boards.',
         ],
         appLink: { href: '/app/boards', label: 'Open boards' },
       },
       {
         title: 'Keeping boards useful',
-        body: 'Boards work best when object fields are kept current. Timeline can suggest changes from raw events, but a user still chooses what becomes canonical.',
+        body: 'Boards work best when board item properties and object memory stay current. Timeline can suggest changes from raw events, but a user still chooses what becomes canonical.',
         items: [
-          'Drag tasks between columns when status changes.',
-          'Open object details for notes, relationships, and activity.',
-          'Use saved filters for repeated team workflows.',
+          'Drag board items between lanes when workflow state changes.',
+          'Open card details for board notes, next steps, evidence, and object links.',
+          'Use pinned boards for repeated team workflows.',
         ],
       },
     ],
@@ -177,7 +177,7 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'Use object notes for human judgment and extra context.',
           'Resolve duplicate meanings before creating a new object.',
-          'Keep status, stage, owner, priority, and due dates current for boards.',
+          'Keep responsible people, priority, due dates, and next steps current for boards.',
         ],
       },
     ],

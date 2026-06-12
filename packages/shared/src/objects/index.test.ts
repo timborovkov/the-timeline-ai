@@ -1,6 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
   type Db,
+  boardItemChanges,
+  boardItems,
   calendarEventEntities,
   calendarEvents,
   chatMessages,
@@ -396,10 +398,9 @@ describe('object scope — chat session isolation', () => {
   });
 });
 
-describe('object scope — board and archive visibility', () => {
-  it('hides archived objects when requested and keeps board views inside their team', async () => {
+describe('object scope — archive visibility', () => {
+  it('hides archived objects when requested', async () => {
     const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
-    const otherScope = withTeam(db, TEAM_B, USER_OTHER_TEAM).objects;
     const object = await ownerScope.createObject({
       type: 'task',
       canonicalName: 'Archive me',
@@ -413,17 +414,6 @@ describe('object scope — board and archive visibility', () => {
     await expect(ownerScope.listObjects({ archived: true })).resolves.toContainEqual(
       expect.objectContaining({ id: object.id }),
     );
-
-    const board = await ownerScope.saveBoardView({
-      name: 'Team A board',
-      kind: 'kanban',
-      filter: { status: 'todo' },
-    });
-
-    await expect(ownerScope.getBoardView(board.id)).resolves.toMatchObject({
-      name: 'Team A board',
-    });
-    await expect(otherScope.getBoardView(board.id)).resolves.toBeNull();
 
     await db.insert(entities).values({
       id: '99999999-9999-9999-9999-999999999999',
@@ -462,7 +452,8 @@ describe('object scope — board and archive visibility', () => {
 
 describe('object scope — merge cleanup', () => {
   it('merges compatible objects, moves derived rows, dedupes edges, and hides merged rows', async () => {
-    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const scope = workspace.objects;
     const survivor = await scope.createObject({
       type: 'company',
       canonicalName: 'PwC',
@@ -489,6 +480,24 @@ describe('object scope — merge cleanup', () => {
       type: 'task',
       canonicalName: 'Follow up with PwC',
       parentObjectId: typo.id,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const board = await workspace.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [
+        { name: 'Discussed', kind: 'active' },
+        { name: 'Contract signed', kind: 'done' },
+      ],
+    });
+    const survivorCard = await workspace.boards.addBoardItem(board.id, {
+      entityId: survivor.id,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const typoCard = await workspace.boards.addBoardItem(board.id, {
+      entityId: typo.id,
+      laneId: board.lanes[1]?.id ?? null,
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
@@ -657,6 +666,18 @@ describe('object scope — merge cleanup', () => {
     expect(changeRows.map((row) => row.field)).toEqual(
       expect.arrayContaining(['__merge__', '__merged_from__', '__note_create__']),
     );
+    const cardRows = await db.select().from(boardItems).where(eq(boardItems.boardId, board.id));
+    expect(cardRows.filter((row) => !row.archivedAt)).toEqual([
+      expect.objectContaining({ id: survivorCard.id, entityId: survivor.id }),
+    ]);
+    const archivedTypoCard = cardRows.find((row) => row.id === typoCard.id);
+    expect(archivedTypoCard?.entityId).toBe(typo.id);
+    expect(archivedTypoCard?.archivedAt).toBeInstanceOf(Date);
+    const boardHistoryRows = await db
+      .select()
+      .from(boardItemChanges)
+      .where(eq(boardItemChanges.boardId, board.id));
+    expect(boardHistoryRows.every((row) => row.entityId !== typo.id)).toBe(true);
 
     const finalSurvivor = await scope.createObject({
       type: 'company',

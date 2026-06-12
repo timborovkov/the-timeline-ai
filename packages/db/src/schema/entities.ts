@@ -105,6 +105,7 @@ export const entities = pgTable(
     uniqueIndex('entities_team_type_canonical_name_unq')
       .on(table.teamId, table.type, sql`lower(${table.canonicalName})`)
       .where(sql`${table.mergedIntoId} IS NULL`),
+    uniqueIndex('entities_team_id_unq').on(table.teamId, table.id),
     // GIN over aliases for alias-membership lookup. Team scoping happens via
     // the btree (entities_team_idx) — Postgres bitmap-ands the two.
     index('entities_aliases_gin').using('gin', sql`${table.aliases} jsonb_path_ops`),

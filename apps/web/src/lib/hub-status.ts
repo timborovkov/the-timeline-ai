@@ -1,5 +1,5 @@
 import {
-  boardViews,
+  boards,
   calendarEvents,
   documents,
   documentVersions,
@@ -198,8 +198,8 @@ async function getWorkInventoryCounts(teamId: string, userId: string, now: Date,
     countTeamRows([...openTaskConditions, lt(entities.dueAt, now)]),
     db
       .select({ total: sql<number>`COUNT(*)::int` })
-      .from(boardViews)
-      .where(eq(boardViews.teamId, teamId)),
+      .from(boards)
+      .where(and(eq(boards.teamId, teamId), isNull(boards.archivedAt))),
     db
       .select({ total: sql<number>`COUNT(*)::int` })
       .from(calendarEvents)

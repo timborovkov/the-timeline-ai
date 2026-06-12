@@ -77,6 +77,7 @@ export const rawEvents = pgTable(
       table.occurredAt,
       table.id,
     ),
+    uniqueIndex('raw_events_team_id_unq').on(table.teamId, table.id),
     index('raw_events_author_idx').on(table.authorUserId),
     index('raw_events_visibility_owner_idx').on(table.teamId, table.visibilityOwnerUserId),
     // Idempotency: Telegram delivers the same update_id on retry when we

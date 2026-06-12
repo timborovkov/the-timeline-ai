@@ -9,6 +9,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
+import { PinnedBoards } from '@/components/boards/pinned-boards';
 import { CaptureForm } from '@/components/capture-form';
 import { IndexStrip } from '@/components/index-strip';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
@@ -61,7 +62,7 @@ export default async function HomeDashboardPage() {
   const role = await scope.requireMembership();
   const isAdmin = role === 'owner' || role === 'admin';
 
-  const [onboardingState, team, pendingApprovals, eventPage, members, webDefault] =
+  const [onboardingState, team, pendingApprovals, eventPage, members, webDefault, pinnedBoards] =
     await Promise.all([
       scope.onboarding.getChecklistState(),
       scope.timeline.team(),
@@ -69,6 +70,7 @@ export default async function HomeDashboardPage() {
       scope.timeline.listEventsPage({ limit: 12 }),
       scope.timeline.listMembers(),
       scope.timeline.resolveVisibilityDefault('web'),
+      scope.boards.listPinnedBoards(),
     ]);
 
   const telegramConnectionCount =
@@ -128,6 +130,8 @@ export default async function HomeDashboardPage() {
           inboundEmail={team?.inboundEmail ?? null}
         />
       ) : null}
+
+      <PinnedBoards boards={pinnedBoards} />
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.65fr)]">
         <section
