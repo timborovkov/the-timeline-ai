@@ -21,6 +21,7 @@ vi.mock('#src/queue/queues.js', async (importOriginal) => {
     enqueueCalendarEventEmbedJob: enqueue,
     enqueueEmbedJob: enqueue,
     enqueueObjectEmbedJob: enqueue,
+    enqueueObjectNoteEmbedJob: enqueue,
   };
 });
 
@@ -1642,6 +1643,68 @@ describe('suggestion scope', () => {
       actor_user_id: null,
       note_author_user_id: null,
       event_author_user_id: null,
+    });
+  });
+
+  it('accepts object note update suggestions as agent audit changes', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const object = await scope.objects.createObject({
+      type: 'topic',
+      canonicalName: 'Support routing',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const note = await scope.objects.createNote({
+      entityId: object.id,
+      body: 'Q: Where do refunds go?\nA: Send them to billing.',
+      authorUserId: USER_ID,
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update refund routing answer',
+      dedupeKey: 'agent-note-update',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'object_note',
+          targetId: note.id,
+          title: 'Update Q&A note',
+          dedupeKey: 'agent-note-update:item',
+          proposedPayload: {
+            body: 'Q: Where do refunds go?\nA: Send them to finance-ops.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{
+      body: string;
+      actor_kind: string;
+      actor_user_id: string | null;
+      source_metadata: Record<string, unknown>;
+    }>(
+      `SELECT n.body, oc.actor_kind, oc.actor_user_id, re.source_metadata
+       FROM object_notes n
+       JOIN object_changes oc ON oc.entity_id = n.entity_id
+       LEFT JOIN raw_events re ON re.id = oc.source_event_id
+       WHERE n.id = $1 AND oc.field = '__note_update__'
+       ORDER BY oc.changed_at DESC
+       LIMIT 1`,
+      [note.id],
+    );
+    expect(result.rows[0]?.body).toBe('Q: Where do refunds go?\nA: Send them to finance-ops.');
+    expect(result.rows[0]).toMatchObject({
+      actor_kind: 'agent',
+      actor_user_id: null,
+      source_metadata: {
+        kind: 'object_note_update',
+        note_id: note.id,
+        agent_suggestion_item_id: itemId,
+      },
     });
   });
 

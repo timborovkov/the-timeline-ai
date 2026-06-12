@@ -438,6 +438,9 @@ tests and evals carry the branch coverage and model/tool behavior.
   - Slack/Telegram raw events schedule conversation-review jobs, and the review
     worker handles contradiction, pending proposal revision, accepted-proposal
     correction proposals, and minimal visible evidence citations.
+  - Slack/Telegram conversation reviews can propose reusable Q&A as
+    `object_note` create/update items, including existing-note prompt context
+    for clear corrections.
   - Raw event text about an existing account/project produces an object update
     suggestion instead of a duplicate object where the fixture makes the target
     unambiguous.
@@ -457,6 +460,8 @@ tests and evals carry the branch coverage and model/tool behavior.
     event requested by the suggestion payload.
   - Accepting an object suggestion creates, updates, archives, or links only
     team-scoped objects.
+  - Accepting an `object_note` suggestion creates notes idempotently and can
+    update an existing Q&A note through the agent audit/change path.
   - Rejection leaves durable task/object/calendar/decision state unchanged.
   - Duplicate acceptance is safe.
   - Acceptance writes the expected evidence/audit/change intent and revalidates

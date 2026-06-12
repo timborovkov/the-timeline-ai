@@ -14,6 +14,7 @@ import {
   facts as factsTable,
   objectIdentityFacets,
   objectChanges,
+  objectNotes,
   rawEvents,
   teamMembers,
   teamVisibilityDefaults,
@@ -215,6 +216,22 @@ export interface SearchEventResult {
   senderResolutionStatus: SenderResolutionStatus;
   entityIds: string[];
   snippet: string;
+}
+
+export interface SearchObjectNoteEvidence {
+  rawEventId: string;
+  quote: string | null;
+}
+
+export interface SearchObjectNoteResult {
+  noteId: string;
+  objectId: string;
+  objectName: string;
+  objectType: EntityType;
+  body: string;
+  score: number;
+  updatedAt: string;
+  evidence: SearchObjectNoteEvidence[];
 }
 
 export interface SenderContext {
@@ -2382,6 +2399,146 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             snippet,
           });
           if (results.length >= (input.limit ?? 20)) break;
+        }
+        return results;
+      },
+
+      async searchObjectNotes(input: {
+        query: string;
+        objectId?: string;
+        limit?: number;
+      }): Promise<SearchObjectNoteResult[]> {
+        await ensureMember();
+        const embedFn = deps.embed ?? defaultEmbed;
+        const searchFn =
+          deps.qdrantSearch ??
+          (async (tId, uId, vector, opts) => {
+            const client = getQdrantClient();
+            return client.search(tId, uId, vector, opts);
+          });
+
+        const limit = Math.min(Math.max(input.limit ?? 10, 1), 20);
+        const { vector } = await embedFn({ text: input.query });
+        const hits = await searchFn(teamId, userId, vector, {
+          limit: limit * 3,
+          sourceKind: 'object_note',
+        });
+
+        const orderedNoteIds: string[] = [];
+        const scoreByNoteId = new Map<string, number>();
+        for (const hit of hits) {
+          if (hit.payload.team_id !== teamId) continue;
+          if (hit.payload.source_kind !== 'object_note') continue;
+          const noteId = hit.payload.note_id;
+          const objectId = hit.payload.object_id;
+          if (!noteId || !objectId) continue;
+          if (input.objectId && objectId !== input.objectId) continue;
+          if (!scoreByNoteId.has(noteId)) orderedNoteIds.push(noteId);
+          const previous = scoreByNoteId.get(noteId) ?? Number.NEGATIVE_INFINITY;
+          if (hit.score > previous) scoreByNoteId.set(noteId, hit.score);
+        }
+        if (orderedNoteIds.length === 0) return [];
+
+        const noteRows = await db
+          .select({
+            noteId: objectNotes.id,
+            objectId: objectNotes.entityId,
+            body: objectNotes.body,
+            updatedAt: objectNotes.updatedAt,
+            objectName: entities.canonicalName,
+            objectType: entities.type,
+          })
+          .from(objectNotes)
+          .innerJoin(entities, eq(entities.id, objectNotes.entityId))
+          .where(
+            and(
+              eq(objectNotes.teamId, teamId),
+              isNull(objectNotes.deletedAt),
+              isNull(entities.mergedIntoId),
+              input.objectId ? eq(objectNotes.entityId, input.objectId) : undefined,
+              inArray(objectNotes.id, orderedNoteIds),
+            ),
+          );
+        const noteMap = new Map(noteRows.map((row) => [row.noteId, row]));
+
+        const auditRows = await db
+          .select({
+            noteId: sql<string>`${rawEvents.sourceMetadata} ->> 'note_id'`,
+            suggestionItemId: sql<
+              string | null
+            >`${rawEvents.sourceMetadata} ->> 'agent_suggestion_item_id'`,
+          })
+          .from(rawEvents)
+          .where(
+            and(
+              eq(rawEvents.teamId, teamId),
+              eq(rawEvents.source, 'system'),
+              inArray(sql<string>`${rawEvents.sourceMetadata} ->> 'note_id'`, orderedNoteIds),
+              sql`${rawEvents.sourceMetadata} ->> 'kind' in ('object_note_create', 'object_note_update')`,
+            ),
+          );
+        const itemToNoteIds = new Map<string, string[]>();
+        for (const row of auditRows) {
+          if (!row.suggestionItemId || !row.noteId) continue;
+          const existing = itemToNoteIds.get(row.suggestionItemId) ?? [];
+          existing.push(row.noteId);
+          itemToNoteIds.set(row.suggestionItemId, existing);
+        }
+
+        const evidenceByNoteId = new Map<string, SearchObjectNoteEvidence[]>();
+        const suggestionItemIds = Array.from(itemToNoteIds.keys());
+        if (suggestionItemIds.length > 0) {
+          const itemRows = await db
+            .select({
+              itemId: agentSuggestionItems.id,
+              suggestionId: agentSuggestionItems.suggestionId,
+            })
+            .from(agentSuggestionItems)
+            .where(inArray(agentSuggestionItems.id, suggestionItemIds));
+          const suggestionIds = Array.from(new Set(itemRows.map((row) => row.suggestionId)));
+          const suggestionIdToNoteIds = new Map<string, string[]>();
+          for (const row of itemRows) {
+            const noteIds = itemToNoteIds.get(row.itemId) ?? [];
+            const existing = suggestionIdToNoteIds.get(row.suggestionId) ?? [];
+            existing.push(...noteIds);
+            suggestionIdToNoteIds.set(row.suggestionId, existing);
+          }
+          if (suggestionIds.length > 0) {
+            const evidenceRows = await db
+              .select({
+                suggestionId: agentSuggestionEvidence.suggestionId,
+                rawEventId: agentSuggestionEvidence.rawEventId,
+                quote: agentSuggestionEvidence.quote,
+              })
+              .from(agentSuggestionEvidence)
+              .where(inArray(agentSuggestionEvidence.suggestionId, suggestionIds));
+            for (const row of evidenceRows) {
+              for (const noteId of suggestionIdToNoteIds.get(row.suggestionId) ?? []) {
+                const existing = evidenceByNoteId.get(noteId) ?? [];
+                if (!existing.some((ev) => ev.rawEventId === row.rawEventId)) {
+                  existing.push({ rawEventId: row.rawEventId, quote: row.quote });
+                }
+                evidenceByNoteId.set(noteId, existing);
+              }
+            }
+          }
+        }
+
+        const results: SearchObjectNoteResult[] = [];
+        for (const noteId of orderedNoteIds) {
+          const row = noteMap.get(noteId);
+          if (!row) continue;
+          results.push({
+            noteId: row.noteId,
+            objectId: row.objectId,
+            objectName: row.objectName,
+            objectType: row.objectType,
+            body: row.body,
+            score: scoreByNoteId.get(noteId) ?? 0,
+            updatedAt: row.updatedAt.toISOString(),
+            evidence: evidenceByNoteId.get(noteId) ?? [],
+          });
+          if (results.length >= limit) break;
         }
         return results;
       },

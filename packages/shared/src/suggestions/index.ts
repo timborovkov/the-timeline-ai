@@ -185,8 +185,12 @@ const identityFacetPayload = z.object({
 });
 
 const objectNotePayload = z.object({
-  entityId: uuid,
+  entityId: uuid.optional(),
+  entityName: z.string().trim().min(1).max(200).optional(),
+  entityType: z.string().trim().min(1).max(40).optional(),
+  noteId: uuid.optional(),
   body: z.string().trim().min(1).max(5000),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const objectRelationshipPayload = z.object({
@@ -1314,7 +1318,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           and(
             eq(rawEvents.teamId, teamId),
             eq(rawEvents.source, 'system'),
-            sql`${rawEvents.sourceMetadata} ->> 'kind' = 'object_note_create'`,
+            sql`${rawEvents.sourceMetadata} ->> 'kind' in ('object_note_create', 'object_note_update')`,
             sql`${rawEvents.sourceMetadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
           ),
         )
@@ -1357,6 +1361,32 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .where(and(eq(entities.teamId, teamId), eq(entities.id, targetId)))
       .limit(1);
     return row?.type ?? null;
+  }
+
+  async function resolveObjectNoteEntityId(
+    payload: z.infer<typeof objectNotePayload>,
+  ): Promise<string> {
+    if (payload.entityId) return payload.entityId;
+    if (!payload.entityName) throw new Error('Object note target object is required');
+
+    const conds = [
+      eq(entities.teamId, teamId),
+      isNull(entities.mergedIntoId),
+      isNull(entities.archivedAt),
+      sql`lower(${entities.canonicalName}) = lower(${payload.entityName})`,
+    ];
+    if (payload.entityType) conds.push(eq(entities.type, payload.entityType as ObjectType));
+
+    const rows = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(and(...conds))
+      .limit(2);
+    const row = rows[0];
+    if (rows.length !== 1 || !row) {
+      throw new Error('Object note target object was not uniquely matched');
+    }
+    return row.id;
   }
 
   async function objectTypesForItems(
@@ -1473,16 +1503,40 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
 
     if (item.targetKind === 'object_note') {
-      if (item.operation !== 'create') throw new Error('Object notes only support create');
       const parsed = objectNotePayload.parse(payload);
-      const created = await objects.createNote({
-        entityId: parsed.entityId,
-        body: parsed.body,
-        authorUserId: null,
-        metadata: { agent_suggestion_item_id: item.id },
-        actor: { kind: 'agent', userId: null },
-      });
-      return created.id;
+      if (item.operation === 'create') {
+        const entityId = await resolveObjectNoteEntityId(parsed);
+        const created = await objects.createNote({
+          entityId,
+          body: parsed.body,
+          authorUserId: null,
+          metadata: {
+            ...(parsed.metadata ?? {}),
+            agent_suggestion_item_id: item.id,
+            qna_note: parsed.body.startsWith('Q:'),
+          },
+          actor: { kind: 'agent', userId: null },
+        });
+        return created.id;
+      }
+      if (item.operation === 'update') {
+        const noteId = targetId ?? parsed.noteId;
+        if (!noteId) throw new Error('Object note update requires a note id');
+        const updated = await objects.updateNote({
+          noteId,
+          body: parsed.body,
+          actorUserId: null,
+          actor: { kind: 'agent', userId: null },
+          metadata: {
+            ...(parsed.metadata ?? {}),
+            agent_suggestion_item_id: item.id,
+            qna_note: parsed.body.startsWith('Q:'),
+          },
+        });
+        if (!updated) throw new Error('Object note update target not found');
+        return noteId;
+      }
+      throw new Error('Object notes only support create/update');
     }
 
     if (item.targetKind === 'object_relationship') {
