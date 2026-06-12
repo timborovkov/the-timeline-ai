@@ -777,7 +777,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .select()
         .from(agentSuggestionItems)
         .where(inArray(agentSuggestionItems.suggestionId, ids))
-        .orderBy(asc(agentSuggestionItems.suggestionId), asc(agentSuggestionItems.createdAt)),
+        .orderBy(
+          asc(agentSuggestionItems.suggestionId),
+          asc(agentSuggestionItems.createdAt),
+          asc(agentSuggestionItems.id),
+        ),
       db
         .select({
           id: agentSuggestionEvidence.id,
@@ -1365,9 +1369,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function resolveObjectNoteEntityId(
     payload: z.infer<typeof objectNotePayload>,
+    item?: typeof agentSuggestionItems.$inferSelect,
   ): Promise<string> {
     if (payload.entityId) return payload.entityId;
     if (!payload.entityName) throw new Error('Object note target object is required');
+
+    if (item) {
+      const siblingId = await resolveObjectNoteSiblingCreate(payload, item);
+      if (siblingId) return siblingId;
+    }
 
     const conds = [
       eq(entities.teamId, teamId),
@@ -1383,10 +1393,84 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .where(and(...conds))
       .limit(2);
     const row = rows[0];
-    if (rows.length !== 1 || !row) {
+    if (rows.length === 1 && row) return row.id;
+    if (rows.length !== 1) {
       throw new Error('Object note target object was not uniquely matched');
     }
-    return row.id;
+    throw new Error('Object note target object was not uniquely matched');
+  }
+
+  async function resolveObjectNoteSiblingCreate(
+    payload: z.infer<typeof objectNotePayload>,
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<string | null> {
+    if (!payload.entityName) return null;
+    const rows = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          eq(agentSuggestionItems.suggestionId, item.suggestionId),
+          eq(agentSuggestionItems.operation, 'create'),
+          inArray(agentSuggestionItems.targetKind, ['object', 'task']),
+        ),
+      );
+    const matches = rows.filter((candidate) => {
+      const candidatePayload = objectCreatePayload.parse(normalizeLifecyclePayload(candidate));
+      const canonicalName =
+        candidatePayload.canonicalName !== undefined && candidatePayload.canonicalName.length > 0
+          ? candidatePayload.canonicalName
+          : candidate.title;
+      if (canonicalName.toLowerCase() !== payload.entityName?.toLowerCase()) return false;
+      const candidateType =
+        candidate.targetKind === 'task' ? 'task' : (candidatePayload.type ?? 'other');
+      return !payload.entityType || candidateType === payload.entityType;
+    });
+    if (matches.length === 0) return null;
+    if (matches.length > 1) {
+      throw new Error('Object note target sibling object was not uniquely matched');
+    }
+
+    const sibling = matches[0];
+    if (!sibling) return null;
+    const existing = sibling.resultId ?? (await existingResultForItem(sibling));
+    if (existing) return existing;
+    if (sibling.status === 'accepted') {
+      throw new Error('Object note target sibling object has no accepted result');
+    }
+    if (sibling.status !== 'pending' && sibling.status !== 'failed') return null;
+
+    const accepted = await acceptSuggestionItem(sibling.id);
+    if (!accepted) throw new Error('Object note target sibling object could not be accepted');
+    const [resolved] = await db
+      .select({ resultId: agentSuggestionItems.resultId })
+      .from(agentSuggestionItems)
+      .where(and(eq(agentSuggestionItems.teamId, teamId), eq(agentSuggestionItems.id, sibling.id)))
+      .limit(1);
+    if (!resolved?.resultId) {
+      throw new Error('Object note target sibling object has no accepted result');
+    }
+    return resolved.resultId;
+  }
+
+  function acceptancePriority(item: SuggestionItem): number {
+    if (
+      item.operation === 'create' &&
+      (item.targetKind === 'object' || item.targetKind === 'task')
+    ) {
+      return 0;
+    }
+    if (item.operation === 'create' && item.targetKind === 'object_note') return 1;
+    return 2;
+  }
+
+  function orderSuggestionItemsForAcceptance(items: SuggestionItem[]): SuggestionItem[] {
+    return [...items].sort((left, right) => {
+      const priority = acceptancePriority(left) - acceptancePriority(right);
+      if (priority !== 0) return priority;
+      return left.id.localeCompare(right.id);
+    });
   }
 
   async function objectTypesForItems(
@@ -1505,7 +1589,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (item.targetKind === 'object_note') {
       const parsed = objectNotePayload.parse(payload);
       if (item.operation === 'create') {
-        const entityId = await resolveObjectNoteEntityId(parsed);
+        const entityId = await resolveObjectNoteEntityId(parsed, item);
         const created = await objects.createNote({
           entityId,
           body: parsed.body,
@@ -2113,8 +2197,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (!bundle) return { accepted: 0, failed: 0 };
       let accepted = 0;
       let failed = 0;
-      for (const item of bundle.items.filter(
-        (i) => (i.status === 'pending' || i.status === 'failed') && i.targetKind !== 'object_merge',
+      for (const item of orderSuggestionItemsForAcceptance(
+        bundle.items.filter(
+          (i) =>
+            (i.status === 'pending' || i.status === 'failed') && i.targetKind !== 'object_merge',
+        ),
       )) {
         try {
           if (await acceptSuggestionItem(item.id)) accepted += 1;
