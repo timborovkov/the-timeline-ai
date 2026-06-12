@@ -197,6 +197,105 @@ describe('processExtractJobForTests', () => {
     );
   });
 
+  it('does not attach facts to generic topics or tools even when matching objects exist', async () => {
+    const rawEventId = '33333333-3333-4333-8333-333333333336';
+    await seedEvent(db, {
+      id: rawEventId,
+      text: 'Otto asked if the various financial data sets could be combined.',
+    });
+    await db.insert(entities).values([
+      { teamId: TEAM_ID, type: 'topic', canonicalName: 'financial data' },
+      { teamId: TEAM_ID, type: 'topic', canonicalName: 'PE firms' },
+      { teamId: TEAM_ID, type: 'company', canonicalName: 'GitHub' },
+      { teamId: TEAM_ID, type: 'topic', canonicalName: 'Q3 roadmap' },
+    ]);
+    const testIO = io({
+      chatStructured: modelWithFacts([
+        {
+          statement: 'Otto asked if the various financial data sets could be combined.',
+          confidence: 0.9,
+          mentions: [{ name: 'financial data', type: 'topic', role: 'topic' }],
+        },
+        {
+          statement: 'The Q3 roadmap should include finance import planning.',
+          confidence: 0.9,
+          mentions: [{ name: 'Q3 roadmap', type: 'topic', role: 'topic' }],
+        },
+        {
+          statement: 'The team mentioned PE firms and GitHub in passing.',
+          confidence: 0.8,
+          mentions: [
+            { name: 'PE firms', type: 'topic', role: 'topic' },
+            { name: 'GitHub', type: 'company', role: 'topic' },
+          ],
+        },
+      ]),
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({ rawEventId, factsInserted: 3, modelVersion: MODEL_VERSION });
+
+    const factRows = await db.select().from(facts).where(eq(facts.rawEventId, rawEventId));
+    const links = await db.select().from(factEntities);
+    expect(factRows).toHaveLength(3);
+    expect(links).toHaveLength(1);
+    const [roadmap] = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(eq(entities.canonicalName, 'Q3 roadmap'));
+    expect(links[0]?.entityId).toBe(roadmap?.id);
+  });
+
+  it('anchors data-source facts to products instead of public registry objects', async () => {
+    const rawEventId = '33333333-3333-4333-8333-333333333337';
+    await seedEvent(db, {
+      id: rawEventId,
+      text: 'Mika Malen uses Altus for system integrations at about 50 EUR per run and uses Taxxa.ai for reliable access to KILA statements, Finlex, and Tax Administration data.',
+    });
+    await db.insert(entities).values([
+      { teamId: TEAM_ID, type: 'company', canonicalName: 'Altus' },
+      { teamId: TEAM_ID, type: 'company', canonicalName: 'Taxxa.ai' },
+      {
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Verottaja',
+        aliases: ['Tax Administration'],
+      },
+      { teamId: TEAM_ID, type: 'company', canonicalName: 'KILA' },
+      { teamId: TEAM_ID, type: 'company', canonicalName: 'Finlex' },
+    ]);
+    const testIO = io({
+      chatStructured: modelWithFacts([
+        {
+          statement:
+            'Mika Malen uses Altus for system integrations at about 50 EUR per run and uses Taxxa.ai for reliable access to KILA statements, Finlex, and Tax Administration data.',
+          confidence: 1,
+          mentions: [
+            { name: 'Altus', type: 'company', role: 'object' },
+            { name: 'Taxxa.ai', type: 'company', role: 'object' },
+            { name: 'Verottaja', type: 'company', role: 'topic', aliases: ['Tax Administration'] },
+            { name: 'KILA', type: 'company', role: 'topic' },
+            { name: 'Finlex', type: 'company', role: 'topic' },
+          ],
+        },
+      ]),
+    });
+
+    await expect(
+      processExtractJobForTests({ db }, { rawEventId, teamId: TEAM_ID }, testIO),
+    ).resolves.toMatchObject({ rawEventId, factsInserted: 1, modelVersion: MODEL_VERSION });
+
+    const [fact] = await db.select().from(facts).where(eq(facts.rawEventId, rawEventId));
+    if (!fact) throw new Error('expected extracted fact');
+    const links = await db
+      .select({ entityId: factEntities.entityId, name: entities.canonicalName })
+      .from(factEntities)
+      .innerJoin(entities, eq(entities.id, factEntities.entityId))
+      .where(eq(factEntities.factId, fact.id));
+    expect(links.map((link) => link.name).sort()).toEqual(['Altus', 'Taxxa.ai']);
+  });
+
   it('drops noisy message-mechanics facts before persistence', async () => {
     const rawEventId = '33333333-3333-4333-8333-333333333335';
     await seedEvent(db, {

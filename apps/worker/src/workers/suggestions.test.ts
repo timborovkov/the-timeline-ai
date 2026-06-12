@@ -340,6 +340,67 @@ describe('processSuggestionJobForTests', () => {
     ).toEqual(['object', 'object_merge']);
   });
 
+  it('offers archive cleanup for fact-attached low-signal topic objects', async () => {
+    const [objectRow, peFirms] = await db
+      .insert(entities)
+      .values([
+        {
+          teamId: TEAM_ID,
+          type: 'topic',
+          canonicalName: 'financial data',
+        },
+        {
+          teamId: TEAM_ID,
+          type: 'topic',
+          canonicalName: 'PE firms',
+        },
+      ])
+      .returning({ id: entities.id });
+    if (!objectRow || !peFirms) throw new Error('expected low-signal objects');
+    await db.insert(rawEvents).values({
+      id: '55555555-1111-4111-8111-111111111111',
+      teamId: TEAM_ID,
+      authorUserId: OWNER_ID,
+      source: 'web',
+      contentText: 'Otto asked if the various financial data sets could be combined.',
+      occurredAt: REFERENCE_DATE,
+      visibility: 'team',
+      sourceMetadata: {},
+    });
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: '55555555-1111-4111-8111-111111111111',
+        statement: 'Otto asked if the various financial data sets could be combined.',
+        confidence: 0.9,
+        modelVersion: 'test-extract@old',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('expected fact');
+    await db.insert(factEntities).values({
+      factId: fact.id,
+      entityId: objectRow.id,
+      role: 'topic',
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
+    );
+
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(2);
+    expect(bundles.map((bundle) => bundle.items[0]?.title).sort()).toEqual([
+      'Archive PE firms',
+      'Archive financial data',
+    ]);
+  });
+
   it('does not re-offer rejected cleanup suggestions for the same evidence hash', async () => {
     await db.insert(entities).values([
       { teamId: TEAM_ID, type: 'company', canonicalName: 'KPMG' },
@@ -454,7 +515,7 @@ describe('processSuggestionJobForTests', () => {
     ).resolves.toEqual([]);
   });
 
-  it('skips archive cleanup suggestions for objects with notes, facts, or relationships', async () => {
+  it('skips archive cleanup suggestions for objects with notes or relationships', async () => {
     const [withNote, withFact, withRelationship, related] = await db
       .insert(entities)
       .values([
@@ -514,9 +575,18 @@ describe('processSuggestionJobForTests', () => {
       { scope: 'object_cleanup', teamId: TEAM_ID, triggeredBy: 'manual' },
     );
 
-    await expect(
-      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
-    ).resolves.toEqual([]);
+    const bundles = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.items[0]).toMatchObject({
+      operation: 'archive_or_cancel',
+      targetKind: 'object',
+      targetId: withFact.id,
+      title: 'Archive Finder',
+    });
   });
 
   it('turns a commitment raw event into task and calendar suggestions through fallback', async () => {
@@ -1594,7 +1664,7 @@ describe('processSuggestionJobForTests', () => {
     ).resolves.toEqual([]);
   });
 
-  it('keeps durable platform object creates even when the name is usually low-signal', async () => {
+  it('drops durable-looking platform company creates so tool choices become decisions instead', async () => {
     const rawEventId = '10000000-0000-0000-0000-000000000030';
     await seedRawEvent(db as never, {
       id: rawEventId,
@@ -1637,6 +1707,54 @@ describe('processSuggestionJobForTests', () => {
       { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
     );
 
+    await expect(
+      withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions(),
+    ).resolves.toEqual([]);
+  });
+
+  it('keeps durable tool choices when the proposal is modeled as a decision', async () => {
+    const rawEventId = '10000000-0000-0000-0000-000000000036';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'We decided to use GitHub for issue tracking.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Decision: Use GitHub for issue tracking',
+            summary: 'The team decided to use GitHub for issue tracking.',
+            reason: 'The source records an accepted durable tool choice.',
+            confidence: 'high',
+            quote: 'We decided to use GitHub for issue tracking.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Use GitHub for issue tracking',
+                proposedPayload: {
+                  type: 'decision',
+                  canonicalName: 'Use GitHub for issue tracking',
+                  status: 'accepted',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
     const [bundle] = await withTeam(
       db as never,
       TEAM_ID,
@@ -1645,10 +1763,10 @@ describe('processSuggestionJobForTests', () => {
     expect(bundle?.items[0]).toMatchObject({
       operation: 'create',
       targetKind: 'object',
-      title: 'GitHub',
+      title: 'Use GitHub for issue tracking',
       proposedPayload: {
-        type: 'company',
-        canonicalName: 'GitHub',
+        type: 'decision',
+        canonicalName: 'Use GitHub for issue tracking',
         status: 'accepted',
       },
     });
