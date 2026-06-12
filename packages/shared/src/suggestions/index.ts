@@ -1401,6 +1401,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     item?: typeof agentSuggestionItems.$inferSelect,
   ): Promise<string> {
     if (payload.entityId) return payload.entityId;
+    if (item?.targetId) return item.targetId;
     if (!payload.entityName) throw new Error('Object note target object is required');
 
     if (item) {

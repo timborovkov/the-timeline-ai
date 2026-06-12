@@ -1646,6 +1646,49 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('accepts object note create suggestions that store the object id on targetId', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const object = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Target id note project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember target id note',
+      dedupeKey: 'target-id-object-note',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_note',
+          targetId: object.id,
+          title: 'Add note',
+          dedupeKey: 'target-id-object-note:item',
+          proposedPayload: {
+            body: 'Q: Who owns partner onboarding?\nA: Nina owns partner onboarding.',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ body: string; entity_id: string }>(
+      `SELECT body, entity_id
+       FROM object_notes
+       WHERE team_id = '${TEAM_ID}'
+         AND entity_id = '${object.id}'`,
+    );
+    expect(result.rows).toEqual([
+      {
+        body: 'Q: Who owns partner onboarding?\nA: Nina owns partner onboarding.',
+        entity_id: object.id,
+      },
+    ]);
+  });
+
   it('accepts a Q&A note before its sibling topic create by applying the topic first', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
