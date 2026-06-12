@@ -509,7 +509,16 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
           docChunkConstraints.push({ key: 'folder_id', match: { any: searchOpts.folderIds } });
         }
         if (searchOpts.fileKinds && searchOpts.fileKinds.length > 0) {
-          docChunkConstraints.push({ key: 'file_kind', match: { any: searchOpts.fileKinds } });
+          const fileKindBranches: unknown[] = [
+            { key: 'file_kind', match: { any: searchOpts.fileKinds } },
+          ];
+          if (searchOpts.fileKinds.includes('document')) {
+            // Legacy curated document vectors predate the file_kind payload.
+            // Keep them searchable; Postgres hydration still verifies the
+            // current documents.file_kind before returning results.
+            fileKindBranches.push({ is_empty: { key: 'file_kind' } });
+          }
+          docChunkConstraints.push({ should: fileKindBranches });
         }
       }
       const branches: unknown[] = [];

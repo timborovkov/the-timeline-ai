@@ -539,7 +539,30 @@ describe('createQdrantClient', () => {
     expect(should?.should).toContainEqual({
       must: [
         { key: 'source_kind', match: { value: 'doc_chunk' } },
-        { key: 'file_kind', match: { any: ['captured'] } },
+        { should: [{ key: 'file_kind', match: { any: ['captured'] } }] },
+      ],
+    });
+  });
+
+  it('document fileKind search admits legacy doc_chunk points without file_kind payloads', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher });
+    await client.search('team-A', 'user-1', [0, 0, 0, 0], {
+      sourceKind: 'doc_chunk',
+      fileKinds: ['document'],
+    });
+    const search = calls.find((c) => c.url.endsWith('/points/search'));
+    if (!search) throw new Error('no search call captured');
+    const body = search.body as { filter: { must: unknown[] } };
+    const should = body.filter.must.find(
+      (m): m is { should: { must?: unknown[] }[] } =>
+        (m as { should?: unknown }).should !== undefined,
+    );
+    const docBranch = should?.should.find((branch) => Array.isArray(branch.must));
+    expect(docBranch?.must).toContainEqual({
+      should: [
+        { key: 'file_kind', match: { any: ['document'] } },
+        { is_empty: { key: 'file_kind' } },
       ],
     });
   });

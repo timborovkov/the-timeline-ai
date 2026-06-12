@@ -131,6 +131,23 @@ interface ExtractedRepresentation {
   text: string;
 }
 
+function metadataPreviewText(input: {
+  label: 'Captured file' | 'Document';
+  name: string;
+  contentType: string | null;
+  byteSize: number | null;
+  reason: string;
+}): string {
+  return [
+    `${input.label}: ${input.name}`,
+    input.contentType ? `Content type: ${input.contentType}` : null,
+    input.byteSize !== null ? `Size: ${String(input.byteSize)} bytes` : null,
+    input.reason,
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join('\n');
+}
+
 /**
  * Pure-ish job handler. Called by the BullMQ Worker (production) and
  * directly by tests with injected IO. Side effects:
@@ -209,39 +226,58 @@ export async function processDocumentExtractJob(
     };
   }
 
-  if (
-    document.fileKind === 'captured' &&
-    version.byteSize !== null &&
-    version.byteSize > MAX_DOCUMENT_BYTES
-  ) {
-    const preview = [
-      `Captured file: ${document.name}`,
-      version.contentType ? `Content type: ${version.contentType}` : null,
-      `Size: ${String(version.byteSize)} bytes`,
-      'Deep extraction deferred until promotion or targeted inspection.',
-    ]
-      .filter((line): line is string => Boolean(line))
-      .join('\n');
-    await deps.db.transaction(async (tx) => {
+  if (version.byteSize !== null && version.byteSize > MAX_DOCUMENT_BYTES) {
+    const preview =
+      document.fileKind === 'captured'
+        ? metadataPreviewText({
+            label: 'Captured file',
+            name: document.name,
+            contentType: version.contentType,
+            byteSize: version.byteSize,
+            reason: 'Deep extraction deferred until promotion or targeted inspection.',
+          })
+        : metadataPreviewText({
+            label: 'Document',
+            name: document.name,
+            contentType: version.contentType,
+            byteSize: version.byteSize,
+            reason: 'Deep extraction deferred because the file exceeds the current extraction cap.',
+          });
+    const insertedIds = await deps.db.transaction(async (tx) => {
       await tx.delete(documentChunks).where(eq(documentChunks.documentVersionId, version.id));
-      await tx.insert(documentChunks).values({
-        teamId,
-        documentId: document.id,
-        documentVersionId: version.id,
-        chunkIndex: 0,
-        representationKind: 'metadata_preview',
-        text: preview,
-        tokenCount: chunkText(preview)[0]?.tokenCount ?? Math.ceil(preview.length / 4),
-      });
+      const inserted = await tx
+        .insert(documentChunks)
+        .values({
+          teamId,
+          documentId: document.id,
+          documentVersionId: version.id,
+          chunkIndex: 0,
+          representationKind: 'metadata_preview',
+          text: preview,
+          tokenCount: chunkText(preview)[0]?.tokenCount ?? Math.ceil(preview.length / 4),
+        })
+        .returning({ id: documentChunks.id });
       await tx
         .update(documentVersions)
         .set({
           processingStatus: 'deferred',
-          processingError: 'deep extraction deferred by captured-file budget',
+          processingError:
+            document.fileKind === 'captured'
+              ? 'deep extraction deferred by captured-file budget'
+              : 'deep extraction deferred by document extraction cap',
           extractionModelVersion: EXTRACT_CODE_VERSION,
         })
         .where(eq(documentVersions.id, version.id));
+      return inserted.map((row) => row.id);
     });
+    for (const chunkId of insertedIds) {
+      await io.enqueueEmbed({
+        scope: 'doc_chunk',
+        teamId,
+        documentChunkId: chunkId,
+        ...(targetCollection ? { targetCollection } : {}),
+      });
+    }
     return { documentVersionId, chunkCount: 1, skipped: true, reason: 'deferred_budget' };
   }
 

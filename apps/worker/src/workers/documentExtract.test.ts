@@ -471,7 +471,7 @@ describe('processDocumentExtractJob — content-type routing', () => {
     expect(result.skipped).toBe(true);
     expect(result.reason).toBe('deferred_budget');
     expect(h.fetchBlob).not.toHaveBeenCalled();
-    expect(h.enqueueEmbed).not.toHaveBeenCalled();
+    expect(h.enqueueEmbed).toHaveBeenCalledOnce();
 
     const version = await h.pg.query<{ processing_status: string; processing_error: string }>(
       `SELECT processing_status, processing_error FROM document_versions WHERE id = $1`,
@@ -487,6 +487,45 @@ describe('processDocumentExtractJob — content-type routing', () => {
     expect(chunk.rows).toHaveLength(1);
     expect(chunk.rows[0]?.representation_kind).toBe('metadata_preview');
     expect(chunk.rows[0]?.text).toContain('Deep extraction deferred');
+    const embedJob = h.enqueueEmbed.mock.calls[0]?.[0] as queueNS.EmbedJobData | undefined;
+    expect(embedJob).toMatchObject({ scope: 'doc_chunk', teamId: TEAM_ID });
+    expect(embedJob && 'documentChunkId' in embedJob ? embedJob.documentChunkId : null).toEqual(
+      expect.any(String),
+    );
+  });
+
+  it('keeps promoted oversized captures deferred and embeds their document metadata preview', async () => {
+    h = await makeHarness('%PDF massive bytes');
+    const { documentId, versionId } = await createFinalisedCapturedFile(h.pg, {
+      name: 'large-promoted.pdf',
+      contentType: 'application/pdf',
+      byteSize: 50 * 1024 * 1024,
+    });
+    await h.pg.query(`UPDATE documents SET file_kind = 'document' WHERE id = $1`, [documentId]);
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe('deferred_budget');
+    expect(h.fetchBlob).not.toHaveBeenCalled();
+    expect(h.enqueueEmbed).toHaveBeenCalledOnce();
+
+    const version = await h.pg.query<{ processing_status: string; processing_error: string }>(
+      `SELECT processing_status, processing_error FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(version.rows[0]?.processing_status).toBe('deferred');
+    expect(version.rows[0]?.processing_error).toContain('document extraction cap');
+
+    const chunk = await h.pg.query<{ representation_kind: string; text: string }>(
+      `SELECT representation_kind, text FROM document_chunks WHERE document_version_id = $1`,
+      [versionId],
+    );
+    expect(chunk.rows).toHaveLength(1);
+    expect(chunk.rows[0]?.representation_kind).toBe('metadata_preview');
+    expect(chunk.rows[0]?.text).toContain('Document: large-promoted.pdf');
   });
 
   it('routes DOCX through mammoth (native), not the vision LLM', async () => {
