@@ -15,6 +15,7 @@ import {
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
+import type { BoardScope } from '#src/boards/index.js';
 import type {
   CalendarScope,
   CreateCalendarEventInput,
@@ -43,7 +44,9 @@ type TargetKind =
   | 'identity_facet'
   | 'object_note'
   | 'object_relationship'
-  | 'object_merge';
+  | 'object_merge'
+  | 'board_membership'
+  | 'board_item_update';
 
 export interface SuggestionScopeDeps {
   db: Db;
@@ -52,6 +55,7 @@ export interface SuggestionScopeDeps {
   ensureMember: (role?: TeamRole) => Promise<TeamRole>;
   requireTeamMember: (otherUserId: string) => Promise<void>;
   objects: ObjectScope;
+  boards: BoardScope;
   calendar: CalendarScope;
 }
 
@@ -199,6 +203,31 @@ const objectMergePayload = z.object({
   objectIds: z.array(uuid).min(2).max(10),
   survivorId: uuid,
   reason: z.string().trim().max(1000).optional(),
+});
+
+const boardMembershipPayload = z.object({
+  boardId: uuid,
+  entityId: uuid,
+  laneId: uuid.nullable().optional(),
+  sourceEventId: uuid.nullable().optional(),
+  note: z.string().trim().max(1000).nullable().optional(),
+});
+
+const boardItemUpdatePayload = z.object({
+  boardItemId: uuid,
+  field: z.enum([
+    'laneId',
+    'position',
+    'responsibleUserId',
+    'dueAt',
+    'priority',
+    'nextStep',
+    'notes',
+    'customFields',
+  ]),
+  newValue: z.unknown(),
+  sourceEventId: uuid.nullable().optional(),
+  note: z.string().trim().max(1000).nullable().optional(),
 });
 
 const calendarCreatePayload = z.object({
@@ -720,7 +749,7 @@ function toBundle(
 }
 
 export function createSuggestionScope(deps: SuggestionScopeDeps) {
-  const { db, teamId, userId, ensureMember, objects, calendar } = deps;
+  const { db, teamId, userId, ensureMember, objects, boards, calendar } = deps;
 
   async function resolveCurrentObjectId(entityId: string): Promise<string | null> {
     if (!UUID_RE.test(entityId)) return null;
@@ -1497,6 +1526,46 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         metadata: { agent_suggestion_item_id: item.id },
       });
       return created?.id ?? null;
+    }
+
+    if (item.targetKind === 'board_membership') {
+      if (item.operation !== 'create')
+        throw new Error('Board membership suggestions only support create');
+      const parsed = boardMembershipPayload.parse(payload);
+      if (parsed.sourceEventId) await validateEvidenceVisible([parsed.sourceEventId]);
+      const change = await boards.proposeBoardMembership({
+        boardId: parsed.boardId,
+        entityId: parsed.entityId,
+        laneId: parsed.laneId ?? null,
+        sourceEventId: parsed.sourceEventId ?? null,
+        suggestionItemId: item.id,
+        note: parsed.note ?? item.description,
+      });
+      const applied = await boards.acceptBoardItemChange(change.id, {
+        kind: 'agent',
+        userId: null,
+      });
+      return applied;
+    }
+
+    if (item.targetKind === 'board_item_update') {
+      if (item.operation !== 'update')
+        throw new Error('Board item suggestions only support update');
+      const parsed = boardItemUpdatePayload.parse(payload);
+      if (parsed.sourceEventId) await validateEvidenceVisible([parsed.sourceEventId]);
+      const change = await boards.proposeBoardItemUpdate({
+        boardItemId: parsed.boardItemId,
+        field: parsed.field,
+        newValue: parsed.newValue,
+        sourceEventId: parsed.sourceEventId ?? null,
+        suggestionItemId: item.id,
+        note: parsed.note ?? item.description,
+      });
+      const applied = await boards.acceptBoardItemChange(change.id, {
+        kind: 'agent',
+        userId: null,
+      });
+      return applied;
     }
 
     if (item.operation === 'create') {

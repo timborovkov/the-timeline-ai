@@ -126,6 +126,8 @@ bundling, deployment output, or server/client import boundaries.
   principles, and architecture overview.
 - [`docs/captured-files.md`](./docs/captured-files.md) — captured-file vs.
   document semantics, processing rules, and follow-up implementation bar.
+- [`docs/boards-2-spec.md`](./docs/boards-2-spec.md) — executable spec for
+  curated Boards 2.0.
 - [`docs/setup/local.html`](./docs/setup/local.html) — complete local setup.
 - [`docs/index.html`](./docs/index.html) — documentation index.
 - [`design.md`](./design.md) — UI design system and product interaction model.
