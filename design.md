@@ -447,7 +447,7 @@ keyboard or assistive-tech users.
   - `⌘K` / `Ctrl+K` — focuses the command bar from anywhere.
   - `Esc` — closes the topmost overlay (dialog → inspector → menu → command bar).
   - `g t` / `g c` / `g o` / `g b` — jump to Timeline / Ask / Objects /
-    Boards (legacy object/board shortcuts stay available even though Work is
+    Boards (direct object/board shortcuts stay available even though Work is
     the primary sidebar parent; registered in
     [apps/web/src/components/keymap.tsx](apps/web/src/components/keymap.tsx)).
 - **Citation chip** is a `<button>` (not a link) — Enter / Space opens the

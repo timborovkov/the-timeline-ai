@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { boardItemChanges, boardItems, type Db } from '@timeline/db';
+import { boardItemChanges, boardItems, boards, type Db } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -124,6 +124,72 @@ describe('board scope', () => {
       .from(boardItemChanges)
       .where(eq(boardItemChanges.boardItemId, item.id));
     expect(changes.map((change) => change.field).sort()).toEqual(['__add__', 'laneId', 'priority']);
+  });
+
+  it('rejects cross-team board item rows at the database boundary', async () => {
+    const owner = withTeam(db, TEAM_A, USER_OWNER);
+    const other = withTeam(db, TEAM_B, USER_OTHER_TEAM);
+    const board = await owner.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Discussed', kind: 'active' }],
+    });
+    const otherObject = await other.objects.createObject({
+      type: 'company',
+      canonicalName: 'Other Corp',
+      actor: { kind: 'user', userId: USER_OTHER_TEAM },
+    });
+
+    await expect(
+      db.insert(boardItems).values({
+        teamId: TEAM_A,
+        boardId: board.id,
+        entityId: otherObject.id,
+        laneId: board.lanes[0]?.id ?? null,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects invalid suggested board item values before they become actionable', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Pilot pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Negotiation', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Revigo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const item = await scope.boards.addBoardItem(board.id, {
+      entityId: company.id,
+      laneId: board.lanes[0]?.id ?? null,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(
+      scope.boards.proposeBoardItemUpdate({
+        boardItemId: item.id,
+        field: 'priority',
+        newValue: 999,
+      }),
+    ).rejects.toThrow('Invalid priority');
+  });
+
+  it('does not leave a board behind when lane creation input is invalid', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+
+    await expect(
+      scope.boards.createBoard({
+        name: 'Broken board',
+        templateKind: 'custom',
+        lanes: [{ name: '', kind: 'active' }],
+      }),
+    ).rejects.toThrow('Lane name required');
+
+    const rows = await db.select().from(boards).where(eq(boards.teamId, TEAM_A));
+    expect(rows).toHaveLength(0);
   });
 
   it('keeps stale suggested item updates pending when the item is no longer active', async () => {

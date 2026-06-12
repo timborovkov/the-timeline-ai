@@ -1366,7 +1366,10 @@ export async function mergeObjects(
   input: { survivorId: string; mergedIds: string[]; actor: UpdateActor },
 ): Promise<{ survivor: ObjectRow; mergedIds: string[] }> {
   await scope.requireMembership();
-  const ids = Array.from(new Set([input.survivorId, ...input.mergedIds]));
+  const requestedMergedIds = Array.from(new Set(input.mergedIds)).filter(
+    (id) => id !== input.survivorId,
+  );
+  const ids = [input.survivorId, ...requestedMergedIds];
   if (!ids.every((id) => UUID_RE.test(id))) throw new Error('Invalid entity id');
   if (ids.length < 2) throw new Error('Select at least two objects to merge');
   if (ids.length > 10) throw new Error('Merge at most 10 objects at once');
@@ -1387,7 +1390,10 @@ export async function mergeObjects(
     }
     const survivor = objects.find((row) => row.id === input.survivorId);
     if (!survivor) throw new Error('Survivor object not found');
-    const losers = objects.filter((row) => row.id !== survivor.id);
+    const objectsById = new Map(objects.map((row) => [row.id, row]));
+    const losers = requestedMergedIds
+      .map((id) => objectsById.get(id))
+      .filter((row): row is ObjectRow => row !== undefined);
     const loserIds = losers.map((row) => row.id);
     const nextAliases = mergeAliases(survivor, losers);
 

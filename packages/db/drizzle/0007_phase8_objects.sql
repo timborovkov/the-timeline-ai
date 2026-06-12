@@ -1,4 +1,4 @@
--- Phase 8: workspace objects, audit, notes, views, boards, notifications, chat sessions.
+-- Phase 8: workspace objects, audit, notes, views, notifications, chat sessions.
 --
 -- Extends `entities` in place rather than introducing a parallel `objects`
 -- table — same canonical resolver, same fact_entities wiring, same agent
@@ -18,7 +18,6 @@ ALTER TYPE "public"."entity_type" ADD VALUE IF NOT EXISTS 'follow_up';--> statem
 CREATE TYPE "public"."relationship_kind" AS ENUM('parent','child','related','blocks','blocked_by','duplicate_of','linked');--> statement-breakpoint
 CREATE TYPE "public"."object_change_actor_kind" AS ENUM('user','agent','system');--> statement-breakpoint
 CREATE TYPE "public"."object_change_status" AS ENUM('applied','suggested','rejected');--> statement-breakpoint
-CREATE TYPE "public"."board_kind" AS ENUM('kanban','table','list');--> statement-breakpoint
 CREATE TYPE "public"."notification_kind" AS ENUM('object_changed','task_due','task_overdue','follow_up_overdue','mention','agent_suggestion');--> statement-breakpoint
 CREATE TYPE "public"."chat_message_role" AS ENUM('user','assistant','tool','system');--> statement-breakpoint
 
@@ -121,25 +120,6 @@ CREATE TABLE "object_views" (
 ALTER TABLE "object_views" ADD CONSTRAINT "object_views_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "object_views" ADD CONSTRAINT "object_views_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "object_views" ADD CONSTRAINT "object_views_entity_id_entities_id_fk" FOREIGN KEY ("entity_id") REFERENCES "public"."entities"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-
-CREATE TABLE "board_views" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-  "team_id" uuid NOT NULL,
-  "created_by" uuid,
-  "name" text NOT NULL,
-  "kind" "board_kind" NOT NULL,
-  "filter" jsonb DEFAULT '{}'::jsonb NOT NULL,
-  "group_by" text,
-  "sort" jsonb DEFAULT '{}'::jsonb NOT NULL,
-  "is_shared" boolean DEFAULT true NOT NULL,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "updated_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-ALTER TABLE "board_views" ADD CONSTRAINT "board_views_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "board_views" ADD CONSTRAINT "board_views_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "board_views_team_shared_idx" ON "board_views" USING btree ("team_id","is_shared");--> statement-breakpoint
-CREATE INDEX "board_views_created_by_idx" ON "board_views" USING btree ("created_by");--> statement-breakpoint
 
 CREATE TABLE "notifications" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,

@@ -1,10 +1,10 @@
 # Boards 2.0 Spec
 
-Boards 2.0 turns boards from saved object filters into curated work surfaces
-for running team workflows: pilot pipelines, task boards, product catalogs,
-marketing plans, management reviews, and similar operating views. The same
-workspace object can appear on many boards, but each board keeps its own
-membership, lanes, item properties, and history.
+Boards 2.0 makes boards curated work surfaces for running team workflows:
+pilot pipelines, task boards, product catalogs, marketing plans, management
+reviews, and similar operating views. The same workspace object can appear on
+many boards, but each board keeps its own membership, lanes, item properties,
+and history.
 
 ## Goals
 
@@ -120,7 +120,6 @@ Defer:
 - strict template enforcement
 - advanced automation rules
 - bulk import
-- saved-filter-only compatibility UI
 
 ## Templates
 
@@ -311,10 +310,9 @@ pending suggestions.
 
 ## Data Model
 
-Boards 2.0 replaces the old `board_views` saved-filter model entirely. Boards
-are explicit records with explicit membership; broad object filters can help
-find candidates, but they are not boards and are not preserved as a runtime
-surface.
+Boards 2.0 is the only board model. Boards are explicit records with explicit
+membership; broad object filters can help find candidates, but they are not
+boards and are not preserved as a runtime surface.
 
 ### Proposed Tables
 
@@ -515,13 +513,11 @@ Board components should not imply that a board is just an object filter.
 - Errors attach to the affected card, row, or field.
 - Pinned board snapshots are compact modules, not full boards.
 
-## Migration and Compatibility
+## Migration
 
-Boards 2.0 removes `board_views`. The migration creates the curated board
-tables, leaves no saved-filter board compatibility API, and drops the old
-`board_views` table/type. Users create fresh curated boards from templates and
-add explicit board items; this avoids carrying forward noisy boards that showed
-every object matching a broad type.
+The migration creates the curated board tables directly. Users create curated
+boards from templates and add explicit board items; this avoids carrying forward
+noisy boards that showed every object matching a broad type.
 
 ## Testing
 

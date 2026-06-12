@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -65,6 +66,7 @@ export const boards = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    uniqueIndex('boards_team_id_unq').on(table.teamId, table.id),
     index('boards_team_archived_idx').on(table.teamId, table.archivedAt),
     index('boards_team_updated_idx').on(table.teamId, table.updatedAt),
   ],
@@ -88,6 +90,12 @@ export const boardLanes = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    uniqueIndex('board_lanes_team_id_unq').on(table.teamId, table.id),
+    foreignKey({
+      columns: [table.teamId, table.boardId],
+      foreignColumns: [boards.teamId, boards.id],
+      name: 'board_lanes_team_board_fk',
+    }).onDelete('cascade'),
     index('board_lanes_team_board_position_idx').on(table.teamId, table.boardId, table.position),
   ],
 );
@@ -120,6 +128,22 @@ export const boardItems = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    uniqueIndex('board_items_team_id_unq').on(table.teamId, table.id),
+    foreignKey({
+      columns: [table.teamId, table.boardId],
+      foreignColumns: [boards.teamId, boards.id],
+      name: 'board_items_team_board_fk',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.teamId, table.entityId],
+      foreignColumns: [entities.teamId, entities.id],
+      name: 'board_items_team_entity_fk',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.teamId, table.laneId],
+      foreignColumns: [boardLanes.teamId, boardLanes.id],
+      name: 'board_items_team_lane_fk',
+    }),
     uniqueIndex('board_items_team_board_entity_active_unq')
       .on(table.teamId, table.boardId, table.entityId)
       .where(sql`${table.archivedAt} IS NULL`),
@@ -163,6 +187,31 @@ export const boardItemChanges = pgTable(
     changedAt: timestamp('changed_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    foreignKey({
+      columns: [table.teamId, table.boardId],
+      foreignColumns: [boards.teamId, boards.id],
+      name: 'board_item_changes_team_board_fk',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.teamId, table.boardItemId],
+      foreignColumns: [boardItems.teamId, boardItems.id],
+      name: 'board_item_changes_team_item_fk',
+    }),
+    foreignKey({
+      columns: [table.teamId, table.entityId],
+      foreignColumns: [entities.teamId, entities.id],
+      name: 'board_item_changes_team_entity_fk',
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.teamId, table.sourceEventId],
+      foreignColumns: [rawEvents.teamId, rawEvents.id],
+      name: 'board_item_changes_team_source_event_fk',
+    }),
+    foreignKey({
+      columns: [table.teamId, table.suggestionItemId],
+      foreignColumns: [agentSuggestionItems.teamId, agentSuggestionItems.id],
+      name: 'board_item_changes_team_suggestion_item_fk',
+    }),
     index('board_item_changes_team_item_changed_idx').on(
       table.teamId,
       table.boardItemId,
@@ -193,6 +242,11 @@ export const boardPins = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    foreignKey({
+      columns: [table.teamId, table.boardId],
+      foreignColumns: [boards.teamId, boards.id],
+      name: 'board_pins_team_board_fk',
+    }).onDelete('cascade'),
     uniqueIndex('board_pins_team_user_board_unq').on(table.teamId, table.userId, table.boardId),
     index('board_pins_team_user_position_idx').on(table.teamId, table.userId, table.position),
   ],

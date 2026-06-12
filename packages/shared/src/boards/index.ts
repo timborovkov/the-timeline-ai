@@ -260,20 +260,43 @@ function patchFromSuggestedField(
 ): BoardItemPatch {
   switch (field) {
     case 'laneId':
-      return { laneId: typeof value === 'string' ? value : null };
+      if (value === null) return { laneId: null };
+      if (typeof value === 'string' && UUID_RE.test(value)) return { laneId: value };
+      throw new Error('Invalid lane id');
     case 'position':
-      return { position: typeof value === 'number' ? value : 0 };
+      if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+        return { position: value };
+      }
+      throw new Error('Invalid position');
     case 'responsibleUserId':
-      return { responsibleUserId: typeof value === 'string' ? value : null };
+      if (value === null) return { responsibleUserId: null };
+      if (typeof value === 'string' && UUID_RE.test(value)) return { responsibleUserId: value };
+      throw new Error('Invalid responsible user');
     case 'dueAt':
-      return { dueAt: typeof value === 'string' || value instanceof Date ? new Date(value) : null };
+      if (value === null) return { dueAt: null };
+      if (typeof value === 'string' || value instanceof Date) {
+        const dueAt = new Date(value);
+        if (Number.isFinite(dueAt.getTime())) return { dueAt };
+      }
+      throw new Error('Invalid due date');
     case 'priority':
-      return { priority: typeof value === 'number' ? value : null };
+      if (value === null) return { priority: null };
+      if (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 4) {
+        return { priority: value };
+      }
+      throw new Error('Invalid priority');
     case 'nextStep':
-      return { nextStep: typeof value === 'string' ? value : null };
+      if (value === null) return { nextStep: null };
+      if (typeof value === 'string' && value.length <= 300) return { nextStep: value };
+      throw new Error('Invalid next step');
     case 'notes':
-      return { notes: typeof value === 'string' ? value : null };
+      if (value === null) return { notes: null };
+      if (typeof value === 'string' && value.length <= 5000) return { notes: value };
+      throw new Error('Invalid notes');
     case 'customFields':
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('Invalid custom fields');
+      }
       return { customFields: jsonObject(value) };
   }
 }
@@ -528,40 +551,48 @@ export function createBoardScope({
       const templateKind = BOARD_TEMPLATES.includes(input.templateKind)
         ? input.templateKind
         : 'custom';
-      const lanes = input.lanes.length > 0 ? input.lanes : defaultBoardLanes(templateKind);
-      const boardRows = await db
-        .insert(boards)
-        .values({
-          teamId: scope.teamId,
-          createdBy: scope.userId,
-          name,
-          purpose: input.purpose?.trim() ?? '',
-          templateKind,
-          recommendedObjectTypes: input.recommendedObjectTypes ?? [],
-          strictObjectTypes: input.strictObjectTypes ?? false,
-          candidateFilter: input.candidateFilter ?? {},
-          isShared: input.isShared ?? true,
-        })
-        .returning();
-      const board = boardRows[0];
-      if (!board) throw new Error('Failed to create board');
-      const laneRows = await db
-        .insert(boardLanes)
-        .values(
-          lanes.map((lane, idx) => ({
+      const lanes = (input.lanes.length > 0 ? input.lanes : defaultBoardLanes(templateKind)).map(
+        (lane, idx) => ({
+          name: normalizeName(lane.name, 'Lane name'),
+          kind: lane.kind ?? null,
+          position: idx,
+        }),
+      );
+      return db.transaction(async (tx) => {
+        const boardRows = await tx
+          .insert(boards)
+          .values({
             teamId: scope.teamId,
-            boardId: board.id,
-            name: normalizeName(lane.name, 'Lane name'),
-            kind: lane.kind ?? null,
-            position: idx,
-          })),
-        )
-        .returning();
-      return {
-        ...toBoardRow(board, new Map([[board.id, 0]]), new Set()),
-        lanes: laneRows.map(toLaneRow),
-        items: [],
-      };
+            createdBy: scope.userId,
+            name,
+            purpose: input.purpose?.trim() ?? '',
+            templateKind,
+            recommendedObjectTypes: input.recommendedObjectTypes ?? [],
+            strictObjectTypes: input.strictObjectTypes ?? false,
+            candidateFilter: input.candidateFilter ?? {},
+            isShared: input.isShared ?? true,
+          })
+          .returning();
+        const board = boardRows[0];
+        if (!board) throw new Error('Failed to create board');
+        const laneRows = await tx
+          .insert(boardLanes)
+          .values(
+            lanes.map((lane) => ({
+              teamId: scope.teamId,
+              boardId: board.id,
+              name: lane.name,
+              kind: lane.kind,
+              position: lane.position,
+            })),
+          )
+          .returning();
+        return {
+          ...toBoardRow(board, new Map([[board.id, 0]]), new Set()),
+          lanes: laneRows.map(toLaneRow),
+          items: [],
+        };
+      });
     },
 
     async archiveBoard(boardId: string): Promise<boolean> {
@@ -666,7 +697,13 @@ export function createBoardScope({
             ...(patch.customFields !== undefined ? { customFields: patch.customFields } : {}),
             updatedAt: new Date(),
           })
-          .where(and(eq(boardItems.id, itemId), eq(boardItems.teamId, scope.teamId)))
+          .where(
+            and(
+              eq(boardItems.id, itemId),
+              eq(boardItems.teamId, scope.teamId),
+              isNull(boardItems.archivedAt),
+            ),
+          )
           .returning({ id: boardItems.id });
         if (updated.length === 0) throw new Error('Board item not found');
         await Promise.all(
@@ -697,7 +734,13 @@ export function createBoardScope({
         const updated = await tx
           .update(boardItems)
           .set({ archivedAt: new Date(), updatedAt: new Date() })
-          .where(and(eq(boardItems.id, itemId), eq(boardItems.teamId, scope.teamId)))
+          .where(
+            and(
+              eq(boardItems.id, itemId),
+              eq(boardItems.teamId, scope.teamId),
+              isNull(boardItems.archivedAt),
+            ),
+          )
           .returning({ id: boardItems.id });
         if (updated.length === 0) throw new Error('Board item not found');
         await writeChange({
@@ -864,6 +907,7 @@ export function createBoardScope({
     }): Promise<BoardItemChangeRow> {
       const item = await itemWithObject(input.boardItemId);
       if (!item) throw new Error('Board item not found');
+      patchFromSuggestedField(input.field, input.newValue);
       return writeChange({
         boardId: item.boardId,
         boardItemId: item.id,
@@ -897,27 +941,48 @@ export function createBoardScope({
         .limit(1);
       const change = rows[0];
       if (!change) return null;
-      let itemId = change.boardItemId;
-      if (change.field === '__add__') {
-        const payload = jsonObject(change.newValue);
-        const created = await api.addBoardItem(change.boardId, {
-          entityId: change.entityId,
-          laneId: typeof payload.laneId === 'string' ? payload.laneId : null,
-          actor,
-        });
-        itemId = created.id;
-      } else if (itemId && isBoardItemPatchField(change.field)) {
-        const updated = await api.updateBoardItem(
-          itemId,
-          patchFromSuggestedField(change.field, change.newValue),
-          actor,
-        );
-        if (!updated) throw new Error('Board item no longer active');
-      }
-      await db
+      const [claimed] = await db
         .update(boardItemChanges)
         .set({ status: 'applied' })
-        .where(and(eq(boardItemChanges.id, change.id), eq(boardItemChanges.teamId, scope.teamId)));
+        .where(
+          and(
+            eq(boardItemChanges.id, change.id),
+            eq(boardItemChanges.teamId, scope.teamId),
+            eq(boardItemChanges.status, 'suggested'),
+          ),
+        )
+        .returning({ id: boardItemChanges.id });
+      if (!claimed) return null;
+      let itemId = change.boardItemId;
+      try {
+        if (change.field === '__add__') {
+          const payload = jsonObject(change.newValue);
+          const laneId = payload.laneId;
+          const created = await api.addBoardItem(change.boardId, {
+            entityId: change.entityId,
+            laneId: typeof laneId === 'string' && UUID_RE.test(laneId) ? laneId : null,
+            actor,
+          });
+          itemId = created.id;
+        } else if (itemId && isBoardItemPatchField(change.field)) {
+          const updated = await api.updateBoardItem(
+            itemId,
+            patchFromSuggestedField(change.field, change.newValue),
+            actor,
+          );
+          if (!updated) throw new Error('Board item no longer active');
+        } else {
+          throw new Error('Unsupported board change field');
+        }
+      } catch (err) {
+        await db
+          .update(boardItemChanges)
+          .set({ status: 'suggested' })
+          .where(
+            and(eq(boardItemChanges.id, change.id), eq(boardItemChanges.teamId, scope.teamId)),
+          );
+        throw err;
+      }
       return itemId;
     },
 

@@ -132,6 +132,7 @@ export const agentSuggestionItems = pgTable(
       table.targetKind,
       table.targetId,
     ),
+    uniqueIndex('agent_suggestion_items_team_id_unq').on(table.teamId, table.id),
   ],
 );
 
