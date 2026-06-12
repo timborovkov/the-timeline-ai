@@ -1,13 +1,10 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { PGlite } from '@electric-sql/pglite';
 import { type Db } from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createOnboardingScope } from '#src/onboarding/index.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
 
 /**
  * Onboarding checklist tests. The checklist is inferred from real workspace
@@ -15,27 +12,10 @@ import { createOnboardingScope } from '#src/onboarding/index.js';
  * protect the product contract without mocking the underlying tables.
  */
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
-
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-4222-8222-222222222222';
 const OWNER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const MEMBER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-
-async function applyMigrations(pg: PGlite): Promise<void> {
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((file) => file.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((statement) => statement.trim())
-      .filter((statement) => statement.length > 0 && statement !== 'SELECT 1;');
-    for (const statement of statements) await pg.exec(statement);
-  }
-}
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -70,7 +50,7 @@ function completedKeys(state: Awaited<ReturnType<ReturnType<typeof scope>['getCh
 
 beforeEach(async () => {
   pg = new PGlite();
-  await applyMigrations(pg);
+  await applyDbMigrations(pg);
   await seed(pg);
   db = drizzle(pg) as unknown as Db;
   ensureMemberMock = vi.fn<(minRole?: 'owner' | 'admin' | 'member') => void>();

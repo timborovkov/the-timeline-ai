@@ -69,7 +69,6 @@ export function InspectorProvider({ children }: { children: ReactNode }) {
     );
   }, [pathname]);
 
-  // Close on Escape when the inspector is open
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {

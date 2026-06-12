@@ -1,7 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { PGlite } from '@electric-sql/pglite';
 import { conversationReviews, rawEvents, type Db } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -11,6 +7,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { applyDbMigrations } from '#src/test/pglite.js';
 import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
 import {
   markTranscribeFailureForTests,
@@ -24,29 +21,12 @@ import {
  * jobs are enqueued without needing Redis, S3, or OpenRouter in the test.
  */
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, '../../../../packages/db/drizzle');
-
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const TG_USER_ROW_ID = '33333333-3333-3333-3333-333333333333';
 const TG_USER_ID = 7;
 const RAW_EVENT_ID = '10000000-0000-0000-0000-000000000001';
 const AUDIO_KEY = `teams/${TEAM_ID}/telegram/42/10-voice-file.ogg`;
-
-async function applyMigrations(pg: PGlite): Promise<void> {
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s !== 'SELECT 1;');
-    for (const stmt of statements) await pg.exec(stmt);
-  }
-}
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -109,7 +89,7 @@ describe('processTranscribeJobForTests', () => {
 
   beforeEach(async () => {
     pg = new PGlite();
-    await applyMigrations(pg);
+    await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
   });

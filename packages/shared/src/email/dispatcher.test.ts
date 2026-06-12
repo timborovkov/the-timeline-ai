@@ -1,7 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { PGlite } from '@electric-sql/pglite';
 import { rawEvents, teamMembers, teams, teamVisibilityDefaults, users } from '@timeline/db';
 import { eq } from 'drizzle-orm';
@@ -11,9 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PostmarkInbound } from '#src/email/postmark-schema.js';
 
 import { handleInbound } from '#src/email/dispatcher.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
+import { applyDbMigrations } from '#src/test/pglite.js';
+import { textQueueDeps } from '#src/test/queue-deps.js';
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -55,14 +50,6 @@ function attachment(name: string, contentType: string, body = 'hello') {
   };
 }
 
-function textQueueDeps() {
-  return {
-    extract: { enqueueExtract: vi.fn().mockResolvedValue(undefined) },
-    embed: { enqueueEmbed: vi.fn().mockResolvedValue(undefined) },
-    suggestions: { enqueueSuggestion: vi.fn().mockResolvedValue(undefined) },
-  };
-}
-
 function attachmentDeps() {
   return {
     uploadAttachment: vi.fn().mockResolvedValue(undefined),
@@ -77,27 +64,13 @@ function attachmentDeps() {
   };
 }
 
-async function applyMigrations(pg: PGlite): Promise<void> {
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s !== 'SELECT 1;');
-    for (const stmt of statements) await pg.exec(stmt);
-  }
-}
-
 describe('email dispatcher', () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
 
   beforeEach(async () => {
     pg = new PGlite();
-    await applyMigrations(pg);
+    await applyDbMigrations(pg);
     db = drizzle(pg);
 
     await db.insert(teams).values({

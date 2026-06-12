@@ -29,15 +29,10 @@ export function Logo({
       focusable="false"
     >
       {!ariaHidden && <title>{title}</title>}
-      {/* Row 1 — long */}
       <rect x="0" y="6" width="38" height="6" fill="currentColor" />
-      {/* Row 2 — short */}
       <rect x="0" y="16" width="27" height="6" fill="currentColor" />
-      {/* Row 3 — long, cited */}
       <rect x="0" y="26" width="38" height="6" fill="currentColor" />
-      {/* Citation chip — signal lime */}
       <rect x="42" y="26" width="6" height="6" fill="var(--signal)" />
-      {/* Row 4 — medium */}
       <rect x="0" y="36" width="32" height="6" fill="currentColor" />
     </svg>
   );

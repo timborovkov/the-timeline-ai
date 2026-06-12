@@ -1,7 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import {
@@ -25,6 +22,8 @@ import {
   linkSlackUserFromOAuth,
   unbindSlackConversation,
 } from '#src/slack/dispatcher.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
+import { textQueueDeps } from '#src/test/queue-deps.js';
 
 const askAgentMock = vi.hoisted(() => vi.fn());
 
@@ -32,29 +31,12 @@ vi.mock('#src/agent/ask.js', () => ({
   askAgent: askAgentMock,
 }));
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, '../../../db/drizzle');
-
 const TEAM_A = '11111111-1111-1111-1111-111111111111';
 const TEAM_B = '22222222-2222-2222-2222-222222222222';
 const USER_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const USER_B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const WORKSPACE_ID = '33333333-3333-3333-3333-333333333333';
 const SLACK_USER_ROW_ID = '44444444-4444-4444-4444-444444444444';
-
-async function applyMigrations(pg: PGlite): Promise<void> {
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s !== 'SELECT 1;');
-    for (const stmt of statements) await pg.exec(stmt);
-  }
-}
 
 async function seedTeams(pg: PGlite): Promise<void> {
   await pg.exec(`
@@ -172,14 +154,6 @@ function fetchBodyContaining(fetchMock: ReturnType<typeof vi.fn>, needle: string
   return null;
 }
 
-function textQueueDeps() {
-  return {
-    extract: { enqueueExtract: vi.fn().mockResolvedValue(undefined) },
-    embed: { enqueueEmbed: vi.fn().mockResolvedValue(undefined) },
-    suggestions: { enqueueSuggestion: vi.fn().mockResolvedValue(undefined) },
-  };
-}
-
 describe('Slack dispatcher routing', () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
@@ -193,7 +167,7 @@ describe('Slack dispatcher routing', () => {
     askAgentMock.mockReset();
     askAgentMock.mockResolvedValue({ ok: true, answer: 'answer' });
     pg = new PGlite();
-    await applyMigrations(pg);
+    await applyDbMigrations(pg);
     await seedTeams(pg);
     db = drizzle(pg);
     installFetchMock();
