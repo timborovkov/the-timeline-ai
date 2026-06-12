@@ -502,16 +502,46 @@ describe('createQdrantClient', () => {
         must: unknown[];
       };
     };
-    const docMust = body.filter.must.find(
-      (m): m is { key: string; match: { value: string } } =>
-        (m as { key?: string }).key === 'document_id',
+    const should = body.filter.must.find(
+      (m): m is { should: { must?: unknown[] }[] } =>
+        (m as { should?: unknown }).should !== undefined,
     );
+    const docBranch = should?.should.find((branch) => Array.isArray(branch.must));
+    const must = docBranch?.must as { key: string; match: { value?: string; any?: string[] } }[];
+    const docMust = must.find((m) => m.key === 'document_id');
     expect(docMust?.match.value).toBe('doc-1');
-    const folderMust = body.filter.must.find(
-      (m): m is { key: string; match: { any: string[] } } =>
-        (m as { key?: string }).key === 'folder_id',
-    );
+    const folderMust = must.find((m) => m.key === 'folder_id');
     expect(folderMust?.match.any).toEqual(['folder-a', 'folder-b']);
+  });
+
+  it('mixed timeline sourceKind narrows fileKind only on the doc_chunk branch', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher });
+    await client.search('team-A', 'user-1', [0, 0, 0, 0], {
+      sourceKind: ['raw_event', 'fact', 'doc_chunk'],
+      fileKinds: ['captured'],
+    });
+    const search = calls.find((c) => c.url.endsWith('/points/search'));
+    if (!search) throw new Error('no search call captured');
+    const body = search.body as { filter: { must: unknown[] } };
+    const topLevelFileKind = body.filter.must.find(
+      (m): m is { key: string } => (m as { key?: string }).key === 'file_kind',
+    );
+    expect(topLevelFileKind).toBeUndefined();
+    const should = body.filter.must.find(
+      (m): m is { should: { key?: string; match?: unknown; must?: unknown[] }[] } =>
+        (m as { should?: unknown }).should !== undefined,
+    );
+    expect(should?.should).toContainEqual({
+      key: 'source_kind',
+      match: { any: ['raw_event', 'fact'] },
+    });
+    expect(should?.should).toContainEqual({
+      must: [
+        { key: 'source_kind', match: { value: 'doc_chunk' } },
+        { key: 'file_kind', match: { any: ['captured'] } },
+      ],
+    });
   });
 
   it('documentId / folderIds on a non-doc_chunk search are ignored (no leakage)', async () => {

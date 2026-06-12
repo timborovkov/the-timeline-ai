@@ -108,6 +108,15 @@ export interface QdrantPayload {
   document_chunk_id: string | null;
   /** Parent folder id (or null for team-root). Drives folderId search filters. */
   folder_id: string | null;
+  /** documents.fileKind. Set only for source_kind='doc_chunk'. */
+  file_kind?: 'captured' | 'document' | null;
+  /** document_chunks.representationKind. Set only for source_kind='doc_chunk'. */
+  representation_kind?:
+    | 'source_text'
+    | 'transcript'
+    | 'visual_description'
+    | 'metadata_preview'
+    | null;
   /** documents.ownerUserId — surfaced for owner filters. */
   owner_user_id: string | null;
   /** document_versions.createdAt as ISO. Lets recency filters work on docs. */
@@ -144,6 +153,8 @@ export interface SearchOpts {
    *  already flattened to a list of folder ids. Only meaningful when
    *  `sourceKind` includes `'doc_chunk'`. */
   folderIds?: string[];
+  /** Restrict doc_chunk search by captured/document row kind. */
+  fileKinds?: ('captured' | 'document')[];
 }
 
 export interface SearchHit {
@@ -488,7 +499,31 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       // and/or fact (the only kinds legacy points can be) by inferring from
       // fact_id presence. Without this dual branch, narrowing search by
       // kind silently drops most timeline hits until a full reembed.
-      const branches: unknown[] = [{ key: 'source_kind', match: { any: kinds } }];
+      const wantsDocChunk = kinds.includes('doc_chunk');
+      const docChunkConstraints: unknown[] = [];
+      if (wantsDocChunk) {
+        if (searchOpts.documentId) {
+          docChunkConstraints.push({ key: 'document_id', match: { value: searchOpts.documentId } });
+        }
+        if (searchOpts.folderIds && searchOpts.folderIds.length > 0) {
+          docChunkConstraints.push({ key: 'folder_id', match: { any: searchOpts.folderIds } });
+        }
+        if (searchOpts.fileKinds && searchOpts.fileKinds.length > 0) {
+          docChunkConstraints.push({ key: 'file_kind', match: { any: searchOpts.fileKinds } });
+        }
+      }
+      const branches: unknown[] = [];
+      if (wantsDocChunk && docChunkConstraints.length > 0) {
+        const nonDocKinds = kinds.filter((kind) => kind !== 'doc_chunk');
+        if (nonDocKinds.length > 0) {
+          branches.push({ key: 'source_kind', match: { any: nonDocKinds } });
+        }
+        branches.push({
+          must: [{ key: 'source_kind', match: { value: 'doc_chunk' } }, ...docChunkConstraints],
+        });
+      } else {
+        branches.push({ key: 'source_kind', match: { any: kinds } });
+      }
       const wantsRawEvent = kinds.includes('raw_event');
       const wantsFact = kinds.includes('fact');
       if (wantsRawEvent && wantsFact) {
@@ -506,18 +541,6 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
         });
       }
       extraMust.push({ should: branches });
-      // Phase 9: doc-chunk callers can further narrow by document or folder.
-      // These fields are only set on `source_kind='doc_chunk'` points, so
-      // they're a no-op for any other kind — safe to apply unconditionally
-      // when present.
-      if (kinds.includes('doc_chunk')) {
-        if (searchOpts.documentId) {
-          extraMust.push({ key: 'document_id', match: { value: searchOpts.documentId } });
-        }
-        if (searchOpts.folderIds && searchOpts.folderIds.length > 0) {
-          extraMust.push({ key: 'folder_id', match: { any: searchOpts.folderIds } });
-        }
-      }
     } else {
       // Phase 9/10: when sourceKind is unspecified the caller is doing a
       // timeline-flavoured search (searchEvents). Per-chunk points

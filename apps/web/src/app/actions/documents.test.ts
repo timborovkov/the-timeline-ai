@@ -7,6 +7,7 @@ import {
   createFolderAction,
   finalizeDocumentVersionAction,
   getDocumentPreviewUrlAction,
+  promoteCapturedFileAction,
   renameDocumentAction,
   requestDocumentUploadAction,
 } from '@/app/actions/documents';
@@ -50,6 +51,7 @@ const fakes = vi.hoisted(() => ({
     softDeleteDocument: vi.fn(),
     restoreDocument: vi.fn(),
     setDocumentVisibility: vi.fn(),
+    promoteCapturedFile: vi.fn(),
     createFolder: vi.fn(),
     renameFolder: vi.fn(),
     moveFolder: vi.fn(),
@@ -143,6 +145,7 @@ describe('documents actions — auth chokepoint', () => {
       }),
       finalizeDocumentVersionAction({ versionId: VERSION_ID }),
       renameDocumentAction({ id: DOC_ID, name: 'new' }),
+      promoteCapturedFileAction({ id: DOC_ID }),
       createFolderAction({ name: 'F' }),
     ];
     for (const p of calls) {
@@ -154,6 +157,7 @@ describe('documents actions — auth chokepoint', () => {
     expect(fakeScope.createDocument).not.toHaveBeenCalled();
     expect(fakeScope.finalizeDocumentVersion).not.toHaveBeenCalled();
     expect(fakeScope.renameDocument).not.toHaveBeenCalled();
+    expect(fakeScope.promoteCapturedFile).not.toHaveBeenCalled();
     expect(fakeScope.createFolder).not.toHaveBeenCalled();
   });
 
@@ -213,6 +217,43 @@ describe('documents actions — schema validation gates the scope', () => {
       visibility: 'specific_users',
       visibilityUserIds: [USER_ID],
     });
+  });
+});
+
+describe('promoteCapturedFileAction', () => {
+  it('enqueues document extraction when promotion resets a deferred version', async () => {
+    fakeScope.promoteCapturedFile.mockResolvedValue({
+      document: { id: DOC_ID },
+      reprocessVersionId: VERSION_ID,
+    });
+
+    const r = await promoteCapturedFileAction({ id: DOC_ID });
+
+    expect(r.ok).toBe(true);
+    expect(r.documentId).toBe(DOC_ID);
+    expect(fakeScope.promoteCapturedFile).toHaveBeenCalledWith({
+      id: DOC_ID,
+      name: undefined,
+      folderId: null,
+      visibility: undefined,
+      visibilityUserIds: null,
+    });
+    expect(fakeEnqueueDocExtract).toHaveBeenCalledWith({
+      documentVersionId: VERSION_ID,
+      teamId: TEAM_ID,
+    });
+  });
+
+  it('does not enqueue extraction for an already-processed promoted capture', async () => {
+    fakeScope.promoteCapturedFile.mockResolvedValue({
+      document: { id: DOC_ID },
+      reprocessVersionId: null,
+    });
+
+    const r = await promoteCapturedFileAction({ id: DOC_ID });
+
+    expect(r.ok).toBe(true);
+    expect(fakeEnqueueDocExtract).not.toHaveBeenCalled();
   });
 });
 

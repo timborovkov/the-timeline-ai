@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +28,8 @@ import { type DocumentExtractIO, processDocumentExtractJob } from '#src/workers/
  *   - Soft-deleted documents are skipped without touching status.
  *   - Unsupported content-types stamp `processing_status='failed'` with
  *     a clear message and throw UnrecoverableError.
- *   - Privacy gate: non-`team` visibility documents never produce chunks.
+ *   - Private visibility documents still chunk; retrieval enforces the privacy
+ *     filter with vector payload metadata.
  */
 
 type AnyDb = Db;
@@ -138,6 +140,50 @@ async function createFinalisedDocument(
     contentType: opts.contentType,
   });
   return { documentId: created.document.id, versionId: finalised.version.id };
+}
+
+async function createFinalisedCapturedFile(
+  pg: PGlite,
+  opts: {
+    name: string;
+    contentType: string;
+    byteSize?: number;
+    visibility?: 'team' | 'private' | 'specific_users';
+  },
+): Promise<{ documentId: string; versionId: string; sourceEventId: string }> {
+  const sourceEventId = randomUUID();
+  const documentId = randomUUID();
+  const versionId = randomUUID();
+  const visibility = opts.visibility ?? 'team';
+  await pg.query(
+    `INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility, visibility_owner_user_id, source_metadata)
+     VALUES ($1, $2, $3, 'telegram', 'Telegram attachment', $4, $3, '{}'::jsonb)`,
+    [sourceEventId, TEAM_ID, USER_A, visibility],
+  );
+  await pg.query(
+    `INSERT INTO documents (id, team_id, file_kind, folder_id, name, owner_user_id, visibility, source_raw_event_id, metadata)
+     VALUES ($1, $2, 'captured', null, $3, $4, $5, $6, '{}'::jsonb)`,
+    [documentId, TEAM_ID, opts.name, USER_A, visibility, sourceEventId],
+  );
+  await pg.query(
+    `INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, content_type, uploaded_by_user_id, source_event_id, processing_status)
+     VALUES ($1, $2, $3, 1, $4, $5, $6, $7, $8, 'pending')`,
+    [
+      versionId,
+      TEAM_ID,
+      documentId,
+      `${TEAM_ID}/${documentId}/v1/${opts.name}`,
+      opts.byteSize ?? 1024,
+      opts.contentType,
+      USER_A,
+      sourceEventId,
+    ],
+  );
+  await pg.query(`UPDATE documents SET current_version_id = $1 WHERE id = $2`, [
+    versionId,
+    documentId,
+  ]);
+  return { documentId, versionId, sourceEventId };
 }
 
 // `h` is assigned at the top of every `it`. We declare it as `Harness`
@@ -313,8 +359,8 @@ describe('processDocumentExtractJob — short-circuits', () => {
   });
 });
 
-describe('processDocumentExtractJob — privacy gate', () => {
-  it('stamps failed and skips when document visibility is not "team"', async () => {
+describe('processDocumentExtractJob — privacy payloads', () => {
+  it('chunks private documents so vector retrieval can enforce visibility filters', async () => {
     h = await makeHarness('private content');
     const { versionId } = await createFinalisedDocument(h.db, {
       name: 'private.txt',
@@ -326,19 +372,15 @@ describe('processDocumentExtractJob — privacy gate', () => {
       { documentVersionId: versionId, teamId: TEAM_ID },
       h.io,
     );
-    expect(result.skipped).toBe(true);
-    expect(result.reason).toContain('visibility=private');
-    // Status is stamped 'failed' with the visibility reason so the
-    // redocument-extract script can re-pick it up after a relaxation.
-    const row = await h.pg.query<{ processing_status: string; processing_error: string }>(
-      `SELECT processing_status, processing_error FROM document_versions WHERE id = $1`,
+    expect(result.skipped).toBeUndefined();
+    expect(result.chunkCount).toBeGreaterThanOrEqual(1);
+    const row = await h.pg.query<{ processing_status: string }>(
+      `SELECT processing_status FROM document_versions WHERE id = $1`,
       [versionId],
     );
-    expect(row.rows[0]?.processing_status).toBe('failed');
-    expect(row.rows[0]?.processing_error).toContain('visibility=private');
-    // Critically: blob was never fetched, no embed jobs enqueued.
-    expect(h.fetchBlob).not.toHaveBeenCalled();
-    expect(h.enqueueEmbed).not.toHaveBeenCalled();
+    expect(row.rows[0]?.processing_status).toBe('chunked');
+    expect(h.fetchBlob).toHaveBeenCalledOnce();
+    expect(h.enqueueEmbed).toHaveBeenCalledTimes(result.chunkCount ?? 0);
   });
 });
 
@@ -378,8 +420,11 @@ describe('processDocumentExtractJob — content-type routing', () => {
   });
 
   it('routes image/* through the vision extractor', async () => {
-    h = await makeHarness('\xff\xd8\xff image bytes', {
-      visionResponse: 'whiteboard says: Q3 OKRs',
+    h = await makeHarness('\xff\xd8\xff image bytes');
+    h.extractFromMedia.mockResolvedValueOnce({
+      text: 'whiteboard says: Q3 OKRs',
+      visualDescription: 'A photo of a whiteboard with planning notes.',
+      model: 'openai/gpt-4o-mini',
     });
     const { versionId } = await createFinalisedDocument(h.db, {
       name: 'whiteboard.jpg',
@@ -399,11 +444,49 @@ describe('processDocumentExtractJob — content-type routing', () => {
     expect(call.mediaType).toBe('image/jpeg');
     expect(call.filename).toBe('whiteboard.jpg');
     // The chunk text must come from the vision response, not the blob.
-    const chunk = await h.pg.query<{ text: string }>(
-      `SELECT text FROM document_chunks WHERE document_version_id = $1 ORDER BY chunk_index LIMIT 1`,
+    const chunk = await h.pg.query<{ text: string; representation_kind: string }>(
+      `SELECT text, representation_kind FROM document_chunks WHERE document_version_id = $1 ORDER BY chunk_index`,
       [versionId],
     );
     expect(chunk.rows[0]?.text).toContain('Q3 OKRs');
+    expect(chunk.rows.map((row) => row.representation_kind)).toContain('source_text');
+    expect(chunk.rows.map((row) => row.representation_kind)).toContain('visual_description');
+    expect(chunk.rows.some((row) => row.text.includes('whiteboard with planning notes'))).toBe(
+      true,
+    );
+  });
+
+  it('defers oversized captured files with a metadata preview instead of failing', async () => {
+    h = await makeHarness('%PDF massive bytes');
+    const { versionId } = await createFinalisedCapturedFile(h.pg, {
+      name: 'huge-thread-dump.pdf',
+      contentType: 'application/pdf',
+      byteSize: 26 * 1024 * 1024,
+    });
+    const result = await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe('deferred_budget');
+    expect(h.fetchBlob).not.toHaveBeenCalled();
+    expect(h.enqueueEmbed).not.toHaveBeenCalled();
+
+    const version = await h.pg.query<{ processing_status: string; processing_error: string }>(
+      `SELECT processing_status, processing_error FROM document_versions WHERE id = $1`,
+      [versionId],
+    );
+    expect(version.rows[0]?.processing_status).toBe('deferred');
+    expect(version.rows[0]?.processing_error).toContain('deferred');
+
+    const chunk = await h.pg.query<{ representation_kind: string; text: string }>(
+      `SELECT representation_kind, text FROM document_chunks WHERE document_version_id = $1`,
+      [versionId],
+    );
+    expect(chunk.rows).toHaveLength(1);
+    expect(chunk.rows[0]?.representation_kind).toBe('metadata_preview');
+    expect(chunk.rows[0]?.text).toContain('Deep extraction deferred');
   });
 
   it('routes DOCX through mammoth (native), not the vision LLM', async () => {

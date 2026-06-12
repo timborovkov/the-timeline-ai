@@ -124,6 +124,8 @@ bundling, deployment output, or server/client import boundaries.
 
 - [`docs/product-brief.html`](./docs/product-brief.html) — product vision,
   principles, and architecture overview.
+- [`docs/captured-files.md`](./docs/captured-files.md) — captured-file vs.
+  document semantics, processing rules, and follow-up implementation bar.
 - [`docs/setup/local.html`](./docs/setup/local.html) — complete local setup.
 - [`docs/index.html`](./docs/index.html) — documentation index.
 - [`design.md`](./design.md) — UI design system and product interaction model.

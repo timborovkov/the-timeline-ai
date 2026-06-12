@@ -45,6 +45,7 @@ export interface ExtractTextFromMediaInput {
 
 export interface ExtractTextFromMediaResult {
   text: string;
+  visualDescription?: string;
   model: string;
 }
 
@@ -71,18 +72,24 @@ function buildDefaultModel(modelId: string): LanguageModel {
   return provider(modelId);
 }
 
-const SYSTEM_PROMPT = `You are an OCR + document transcription engine. Output the document's text as plain text, preserving:
+const SYSTEM_PROMPT = `You are an OCR + visual description engine. Output two clearly labeled sections:
+
+SOURCE_TEXT:
+The document's readable text as plain text, preserving:
 - paragraph breaks (one blank line between paragraphs)
 - list structure (use "- " for bullets, "1. " for numbered lists)
 - table structure (use plain pipe-delimited rows, header underline with dashes)
 - headings (prefix with "# " for major sections, "## " for sub-sections)
 
+VISUAL_DESCRIPTION:
+A concise, neutral description of what is visibly shown. Describe layout, objects, UI, charts, photos, scans, and other non-text context. Do not infer business conclusions.
+
 Rules:
-- Output ONLY the transcribed text. No commentary, no preamble, no "Here is the text:".
-- If a page contains an image with no text, write [image] on its own line.
+- Output ONLY those two sections. No commentary, no preamble, no "Here is the text:".
+- If there is no readable text, leave SOURCE_TEXT blank or write [no readable text].
 - If text is illegible, write [illegible] inline.
 - If the document is multiple pages, separate pages with two blank lines.
-- Do not summarise. Do not paraphrase. Transcribe faithfully.`;
+- Do not paraphrase source text. Transcribe faithfully.`;
 
 /**
  * Send a binary document (PDF, image) to a vision model and get back its
@@ -133,7 +140,7 @@ export async function extractTextFromMedia(
               contentPart,
               {
                 type: 'text',
-                text: 'Transcribe the attached document to plain text. Follow the formatting rules in the system prompt.',
+                text: 'Extract readable text and write a neutral visual description. Follow the section format in the system prompt.',
               },
             ],
           },
@@ -156,7 +163,24 @@ export async function extractTextFromMedia(
     },
   );
 
-  return { text: result.text, model: modelId };
+  const parsed = parseVisionSections(result.text);
+  return {
+    text: parsed.text,
+    ...(parsed.visualDescription ? { visualDescription: parsed.visualDescription } : {}),
+    model: modelId,
+  };
 }
 
 export { resolveVisionModelId };
+
+function parseVisionSections(output: string): { text: string; visualDescription?: string } {
+  const sourceMatch = /SOURCE_TEXT:\s*([\s\S]*?)(?:\n\s*VISUAL_DESCRIPTION:|$)/i.exec(output);
+  const visualMatch = /VISUAL_DESCRIPTION:\s*([\s\S]*)$/i.exec(output);
+  if (!sourceMatch && !visualMatch) return { text: output };
+  const text = (sourceMatch?.[1] ?? '').trim();
+  const visualDescription = (visualMatch?.[1] ?? '').trim();
+  return {
+    text: text === '[no readable text]' ? '' : text,
+    ...(visualDescription ? { visualDescription } : {}),
+  };
+}

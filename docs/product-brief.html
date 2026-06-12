@@ -165,14 +165,15 @@
           long-form.
         </li>
         <li>
-          <strong>Document processing</strong> (if file/document). Store immutable file version in
-          RustFS, extract text, run PDF/OCR/vision processing when needed, chunk content, summarize
-          meaningful changes, and record document activity on the timeline.
+          <strong>File processing</strong> (if file/document). Store immutable file versions in
+          RustFS, distinguish unpromoted captured files from curated documents, extract source text
+          and typed visual/transcript/metadata representations, and record timeline activity only
+          for explicit document actions such as upload, promotion, or version changes.
         </li>
         <li>
           <strong>Extraction.</strong> LLM pulls useful facts and durable-work signals from the
-          transcribed/raw/document text. Output is structured JSON linked back to the raw event or
-          document version; noisy message mechanics and first-mention link targets stay raw
+          transcribed/raw/file representation text. Output is structured JSON linked back to the raw
+          event or document version; noisy message mechanics and first-mention link targets stay raw
           evidence.
         </li>
         <li>
@@ -181,8 +182,8 @@
           are merged through human-reviewed cleanup.
         </li>
         <li>
-          <strong>Embedding.</strong> Raw text, extracted facts, document chunks, and document
-          change summaries are embedded via OpenRouter (pinned to
+          <strong>Embedding.</strong> Raw text, extracted facts, captured-file representations,
+          document chunks, and document change summaries are embedded via OpenRouter (pinned to
           <code>openai/text-embedding-3-small</code>, 1536 dims unless changed through a re-embed
           procedure).
         </li>
@@ -345,8 +346,10 @@
         deck by Friday"). All linked, all auditable.
       </p>
       <p>
-        Similarly, a document upload ("Office Rules.pdf") creates a document object, immutable
-        version, timeline event, extracted chunks, embeddings, and citations. If Otto uploads a new
+        Similarly, a manual document upload ("Office Rules.pdf") creates a curated document object,
+        immutable version, timeline event, extracted chunks, embeddings, and citations. A
+        conversational attachment starts as source-backed captured evidence instead; promoting it
+        preserves provenance while making it manageable in the document drive. If Otto uploads a new
         version with a section banning TikTok at the office, the update is searchable as both
         document content and a timeline change.
       </p>

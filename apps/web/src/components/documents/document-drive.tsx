@@ -39,6 +39,8 @@ import { Button } from '@/components/ui/button';
 import { queryKeys } from '@/lib/query-keys';
 import { type DocumentListPage, useDocumentListQuery } from '@/lib/use-paginated-queries';
 
+const LIST_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+
 interface FolderItem {
   id: string;
   name: string;
@@ -48,6 +50,7 @@ interface FolderItem {
 
 interface DocumentItem {
   id: string;
+  fileKind: 'captured' | 'document';
   name: string;
   visibility: string;
   updatedAt: string;
@@ -222,6 +225,7 @@ export function DocumentDrive({
         optimisticDocumentId = req.documentId;
         addOptimisticDocument({
           id: req.documentId,
+          fileKind: 'document',
           name: file.name,
           visibility,
           updatedAt: new Date().toISOString(),
@@ -363,6 +367,12 @@ function DocumentDriveHeader({
     <header className="flex flex-wrap items-center justify-between gap-4">
       <Breadcrumbs breadcrumbs={breadcrumbs} />
       <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/app/documents/captured">
+            <FileText className="mr-2 size-4" />
+            Captured
+          </Link>
+        </Button>
         <Button variant="outline" size="sm" onClick={onNewFolder} disabled={pending}>
           <FolderPlus className="mr-2 size-4" />
           New folder
@@ -805,9 +815,7 @@ function fileKindDetails(
 }
 
 function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(
-    new Date(value),
-  );
+  return LIST_DATE_FORMATTER.format(new Date(value));
 }
 
 function formatBytes(bytes: number | null): string | null {

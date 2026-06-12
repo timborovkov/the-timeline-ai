@@ -215,6 +215,164 @@ describe('document scope — visibility filter', () => {
     expect(await B.getDocument(created.document.id)).not.toBeNull();
   });
 
+  it('defaults document listings to promoted documents while captured files use their own listing', async () => {
+    const sourceEvent = await pg.query<{ id: string }>(
+      `INSERT INTO raw_events (team_id, author_user_id, source, content_text, visibility, source_metadata)
+       VALUES ($1, $2, 'telegram', 'Image-only Telegram capture', 'team', '{}'::jsonb)
+       RETURNING id`,
+      [TEAM_ID, USER_A],
+    );
+    const captured = await pg.query<{ id: string }>(
+      `INSERT INTO documents (team_id, file_kind, folder_id, name, owner_user_id, visibility, source_raw_event_id, metadata)
+       VALUES ($1, 'captured', null, 'receipt.png', $2, 'team', $3, '{}'::jsonb)
+       RETURNING id`,
+      [TEAM_ID, USER_A, sourceEvent.rows[0]?.id],
+    );
+    const version = await pg.query<{ id: string }>(
+      `INSERT INTO document_versions (team_id, document_id, version, object_key, byte_size, content_type, uploaded_by_user_id, source_event_id, processing_status)
+       VALUES ($1, $2, 1, 'team/captured/v1/receipt.png', 2048, 'image/png', $3, $4, 'chunked')
+       RETURNING id`,
+      [TEAM_ID, captured.rows[0]?.id, USER_A, sourceEvent.rows[0]?.id],
+    );
+    await pg.query(`UPDATE documents SET current_version_id = $1 WHERE id = $2`, [
+      version.rows[0]?.id,
+      captured.rows[0]?.id,
+    ]);
+
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const documentsOnly = await scope.listDocuments({ folderId: null });
+    expect(documentsOnly.map((document) => document.id)).not.toContain(captured.rows[0]?.id);
+
+    const capturedPage = await scope.listCapturedFilesPage({ limit: 10 });
+    expect(capturedPage.items.map((document) => document.id)).toContain(captured.rows[0]?.id);
+    expect(capturedPage.items[0]?.fileKind).toBe('captured');
+  });
+
+  it('rejects captured files with folders at the database boundary', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const folder = await scope.createFolder({ name: 'Captures', parentFolderId: null });
+    const sourceEvent = await pg.query<{ id: string }>(
+      `INSERT INTO raw_events (team_id, author_user_id, source, content_text, visibility, source_metadata)
+       VALUES ($1, $2, 'telegram', 'Foldered capture attempt', 'team', '{}'::jsonb)
+       RETURNING id`,
+      [TEAM_ID, USER_A],
+    );
+
+    await expect(
+      pg.query(
+        `INSERT INTO documents (team_id, file_kind, folder_id, name, owner_user_id, visibility, source_raw_event_id, metadata)
+         VALUES ($1, 'captured', $2, 'bad-capture.png', $3, 'team', $4, '{}'::jsonb)`,
+        [TEAM_ID, folder.id, USER_A, sourceEvent.rows[0]?.id],
+      ),
+    ).rejects.toThrow(/documents_captured_folder_null_chk/);
+  });
+
+  it('promotes an existing captured file without losing source provenance', async () => {
+    const sourceEvent = await pg.query<{ id: string }>(
+      `INSERT INTO raw_events (team_id, author_user_id, source, content_text, visibility, source_metadata)
+       VALUES ($1, $2, 'slack', 'Slack file attachment', 'team', '{}'::jsonb)
+       RETURNING id`,
+      [TEAM_ID, USER_A],
+    );
+    const captured = await pg.query<{ id: string }>(
+      `INSERT INTO documents (team_id, file_kind, folder_id, name, owner_user_id, visibility, source_raw_event_id, metadata)
+       VALUES ($1, 'captured', null, 'F123.pdf', $2, 'team', $3, '{}'::jsonb)
+       RETURNING id`,
+      [TEAM_ID, USER_A, sourceEvent.rows[0]?.id],
+    );
+
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const result = await scope.promoteCapturedFile({
+      id: captured.rows[0]?.id ?? '',
+      name: 'Runbook.pdf',
+      folderId: null,
+      visibility: 'team',
+    });
+    const promoted = result.document;
+
+    expect(promoted.fileKind).toBe('document');
+    expect(promoted.name).toBe('Runbook.pdf');
+    expect(promoted.sourceRawEventId).toBe(sourceEvent.rows[0]?.id);
+    expect(promoted.promotedAt).toBeInstanceOf(Date);
+    expect(promoted.promotedByUserId).toBe(USER_A);
+    expect((await scope.listCapturedFilesPage({ limit: 10 })).items).toHaveLength(0);
+    expect((await scope.listDocuments({ folderId: null })).map((d) => d.id)).toContain(promoted.id);
+  });
+
+  it('resets deferred current versions when captured files are promoted', async () => {
+    const sourceEvent = await pg.query<{ id: string }>(
+      `INSERT INTO raw_events (team_id, author_user_id, source, content_text, visibility, source_metadata)
+       VALUES ($1, $2, 'telegram', 'Large captured PDF', 'team', '{}'::jsonb)
+       RETURNING id`,
+      [TEAM_ID, USER_A],
+    );
+    const captured = await pg.query<{ id: string }>(
+      `INSERT INTO documents (team_id, file_kind, folder_id, name, owner_user_id, visibility, source_raw_event_id, metadata)
+       VALUES ($1, 'captured', null, 'large.pdf', $2, 'team', $3, '{}'::jsonb)
+       RETURNING id`,
+      [TEAM_ID, USER_A, sourceEvent.rows[0]?.id],
+    );
+    const version = await pg.query<{ id: string }>(
+      `INSERT INTO document_versions (
+         team_id,
+         document_id,
+         version,
+         object_key,
+         byte_size,
+         content_type,
+         uploaded_by_user_id,
+         source_event_id,
+         processing_status,
+         processing_error,
+         extraction_model_version
+       )
+       VALUES (
+         $1,
+         $2,
+         1,
+         'team/captured/v1/large.pdf',
+         52428800,
+         'application/pdf',
+         $3,
+         $4,
+         'deferred',
+         'deep extraction deferred by captured-file budget',
+         'document-extract-v1'
+       )
+       RETURNING id`,
+      [TEAM_ID, captured.rows[0]?.id, USER_A, sourceEvent.rows[0]?.id],
+    );
+    await pg.query(`UPDATE documents SET current_version_id = $1 WHERE id = $2`, [
+      version.rows[0]?.id,
+      captured.rows[0]?.id,
+    ]);
+
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const result = await scope.promoteCapturedFile({
+      id: captured.rows[0]?.id ?? '',
+      name: 'Large Runbook.pdf',
+      folderId: null,
+      visibility: 'team',
+    });
+
+    expect(result.reprocessVersionId).toBe(version.rows[0]?.id);
+    const rows = await pg.query<{
+      processing_status: string;
+      processing_error: string | null;
+      extraction_model_version: string | null;
+    }>(
+      `SELECT processing_status, processing_error, extraction_model_version
+       FROM document_versions
+       WHERE id = $1`,
+      [version.rows[0]?.id],
+    );
+    expect(rows.rows[0]).toEqual({
+      processing_status: 'pending',
+      processing_error: null,
+      extraction_model_version: null,
+    });
+  });
+
   it('listDocumentsWithProvenancePage does not leak hidden raw-event provenance', async () => {
     const A = withTeam(db, TEAM_ID, USER_A).documents;
     const created = await A.createDocument({

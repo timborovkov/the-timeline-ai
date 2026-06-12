@@ -32,6 +32,7 @@ export async function GET(req: Request): Promise<Response> {
     return {
       items: result.items.map((document) => ({
         id: document.id,
+        fileKind: document.fileKind,
         name: document.name,
         visibility: document.visibility,
         updatedAt: document.updatedAt.toISOString(),

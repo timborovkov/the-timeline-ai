@@ -40,6 +40,8 @@ type DbOrTx = Db | DbTx;
  */
 
 type Visibility = 'private' | 'team' | 'specific_users';
+type FileKind = 'captured' | 'document';
+type RepresentationKind = 'source_text' | 'transcript' | 'visual_description' | 'metadata_preview';
 
 export interface DocumentScopeDeps {
   db: Db;
@@ -81,6 +83,7 @@ export interface FolderRow {
 export interface DocumentRow {
   id: string;
   teamId: string;
+  fileKind: FileKind;
   folderId: string | null;
   name: string;
   currentVersionId: string | null;
@@ -88,6 +91,9 @@ export interface DocumentRow {
   visibility: Visibility;
   visibilityUserIds: string[] | null;
   metadata: Record<string, unknown>;
+  sourceRawEventId: string | null;
+  promotedAt: Date | null;
+  promotedByUserId: string | null;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -116,6 +122,7 @@ export interface DocumentListEntry extends DocumentRow {
 export interface DocumentListArgs {
   folderId?: string | null;
   includeDeleted?: boolean;
+  fileKind?: FileKind;
   limit?: number;
   cursor?: string | null;
 }
@@ -131,7 +138,7 @@ export interface DocumentVersionRow {
   checksumSha256: string | null;
   uploadedByUserId: string | null;
   sourceEventId: string | null;
-  processingStatus: 'pending' | 'extracting' | 'chunked' | 'embedded' | 'failed';
+  processingStatus: 'pending' | 'extracting' | 'chunked' | 'embedded' | 'deferred' | 'failed';
   processingError: string | null;
   extractionModelVersion: string | null;
   embeddingModelVersion: string | null;
@@ -144,6 +151,7 @@ export interface DocumentChunkRow {
   documentId: string;
   documentVersionId: string;
   chunkIndex: number;
+  representationKind: RepresentationKind;
   text: string;
   tokenCount: number;
   pageNumber: number | null;
@@ -196,10 +204,24 @@ export interface SetVisibilityInput {
   visibilityUserIds?: string[] | null;
 }
 
+export interface PromoteCapturedFileInput {
+  id: string;
+  name?: string;
+  folderId?: string | null;
+  visibility?: Visibility;
+  visibilityUserIds?: string[] | null;
+}
+
+export interface PromoteCapturedFileResult {
+  document: DocumentRow;
+  reprocessVersionId: string | null;
+}
+
 export interface SearchDocumentChunksInput {
   query: string;
   documentId?: string;
   folderIds?: string[];
+  fileKinds?: FileKind[];
   limit?: number;
   offset?: number;
   maxOffset?: number;
@@ -209,6 +231,8 @@ export interface DocumentChunkSearchHit {
   documentId: string;
   documentVersionId: string;
   documentChunkId: string;
+  fileKind: FileKind;
+  representationKind: RepresentationKind;
   version: number;
   chunkIndex: number;
   pageNumber: number | null;
@@ -216,6 +240,7 @@ export interface DocumentChunkSearchHit {
   summary: string | null;
   documentName: string;
   folderId: string | null;
+  sourceRawEventId: string | null;
   score: number;
 }
 
@@ -425,13 +450,16 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
   }
 
   function documentListConditions(args: DocumentListArgs): SQL[] {
-    const conditions: SQL[] = [eq(documents.teamId, teamId)];
+    const fileKind = args.fileKind ?? 'document';
+    const conditions: SQL[] = [eq(documents.teamId, teamId), eq(documents.fileKind, fileKind)];
     if (documentVisibility) conditions.push(documentVisibility);
     if (!args.includeDeleted) conditions.push(isNull(documents.deletedAt));
-    if (args.folderId === null || args.folderId === undefined) {
-      conditions.push(isNull(documents.folderId));
-    } else {
-      conditions.push(eq(documents.folderId, args.folderId));
+    if (fileKind === 'document') {
+      if (args.folderId === null || args.folderId === undefined) {
+        conditions.push(isNull(documents.folderId));
+      } else {
+        conditions.push(eq(documents.folderId, args.folderId));
+      }
     }
     return conditions;
   }
@@ -451,6 +479,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
   ): Promise<DocumentListEntry[]> {
     await ensureMember();
     const conditions = documentListConditions(args);
+    if (args.fileKind === 'captured') conditions.push(sql`${rawEvents.id} IS NOT NULL`);
     const cursor = decodeCursor(args.cursor);
     if (args.cursor && !cursor) throw new Error('Invalid cursor');
     if (cursor) {
@@ -602,6 +631,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     };
     if (input.documentId) searchOpts.documentId = input.documentId;
     if (input.folderIds) searchOpts.folderIds = input.folderIds;
+    searchOpts.fileKinds = input.fileKinds ?? ['document'];
 
     const hits = await searchFn(teamId, userId, vector, searchOpts);
     if (hits.length === 0) return { items: [], nextOffset: null };
@@ -626,22 +656,38 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         documentId: documentChunks.documentId,
         documentVersionId: documentChunks.documentVersionId,
         chunkIndex: documentChunks.chunkIndex,
+        representationKind: documentChunks.representationKind,
         pageNumber: documentChunks.pageNumber,
         text: documentChunks.text,
         summary: documentChunks.summary,
         version: documentVersions.version,
+        fileKind: documents.fileKind,
         documentName: documents.name,
         folderId: documents.folderId,
+        sourceRawEventId: documents.sourceRawEventId,
       })
       .from(documentChunks)
       .innerJoin(documents, eq(documents.id, documentChunks.documentId))
       .innerJoin(documentVersions, eq(documentVersions.id, documentChunks.documentVersionId))
+      .leftJoin(
+        rawEvents,
+        and(
+          eq(rawEvents.id, documentVersions.sourceEventId),
+          eq(rawEvents.teamId, teamId),
+          rawEventVisibleToUser(userId),
+          activeRawEventFilter,
+        ),
+      )
       .where(
         and(
           inArray(documentChunks.id, chunkIds),
           eq(documentChunks.teamId, teamId),
           documentVisibility,
           isNull(documents.deletedAt),
+          or(eq(documents.fileKind, 'document'), sql`${rawEvents.id} IS NOT NULL`),
+          input.fileKinds && input.fileKinds.length > 0
+            ? inArray(documents.fileKind, input.fileKinds)
+            : eq(documents.fileKind, 'document'),
         ),
       );
     const byId = new Map(rows.map((r) => [r.chunkId, r]));
@@ -657,6 +703,8 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         documentId: row.documentId,
         documentVersionId: row.documentVersionId,
         documentChunkId: row.chunkId,
+        fileKind: row.fileKind,
+        representationKind: row.representationKind,
         version: row.version,
         chunkIndex: row.chunkIndex,
         pageNumber: row.pageNumber,
@@ -664,6 +712,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         summary: row.summary,
         documentName: row.documentName,
         folderId: row.folderId,
+        sourceRawEventId: row.sourceRawEventId,
         score: hit.score,
       });
     }
@@ -846,6 +895,22 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       return pageWindow(rows, limit, (row) => ({ at: row.updatedAt.toISOString(), id: row.id }));
     },
 
+    async listCapturedFilesPage(
+      args: {
+        includeDeleted?: boolean;
+        limit?: number;
+        cursor?: string | null;
+      } = {},
+    ): Promise<{ items: DocumentListEntry[]; nextCursor: string | null }> {
+      const limit = Math.min(Math.max(args.limit ?? 30, 1), 100);
+      const rows = await listDocumentsWithProvenance({
+        ...args,
+        fileKind: 'captured',
+        limit: limit + 1,
+      });
+      return pageWindow(rows, limit, (row) => ({ at: row.updatedAt.toISOString(), id: row.id }));
+    },
+
     async getDocument(
       id: string,
       options: { auditDetailRead?: boolean } = {},
@@ -888,6 +953,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           .insert(documents)
           .values({
             teamId,
+            fileKind: 'document',
             folderId: input.folderId ?? null,
             name: input.name.trim(),
             ownerUserId: userId,
@@ -933,6 +999,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       const document = await getDocumentRaw(input.documentId);
       if (!document) throw new Error('Document not found');
       if (document.deletedAt) throw new Error('Document is deleted');
+      if (document.fileKind !== 'document') throw new Error('Captured file must be promoted first');
       // Pick next version number under the row lock from documents.
       return db.transaction(async (tx) => {
         const latest = await tx
@@ -961,6 +1028,96 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         const row = rows[0];
         if (!row) throw new Error('Failed to create document version');
         return row;
+      });
+    },
+
+    async promoteCapturedFile(input: PromoteCapturedFileInput): Promise<PromoteCapturedFileResult> {
+      await ensureMember();
+      const existing = await getDocumentRaw(input.id);
+      if (!existing) throw new Error('Captured file not found');
+      if (existing.fileKind !== 'captured') throw new Error('File is already a document');
+      if (input.folderId) await assertFolderInTeam(input.folderId);
+      const visibility = input.visibility ?? existing.visibility;
+      const visibilityUserIds = await normalizeDocumentVisibilityUserIds({
+        visibility,
+        visibilityUserIds:
+          input.visibility === undefined
+            ? existing.visibilityUserIds
+            : (input.visibilityUserIds ?? null),
+      });
+      return db.transaction(async (tx) => {
+        const now = new Date();
+        let reprocessVersionId: string | null = null;
+        const rows = await tx
+          .update(documents)
+          .set({
+            fileKind: 'document',
+            name: input.name?.trim() ?? existing.name,
+            folderId: input.folderId ?? null,
+            visibility,
+            visibilityUserIds,
+            promotedAt: now,
+            promotedByUserId: userId,
+            updatedAt: now,
+          })
+          .where(and(eq(documents.id, existing.id), eq(documents.teamId, teamId)))
+          .returning();
+        const row = rows[0] as DocumentRow | undefined;
+        if (!row) throw new Error('Failed to promote captured file');
+        if (row.currentVersionId) {
+          const currentVersions = await tx
+            .select({
+              id: documentVersions.id,
+              processingStatus: documentVersions.processingStatus,
+            })
+            .from(documentVersions)
+            .where(
+              and(
+                eq(documentVersions.id, row.currentVersionId),
+                eq(documentVersions.teamId, teamId),
+                eq(documentVersions.processingStatus, 'deferred'),
+              ),
+            )
+            .limit(1);
+          const currentVersion = currentVersions[0];
+          if (currentVersion) {
+            await tx
+              .update(documentVersions)
+              .set({
+                processingStatus: 'pending',
+                processingError: null,
+                extractionModelVersion: null,
+              })
+              .where(eq(documentVersions.id, currentVersion.id));
+            reprocessVersionId = currentVersion.id;
+          }
+        }
+        await writeDocumentEvent(tx, {
+          action: 'upload',
+          summary: `Promoted ${row.name} to document drive`,
+          documentId: row.id,
+          documentVersionId: row.currentVersionId,
+          folderId: row.folderId,
+          visibility: row.visibility,
+          visibilityUserIds: row.visibilityUserIds,
+          previous: { fileKind: existing.fileKind, sourceRawEventId: existing.sourceRawEventId },
+        });
+        await tx.insert(auditLog).values({
+          teamId,
+          actorUserId: userId,
+          action: 'document.promote_captured_file',
+          targetType: 'document',
+          targetId: row.id,
+          targetVisibility: row.visibility,
+          targetOwnerUserId: row.ownerUserId,
+          targetVisibilityUserIds: row.visibilityUserIds,
+          metadata: {
+            source_raw_event_id: row.sourceRawEventId,
+            previous_visibility: existing.visibility,
+            visibility: row.visibility,
+          },
+        });
+        return { document: normalizeDocumentRow(row), reprocessVersionId };
       });
     },
 
@@ -1065,7 +1222,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
         const dUpdated = await tx
           .update(documents)
-          .set({ currentVersionId: version.id, updatedAt: new Date() })
+          .set({ currentVersionId: version.id, updatedAt: new Date(), fileKind: 'document' })
           .where(and(eq(documents.id, document.id), isNull(documents.deletedAt)))
           .returning();
         const updatedDocument = dUpdated[0] as DocumentRow | undefined;
@@ -1234,6 +1391,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           documentId: documentChunks.documentId,
           documentVersionId: documentChunks.documentVersionId,
           chunkIndex: documentChunks.chunkIndex,
+          representationKind: documentChunks.representationKind,
           text: documentChunks.text,
           tokenCount: documentChunks.tokenCount,
           pageNumber: documentChunks.pageNumber,

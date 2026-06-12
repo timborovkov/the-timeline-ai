@@ -167,11 +167,11 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
       </p>
       <p>
         Attachments use the shared conversational guardrails: up to 25 MiB, at most five processed
-        files per message, audio/voice files routed to transcription, and supported text/image/PDF/
-        DOCX/CSV/JSON/XML/YAML/Markdown/HTML/log files routed to document extraction. Archives,
-        executables, video, oversize files, and unknown binary files are skipped. Ambiguous
-        <code>.mp4</code>/<code>.webm</code> files require an <code>audio/*</code> content type to
-        enter transcription.
+        files per message, native voice messages routed to transcription, and supported
+        text/image/PDF/DOCX/CSV/JSON/XML/YAML/Markdown/HTML/log files captured as source evidence
+        and routed to typed extraction representations. Archives, executables, video, oversize
+        files, and unknown binary files are skipped. Ambiguous <code>.mp4</code>/<code>.webm</code>
+        files require an <code>audio/*</code> content type to enter transcription.
       </p>
 
       <h2 id="schema">Schema reference</h2>

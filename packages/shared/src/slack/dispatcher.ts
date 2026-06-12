@@ -508,6 +508,7 @@ async function handleMessageEvent(
     text,
     occurredAt: slackTsToDate(eventTs),
     visibility: route.visibility,
+    visibilityOwnerUserId: route.sourceOwnerUserId,
     metadata,
     isEdit,
     workspaceId: workspace.id,
@@ -549,6 +550,7 @@ async function insertSlackEvent(
     text: string | null;
     occurredAt: Date;
     visibility: 'team' | 'private' | 'specific_users';
+    visibilityOwnerUserId: string | null;
     metadata: Record<string, unknown>;
     isEdit: boolean;
     workspaceId: string;
@@ -563,6 +565,7 @@ async function insertSlackEvent(
     contentText: input.text,
     occurredAt: input.occurredAt,
     visibility: input.visibility,
+    visibilityOwnerUserId: input.visibilityOwnerUserId,
     sourceMetadata: input.metadata,
   };
   async function insert(tx: DbOrTx) {
@@ -731,6 +734,7 @@ async function processSlackAttachments(
           contentText: null,
           contentAudioUrl: key,
           visibility: input.visibility,
+          visibilityOwnerUserId: input.parentAuthorUserId ?? input.sourceOwnerUserId,
           sourceMetadata: {
             slack_attachment_kind: 'audio',
             slack_file_id: file.id,
@@ -852,9 +856,11 @@ async function createSlackDocumentAttachment(
       .insert(documents)
       .values({
         teamId: input.teamId,
+        fileKind: 'captured',
         name: input.filename,
-        ownerUserId: input.parentAuthorUserId,
+        ownerUserId: input.parentAuthorUserId ?? input.sourceOwnerUserId,
         visibility: input.visibility,
+        sourceRawEventId: input.parentRawEventId,
         metadata: {
           source: 'slack',
           slack_file_id: input.file.id,
@@ -873,30 +879,6 @@ async function createSlackDocumentAttachment(
       version: 1,
       filename: input.filename,
     });
-    const eventRows = await tx
-      .insert(rawEvents)
-      .values({
-        teamId: input.teamId,
-        authorUserId: input.parentAuthorUserId,
-        source: 'document',
-        contentText: `Uploaded ${input.filename}`,
-        visibility: input.visibility,
-        sourceMetadata: {
-          action: 'upload',
-          document_id: doc.id,
-          document_name: input.filename,
-          document_version: 1,
-          source: 'slack',
-          slack_file_id: input.file.id,
-          slack_workspace_id: input.workspace.id,
-          slack_channel_id: input.channelId,
-          slack_message_ts: input.messageTs,
-          parent_raw_event_id: input.parentRawEventId,
-        },
-      })
-      .returning({ id: rawEvents.id });
-    const event = eventRows[0];
-    if (!event) throw new Error('slack_document_event_insert_failed');
     const versionRows = await tx
       .insert(documentVersions)
       .values({
@@ -907,7 +889,7 @@ async function createSlackDocumentAttachment(
         byteSize: input.bytes.length,
         contentType: input.contentType,
         uploadedByUserId: input.parentAuthorUserId,
-        sourceEventId: event.id,
+        sourceEventId: input.parentRawEventId,
         processingStatus: 'pending',
       })
       .returning({ id: documentVersions.id, objectKey: documentVersions.objectKey });
