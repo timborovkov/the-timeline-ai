@@ -368,7 +368,7 @@ async function buildObjectChangePlan(db: Db, data: EmbedJobData): Promise<Embedd
     .where(eq(objectChangesTable.id, data.changeId))
     .limit(1);
   const row = rows[0];
-  if (!row) throw new UnrecoverableError(`object_change ${data.changeId} not found`);
+  if (!row) return null;
   if (row.teamId !== data.teamId)
     throw new UnrecoverableError(`object_change ${data.changeId} team mismatch`);
   const note = row.note?.trim();

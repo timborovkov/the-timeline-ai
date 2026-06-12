@@ -14,10 +14,10 @@ coverage from `main`. Current suite shape:
   runs under root `pnpm test`.
 - Shared Vitest: 64 files / 579 tests plus 1 skipped, including PGlite
   integration/eval coverage plus queue, S3, and onboarding contracts.
-- Web Vitest: 77 files / 388 tests, including route/action/component coverage
+- Web Vitest: 77 files / 390 tests, including route/action/component coverage
   for core recovery, onboarding, object sections, and first high-value UI
   states.
-- Worker Vitest: 11 files / 116 tests, including extract, transcribe,
+- Worker Vitest: 11 files / 117 tests, including extract, transcribe,
   suggestions, embed, document extract, meeting finalize, janitor, and overdue
   processors.
 - Playwright: 13 local core E2E journeys plus 1 production-ish smoke journey.
@@ -53,9 +53,9 @@ Legend:
 | Job recovery and failed work | Missing dashboard E2E | Strong retry/dismiss/dashboard route coverage plus cron reconcile auth/failure behavior and direct finished archive route coverage | N/A | Strong job-recovery PGlite coverage, including retained finished-job archive pagination | Janitor worker covered | Partial job recovery list component with retry status and finished archive states | Retry/dismiss E2E flow |
 | Onboarding | Missing E2E checklist/dismissal | Strong checklist route coverage | Strong onboarding action coverage | Strong PGlite checklist inference, dismiss/reopen, manual completion, and team isolation | Missing | Partial checklist static states | Checklist E2E and richer interaction states |
 | Suggestions and background agent actions | Partial: capture-to-suggestion-to-acceptance creates durable task/calendar state, and object-update approval updates an existing object without duplication | Missing route coverage if surfaced later | Strong suggestions action boundary tests | Strong PGlite suggestions scope, dedupe, accept/reject, task/object/calendar/decision durability, and cross-team failure behavior | Partial: deterministic suggestion worker processor tests | Partial: object cleanup suggestions review/fallback/pagination | Remaining P1: richer suggestions UI states and live-model evals |
-| Embeddings and retrieval quality | Missing E2E semantic retrieval flow | Strong search/chat route contracts with mocked boundaries | N/A | Strong deterministic retrieval ranking, PGlite hydration, visibility/team filtering, embedding source planning, Qdrant point IDs, raw-event rendering, and LLM wrapper behavior | Partial: embed worker text/payload/skip coverage | Missing retrieval UI assertions | Remaining: source rendering breadth for more providers and browser semantic retrieval assertions |
+| Embeddings and retrieval quality | Missing E2E semantic retrieval flow | Strong search/chat route contracts with mocked boundaries | N/A | Strong deterministic retrieval ranking, PGlite hydration, visibility/team filtering, embedding source planning, Qdrant point IDs, raw-event rendering, and LLM wrapper behavior | Partial: embed worker text/payload/skip/stale-source coverage | Missing retrieval UI assertions | Remaining: source rendering breadth for more providers and browser semantic retrieval assertions |
 | Support and team exports | Missing E2E | Missing direct routes if exposed | Missing support and team-export actions | Strong team-export archive integration | Team-export worker missing | Missing UI | Support validation/email failure, export enqueue/idempotency, worker failure cleanup |
-| Platform contracts: DB, queue, S3, env, rate limits | N/A | Rate-limit behavior covered through routes and token bucket | Queue degradation covered in some actions | Partial: env, crypto, rate limit, Qdrant, pagination, DB schema contracts, queue wrappers, and S3 wrappers covered | Queue/S3 wrapper behavior covered in shared tests | N/A | Deeper DB migration-compat history, queue/S3 live-emulator canaries |
+| Platform contracts: DB, queue, S3, env, rate limits | N/A | Rate-limit behavior covered through routes and token bucket | Queue degradation covered in some actions | Partial: env, crypto, rate limit, Qdrant, pagination, DB schema contracts, queue wrappers, Sentry scrubbing, and S3 wrappers covered | Queue/S3 wrapper behavior covered in shared tests | N/A | Deeper DB migration-compat history, queue/S3 live-emulator canaries |
 | Frontend components and UI states | Partial only where E2E crosses real pages | N/A | N/A | N/A | N/A | Partial: nav, job recovery list, capture composer, approvals, chat pane, document drive, object detail, onboarding checklist, timeline controls/page helpers, timeline feed dedupe, hub/status/error helpers | Timeline list cards, document detail/search, boards, team settings, integrations, MCP, richer empty/error/loading states |
 
 ## High-Level Read
@@ -593,8 +593,8 @@ contracts and unit tests for pure branching.
   fallback behavior, visibility scoping, skipped-event stamping, and idempotent
   reruns.
 - P1 embed worker: source rendering, embedding calls, Qdrant payloads, stable
-  point IDs, visibility filters, failure stamping, and deterministic retrieval
-  smoke coverage.
+  point IDs, visibility filters, stale-source skips, failure stamping, and
+  deterministic retrieval smoke coverage.
 - Extract worker: team-visible extraction to facts with existing-object links,
   private and specific-user skip stamping, missing row/team mismatch/no-text
   failures, zero-fact idempotency, recent-context privacy filtering, suggestion

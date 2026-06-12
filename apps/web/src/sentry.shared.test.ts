@@ -7,6 +7,7 @@ import {
   sanitizeRequestUrl,
   scrubSentryEvent,
   sentrySampleRate,
+  shouldDropBrowserExtensionEvent,
 } from '@/sentry.shared';
 
 describe('Sentry web config helpers', () => {
@@ -38,9 +39,10 @@ describe('Sentry web config helpers', () => {
       },
     } as unknown as ErrorEvent);
 
-    expect(event.request?.url).toBe('https://app.timeline.test/api/integrations/github/callback');
-    expect(event.request?.cookies).toBeUndefined();
-    expect(event.request?.headers).toEqual({ 'x-request-id': 'req-1' });
+    expect(event).not.toBeNull();
+    expect(event?.request?.url).toBe('https://app.timeline.test/api/integrations/github/callback');
+    expect(event?.request?.cookies).toBeUndefined();
+    expect(event?.request?.headers).toEqual({ 'x-request-id': 'req-1' });
   });
 
   it('strips query strings and redacts invite tokens from request URLs', () => {
@@ -52,5 +54,50 @@ describe('Sentry web config helpers', () => {
     expect(sanitizeRequestUrl('/accept-invite/sensitive-token?invite=secret')).toBe(
       '/accept-invite/[redacted]',
     );
+  });
+
+  it('drops MetaMask browser extension errors injected into app pages', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'MetaMask extension not found',
+            stacktrace: {
+              frames: [{ filename: 'app:///scripts/inpage.js', lineno: 4, in_app: true }],
+            },
+          },
+          {
+            type: 'i',
+            value: 'Failed to connect to MetaMask',
+            stacktrace: {
+              frames: [{ filename: 'app:///scripts/inpage.js', lineno: 7, in_app: true }],
+            },
+          },
+        ],
+      },
+    } as unknown as ErrorEvent;
+
+    expect(shouldDropBrowserExtensionEvent(event)).toBe(true);
+    expect(scrubSentryEvent(event)).toBeNull();
+  });
+
+  it('keeps matching app errors when the stack is not from a browser extension', () => {
+    const event = {
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'Failed to connect to MetaMask',
+            stacktrace: {
+              frames: [{ filename: '/app/chat/page.js', lineno: 12, in_app: true }],
+            },
+          },
+        ],
+      },
+    } as unknown as ErrorEvent;
+
+    expect(shouldDropBrowserExtensionEvent(event)).toBe(false);
+    expect(scrubSentryEvent(event)).toBe(event);
   });
 });
