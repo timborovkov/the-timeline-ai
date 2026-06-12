@@ -64,14 +64,18 @@ export function ObjectMergeRouteModalForm({ preview, suggestionItemId }: FormPro
   const modalClose = use(ObjectMergeRouteModalCloseContext);
   const closedRef = useRef(false);
 
-  function close() {
+  function closeRoute(): boolean {
     if (modalClose) {
-      if (modalClose()) router.refresh();
-      return;
+      return modalClose();
     }
-    if (closedRef.current) return;
+    if (closedRef.current) return false;
     closedRef.current = true;
     router.back();
+    return true;
+  }
+
+  function handleMerged() {
+    closeRoute();
     router.refresh();
   }
 
@@ -82,8 +86,8 @@ export function ObjectMergeRouteModalForm({ preview, suggestionItemId }: FormPro
       countsBySurvivorId={preview.countsBySurvivorId}
       factSamplesByObjectId={preview.factSamplesByObjectId}
       suggestionItemId={suggestionItemId}
-      onCancel={close}
-      onMerged={close}
+      onCancel={closeRoute}
+      onMerged={handleMerged}
     />
   );
 }
