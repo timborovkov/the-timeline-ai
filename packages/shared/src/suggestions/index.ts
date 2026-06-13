@@ -149,6 +149,7 @@ export interface DuplicatePendingApprovalReconcileResult {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const LOCAL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const uuid = z.string().regex(UUID_RE);
 const localRef = z
   .string()
@@ -260,14 +261,8 @@ const calendarCreatePayload = z.object({
   description: z.string().trim().max(2000).nullable().optional(),
   startAt: z.iso.datetime(),
   endAt: z.iso.datetime(),
-  startDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  endDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
+  startDate: z.string().regex(LOCAL_DATE_RE).optional(),
+  endDate: z.string().regex(LOCAL_DATE_RE).optional(),
   timezone: z.string().max(100).default('UTC'),
   allDay: z.boolean().default(false),
   location: z.string().trim().max(500).nullable().optional(),
@@ -282,11 +277,17 @@ const calendarUpdatePayload = calendarCreatePayload.partial();
 
 function normalizeCalendarPayload(
   item: typeof agentSuggestionItems.$inferSelect,
-  opts: { fallbackTitle: boolean },
+  opts: { fallbackTitle: boolean; defaultTimezone?: string },
 ): Record<string, unknown> {
   const payload = item.proposedPayload as Record<string, unknown>;
   const normalized = { ...payload };
   if (!Object.hasOwn(normalized, 'title') && opts.fallbackTitle) normalized.title = item.title;
+  if (!Object.hasOwn(normalized, 'startDate') && typeof payload.start_date === 'string') {
+    normalized.startDate = payload.start_date;
+  }
+  if (!Object.hasOwn(normalized, 'endDate') && typeof payload.end_date === 'string') {
+    normalized.endDate = payload.end_date;
+  }
   if (!Object.hasOwn(normalized, 'startAt')) {
     if (typeof payload.startTime === 'string') normalized.startAt = payload.startTime;
     else if (typeof payload.start_at === 'string') normalized.startAt = payload.start_at;
@@ -297,6 +298,36 @@ function normalizeCalendarPayload(
   }
   if (!Object.hasOwn(normalized, 'allDay') && typeof payload.all_day === 'boolean') {
     normalized.allDay = payload.all_day;
+  }
+  if (
+    !Object.hasOwn(normalized, 'allDay') &&
+    typeof normalized.startDate === 'string' &&
+    LOCAL_DATE_RE.test(normalized.startDate) &&
+    !Object.hasOwn(normalized, 'startAt') &&
+    !Object.hasOwn(normalized, 'endAt')
+  ) {
+    normalized.allDay = true;
+  }
+  if (
+    normalized.allDay === true &&
+    typeof normalized.startDate === 'string' &&
+    LOCAL_DATE_RE.test(normalized.startDate) &&
+    (typeof normalized.endDate !== 'string' || LOCAL_DATE_RE.test(normalized.endDate)) &&
+    !Object.hasOwn(normalized, 'startAt') &&
+    !Object.hasOwn(normalized, 'endAt')
+  ) {
+    const timezone =
+      typeof normalized.timezone === 'string'
+        ? normalized.timezone
+        : (opts.defaultTimezone ?? 'UTC');
+    const endDate =
+      typeof normalized.endDate === 'string'
+        ? normalized.endDate
+        : oneDayAfter(normalized.startDate);
+    const range = localDateSpanToUtcRange(normalized.startDate, endDate, timezone);
+    if (!Object.hasOwn(normalized, 'startAt')) normalized.startAt = range.from.toISOString();
+    if (!Object.hasOwn(normalized, 'endAt')) normalized.endAt = range.to.toISOString();
+    if (!Object.hasOwn(normalized, 'timezone')) normalized.timezone = timezone;
   }
   return normalized;
 }
@@ -1057,6 +1088,132 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
+  async function staleObjectTargetReason(entityId: string | null): Promise<string | null> {
+    if (!entityId || !UUID_RE.test(entityId)) return null;
+    const [row] = await db
+      .select({
+        id: entities.id,
+        teamId: entities.teamId,
+        mergedIntoId: entities.mergedIntoId,
+        archivedAt: entities.archivedAt,
+      })
+      .from(entities)
+      .where(eq(entities.id, entityId))
+      .limit(1);
+    if (!row) return 'The target object no longer exists.';
+    if (row.teamId !== teamId) return null;
+    if (row.mergedIntoId) return 'The target object was merged into another object.';
+    if (row.archivedAt) return 'The target object was archived.';
+    return null;
+  }
+
+  async function staleCalendarTargetReason(calendarEventId: string | null): Promise<string | null> {
+    if (!calendarEventId || !UUID_RE.test(calendarEventId)) return null;
+    const [row] = await db
+      .select({
+        id: calendarEvents.id,
+        teamId: calendarEvents.teamId,
+        deletedAt: calendarEvents.deletedAt,
+      })
+      .from(calendarEvents)
+      .where(eq(calendarEvents.id, calendarEventId))
+      .limit(1);
+    if (!row) return 'The target calendar event no longer exists.';
+    if (row.teamId !== teamId) return null;
+    if (row.deletedAt) return 'The target calendar event was deleted.';
+    return null;
+  }
+
+  async function staleActionableItemReason(
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<string | null> {
+    if (item.status !== 'pending' && item.status !== 'failed') return null;
+    if (item.targetKind === 'object' || item.targetKind === 'task') {
+      if (item.operation === 'create') return null;
+      return staleObjectTargetReason(item.targetId);
+    }
+    if (item.targetKind === 'calendar_event') {
+      if (item.operation === 'create') return null;
+      return staleCalendarTargetReason(item.targetId);
+    }
+    const payload =
+      item.proposedPayload &&
+      typeof item.proposedPayload === 'object' &&
+      !Array.isArray(item.proposedPayload)
+        ? (item.proposedPayload as Record<string, unknown>)
+        : {};
+    if (item.targetKind === 'identity_facet') {
+      const parsed = identityFacetPayload.safeParse(payload);
+      return parsed.success ? staleObjectTargetReason(parsed.data.entityId) : null;
+    }
+    if (item.targetKind === 'object_note') {
+      const parsed = objectNotePayload.safeParse(payload);
+      if (!parsed.success) return null;
+      return staleObjectTargetReason(parsed.data.entityId ?? item.targetId);
+    }
+    if (item.targetKind === 'object_relationship') {
+      const parsed = objectRelationshipPayload.safeParse(payload);
+      if (!parsed.success) return null;
+      for (const entityId of [parsed.data.fromEntityId, parsed.data.toEntityId]) {
+        const reason = await staleObjectTargetReason(entityId ?? null);
+        if (reason) return reason;
+      }
+      return null;
+    }
+    if (item.targetKind === 'object_merge') {
+      const parsed = objectMergePayload.safeParse(payload);
+      if (!parsed.success) return null;
+      const objectIds = await resolveCurrentObjectIds(parsed.data.objectIds);
+      return objectIds.length < 2
+        ? 'Objects in this merge suggestion were already merged or removed.'
+        : null;
+    }
+    return null;
+  }
+
+  async function reconcileStaleActionableItems(): Promise<number> {
+    const candidateRows = await db
+      .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
+      .from(agentSuggestionItems)
+      .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+          inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+        ),
+      );
+
+    let superseded = 0;
+    for (const candidate of candidateRows) {
+      const reason = await staleActionableItemReason(candidate.item);
+      if (!reason) continue;
+      if (await supersedeItem(candidate.item.id, null, reason)) superseded += 1;
+    }
+    return superseded;
+  }
+
+  async function reconcileStaleActionableItemsBestEffort(context: {
+    suggestionItemId?: string;
+    op: string;
+  }): Promise<number> {
+    try {
+      return await reconcileStaleActionableItems();
+    } catch (err) {
+      log.error(
+        {
+          err,
+          teamId,
+          userId,
+          suggestionItemId: context.suggestionItemId,
+          op: context.op,
+        },
+        'stale_suggestion_reconciliation_failed',
+      );
+      return 0;
+    }
+  }
+
   async function reconcileCanonicalChange(input: {
     targetKind: Extract<TargetKind, 'object' | 'task' | 'calendar_event'>;
     targetId: string;
@@ -1811,8 +1968,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
 
     if (item.operation === 'create') {
+      const settings = await calendar.getCalendarSettings();
       const parsed = calendarCreatePayload.parse(
-        normalizeCalendarPayload(item, { fallbackTitle: true }),
+        normalizeCalendarPayload(item, {
+          fallbackTitle: true,
+          defaultTimezone: settings.defaultTimezone,
+        }),
       );
       const normalizedRange = parsed.allDay
         ? normalizeAllDayRange({
@@ -1934,6 +2095,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         })
         .where(eq(agentSuggestionItems.id, itemId));
       await refreshBundleStatus(row.suggestion.id, userId);
+      const staleReason = await staleActionableItemReason(row.item);
+      if (staleReason && (await supersedeItem(itemId, null, staleReason))) {
+        await reconcileStaleActionableItemsBestEffort({
+          suggestionItemId: itemId,
+          op: 'accept_failure',
+        });
+        return true;
+      }
+      await reconcileStaleActionableItemsBestEffort({
+        suggestionItemId: itemId,
+        op: 'accept_failure',
+      });
       throw err;
     }
     await db
@@ -1946,6 +2119,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .where(eq(agentSuggestionItems.id, itemId));
     await refreshBundleStatus(row.suggestion.id, userId);
     await reconcileAcceptedItemBestEffort({ ...row.item, resultId });
+    await reconcileStaleActionableItemsBestEffort({ suggestionItemId: itemId, op: 'accept' });
     return true;
   }
 
@@ -2059,6 +2233,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       reason: 'Objects were merged from another cleanup suggestion.',
     });
     await reconcileAcceptedItemBestEffort({ ...row.item, resultId: survivorId });
+    await reconcileStaleActionableItemsBestEffort({
+      suggestionItemId: input.itemId,
+      op: 'accept_object_merge',
+    });
     return { survivorId };
   }
 
@@ -2363,6 +2541,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (!rejected) return false;
       await supersedeRelationshipDependents(row.item);
       await refreshBundleStatus(row.suggestion.id, userId);
+      await reconcileStaleActionableItemsBestEffort({ suggestionItemId: itemId, op: 'reject' });
       return true;
     },
 

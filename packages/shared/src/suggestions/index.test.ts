@@ -1036,6 +1036,108 @@ describe('suggestion scope', () => {
     expect(loaded).toMatchObject({ status: 'superseded' });
   });
 
+  it('supersedes stale object updates instead of failing when their target was merged away', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const oldTarget = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Audit AI',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const survivor = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'AuditAI',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update stale company',
+      dedupeKey: 'stale-merged-target',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: oldTarget.id,
+          title: 'Rename stale company',
+          dedupeKey: 'stale-merged-target:item',
+          proposedPayload: { canonicalName: 'AuditAI Inc' },
+        },
+      ],
+    });
+
+    await scope.objects.mergeObjects({
+      survivorId: survivor.id,
+      mergedIds: [oldTarget.id],
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    const loaded = await scope.suggestions.getSuggestion(bundle.id);
+    expect(loaded).toMatchObject({ status: 'superseded' });
+    expect(loaded?.items[0]).toMatchObject({
+      status: 'superseded',
+      supersededByItemId: null,
+      supersededReason: 'The target object was merged into another object.',
+    });
+  });
+
+  it('sweeps stale failed object approvals after resolving another item', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const staleTarget = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Old marketing site',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const staleBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update stale marketing site',
+      dedupeKey: 'stale-failed-sweep',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: staleTarget.id,
+          title: 'Update stale marketing site',
+          dedupeKey: 'stale-failed-sweep:item',
+          proposedPayload: { status: 'accepted' },
+        },
+      ],
+    });
+    const unrelatedBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create unrelated task',
+      dedupeKey: 'stale-failed-sweep:unrelated',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Unrelated task',
+          dedupeKey: 'stale-failed-sweep:unrelated:item',
+          proposedPayload: { canonicalName: 'Unrelated task' },
+        },
+      ],
+    });
+    const staleItemId = staleBundle.items[0]?.id ?? '';
+    await pg.query(`UPDATE agent_suggestion_items SET status = 'failed' WHERE id = $1`, [
+      staleItemId,
+    ]);
+    await scope.objects.archiveObject(staleTarget.id, { kind: 'user', userId: USER_ID });
+
+    await expect(
+      scope.suggestions.rejectSuggestionItem(unrelatedBundle.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+
+    const loaded = await scope.suggestions.getSuggestion(staleBundle.id);
+    expect(loaded).toMatchObject({ status: 'superseded' });
+    expect(loaded?.items[0]).toMatchObject({
+      status: 'superseded',
+      failureReason: null,
+      supersededReason: 'The target object was archived.',
+    });
+  });
+
   it('keeps accepted suggestion rows immutable and creates a correction bundle', async () => {
     const scope = withTeam(db as never, TEAM_ID, PSEUDO_USER, { skipMembershipCheck: true });
     const original = await scope.suggestions.createOrMergeSuggestionBundle({
@@ -2304,6 +2406,141 @@ describe('suggestion scope', () => {
     );
     expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-02T04:00:00.000Z');
     expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-03T04:00:00.000Z');
+  });
+
+  it('accepts date-only all-day calendar suggestions from legacy model payloads', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.calendar.upsertCalendarSettings({ defaultTimezone: 'Europe/Helsinki' });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create date-only events',
+      dedupeKey: 'calendar-create-date-only-legacy-payload',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Mikael Rintala resigns from current job',
+          dedupeKey: 'calendar-create-date-only-legacy-payload:item',
+          proposedPayload: {
+            canonicalName: 'Mikael Rintala resigns from current job',
+            start_date: '2026-06-15',
+            visibility: 'team',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{
+      title: string;
+      start_at: Date;
+      end_at: Date;
+      all_day: boolean;
+    }>(
+      `SELECT title, start_at, end_at, all_day
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}' AND title = 'Mikael Rintala resigns from current job'`,
+    );
+    expect(result.rows[0]).toMatchObject({
+      title: 'Mikael Rintala resigns from current job',
+      all_day: true,
+    });
+    expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-14T21:00:00.000Z');
+    expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-15T21:00:00.000Z');
+  });
+
+  it('accepts multi-day all-day calendar suggestions from legacy date-only payloads', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create multi-day date-only event',
+      dedupeKey: 'calendar-create-multi-day-legacy-payload',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Company offsite',
+          dedupeKey: 'calendar-create-multi-day-legacy-payload:item',
+          proposedPayload: {
+            title: 'Company offsite',
+            start_date: '2026-06-15',
+            end_date: '2026-06-18',
+            timezone: 'Europe/Helsinki',
+            visibility: 'team',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{
+      title: string;
+      start_at: Date;
+      end_at: Date;
+      all_day: boolean;
+    }>(
+      `SELECT title, start_at, end_at, all_day
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}' AND title = 'Company offsite'`,
+    );
+    expect(result.rows[0]).toMatchObject({
+      title: 'Company offsite',
+      all_day: true,
+    });
+    expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-14T21:00:00.000Z');
+    expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-17T21:00:00.000Z');
+  });
+
+  it('does not infer all-day for legacy timed payloads that also include date hints', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create timed event with date hint',
+      dedupeKey: 'calendar-create-timed-date-hint-legacy-payload',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Timed meeting with date hint',
+          dedupeKey: 'calendar-create-timed-date-hint-legacy-payload:item',
+          proposedPayload: {
+            title: 'Timed meeting with date hint',
+            startTime: '2026-06-15T09:00:00.000Z',
+            endTime: '2026-06-15T10:00:00.000Z',
+            start_date: '2026-06-15',
+            timezone: 'Europe/Helsinki',
+            visibility: 'team',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{
+      title: string;
+      start_at: Date;
+      end_at: Date;
+      all_day: boolean;
+    }>(
+      `SELECT title, start_at, end_at, all_day
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}' AND title = 'Timed meeting with date hint'`,
+    );
+    expect(result.rows[0]).toMatchObject({
+      title: 'Timed meeting with date hint',
+      all_day: false,
+    });
+    expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-15T09:00:00.000Z');
+    expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-15T10:00:00.000Z');
   });
 
   it('does not double-normalize pre-normalized all-day suggestions in UTC+ timezones', async () => {
