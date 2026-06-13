@@ -1179,7 +1179,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .where(
         and(
           eq(agentSuggestionItems.teamId, teamId),
-          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
+          eq(agentSuggestionItems.status, 'failed'),
           inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
         ),
       );
