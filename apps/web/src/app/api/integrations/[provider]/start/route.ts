@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { appUrl } from '@/lib/site-url';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,7 +27,7 @@ const stateSchema = z.object({
 });
 
 export async function POST(
-  req: Request,
+  _req: Request,
   ctx: { params: Promise<{ provider: string }> },
 ): Promise<Response> {
   const session = await auth();
@@ -57,8 +58,7 @@ export async function POST(
   const sig = createHmac('sha256', secret).update(payloadB64).digest('base64url');
   const state = `${payloadB64}.${sig}`;
 
-  const url = new URL(req.url);
-  const redirectUri = `${url.origin}/api/integrations/${provider}/callback`;
+  const redirectUri = appUrl(`/api/integrations/${provider}/callback`).toString();
 
   try {
     const p = integrationsLib.getProvider(provider);

@@ -47,19 +47,23 @@ const USER_ID = '22222222-2222-4222-8222-222222222222';
 const OTHER_USER_ID = '33333333-3333-4333-8333-333333333333';
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const SERVER_ID = '44444444-4444-4444-8444-444444444444';
+const PUBLIC_ORIGIN = 'https://thetimeline.cc';
 const DISCOVERY = {
   authorization_endpoint: 'https://auth.example/authorize',
   token_endpoint: 'https://auth.example/token',
 };
 
 function request(search: string): Request {
-  return new Request(`https://timeline.test/api/mcp/oauth/callback${search}`, {
+  return new Request(`https://0.0.0.0:8080/api/mcp/oauth/callback${search}`, {
     method: 'GET',
   });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  process.env.AUTH_URL = PUBLIC_ORIGIN;
+  delete process.env.NEXTAUTH_URL;
+  delete process.env.VERCEL_URL;
   fakes.auth.mockResolvedValue({ user: { id: USER_ID } });
   fakes.verifyOAuthState.mockReturnValue({
     teamId: TEAM_ID,
@@ -92,12 +96,12 @@ describe('GET /api/mcp/oauth/callback', () => {
     fakes.auth.mockResolvedValueOnce(null);
     const signIn = await GET(request('?code=c&state=s'));
     expect(signIn.status).toBe(307);
-    expect(signIn.headers.get('location')).toBe('https://timeline.test/sign-in');
+    expect(signIn.headers.get('location')).toBe(`${PUBLIC_ORIGIN}/sign-in`);
 
     const providerError = await GET(request('?error=access_denied'));
     expect(providerError.status).toBe(307);
     expect(providerError.headers.get('location')).toBe(
-      'https://timeline.test/app/team/integrations?error=access_denied',
+      `${PUBLIC_ORIGIN}/app/team/integrations?error=access_denied`,
     );
   });
 
@@ -153,13 +157,13 @@ describe('GET /api/mcp/oauth/callback', () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe(
-      `https://timeline.test/app/team/integrations?connected=${SERVER_ID}`,
+      `${PUBLIC_ORIGIN}/app/team/integrations?connected=${SERVER_ID}`,
     );
     expect(fakes.discoverOAuth).not.toHaveBeenCalled();
     expect(fakes.exchangeCode).toHaveBeenCalledWith({
       discovery: DISCOVERY,
       code: 'auth-code',
-      redirectUri: 'https://timeline.test/api/mcp/oauth/callback',
+      redirectUri: `${PUBLIC_ORIGIN}/api/mcp/oauth/callback`,
       clientId: 'client',
       clientSecret: 'secret',
       codeVerifier: 'verifier',
@@ -217,7 +221,7 @@ describe('GET /api/mcp/oauth/callback', () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe(
-      'https://timeline.test/app/team/integrations?error=token_down',
+      `${PUBLIC_ORIGIN}/app/team/integrations?error=token_down`,
     );
     expect(fakes.loggerWarn).toHaveBeenCalledWith(
       expect.objectContaining({ mcpServerId: SERVER_ID }),

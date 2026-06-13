@@ -51,6 +51,7 @@ const USER_ID = '22222222-2222-4222-8222-222222222222';
 const OTHER_USER_ID = '33333333-3333-4333-8333-333333333333';
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const SERVER_ID = '44444444-4444-4444-8444-444444444444';
+const PUBLIC_ORIGIN = 'https://thetimeline.cc';
 const DISCOVERY = {
   authorization_endpoint: 'https://auth.example/authorize',
   token_endpoint: 'https://auth.example/token',
@@ -58,7 +59,7 @@ const DISCOVERY = {
 };
 
 function request(body: unknown): Request {
-  return new Request('https://timeline.test/api/mcp/oauth/start', {
+  return new Request('https://0.0.0.0:8080/api/mcp/oauth/start', {
     method: 'POST',
     body: JSON.stringify(body),
   });
@@ -66,6 +67,9 @@ function request(body: unknown): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  process.env.AUTH_URL = PUBLIC_ORIGIN;
+  delete process.env.NEXTAUTH_URL;
+  delete process.env.VERCEL_URL;
   fakes.auth.mockResolvedValue({ user: { id: USER_ID } });
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakes.getServer.mockResolvedValue({
@@ -166,7 +170,7 @@ describe('POST /api/mcp/oauth/start', () => {
       expect.objectContaining({
         discovery: DISCOVERY,
         clientId: 'pre-client',
-        redirectUri: 'https://timeline.test/api/mcp/oauth/callback',
+        redirectUri: `${PUBLIC_ORIGIN}/api/mcp/oauth/callback`,
         state: 'signed-state',
         codeChallenge: 'challenge',
         scopes: ['read', 'write'],
@@ -179,7 +183,7 @@ describe('POST /api/mcp/oauth/start', () => {
     expect(dynamic.status).toBe(200);
     expect(fakes.registerClient).toHaveBeenCalledWith(
       'https://auth.example/register',
-      'https://timeline.test/api/mcp/oauth/callback',
+      `${PUBLIC_ORIGIN}/api/mcp/oauth/callback`,
       'The Timeline — Notion',
     );
 

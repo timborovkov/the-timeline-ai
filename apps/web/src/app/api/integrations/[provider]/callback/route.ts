@@ -12,6 +12,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { appUrl } from '@/lib/site-url';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -60,7 +61,7 @@ export async function GET(
 ): Promise<Response> {
   const session = await auth();
   if (!session?.user.id) {
-    return NextResponse.redirect(new URL('/sign-in', req.url));
+    return NextResponse.redirect(appUrl('/sign-in'));
   }
   const { provider } = await ctx.params;
   if (!PROVIDERS.has(provider)) return new Response('unknown_provider', { status: 404 });
@@ -70,7 +71,7 @@ export async function GET(
   const oauthError = url.searchParams.get('error');
   if (oauthError) {
     return NextResponse.redirect(
-      new URL(`/app/team/integrations?error=${encodeURIComponent(oauthError)}`, req.url),
+      appUrl(`/app/team/integrations?error=${encodeURIComponent(oauthError)}`),
     );
   }
   if (!code || !state) {
@@ -88,7 +89,7 @@ export async function GET(
   }
 
   const p = integrationsLib.getProvider(provider);
-  const redirectUri = `${url.origin}/api/integrations/${provider}/callback`;
+  const redirectUri = appUrl(`/api/integrations/${provider}/callback`).toString();
   try {
     const result = await p.handleOAuthCallback({ code, redirectUri });
     const visibilityDefault = await scope.timeline.resolveVisibilityDefault('integration');
@@ -122,7 +123,7 @@ export async function GET(
       });
     }
     return NextResponse.redirect(
-      new URL(`/app/team/integrations?connected=${provider}&integrationId=${created.id}`, req.url),
+      appUrl(`/app/team/integrations?connected=${provider}&integrationId=${created.id}`),
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'oauth_callback_failed';
@@ -132,8 +133,6 @@ export async function GET(
       operation: 'integration_oauth_callback',
       tags: { provider },
     });
-    return NextResponse.redirect(
-      new URL(`/app/team/integrations?error=${encodeURIComponent(msg)}`, req.url),
-    );
+    return NextResponse.redirect(appUrl(`/app/team/integrations?error=${encodeURIComponent(msg)}`));
   }
 }
