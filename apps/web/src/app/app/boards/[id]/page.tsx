@@ -63,7 +63,13 @@ export default async function BoardDetailPage({
   const isKanban = view === 'kanban';
 
   return (
-    <div className={isKanban ? 'flex h-[calc(100dvh-10rem)] flex-col' : undefined}>
+    <div
+      className={
+        isKanban
+          ? '-mx-4 -my-6 flex h-[calc(100dvh-3.5rem)] min-w-0 flex-col md:-mx-8 md:-my-8'
+          : undefined
+      }
+    >
       <IndexStrip
         srLabel={`${board.name} · ${board.templateKind} · ${board.itemCount} board items`}
         segments={[
@@ -72,7 +78,7 @@ export default async function BoardDetailPage({
           { label: 'name', value: board.name, signal: true },
           { label: 'items', value: board.itemCount },
         ]}
-        className="mb-4 shrink-0"
+        className={isKanban ? 'shrink-0 px-4 md:px-8' : 'mb-4 shrink-0'}
       >
         <span className="inline-flex items-center gap-2">
           <HistoryBackLink fallbackHref="/app/boards" label="Back" />
@@ -81,7 +87,13 @@ export default async function BoardDetailPage({
         </span>
       </IndexStrip>
 
-      <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3">
+      <div
+        className={
+          isKanban
+            ? 'flex shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-4 md:px-8'
+            : 'mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3'
+        }
+      >
         <p className="max-w-3xl text-sm text-fg-muted">
           {board.purpose || 'A curated board over workspace objects.'}
         </p>
@@ -100,7 +112,7 @@ export default async function BoardDetailPage({
         </nav>
       </div>
 
-      <div className="mb-4 shrink-0">
+      <div className={isKanban ? 'shrink-0 px-4 pb-4 md:px-8' : 'mb-4 shrink-0'}>
         <BoardAddItemForm
           boardId={board.id}
           defaultLaneId={firstLaneId}
@@ -118,7 +130,7 @@ export default async function BoardDetailPage({
             : 'min-h-0 flex-1'
         }
       >
-        <div className="min-h-0">
+        <div className={isKanban ? 'h-full min-h-0 min-w-0' : 'min-h-0'}>
           {view === 'kanban' && (
             <CuratedKanbanBoard boardId={board.id} lanes={board.lanes} items={board.items} />
           )}
