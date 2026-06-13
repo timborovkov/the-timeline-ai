@@ -8,6 +8,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { appUrl } from '@/lib/site-url';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -66,8 +67,7 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
-  const url = new URL(req.url);
-  const redirectUri = `${url.origin}/api/mcp/oauth/callback`;
+  const redirectUri = appUrl('/api/mcp/oauth/callback').toString();
   try {
     const discovery = await mcp.discoverOAuth(server.url);
     let clientId: string;

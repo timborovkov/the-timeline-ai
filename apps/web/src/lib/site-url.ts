@@ -22,6 +22,10 @@ export function getSiteUrl(): string {
   return 'http://localhost:3000';
 }
 
+export function appUrl(path: string): URL {
+  return new URL(path, `${getSiteUrl()}/`);
+}
+
 function canonicalOrigin(url: string): string {
   return new URL(url).origin;
 }

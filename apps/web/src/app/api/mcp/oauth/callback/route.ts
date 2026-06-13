@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { appUrl } from '@/lib/site-url';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,7 +24,7 @@ const log = childLogger('web:api:mcp:oauth:callback');
 export async function GET(req: Request): Promise<Response> {
   const session = await auth();
   if (!session?.user.id) {
-    return NextResponse.redirect(new URL('/sign-in', req.url));
+    return NextResponse.redirect(appUrl('/sign-in'));
   }
   const url = new URL(req.url);
   const code = url.searchParams.get('code');
@@ -31,7 +32,7 @@ export async function GET(req: Request): Promise<Response> {
   const oauthError = url.searchParams.get('error');
   if (oauthError) {
     return NextResponse.redirect(
-      new URL(`/app/team/integrations?error=${encodeURIComponent(oauthError)}`, req.url),
+      appUrl(`/app/team/integrations?error=${encodeURIComponent(oauthError)}`),
     );
   }
   if (!code || !state) {
@@ -63,7 +64,7 @@ export async function GET(req: Request): Promise<Response> {
     return new Response('missing_pending_state', { status: 400 });
   }
 
-  const redirectUri = `${url.origin}/api/mcp/oauth/callback`;
+  const redirectUri = appUrl('/api/mcp/oauth/callback').toString();
   try {
     // Reuse the authorization-server metadata pinned at /start so the
     // code exchange hits the same `token_endpoint` the user consented at.
@@ -125,14 +126,12 @@ export async function GET(req: Request): Promise<Response> {
       await scope.mcp.updateServer(verified.mcpServerId, { enabled: true });
     }
     return NextResponse.redirect(
-      new URL(`/app/team/integrations?connected=${verified.mcpServerId}`, req.url),
+      appUrl(`/app/team/integrations?connected=${verified.mcpServerId}`),
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'mcp_oauth_callback_failed';
     log.warn({ err, mcpServerId: verified.mcpServerId }, 'mcp oauth callback failed');
     reportCaughtError(err, { surface: 'api', operation: 'mcp_oauth_callback' });
-    return NextResponse.redirect(
-      new URL(`/app/team/integrations?error=${encodeURIComponent(msg)}`, req.url),
-    );
+    return NextResponse.redirect(appUrl(`/app/team/integrations?error=${encodeURIComponent(msg)}`));
   }
 }
