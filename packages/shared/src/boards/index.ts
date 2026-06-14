@@ -43,6 +43,7 @@ export type BoardItemField =
   | 'customFields';
 
 export interface BoardLaneInput {
+  id?: string;
   name: string;
   kind?: BoardLaneKind | null;
 }
@@ -138,6 +139,18 @@ export interface CreateBoardInput {
   candidateFilter?: Record<string, unknown>;
   lanes: BoardLaneInput[];
   isShared?: boolean;
+}
+
+export interface RenameBoardInput {
+  id: string;
+  name: string;
+}
+
+export interface UpdateBoardSettingsInput {
+  id: string;
+  name?: string;
+  purpose?: string;
+  lanes?: BoardLaneInput[];
 }
 
 export interface AddBoardItemInput {
@@ -577,7 +590,13 @@ export function createBoardScope({
         db
           .select()
           .from(boardLanes)
-          .where(and(eq(boardLanes.boardId, boardId), eq(boardLanes.teamId, scope.teamId)))
+          .where(
+            and(
+              eq(boardLanes.boardId, boardId),
+              eq(boardLanes.teamId, scope.teamId),
+              isNull(boardLanes.archivedAt),
+            ),
+          )
           .orderBy(asc(boardLanes.position), asc(boardLanes.createdAt)),
         itemLimit === 'all' ? itemsQuery : itemsQuery.limit(itemLimit),
         db
@@ -698,6 +717,123 @@ export function createBoardScope({
       });
       await afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync);
       return txResult.rows.length > 0;
+    },
+
+    async renameBoard(input: RenameBoardInput): Promise<boolean> {
+      await requireBoard(input.id);
+      const rows = await db
+        .update(boards)
+        .set({ name: normalizeName(input.name, 'Board name'), updatedAt: new Date() })
+        .where(
+          and(eq(boards.id, input.id), eq(boards.teamId, scope.teamId), isNull(boards.archivedAt)),
+        )
+        .returning({ id: boards.id });
+      return rows.length > 0;
+    },
+
+    async updateBoardSettings(input: UpdateBoardSettingsInput): Promise<boolean> {
+      await requireBoard(input.id);
+      const nextLanes = input.lanes?.map((lane, idx) => ({
+        id: lane.id,
+        name: normalizeName(lane.name, 'Lane name'),
+        kind: lane.kind ?? null,
+        position: idx,
+      }));
+      if (nextLanes?.length === 0) throw new Error('At least one lane is required');
+      if (nextLanes && nextLanes.length > 16) throw new Error('Too many lanes');
+
+      const currentLanes = nextLanes
+        ? await db
+            .select()
+            .from(boardLanes)
+            .where(
+              and(
+                eq(boardLanes.boardId, input.id),
+                eq(boardLanes.teamId, scope.teamId),
+                isNull(boardLanes.archivedAt),
+              ),
+            )
+        : [];
+      const currentLaneIds = new Set(currentLanes.map((lane) => lane.id));
+      const keptLaneIds = new Set(nextLanes?.flatMap((lane) => (lane.id ? [lane.id] : [])) ?? []);
+      for (const lane of nextLanes ?? []) {
+        if (lane.id && !currentLaneIds.has(lane.id)) throw new Error('Lane not on this board');
+      }
+      const removedLaneIds = currentLanes
+        .map((lane) => lane.id)
+        .filter((laneId) => !keptLaneIds.has(laneId));
+
+      await db.transaction(async (tx) => {
+        const now = new Date();
+        const boardPatch: Partial<typeof boards.$inferInsert> = { updatedAt: now };
+        if (input.name !== undefined) boardPatch.name = normalizeName(input.name, 'Board name');
+        if (input.purpose !== undefined) boardPatch.purpose = input.purpose.trim();
+        await tx
+          .update(boards)
+          .set(boardPatch)
+          .where(
+            and(
+              eq(boards.id, input.id),
+              eq(boards.teamId, scope.teamId),
+              isNull(boards.archivedAt),
+            ),
+          );
+
+        for (const lane of nextLanes ?? []) {
+          if (lane.id) {
+            await tx
+              .update(boardLanes)
+              .set({
+                name: lane.name,
+                kind: lane.kind,
+                position: lane.position,
+                updatedAt: now,
+              })
+              .where(
+                and(
+                  eq(boardLanes.id, lane.id),
+                  eq(boardLanes.boardId, input.id),
+                  eq(boardLanes.teamId, scope.teamId),
+                  isNull(boardLanes.archivedAt),
+                ),
+              );
+          } else {
+            await tx.insert(boardLanes).values({
+              teamId: scope.teamId,
+              boardId: input.id,
+              name: lane.name,
+              kind: lane.kind,
+              position: lane.position,
+            });
+          }
+        }
+
+        if (removedLaneIds.length > 0) {
+          await tx
+            .update(boardLanes)
+            .set({ archivedAt: now, updatedAt: now })
+            .where(
+              and(
+                eq(boardLanes.boardId, input.id),
+                eq(boardLanes.teamId, scope.teamId),
+                inArray(boardLanes.id, removedLaneIds),
+                isNull(boardLanes.archivedAt),
+              ),
+            );
+          await tx
+            .update(boardItems)
+            .set({ laneId: null, updatedAt: now })
+            .where(
+              and(
+                eq(boardItems.boardId, input.id),
+                eq(boardItems.teamId, scope.teamId),
+                inArray(boardItems.laneId, removedLaneIds),
+                isNull(boardItems.archivedAt),
+              ),
+            );
+        }
+      });
+      return true;
     },
 
     async addBoardItem(boardId: string, input: AddBoardItemInput): Promise<BoardItemRow> {

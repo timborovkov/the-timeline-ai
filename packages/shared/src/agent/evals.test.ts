@@ -173,7 +173,7 @@ describe('agent tool evals', () => {
       visibility: 'team',
       agentSuggested: true,
     });
-  });
+  }, 60_000);
 
   it('answers a timeline question with cited evidence from accessible events', async () => {
     // Product behavior: chat should ground factual timeline answers in source

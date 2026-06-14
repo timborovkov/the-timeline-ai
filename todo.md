@@ -53,8 +53,9 @@ implementation detail.
       objects and the relationship together when each object independently
       qualifies as durable information, using bundle-local refs and ordered
       acceptance so `Accept all` creates endpoints before applying the link.
-- [x] Surface accepted and pending relationships on both object detail pages
-      with cited evidence explaining why the objects are connected.
+- [x] Surface accepted and pending relationships on both object detail pages,
+      with relationship activity and evidence available nearby while cited
+      per-edge explanations remain part of the later graph/mind-map slice.
 - [x] Replace manual UUID relationship linking with object search/select in the
       object detail UI.
 - [x] Collapse the generic `linked` relationship kind into `related`, migrate

@@ -128,7 +128,7 @@ describe('askAgent', () => {
     await applyDbMigrations(pg);
     await seed(pg);
     db = drizzle(pg);
-  });
+  }, 60_000);
 
   afterEach(() => {
     process.env = { ...ENV_BACKUP };

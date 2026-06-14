@@ -176,7 +176,7 @@ export function GlobalSearchPalette({ hint, className }: Props) {
     <div ref={rootRef} className={cn('relative flex-1', className)}>
       <div
         className={cn(
-          'flex h-10 items-center gap-2 rounded-sm border border-border bg-surface px-3',
+          'flex h-10 w-full items-center gap-2 rounded-sm border border-border bg-surface px-3',
           'focus-within:border-border-strong',
           'transition-colors',
         )}

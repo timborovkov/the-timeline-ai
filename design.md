@@ -310,23 +310,26 @@ visible change.
 
 ### Kanban / board
 
-- Boards are curated work surfaces with explicit board items, not raw saved
-  filters over every matching object. Filters and templates help users find
-  eligible objects; membership is intentional.
+- Boards are curated work surfaces with explicit board items and user-defined
+  stages, not raw saved filters over every matching object. Filters, templates,
+  and presets help users start; membership and workflow shape stay intentional.
 - Board shortcuts on Home use compact snapshots, not embedded full boards: board
   name, item count, lane counts, and last update. Opening the snapshot enters
   the full board.
-- Board creation starts from clear templates with icons, example use cases,
-  recommended object kinds, and editable default lanes/fields before advanced
-  filtering appears.
+- Board creation starts from clear presets with icons, example use cases, and
+  editable stages. Presets are starting points, not board types; stages can be
+  renamed, reordered, added, or removed during creation and from board settings.
+- Board descriptions are user-authored. Preset copy must not appear on the
+  board once it has been created unless the user explicitly wrote it.
 - Cards `bg-bg border border-border rounded-sm p-3`. Inner padding 12px.
-- Card meta strip at the bottom: mono uppercase 11px with task ID,
-  responsible person, due indicator, priority, and next step where present.
+- Card meta strip at the bottom: mono uppercase 10-11px with responsible
+  person, due indicator, and priority. Missing values render explicitly
+  (`Unassigned`, `No due`, `No priority`) so cleanup work is scannable.
   Due-this-week = `text-signal`; overdue = `text-danger`.
 - Card clicks open a board-context detail panel first. The panel shows object
-  memory, board-local properties, board notes, item history, evidence, and a
-  direct link to the full object page.
-- Drag uses `@dnd-kit/core` with optimistic `updateObjectAction` calls.
+  memory, editable board-local properties, board notes, item history, an object
+  preview modal, and direct links to the full object page and object chat.
+- Drag uses `@dnd-kit/core` with optimistic `updateBoardItemAction` calls.
 - Board moves should feel complete immediately. Show a quiet board-level
   saving state while moves are in flight, then a brief saved confirmation once
   server state catches up. Avoid per-move success toasts on kanban surfaces;
@@ -545,14 +548,15 @@ key/value pairs.
 ### Optimistic updates
 
 - Lightweight, reversible product edits should update the local surface
-  immediately, then reconcile with server state: kanban moves, object
-  status/stage/priority/due edits, text capture, calendar create/edit,
-  document upload placeholders, onboarding checklist actions, and inbox
-  read-state changes.
-- Compound, destructive, security-sensitive, or external-provider actions
-  wait for server confirmation: invites, meeting bot scheduling/cancel,
-  archive/delete, relationship changes, exports, OAuth/integration setup,
-  and approval accept/reject.
+  immediately, then reconcile with server state: kanban moves, board item adds,
+  board item responsible/due/priority/notes edits, object status/stage/priority/due
+  edits, object notes, relationship changes, object-change approvals, object
+  archive state after explicit user confirmation, document renames, document
+  folder create/delete, text capture, calendar create/edit, document upload
+  placeholders, onboarding checklist actions, and inbox read-state changes.
+- Security-sensitive or external-provider actions wait for server
+  confirmation: invites, meeting bot scheduling/cancel, exports, OAuth/
+  integration setup, and irreversible destructive operations.
 - Success feedback should be quiet and local (`Saving...` then `Saved`).
   Use prominent alerts only for failures, and rollback the smallest affected
   thing so the user can tell what changed.

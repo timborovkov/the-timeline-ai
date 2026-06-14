@@ -7,13 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as boards from '@timeline/shared/boards';
 
 const fakes = vi.hoisted(() => ({
-  refresh: vi.fn(),
-  updateBoardItemAction: vi.fn(),
-}));
-
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('@/app/actions/boards', () => ({
-  updateBoardItemAction: fakes.updateBoardItemAction,
+  updateItem: vi.fn(),
 }));
 
 const { CuratedBoardTable } = await import('./curated-board-views.js');
@@ -57,9 +51,8 @@ function boardItem(): boards.BoardItemRow {
 describe('CuratedBoardTable', () => {
   beforeEach(() => {
     cleanup();
-    fakes.refresh.mockReset();
-    fakes.updateBoardItemAction.mockReset();
-    fakes.updateBoardItemAction.mockResolvedValue({ ok: true });
+    fakes.updateItem.mockReset();
+    fakes.updateItem.mockResolvedValue({ ok: true });
   });
 
   it('edits board item fields inline', async () => {
@@ -88,6 +81,7 @@ describe('CuratedBoardTable', () => {
         ]}
         items={[boardItem()]}
         members={[{ id: 'user-1', label: 'Ada' }]}
+        onUpdateItem={fakes.updateItem}
       />,
     );
 
@@ -96,18 +90,14 @@ describe('CuratedBoardTable', () => {
       'user-1',
     );
     await waitFor(() => {
-      expect(fakes.updateBoardItemAction).toHaveBeenCalledWith({
-        id: 'item-1',
+      expect(fakes.updateItem).toHaveBeenCalledWith('item-1', {
         responsibleUserId: 'user-1',
       });
     });
 
     await user.selectOptions(screen.getByLabelText('Lane for Launch review'), 'lane-2');
     await waitFor(() => {
-      expect(fakes.updateBoardItemAction).toHaveBeenCalledWith({
-        id: 'item-1',
-        laneId: 'lane-2',
-      });
+      expect(fakes.updateItem).toHaveBeenCalledWith('item-1', { laneId: 'lane-2' });
     });
   });
 

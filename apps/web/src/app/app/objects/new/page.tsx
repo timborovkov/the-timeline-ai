@@ -9,15 +9,16 @@ export const metadata: Metadata = {
   description: 'Create a tracked timeline object.',
 };
 
+const objectsBackLink = <HistoryBackLink fallbackHref="/app/objects" label="Back" />;
+
 export default function NewObjectPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <IndexStrip
         srLabel="Create a new workspace object"
         segments={[{ value: 'OBJECTS / NEW' }, { label: 'mode', value: 'create', signal: true }]}
-      >
-        <HistoryBackLink fallbackHref="/app/objects" label="Back" />
-      </IndexStrip>
+        leading={objectsBackLink}
+      />
       <NewObjectForm />
     </div>
   );

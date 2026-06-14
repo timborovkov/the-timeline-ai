@@ -80,7 +80,7 @@ export function AppShell({
             </div>
             <GlobalSearchPalette
               hint={active.teamName ? `team · ${active.teamName}` : undefined}
-              className="hidden md:flex"
+              className="hidden md:block"
             />
             <div className="ml-auto flex items-center gap-1">
               <Link
