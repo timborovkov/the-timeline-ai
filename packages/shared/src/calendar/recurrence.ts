@@ -1,7 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
-import rrule from 'rrule';
+import * as rrule from 'rrule';
 
-const { rrulestr } = rrule;
+type RRuleModule = typeof rrule & { default?: typeof rrule };
+
+const rrulestr = rrule.rrulestr ?? (rrule as RRuleModule).default?.rrulestr;
+if (typeof rrulestr !== 'function') throw new Error('rrule parser export not found');
 
 const RECURRENCE_WINDOW_MONTHS = 3;
 
