@@ -184,6 +184,40 @@ describe('Postmark messaging adapter', () => {
     });
   });
 
+  it('uses the legacy invite sender when the shared sender is not set', async () => {
+    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    delete process.env.TRANSACTIONAL_EMAIL_FROM;
+    process.env.INVITE_EMAIL_FROM = 'Timeline Invites <invites@example.test>';
+    const requests: RequestInit[] = [];
+    const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      requests.push(init ?? {});
+      return Promise.resolve(
+        new Response(JSON.stringify({ MessageID: 'postmark-id' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    });
+    const message = renderMessage('team_invite', {
+      to: 'tim@example.test',
+      inviterName: 'Tim',
+      teamName: 'Timeline',
+      role: 'member',
+      inviteUrl: 'https://timeline.test/accept-invite/token',
+      expiresAt: new Date('2026-06-15T12:00:00Z'),
+    });
+
+    await expect(messagingInternals.sendPostmarkEmail(message, fetchMock)).resolves.toEqual({
+      ok: true,
+      providerMessageId: 'postmark-id',
+    });
+    const body = requests[0]?.body;
+    expect(typeof body).toBe('string');
+    expect(JSON.parse(body as string)).toMatchObject({
+      From: 'Timeline Invites <invites@example.test>',
+    });
+  });
+
   it('maps provider errors into short delivery errors', async () => {
     process.env.POSTMARK_SERVER_TOKEN = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
@@ -272,10 +306,11 @@ describe('Postmark messaging adapter', () => {
         { db: db as never, dedupeKey: 'welcome:user-1', fetch: fetchMock },
       ),
     ).resolves.toEqual({
-      ok: true,
+      ok: false,
       deliveryId: 'delivery-1',
       skipped: true,
       skippedStatus: 'pending',
+      error: 'Delivery is already pending.',
     });
 
     expect(fetchMock).not.toHaveBeenCalled();
@@ -351,10 +386,11 @@ describe('Postmark messaging adapter', () => {
         { db: db as never, dedupeKey: 'welcome:user-1', fetch: fetchMock },
       ),
     ).resolves.toEqual({
-      ok: true,
+      ok: false,
       deliveryId: 'delivery-1',
       skipped: true,
       skippedStatus: 'pending',
+      error: 'Delivery is already pending.',
     });
 
     expect(fetchMock).not.toHaveBeenCalled();
@@ -408,10 +444,11 @@ describe('Postmark messaging adapter', () => {
         fetch: fetchMock,
       }),
     ).resolves.toEqual({
-      ok: true,
+      ok: false,
       deliveryId: 'delivery-1',
       skipped: true,
       skippedStatus: 'pending',
+      error: 'Delivery is already pending.',
     });
 
     expect(fetchMock).not.toHaveBeenCalled();

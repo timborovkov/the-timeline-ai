@@ -40,7 +40,7 @@ export interface SendMessageOptions {
 
 function configuredSender(): string | null {
   const env = getEnv();
-  return env.TRANSACTIONAL_EMAIL_FROM ?? null;
+  return env.TRANSACTIONAL_EMAIL_FROM ?? env.INVITE_EMAIL_FROM ?? null;
 }
 
 function shortError(err: unknown, fallback: string): string {
@@ -242,7 +242,13 @@ export async function sendMessage<TIntent extends MessageIntent>(
         deliveryId: existing.id,
       });
       if (!claimed) {
-        return { ok: true, deliveryId: existing.id, skipped: true, skippedStatus: 'pending' };
+        return {
+          ok: false,
+          deliveryId: existing.id,
+          skipped: true,
+          skippedStatus: 'pending',
+          error: 'Delivery is already pending.',
+        };
       }
       deliveryId = existing.id;
     } else if (existing?.status === 'pending') {
@@ -252,7 +258,13 @@ export async function sendMessage<TIntent extends MessageIntent>(
         staleBefore: new Date(Date.now() - PENDING_DELIVERY_RETRY_AFTER_MS),
       });
       if (!claimed) {
-        return { ok: true, deliveryId: existing.id, skipped: true, skippedStatus: 'pending' };
+        return {
+          ok: false,
+          deliveryId: existing.id,
+          skipped: true,
+          skippedStatus: 'pending',
+          error: 'Delivery is already pending.',
+        };
       }
       deliveryId = existing.id;
     } else if (existing) {
