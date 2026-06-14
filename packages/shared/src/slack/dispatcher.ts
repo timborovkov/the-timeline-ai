@@ -22,6 +22,12 @@ import {
 import { encryptJson, decryptJson, type EncryptedSecret } from '#src/crypto/secrets.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import { childLogger } from '#src/logger.js';
+import {
+  confirmRawUrlQuickJoin,
+  createRawUrlQuickJoinConfirmation,
+  joinSavedMeetingByCommand,
+} from '#src/meetings/quick-capture.js';
+import { detectMeetingPlatform } from '#src/meetings/scope.js';
 import { getRedisConnection } from '#src/queue/connection.js';
 import { SlackApi, type SlackConversation, type SlackOAuthAccessResponse } from '#src/slack/api.js';
 import {
@@ -30,6 +36,7 @@ import {
   type SlackFile,
   type SlackMessageEvent,
 } from '#src/slack/types.js';
+import { withTeam } from '#src/team-scope.js';
 
 const log = childLogger('slack');
 
@@ -131,7 +138,7 @@ export async function handleSlackSlashCommand(
   },
   input: SlackSlashCommandInput,
 ): Promise<void> {
-  if (input.command !== '/ask') return;
+  if (input.command !== '/ask' && input.command !== '/timeline') return;
   const workspace = await findWorkspaceBySlackTeamId(deps.db, input.team_id);
   if (!workspace) return;
   const api = new SlackApi(decryptWorkspaceToken(workspace).accessToken);
@@ -140,8 +147,12 @@ export async function handleSlackSlashCommand(
     await api.postMessage({
       channel: input.channel_id,
       response_url: input.response_url,
-      text: 'Link your Slack identity to Timeline before using /ask.',
+      text: `Link your Slack identity to Timeline before using ${input.command}.`,
     });
+    return;
+  }
+  if (input.command === '/timeline') {
+    await handleSlackTimelineCommand(deps.db, api, input, linked);
     return;
   }
   const question = input.text.trim();
@@ -185,6 +196,149 @@ export async function handleSlackSlashCommand(
         log.error({ err: postErr }, 'slack slash command failure response failed');
       });
   }
+}
+
+async function handleSlackTimelineCommand(
+  db: Db,
+  api: SlackApi,
+  input: SlackSlashCommandInput,
+  linked: { teamId: string; userId: string; displayName: string | null },
+): Promise<void> {
+  const [subcommandRaw = '', targetRaw = '', ...titleParts] = input.text.trim().split(/\s+/);
+  if (subcommandRaw.toLowerCase() !== 'join' || !targetRaw) {
+    await api.postMessage({
+      channel: input.channel_id,
+      response_url: input.response_url,
+      text: 'Usage: /timeline join <saved-meeting-alias-or-url> [optional title]',
+    });
+    return;
+  }
+
+  const maybeUrl = targetRaw.trim();
+  if (detectMeetingPlatform(maybeUrl)) {
+    const confirmation = await createRawUrlQuickJoinConfirmation({
+      db,
+      teamId: linked.teamId,
+      userId: linked.userId,
+      meetingUrl: maybeUrl,
+      title: titleParts.join(' ') || null,
+      source: 'slack',
+      sourceContext: {
+        slack_team_id: input.team_id,
+        slack_channel_id: input.channel_id,
+        slack_user_id: input.user_id,
+      },
+    });
+    if (!confirmation.needsConfirmation || !confirmation.confirmationId) {
+      await api.postMessage({
+        channel: input.channel_id,
+        response_url: input.response_url,
+        text: confirmation.error ?? 'Could not prepare meeting capture confirmation.',
+      });
+      return;
+    }
+    await api.postMessage({
+      channel: input.channel_id,
+      response_url: input.response_url,
+      text: 'Confirm participants know this call will be transcribed.',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'plain_text',
+            text: 'Timeline will join this call after you confirm participants know it will be transcribed.',
+          },
+        },
+        {
+          type: 'actions',
+          elements: [
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: 'Confirm and join' },
+              style: 'primary',
+              action_id: 'timeline_join_confirm',
+              value: confirmation.confirmationId,
+            },
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: 'Cancel' },
+              action_id: 'timeline_join_cancel',
+              value: confirmation.confirmationId,
+            },
+          ],
+        },
+      ],
+    });
+    return;
+  }
+
+  const joined = await joinSavedMeetingByCommand({
+    db,
+    teamId: linked.teamId,
+    userId: linked.userId,
+    query: [targetRaw, ...titleParts].join(' '),
+  });
+  await api.postMessage({
+    channel: input.channel_id,
+    response_url: input.response_url,
+    response_type: joined.ok ? 'in_channel' : 'ephemeral',
+    text: joined.ok
+      ? `Joining as ${joined.botName ?? 'Timeline bot'}.`
+      : (joined.error ?? 'Could not join saved meeting.'),
+  });
+}
+
+export async function handleSlackInteraction(
+  deps: { db: Db },
+  payload: unknown,
+): Promise<{ ok: boolean; text?: string }> {
+  if (!payload || typeof payload !== 'object') return { ok: false };
+  const record = payload as Record<string, unknown>;
+  const team = record.team as { id?: string } | undefined;
+  const user = record.user as { id?: string } | undefined;
+  const actions = Array.isArray(record.actions) ? record.actions : [];
+  const action = actions[0] as { action_id?: string; value?: string } | undefined;
+  const responseUrl = typeof record.response_url === 'string' ? record.response_url : undefined;
+  const channel = record.channel as { id?: string } | undefined;
+  if (!team?.id || !user?.id || !action?.value) return { ok: false };
+  const workspace = await findWorkspaceBySlackTeamId(deps.db, team.id);
+  if (!workspace) return { ok: true };
+  const api = new SlackApi(decryptWorkspaceToken(workspace).accessToken);
+  const linked = await findActiveSlackLink(deps.db, workspace.id, user.id);
+  if (!linked) {
+    await api.postMessage({
+      channel: channel?.id ?? '',
+      ...(responseUrl ? { response_url: responseUrl } : {}),
+      text: 'Link your Slack identity to Timeline before joining calls.',
+    });
+    return { ok: true };
+  }
+  if (action.action_id === 'timeline_join_cancel') {
+    const scope = withTeam(deps.db, linked.teamId, linked.userId);
+    await scope.meetings.markMeetingCaptureConfirmation(action.value, 'cancelled');
+    await api.postMessage({
+      channel: channel?.id ?? '',
+      ...(responseUrl ? { response_url: responseUrl } : {}),
+      text: 'Cancelled.',
+    });
+    return { ok: true };
+  }
+  if (action.action_id !== 'timeline_join_confirm') return { ok: true };
+  const joined = await confirmRawUrlQuickJoin({
+    db: deps.db,
+    teamId: linked.teamId,
+    userId: linked.userId,
+    confirmationId: action.value,
+  });
+  await api.postMessage({
+    channel: channel?.id ?? '',
+    ...(responseUrl ? { response_url: responseUrl } : {}),
+    response_type: joined.ok ? 'in_channel' : 'ephemeral',
+    text: joined.ok
+      ? `Joining as ${joined.botName ?? 'Timeline bot'}.`
+      : (joined.error ?? 'Could not join call.'),
+  });
+  return { ok: true };
 }
 
 export async function upsertSlackWorkspaceFromOAuth(input: {

@@ -1,6 +1,7 @@
 'use server';
 import { childLogger } from '@timeline/shared/logger';
 import * as meetingBots from '@timeline/shared/meeting-bots';
+import { detectMeetingPlatform } from '@timeline/shared/meetings';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
@@ -10,6 +11,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { requireRedisQueue } from '@/lib/queue';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { visibilitySchema } from '@/lib/visibility';
@@ -32,20 +34,31 @@ const scheduleSchema = z.object({
   consentGiven: z.boolean().default(false),
 });
 
-function detectPlatform(url: string): 'meet' | 'teams' | 'zoom' | null {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.toLowerCase();
-    if (host.includes('meet.google.com')) return 'meet';
-    if (host.includes('teams.microsoft.com') || host.includes('teams.live.com')) return 'teams';
-    if (host.includes('zoom.us') || host.endsWith('.zoom.us') || host.includes('zoom.com')) {
-      return 'zoom';
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
+const savedMeetingScheduleSchema = z
+  .object({
+    weekdays: z.array(z.number().int().min(0).max(6)).default([]),
+    times: z.array(z.string().regex(/^\d{2}:\d{2}$/)).default([]),
+    timezone: z.string().trim().min(1).default('UTC'),
+    joinOffsetMinutes: z.number().int().min(0).max(30).default(2),
+  })
+  .nullable();
+
+const createSavedMeetingSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(2000).optional(),
+  meetingUrl: z.url().max(2000),
+  aliases: z.array(z.string().trim().min(1).max(80)).default([]),
+  visibility: visibilitySchema.default('team'),
+  visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
+  permissionConfirmed: z.boolean().default(false),
+  scheduleConfig: savedMeetingScheduleSchema.default(null),
+  durationMinutes: z.number().int().min(1).max(1440).default(30),
+  autoJoinEnabled: z.boolean().default(false),
+});
+
+const joinSavedMeetingSchema = z.object({
+  query: z.string().trim().min(1).max(200),
+});
 
 async function withScopeOrError() {
   const session = await auth();
@@ -56,6 +69,66 @@ async function withScopeOrError() {
   return { scope, teamId: active.teamId, userId: session.user.id };
 }
 
+async function ensureMeetingCapacity(
+  scope: ReturnType<typeof withTeam>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const settings = await scope.meetings.getMeetingSettings();
+  const cap = settings.meetingMinutesCap;
+  if (cap !== null && cap === 0 && !settings.meetingMinutesAdminOverride) {
+    return { ok: false, error: 'Meeting notetakers are disabled for this team.' };
+  }
+  if (cap !== null && cap > 0 && !settings.meetingMinutesAdminOverride) {
+    const used = await scope.meetings.getCurrentMonthMinutes();
+    if (used >= cap) {
+      return {
+        ok: false,
+        error: `Monthly meeting cap reached (${String(used)} / ${String(cap)} minutes). Ask an admin to raise the cap.`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
+async function startMeetingBot(input: {
+  scope: ReturnType<typeof withTeam>;
+  teamId: string;
+  meetingId: string;
+  meetingUrl: string;
+  platform: 'meet' | 'teams' | 'zoom';
+  provider?: string;
+}): Promise<Result> {
+  const transcriptWebhookUrl = meetingBots.resolveTranscriptWebhookUrl();
+  try {
+    const [provider, team] = await Promise.all([
+      Promise.resolve(meetingBots.getMeetingBotProvider(input.provider ?? 'recall')),
+      input.scope.timeline.team(),
+    ]);
+    const join = await provider.joinMeeting({
+      meetingId: input.meetingId,
+      teamId: input.teamId,
+      meetingUrl: input.meetingUrl,
+      platform: input.platform,
+      botName: meetingBots.meetingBotDisplayName(team?.name),
+      transcriptWebhookUrl,
+    });
+    await input.scope.meetings.updateMeetingStatus(input.meetingId, 'joining', {
+      providerBotId: join.botId,
+      metadata: { provider_join_result: join.raw ?? {} },
+    });
+    return { ok: true, meetingId: input.meetingId };
+  } catch (err) {
+    log.error({ err, meetingId: input.meetingId }, 'recall_join_failed');
+    reportCaughtError(err, { surface: 'server_action', operation: 'recall_join_meeting' });
+    await input.scope.meetings.updateMeetingStatus(input.meetingId, 'failed', {
+      metadata: {
+        join_failed_at: new Date().toISOString(),
+        join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
+      },
+    });
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to invite notetaker' };
+  }
+}
+
 export async function scheduleMeetingBotAction(
   input: z.input<typeof scheduleSchema>,
 ): Promise<Result> {
@@ -63,12 +136,11 @@ export async function scheduleMeetingBotAction(
     if (!meetingBots.isMeetingBotConfigured()) {
       return { ok: false, error: 'Meeting notetakers are not configured for this environment.' };
     }
-    const transcriptWebhookUrl = meetingBots.resolveTranscriptWebhookUrl();
     const parsed = scheduleSchema.safeParse(input);
     if (!parsed.success) {
       return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
     }
-    const platform = detectPlatform(parsed.data.meetingUrl);
+    const platform = detectMeetingPlatform(parsed.data.meetingUrl);
     if (!platform) {
       return { ok: false, error: 'Unsupported meeting URL — use Google Meet, Teams, or Zoom.' };
     }
@@ -100,20 +172,8 @@ export async function scheduleMeetingBotAction(
       };
     }
 
-    // Per-team monthly minute cap. 0 means disabled; null means unlimited.
-    const cap = settings.meetingMinutesCap;
-    if (cap !== null && cap === 0 && !settings.meetingMinutesAdminOverride) {
-      return { ok: false, error: 'Meeting notetakers are disabled for this team.' };
-    }
-    if (cap !== null && cap > 0 && !settings.meetingMinutesAdminOverride) {
-      const used = await scope.meetings.getCurrentMonthMinutes();
-      if (used >= cap) {
-        return {
-          ok: false,
-          error: `Monthly meeting cap reached (${String(used)} / ${String(cap)} minutes). Ask an admin to raise the cap.`,
-        };
-      }
-    }
+    const capacity = await ensureMeetingCapacity(scope);
+    if (!capacity.ok) return capacity;
 
     // 1. Create meeting row in `pending` status so we have an id to round
     //    through provider metadata.
@@ -129,35 +189,14 @@ export async function scheduleMeetingBotAction(
       },
     });
 
-    // 2. Call the provider. If it throws we mark the meeting failed and
-    //    bubble the error.
-    try {
-      const provider = meetingBots.getMeetingBotProvider('recall');
-      const join = await provider.joinMeeting({
-        meetingId: meeting.id,
-        teamId,
-        meetingUrl: parsed.data.meetingUrl,
-        platform,
-        transcriptWebhookUrl,
-      });
-      await scope.meetings.updateMeetingStatus(meeting.id, 'joining', {
-        providerBotId: join.botId,
-        metadata: { provider_join_result: join.raw ?? {} },
-      });
-    } catch (err) {
-      log.error({ err, meetingId: meeting.id }, 'recall_join_failed');
-      reportCaughtError(err, { surface: 'server_action', operation: 'recall_join_meeting' });
-      await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
-        metadata: {
-          join_failed_at: new Date().toISOString(),
-          join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
-        },
-      });
-      return {
-        ok: false,
-        error: err instanceof Error ? err.message : 'Failed to invite notetaker',
-      };
-    }
+    const started = await startMeetingBot({
+      scope,
+      teamId,
+      meetingId: meeting.id,
+      meetingUrl: parsed.data.meetingUrl,
+      platform,
+    });
+    if (!started.ok) return started;
 
     trackProductEventBestEffort(userId, 'meeting_bot_scheduled', {
       teamId,
@@ -169,6 +208,126 @@ export async function scheduleMeetingBotAction(
 
     revalidatePath('/app/meetings');
     return { ok: true, meetingId: meeting.id };
+  });
+}
+
+export async function createSavedMeetingAction(
+  input: z.input<typeof createSavedMeetingSchema>,
+): Promise<Result & { savedMeetingId?: string }> {
+  return runSentryServerAction('create_saved_meeting', async () => {
+    const parsed = createSavedMeetingSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    }
+    const got = await withScopeOrError();
+    if ('error' in got) return { ok: false, error: got.error };
+    const { scope } = got;
+    try {
+      const saved = await scope.meetings.createSavedMeeting({
+        title: parsed.data.title,
+        description: parsed.data.description,
+        meetingUrl: parsed.data.meetingUrl,
+        aliases: parsed.data.aliases,
+        defaultVisibility: parsed.data.visibility,
+        visibilityUserIds:
+          parsed.data.visibility === 'specific_users' ? parsed.data.visibilityUserIds : [],
+        permissionConfirmed: parsed.data.permissionConfirmed,
+        scheduleConfig: parsed.data.scheduleConfig,
+        durationMinutes: parsed.data.durationMinutes,
+        autoJoinEnabled: parsed.data.autoJoinEnabled,
+      });
+      revalidatePath('/app/meetings');
+      revalidatePath('/app/calendar');
+      return { ok: true, savedMeetingId: saved.id };
+    } catch (err) {
+      log.error({ err }, 'create_saved_meeting_failed');
+      reportCaughtError(err, { surface: 'server_action', operation: 'create_saved_meeting' });
+      return { ok: false, error: err instanceof Error ? err.message : 'Failed to save meeting' };
+    }
+  });
+}
+
+export async function joinSavedMeetingAction(
+  input: z.input<typeof joinSavedMeetingSchema>,
+): Promise<Result> {
+  return runSentryServerAction('join_saved_meeting', async () => {
+    if (!meetingBots.isMeetingBotConfigured()) {
+      return { ok: false, error: 'Meeting notetakers are not configured for this environment.' };
+    }
+    const parsed = joinSavedMeetingSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    }
+    const got = await withScopeOrError();
+    if ('error' in got) return { ok: false, error: got.error };
+    const { scope, teamId } = got;
+    const resolved = await scope.meetings.resolveSavedMeeting(parsed.data.query);
+    if (resolved.kind === 'none' || !resolved.savedMeeting) {
+      return { ok: false, error: 'Saved meeting not found.' };
+    }
+    if (resolved.kind === 'many') {
+      return {
+        ok: false,
+        error: 'More than one saved meeting matched. Use a more specific alias.',
+      };
+    }
+    const capacity = await ensureMeetingCapacity(scope);
+    if (!capacity.ok) return capacity;
+
+    const active = await scope.meetings.findActiveMeetingForUrl(resolved.savedMeeting.meetingUrl);
+    if (active && (active.status === 'joining' || active.status === 'active')) {
+      return { ok: true, meetingId: active.id };
+    }
+    const scheduled = await scope.meetings.findNearbyScheduledOccurrence(resolved.savedMeeting.id);
+    const meeting =
+      scheduled ??
+      (await scope.meetings.createMeeting({
+        platform: resolved.savedMeeting.platform,
+        meetingUrl: resolved.savedMeeting.meetingUrl,
+        title: resolved.savedMeeting.title,
+        savedMeetingId: resolved.savedMeeting.id,
+        defaultVisibility: resolved.savedMeeting.defaultVisibility,
+        visibilityUserIds: resolved.savedMeeting.visibilityUserIds,
+        metadata: {
+          source: 'saved_meeting_manual_join',
+          saved_meeting_id: resolved.savedMeeting.id,
+        },
+      }));
+    const started = await startMeetingBot({
+      scope,
+      teamId,
+      meetingId: meeting.id,
+      meetingUrl: meeting.meetingUrl,
+      platform: meeting.platform,
+    });
+    if (started.ok) {
+      revalidatePath('/app/meetings');
+      revalidatePath(`/app/meetings/${meeting.id}`);
+    }
+    return started;
+  });
+}
+
+export async function archiveSavedMeetingAction(savedMeetingId: string): Promise<Result> {
+  return runSentryServerAction('archive_saved_meeting', async () => {
+    if (!UUID_RE.test(savedMeetingId)) return { ok: false, error: 'Invalid saved meeting id' };
+    const got = await withScopeOrError();
+    if ('error' in got) return { ok: false, error: got.error };
+    const ok = await got.scope.meetings.archiveSavedMeeting(savedMeetingId);
+    revalidatePath('/app/meetings');
+    return ok ? { ok: true } : { ok: false, error: 'Saved meeting not found' };
+  });
+}
+
+export async function skipScheduledMeetingAction(meetingId: string): Promise<Result> {
+  return runSentryServerAction('skip_scheduled_meeting', async () => {
+    if (!UUID_RE.test(meetingId)) return { ok: false, error: 'Invalid meeting id' };
+    const got = await withScopeOrError();
+    if ('error' in got) return { ok: false, error: got.error };
+    const ok = await got.scope.meetings.skipScheduledMeeting(meetingId);
+    revalidatePath('/app/meetings');
+    revalidatePath('/app/calendar');
+    return ok ? { ok: true, meetingId } : { ok: false, error: 'Scheduled meeting not found' };
   });
 }
 
@@ -205,9 +364,31 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
         reportCaughtError(err, { surface: 'server_action', operation: 'recall_leave_meeting' });
       }
     }
-    await scope.meetings.updateMeetingStatus(meetingId, 'failed', {
-      metadata: { cancelled_at: new Date().toISOString() },
-    });
+    const chunks = await scope.meetings.listChunks(meetingId);
+    if (chunks.length > 0) {
+      await scope.meetings.updateMeetingStatus(meetingId, 'processing', {
+        endedAt: new Date(),
+        metadata: {
+          cancelled_at: new Date().toISOString(),
+          partial_capture: true,
+          capture_status: 'completed_partial',
+        },
+      });
+      try {
+        const queue = await requireRedisQueue();
+        await queue.enqueueMeetingFinalizeJob({ meetingId, teamId: meeting.teamId });
+      } catch (err) {
+        log.warn({ err, meetingId }, 'partial_cancel_finalize_enqueue_failed');
+        reportCaughtError(err, {
+          surface: 'server_action',
+          operation: 'partial_cancel_finalize_enqueue',
+        });
+      }
+    } else {
+      await scope.meetings.updateMeetingStatus(meetingId, 'cancelled', {
+        metadata: { cancelled_at: new Date().toISOString(), capture_status: 'cancelled' },
+      });
+    }
     revalidatePath('/app/meetings');
     revalidatePath(`/app/meetings/${meetingId}`);
     return { ok: true, meetingId };

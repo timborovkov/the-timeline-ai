@@ -23,11 +23,17 @@ vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
 vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({ meetings: fakes.fakeMeetings }),
+  withTeam: () => ({
+    meetings: fakes.fakeMeetings,
+    timeline: { team: vi.fn(() => Promise.resolve({ name: 'Acme' })) },
+  }),
 }));
 vi.mock('@timeline/shared/meeting-bots', () => ({
   isMeetingBotConfigured: vi.fn(() => true),
   resolveTranscriptWebhookUrl: vi.fn(() => 'https://timeline.test/api/webhooks/recall/transcript'),
+  meetingBotDisplayName: vi.fn((teamName: string | null | undefined) =>
+    teamName ? `${teamName}'s thetimeline.cc bot` : 'Timeline',
+  ),
   getMeetingBotProvider: vi.fn(() => ({
     joinMeeting: fakes.fakeJoinMeeting,
   })),

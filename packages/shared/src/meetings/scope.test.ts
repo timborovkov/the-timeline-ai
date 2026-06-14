@@ -1,5 +1,13 @@
 import { PGlite } from '@electric-sql/pglite';
-import { calendarEvents, meetings, meetingTranscriptChunks, rawEvents } from '@timeline/db';
+import {
+  calendarEvents,
+  meetingCaptureConfirmations,
+  meetings,
+  meetingTranscriptChunks,
+  rawEvents,
+  savedMeetingAliases,
+  savedMeetings,
+} from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -9,6 +17,13 @@ import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+function nextUtcWeekday(from: Date, weekday: number): Date {
+  const day = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
+  const delta = (weekday - day.getUTCDay() + 7) % 7;
+  day.setUTCDate(day.getUTCDate() + delta);
+  return day;
+}
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 't', 'Test');`);
@@ -363,5 +378,166 @@ describe('meetings scope', () => {
     await scope.recordMeetingMinutes(m.id, 99);
     const total = await scope.getCurrentMonthMinutes();
     expect(total).toBe(30);
+  });
+
+  it('creates saved meetings with normalized unique aliases and resolves alias before title', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
+    const daily = await scope.createSavedMeeting({
+      title: 'Internal daily meeting',
+      meetingUrl: 'https://meet.google.com/abc-defg-hij',
+      aliases: ['Daily', 'team sync'],
+      permissionConfirmed: true,
+    });
+    const other = await scope.createSavedMeeting({
+      title: 'Daily',
+      meetingUrl: 'https://zoom.us/j/123456',
+      aliases: ['client-sync'],
+      permissionConfirmed: true,
+    });
+
+    const aliases = await db
+      .select()
+      .from(savedMeetingAliases)
+      .where(eq(savedMeetingAliases.savedMeetingId, daily.id));
+    expect(aliases.map((alias) => alias.normalizedAlias).sort()).toEqual(['daily', 'team sync']);
+
+    const resolved = await scope.resolveSavedMeeting('daily');
+    expect(resolved).toMatchObject({ kind: 'one', savedMeeting: { id: daily.id } });
+    const titleResolved = await scope.resolveSavedMeeting('Internal Daily Meeting');
+    expect(titleResolved).toMatchObject({ kind: 'one', savedMeeting: { id: daily.id } });
+    expect(other.id).not.toBe(daily.id);
+
+    await expect(
+      scope.createSavedMeeting({
+        title: 'Another daily',
+        meetingUrl: 'https://meet.google.com/xyz-abcd-efg',
+        aliases: ['TEAM sync'],
+        permissionConfirmed: true,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('materializes scheduled saved meeting occurrences, links generated calendar rows, and skips once', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
+    const now = new Date();
+    const day = nextUtcWeekday(now, now.getUTCDay());
+    const occurrenceTime = new Date(day.getTime() + 60 * 60 * 1000);
+    const time = `${String(occurrenceTime.getUTCHours()).padStart(2, '0')}:${String(
+      occurrenceTime.getUTCMinutes(),
+    ).padStart(2, '0')}`;
+    const saved = await scope.createSavedMeeting({
+      title: 'Launch review',
+      meetingUrl: 'https://meet.google.com/lau-nch-rev',
+      aliases: ['launch'],
+      permissionConfirmed: true,
+      scheduleConfig: {
+        weekdays: [occurrenceTime.getUTCDay()],
+        times: [time],
+        timezone: 'UTC',
+        joinOffsetMinutes: 2,
+      },
+      durationMinutes: 45,
+      autoJoinEnabled: true,
+    });
+
+    const scheduled = await db.select().from(meetings).where(eq(meetings.savedMeetingId, saved.id));
+    expect(scheduled.length).toBeGreaterThan(0);
+    expect(scheduled[0]).toMatchObject({
+      status: 'scheduled',
+      title: 'Launch review',
+      meetingUrl: 'https://meet.google.com/lau-nch-rev',
+      defaultVisibility: 'team',
+    });
+    expect(scheduled[0]?.scheduledEndAt?.getTime()).toBe(
+      (scheduled[0]?.scheduledStartAt?.getTime() ?? 0) + 45 * 60_000,
+    );
+    expect(scheduled[0]?.linkedCalendarEventId).toBeTruthy();
+
+    const calendar = (
+      await db
+        .select()
+        .from(calendarEvents)
+        .where(eq(calendarEvents.id, scheduled[0]?.linkedCalendarEventId ?? ''))
+    )[0];
+    expect(calendar?.title).toBe('Launch review');
+    expect(calendar?.metadata).toMatchObject({
+      source: 'saved_meeting',
+      saved_meeting_id: saved.id,
+      capture_status: 'scheduled',
+    });
+
+    const scheduledStartAt = scheduled[0]?.scheduledStartAt;
+    if (!scheduledStartAt) throw new Error('expected scheduled start');
+    const nearby = await scope.findNearbyScheduledOccurrence(saved.id, scheduledStartAt);
+    expect(nearby?.id).toBe(scheduled[0]?.id);
+    await expect(scope.skipScheduledMeeting(scheduled[0]?.id ?? '')).resolves.toBe(true);
+    const skipped = (
+      await db
+        .select()
+        .from(meetings)
+        .where(eq(meetings.id, scheduled[0]?.id ?? ''))
+    )[0];
+    expect(skipped?.status).toBe('skipped');
+    const skippedCalendar = (
+      await db
+        .select()
+        .from(calendarEvents)
+        .where(eq(calendarEvents.id, scheduled[0]?.linkedCalendarEventId ?? ''))
+    )[0];
+    expect(skippedCalendar?.metadata).toMatchObject({ capture_status: 'skipped' });
+  });
+
+  it('tracks raw-url quick join confirmations through pending, expiry, and cancellation states', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
+    const confirmation = await scope.createMeetingCaptureConfirmation({
+      source: 'telegram',
+      meetingUrl: 'https://meet.google.com/raw-url-now',
+      title: 'Raw URL',
+      sourceContext: { telegram_chat_id: 42, telegram_user_id: 7 },
+    });
+    expect(confirmation.status).toBe('pending');
+    expect(confirmation.platform).toBe('meet');
+
+    const pending = await scope.findPendingMeetingCaptureConfirmation({
+      source: 'telegram',
+      sourceContext: { telegram_chat_id: 42, telegram_user_id: 7 },
+    });
+    expect(pending?.id).toBe(confirmation.id);
+
+    await scope.markMeetingCaptureConfirmation(confirmation.id, 'cancelled');
+    const cancelled = (
+      await db
+        .select()
+        .from(meetingCaptureConfirmations)
+        .where(eq(meetingCaptureConfirmations.id, confirmation.id))
+    )[0];
+    expect(cancelled?.status).toBe('cancelled');
+    await expect(
+      scope.findPendingMeetingCaptureConfirmation({
+        source: 'telegram',
+        sourceContext: { telegram_chat_id: 42, telegram_user_id: 7 },
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it('pauses and resets saved meeting failure counters', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
+    const saved = await scope.createSavedMeeting({
+      title: 'Failure-prone sync',
+      meetingUrl: 'https://meet.google.com/fai-lur-esx',
+      permissionConfirmed: true,
+    });
+    await scope.recordSavedMeetingJoinFailure(saved.id, 'no_show');
+    await scope.recordSavedMeetingJoinFailure(saved.id, 'failure');
+    const third = await scope.recordSavedMeetingJoinFailure(saved.id, 'failure');
+    expect(third).toMatchObject({ paused: true, consecutiveFailureCount: 3 });
+    const paused = (await db.select().from(savedMeetings).where(eq(savedMeetings.id, saved.id)))[0];
+    expect(paused?.autoJoinEnabled).toBe(false);
+    expect(paused?.autoJoinPausedAt).toBeInstanceOf(Date);
+
+    await scope.resetSavedMeetingFailures(saved.id);
+    const reset = (await db.select().from(savedMeetings).where(eq(savedMeetings.id, saved.id)))[0];
+    expect(reset?.consecutiveFailureCount).toBe(0);
+    expect(reset?.autoJoinPausedAt).toBeNull();
   });
 });

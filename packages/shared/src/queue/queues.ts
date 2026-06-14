@@ -22,6 +22,9 @@ export const QUEUE_NAMES = {
   // extraction, usage recording. Triggered by the Recall status webhook
   // on `bot.call_ended` / `transcript.done`.
   meetingFinalize: 'meeting-finalize',
+  // Saved meetings: 2-minute cadence that materializes upcoming saved
+  // meeting occurrences and starts due scheduled captures.
+  meetingScheduler: 'meeting-scheduler',
   // Hourly janitor: re-enqueues async-pipeline rows stuck in intermediate
   // states (the enqueue-after-commit pattern in the upload action isn't
   // atomic — if Redis hiccups after the DB write, the job is lost). Mirrors
@@ -598,6 +601,43 @@ export async function enqueueMeetingFinalizeJob(data: MeetingFinalizeJobData): P
 export async function closeMeetingFinalizeQueue(): Promise<void> {
   await closeQueue(_meetingFinalizeQueue, () => {
     _meetingFinalizeQueue = undefined;
+  });
+}
+
+export interface MeetingSchedulerJobData {
+  triggeredAt?: string;
+}
+
+let _meetingSchedulerQueue: TimelineQueue<MeetingSchedulerJobData> | undefined;
+
+export function getMeetingSchedulerQueue(): TimelineQueue<MeetingSchedulerJobData> {
+  if (_meetingSchedulerQueue) return _meetingSchedulerQueue;
+  _meetingSchedulerQueue = createTimelineQueue<MeetingSchedulerJobData>(
+    QUEUE_NAMES.meetingScheduler,
+    {
+      attempts: 2,
+      backoff: { type: 'fixed', delay: 30_000 },
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  );
+  return _meetingSchedulerQueue;
+}
+
+export async function scheduleMeetingSchedulerTick(): Promise<void> {
+  await getMeetingSchedulerQueue().add(
+    'meeting-scheduler-tick',
+    {},
+    {
+      repeat: { pattern: '*/2 * * * *' },
+      jobId: 'meeting-scheduler-tick-2min',
+    },
+  );
+}
+
+export async function closeMeetingSchedulerQueue(): Promise<void> {
+  await closeQueue(_meetingSchedulerQueue, () => {
+    _meetingSchedulerQueue = undefined;
   });
 }
 

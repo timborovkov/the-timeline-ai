@@ -28,6 +28,7 @@ const fakes = vi.hoisted(() => ({
   fakeEnqueueFinalize: vi.fn(),
   fakeReportCaughtError: vi.fn(),
   fakeReportHandledEvent: vi.fn(),
+  fakeRecordJoinFailure: vi.fn(),
   fakeUpdateStatus: vi.fn(),
   fakeWithTeam: vi.fn(),
 }));
@@ -50,7 +51,12 @@ vi.mock('@timeline/shared/logger', () => ({
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: (...args: unknown[]) => {
     fakes.fakeWithTeam(...args);
-    return { meetings: { updateMeetingStatus: fakes.fakeUpdateStatus } };
+    return {
+      meetings: {
+        updateMeetingStatus: fakes.fakeUpdateStatus,
+        recordSavedMeetingJoinFailure: fakes.fakeRecordJoinFailure,
+      },
+    };
   },
 }));
 
@@ -133,6 +139,7 @@ beforeEach(() => {
     status: 'active',
     platform: 'meet',
     provider: 'recall',
+    savedMeetingId: null,
   });
 });
 
@@ -197,6 +204,7 @@ describe('POST /api/webhooks/recall/status — terminal-state guard', () => {
       status: 'completed',
       platform: 'meet',
       provider: 'recall',
+      savedMeetingId: null,
     });
     const r = await POST(signedRequest(statusBody('bot.status_change', 'done')));
     expect(r.status).toBe(200);
@@ -214,11 +222,36 @@ describe('POST /api/webhooks/recall/status — terminal-state guard', () => {
       status: 'failed',
       platform: 'meet',
       provider: 'recall',
+      savedMeetingId: null,
     });
     const r = await POST(signedRequest(statusBody('bot.call_ended', 'call_ended')));
     expect(r.status).toBe(200);
     expect(fakes.fakeUpdateStatus).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
+  });
+
+  it('short-circuits newer terminal product states too', async () => {
+    for (const status of ['completed_partial', 'no_show', 'cancelled', 'skipped'] as const) {
+      vi.clearAllMocks();
+      fakes.fakeLookup.mockResolvedValueOnce({
+        id: 'meeting-1',
+        teamId: TEAM_ID,
+        createdByUserId: USER_ID,
+        status,
+        platform: 'meet',
+        provider: 'recall',
+        savedMeetingId: 'saved-1',
+      });
+
+      const r = await POST(signedRequest(statusBody('bot.call_ended', 'call_ended')));
+
+      expect(r.status).toBe(200);
+      const json = (await r.json()) as { reason?: string; status?: string };
+      expect(json).toMatchObject({ reason: 'terminal_status', status });
+      expect(fakes.fakeUpdateStatus).not.toHaveBeenCalled();
+      expect(fakes.fakeRecordJoinFailure).not.toHaveBeenCalled();
+      expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
+    }
   });
 });
 
@@ -337,6 +370,68 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
     expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
   });
 
+  it('records Saved Meeting no-shows without enqueueing finalize', async () => {
+    fakes.fakeLookup.mockResolvedValueOnce({
+      id: 'meeting-1',
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      status: 'joining',
+      platform: 'meet',
+      provider: 'recall',
+      savedMeetingId: 'saved-1',
+    });
+
+    const r = await POST(
+      signedRequest(recallStatusBody('bot.status_change', 'timeout_exceeded_waiting_room')),
+    );
+
+    expect(r.status).toBe(200);
+    const noShowMetadataMatcher: unknown = expect.objectContaining({
+      capture_status: 'no_show',
+      no_show_code: 'timeout_exceeded_waiting_room',
+    });
+    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
+      'meeting-1',
+      'no_show',
+      expect.objectContaining({
+        endedAt: expect.any(Date) as Date,
+        metadata: noShowMetadataMatcher,
+      }),
+    );
+    expect(fakes.fakeRecordJoinFailure).toHaveBeenCalledWith('saved-1', 'no_show');
+    expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
+  });
+
+  it('records Saved Meeting provider failures separately from no-shows', async () => {
+    fakes.fakeLookup.mockResolvedValueOnce({
+      id: 'meeting-1',
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      status: 'active',
+      platform: 'meet',
+      provider: 'recall',
+      savedMeetingId: 'saved-1',
+    });
+
+    const r = await POST(
+      signedRequest(recallStatusBody('bot.failed', 'recording_permission_denied')),
+    );
+
+    expect(r.status).toBe(200);
+    const failureMetadataMatcher: unknown = expect.objectContaining({
+      failure_code: 'recording_permission_denied',
+    });
+    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
+      'meeting-1',
+      'failed',
+      expect.objectContaining({
+        metadata: failureMetadataMatcher,
+      }),
+    );
+    expect(fakes.fakeRecordJoinFailure).toHaveBeenCalledWith('saved-1', 'failure');
+    expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
+  });
+
   it('ignores backwards transition (active arriving after processing)', async () => {
     fakes.fakeLookup.mockResolvedValueOnce({
       id: 'meeting-1',
@@ -345,6 +440,7 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
       status: 'processing',
       platform: 'meet',
       provider: 'recall',
+      savedMeetingId: null,
     });
     const r = await POST(signedRequest(statusBody('bot.status_change', 'in_call_recording')));
     expect(r.status).toBe(200);
@@ -359,6 +455,7 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
       status: 'processing',
       platform: 'meet',
       provider: 'recall',
+      savedMeetingId: null,
     });
     const r = await POST(signedRequest(statusBody('bot.fatal', 'fatal')));
     expect(r.status).toBe(200);
@@ -389,6 +486,7 @@ describe('POST /api/webhooks/recall/status — Redis-down retry path', () => {
       status: 'pending',
       platform: 'meet',
       provider: 'recall',
+      savedMeetingId: null,
     });
     // A bot.status_change with code=joining_call doesn't trigger finalize.
     const r = await POST(signedRequest(statusBody('bot.status_change', 'joining_call')));

@@ -5,6 +5,7 @@ import {
   meetingTranscriptChunks,
   meetingUsage,
   rawEvents,
+  savedMeetings,
 } from '@timeline/db';
 import { childLogger, formatMeetingTranscript, getEnv, llm, queue } from '@timeline/shared';
 import { currentExtractionModelVersion } from '@timeline/shared/extraction-model-version';
@@ -35,6 +36,7 @@ interface MeetingFinalizeDeps {
 // one action-item list, one usage row.
 
 const finalizeSchema = z.object({
+  title: z.string().trim().min(1).max(120).optional(),
   summary: z.string().min(1).max(2000),
   action_items: z
     .array(
@@ -183,6 +185,27 @@ function calendarTitleForMeeting(meeting: MeetingRow): string {
   return `${platformLabel(meeting.platform)} with Meeting Bot: ${title}`;
 }
 
+function isBlankMeetingTitle(title: string | null): boolean {
+  const normalized = (title ?? '').trim().toLowerCase();
+  return (
+    normalized.length === 0 ||
+    normalized === 'untitled' ||
+    normalized === 'untitled meeting' ||
+    normalized === 'quick meeting'
+  );
+}
+
+function isPartialCapture(meeting: MeetingRow): boolean {
+  const metadata = meeting.metadata;
+  return (
+    metadata !== null &&
+    typeof metadata === 'object' &&
+    !Array.isArray(metadata) &&
+    'partial_capture' in metadata &&
+    metadata.partial_capture === true
+  );
+}
+
 function buildMeetingCalendarDescription(args: {
   meeting: MeetingRow;
   summary: string | null;
@@ -298,6 +321,43 @@ async function createMeetingCalendarEvent(
     minutes: number;
   },
 ): Promise<string | null> {
+  if (args.meeting.linkedCalendarEventId) {
+    const existing = await tx
+      .select({ id: calendarEvents.id, metadata: calendarEvents.metadata })
+      .from(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.id, args.meeting.linkedCalendarEventId),
+          eq(calendarEvents.teamId, args.teamId),
+        ),
+      )
+      .limit(1);
+    if (existing[0]) {
+      const description = buildMeetingCalendarDescription({
+        meeting: args.meeting,
+        summary: args.summary,
+        actionItems: args.actionItems,
+      });
+      await tx
+        .update(calendarEvents)
+        .set({
+          description,
+          endAt: args.endAt,
+          location: args.meeting.meetingUrl,
+          metadata: sql`COALESCE(${calendarEvents.metadata}, '{}'::jsonb) || ${JSON.stringify({
+            capture_status: isPartialCapture(args.meeting) ? 'completed_partial' : 'completed',
+            completed_meeting_id: args.meeting.id,
+            actual_end_at: args.endAt.toISOString(),
+            duration_minutes: args.minutes,
+            meeting_href: `/app/meetings/${args.meeting.id}`,
+          })}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(eq(calendarEvents.id, args.meeting.linkedCalendarEventId));
+      return args.meeting.linkedCalendarEventId;
+    }
+  }
+
   const existingCalendarEventId = await findMeetingCalendarEventId(
     tx,
     args.meeting.id,
@@ -424,12 +484,13 @@ async function summarizeTranscript(
       schema: finalizeSchema,
       model: modelId,
       system:
-        'You are summarising a meeting transcript. Produce a concise summary (3-5 sentences) and an array of concrete action items mentioned during the meeting. If no action items are present, return an empty array. Do NOT invent owners — only set "owner" when the transcript clearly attributes the task to a named person.',
+        'You are summarising a meeting transcript. Produce a concise title, a concise summary (3-5 sentences), and an array of concrete action items mentioned during the meeting. If no action items are present, return an empty array. Do NOT invent owners — only set "owner" when the transcript clearly attributes the task to a named person.',
       prompt: transcriptPrompt,
     });
     return {
       transcriptText,
       summary: result.object.summary,
+      generatedTitle: result.object.title ?? null,
       actionItems: result.object.action_items.map(
         (a: { text: string; owner?: string | null | undefined }) => ({
           text: a.text,
@@ -445,6 +506,7 @@ async function summarizeTranscript(
     return {
       transcriptText,
       summary: null,
+      generatedTitle: null,
       actionItems: [] as { text: string; owner: string | null }[],
       modelUsed: null,
       summaryFailure: summaryFailureFromError(err, modelId),
@@ -476,7 +538,7 @@ export async function processMeetingFinalizeJob(
   if (meeting.teamId !== teamId) {
     throw new UnrecoverableError(`meeting ${meetingId} team mismatch`);
   }
-  if (meeting.status === 'completed') {
+  if (meeting.status === 'completed' || meeting.status === 'completed_partial') {
     // Already finalised. A previous attempt may have committed the DB
     // transaction and then died before enqueueing the post-commit pipeline,
     // so recover the consolidated event and enqueue again. Extract/embed are
@@ -545,6 +607,9 @@ export async function processMeetingFinalizeJob(
           finalized_at: new Date().toISOString(),
         };
         if (summarized.summary) metadataPatch.summary = summarized.summary;
+        if (summarized.generatedTitle && isBlankMeetingTitle(meeting.title)) {
+          metadataPatch.generated_title = summarized.generatedTitle;
+        }
         if (summarized.modelUsed) metadataPatch.summary_model = summarized.modelUsed;
         if (summarized.summaryFailure) {
           metadataPatch.summary_failed_at = summarized.summaryFailure.at;
@@ -578,8 +643,13 @@ export async function processMeetingFinalizeJob(
           chunk_count: finalChunks.length,
           meeting_chunk_provider_id: dedupKey,
         };
-        if (meeting.title) sourceMetadata.title = meeting.title;
+        const finalTitle =
+          summarized.generatedTitle && isBlankMeetingTitle(meeting.title)
+            ? summarized.generatedTitle
+            : meeting.title;
+        if (finalTitle) sourceMetadata.title = finalTitle;
         if (summarized.summary) sourceMetadata.summary = summarized.summary;
+        if (isPartialCapture(meeting)) sourceMetadata.partial_capture = true;
         if (summarized.summaryFailure) {
           sourceMetadata.summary_failed_at = summarized.summaryFailure.at;
           sourceMetadata.summary_error = summarized.summaryFailure.message;
@@ -654,10 +724,24 @@ export async function processMeetingFinalizeJob(
 
         // Status flip is last — a crash anywhere above means the retry will
         // re-enter and complete the remaining steps.
-        await tx
-          .update(meetingsTable)
-          .set({ status: 'completed', updatedAt: new Date() })
-          .where(eq(meetingsTable.id, meetingId));
+        const status = isPartialCapture(meeting) ? 'completed_partial' : 'completed';
+        const meetingSet: Record<string, unknown> = { status, updatedAt: new Date() };
+        if (summarized.generatedTitle && isBlankMeetingTitle(meeting.title)) {
+          meetingSet.title = summarized.generatedTitle;
+        }
+        await tx.update(meetingsTable).set(meetingSet).where(eq(meetingsTable.id, meetingId));
+
+        if (meeting.savedMeetingId) {
+          await tx
+            .update(savedMeetings)
+            .set({
+              consecutiveFailureCount: 0,
+              autoJoinPausedAt: null,
+              autoJoinPausedReason: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(savedMeetings.id, meeting.savedMeetingId));
+        }
 
         return {
           minutes,

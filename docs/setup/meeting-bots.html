@@ -10,12 +10,13 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Meeting bot setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-25</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-14</span></div>
       <p class="tldr">
         Paste a Google Meet, Microsoft Teams, or Zoom link into
-        <code>/app/meetings</code>. A silent <strong>Recall.ai</strong> bot joins, transcribes via
-        Recall's Whisper engine (auto language detection), and the meeting appears as a single event
-        on the timeline with summary, speakers, and action items.
+        <code>/app/meetings</code>, save a reusable meeting link, or use a Slack/Telegram join
+        command. A silent <strong>Recall.ai</strong> bot joins, transcribes via Recall's Whisper
+        engine (auto language detection), and the meeting appears as a single event on the timeline
+        with summary, speakers, and action items.
       </p>
 
       <p>
@@ -35,6 +36,29 @@
       <p>
         Completed meeting detail pages expose the transcript directly, with controls to download a
         Markdown copy or open the browser print flow for PDF export.
+      </p>
+
+      <h2 id="saved-meetings">Saved Meetings and quick joins</h2>
+      <p>
+        <strong>Saved Meetings</strong> are team-owned reusable Meet/Teams/Zoom links with aliases,
+        optional schedules, default visibility, and a one-time permission confirmation at creation.
+        Later joins do not ask for per-call approval. Scheduled Saved Meetings materialize future
+        calendar entries, and each actual capture is linked back to the saved configuration and
+        enriched after finalization.
+      </p>
+      <p>
+        The scheduler worker scans for due Saved Meeting occurrences and starts the bot about two
+        minutes before the scheduled start. If nobody admits or joins the bot, Google Meet captures
+        use a 550-second no-show timeout; recurring auto-join pauses after three consecutive
+        no-shows or provider failures. Manual joins can still be triggered from the dashboard or
+        commands.
+      </p>
+      <p>
+        Slack supports <code>/timeline join &lt;alias-or-url&gt; [title]</code>. Telegram supports
+        <code>/join &lt;alias-or-url&gt; [title]</code>. Saved Meeting aliases join immediately. Raw
+        URL quick joins always require prompt-specific confirmation first, either with the button or
+        a direct affirmative Telegram reply to the pending prompt. Passive conversation never starts
+        a bot.
       </p>
 
       <h2 id="provider">Why Recall.ai (and what else works)</h2>
@@ -112,10 +136,13 @@ RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcr
         </li>
       </ol>
 
-      <h2 id="display-name">3. Bot display name (optional)</h2>
+      <h2 id="display-name">3. Bot display name</h2>
       <p>
-        The bot still appears as a participant in silent mode — every meeting platform surfaces it
-        in the participant list. Set a recognisable name so attendees know what it is:
+        The bot still appears as a participant in silent mode. Timeline now sends a team-specific
+        display name, such as <code>Acme's thetimeline.cc bot</code>, so another team on the same
+        call can see whose bot joined. Names are truncated to Recall's 100-character limit while
+        preserving the suffix. <code>RECALL_BOT_DISPLAY_NAME</code> remains the fallback when the
+        team name is unavailable:
       </p>
       <pre><code>RECALL_BOT_DISPLAY_NAME=Timeline
 </code></pre>
@@ -137,9 +164,10 @@ RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcr
       <h2 id="privacy">Privacy and consent</h2>
       <p>
         <code>team_meeting_settings.require_host_consent</code> (default <strong>true</strong>)
-        forces the user scheduling the bot to tick a consent box confirming participants will be
-        told the bot is recording. The timestamp is stored on
-        <code>meetings.metadata.consent_given_at</code>.
+        forces the user manually scheduling the bot to tick a consent box confirming participants
+        will be told the bot is recording. Saved Meetings store their own permission confirmation at
+        creation time, and raw URL quick joins ask for prompt-specific confirmation before creating
+        a meeting row.
       </p>
       <p>
         We do <strong>not</strong> retain the raw audio. The Recall recording artifact remains on
@@ -166,6 +194,11 @@ RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcr
           page. If transcript chunks are landing but the status never advances, verify the
           Svix-signed status webhook is delivering bot lifecycle events to
           <code>/api/webhooks/recall/status</code>.
+        </li>
+        <li>
+          <strong>Saved Meeting stopped auto-joining</strong> — three consecutive scheduled no-shows
+          or provider failures pause auto-join for that saved meeting. Re-enable it after checking
+          the link and schedule.
         </li>
         <li>
           <strong>No transcript chunks landing</strong> — verify

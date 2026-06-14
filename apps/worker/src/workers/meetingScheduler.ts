@@ -1,0 +1,170 @@
+import { type Db, meetings, meetingUsage, savedMeetings, teamMeetingSettings } from '@timeline/db';
+import { childLogger, meetingBots, queue, withTeam } from '@timeline/shared';
+import { Worker, type Job } from 'bullmq';
+import { and, asc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+
+import { captureWorkerException } from '#src/monitoring.js';
+
+const log = childLogger('worker:meeting-scheduler');
+const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
+const START_WINDOW_MS = 2 * 60 * 1000;
+const FAILURE_PAUSE_THRESHOLD = 3;
+
+interface MeetingSchedulerDeps {
+  db: Db;
+}
+
+async function teamHasMeetingCapacity(db: Db, teamId: string): Promise<boolean> {
+  const [settings] = await db
+    .select()
+    .from(teamMeetingSettings)
+    .where(eq(teamMeetingSettings.teamId, teamId))
+    .limit(1);
+  const cap = settings ? settings.meetingMinutesCap : 600;
+  if (cap === null || settings?.meetingMinutesAdminOverride) return true;
+  if (cap === 0) return false;
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  const [used] = await db
+    .select({ total: sql<number>`COALESCE(SUM(${meetingUsage.minutes}), 0)::int` })
+    .from(meetingUsage)
+    .where(and(eq(meetingUsage.teamId, teamId), gte(meetingUsage.recordedAt, monthStart)));
+  return (used?.total ?? 0) < cap;
+}
+
+async function incrementSavedMeetingFailure(db: Db, savedMeetingId: string): Promise<void> {
+  const [row] = await db
+    .update(savedMeetings)
+    .set({
+      consecutiveFailureCount: sql`${savedMeetings.consecutiveFailureCount} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(eq(savedMeetings.id, savedMeetingId))
+    .returning({ consecutiveFailureCount: savedMeetings.consecutiveFailureCount });
+  if (row && row.consecutiveFailureCount >= FAILURE_PAUSE_THRESHOLD) {
+    await db
+      .update(savedMeetings)
+      .set({
+        autoJoinPausedAt: new Date(),
+        autoJoinPausedReason: 'consecutive_failures',
+        autoJoinEnabled: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(savedMeetings.id, savedMeetingId));
+  }
+}
+
+export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): Promise<{
+  materialized: number;
+  joined: number;
+  failed: number;
+}> {
+  const activeSaved = await deps.db
+    .select({ id: savedMeetings.id, teamId: savedMeetings.teamId })
+    .from(savedMeetings)
+    .where(
+      and(
+        eq(savedMeetings.autoJoinEnabled, true),
+        isNull(savedMeetings.autoJoinPausedAt),
+        isNull(savedMeetings.archivedAt),
+      ),
+    );
+
+  let materialized = 0;
+  for (const saved of activeSaved) {
+    const scope = withTeam(deps.db, saved.teamId, PSEUDO_USER, { skipMembershipCheck: true });
+    materialized += await scope.meetings.materializeSavedMeetingOccurrences(saved.id);
+  }
+
+  const now = new Date();
+  const startWindowEnd = new Date(now.getTime() + START_WINDOW_MS);
+  const due = await deps.db
+    .select()
+    .from(meetings)
+    .where(
+      and(
+        eq(meetings.status, 'scheduled'),
+        gte(meetings.scheduledStartAt, new Date(now.getTime() - 60_000)),
+        lte(meetings.scheduledStartAt, startWindowEnd),
+      ),
+    )
+    .orderBy(asc(meetings.scheduledStartAt))
+    .limit(100);
+
+  let joined = 0;
+  let failed = 0;
+  for (const meeting of due) {
+    if (!meeting.savedMeetingId) continue;
+    const activeDuplicate = await deps.db
+      .select({ id: meetings.id })
+      .from(meetings)
+      .where(
+        and(
+          eq(meetings.teamId, meeting.teamId),
+          eq(meetings.meetingUrl, meeting.meetingUrl),
+          inArray(meetings.status, ['joining', 'active']),
+        ),
+      )
+      .limit(1);
+    if (activeDuplicate[0]) continue;
+
+    const scope = withTeam(deps.db, meeting.teamId, PSEUDO_USER, { skipMembershipCheck: true });
+    if (!(await teamHasMeetingCapacity(deps.db, meeting.teamId))) {
+      await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
+        metadata: { join_failed_at: new Date().toISOString(), join_error: 'meeting_cap_reached' },
+      });
+      await incrementSavedMeetingFailure(deps.db, meeting.savedMeetingId);
+      failed += 1;
+      continue;
+    }
+
+    try {
+      const team = await scope.timeline.team();
+      const provider = meetingBots.getMeetingBotProvider(meeting.provider);
+      const join = await provider.joinMeeting({
+        meetingId: meeting.id,
+        teamId: meeting.teamId,
+        meetingUrl: meeting.meetingUrl,
+        platform: meeting.platform,
+        botName: meetingBots.meetingBotDisplayName(team?.name),
+        transcriptWebhookUrl: meetingBots.resolveTranscriptWebhookUrl(),
+      });
+      await scope.meetings.updateMeetingStatus(meeting.id, 'joining', {
+        providerBotId: join.botId,
+        metadata: { provider_join_result: join.raw ?? {} },
+      });
+      joined += 1;
+    } catch (err) {
+      log.warn({ err, meetingId: meeting.id }, 'scheduled_meeting_join_failed');
+      await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
+        metadata: {
+          join_failed_at: new Date().toISOString(),
+          join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
+        },
+      });
+      await incrementSavedMeetingFailure(deps.db, meeting.savedMeetingId);
+      failed += 1;
+    }
+  }
+
+  return { materialized, joined, failed };
+}
+
+export function startMeetingSchedulerWorker(
+  deps: MeetingSchedulerDeps,
+): Worker<queue.MeetingSchedulerJobData> {
+  const worker = new Worker<queue.MeetingSchedulerJobData>(
+    queue.QUEUE_NAMES.meetingScheduler,
+    async (_job: Job<queue.MeetingSchedulerJobData>) => processMeetingSchedulerTick(deps),
+    { connection: queue.getRedisConnection() },
+  );
+  worker.on('failed', (job, err) => {
+    log.error({ jobId: job?.id, err }, 'meeting_scheduler_failed');
+    captureWorkerException(err, {
+      jobName: job?.name,
+      queueName: queue.QUEUE_NAMES.meetingScheduler,
+    });
+  });
+  return worker;
+}
