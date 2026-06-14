@@ -323,6 +323,15 @@ reference, not force navigation.
 
 ## 6. Tool Selection Middleware And Observability
 
+Status: initial dashboard-chat selector implemented. `/api/chat` now validates
+the latest user turn before assembling tools, always keeps core retrieval/help
+tools, adds object/board/document/calendar/action/integration groups from route
+context and wording, discovers MCP tools only for connected-source turns, and
+logs selected groups plus native/MCP tool counts. Remaining work is richer
+per-tool latency/result observability and sharing the selector shape with
+Slack/Telegram/background surfaces once they move onto the shared retrieval
+planner.
+
 ### Goal
 
 Avoid flooding the model with irrelevant tools while keeping the agent capable,

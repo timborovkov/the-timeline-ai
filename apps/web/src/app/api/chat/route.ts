@@ -11,6 +11,7 @@ import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   safeValidateUIMessages,
+  type ToolSet,
   type UIMessage,
 } from 'ai';
 import { z } from 'zod';
@@ -167,6 +168,133 @@ function dashboardContextPrompt(
     'The user opened chat from the dashboard surface below. Use it to interpret phrases like "this object", "this board", "here", or "current page". Do not treat this context as verified data; use tools before making claims.',
     ...lines,
   ].join('\n');
+}
+
+const nativeToolGroups = {
+  core: [
+    'retrieve_workspace_context',
+    'search_timeline',
+    'search_object_notes',
+    'get_entity',
+    'get_event',
+    'resolve_time_context',
+  ],
+  guide: ['search_app_guide', 'get_app_route'],
+  objects: ['search_objects', 'get_object', 'list_objects', 'list_tasks', 'recent_changes'],
+  boards: ['search_boards'],
+  documents: [
+    'search_documents_structured',
+    'search_documents',
+    'get_document',
+    'get_document_chunk',
+    'list_recent_document_changes',
+  ],
+  calendar: ['list_calendar_events', 'get_calendar_event'],
+  approvals: ['list_pending_approvals'],
+  actions: [
+    'suggest_task',
+    'propose_object_change',
+    'suggest_object_memory',
+    'suggest_calendar_event',
+    'propose_calendar_update',
+  ],
+  integrations: ['list_integrations', 'search_integration_events', 'get_integration_resource'],
+} as const;
+
+type NativeToolGroup = keyof typeof nativeToolGroups;
+
+interface ToolSelection {
+  groups: NativeToolGroup[];
+  includeMcp: boolean;
+}
+
+function matchesAny(value: string, patterns: RegExp[]): boolean {
+  return patterns.some((pattern) => pattern.test(value));
+}
+
+function selectAgentToolGroups(input: {
+  question: string;
+  dashboardContext?: z.infer<typeof dashboardContextSchema> | undefined;
+}): ToolSelection {
+  const text = `${input.question} ${input.dashboardContext?.routeKind ?? ''} ${
+    input.dashboardContext?.pathname ?? ''
+  }`.toLowerCase();
+  const groups = new Set<NativeToolGroup>(['core', 'guide']);
+
+  if (
+    input.dashboardContext?.objectId ||
+    input.dashboardContext?.taskId ||
+    matchesAny(text, [
+      /\b(object|person|company|project|topic|deal|vendor|incident|decision|hiring|task|todo|follow[- ]?up|status|stage|archive|merge)\b/,
+    ])
+  ) {
+    groups.add('objects');
+  }
+
+  if (
+    input.dashboardContext?.boardId ||
+    input.dashboardContext?.boardItemId ||
+    matchesAny(text, [/\b(board|kanban|lane|card|pipeline)\b/])
+  ) {
+    groups.add('boards');
+  }
+
+  if (
+    input.dashboardContext?.documentId ||
+    matchesAny(text, [/\b(document|doc|file|pdf|contract|policy|drive|chunk)\b/])
+  ) {
+    groups.add('documents');
+  }
+
+  if (
+    input.dashboardContext?.calendarEventId ||
+    input.dashboardContext?.calendarDate ||
+    matchesAny(text, [
+      /\b(calendar|schedule|meeting|today|tomorrow|yesterday|week|month|date|time)\b/,
+    ])
+  ) {
+    groups.add('calendar');
+  }
+
+  if (matchesAny(text, [/\b(approval|pending|proposal|suggestion|queued|review)\b/])) {
+    groups.add('approvals');
+  }
+
+  if (
+    matchesAny(text, [
+      /\b(create|add|update|change|edit|set|move|cancel|delete|remove|archive|merge|remember|schedule|reschedule|approve|do it)\b/,
+    ])
+  ) {
+    groups.add('actions');
+    groups.add('objects');
+  }
+
+  if (
+    matchesAny(text, [
+      /\b(integration|source|slack|telegram|tg|github|linear|drive|email|connected|external|mcp)\b/,
+    ])
+  ) {
+    groups.add('integrations');
+  }
+
+  const includeMcp = matchesAny(text, [
+    /\b(external tool|connected tool|mcp|github|linear|drive|jira|notion|slack|telegram|source)\b/,
+  ]);
+
+  return { groups: [...groups], includeMcp };
+}
+
+function filterToolSet(tools: ToolSet, names: readonly string[]): ToolSet {
+  const selected: ToolSet = {};
+  for (const name of names) {
+    const tool = tools[name];
+    if (tool) selected[name] = tool;
+  }
+  return selected;
+}
+
+function selectedNativeToolNames(groups: NativeToolGroup[]): string[] {
+  return [...new Set(groups.flatMap((group) => nativeToolGroups[group]))];
 }
 
 async function generateChatTitle(input: {
@@ -596,26 +724,6 @@ export async function POST(req: Request): Promise<Response> {
   });
   const contextPrompt = dashboardContextPrompt(parsed.data.dashboardContext);
   const system = contextPrompt ? `${baseSystem}\n\n${contextPrompt}` : baseSystem;
-  // Phase 11 — merge any custom MCP tools the team has connected. The
-  // MCP manager caches per-team for 5 min so this is cheap on hot paths.
-  // Failures here (discovery failed, OAuth expired, server down) MUST
-  // NOT crash the chat — but we log them so they show up in observability
-  // instead of silently disappearing.
-  const mcpTools = await agent
-    .buildMcpTools(scope, { onToolError: reportChatAgentToolError })
-    .catch((err: unknown) => {
-      log.warn(
-        { err, teamId: active.teamId },
-        'mcp tool discovery failed; chat continues with native tools only',
-      );
-      reportCaughtError(err, { surface: 'api', operation: 'chat_mcp_tool_discovery' });
-      return {};
-    });
-  const tools = {
-    ...agent.buildAgentTools(scope, { onToolError: reportChatAgentToolError }),
-    ...mcpTools,
-  };
-
   // Validate UIMessages BEFORE convertToModelMessages so a malformed client
   // (or attacker poking the endpoint) gets a clean 400 instead of an
   // unhandled rejection on the streaming path. The zod gate above only
@@ -641,6 +749,39 @@ export async function POST(req: Request): Promise<Response> {
       shouldTitleSession,
     });
   }
+
+  const latestQuestion = messageText(latestUserMessage);
+  const toolSelection = selectAgentToolGroups({
+    question: latestQuestion,
+    dashboardContext: parsed.data.dashboardContext,
+  });
+  const nativeTools = agent.buildAgentTools(scope, { onToolError: reportChatAgentToolError });
+  const nativeToolNames = selectedNativeToolNames(toolSelection.groups);
+  const selectedNativeTools = filterToolSet(nativeTools, nativeToolNames);
+  const omittedNativeToolCount = Math.max(
+    0,
+    Object.keys(nativeTools).length - Object.keys(selectedNativeTools).length,
+  );
+  // Phase 11 — custom MCP tools can be numerous and provider-shaped, so only
+  // discover/include them when the turn asks for connected/external sources.
+  // Failures here (discovery failed, OAuth expired, server down) MUST NOT crash
+  // the chat, but we log them so they show up in observability.
+  const mcpTools = toolSelection.includeMcp
+    ? await agent
+        .buildMcpTools(scope, { onToolError: reportChatAgentToolError })
+        .catch((err: unknown) => {
+          log.warn(
+            { err, teamId: active.teamId },
+            'mcp tool discovery failed; chat continues with native tools only',
+          );
+          reportCaughtError(err, { surface: 'api', operation: 'chat_mcp_tool_discovery' });
+          return {};
+        })
+    : {};
+  const tools = {
+    ...selectedNativeTools,
+    ...mcpTools,
+  };
 
   const messages = await convertToModelMessages(uiMessages);
   const modelId = llm.resolveAgentModelId();
@@ -677,6 +818,20 @@ export async function POST(req: Request): Promise<Response> {
     persisted: Boolean(sessionId),
     messageCount: uiMessages.length,
   });
+  log.info(
+    {
+      promptVersion: agent.AGENT_PROMPT_VERSION,
+      teamId: active.teamId,
+      userId: session.user.id,
+      sessionId: sessionId ?? null,
+      toolGroups: toolSelection.groups,
+      selectedNativeToolCount: Object.keys(selectedNativeTools).length,
+      omittedNativeToolCount,
+      mcpToolCount: Object.keys(mcpTools).length,
+      mcpDiscoverySkipped: !toolSelection.includeMcp,
+    },
+    'chat agent tools selected',
+  );
 
   const result = llm.streamChat({
     system,
