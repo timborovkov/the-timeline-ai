@@ -60,7 +60,7 @@ interface MeetingFinalizeIO {
 }
 
 interface ProcessResult {
-  skipped?: 'already_completed' | 'failed';
+  skipped?: 'already_completed' | 'terminal';
   meetingId?: string;
   minutes?: number;
   actionItems?: number;
@@ -562,8 +562,8 @@ export async function processMeetingFinalizeJob(
     }
     return { skipped: 'already_completed', meetingId };
   }
-  if (meeting.status === 'failed') {
-    return { skipped: 'failed', meetingId };
+  if (['failed', 'cancelled', 'skipped', 'no_show'].includes(meeting.status)) {
+    return { skipped: 'terminal', meetingId };
   }
 
   if (!env.OPENROUTER_API_KEY && !io.chatStructured) {

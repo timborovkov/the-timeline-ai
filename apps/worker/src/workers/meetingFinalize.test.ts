@@ -53,6 +53,9 @@ async function seedMeeting(
       | 'processing'
       | 'completed'
       | 'completed_partial'
+      | 'skipped'
+      | 'no_show'
+      | 'cancelled'
       | 'failed';
     startedAt?: Date | null;
     endedAt?: Date | null;
@@ -395,7 +398,7 @@ describe('processMeetingFinalizeJob', () => {
       { chatStructured: chat as never },
     );
 
-    expect(result.skipped).toBe('failed');
+    expect(result.skipped).toBe('terminal');
     expect(chat).not.toHaveBeenCalled();
     const row = (await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID)))[0];
     expect(row?.status).toBe('failed');
@@ -404,6 +407,32 @@ describe('processMeetingFinalizeJob', () => {
     );
     const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
     expect(events).toHaveLength(0);
+  });
+
+  it('does not finalize newer terminal meeting states', async () => {
+    for (const status of ['cancelled', 'skipped', 'no_show'] as const) {
+      await pg.exec(
+        'DELETE FROM raw_events; DELETE FROM meeting_transcript_chunks; DELETE FROM meetings;',
+      );
+      await seedMeeting(db as never, { status, metadata: { terminal_status: status } });
+      await seedChunk(db as never, 0, 'This terminal row should not finalize.', 'Alice');
+      const chat = makeChatStub('SHOULD NOT BE WRITTEN');
+
+      const result = await processMeetingFinalizeJob(
+        { db: db as never },
+        { meetingId: MEETING_ID, teamId: TEAM_ID },
+        { chatStructured: chat as never },
+      );
+
+      expect(result.skipped).toBe('terminal');
+      expect(chat).not.toHaveBeenCalled();
+      const row = (
+        await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID))
+      )[0];
+      expect(row?.status).toBe(status);
+      const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+      expect(events).toHaveLength(0);
+    }
   });
 
   it('finalizes transcript-only when structured summary generation fails', async () => {

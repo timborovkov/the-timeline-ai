@@ -7,7 +7,8 @@ import { captureWorkerException } from '#src/monitoring.js';
 
 const log = childLogger('worker:meeting-scheduler');
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
-const START_WINDOW_MS = 2 * 60 * 1000;
+const MAX_JOIN_OFFSET_MS = 30 * 60 * 1000;
+const DEFAULT_JOIN_OFFSET_MS = 2 * 60 * 1000;
 const FAILURE_PAUSE_THRESHOLD = 3;
 
 interface MeetingSchedulerDeps {
@@ -55,6 +56,14 @@ async function incrementSavedMeetingFailure(db: Db, savedMeetingId: string): Pro
   }
 }
 
+function joinOffsetMs(scheduleConfig: unknown): number {
+  if (!scheduleConfig || typeof scheduleConfig !== 'object') return DEFAULT_JOIN_OFFSET_MS;
+  const raw = scheduleConfig as Record<string, unknown>;
+  return typeof raw.joinOffsetMinutes === 'number' && Number.isFinite(raw.joinOffsetMinutes)
+    ? Math.max(0, Math.min(30, Math.trunc(raw.joinOffsetMinutes))) * 60 * 1000
+    : DEFAULT_JOIN_OFFSET_MS;
+}
+
 export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): Promise<{
   materialized: number;
   joined: number;
@@ -78,13 +87,17 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
   }
 
   const now = new Date();
-  const startWindowEnd = new Date(now.getTime() + START_WINDOW_MS);
+  const startWindowEnd = new Date(now.getTime() + MAX_JOIN_OFFSET_MS);
   const due = await deps.db
-    .select()
+    .select({ meeting: meetings, scheduleConfig: savedMeetings.scheduleConfig })
     .from(meetings)
+    .innerJoin(savedMeetings, eq(meetings.savedMeetingId, savedMeetings.id))
     .where(
       and(
         eq(meetings.status, 'scheduled'),
+        eq(savedMeetings.autoJoinEnabled, true),
+        isNull(savedMeetings.autoJoinPausedAt),
+        isNull(savedMeetings.archivedAt),
         gte(meetings.scheduledStartAt, new Date(now.getTime() - 60_000)),
         lte(meetings.scheduledStartAt, startWindowEnd),
       ),
@@ -94,8 +107,15 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
 
   let joined = 0;
   let failed = 0;
-  for (const meeting of due) {
+  for (const dueRow of due) {
+    const meeting = dueRow.meeting;
     if (!meeting.savedMeetingId) continue;
+    if (
+      meeting.scheduledStartAt &&
+      meeting.scheduledStartAt.getTime() > now.getTime() + joinOffsetMs(dueRow.scheduleConfig)
+    ) {
+      continue;
+    }
     const activeDuplicate = await deps.db
       .select({ id: meetings.id })
       .from(meetings)

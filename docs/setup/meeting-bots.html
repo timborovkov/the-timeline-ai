@@ -47,11 +47,11 @@
         enriched after finalization.
       </p>
       <p>
-        The scheduler worker scans for due Saved Meeting occurrences and starts the bot about two
-        minutes before the scheduled start. If nobody admits or joins the bot, Google Meet captures
-        use a 550-second no-show timeout; recurring auto-join pauses after three consecutive
-        no-shows or provider failures. Manual joins can still be triggered from the dashboard or
-        commands.
+        The scheduler worker scans for due Saved Meeting occurrences and starts the bot at the saved
+        meeting's configured join offset, defaulting to two minutes before the scheduled start. If
+        nobody admits or joins the bot, Google Meet captures use a 550-second no-show timeout;
+        recurring auto-join pauses after three consecutive no-shows or provider failures. Manual
+        joins can still be triggered from the dashboard or commands.
       </p>
       <p>
         Slack supports <code>/timeline join &lt;alias-or-url&gt; [title]</code>. Telegram supports
@@ -93,7 +93,22 @@
       </ol>
       <pre><code>RECALL_API_KEY=...
 RECALL_BASE_URL=https://us-west-2.recall.ai/api/v1
+RECALL_RETENTION=
 </code></pre>
+      <p>
+        <code>RECALL_RETENTION</code> defaults to <strong>1 hour</strong> when unset or empty. The
+        bot request sends <code>recording_config.retention = { type: "timed", hours: 1 }</code>,
+        which keeps Recall recording media only briefly after the meeting completes. Set a positive
+        integer only when you intentionally want longer timed Recall storage in hours, for example
+        <code>RECALL_RETENTION=24</code>. Set <code>RECALL_RETENTION=forever</code> only for a
+        deliberately retained environment. Zero retention values are rejected.
+      </p>
+      <p>
+        Timeline always uses Recall's accuracy-prioritised multilingual transcription path with auto
+        language detection. Recall's zero-retention mode is intentionally not exposed because it is
+        incompatible with <code>prioritize_accuracy</code> and would downgrade mixed-language
+        meetings to the low-latency English path.
+      </p>
 
       <h2 id="webhooks">2. Webhook endpoints</h2>
       <p>
@@ -170,10 +185,11 @@ RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcr
         a meeting row.
       </p>
       <p>
-        We do <strong>not</strong> retain the raw audio. The Recall recording artifact remains on
-        Recall's storage under their default retention; we explicitly do not copy it to our S3.
+        We do <strong>not</strong> retain the raw audio. By default, the Recall bot request keeps
+        recording media for one hour after the meeting completes so the high-quality multilingual
+        transcript path remains available. We explicitly do not copy audio or video to our S3.
         Transcript text lands on the timeline; summary metadata is attached when OpenRouter
-        generation succeeds. Audio does not.
+        generation succeeds. Audio and video do not.
       </p>
 
       <h2 id="local-dev">Local development</h2>

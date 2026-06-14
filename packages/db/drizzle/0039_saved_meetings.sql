@@ -77,8 +77,9 @@ ALTER TABLE "meetings"
   ADD COLUMN IF NOT EXISTS "scheduled_end_at" timestamp with time zone,
   ADD COLUMN IF NOT EXISTS "linked_calendar_event_id" uuid;
 
-CREATE INDEX IF NOT EXISTS "meetings_team_saved_scheduled_idx"
-  ON "meetings" ("team_id", "saved_meeting_id", "scheduled_start_at");
+CREATE UNIQUE INDEX IF NOT EXISTS "meetings_team_saved_scheduled_unq"
+  ON "meetings" ("team_id", "saved_meeting_id", "scheduled_start_at")
+  WHERE "saved_meeting_id" IS NOT NULL AND "scheduled_start_at" IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS "meetings_team_calendar_idx"
   ON "meetings" ("team_id", "linked_calendar_event_id");

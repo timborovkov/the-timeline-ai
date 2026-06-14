@@ -3,6 +3,48 @@
 Conventions for any AI coding agent working in this repo (Claude Code, Codex,
 Cursor, etc.).
 
+## Non-negotiable completion gates
+
+These gates are repo-wide, not scoped to the files you touched. Do not hand back,
+commit, push, open a PR, mark work complete, or call a task "done" while any gate
+is red.
+
+After **any** code, configuration, or documentation change:
+
+1. Run `pnpm validate`.
+   - This is the canonical static gate and must pass.
+   - It runs Prettier formatting checks, TypeScript compilation/typecheck,
+     ESLint, and Knip.
+2. Run `pnpm doctor`.
+   - React Doctor must report a 100 score before handoff.
+   - If the command exits without showing a score, do not claim "React Doctor is
+     100" unless you can verify that from the tool output, artifacts, or
+     documented behavior. Say exactly what was verified.
+3. Run tests appropriate to the change.
+   - For code changes, run the nearest targeted test command for the behavior
+     touched.
+   - For code changes, also run `pnpm test:ci` as the minimum regression suite.
+   - Run broader suites such as `pnpm test`, `pnpm e2e`, or a package-filtered
+     Vitest/e2e command when the blast radius is shared, cross-package,
+     user-facing, or hard to localize.
+   - For docs-only changes, tests may be skipped only when no executable
+     behavior, scripts, examples, or generated artifacts changed.
+
+If any completion gate fails:
+
+- Fix the root cause even when it appears unrelated to your change. Treat
+  unrelated compile, lint, formatting, React Doctor, or test failures as repo
+  health bugs in the current task.
+- Rerun the failed gate after fixing it. If the fix could affect another gate,
+  rerun the full checklist.
+- Do not downgrade, silence, delete, or loosen checks to get green unless the
+  check itself is objectively wrong and the replacement is stricter or equally
+  strict.
+- Escalate only after a serious root-cause attempt, with the exact failing
+  command, error, what you tried, and what blocks completion.
+
+Use `pnpm` only. Do not use `npm` or `yarn`.
+
 ## Handoff protocol — run `/document-release` before handing back
 
 **Before you hand control back to the user at the end of a meaningful chunk of
@@ -45,6 +87,20 @@ tool. When in doubt, invoke the skill.
 - QA / "does this actually work?" → `/qa`.
 - Save / resume working context → `/context-save` and `/context-restore`.
 
+## Keep this file current
+
+Treat this file as an operating contract for agents, not a loose README.
+
+- When package scripts, validation commands, CI gates, repo layout, or required
+  workflows change, update this file in the same PR.
+- When product architecture moves across packages or major modules are added,
+  removed, or renamed, update the repo layout and guardrails here.
+- When instructions here conflict with code, package scripts, or CI, fix the
+  stale instruction or the stale implementation before handing back.
+- Prefer concise hard rules in `AGENTS.md`; put long product explanation in
+  [CONTEXT.md](CONTEXT.md), roadmap state in [todo.md](todo.md), and design
+  language in [design.md](design.md).
+
 ## Project-specific guardrails
 
 - **Team isolation is sacred.** Every Postgres query goes through
@@ -73,12 +129,6 @@ tool. When in doubt, invoke the skill.
   package names (`@timeline/db`, `@timeline/shared`, and exported subpaths)
   rather than deep relative paths; root scripts should also consume exported
   `@timeline/*` subpaths instead of reaching into `packages/*/src`.
-- **Run `pnpm validate` before declaring work complete.** Runs
-  `format:check`, `typecheck`, `lint`, and `knip` in sequence — the same static
-  gates CI enforces. Run the relevant test command separately for the behavior
-  you touched (`pnpm test:ci`, `pnpm test`, a package-filtered Vitest command,
-  `pnpm test:eval`, or an e2e command). Fix failures at the root cause; do not
-  skip.
 - **Meeting bots are silent + consent-gated.** Phase 10 ships transcript
   capture only — no voice/agent mode. `team_meeting_settings
   .require_host_consent` (default true) blocks scheduling unless the
@@ -133,7 +183,8 @@ packages/
             team+user-overlay scope), mcp-server module (Phase 11 outbound —
             JSON-RPC handler, bearer-key mint/verify for /api/mcp/server),
             calendar module (Phase 11 — event scope, raw-event audit rows,
-            entity links, settings, and calendar embedding enqueue/delete),
+            entity links, settings, team calendar subscriptions, and calendar
+            embedding enqueue/delete),
             conversation-review module (bounded Slack/Telegram evidence
             windows for proposal generation),
             onboarding module (Phase 13 — team-level tutorial completion +

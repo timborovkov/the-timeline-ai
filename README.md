@@ -30,6 +30,8 @@ source material instead of hiding behind black-box summaries.
   document citations.
 - Silent, consent-gated meeting transcript capture for Google Meet, Microsoft
   Teams, and Zoom.
+- Read-only team calendar subscription feeds for viewing Timeline events in a
+  default calendar app.
 - Slack, Telegram, email, native GitHub/Linear/Google Drive sync, and custom
   MCP-powered ingestion surfaces.
 - An outbound MCP server so tools like Claude Desktop and Cursor can query a
@@ -136,9 +138,9 @@ bundling, deployment output, or server/client import boundaries.
 - [`docs/adr/`](./docs/adr/) — durable architecture decisions.
 
 Setup guides for external services live under [`docs/setup`](./docs/setup/):
-Telegram, Slack, OpenRouter, LangSmith, Postmark, Resend transactional email,
-Recall.ai meeting bots, PostHog analytics, Sentry, Railway, third-party
-integrations, and Timeline-as-MCP-server.
+Telegram, Slack, OpenRouter, LangSmith, Postmark transactional/inbound email,
+Recall.ai meeting bots, PostHog analytics, Sentry, Railway, third-party integrations,
+and Timeline-as-MCP-server.
 
 ## Contributing
 

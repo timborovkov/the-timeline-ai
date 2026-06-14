@@ -127,13 +127,6 @@ export default function PrivacyPage() {
             <td>Transactional email, inbound email, invites, and support mail.</td>
           </tr>
           <tr>
-            <td>Resend</td>
-            <td>
-              Transactional email and video-call related notifications, such as invites,
-              confirmations, reminders, and service messages.
-            </td>
-          </tr>
-          <tr>
             <td>Sentry</td>
             <td>Error reporting and diagnostics.</td>
           </tr>

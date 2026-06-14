@@ -288,9 +288,13 @@ incoherent proposed outcome inside an artifact cluster; unrelated pending
 proposals for the same artifact remain actionable even when they appear in the
 same review bundle. A pending approval is also superseded when canonical state
 already reflects the proposed outcome, including after a direct edit or an
-accepted approval. Narrower or private evidence does not supersede a broader
-approval queue. Superseded approvals leave the active approval queue but remain
-available as history with their evidence and replacement relationship.
+accepted approval. When a reviewer tries to accept a pending approval whose
+target has already disappeared, or when a failed retryable approval points at a
+target object or calendar event that was archived, merged away, or deleted, it
+may be superseded instead of staying in the active retry queue. Narrower or
+private evidence does not supersede a broader approval queue. Superseded
+approvals leave the active approval queue but remain available as history with
+their evidence and replacement relationship.
 _Avoid_: Rejected approval, deleted approval, failed approval
 
 **Rejected Approval**:
@@ -817,7 +821,10 @@ timezone used for interpretation and display.
 **Date-Only vs. Vague Time**:
 Date-only means the date is concrete and belongs on the calendar as all-day.
 Vague time means the date is not concrete and should not create a calendar
-event.
+event. Date-only calendar suggestion payloads may arrive as canonical
+`startDate` / `endDate` fields or legacy `start_date` / `end_date` aliases; both
+normalize to an all-day local date span in the workspace calendar timezone when
+no explicit timezone is supplied.
 
 ## Example Dialogue
 

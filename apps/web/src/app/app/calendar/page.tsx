@@ -1,11 +1,12 @@
-import { users } from '@timeline/db';
+import { teamCalendarSubscriptions, users } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
+import { CalendarSubscriptionPanel } from '@/components/calendar/calendar-subscription-panel';
 import { CalendarView } from '@/components/calendar/calendar-view';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -50,10 +51,25 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   const to = new Date(anchorDate);
   to.setUTCDate(to.getUTCDate() + rangeDays);
 
-  const [events, defaultRow, members] = await Promise.all([
+  const [events, defaultRow, members, subscriptionRows] = await Promise.all([
     scope.calendar.listCalendarEvents({ from, to }),
     scope.timeline.resolveVisibilityDefault('calendar'),
     scope.timeline.listMembers(),
+    db
+      .select({
+        tokenPrefix: teamCalendarSubscriptions.tokenPrefix,
+        lastUsedAt: teamCalendarSubscriptions.lastUsedAt,
+        createdAt: teamCalendarSubscriptions.createdAt,
+        updatedAt: teamCalendarSubscriptions.updatedAt,
+      })
+      .from(teamCalendarSubscriptions)
+      .where(
+        and(
+          eq(teamCalendarSubscriptions.teamId, active.teamId),
+          eq(teamCalendarSubscriptions.userId, session.user.id),
+        ),
+      )
+      .limit(1),
   ]);
   const memberIds = members.map((m) => m.userId);
   const memberUsers =
@@ -100,6 +116,19 @@ export default async function CalendarPage({ searchParams }: PageProps) {
           <ApprovalsClient suggestions={calendarSuggestions} allowBulkAccept={false} />
         </section>
       ) : null}
+
+      <CalendarSubscriptionPanel
+        subscription={
+          subscriptionRows[0]
+            ? {
+                prefix: subscriptionRows[0].tokenPrefix,
+                lastUsedAt: subscriptionRows[0].lastUsedAt?.toISOString() ?? null,
+                createdAt: subscriptionRows[0].createdAt.toISOString(),
+                updatedAt: subscriptionRows[0].updatedAt.toISOString(),
+              }
+            : null
+        }
+      />
 
       <CalendarView
         events={serialized}

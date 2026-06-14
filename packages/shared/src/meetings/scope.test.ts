@@ -1,4 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
+import { Temporal } from '@js-temporal/polyfill';
 import {
   calendarEvents,
   meetingCaptureConfirmations,
@@ -442,6 +443,12 @@ describe('meetings scope', () => {
 
     const scheduled = await db.select().from(meetings).where(eq(meetings.savedMeetingId, saved.id));
     expect(scheduled.length).toBeGreaterThan(0);
+    await expect(scope.materializeSavedMeetingOccurrences(saved.id)).resolves.toBe(0);
+    const afterRematerialize = await db
+      .select()
+      .from(meetings)
+      .where(eq(meetings.savedMeetingId, saved.id));
+    expect(afterRematerialize).toHaveLength(scheduled.length);
     expect(scheduled[0]).toMatchObject({
       status: 'scheduled',
       title: 'Launch review',
@@ -485,6 +492,33 @@ describe('meetings scope', () => {
         .where(eq(calendarEvents.id, scheduled[0]?.linkedCalendarEventId ?? ''))
     )[0];
     expect(skippedCalendar?.metadata).toMatchObject({ capture_status: 'skipped' });
+  });
+
+  it('materializes saved meeting schedules in the configured timezone', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
+    const timezone = 'Europe/Helsinki';
+    const target = Temporal.Now.instant()
+      .toZonedDateTimeISO(timezone)
+      .add({ hours: 2 })
+      .with({ second: 0, millisecond: 0, microsecond: 0, nanosecond: 0 });
+    const time = `${String(target.hour).padStart(2, '0')}:${String(target.minute).padStart(2, '0')}`;
+
+    const saved = await scope.createSavedMeeting({
+      title: 'Helsinki sync',
+      meetingUrl: 'https://meet.google.com/hel-sin-ki',
+      permissionConfirmed: true,
+      scheduleConfig: {
+        weekdays: [target.dayOfWeek % 7],
+        times: [time],
+        timezone,
+        joinOffsetMinutes: 2,
+      },
+      autoJoinEnabled: true,
+    });
+
+    const scheduled = await db.select().from(meetings).where(eq(meetings.savedMeetingId, saved.id));
+    const expectedStart = new Date(target.toInstant().epochMilliseconds).toISOString();
+    expect(scheduled.map((row) => row.scheduledStartAt?.toISOString())).toContain(expectedStart);
   });
 
   it('tracks raw-url quick join confirmations through pending, expiry, and cancellation states', async () => {

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { PGlite } from '@electric-sql/pglite';
 import { meetings, savedMeetings, teamMeetingSettings } from '@timeline/db';
 import { eq } from 'drizzle-orm';
@@ -47,7 +49,15 @@ async function seed(pg: PGlite): Promise<void> {
 
 async function insertSavedAndScheduled(
   db: ReturnType<typeof drizzle>,
-  input: { url?: string; consecutiveFailureCount?: number } = {},
+  input: {
+    url?: string;
+    consecutiveFailureCount?: number;
+    autoJoinEnabled?: boolean;
+    autoJoinPausedAt?: Date | null;
+    archivedAt?: Date | null;
+    joinOffsetMinutes?: number;
+    scheduledStartAt?: Date;
+  } = {},
 ) {
   const [saved] = await db
     .insert(savedMeetings)
@@ -59,15 +69,21 @@ async function insertSavedAndScheduled(
       meetingUrl: input.url ?? 'https://meet.google.com/due-now-test',
       permissionConfirmedAt: new Date(),
       permissionConfirmedByUserId: USER_ID,
-      scheduleConfig: { weekdays: [1], times: ['10:00'], timezone: 'UTC', joinOffsetMinutes: 2 },
+      scheduleConfig: {
+        weekdays: [1],
+        times: ['10:00'],
+        timezone: 'UTC',
+        joinOffsetMinutes: input.joinOffsetMinutes ?? 2,
+      },
       durationMinutes: 30,
-      autoJoinEnabled: true,
+      autoJoinEnabled: input.autoJoinEnabled ?? true,
+      autoJoinPausedAt: input.autoJoinPausedAt ?? null,
+      archivedAt: input.archivedAt ?? null,
       consecutiveFailureCount: input.consecutiveFailureCount ?? 0,
     })
     .returning();
   if (!saved) throw new Error('missing saved meeting');
 
-  const now = new Date();
   const [meeting] = await db
     .insert(meetings)
     .values({
@@ -79,8 +95,8 @@ async function insertSavedAndScheduled(
       meetingUrl: saved.meetingUrl,
       title: saved.title,
       status: 'scheduled',
-      scheduledStartAt: new Date(now.getTime() + 30_000),
-      scheduledEndAt: new Date(now.getTime() + 30 * 60_000),
+      scheduledStartAt: input.scheduledStartAt ?? new Date(Date.now() + 30_000),
+      scheduledEndAt: new Date((input.scheduledStartAt?.getTime() ?? Date.now()) + 30 * 60_000),
       defaultVisibility: 'team',
       metadata: { source: 'test' },
     })
@@ -133,6 +149,41 @@ describe('processMeetingSchedulerTick', () => {
       status: 'active',
       defaultVisibility: 'team',
       metadata: {},
+    });
+
+    const result = await processMeetingSchedulerTick({ db: db as never });
+
+    expect(result.joined).toBe(0);
+    expect(joinMeetingMock).not.toHaveBeenCalled();
+    const row = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
+    expect(row?.status).toBe('scheduled');
+  });
+
+  it('does not start pre-materialized rows after auto-join is disabled, paused, or archived', async () => {
+    for (const input of [
+      { autoJoinEnabled: false },
+      { autoJoinPausedAt: new Date() },
+      { archivedAt: new Date() },
+    ]) {
+      joinMeetingMock.mockClear();
+      const { meeting } = await insertSavedAndScheduled(db, {
+        ...input,
+        url: `https://meet.google.com/${randomUUID().slice(0, 11)}`,
+      });
+
+      const result = await processMeetingSchedulerTick({ db: db as never });
+
+      expect(result.joined).toBe(0);
+      expect(joinMeetingMock).not.toHaveBeenCalled();
+      const row = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
+      expect(row?.status).toBe('scheduled');
+    }
+  });
+
+  it('honors the saved meeting join offset before starting scheduled captures', async () => {
+    const { meeting } = await insertSavedAndScheduled(db, {
+      joinOffsetMinutes: 0,
+      scheduledStartAt: new Date(Date.now() + 30_000),
     });
 
     const result = await processMeetingSchedulerTick({ db: db as never });

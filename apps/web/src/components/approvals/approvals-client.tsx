@@ -8,6 +8,7 @@ import { useState, useTransition } from 'react';
 import {
   acceptAllSuggestionAction,
   acceptSuggestionItemAction,
+  acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction,
 } from '@/app/actions/suggestions';
 import { EmptyAction } from '@/components/empty-action';
@@ -150,6 +151,19 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const bulkAcceptSuggestions = suggestions.flatMap((bundle) => {
+    const itemIds = bundle.items.reduce<string[]>((ids, item) => {
+      if (isActionableSuggestionStatus(item.status) && item.targetKind !== 'object_merge') {
+        ids.push(item.id);
+      }
+      return ids;
+    }, []);
+    return itemIds.length > 0 ? [{ suggestionId: bundle.id, itemIds }] : [];
+  });
+  const bulkAcceptItemCount = bulkAcceptSuggestions.reduce(
+    (sum, suggestion) => sum + suggestion.itemIds.length,
+    0,
+  );
 
   function run(action: () => Promise<{ ok?: boolean; error?: string }>) {
     setError(null);
@@ -176,6 +190,22 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
       {error ? (
         <div className="border border-danger/40 px-3 py-2 font-mono text-xs uppercase tracking-[0.12em] text-danger">
           {error}
+        </div>
+      ) : null}
+
+      {allowBulkAccept && bulkAcceptItemCount > 1 ? (
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            disabled={pending}
+            onClick={() => {
+              run(() => acceptVisibleSuggestionsAction({ suggestions: bulkAcceptSuggestions }));
+            }}
+          >
+            <CheckCheck className="size-4" />
+            Accept all visible
+          </Button>
         </div>
       ) : null}
 

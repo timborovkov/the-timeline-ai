@@ -42,6 +42,17 @@ interface RecallBotResponse {
   meeting_url?: { meeting_id?: string };
 }
 
+type RecallRetentionConfig = { type: 'timed'; hours: number } | { type: 'forever' };
+
+function resolveRetention(value: string | undefined): RecallRetentionConfig {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === undefined || normalized === '') return { type: 'timed', hours: 1 };
+  if (normalized === 'forever') return { type: 'forever' };
+  const hours = Number(normalized);
+  if (Number.isInteger(hours) && hours > 0) return { type: 'timed', hours };
+  throw new Error('RECALL_RETENTION must be empty, forever, or a positive whole number of hours');
+}
+
 function mapStatus(code: string | undefined): MeetingBotStatus['status'] {
   // Recall's published lifecycle codes — collapsed onto our six-state enum.
   // Unrecognised values are treated as 'active' so a new code Recall ships
@@ -78,6 +89,7 @@ export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingB
   }
   const baseUrl = (opts.baseUrl ?? env.RECALL_BASE_URL).replace(/\/$/, '');
   const botName = opts.botName ?? env.RECALL_BOT_DISPLAY_NAME;
+  const retention = resolveRetention(env.RECALL_RETENTION);
   const fetcher = opts.fetcher ?? fetch;
 
   async function request(method: string, path: string, body?: unknown): Promise<unknown> {
@@ -117,8 +129,8 @@ export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingB
     name: 'recall',
 
     async joinMeeting(input: JoinMeetingInput): Promise<JoinMeetingResult> {
-      // Always use Recall's multilingual transcription with auto language
-      // detection. Low-latency mode only supports English language codes.
+      // Keep Recall's multilingual accuracy path. Zero retention is rejected
+      // by config because Recall does not support it with prioritize_accuracy.
       const recallStreamingProvider = {
         mode: 'prioritize_accuracy',
         language_code: 'auto',
@@ -152,6 +164,7 @@ export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingB
           },
         ],
         recording_config: {
+          retention,
           transcript: { provider: { recallai_streaming: recallStreamingProvider } },
           realtime_endpoints: [
             {

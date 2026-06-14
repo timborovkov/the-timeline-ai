@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Postmark email setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-03</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-14</span></div>
       <p class="tldr">Postmark powers inbound timeline capture and outbound product emails.</p>
 
       <p>
@@ -126,8 +126,13 @@ SUPPORT_EMAIL=contact@thetimeline.cc
       <ol>
         <li>Parses the Postmark payload (Zod schema).</li>
         <li>
-          Resolves which team(s) the message was addressed to via <code>teams.inbound_email</code>.
-          Multiple recipients land as multiple rows, one per team.
+          Resolves which team(s) the message was addressed to via the Postmark mailbox hash or
+          <code>teams.inbound_email</code>. Multiple recipients land as multiple rows, one per team.
+        </li>
+        <li>
+          Applies the optional team sender whitelist. When enabled in Team settings, only exact
+          normalized <code>From</code> email addresses from the saved whitelist are accepted.
+          Blocked deliveries are dropped before attachment uploads, raw events, or queue work.
         </li>
         <li>
           Looks up the From address against <code>users.email</code> joined to

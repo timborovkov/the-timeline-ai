@@ -31,7 +31,7 @@ function makeFetcher(responder: (input: { url: string; init: RequestInit }) => R
 }
 
 describe('createRecallProvider', () => {
-  it('joinMeeting posts to /bot with Token auth, metadata round-trip, and silent config', async () => {
+  it('joinMeeting posts to /bot with Token auth, metadata round-trip, minimal retention, and silent config', async () => {
     const { fetcher, calls } = makeFetcher(() => Response.json({ id: 'bot-123' }));
     const provider = createRecallProvider({ fetcher });
     const result = await provider.joinMeeting({
@@ -64,6 +64,7 @@ describe('createRecallProvider', () => {
     expect(meta.team_id).toBe('t-1');
     expect(meta.platform).toBe('meet');
     expect(body.recording_config).toMatchObject({
+      retention: { type: 'timed', hours: 1 },
       transcript: {
         provider: {
           recallai_streaming: {
@@ -76,7 +77,9 @@ describe('createRecallProvider', () => {
     expect(body.output_media).toBeUndefined();
   });
 
-  it('joinMeeting always uses auto language detection for multilingual meetings', async () => {
+  it('joinMeeting uses configured timed retention for multilingual meetings', async () => {
+    process.env.RECALL_RETENTION = '24';
+    resetEnvForTests();
     const { fetcher, calls } = makeFetcher(() => Response.json({ id: 'bot-123' }));
     const provider = createRecallProvider({ fetcher });
     await provider.joinMeeting({
@@ -91,6 +94,7 @@ describe('createRecallProvider', () => {
     if (!call) throw new Error('no call');
     const body = JSON.parse(call.init.body as string) as Record<string, unknown>;
     expect(body.recording_config).toMatchObject({
+      retention: { type: 'timed', hours: 24 },
       transcript: {
         provider: {
           recallai_streaming: {
@@ -101,6 +105,36 @@ describe('createRecallProvider', () => {
       },
     });
   });
+
+  it('joinMeeting supports forever retention when explicitly configured', async () => {
+    process.env.RECALL_RETENTION = 'forever';
+    resetEnvForTests();
+    const { fetcher, calls } = makeFetcher(() => Response.json({ id: 'bot-123' }));
+    const provider = createRecallProvider({ fetcher });
+    await provider.joinMeeting({
+      meetingId: 'm-1',
+      teamId: 't-1',
+      meetingUrl: 'https://meet.google.com/abc-defg-hij',
+      platform: 'meet',
+      transcriptWebhookUrl: 'https://example.com/webhook',
+    });
+
+    const call = calls[0];
+    if (!call) throw new Error('no call');
+    const body = JSON.parse(call.init.body as string) as Record<string, unknown>;
+    expect(body.recording_config).toMatchObject({
+      retention: { type: 'forever' },
+    });
+  });
+
+  it.each(['tomorrow-ish', '0', 'zero', 'none', 'null'])(
+    'constructor rejects invalid RECALL_RETENTION value %s',
+    (value) => {
+      process.env.RECALL_RETENTION = value;
+      resetEnvForTests();
+      expect(() => createRecallProvider()).toThrow(/RECALL_RETENTION/);
+    },
+  );
 
   it('joinMeeting throws on non-2xx', async () => {
     const { fetcher } = makeFetcher(() => new Response('boom', { status: 500, statusText: 'err' }));

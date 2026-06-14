@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
   calendarEvents,
   type Db,
@@ -246,15 +247,22 @@ function savedMeetingRow(
   };
 }
 
-function parseTimeOnUtcDate(day: Date, time: string): Date | null {
+function parsePlainTime(time: string): Temporal.PlainTime | null {
   const match = /^(\d{2}):(\d{2})$/.exec(time);
   if (!match) return null;
   const hours = Number(match[1]);
   const minutes = Number(match[2]);
   if (hours > 23 || minutes > 59) return null;
-  return new Date(
-    Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hours, minutes, 0, 0),
-  );
+  return Temporal.PlainTime.from({ hour: hours, minute: minutes });
+}
+
+function validTimezoneOrUtc(timezone: string): string {
+  try {
+    Temporal.Instant.from('2026-01-01T00:00:00Z').toZonedDateTimeISO(timezone);
+    return timezone;
+  } catch {
+    return 'UTC';
+  }
 }
 
 function materializedOccurrenceStarts(
@@ -262,13 +270,20 @@ function materializedOccurrenceStarts(
   from = new Date(),
   days = SAVED_MEETING_MATERIALIZATION_DAYS,
 ): Date[] {
-  const start = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
+  const timezone = validTimezoneOrUtc(config.timezone);
+  const fromInstant = Temporal.Instant.from(from.toISOString());
+  const startDate = fromInstant.toZonedDateTimeISO(timezone).toPlainDate();
   const out: Date[] = [];
   for (let offset = 0; offset <= days; offset += 1) {
-    const day = new Date(start.getTime() + offset * 24 * 60 * 60 * 1000);
-    if (!config.weekdays.includes(day.getUTCDay())) continue;
+    const day = startDate.add({ days: offset });
+    if (!config.weekdays.includes(day.dayOfWeek % 7)) continue;
     for (const time of config.times) {
-      const occurrence = parseTimeOnUtcDate(day, time);
+      const plainTime = parsePlainTime(time);
+      const occurrence = plainTime
+        ? new Date(
+            day.toPlainDateTime(plainTime).toZonedDateTime(timezone).toInstant().epochMilliseconds,
+          )
+        : null;
       if (occurrence && occurrence >= from) out.push(occurrence);
     }
   }

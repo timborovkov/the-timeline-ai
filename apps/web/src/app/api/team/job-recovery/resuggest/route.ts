@@ -271,9 +271,8 @@ export async function POST(req: Request): Promise<Response> {
     source: parsed.data.source,
   });
 
-  const jobs = [...conversations.values()].sort(
-    (a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || a.id.localeCompare(b.id),
-  );
+  const jobs = Array.from(conversations.values());
+  jobs.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || a.id.localeCompare(b.id));
   const recoveredJobs = await recoverAndEnqueueInBatches(queue, jobs, {
     windowDays: parsed.data.windowDays,
     source: parsed.data.source,

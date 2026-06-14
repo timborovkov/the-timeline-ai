@@ -177,11 +177,9 @@ export const meetings = pgTable(
     uniqueIndex('meetings_team_bot_unq')
       .on(table.teamId, table.providerBotId)
       .where(sql`${table.providerBotId} IS NOT NULL`),
-    index('meetings_team_saved_scheduled_idx').on(
-      table.teamId,
-      table.savedMeetingId,
-      table.scheduledStartAt,
-    ),
+    uniqueIndex('meetings_team_saved_scheduled_unq')
+      .on(table.teamId, table.savedMeetingId, table.scheduledStartAt)
+      .where(sql`${table.savedMeetingId} IS NOT NULL AND ${table.scheduledStartAt} IS NOT NULL`),
     index('meetings_team_calendar_idx').on(table.teamId, table.linkedCalendarEventId),
   ],
 );

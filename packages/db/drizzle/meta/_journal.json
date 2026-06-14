@@ -265,7 +265,21 @@
       "idx": 37,
       "version": "7",
       "when": 1795652580000,
-      "tag": "0037_saved_meetings",
+      "tag": "0037_email_sender_whitelist",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795652640000,
+      "tag": "0038_calendar_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795652700000,
+      "tag": "0039_saved_meetings",
       "breakpoints": true
     }
   ]
