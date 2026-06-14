@@ -144,6 +144,61 @@ describe('calendar scope', () => {
     }
   });
 
+  it('uses the parent creator for raw timeline rows materialized by the worker scope', async () => {
+    const ownerScope = withTeam(db as never, TEAM_ID, USER_B_ID);
+    const workerScope = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+    });
+    const parent = await ownerScope.calendar.createCalendarEvent({
+      title: 'Private daily call',
+      startAt: new Date('2026-01-01T16:00:00Z'),
+      endAt: new Date('2026-01-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'private',
+      rrule: 'FREQ=DAILY;COUNT=2',
+    });
+
+    await workerScope.calendar.materializeRecurringEvent(parent.id, {
+      from: new Date('2026-01-01T00:00:00Z'),
+      to: new Date('2026-01-03T00:00:00Z'),
+    });
+
+    const rows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.recurringParentId, parent.id));
+    expect(rows).toHaveLength(1);
+    const rawRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    const linked = rawRows.filter((row) =>
+      [rows[0]?.scheduledRawEventId, rows[0]?.startAtRawEventId].includes(row.id),
+    );
+    expect(linked).toHaveLength(2);
+    expect(linked.every((row) => row.authorUserId === USER_B_ID)).toBe(true);
+    expect(linked.every((row) => row.visibilityOwnerUserId === USER_B_ID)).toBe(true);
+  });
+
+  it('does not re-enqueue embeddings for already materialized recurrence rows', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=3',
+    });
+    fakes.enqueueCalendarEventEmbedJob.mockClear();
+
+    await expect(
+      scope.calendar.materializeRecurringEvent(parent.id, {
+        from: new Date('2026-07-01T00:00:00Z'),
+        to: new Date('2026-07-04T00:00:00Z'),
+      }),
+    ).resolves.toEqual([]);
+
+    expect(fakes.enqueueCalendarEventEmbedJob).not.toHaveBeenCalled();
+  });
+
   it('moves one recurring occurrence without changing sibling occurrences', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const parent = await scope.calendar.createCalendarEvent({

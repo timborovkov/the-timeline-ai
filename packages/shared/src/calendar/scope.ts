@@ -438,8 +438,8 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     tx: DbOrTx,
     parent: CalendarEventRow,
     occurrenceStart: Date,
-  ): Promise<string | null> {
-    if (sameDate(occurrenceStart, parent.startAt)) return parent.id;
+  ): Promise<{ id: string; inserted: boolean } | null> {
+    if (sameDate(occurrenceStart, parent.startAt)) return { id: parent.id, inserted: false };
     const durationMs = parent.endAt.getTime() - parent.startAt.getTime();
     const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
     const [existing] = await tx
@@ -457,7 +457,9 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         ),
       )
       .limit(1);
-    if (existing?.isException || (existing && !existing.deletedAt)) return existing.id;
+    if (existing?.isException || (existing && !existing.deletedAt)) {
+      return { id: existing.id, inserted: false };
+    }
 
     const [row] = await tx
       .insert(calendarEvents)
@@ -490,7 +492,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
 
     const { scheduledRawEventId, startAtRawEventId } = await insertCalendarRawEvents(tx, {
       teamId,
-      userId,
+      userId: parent.createdByUserId ?? userId,
       calendarEventId: row.id,
       title: parent.title,
       description: parent.description,
@@ -505,7 +507,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       .update(calendarEvents)
       .set({ scheduledRawEventId, startAtRawEventId })
       .where(eq(calendarEvents.id, row.id));
-    return row.id;
+    return { id: row.id, inserted: true };
   }
 
   async function materializeParent(
@@ -526,8 +528,8 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     });
     const ids: string[] = [];
     for (const start of starts) {
-      const id = await insertOccurrence(tx, parent, start);
-      if (id) ids.push(id);
+      const occurrence = await insertOccurrence(tx, parent, start);
+      if (occurrence?.inserted) ids.push(occurrence.id);
     }
     return ids;
   }

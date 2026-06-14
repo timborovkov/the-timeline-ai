@@ -58,8 +58,10 @@ export function expandRRuleBetween(args: {
 }
 
 export function recurrenceWindowFrom(startAt: Date, now = new Date()): { from: Date; to: Date } {
-  const from = startAt > now ? startAt : now;
-  const to = new Date(from);
+  const lookback = new Date(now);
+  lookback.setUTCMonth(lookback.getUTCMonth() - RECURRENCE_WINDOW_MONTHS);
+  const from = startAt > lookback ? startAt : lookback;
+  const to = new Date(now);
   to.setUTCMonth(to.getUTCMonth() + RECURRENCE_WINDOW_MONTHS);
   return { from, to };
 }
