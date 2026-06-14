@@ -1083,14 +1083,14 @@ describe('suggestion scope', () => {
     });
   });
 
-  it('sweeps stale failed object approvals after resolving another item', async () => {
+  it('sweeps stale failed object approvals after resolving another item in the same bundle', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const staleTarget = await scope.objects.createObject({
       type: 'project',
       canonicalName: 'Old marketing site',
       actor: { kind: 'user', userId: USER_ID },
     });
-    const staleBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
       title: 'Update stale marketing site',
       dedupeKey: 'stale-failed-sweep',
@@ -1103,13 +1103,6 @@ describe('suggestion scope', () => {
           dedupeKey: 'stale-failed-sweep:item',
           proposedPayload: { status: 'accepted' },
         },
-      ],
-    });
-    const unrelatedBundle = await scope.suggestions.createOrMergeSuggestionBundle({
-      source: 'background',
-      title: 'Create unrelated task',
-      dedupeKey: 'stale-failed-sweep:unrelated',
-      items: [
         {
           operation: 'create',
           targetKind: 'task',
@@ -1119,23 +1112,121 @@ describe('suggestion scope', () => {
         },
       ],
     });
-    const staleItemId = staleBundle.items[0]?.id ?? '';
+    const staleItemId = bundle.items.find((item) => item.targetId === staleTarget.id)?.id ?? '';
+    const siblingItemId = bundle.items.find((item) => item.id !== staleItemId)?.id ?? '';
     await pg.query(`UPDATE agent_suggestion_items SET status = 'failed' WHERE id = $1`, [
       staleItemId,
     ]);
     await scope.objects.archiveObject(staleTarget.id, { kind: 'user', userId: USER_ID });
 
-    await expect(
-      scope.suggestions.rejectSuggestionItem(unrelatedBundle.items[0]?.id ?? ''),
-    ).resolves.toBe(true);
+    await expect(scope.suggestions.rejectSuggestionItem(siblingItemId)).resolves.toBe(true);
 
-    const loaded = await scope.suggestions.getSuggestion(staleBundle.id);
-    expect(loaded).toMatchObject({ status: 'superseded' });
-    expect(loaded?.items[0]).toMatchObject({
+    const loaded = await scope.suggestions.getSuggestion(bundle.id);
+    const staleItem = loaded?.items.find((item) => item.id === staleItemId);
+    expect(loaded).toMatchObject({ status: 'partially_resolved' });
+    expect(staleItem).toMatchObject({
       status: 'superseded',
       failureReason: null,
       supersededReason: 'The target object was archived.',
     });
+  });
+
+  it('sweeps stale failed siblings after accepting a stale pending item', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const pendingTarget = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Archived pending target',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const failedTarget = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Archived failed target',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update stale sibling targets',
+      dedupeKey: 'stale-accept-sweeps-failed-sibling',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: pendingTarget.id,
+          title: 'Update pending stale target',
+          dedupeKey: 'stale-accept-sweeps-failed-sibling:pending',
+          proposedPayload: { status: 'accepted' },
+        },
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: failedTarget.id,
+          title: 'Update failed stale target',
+          dedupeKey: 'stale-accept-sweeps-failed-sibling:failed',
+          proposedPayload: { status: 'accepted' },
+        },
+      ],
+    });
+    const pendingItemId = bundle.items.find((item) => item.targetId === pendingTarget.id)?.id ?? '';
+    const failedItemId = bundle.items.find((item) => item.targetId === failedTarget.id)?.id ?? '';
+    await pg.query(`UPDATE agent_suggestion_items SET status = 'failed' WHERE id = $1`, [
+      failedItemId,
+    ]);
+    await scope.objects.archiveObject(pendingTarget.id, { kind: 'user', userId: USER_ID });
+    await scope.objects.archiveObject(failedTarget.id, { kind: 'user', userId: USER_ID });
+
+    await expect(scope.suggestions.acceptSuggestionItem(pendingItemId)).resolves.toBe(true);
+
+    const loaded = await scope.suggestions.getSuggestion(bundle.id);
+    expect(loaded).toMatchObject({ status: 'superseded' });
+    expect(loaded?.items.find((item) => item.id === pendingItemId)).toMatchObject({
+      status: 'superseded',
+      supersededReason: 'The target object was archived.',
+    });
+    expect(loaded?.items.find((item) => item.id === failedItemId)).toMatchObject({
+      status: 'superseded',
+      supersededReason: 'The target object was archived.',
+    });
+  });
+
+  it('supersedes pending object approvals before applying when the target was archived', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const staleTarget = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Archived proposal target',
+      status: 'active',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update archived proposal target',
+      dedupeKey: 'stale-pending-archived-target',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'object',
+          targetId: staleTarget.id,
+          title: 'Ship archived proposal target',
+          dedupeKey: 'stale-pending-archived-target:item',
+          proposedPayload: { status: 'shipped' },
+        },
+      ],
+    });
+    await scope.objects.archiveObject(staleTarget.id, { kind: 'user', userId: USER_ID });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    const loaded = await scope.suggestions.getSuggestion(bundle.id);
+    expect(loaded).toMatchObject({ status: 'superseded' });
+    expect(loaded?.items[0]).toMatchObject({
+      status: 'superseded',
+      supersededReason: 'The target object was archived.',
+    });
+    const result = await pg.query<{ status: string }>(
+      `SELECT status FROM entities WHERE id = '${staleTarget.id}'`,
+    );
+    expect(result.rows[0]?.status).toBe('active');
   });
 
   it('keeps accepted suggestion rows immutable and creates a correction bundle', async () => {
@@ -2077,6 +2168,68 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('keeps failed object note updates retryable when the note still exists', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const object = await scope.objects.createObject({
+      type: 'topic',
+      canonicalName: 'Retryable note topic',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const note = await scope.objects.createNote({
+      entityId: object.id,
+      body: 'Q: Who handles renewals?\nA: Sales.',
+      authorUserId: USER_ID,
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const failedBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Update retryable note',
+      dedupeKey: 'failed-note-update-stays-retryable',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'object_note',
+          targetId: note.id,
+          title: 'Update retryable note',
+          dedupeKey: 'failed-note-update-stays-retryable:item',
+          proposedPayload: {
+            body: 'Q: Who handles renewals?\nA: Customer success.',
+          },
+        },
+      ],
+    });
+    const unrelatedBundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create unrelated task after note failure',
+      dedupeKey: 'failed-note-update-stays-retryable:unrelated',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Unrelated note sweep task',
+          dedupeKey: 'failed-note-update-stays-retryable:unrelated:item',
+          proposedPayload: { canonicalName: 'Unrelated note sweep task' },
+        },
+      ],
+    });
+    const failedItemId = failedBundle.items[0]?.id ?? '';
+    await pg.query(`UPDATE agent_suggestion_items SET status = 'failed' WHERE id = $1`, [
+      failedItemId,
+    ]);
+
+    await expect(
+      scope.suggestions.rejectSuggestionItem(unrelatedBundle.items[0]?.id ?? ''),
+    ).resolves.toBe(true);
+
+    const loaded = await scope.suggestions.getSuggestion(failedBundle.id);
+    expect(loaded).toMatchObject({ status: 'pending' });
+    expect(loaded?.items[0]).toMatchObject({
+      status: 'failed',
+      failureReason: null,
+      supersededReason: null,
+    });
+  });
+
   it('does not recreate object relationships when retrying after result bookkeeping was lost', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const from = await scope.objects.createObject({
@@ -2661,6 +2814,47 @@ describe('suggestion scope', () => {
     );
     expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-02T15:00:00.000Z');
     expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-03T15:00:00.000Z');
+  });
+
+  it('uses the existing event timezone for legacy date-only calendar updates', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const event = await scope.calendar.createCalendarEvent({
+      title: 'Existing Helsinki all day',
+      startAt: new Date('2026-06-15T21:00:00.000Z'),
+      endAt: new Date('2026-06-16T21:00:00.000Z'),
+      timezone: 'Europe/Helsinki',
+      allDay: true,
+      visibility: 'team',
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Move Helsinki all-day event',
+      dedupeKey: 'calendar-update-date-only-legacy-payload',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'calendar_event',
+          targetId: event.id,
+          title: 'Move Helsinki all-day event',
+          dedupeKey: 'calendar-update-date-only-legacy-payload:item',
+          proposedPayload: {
+            start_date: '2026-06-20',
+            end_date: '2026-06-21',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{ start_at: Date; end_at: Date; timezone: string }>(
+      `SELECT start_at, end_at, timezone FROM calendar_events WHERE id = '${event.id}'`,
+    );
+    expect(result.rows[0]?.timezone).toBe('Europe/Helsinki');
+    expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-19T21:00:00.000Z');
+    expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-20T21:00:00.000Z');
   });
 
   it('does not silently ignore invalid canonical calendar update fields', async () => {

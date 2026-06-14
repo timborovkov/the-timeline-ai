@@ -7,6 +7,7 @@ import {
   calendarEvents,
   entities,
   objectIdentityFacets,
+  objectNotes,
   notifications,
   rawEvents,
   teamMembers,
@@ -1100,7 +1101,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .from(entities)
       .where(eq(entities.id, entityId))
       .limit(1);
-    if (!row) return 'The target object no longer exists.';
+    if (!row) return null;
     if (row.teamId !== teamId) return null;
     if (row.mergedIntoId) return 'The target object was merged into another object.';
     if (row.archivedAt) return 'The target object was archived.';
@@ -1118,10 +1119,34 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .from(calendarEvents)
       .where(eq(calendarEvents.id, calendarEventId))
       .limit(1);
-    if (!row) return 'The target calendar event no longer exists.';
+    if (!row) return null;
     if (row.teamId !== teamId) return null;
     if (row.deletedAt) return 'The target calendar event was deleted.';
     return null;
+  }
+
+  async function staleObjectNoteTargetReason(
+    item: typeof agentSuggestionItems.$inferSelect,
+    payload: z.infer<typeof objectNotePayload>,
+  ): Promise<string | null> {
+    if (item.operation === 'create') {
+      return staleObjectTargetReason(payload.entityId ?? item.targetId);
+    }
+    const noteId = item.targetId ?? payload.noteId ?? null;
+    if (!noteId || !UUID_RE.test(noteId)) return null;
+    const [row] = await db
+      .select({
+        teamId: objectNotes.teamId,
+        entityId: objectNotes.entityId,
+        deletedAt: objectNotes.deletedAt,
+      })
+      .from(objectNotes)
+      .where(eq(objectNotes.id, noteId))
+      .limit(1);
+    if (!row) return null;
+    if (row.teamId !== teamId) return null;
+    if (row.deletedAt) return 'The target object note was deleted.';
+    return staleObjectTargetReason(row.entityId);
   }
 
   async function staleActionableItemReason(
@@ -1149,7 +1174,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (item.targetKind === 'object_note') {
       const parsed = objectNotePayload.safeParse(payload);
       if (!parsed.success) return null;
-      return staleObjectTargetReason(parsed.data.entityId ?? item.targetId);
+      return staleObjectNoteTargetReason(item, parsed.data);
     }
     if (item.targetKind === 'object_relationship') {
       const parsed = objectRelationshipPayload.safeParse(payload);
@@ -1171,7 +1196,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return null;
   }
 
-  async function reconcileStaleActionableItems(): Promise<number> {
+  async function reconcileStaleActionableItems(input: { suggestionId: string }): Promise<number> {
     const candidateRows = await db
       .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
       .from(agentSuggestionItems)
@@ -1179,6 +1204,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .where(
         and(
           eq(agentSuggestionItems.teamId, teamId),
+          eq(agentSuggestionItems.suggestionId, input.suggestionId),
           eq(agentSuggestionItems.status, 'failed'),
           inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
         ),
@@ -1195,10 +1221,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function reconcileStaleActionableItemsBestEffort(context: {
     suggestionItemId?: string;
+    suggestionId: string;
     op: string;
   }): Promise<number> {
     try {
-      return await reconcileStaleActionableItems();
+      return await reconcileStaleActionableItems({ suggestionId: context.suggestionId });
     } catch (err) {
       log.error(
         {
@@ -1206,6 +1233,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           teamId,
           userId,
           suggestionItemId: context.suggestionItemId,
+          suggestionId: context.suggestionId,
           op: context.op,
         },
         'stale_suggestion_reconciliation_failed',
@@ -2007,16 +2035,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
     if (!targetId) throw new Error('Target id is required');
     if (item.operation === 'update') {
+      const event = await calendar.getCalendarEvent(targetId);
+      const defaultTimezone =
+        event?.timezone ?? (await calendar.getCalendarSettings()).defaultTimezone;
       const parsed = calendarUpdatePayload.parse(
-        normalizeCalendarPayload(item, { fallbackTitle: false }),
+        normalizeCalendarPayload(item, { fallbackTitle: false, defaultTimezone }),
       );
       const patch: UpdateCalendarEventInput = {};
       if (parsed.title !== undefined) patch.title = parsed.title;
       if (parsed.description !== undefined) patch.description = parsed.description;
-      const event =
-        parsed.startAt !== undefined || parsed.endAt !== undefined
-          ? await calendar.getCalendarEvent(targetId)
-          : null;
       const effectiveAllDay = parsed.allDay ?? event?.allDay ?? false;
       if (effectiveAllDay && parsed.startAt !== undefined && parsed.endAt !== undefined) {
         const normalizedRange = normalizeAllDayRange({
@@ -2062,6 +2089,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .limit(1);
     const row = rows[0];
     if (!row) return false;
+    const staleReason = await staleActionableItemReason(row.item);
+    if (staleReason) {
+      const superseded = await supersedeItem(itemId, null, staleReason);
+      if (superseded) {
+        await reconcileStaleActionableItemsBestEffort({
+          suggestionItemId: itemId,
+          suggestionId: row.suggestion.id,
+          op: 'accept_stale',
+        });
+      }
+      return superseded;
+    }
     const [claimed] = await db
       .update(agentSuggestionItems)
       .set({
@@ -2099,12 +2138,14 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (staleReason && (await supersedeItem(itemId, null, staleReason))) {
         await reconcileStaleActionableItemsBestEffort({
           suggestionItemId: itemId,
+          suggestionId: row.suggestion.id,
           op: 'accept_failure',
         });
         return true;
       }
       await reconcileStaleActionableItemsBestEffort({
         suggestionItemId: itemId,
+        suggestionId: row.suggestion.id,
         op: 'accept_failure',
       });
       throw err;
@@ -2119,7 +2160,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .where(eq(agentSuggestionItems.id, itemId));
     await refreshBundleStatus(row.suggestion.id, userId);
     await reconcileAcceptedItemBestEffort({ ...row.item, resultId });
-    await reconcileStaleActionableItemsBestEffort({ suggestionItemId: itemId, op: 'accept' });
+    await reconcileStaleActionableItemsBestEffort({
+      suggestionItemId: itemId,
+      suggestionId: row.suggestion.id,
+      op: 'accept',
+    });
     return true;
   }
 
@@ -2157,11 +2202,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       ...new Set(expectedResolvedIds.filter((objectId): objectId is string => Boolean(objectId))),
     ];
     if (expectedObjectIds.length < 2) {
-      await supersedeItem(
+      const superseded = await supersedeItem(
         row.item.id,
         null,
         'Objects in this merge suggestion were already merged.',
       );
+      if (superseded) {
+        await reconcileStaleActionableItemsBestEffort({
+          suggestionItemId: input.itemId,
+          suggestionId: row.suggestion.id,
+          op: 'accept_object_merge_stale',
+        });
+      }
       return null;
     }
     const inputSurvivorId = await resolveCurrentObjectId(input.survivorId);
@@ -2235,6 +2287,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     await reconcileAcceptedItemBestEffort({ ...row.item, resultId: survivorId });
     await reconcileStaleActionableItemsBestEffort({
       suggestionItemId: input.itemId,
+      suggestionId: row.suggestion.id,
       op: 'accept_object_merge',
     });
     return { survivorId };
@@ -2541,7 +2594,11 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (!rejected) return false;
       await supersedeRelationshipDependents(row.item);
       await refreshBundleStatus(row.suggestion.id, userId);
-      await reconcileStaleActionableItemsBestEffort({ suggestionItemId: itemId, op: 'reject' });
+      await reconcileStaleActionableItemsBestEffort({
+        suggestionItemId: itemId,
+        suggestionId: row.suggestion.id,
+        op: 'reject',
+      });
       return true;
     },
 
