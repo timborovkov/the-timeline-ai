@@ -1,6 +1,15 @@
 import { DrizzleAdapter } from '@auth/drizzle-adapter';
-import { accounts, authenticators, getDb, sessions, users, verificationTokens } from '@timeline/db';
+import {
+  accounts,
+  authenticators,
+  getDb,
+  sessions,
+  teams,
+  users,
+  verificationTokens,
+} from '@timeline/db';
 import { childLogger } from '@timeline/shared/logger';
+import { sendMessage } from '@timeline/shared/messaging';
 import { verifyPassword } from '@timeline/shared/passwords';
 import { eq } from 'drizzle-orm';
 import NextAuth, { CredentialsSignin, type NextAuthConfig } from 'next-auth';
@@ -11,8 +20,10 @@ import { z } from 'zod';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { authConfig } from '@/lib/auth.config';
 import { ensureSoloTeam } from '@/lib/default-team';
+import { sendEmailVerification } from '@/lib/email-verification';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { checkCredentialsSignInRateLimit } from '@/lib/sign-in-rate-limit';
+import { getSiteUrl } from '@/lib/site-url';
 
 const db = getDb();
 const log = childLogger('web:auth');
@@ -104,11 +115,44 @@ const nextAuth = NextAuth({
       if (pendingInvite) return;
       const teamId = await ensureSoloTeam(userId, { name: user.name, email: user.email });
       if (teamId) {
+        const teamRows = await db
+          .select({ name: teams.name })
+          .from(teams)
+          .where(eq(teams.id, teamId))
+          .limit(1);
+        const teamName = teamRows[0]?.name ?? 'your team';
         trackProductEventBestEffort(userId, 'team_created', {
           teamId,
           userId,
           source: 'oauth',
         });
+        if (user.email) {
+          await Promise.all([
+            sendMessage(
+              'welcome',
+              {
+                to: user.email,
+                name: user.name ?? null,
+                dashboardUrl: `${getSiteUrl()}/app`,
+                teamName,
+              },
+              { db, teamId, userId, dedupeKey: `welcome:${userId}` },
+            ).catch((err: unknown) => {
+              reportCaughtError(err, {
+                surface: 'server_action',
+                operation: 'oauth_welcome_email',
+              });
+            }),
+            sendEmailVerification({ db, userId, email: user.email, teamId }).catch(
+              (err: unknown) => {
+                reportCaughtError(err, {
+                  surface: 'server_action',
+                  operation: 'oauth_verify_email',
+                });
+              },
+            ),
+          ]);
+        }
       }
     },
   },

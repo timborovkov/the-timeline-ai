@@ -184,13 +184,14 @@ Departs from the v1 centered `max-w-3xl` prose column. New shell:
   citation source, summarized raw event evidence, related objects, and audit
   trail. Long ids truncate visually with full values available on hover. Large
   raw-event groups are capped with an overflow count. Hidden by default;
-  opens when the user clicks an object reference or the inspector toggle. Raw
-  event evidence links use a quick-view dialog first, with a direct link to the
-  full timeline row inside. This inspect-before-navigation pattern is the
-  structural expression of "every claim is cited."
-- **Command bar** persistent across the top of the main column. Cmd+K
-  focuses. The product's center of gravity is search/jump/ask, not the
-  sidebar.
+  opens when the user clicks a citation chip, an object reference, or the
+  inspector toggle. Raw event evidence links use a quick-view dialog first, with
+  a direct link to the full timeline row inside. This inspect-before-navigation
+  pattern is the structural expression of "every claim is cited."
+- **Global search palette** persistent across the top of the main column.
+  Cmd+K focuses. The palette is navigational: it previews grouped results for
+  pages, work records, timeline events, documents, and calendar items, while
+  Enter without a selected result opens the full search page.
 
 ### Density
 
@@ -269,10 +270,11 @@ Linear-tight on operational surfaces. Comfortable on mobile and on forms.
 The timeline is the canonical operational surface and the redesign's most
 visible change.
 
-- **Dedicated surface.** `/app` is the Home Dashboard for capture, pinned board
-  shortcuts, onboarding, ingest access, pending approvals, and compact recent
-  activity. `/app/timeline` is only the full archive browser: timeline
-  browsing, filtering, pagination, inspection, and source evidence.
+- **Dedicated surface.** `/app` is the Home Dashboard for capture, concise board
+  shortcuts, onboarding, ingest access, quick actions, the latest daily digest,
+  pending approvals, and compact recent activity. `/app/timeline` is only the
+  full archive browser: timeline browsing, filtering, pagination, inspection,
+  and source evidence. Free-form search lives in `/app/search`.
 - **Timeline moments, not raw rows by default.** The browser is date-first:
   sticky date sections contain source clusters, and each cluster contains one
   or more raw events behind the user-facing moment.
@@ -311,7 +313,7 @@ visible change.
 - Boards are curated work surfaces with explicit board items, not raw saved
   filters over every matching object. Filters and templates help users find
   eligible objects; membership is intentional.
-- Pinned boards on Home use compact snapshots, not embedded full boards: board
+- Board shortcuts on Home use compact snapshots, not embedded full boards: board
   name, item count, lane counts, and last update. Opening the snapshot enters
   the full board.
 - Board creation starts from clear templates with icons, example use cases,

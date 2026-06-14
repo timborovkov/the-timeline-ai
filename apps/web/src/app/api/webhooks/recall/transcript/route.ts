@@ -110,6 +110,7 @@ function buildChunkFromPayload(payload: z.infer<typeof transcriptSchema>): {
   };
 }
 
+// react-doctor-disable-next-line react-doctor/webhook-signature-risk -- Recall realtime transcript events are unsigned by provider design; botId lookup, schema validation, and IP/bot rate limits are the endpoint's proof-of-association controls.
 export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
   if (!env.RECALL_API_KEY) {

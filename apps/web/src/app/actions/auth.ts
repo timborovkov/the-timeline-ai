@@ -1,6 +1,7 @@
 'use server';
 
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
+import { sendMessage } from '@timeline/shared/messaging';
 import { hashPassword } from '@timeline/shared/passwords';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
@@ -12,13 +13,15 @@ import { z } from 'zod';
 
 import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
-import { signIn } from '@/lib/auth';
+import { auth, signIn } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { sendEmailVerification } from '@/lib/email-verification';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 import { clientIpFromHeaders } from '@/lib/request-ip';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { getSiteUrl } from '@/lib/site-url';
 import { turnstileHostnameFromHeaders, verifyTurnstileToken } from '@/lib/turnstile';
 
 const signUpSchema = z.object({
@@ -31,6 +34,11 @@ const signUpSchema = z.object({
 
 export interface SignUpState {
   error?: string;
+}
+
+export interface EmailVerificationState {
+  error?: string;
+  ok?: boolean;
 }
 
 export async function signUpAction(_prev: SignUpState, formData: FormData): Promise<SignUpState> {
@@ -220,6 +228,39 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
       });
     }
 
+    const teamRows = await db
+      .select({ name: teams.name })
+      .from(teams)
+      .where(eq(teams.id, createdAccount.activeTeamId))
+      .limit(1);
+    await Promise.all([
+      sendMessage(
+        'welcome',
+        {
+          to: email,
+          name,
+          dashboardUrl: `${getSiteUrl()}/app`,
+          teamName: teamRows[0]?.name ?? 'your team',
+        },
+        {
+          db,
+          teamId: createdAccount.activeTeamId,
+          userId: createdAccount.userId,
+          dedupeKey: `welcome:${createdAccount.userId}`,
+        },
+      ).catch((err: unknown) => {
+        reportCaughtError(err, { surface: 'server_action', operation: 'welcome_email' });
+      }),
+      sendEmailVerification({
+        db,
+        userId: createdAccount.userId,
+        email,
+        teamId: createdAccount.activeTeamId,
+      }).catch((err: unknown) => {
+        reportCaughtError(err, { surface: 'server_action', operation: 'signup_verify_email' });
+      }),
+    ]);
+
     // Best-effort auto-signin. The account already exists and is committed —
     // if signIn throws for any reason (Auth.js misconfig, transient adapter
     // failure), send the user to /sign-in instead of surfacing a confusing
@@ -306,5 +347,51 @@ export async function signInWithGitHubAction(formData: FormData): Promise<void> 
     // signIn() with a non-credentials provider throws NEXT_REDIRECT on success.
     // Let it propagate; Next handles the response.
     await signIn('github', { redirectTo: callbackUrl });
+  });
+}
+
+export async function resendEmailVerificationAction(
+  _prev: EmailVerificationState,
+  _formData: FormData,
+): Promise<EmailVerificationState> {
+  return runSentryServerAction('resend_email_verification', async () => {
+    const session = await auth();
+    if (!session?.user) return { error: 'Not signed in' };
+
+    const rows = await db
+      .select({ email: users.email, emailVerified: users.emailVerified })
+      .from(users)
+      .where(eq(users.id, session.user.id))
+      .limit(1);
+    const user = rows[0];
+    if (!user?.email) return { error: 'No email address on this account.' };
+    if (user.emailVerified) return { ok: true };
+
+    const [userLimit, emailLimit] = await Promise.all([
+      rateLimit.checkRateLimit({
+        key: rateLimit.rateLimitKey('email-verification', 'user', session.user.id),
+        ...rateLimit.RATE_LIMITS.emailVerification,
+      }),
+      rateLimit.checkRateLimit({
+        key: rateLimit.rateLimitKey('email-verification', 'email', user.email.toLowerCase()),
+        ...rateLimit.RATE_LIMITS.emailVerification,
+      }),
+    ]);
+    const blocked = !userLimit.ok ? userLimit : !emailLimit.ok ? emailLimit : null;
+    if (blocked) {
+      return {
+        error: `Verification email recently sent. Try again in ${Math.ceil(
+          blocked.retryAfterMs / 1000,
+        )} seconds.`,
+      };
+    }
+
+    const result = await sendEmailVerification({
+      db,
+      userId: session.user.id,
+      email: user.email,
+    });
+    if (!result.ok) return { error: result.error ?? 'Failed to send verification email.' };
+    return { ok: true };
   });
 }

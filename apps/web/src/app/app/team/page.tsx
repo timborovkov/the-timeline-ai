@@ -1,4 +1,5 @@
 import { teamExports, teamInvites, teamMembers, teams, users } from '@timeline/db';
+import { getDigestPreference } from '@timeline/shared/messaging';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
@@ -16,6 +17,7 @@ import { ActionChip } from '@/components/action-chip';
 import { IndexStrip } from '@/components/index-strip';
 import {
   InboundEmailWhitelistForm,
+  DigestPreferenceForm,
   InviteMemberForm,
   RenameTeamForm,
   TeamExportPanel,
@@ -77,7 +79,14 @@ export default async function TeamSettingsPage() {
   const isAdmin = role === 'owner' || role === 'admin';
   const isOwner = role === 'owner';
 
-  const memberRows = await scope.timeline.listMembers();
+  const [memberRows, digestPreference] = await Promise.all([
+    scope.timeline.listMembers(),
+    getDigestPreference({
+      db,
+      teamId: active.teamId,
+      userId: session.user.id,
+    }),
+  ]);
   const inboundEmailSettings: InboundEmailWhitelistSettings = isAdmin
     ? ((
         await db
@@ -193,6 +202,7 @@ export default async function TeamSettingsPage() {
       />
 
       <AdminShortcuts isAdmin={isAdmin} />
+      <MessagingPreferencesCard enabled={digestPreference.enabled} />
       <AdminSettingsCards
         isAdmin={isAdmin}
         teamName={active.teamName}
@@ -217,6 +227,19 @@ export default async function TeamSettingsPage() {
         userMap={userMap}
       />
     </div>
+  );
+}
+
+function MessagingPreferencesCard({ enabled }: { enabled: boolean }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Messaging</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <DigestPreferenceForm enabled={enabled} />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -392,7 +415,7 @@ function InviteCards({
   if (!isAdmin) return null;
   return (
     <>
-      <Card>
+      <Card id="invite" className="scroll-mt-24">
         <CardHeader>
           <CardTitle>Invite a teammate</CardTitle>
         </CardHeader>

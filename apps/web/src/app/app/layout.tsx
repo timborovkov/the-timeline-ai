@@ -45,8 +45,8 @@ export default async function AppLayout({
 
   const { active, memberships } = activeTeam;
   const currentUser = currentUsers[0];
-  const verifiedEmail = currentUser?.emailVerified ? currentUser.email.toLowerCase() : null;
-  const recipientInvites = verifiedEmail
+  const currentEmail = currentUser?.email ? currentUser.email.toLowerCase() : null;
+  const recipientInvites = currentEmail
     ? await db
         .select({
           id: teamInvites.id,
@@ -61,7 +61,7 @@ export default async function AppLayout({
         .innerJoin(users, eq(users.id, teamInvites.invitedByUserId))
         .where(
           and(
-            sql`lower(${teamInvites.email}) = ${verifiedEmail}`,
+            sql`lower(${teamInvites.email}) = ${currentEmail}`,
             isNull(teamInvites.acceptedAt),
             isNull(teamInvites.revokedAt),
             gt(teamInvites.expiresAt, new Date()),
@@ -137,7 +137,11 @@ export default async function AppLayout({
             expiresAt: invite.expiresAt.toISOString(),
             invitedBy: invite.inviterName ?? invite.inviterEmail,
           }))}
-          user={session.user}
+          user={{
+            name: session.user.name,
+            email: currentUser?.email ?? session.user.email,
+            emailVerified: currentUser?.emailVerified ?? null,
+          }}
           badges={badges}
           inbox={inbox}
         >
