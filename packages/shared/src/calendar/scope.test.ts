@@ -136,6 +136,12 @@ describe('calendar scope', () => {
       '2026-07-07T16:00:00.000Z',
       '2026-07-08T16:00:00.000Z',
     ]);
+    const embeddedIds = fakes.enqueueCalendarEventEmbedJob.mock.calls.map(
+      ([, eventId]) => eventId as string,
+    );
+    for (const row of rows) {
+      expect(embeddedIds).toContain(row.id);
+    }
   });
 
   it('moves one recurring occurrence without changing sibling occurrences', async () => {
@@ -227,6 +233,14 @@ describe('calendar scope', () => {
       visibility: 'team',
       rrule: 'FREQ=DAILY;COUNT=5',
     });
+    const beforeRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_ID));
+    const oldChildRawIds = beforeRows
+      .filter((row) => row.recurringParentId === parent.id && !row.isException)
+      .flatMap((row) => [row.scheduledRawEventId, row.startAtRawEventId])
+      .filter((rawEventId): rawEventId is string => rawEventId !== null);
 
     await scope.calendar.updateCalendarEvent(parent.id, {
       title: 'Daily planning',
@@ -250,6 +264,13 @@ describe('calendar scope', () => {
       '2026-07-04T16:00:00.000Z',
       '2026-07-05T16:00:00.000Z',
     ]);
+
+    const rawRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    for (const rawEventId of oldChildRawIds) {
+      expect(rawRows.find((row) => row.id === rawEventId)?.sourceMetadata).toMatchObject({
+        deleted: true,
+      });
+    }
   });
 
   it('splits this-and-future recurring edits into a new parent series', async () => {
@@ -267,6 +288,15 @@ describe('calendar scope', () => {
       to: new Date('2026-07-08T00:00:00Z'),
       limit: 20,
     });
+    const futureRawIds = rows
+      .filter(
+        (row) =>
+          row.recurringParentId === parent.id &&
+          row.originalStartAt !== null &&
+          row.originalStartAt >= new Date('2026-07-04T16:00:00Z'),
+      )
+      .flatMap((row) => [row.scheduledRawEventId, row.startAtRawEventId])
+      .filter((rawEventId): rawEventId is string => rawEventId !== null);
     const occurrence = rows.find(
       (row) => row.originalStartAt?.toISOString() === '2026-07-04T16:00:00.000Z',
     );
@@ -292,6 +322,53 @@ describe('calendar scope', () => {
     expect(starts).toContain('2026-07-06T15:00:00.000Z');
     expect(starts).not.toContain('2026-07-04T16:00:00.000Z');
     expect(starts).not.toContain('2026-07-07T15:00:00.000Z');
+
+    const rawRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    for (const rawEventId of futureRawIds) {
+      expect(rawRows.find((row) => row.id === rawEventId)?.sourceMetadata).toMatchObject({
+        deleted: true,
+      });
+    }
+  });
+
+  it('deleting a recurring parent as a single event removes active children and tombstones their timeline rows', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=3',
+    });
+    const beforeRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_ID));
+    const childRows = beforeRows.filter((row) => row.recurringParentId === parent.id);
+    expect(childRows).toHaveLength(2);
+    const childRawIds = childRows
+      .flatMap((row) => [row.scheduledRawEventId, row.startAtRawEventId])
+      .filter((rawEventId): rawEventId is string => rawEventId !== null);
+
+    await expect(
+      scope.calendar.deleteCalendarEvent(parent.id, { recurrenceEditMode: 'single' }),
+    ).resolves.toBe(true);
+
+    const afterRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_ID));
+    expect(afterRows.find((row) => row.id === parent.id)?.deletedAt).toBeInstanceOf(Date);
+    for (const child of childRows) {
+      expect(afterRows.find((row) => row.id === child.id)?.deletedAt).toBeInstanceOf(Date);
+    }
+    const rawRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    for (const rawEventId of childRawIds) {
+      expect(rawRows.find((row) => row.id === rawEventId)?.sourceMetadata).toMatchObject({
+        deleted: true,
+      });
+    }
   });
 
   it('deleteCalendarEvent tombstones both linked timeline rows', async () => {

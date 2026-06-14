@@ -323,6 +323,53 @@ async function enqueueCalendarEventEmbedding(teamId: string, eventId: string): P
   }
 }
 
+async function enqueueCalendarEventEmbeddings(teamId: string, eventIds: string[]): Promise<void> {
+  await Promise.all(
+    uniqueIds(eventIds).map((eventId) => enqueueCalendarEventEmbedding(teamId, eventId)),
+  );
+}
+
+async function deleteCalendarEventPointsForIds(teamId: string, eventIds: string[]): Promise<void> {
+  await Promise.all(
+    uniqueIds(eventIds).map((eventId) => deleteCalendarEventPoints(teamId, eventId)),
+  );
+}
+
+async function tombstoneCalendarRawEventIds(tx: DbOrTx, rawEventIds: string[]): Promise<void> {
+  const ids = uniqueIds(rawEventIds.filter((id) => id.length > 0));
+  if (ids.length === 0) return;
+  const tombstone = JSON.stringify({ deleted: true });
+  await tx
+    .update(rawEvents)
+    .set({
+      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${tombstone}::jsonb`,
+    })
+    .where(inArray(rawEvents.id, ids));
+}
+
+async function tombstoneLinkedRawEventsForCalendarEventIds(
+  tx: DbOrTx,
+  args: { teamId: string; eventIds: string[] },
+): Promise<void> {
+  const ids = uniqueIds(args.eventIds);
+  if (ids.length === 0) return;
+  const rows = await tx
+    .select({
+      scheduledRawEventId: calendarEvents.scheduledRawEventId,
+      startAtRawEventId: calendarEvents.startAtRawEventId,
+    })
+    .from(calendarEvents)
+    .where(and(eq(calendarEvents.teamId, args.teamId), inArray(calendarEvents.id, ids)));
+  await tombstoneCalendarRawEventIds(
+    tx,
+    rows.flatMap((row) =>
+      [row.scheduledRawEventId, row.startAtRawEventId].filter(
+        (rawEventId): rawEventId is string => rawEventId !== null && rawEventId.length > 0,
+      ),
+    ),
+  );
+}
+
 export function createCalendarScope(deps: CalendarScopeDeps) {
   const { db, teamId, userId, ensureMember, requireTeamMember } = deps;
 
@@ -476,7 +523,20 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     tx: DbOrTx,
     parent: CalendarEventRow,
     opts: { from?: Date; to?: Date } = {},
-  ): Promise<string[]> {
+  ): Promise<{ materializedIds: string[]; deletedIds: string[] }> {
+    const children = await tx
+      .select({ id: calendarEvents.id })
+      .from(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.teamId, teamId),
+          eq(calendarEvents.recurringParentId, parent.id),
+          eq(calendarEvents.isException, false),
+          isNull(calendarEvents.deletedAt),
+        ),
+      );
+    const deletedIds = children.map((child) => child.id);
+    await tombstoneLinkedRawEventsForCalendarEventIds(tx, { teamId, eventIds: deletedIds });
     await tx
       .update(calendarEvents)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
@@ -488,7 +548,8 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           isNull(calendarEvents.deletedAt),
         ),
       );
-    return materializeParent(tx, parent, opts);
+    const materializedIds = await materializeParent(tx, parent, opts);
+    return { materializedIds, deletedIds };
   }
 
   async function confirmProposalGroup(
@@ -529,20 +590,14 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       .update(calendarEvents)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
       .where(inArray(calendarEvents.id, siblingIds));
-    const linkedRawEventIds = siblings.flatMap((sibling) =>
-      [sibling.scheduledRawEventId, sibling.startAtRawEventId].filter(
-        (rid): rid is string => rid !== null && rid.length > 0,
+    await tombstoneCalendarRawEventIds(
+      tx,
+      siblings.flatMap((sibling) =>
+        [sibling.scheduledRawEventId, sibling.startAtRawEventId].filter(
+          (rid): rid is string => rid !== null && rid.length > 0,
+        ),
       ),
     );
-    if (linkedRawEventIds.length > 0) {
-      const tombstone = JSON.stringify({ deleted: true });
-      await tx
-        .update(rawEvents)
-        .set({
-          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${tombstone}::jsonb`,
-        })
-        .where(inArray(rawEvents.id, linkedRawEventIds));
-    }
     return siblingIds;
   }
 
@@ -559,7 +614,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         ? validateRRule({ rrule: input.rrule, startAt: input.startAt, timezone })
         : null;
 
-      const created = await db.transaction(async (tx) => {
+      const { created, materializedIds } = await db.transaction(async (tx) => {
         const vis = input.visibility ?? 'team';
         const visUserIds = await validateVisibilityUserIds(
           vis,
@@ -632,15 +687,14 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           startAtRawEventId,
         };
 
-        if (rrule && !input.recurringParentId) {
-          await materializeParent(tx, updated);
-        }
+        const materializedIds =
+          rrule && !input.recurringParentId ? await materializeParent(tx, updated) : [];
 
-        return redactIfNeeded(updated);
+        return { created: redactIfNeeded(updated), materializedIds };
       });
 
       if (created.visibility === 'team') {
-        await enqueueCalendarEventEmbedding(teamId, created.id);
+        await enqueueCalendarEventEmbeddings(teamId, [created.id, ...materializedIds]);
       }
 
       return created;
@@ -739,6 +793,22 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
               updatedAt: new Date(),
             })
             .where(eq(calendarEvents.id, parentRow.id));
+          const futureChildren = await tx
+            .select({ id: calendarEvents.id })
+            .from(calendarEvents)
+            .where(
+              and(
+                eq(calendarEvents.teamId, teamId),
+                eq(calendarEvents.recurringParentId, parentRow.id),
+                gte(calendarEvents.originalStartAt, splitAt),
+                isNull(calendarEvents.deletedAt),
+              ),
+            );
+          const deletedOccurrenceIds = futureChildren.map((child) => child.id);
+          await tombstoneLinkedRawEventsForCalendarEventIds(tx, {
+            teamId,
+            eventIds: deletedOccurrenceIds,
+          });
           await tx
             .update(calendarEvents)
             .set({ deletedAt: new Date(), updatedAt: new Date() })
@@ -806,7 +876,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
             .where(eq(calendarEvents.id, newParent.id))
             .returning();
           if (!hydrated) throw new Error('Failed to hydrate split recurring event');
-          await materializeParent(tx, hydrated as CalendarEventRow);
+          const materializedIds = await materializeParent(tx, hydrated as CalendarEventRow);
           return {
             event: redactIfNeeded(hydrated as CalendarEventRow),
             changedFields: [
@@ -816,6 +886,8 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
               'recurrenceEditMode',
             ] as (keyof UpdateCalendarEventInput)[],
             qdrantAction: hydrated.visibility === 'team' ? ('embed' as const) : null,
+            deletedOccurrenceIds,
+            materializedIds,
           };
         }
 
@@ -1065,21 +1137,32 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       });
 
       if (!result) return null;
+      const materializedIds = 'materializedIds' in result ? (result.materializedIds ?? []) : [];
+      const deletedOccurrenceIds =
+        'deletedOccurrenceIds' in result ? (result.deletedOccurrenceIds ?? []) : [];
       if (result.qdrantAction === 'embed') {
-        await enqueueCalendarEventEmbedding(teamId, id);
+        await enqueueCalendarEventEmbeddings(teamId, [result.event.id, ...materializedIds]);
       } else if (result.qdrantAction === 'delete') {
-        await deleteCalendarEventPoints(teamId, id);
+        await deleteCalendarEventPointsForIds(teamId, [result.event.id, ...materializedIds]);
+      }
+      if (deletedOccurrenceIds.length > 0) {
+        await deleteCalendarEventPointsForIds(teamId, deletedOccurrenceIds);
       }
       if ('rematerialize' in result && result.rematerialize) {
-        await db.transaction(async (tx) => {
+        const rematerialized = await db.transaction(async (tx) => {
           const rows = await tx
             .select()
             .from(calendarEvents)
             .where(eq(calendarEvents.id, result.event.id))
             .limit(1);
           const parent = rows[0] as CalendarEventRow | undefined;
-          if (parent) await rematerializeParent(tx, parent);
+          if (!parent) return { materializedIds: [], deletedIds: [] };
+          return rematerializeParent(tx, parent);
         });
+        await deleteCalendarEventPointsForIds(teamId, rematerialized.deletedIds);
+        if (result.event.visibility === 'team') {
+          await enqueueCalendarEventEmbeddings(teamId, rematerialized.materializedIds);
+        }
       }
       const cancelledProposalEventIds =
         'cancelledProposalEventIds' in result ? (result.cancelledProposalEventIds ?? []) : [];
@@ -1129,7 +1212,26 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           })
           .where(eq(calendarEvents.id, id));
 
-        if (!current.recurringParentId && recurrenceMode === 'series') {
+        let deletedChildIds: string[] = [];
+        if (
+          !current.recurringParentId &&
+          (recurrenceMode === 'series' || recurrenceMode === 'single')
+        ) {
+          const childRows = await tx
+            .select({ id: calendarEvents.id })
+            .from(calendarEvents)
+            .where(
+              and(
+                eq(calendarEvents.teamId, teamId),
+                eq(calendarEvents.recurringParentId, id),
+                isNull(calendarEvents.deletedAt),
+              ),
+            );
+          deletedChildIds = childRows.map((child) => child.id);
+          await tombstoneLinkedRawEventsForCalendarEventIds(tx, {
+            teamId,
+            eventIds: deletedChildIds,
+          });
           await tx
             .update(calendarEvents)
             .set({ deletedAt: new Date(), updatedAt: new Date() })
@@ -1142,18 +1244,12 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
             );
         }
 
-        const linkedRawEventIds = [row.startAtRawEventId, row.scheduledRawEventId].filter(
-          (rid): rid is string => rid !== null && rid.length > 0,
+        await tombstoneCalendarRawEventIds(
+          tx,
+          [row.startAtRawEventId, row.scheduledRawEventId].filter(
+            (rid): rid is string => rid !== null && rid.length > 0,
+          ),
         );
-        if (linkedRawEventIds.length > 0) {
-          const tombstone = JSON.stringify({ deleted: true });
-          await tx
-            .update(rawEvents)
-            .set({
-              sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${tombstone}::jsonb`,
-            })
-            .where(inArray(rawEvents.id, linkedRawEventIds));
-        }
 
         await tx.insert(rawEvents).values({
           teamId,
@@ -1170,14 +1266,14 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           },
         });
 
-        return true;
+        return { deleted: true, deletedChildIds };
       });
 
       if (deleted) {
-        await deleteCalendarEventPoints(teamId, id);
+        await deleteCalendarEventPointsForIds(teamId, [id, ...deleted.deletedChildIds]);
       }
 
-      return deleted;
+      return Boolean(deleted);
     },
 
     async linkEntity(
@@ -1258,7 +1354,16 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       opts: Omit<MaterializeRecurringEventsInput, 'parentId'> = {},
     ): Promise<string[]> {
       await ensureMember();
-      return db.transaction((tx) => materializeParentById(tx, id, opts));
+      const [parent] = await db
+        .select({ visibility: calendarEvents.visibility })
+        .from(calendarEvents)
+        .where(and(eq(calendarEvents.id, id), eq(calendarEvents.teamId, teamId)))
+        .limit(1);
+      const ids = await db.transaction((tx) => materializeParentById(tx, id, opts));
+      if (parent?.visibility === 'team') {
+        await enqueueCalendarEventEmbeddings(teamId, ids);
+      }
+      return ids;
     },
 
     async materializeRecurringEvents(opts: MaterializeRecurringEventsInput = {}): Promise<number> {
@@ -1277,12 +1382,15 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         .orderBy(asc(calendarEvents.startAt))
         .limit(500);
       let count = 0;
+      const teamVisibleIds: string[] = [];
       await db.transaction(async (tx) => {
         for (const parent of parents) {
           const ids = await materializeParent(tx, parent as CalendarEventRow, opts);
           count += ids.length;
+          if (parent.visibility === 'team') teamVisibleIds.push(...ids);
         }
       });
+      await enqueueCalendarEventEmbeddings(teamId, teamVisibleIds);
       return count;
     },
 
