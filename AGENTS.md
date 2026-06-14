@@ -183,7 +183,8 @@ packages/
             team+user-overlay scope), mcp-server module (Phase 11 outbound —
             JSON-RPC handler, bearer-key mint/verify for /api/mcp/server),
             calendar module (Phase 11 — event scope, raw-event audit rows,
-            entity links, settings, and calendar embedding enqueue/delete),
+            entity links, settings, team calendar subscriptions, and calendar
+            embedding enqueue/delete),
             conversation-review module (bounded Slack/Telegram evidence
             windows for proposal generation),
             onboarding module (Phase 13 — team-level tutorial completion +

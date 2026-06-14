@@ -30,6 +30,8 @@ source material instead of hiding behind black-box summaries.
   document citations.
 - Silent, consent-gated meeting transcript capture for Google Meet, Microsoft
   Teams, and Zoom.
+- Read-only team calendar subscription feeds for viewing Timeline events in a
+  default calendar app.
 - Slack, Telegram, email, native GitHub/Linear/Google Drive sync, and custom
   MCP-powered ingestion surfaces.
 - An outbound MCP server so tools like Claude Desktop and Cursor can query a
