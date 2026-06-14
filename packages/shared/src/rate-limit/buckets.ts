@@ -9,7 +9,7 @@ export const RATE_LIMITS = {
   signIn: { capacity: 10, refillPerSec: 10 / 60 },
   /** Public support/contact form: 3/min per source IP and per submitted email. */
   supportForm: { capacity: 3, refillPerSec: 3 / 60 },
-  /** /api/search: 30/min per userId. */
+  /** /api/search/global: 30/min per userId. */
   search: { capacity: 30, refillPerSec: 30 / 60 },
   /** /api/chat: 20/min per userId. Chat is expensive (OpenRouter spend). */
   aiChat: { capacity: 20, refillPerSec: 20 / 60 },

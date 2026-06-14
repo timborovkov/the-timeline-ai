@@ -184,13 +184,14 @@ Departs from the v1 centered `max-w-3xl` prose column. New shell:
   citation source, summarized raw event evidence, related objects, and audit
   trail. Long ids truncate visually with full values available on hover. Large
   raw-event groups are capped with an overflow count. Hidden by default;
-  opens when the user clicks an object reference or the inspector toggle. Raw
-  event evidence links use a quick-view dialog first, with a direct link to the
-  full timeline row inside. This inspect-before-navigation pattern is the
-  structural expression of "every claim is cited."
-- **Command bar** persistent across the top of the main column. Cmd+K
-  focuses. The product's center of gravity is search/jump/ask, not the
-  sidebar.
+  opens when the user clicks a citation chip, an object reference, or the
+  inspector toggle. Raw event evidence links use a quick-view dialog first, with
+  a direct link to the full timeline row inside. This inspect-before-navigation
+  pattern is the structural expression of "every claim is cited."
+- **Global search palette** persistent across the top of the main column.
+  Cmd+K focuses. The palette is navigational: it previews grouped results for
+  pages, work records, timeline events, documents, and calendar items, while
+  Enter without a selected result opens the full search page.
 
 ### Density
 
@@ -272,7 +273,8 @@ visible change.
 - **Dedicated surface.** `/app` is the Home Dashboard for capture, pinned board
   shortcuts, onboarding, ingest access, pending approvals, and compact recent
   activity. `/app/timeline` is only the full archive browser: timeline
-  browsing, filtering, pagination, inspection, and source evidence.
+  browsing, filtering, pagination, inspection, and source evidence. Free-form
+  search lives in `/app/search`.
 - **Timeline moments, not raw rows by default.** The browser is date-first:
   sticky date sections contain source clusters, and each cluster contains one
   or more raw events behind the user-facing moment.
