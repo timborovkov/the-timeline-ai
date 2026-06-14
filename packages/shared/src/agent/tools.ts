@@ -254,6 +254,23 @@ const retrieveWorkspaceContextInput = z.object({
   includeCalendar: z.boolean().optional(),
 });
 
+const objectUpdateFieldSchema = z.enum([
+  'status',
+  'stage',
+  'priority',
+  'ownerUserId',
+  'assigneeUserId',
+  'dueAt',
+]);
+
+const executeObjectUpdateInput = z.object({
+  entityId: z.string().regex(UUID_RE),
+  field: objectUpdateFieldSchema,
+  expectedCurrentValue: z.unknown(),
+  newValue: z.unknown(),
+  reason: z.string().trim().min(1).max(500),
+});
+
 const searchAppGuideInput = z.object({
   query: z.string().trim().min(1).max(300),
   limit: z.number().int().min(1).max(10).optional(),
@@ -470,10 +487,101 @@ export async function buildMcpTools(
   return out;
 }
 
+interface ObjectUpdateReadable {
+  status?: unknown;
+  stage?: unknown;
+  priority?: unknown;
+  ownerUserId?: unknown;
+  assigneeUserId?: unknown;
+  dueAt?: unknown;
+}
+
+function currentObjectValue(
+  object: ObjectUpdateReadable,
+  field: z.infer<typeof objectUpdateFieldSchema>,
+) {
+  const raw = object[field];
+  return raw instanceof Date ? raw.toISOString() : (raw ?? null);
+}
+
+function normalizedValueForPatch(field: z.infer<typeof objectUpdateFieldSchema>, value: unknown) {
+  const normalized = objects.normalizeObjectPatchValue(field, value);
+  if (field === 'dueAt') {
+    return normalized === null ? null : new Date(normalized as string);
+  }
+  return normalized;
+}
+
+function valuesMatchForApproval(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function previewValue(value: unknown): string {
+  if (value === null || value === undefined) return 'empty';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
 export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}): ToolSet {
   const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
     safe(label, fn, options.onToolError);
   return {
+    execute_object_update: tool({
+      description:
+        'Approval-required dashboard action. Directly update one field on an existing object after the user approves in chat. Use only for explicit user commands like "set this deal status to won" or "move this task due date to tomorrow". First call get_object or retrieve_workspace_context, then pass the observed current value as expectedCurrentValue so stale state is rejected. This does NOT create a background approval queue item.',
+      inputSchema: executeObjectUpdateInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_object_update', async () => {
+          const input = executeObjectUpdateInput.parse(raw);
+          const current = await scope.objects.getObject(input.entityId);
+          if (!current) return { ok: false, error: 'not_found' };
+          const currentValue = currentObjectValue(current, input.field);
+          const normalizedExpected = objects.normalizeObjectPatchValue(
+            input.field,
+            input.expectedCurrentValue,
+          );
+          if (!valuesMatchForApproval(currentValue, normalizedExpected)) {
+            return {
+              ok: false,
+              error: 'stale_state',
+              message:
+                'The object changed since this action was prepared. Re-read the object before retrying.',
+              object_citation: artifactRefCitation({ kind: 'object', id: input.entityId }),
+              field: input.field,
+              expected_value: normalizedExpected,
+              current_value: currentValue,
+            };
+          }
+          const normalizedNewValue = normalizedValueForPatch(input.field, input.newValue);
+          const patch: objects.ObjectPatch = { [input.field]: normalizedNewValue };
+          const result = await scope.objects.updateObject(input.entityId, patch, {
+            kind: 'agent',
+            userId: scope.userId,
+          });
+          const newValue = currentObjectValue(result.object, input.field);
+          return {
+            ok: true,
+            object_id: result.object.id,
+            object_citation: artifactRefCitation({ kind: 'object', id: result.object.id }),
+            field: input.field,
+            previous_value: currentValue,
+            new_value: newValue,
+            changed_fields: result.changedFields,
+            message:
+              result.changedFields.length === 0
+                ? `No change needed: ${current.canonicalName} already had ${input.field} set to ${previewValue(
+                    currentValue,
+                  )}.`
+                : `Updated ${current.canonicalName}: ${input.field} changed from ${previewValue(
+                    currentValue,
+                  )} to ${previewValue(newValue)}.`,
+          };
+        }),
+    }),
+
     retrieve_workspace_context: tool({
       description:
         'Read-only retrieval planner/fusion tool. Use first for broad questions like "what do we know about X?", object/person/company profiles, task/board/calendar/document context, or when current route context implies a target object. Returns a compact context packet with typed citations across objects, notes, timeline events, tasks, boards, calendar, documents, and route guides.',

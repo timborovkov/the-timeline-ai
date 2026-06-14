@@ -22,6 +22,7 @@ import { type TeamScope } from '#src/team-scope.js';
  */
 
 interface FakeScope {
+  userId: string;
   timeline: {
     searchEvents: ReturnType<typeof vi.fn>;
     getEntity: ReturnType<typeof vi.fn>;
@@ -48,6 +49,8 @@ interface FakeScope {
   objects: {
     searchObjects: ReturnType<typeof vi.fn>;
     listObjects: ReturnType<typeof vi.fn>;
+    getObject: ReturnType<typeof vi.fn>;
+    updateObject: ReturnType<typeof vi.fn>;
   };
   boards: {
     listBoards: ReturnType<typeof vi.fn>;
@@ -58,6 +61,7 @@ interface FakeScope {
 
 function makeFakeScope(): FakeScope {
   return {
+    userId: '77777777-7777-4777-8777-777777777777',
     timeline: {
       searchEvents: vi.fn(),
       getEntity: vi.fn(),
@@ -84,6 +88,8 @@ function makeFakeScope(): FakeScope {
     objects: {
       searchObjects: vi.fn(),
       listObjects: vi.fn(),
+      getObject: vi.fn(),
+      updateObject: vi.fn(),
     },
     boards: {
       listBoards: vi.fn(),
@@ -178,6 +184,105 @@ describe('buildAgentTools — team isolation', () => {
       group: 'help',
     });
     await expect(exec({ routeId: 'unknown/route' }, {})).resolves.toEqual({ found: false });
+  });
+
+  it('execute_object_update requires approval and applies a direct object update', async () => {
+    const scope = makeFakeScope();
+    scope.objects.getObject.mockResolvedValue({
+      id: OBJECT_ID,
+      canonicalName: 'Otto Silventola',
+      status: 'active',
+      stage: null,
+      priority: null,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+    });
+    scope.objects.updateObject.mockResolvedValue({
+      object: {
+        id: OBJECT_ID,
+        canonicalName: 'Otto Silventola',
+        status: 'done',
+        stage: null,
+        priority: null,
+        ownerUserId: null,
+        assigneeUserId: null,
+        dueAt: null,
+      },
+      changedFields: ['status'],
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_object_update?.needsApproval).toBe(true);
+    const exec = tools.execute_object_update?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        entityId: OBJECT_ID,
+        field: 'status',
+        expectedCurrentValue: 'active',
+        newValue: 'done',
+        reason: 'User asked to mark it done in chat.',
+      },
+      {},
+    );
+
+    expect(scope.objects.updateObject).toHaveBeenCalledWith(
+      OBJECT_ID,
+      { status: 'done' },
+      { kind: 'agent', userId: scope.userId },
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      object_id: OBJECT_ID,
+      object_citation: `[ent:${OBJECT_ID}]`,
+      field: 'status',
+      previous_value: 'active',
+      new_value: 'done',
+      changed_fields: ['status'],
+    });
+  });
+
+  it('execute_object_update rejects stale state before mutating', async () => {
+    const scope = makeFakeScope();
+    scope.objects.getObject.mockResolvedValue({
+      id: OBJECT_ID,
+      canonicalName: 'Otto Silventola',
+      status: 'blocked',
+      stage: null,
+      priority: null,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.execute_object_update?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        entityId: OBJECT_ID,
+        field: 'status',
+        expectedCurrentValue: 'active',
+        newValue: 'done',
+        reason: 'User asked to mark it done in chat.',
+      },
+      {},
+    );
+
+    expect(scope.objects.updateObject).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'stale_state',
+      object_citation: `[ent:${OBJECT_ID}]`,
+      field: 'status',
+      expected_value: 'active',
+      current_value: 'blocked',
+    });
   });
 
   it('search_objects forwards structured filters and returns typed citations', async () => {

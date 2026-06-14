@@ -11,6 +11,7 @@ vi.mock('ai', () => ({
   DefaultChatTransport: class DefaultChatTransport {
     constructor(public options: unknown) {}
   },
+  lastAssistantMessageIsCompleteWithApprovalResponses: vi.fn(() => true),
 }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn() }),

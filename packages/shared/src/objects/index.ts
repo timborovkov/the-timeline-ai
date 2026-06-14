@@ -3530,7 +3530,7 @@ export interface ProposeObjectChangeInput {
  * `updateObject` will eventually write (e.g., null instead of empty
  * string for nullable fields, ISO datetime instead of Date object).
  */
-function normalizeProposedValue(
+export function normalizeObjectPatchValue(
   field: ProposeObjectChangeInput['field'],
   newValue: unknown,
 ): unknown {
@@ -3590,7 +3590,7 @@ export async function proposeObjectChange(
   // Validate value shape against the target field BEFORE writing. See
   // `normalizeProposedValue` doc for why this matters — without it, the
   // failure surfaces at human-accept time as a confusing 500.
-  const normalized = normalizeProposedValue(input.field, input.newValue);
+  const normalized = normalizeObjectPatchValue(input.field, input.newValue);
 
   // If the proposed value is a user reference, verify team membership so
   // the agent can't seed a foreign user that later gets pushed through

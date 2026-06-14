@@ -1,7 +1,11 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport, type UIMessage } from 'ai';
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+  type UIMessage,
+} from 'ai';
 import { Send, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -90,9 +94,10 @@ function ChatSurfaceContent({
     onSessionIdChange,
     updateUrlOnSessionCreate,
   });
-  const { messages, sendMessage, status, error } = useChat({
+  const { messages, sendMessage, status, error, addToolApprovalResponse } = useChat({
     transport,
     messages: initialMessages,
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   });
 
   const [input, setInput] = useState('');
@@ -134,6 +139,7 @@ function ChatSurfaceContent({
         compact={compact}
         isStreaming={isStreaming}
         messages={messages}
+        onToolApprovalResponse={addToolApprovalResponse}
         onSuggestion={submit}
         scrollRef={scrollRef}
         teamName={teamName}
@@ -249,6 +255,7 @@ function ChatTranscript({
   compact,
   isStreaming,
   messages,
+  onToolApprovalResponse,
   onSuggestion,
   scrollRef,
   teamName,
@@ -256,6 +263,7 @@ function ChatTranscript({
   compact: boolean;
   isStreaming: boolean;
   messages: UIMessage[];
+  onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
   onSuggestion: (text: string) => void;
   scrollRef: RefObject<HTMLDivElement | null>;
   teamName: string;
@@ -265,7 +273,12 @@ function ChatTranscript({
       {messages.length === 0 ? (
         <ChatEmptyState compact={compact} onSuggestion={onSuggestion} teamName={teamName} />
       ) : (
-        <MessageList compact={compact} isStreaming={isStreaming} messages={messages} />
+        <MessageList
+          compact={compact}
+          isStreaming={isStreaming}
+          messages={messages}
+          onToolApprovalResponse={onToolApprovalResponse}
+        />
       )}
     </div>
   );
@@ -315,15 +328,21 @@ function MessageList({
   compact,
   isStreaming,
   messages,
+  onToolApprovalResponse,
 }: {
   compact: boolean;
   isStreaming: boolean;
   messages: UIMessage[];
+  onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
 }) {
   return (
     <ol className={cn('flex flex-col', compact ? 'gap-4' : 'gap-6')}>
       {messages.map((message) => (
-        <ChatMessage key={message.id} message={message} />
+        <ChatMessage
+          key={message.id}
+          message={message}
+          onToolApprovalResponse={onToolApprovalResponse}
+        />
       ))}
       {isStreaming && (
         <li>
@@ -334,7 +353,13 @@ function MessageList({
   );
 }
 
-function ChatMessage({ message }: { message: UIMessage }) {
+function ChatMessage({
+  message,
+  onToolApprovalResponse,
+}: {
+  message: UIMessage;
+  onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
+}) {
   const isUser = message.role === 'user';
   return (
     <li className={cn('flex flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}>
@@ -351,7 +376,11 @@ function ChatMessage({ message }: { message: UIMessage }) {
       >
         <div className="space-y-2">
           {message.parts.map((part, idx) => (
-            <ChatMessagePart key={`${message.id}-${String(idx)}`} part={part} />
+            <ChatMessagePart
+              key={`${message.id}-${String(idx)}`}
+              part={part}
+              onToolApprovalResponse={onToolApprovalResponse}
+            />
           ))}
         </div>
       </div>
@@ -359,7 +388,13 @@ function ChatMessage({ message }: { message: UIMessage }) {
   );
 }
 
-function ChatMessagePart({ part }: { part: UIMessage['parts'][number] }) {
+function ChatMessagePart({
+  part,
+  onToolApprovalResponse,
+}: {
+  part: UIMessage['parts'][number];
+  onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
+}) {
   if (part.type === 'text') {
     return <CitationText text={part.text} />;
   }
@@ -370,6 +405,7 @@ function ChatMessagePart({ part }: { part: UIMessage['parts'][number] }) {
     state: string;
     input?: unknown;
     output?: unknown;
+    approval?: { id: string; approved?: boolean; reason?: string };
   };
   return (
     <ToolStep
@@ -377,6 +413,8 @@ function ChatMessagePart({ part }: { part: UIMessage['parts'][number] }) {
       state={toolPart.state}
       input={toolPart.input}
       output={toolPart.output}
+      approval={toolPart.approval}
+      onApprovalResponse={onToolApprovalResponse}
     />
   );
 }

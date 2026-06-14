@@ -12,6 +12,8 @@ interface Props {
   state: string;
   input?: unknown;
   output?: unknown;
+  approval?: { id: string; approved?: boolean; reason?: string };
+  onApprovalResponse?: (input: { id: string; approved: boolean; reason?: string }) => void;
 }
 
 function isMcpTool(name: string): { serverIdCompact: string; tool: string } | null {
@@ -23,7 +25,7 @@ function isMcpTool(name: string): { serverIdCompact: string; tool: string } | nu
   return { serverIdCompact: rest.slice(0, sep), tool: rest.slice(sep + 2) };
 }
 
-function summarize(name: string, input: unknown, output: unknown): string {
+function summarize(name: string, input: unknown, output: unknown, state: string): string {
   const inp = (input ?? {}) as Record<string, unknown>;
   if (name === 'search_timeline') {
     const q = typeof inp.query === 'string' ? inp.query : '';
@@ -57,6 +59,14 @@ function summarize(name: string, input: unknown, output: unknown): string {
       : `Retrieved workspace context${recipe} for "${q}" — ${String(count)} ref${
           count === 1 ? '' : 's'
         }`;
+  }
+  if (name === 'execute_object_update') {
+    const field = typeof inp.field === 'string' ? inp.field : 'field';
+    const out = output as { ok?: boolean; message?: string } | undefined;
+    if (out?.message) return out.message;
+    if (state === 'approval-requested') return `Approval needed to update object ${field}`;
+    if (state === 'output-denied') return `Denied object ${field} update`;
+    return `Update object ${field}`;
   }
   if (name === 'search_boards') {
     const q = typeof inp.query === 'string' ? inp.query : '';
@@ -344,10 +354,86 @@ function ReconnectButton({ serverId, serverName }: { serverId: string; serverNam
   );
 }
 
-export function ToolStep({ name, state, input, output }: Props) {
+function formatApprovalValue(value: unknown): string {
+  if (value === null || value === undefined) return 'empty';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
+function ToolApprovalCard({
+  approval,
+  input,
+  onApprovalResponse,
+}: {
+  approval: { id: string };
+  input: unknown;
+  onApprovalResponse: NonNullable<Props['onApprovalResponse']>;
+}) {
+  const record = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+  const field = typeof record.field === 'string' ? record.field : 'field';
+  const reason = typeof record.reason === 'string' ? record.reason : null;
+  return (
+    <div className="mt-2 rounded-sm border border-signal/40 bg-signal/5 p-3">
+      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-signal">
+        approval required
+      </p>
+      <dl className="mt-2 grid gap-1 text-[11px] text-fg-muted">
+        <div className="grid grid-cols-[6rem_1fr] gap-2">
+          <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Field</dt>
+          <dd className="text-fg">{field}</dd>
+        </div>
+        <div className="grid grid-cols-[6rem_1fr] gap-2">
+          <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Current</dt>
+          <dd className="break-words text-fg">
+            {formatApprovalValue(record.expectedCurrentValue)}
+          </dd>
+        </div>
+        <div className="grid grid-cols-[6rem_1fr] gap-2">
+          <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Proposed</dt>
+          <dd className="break-words text-fg">{formatApprovalValue(record.newValue)}</dd>
+        </div>
+        {reason ? (
+          <div className="grid grid-cols-[6rem_1fr] gap-2">
+            <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Reason</dt>
+            <dd className="break-words text-fg">{reason}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            onApprovalResponse({ id: approval.id, approved: true });
+          }}
+          className="rounded-sm bg-signal px-3 py-1.5 text-xs font-medium text-signal-fg hover:opacity-90"
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onApprovalResponse({
+              id: approval.id,
+              approved: false,
+              reason: 'User denied in chat',
+            });
+          }}
+          className="rounded-sm border border-border px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-2"
+        >
+          Deny
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function ToolStep({ name, state, input, output, approval, onApprovalResponse }: Props) {
   const [open, setOpen] = useState(false);
   const isRunning =
     state === 'input-streaming' || state === 'input-available' || state === 'partial-call';
+  const isApprovalPending = state === 'approval-requested';
   const out =
     output &&
     typeof output === 'object' &&
@@ -360,11 +446,14 @@ export function ToolStep({ name, state, input, output }: Props) {
     (typeof output === 'object' &&
       output !== null &&
       'error' in (output as Record<string, unknown>));
-  const summary = summarize(name, input, output);
+  const summary = summarize(name, input, output, state);
   const reauthServerId = out && typeof out.mcp_server_id === 'string' ? out.mcp_server_id : null;
   const reauthServerName =
     out && typeof out.mcp_server_name === 'string' ? out.mcp_server_name : 'MCP server';
   const suggestion = name === 'suggest_object_memory' ? suggestionFromOutput(output) : null;
+  const needsApproval =
+    state === 'approval-requested' && approval && onApprovalResponse ? approval : null;
+  const approvalResponse = needsApproval && onApprovalResponse ? onApprovalResponse : null;
   return (
     <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs">
       <button
@@ -375,13 +464,20 @@ export function ToolStep({ name, state, input, output }: Props) {
         }}
       >
         <span className="truncate">
-          {isRunning ? '⏳ ' : isError ? '⚠ ' : '✓ '}
+          {isApprovalPending ? '⏸ ' : isRunning ? '⏳ ' : isError ? '⚠ ' : '✓ '}
           {summary}
         </span>
         <span className="text-muted-foreground">{open ? '−' : '+'}</span>
       </button>
       {reauthServerId ? (
         <ReconnectButton serverId={reauthServerId} serverName={reauthServerName} />
+      ) : null}
+      {needsApproval && approvalResponse ? (
+        <ToolApprovalCard
+          approval={needsApproval}
+          input={input}
+          onApprovalResponse={approvalResponse}
+        />
       ) : null}
       {suggestion ? <InlineApprovalCard suggestion={suggestion} /> : null}
       {open && (
