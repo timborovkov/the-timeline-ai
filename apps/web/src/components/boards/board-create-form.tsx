@@ -1,11 +1,19 @@
 'use client';
 
-import { Boxes, ClipboardList, KanbanSquare, PackageOpen } from 'lucide-react';
+import { Boxes, ClipboardList, KanbanSquare, PackageOpen, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useReducer, useTransition } from 'react';
 
 import { createBoardAction } from '@/app/actions/boards';
 import { BoardStageEditor, type EditableBoardStage } from '@/components/boards/board-stage-editor';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
 const PRESETS = [
@@ -106,7 +114,36 @@ function reducer(state: BoardFormState, action: BoardFormAction): BoardFormState
   }
 }
 
-export function BoardCreateForm() {
+interface BoardCreateFormProps {
+  showHeading?: boolean;
+}
+
+export function BoardCreateDialog() {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 rounded-sm bg-signal px-3 py-1.5 font-sans text-sm font-medium normal-case tracking-normal text-signal-fg hover:opacity-90"
+        >
+          <Plus className="size-3.5" aria-hidden="true" />
+          Create board
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[min(820px,calc(100vh-2rem))] overflow-y-auto border-border bg-bg sm:max-w-5xl">
+        <DialogHeader>
+          <DialogTitle>New board</DialogTitle>
+          <DialogDescription>
+            Pick a starting shape, name it, and tune the stages for this workflow.
+          </DialogDescription>
+        </DialogHeader>
+        <BoardCreateForm showHeading={false} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [{ error, name, templateKind, purpose, stages }, dispatch] = useReducer(reducer, {
@@ -142,9 +179,11 @@ export function BoardCreateForm() {
 
   return (
     <div>
-      <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-        New board
-      </h2>
+      {showHeading ? (
+        <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+          New board
+        </h2>
+      ) : null}
       <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
         {PRESETS.map((preset) => {
           const Icon = preset.icon;

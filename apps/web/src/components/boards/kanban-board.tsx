@@ -28,6 +28,7 @@ import type * as objects from '@timeline/shared/objects';
 
 import { updateObjectAction } from '@/app/actions/objects';
 import { ObjectTextFilter } from '@/components/boards/object-text-filter';
+import { displayText } from '@/lib/display-dates';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { cn, errorMessage } from '@/lib/utils';
 
@@ -369,7 +370,7 @@ function Card({ row, error, saving }: { row: objects.ObjectRow; error?: string; 
         // the title area, which is where users naturally grab the card.
         className="block min-w-0 truncate font-medium hover:underline"
       >
-        {row.canonicalName}
+        {displayText(row.canonicalName)}
       </Link>
       <div className="mt-1.5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
         <span>{row.type}</span>

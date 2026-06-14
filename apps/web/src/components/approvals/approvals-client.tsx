@@ -14,6 +14,7 @@ import {
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
 import { Button } from '@/components/ui/button';
+import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
 interface SuggestionItem {
@@ -136,10 +137,10 @@ function itemStatusLabel(status: string): string {
 }
 
 function formatPayloadValue(value: unknown): string {
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') return displayText(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (value instanceof Date) return value.toISOString();
-  return JSON.stringify(value);
+  return displayText(JSON.stringify(value));
 }
 
 function objectMergeHref(item: SuggestionItem): string {
@@ -163,10 +164,10 @@ function localRefLabel(bundle: SuggestionBundle, ref: string): string {
       typeof candidate.proposedPayload.localRef === 'string' &&
       candidate.proposedPayload.localRef.trim().toLowerCase() === normalizedRef,
   );
-  if (!item) return ref;
+  if (!item) return displayText(ref);
   return typeof item.proposedPayload.canonicalName === 'string'
-    ? item.proposedPayload.canonicalName
-    : item.title;
+    ? displayText(item.proposedPayload.canonicalName)
+    : displayText(item.title);
 }
 
 function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBundle): string | null {
@@ -182,9 +183,9 @@ function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBund
   const kind =
     typeof item.proposedPayload.kind === 'string' ? item.proposedPayload.kind : 'related';
   if (from === 'existing object' && to === 'existing object') {
-    return `${item.title} · ${kind}`;
+    return displayText(`${item.title} · ${kind}`);
   }
-  return `${from} ↔ ${to} · ${kind}`;
+  return displayText(`${from} ↔ ${to} · ${kind}`);
 }
 
 export function ApprovalsClient({ suggestions, allowBulkAccept = true, folded }: Props) {
@@ -501,12 +502,16 @@ function ApprovalBundleHeader({ bundle }: { bundle: SuggestionBundle }) {
   return (
     <div className="min-w-0 flex-1">
       <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-        {bundle.source} · {bundle.confidence} · {new Date(bundle.createdAt).toLocaleString()}
+        {bundle.source} · {bundle.confidence} · {formatDisplayDateTime(bundle.createdAt)}
       </div>
-      <h2 className="mt-1 text-base font-semibold tracking-tight text-fg">{bundle.title}</h2>
-      {bundle.summary ? <p className="mt-1 text-sm text-fg-muted">{bundle.summary}</p> : null}
+      <h2 className="mt-1 text-base font-semibold tracking-tight text-fg">
+        {displayText(bundle.title)}
+      </h2>
+      {bundle.summary ? (
+        <p className="mt-1 text-sm text-fg-muted">{displayText(bundle.summary)}</p>
+      ) : null}
       {bundle.reason ? (
-        <p className="mt-1 max-w-3xl text-xs leading-5 text-fg-dim">{bundle.reason}</p>
+        <p className="mt-1 max-w-3xl text-xs leading-5 text-fg-dim">{displayText(bundle.reason)}</p>
       ) : null}
     </div>
   );
@@ -542,8 +547,10 @@ function ApprovalItemMain({ item }: { item: SuggestionItem }) {
       <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
         Proposal · {itemStatusLabel(item.status)}
       </div>
-      <div className="mt-1 font-medium text-fg">{item.title}</div>
-      {item.description ? <p className="mt-1 text-sm text-fg-muted">{item.description}</p> : null}
+      <div className="mt-1 font-medium text-fg">{displayText(item.title)}</div>
+      {item.description ? (
+        <p className="mt-1 text-sm text-fg-muted">{displayText(item.description)}</p>
+      ) : null}
     </div>
   );
 }
@@ -558,7 +565,9 @@ function ApprovalItemPayload({ bundle, item }: { bundle: SuggestionBundle; item:
       {summary ? (
         <p className="mt-1 truncate font-mono text-[11px] text-fg-dim">{summary}</p>
       ) : null}
-      {item.failureReason ? <p className="mt-1 text-xs text-danger">{item.failureReason}</p> : null}
+      {item.failureReason ? (
+        <p className="mt-1 text-xs text-danger">{displayText(item.failureReason)}</p>
+      ) : null}
     </div>
   );
 }
@@ -634,7 +643,7 @@ function ApprovalEvidence({ bundle }: { bundle: SuggestionBundle }) {
             Timeline evidence · {ev.source ?? 'source'} · {ev.rawEventId.slice(0, 8)}
           </span>
           <span className="line-clamp-2 text-fg-muted group-hover:text-fg">
-            {ev.quote ?? 'Open the source event on the timeline.'}
+            {ev.quote ? displayText(ev.quote) : 'Open the source event on the timeline.'}
           </span>
         </EvidenceLink>
       ))}
