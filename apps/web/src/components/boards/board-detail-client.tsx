@@ -8,12 +8,11 @@ import type { BoardLayout } from '@/lib/board-links';
 import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects';
 
+import { BoardActionsMenu } from '@/components/boards/board-actions-menu';
 import { BoardAddItemForm } from '@/components/boards/board-add-item-form';
 import { BoardCardDetail } from '@/components/boards/board-card-detail';
-import { BoardPinButton } from '@/components/boards/board-pin-button';
 import { CuratedBoardList, CuratedBoardTable } from '@/components/boards/curated-board-views';
 import { CuratedKanbanBoard } from '@/components/boards/curated-kanban-board';
-import { DeleteBoardButton } from '@/components/boards/delete-board-button';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { IndexStrip } from '@/components/index-strip';
 import { boardViewHref } from '@/lib/board-links';
@@ -107,8 +106,7 @@ export function BoardDetailClient({
       >
         <span className="inline-flex items-center gap-2">
           <HistoryBackLink fallbackHref="/app/boards" label="Back" />
-          <BoardPinButton id={boardId} pinned={pinned} />
-          <DeleteBoardButton id={boardId} />
+          <BoardActionsMenu id={boardId} name={boardName} pinned={pinned} />
         </span>
       </IndexStrip>
 

@@ -6,6 +6,7 @@ import {
   deleteBoardAction,
   pinBoardAction,
   quickCreateBoardItemAction,
+  renameBoardAction,
   removeBoardItemAction,
   updateBoardItemAction,
 } from '@/app/actions/boards';
@@ -19,6 +20,7 @@ const fakes = vi.hoisted(() => ({
     archiveBoard: vi.fn(),
     addBoardItem: vi.fn(),
     createObjectAndAddBoardItem: vi.fn(),
+    renameBoard: vi.fn(),
     updateBoardItem: vi.fn(),
     removeBoardItem: vi.fn(),
     pinBoard: vi.fn(),
@@ -61,6 +63,7 @@ beforeEach(() => {
     entityId: ENTITY_ID,
     object: { id: ENTITY_ID },
   });
+  fakes.fakeBoards.renameBoard.mockResolvedValue(true);
   fakes.fakeBoards.updateBoardItem.mockResolvedValue({
     id: ITEM_ID,
     boardId: BOARD_ID,
@@ -104,6 +107,28 @@ describe('deleteBoardAction', () => {
 
     expect(fakes.fakeBoards.archiveBoard).toHaveBeenCalledWith(BOARD_ID);
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards');
+  });
+});
+
+describe('renameBoardAction', () => {
+  it('renames a board and refreshes board surfaces', async () => {
+    await expect(renameBoardAction({ id: BOARD_ID, name: 'Renamed board' })).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(fakes.fakeBoards.renameBoard).toHaveBeenCalledWith({
+      id: BOARD_ID,
+      name: 'Renamed board',
+    });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/boards/${BOARD_ID}`);
+  });
+
+  it('rejects empty board names before resolving scope', async () => {
+    await expect(renameBoardAction({ id: BOARD_ID, name: '   ' })).resolves.toEqual({
+      error: 'Too small: expected string to have >=1 characters',
+    });
+
+    expect(fakes.fakeResolveScope).not.toHaveBeenCalled();
   });
 });
 

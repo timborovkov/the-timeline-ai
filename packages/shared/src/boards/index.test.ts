@@ -191,6 +191,32 @@ describe('board scope', () => {
     expect((await boardUpdatedAt(board.id)).getTime()).toBeGreaterThan(oldUpdatedAt.getTime());
   });
 
+  it('renames a board inside the active team', async () => {
+    const owner = withTeam(db, TEAM_A, USER_OWNER);
+    const other = withTeam(db, TEAM_B, USER_OTHER_TEAM);
+    const board = await owner.boards.createBoard({
+      name: 'Original board',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    const oldUpdatedAt = new Date('2026-01-01T00:00:00.000Z');
+    await setBoardUpdatedAt(board.id, oldUpdatedAt);
+
+    await expect(owner.boards.renameBoard({ id: board.id, name: 'Renamed board' })).resolves.toBe(
+      true,
+    );
+    await expect(other.boards.renameBoard({ id: board.id, name: 'Wrong team' })).rejects.toThrow(
+      'Board not found',
+    );
+
+    const [row] = await db
+      .select({ name: boards.name, updatedAt: boards.updatedAt })
+      .from(boards)
+      .where(eq(boards.id, board.id));
+    expect(row?.name).toBe('Renamed board');
+    expect(row?.updatedAt.getTime()).toBeGreaterThan(oldUpdatedAt.getTime());
+  });
+
   it('rejects cross-team board item rows at the database boundary', async () => {
     const owner = withTeam(db, TEAM_A, USER_OWNER);
     const other = withTeam(db, TEAM_B, USER_OTHER_TEAM);

@@ -59,14 +59,11 @@ vi.mock('@/components/boards/board-add-item-form', () => ({
 vi.mock('@/components/boards/board-card-detail', () => ({
   BoardCardDetail: () => null,
 }));
-vi.mock('@/components/boards/board-pin-button', () => ({
-  BoardPinButton: () => null,
+vi.mock('@/components/boards/board-actions-menu', () => ({
+  BoardActionsMenu: () => <button type="button">Board actions</button>,
 }));
 vi.mock('@/components/boards/curated-kanban-board', () => ({
   CuratedKanbanBoard: () => null,
-}));
-vi.mock('@/components/boards/delete-board-button', () => ({
-  DeleteBoardButton: () => null,
 }));
 
 const { BoardDetailClient } = await import('./board-detail-client.js');

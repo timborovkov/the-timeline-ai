@@ -128,6 +128,11 @@ export interface CreateBoardInput {
   isShared?: boolean;
 }
 
+export interface RenameBoardInput {
+  id: string;
+  name: string;
+}
+
 export interface AddBoardItemInput {
   entityId: string;
   laneId?: string | null;
@@ -641,6 +646,18 @@ export function createBoardScope({
         .update(boards)
         .set({ archivedAt: new Date(), updatedAt: new Date() })
         .where(and(eq(boards.id, boardId), eq(boards.teamId, scope.teamId)))
+        .returning({ id: boards.id });
+      return rows.length > 0;
+    },
+
+    async renameBoard(input: RenameBoardInput): Promise<boolean> {
+      await requireBoard(input.id);
+      const rows = await db
+        .update(boards)
+        .set({ name: normalizeName(input.name, 'Board name'), updatedAt: new Date() })
+        .where(
+          and(eq(boards.id, input.id), eq(boards.teamId, scope.teamId), isNull(boards.archivedAt)),
+        )
         .returning({ id: boards.id });
       return rows.length > 0;
     },

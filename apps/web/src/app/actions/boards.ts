@@ -26,6 +26,11 @@ const createBoardSchema = z.object({
   lanes: z.array(laneSchema).max(16).optional(),
 });
 
+const renameBoardSchema = z.object({
+  id: uuidSchema,
+  name: z.string().trim().min(1).max(120),
+});
+
 const boardItemPatchSchema = z.object({
   id: uuidSchema,
   laneId: uuidSchema.nullable().optional(),
@@ -133,6 +138,23 @@ export async function deleteBoardAction(input: unknown): Promise<ActionState> {
       return ok ? { ok: true } : { error: 'Board not found' };
     } catch (err) {
       return { error: friendlyError(err, 'archive_board') };
+    }
+  });
+}
+
+export async function renameBoardAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('rename_board', async () => {
+    const parsed = renameBoardSchema.safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const ok = await r.scope.boards.renameBoard(parsed.data);
+      if (!ok) return { error: 'Board not found' };
+      revalidateBoardSurfaces(parsed.data.id);
+      return { ok: true };
+    } catch (err) {
+      return { error: friendlyError(err, 'rename_board') };
     }
   });
 }
