@@ -56,6 +56,12 @@ SUPPORT_EMAIL=contact@thetimeline.cc
         finding the email; email verification is not required to join.
       </p>
       <p>
+        Maintain HTML email templates as static files in
+        <code>packages/shared/src/messaging/email-templates</code>. The shared package build copies
+        them into <code>dist/messaging/email-templates</code>, so server actions and workers render
+        the same branded templates in development and production.
+      </p>
+      <p>
         Daily digests are personalized per active team member, generated against the last noon UTC
         window, stored in <code>daily_digests</code>, and sent once per generated digest unless the
         recipient has disabled the digest in Team settings → Messaging. In-app notifications remain

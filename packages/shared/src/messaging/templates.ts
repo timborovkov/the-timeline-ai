@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import type {
   DailyDigestMessageInput,
   EmailVerificationMessageInput,
@@ -8,6 +12,25 @@ import type {
   TeamInviteMessageInput,
   WelcomeMessageInput,
 } from '#src/messaging/types.js';
+
+type TemplateName =
+  | 'base'
+  | 'daily-digest'
+  | 'email-verification'
+  | 'support-request'
+  | 'team-invite'
+  | 'welcome';
+
+const templateDir = join(dirname(fileURLToPath(import.meta.url)), 'email-templates');
+const templateCache = new Map<TemplateName, string>();
+
+function loadTemplate(name: TemplateName): string {
+  const cached = templateCache.get(name);
+  if (cached) return cached;
+  const template = readFileSync(join(templateDir, `${name}.html`), 'utf8');
+  templateCache.set(name, template);
+  return template;
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -22,6 +45,18 @@ function formatDate(date: Date): string {
   return date.toLocaleDateString('en', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+function renderTemplate(
+  template: string,
+  values: Record<string, string>,
+  rawValues: Record<string, string> = {},
+): string {
+  return template
+    .replaceAll(/\{\{\{\s*([a-zA-Z0-9_]+)\s*\}\}\}/g, (_match, key: string) => rawValues[key] ?? '')
+    .replaceAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key: string) =>
+      escapeHtml(values[key] ?? ''),
+    );
+}
+
 function htmlLayout(input: {
   preview: string;
   title: string;
@@ -33,31 +68,37 @@ function htmlLayout(input: {
         input.cta.label,
       )}</a></p>`
     : '';
-  return `<!doctype html>
-<html>
-  <body style="margin: 0; background: #f6f7f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #171717;">
-    <div style="display: none; max-height: 0; overflow: hidden;">${escapeHtml(input.preview)}</div>
-    <main style="max-width: 640px; margin: 0 auto; padding: 32px 20px;">
-      <div style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.14em; text-transform: uppercase; color: #68a500; font-size: 12px; margin-bottom: 20px;">The Timeline</div>
-      <section style="background: #fff; border: 1px solid #d8dddd; border-radius: 6px; padding: 24px;">
-        <h1 style="font-size: 22px; line-height: 1.25; margin: 0 0 16px;">${escapeHtml(input.title)}</h1>
-        ${input.body}
-        ${cta}
-      </section>
-      <p style="font-size: 12px; color: #747b7b; margin-top: 20px;">You received this because this address is connected to The Timeline.</p>
-    </main>
-  </body>
-</html>`;
+  return renderTemplate(
+    loadTemplate('base'),
+    {
+      preview: input.preview,
+      title: input.title,
+    },
+    {
+      body: input.body,
+      ctaBlock: cta,
+    },
+  );
 }
 
-function paragraphs(lines: string[]): string {
-  return lines
-    .filter((line) => line.trim().length > 0)
-    .map(
-      (line) =>
-        `<p style="font-size: 15px; line-height: 1.55; margin: 0 0 14px;">${escapeHtml(line)}</p>`,
-    )
-    .join('');
+function htmlList(items: string[]): string {
+  return items.length
+    ? `<ul style="font-size: 14px; line-height: 1.55; padding-left: 20px;">${items
+        .map((item) => `<li>${escapeHtml(item)}</li>`)
+        .join('')}</ul>`
+    : '<p style="font-size: 14px; color: #747b7b;">None</p>';
+}
+
+function htmlListItems(items: string[]): string {
+  return items.map((item) => `<li>${escapeHtml(item)}</li>`).join('');
+}
+
+function renderBody(
+  name: Exclude<TemplateName, 'base'>,
+  values: Record<string, string>,
+  rawValues: Record<string, string> = {},
+): string {
+  return renderTemplate(loadTemplate(name), values, rawValues);
 }
 
 function renderTeamInvite(input: TeamInviteMessageInput): RenderedMessage {
@@ -75,11 +116,13 @@ function renderTeamInvite(input: TeamInviteMessageInput): RenderedMessage {
   const htmlBody = htmlLayout({
     preview,
     title: `Join ${input.teamName}`,
-    body: paragraphs([
-      `${input.inviterName} invited you to join ${input.teamName} as ${roleLabel}.`,
-      `This invite expires on ${expires}.`,
-      `If the button does not work, copy and paste this link: ${input.inviteUrl}`,
-    ]),
+    body: renderBody('team-invite', {
+      inviterName: input.inviterName,
+      teamName: input.teamName,
+      roleLabel,
+      expires,
+      inviteUrl: input.inviteUrl,
+    }),
     cta: { href: input.inviteUrl, label: 'Join team' },
   });
   return {
@@ -110,13 +153,13 @@ function renderSupportRequest(input: SupportRequestMessageInput): RenderedMessag
   const htmlBody = htmlLayout({
     preview: `Support request from ${input.name}`,
     title: `Support request: ${input.requestType}`,
-    body: `${paragraphs([
-      `From ${input.name} <${input.email}>`,
-      `Team: ${input.teamName ?? 'n/a'}`,
-      `Current page: ${input.currentPage ?? 'n/a'}`,
-    ])}<pre style="white-space: pre-wrap; font-size: 14px; line-height: 1.5; background: #f6f7f7; border: 1px solid #d8dddd; padding: 12px; border-radius: 4px;">${escapeHtml(
-      input.message,
-    )}</pre>`,
+    body: renderBody('support-request', {
+      name: input.name,
+      email: input.email,
+      teamName: input.teamName ?? 'n/a',
+      currentPage: input.currentPage ?? 'n/a',
+      message: input.message,
+    }),
   });
   return {
     intent: 'support_request',
@@ -155,12 +198,14 @@ function renderWelcome(input: WelcomeMessageInput): RenderedMessage {
   const htmlBody = htmlLayout({
     preview,
     title: 'Welcome to The Timeline',
-    body: `${paragraphs([
-      `Hi ${name}, welcome in. Your ${input.teamName} workspace is ready.`,
-      'A good first pass is simple:',
-    ])}<ol style="font-size: 15px; line-height: 1.55; padding-left: 22px;">${steps
-      .map((step) => `<li>${escapeHtml(step)}</li>`)
-      .join('')}</ol>`,
+    body: renderBody(
+      'welcome',
+      {
+        name,
+        teamName: input.teamName,
+      },
+      { steps: htmlListItems(steps) },
+    ),
     cta: { href: input.dashboardUrl, label: 'Open dashboard' },
   });
   return {
@@ -188,11 +233,10 @@ function renderEmailVerification(input: EmailVerificationMessageInput): Rendered
   const htmlBody = htmlLayout({
     preview,
     title: 'Verify your email',
-    body: paragraphs([
-      'Confirm this email address to finish setting up The Timeline.',
-      `This link expires on ${expires}.`,
-      `If the button does not work, copy and paste this link: ${input.verificationUrl}`,
-    ]),
+    body: renderBody('email-verification', {
+      expires,
+      verificationUrl: input.verificationUrl,
+    }),
     cta: { href: input.verificationUrl, label: 'Verify email' },
   });
   return {
@@ -235,27 +279,25 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
     '',
     `Open digest: ${input.digestUrl}`,
   ].join('\n');
-  const list = (items: string[]) =>
-    items.length
-      ? `<ul style="font-size: 14px; line-height: 1.55; padding-left: 20px;">${items
-          .map((item) => `<li>${escapeHtml(item)}</li>`)
-          .join('')}</ul>`
-      : '<p style="font-size: 14px; color: #747b7b;">None</p>';
   const htmlBody = htmlLayout({
     preview: p.summary,
     title: `Daily digest for ${p.teamName}`,
-    body: `${paragraphs([p.summary])}
-      <h2 style="font-size: 14px; margin: 20px 0 8px;">Snapshot</h2>
-      ${list([
-        `${p.pendingApprovals} pending approvals`,
-        `${p.eventCount} new timeline events`,
-        sourceLines.length ? `Sources: ${sourceLines.join(', ')}` : 'No new sources',
-        objectLines.length ? `Objects changed: ${objectLines.join(', ')}` : 'No object changes',
-      ])}
-      <h2 style="font-size: 14px; margin: 20px 0 8px;">Current tasks</h2>
-      ${list(p.tasks.map((task) => `${task.title} (${task.status})`))}
-      <h2 style="font-size: 14px; margin: 20px 0 8px;">Upcoming calendar</h2>
-      ${list(p.upcomingCalendar.map((event) => `${event.title} (${event.startAt})`))}`,
+    body: renderBody(
+      'daily-digest',
+      { summary: p.summary },
+      {
+        snapshotList: htmlList([
+          `${p.pendingApprovals} pending approvals`,
+          `${p.eventCount} new timeline events`,
+          sourceLines.length ? `Sources: ${sourceLines.join(', ')}` : 'No new sources',
+          objectLines.length ? `Objects changed: ${objectLines.join(', ')}` : 'No object changes',
+        ]),
+        tasksList: htmlList(p.tasks.map((task) => `${task.title} (${task.status})`)),
+        calendarList: htmlList(
+          p.upcomingCalendar.map((event) => `${event.title} (${event.startAt})`),
+        ),
+      },
+    ),
     cta: { href: input.digestUrl, label: 'Open digest' },
   });
   return {
