@@ -58,6 +58,54 @@ describe('ToolStep', () => {
     expect(html).toContain('Updated Otto Silventola: status changed from active to done.');
   });
 
+  it('renders create-object approval details', () => {
+    const html = renderToStaticMarkup(
+      createElement(ToolStep, {
+        name: 'execute_object_create',
+        state: 'approval-requested',
+        input: {
+          type: 'project',
+          canonicalName: 'AuditAI pilot',
+          status: 'open',
+          stage: 'planning',
+          priority: 2,
+          aliases: ['Pilot'],
+          reason: 'User asked to track the pilot.',
+        },
+        approval: { id: 'approval-create' },
+        onApprovalResponse: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('approval required');
+    expect(html).toContain('Type');
+    expect(html).toContain('project');
+    expect(html).toContain('Name');
+    expect(html).toContain('AuditAI pilot');
+    expect(html).toContain('Aliases');
+    expect(html).toContain('Pilot');
+  });
+
+  it('renders archive-object approval details with an object chip', () => {
+    const html = renderToStaticMarkup(
+      createElement(ToolStep, {
+        name: 'execute_object_archive',
+        state: 'approval-requested',
+        input: {
+          entityId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          reason: 'User confirmed this object is obsolete.',
+        },
+        approval: { id: 'approval-archive' },
+        onApprovalResponse: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('approval required');
+    expect(html).toContain('Object');
+    expect(html).toContain('[ent:aaaaaaaa]');
+    expect(html).toContain('User confirmed this object is obsolete.');
+  });
+
   it('renders object preview chips for merge approvals', () => {
     const survivorId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const mergedId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';

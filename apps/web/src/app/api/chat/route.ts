@@ -192,7 +192,9 @@ const nativeToolGroups = {
   calendar: ['list_calendar_events', 'get_calendar_event'],
   approvals: ['list_pending_approvals'],
   actions: [
+    'execute_object_create',
     'execute_object_update',
+    'execute_object_archive',
     'execute_object_merge',
     'suggest_task',
     'suggest_object_memory',

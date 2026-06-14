@@ -45,13 +45,16 @@ interface FakeScope {
   suggestions: {
     createOrMergeSuggestionBundle: ReturnType<typeof vi.fn>;
     listSuggestions: ReturnType<typeof vi.fn>;
+    reconcileCanonicalChange: ReturnType<typeof vi.fn>;
     reconcileObjectMerge: ReturnType<typeof vi.fn>;
   };
   objects: {
     searchObjects: ReturnType<typeof vi.fn>;
     listObjects: ReturnType<typeof vi.fn>;
     getObject: ReturnType<typeof vi.fn>;
+    createObject: ReturnType<typeof vi.fn>;
     updateObject: ReturnType<typeof vi.fn>;
+    archiveObject: ReturnType<typeof vi.fn>;
     getObjectMergePreview: ReturnType<typeof vi.fn>;
     mergeObjects: ReturnType<typeof vi.fn>;
   };
@@ -87,13 +90,16 @@ function makeFakeScope(): FakeScope {
     suggestions: {
       createOrMergeSuggestionBundle: vi.fn(),
       listSuggestions: vi.fn(),
+      reconcileCanonicalChange: vi.fn().mockResolvedValue(0),
       reconcileObjectMerge: vi.fn().mockResolvedValue(0),
     },
     objects: {
       searchObjects: vi.fn(),
       listObjects: vi.fn(),
       getObject: vi.fn(),
+      createObject: vi.fn(),
       updateObject: vi.fn(),
+      archiveObject: vi.fn(),
       getObjectMergePreview: vi.fn(),
       mergeObjects: vi.fn(),
     },
@@ -192,6 +198,73 @@ describe('buildAgentTools — team isolation', () => {
     await expect(exec({ routeId: 'unknown/route' }, {})).resolves.toEqual({ found: false });
   });
 
+  it('execute_object_create requires approval and creates a canonical object directly', async () => {
+    const scope = makeFakeScope();
+    const createdAt = new Date('2026-06-14T12:00:00.000Z');
+    const updatedAt = new Date('2026-06-14T12:00:00.000Z');
+    scope.objects.createObject.mockResolvedValue({
+      id: OBJECT_ID,
+      type: 'project',
+      canonicalName: 'AuditAI pilot',
+      status: 'open',
+      stage: 'planning',
+      priority: 2,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+      agentSuggested: false,
+      archivedAt: null,
+      aliases: ['Pilot'],
+      metadata: {},
+      createdAt,
+      updatedAt,
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_object_create?.needsApproval).toBe(true);
+    const exec = tools.execute_object_create?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        type: 'project',
+        canonicalName: 'AuditAI pilot',
+        status: 'open',
+        stage: 'planning',
+        priority: 2,
+        aliases: ['Pilot'],
+        reason: 'User asked to track the pilot.',
+      },
+      {},
+    );
+
+    expect(scope.objects.createObject).toHaveBeenCalledWith({
+      type: 'project',
+      canonicalName: 'AuditAI pilot',
+      status: 'open',
+      stage: 'planning',
+      priority: 2,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+      aliases: ['Pilot'],
+      parentObjectId: null,
+      actor: { kind: 'agent', userId: scope.userId },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      object_id: OBJECT_ID,
+      object_citation: `[ent:${OBJECT_ID}]`,
+      object: {
+        id: OBJECT_ID,
+        citation: `[ent:${OBJECT_ID}]`,
+        name: 'AuditAI pilot',
+        type: 'project',
+      },
+    });
+  });
+
   it('execute_object_update requires approval and applies a direct object update', async () => {
     const scope = makeFakeScope();
     scope.objects.getObject.mockResolvedValue({
@@ -288,6 +361,69 @@ describe('buildAgentTools — team isolation', () => {
       field: 'status',
       expected_value: 'active',
       current_value: 'blocked',
+    });
+  });
+
+  it('execute_object_archive requires approval and reconciles pending archive suggestions', async () => {
+    const scope = makeFakeScope();
+    scope.objects.getObject.mockResolvedValue({
+      id: OBJECT_ID,
+      type: 'company',
+      canonicalName: 'Old vendor',
+      archivedAt: null,
+    });
+    scope.objects.archiveObject.mockResolvedValue({
+      id: OBJECT_ID,
+      type: 'company',
+      canonicalName: 'Old vendor',
+      status: 'open',
+      stage: null,
+      priority: null,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueAt: null,
+      agentSuggested: false,
+      archivedAt: new Date('2026-06-14T12:00:00.000Z'),
+      aliases: [],
+      metadata: {},
+      createdAt: new Date('2026-06-01T12:00:00.000Z'),
+      updatedAt: new Date('2026-06-14T12:00:00.000Z'),
+      changedFields: ['archivedAt'],
+    });
+    scope.suggestions.reconcileCanonicalChange.mockResolvedValue(2);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_object_archive?.needsApproval).toBe(true);
+    const exec = tools.execute_object_archive?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        entityId: OBJECT_ID,
+        reason: 'User confirmed this object is obsolete.',
+      },
+      {},
+    );
+
+    expect(scope.objects.getObject).toHaveBeenCalledWith(OBJECT_ID);
+    expect(scope.objects.archiveObject).toHaveBeenCalledWith(OBJECT_ID, {
+      kind: 'agent',
+      userId: scope.userId,
+    });
+    expect(scope.suggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+      targetKind: 'object',
+      targetId: OBJECT_ID,
+      operation: 'archive_or_cancel',
+      reason: 'The chat agent archived this object after explicit in-chat approval.',
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      object_id: OBJECT_ID,
+      object_citation: `[ent:${OBJECT_ID}]`,
+      archived: true,
+      changed_fields: ['archivedAt'],
+      reconciled_approvals: 2,
     });
   });
 

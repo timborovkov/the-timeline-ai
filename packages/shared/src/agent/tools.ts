@@ -277,6 +277,25 @@ const executeObjectMergeInput = z.object({
   reason: z.string().trim().min(1).max(1000),
 });
 
+const executeObjectCreateInput = z.object({
+  type: objectTypeSchema.default('other'),
+  canonicalName: z.string().trim().min(1).max(200),
+  status: z.string().trim().min(1).max(40).optional(),
+  stage: z.string().trim().max(40).nullable().optional(),
+  priority: z.number().int().min(1).max(4).nullable().optional(),
+  ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
+  assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+  dueAt: z.iso.datetime().nullable().optional(),
+  aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+  parentObjectId: z.string().regex(UUID_RE).nullable().optional(),
+  reason: z.string().trim().min(1).max(1000),
+});
+
+const executeObjectArchiveInput = z.object({
+  entityId: z.string().regex(UUID_RE),
+  reason: z.string().trim().min(1).max(1000),
+});
+
 const searchAppGuideInput = z.object({
   query: z.string().trim().min(1).max(300),
   limit: z.number().int().min(1).max(10).optional(),
@@ -558,10 +577,49 @@ function compactMergePreview(
   };
 }
 
+function objectKindForCitation(row: Pick<objects.ObjectRow, 'type'>): 'object' | 'task' {
+  return row.type === 'task' || row.type === 'follow_up' ? 'task' : 'object';
+}
+
 export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}): ToolSet {
   const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
     safe(label, fn, options.onToolError);
   return {
+    execute_object_create: tool({
+      description:
+        'Approval-required dashboard action. Directly create a canonical object/task after the user approves in chat. Use only for explicit commands like "create a project called X" or "add a task to follow up with Y". This writes canonical state through createObject and does NOT create a background approval queue item.',
+      inputSchema: executeObjectCreateInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_object_create', async () => {
+          const input = executeObjectCreateInput.parse(raw);
+          const createInput: objects.CreateObjectInput = {
+            type: input.type,
+            canonicalName: input.canonicalName,
+            ...(input.status !== undefined ? { status: input.status } : {}),
+            stage: input.stage ?? null,
+            priority: input.priority ?? null,
+            ownerUserId: input.ownerUserId ?? null,
+            assigneeUserId: input.assigneeUserId ?? null,
+            dueAt: input.dueAt ? new Date(input.dueAt) : null,
+            ...(input.aliases !== undefined ? { aliases: input.aliases } : {}),
+            parentObjectId: input.parentObjectId ?? null,
+            actor: { kind: 'agent', userId: scope.userId },
+          };
+          const object = await scope.objects.createObject(createInput);
+          return {
+            ok: true,
+            object_id: object.id,
+            object_citation: artifactRefCitation({
+              kind: objectKindForCitation(object),
+              id: object.id,
+            }),
+            object: serializeObjectRow(object),
+            message: `Created ${object.type}: ${object.canonicalName}.`,
+          };
+        }),
+    }),
+
     execute_object_update: tool({
       description:
         'Approval-required dashboard action. Directly update one field on an existing object after the user approves in chat. Use only for explicit user commands like "set this deal status to won" or "move this task due date to tomorrow". First call get_object or retrieve_workspace_context, then pass the observed current value as expectedCurrentValue so stale state is rejected. This does NOT create a background approval queue item.',
@@ -612,6 +670,52 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                 : `Updated ${current.canonicalName}: ${input.field} changed from ${previewValue(
                     currentValue,
                   )} to ${previewValue(newValue)}.`,
+          };
+        }),
+    }),
+
+    execute_object_archive: tool({
+      description:
+        'Approval-required dashboard action. Directly archive one existing object/task after the user approves in chat. Use only for explicit archive/cancel commands. First resolve the object with search_objects/get_object/retrieve_workspace_context and show the user the object citation. This runs canonical archiveObject, reconciles duplicate archive suggestions, and does NOT create a background approval queue item.',
+      inputSchema: executeObjectArchiveInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_object_archive', async () => {
+          const input = executeObjectArchiveInput.parse(raw);
+          const current = await scope.objects.getObject(input.entityId);
+          if (!current) return { ok: false, error: 'not_found' };
+          const archived = await scope.objects.archiveObject(input.entityId, {
+            kind: 'agent',
+            userId: scope.userId,
+          });
+          const reconciledApprovals = archived.changedFields.includes('archivedAt')
+            ? await scope.suggestions
+                .reconcileCanonicalChange({
+                  targetKind: archived.type === 'task' ? 'task' : 'object',
+                  targetId: archived.id,
+                  operation: 'archive_or_cancel',
+                  reason: 'The chat agent archived this object after explicit in-chat approval.',
+                })
+                .catch((err: unknown) => {
+                  log.warn({ err, objectId: archived.id }, 'object archive reconcile failed');
+                  options.onToolError?.(err, { tool: 'execute_object_archive:reconcile' });
+                  return 0;
+                })
+            : 0;
+          return {
+            ok: true,
+            object_id: archived.id,
+            object_citation: artifactRefCitation({
+              kind: objectKindForCitation(archived),
+              id: archived.id,
+            }),
+            archived: archived.archivedAt !== null,
+            changed_fields: archived.changedFields,
+            reconciled_approvals: reconciledApprovals,
+            message:
+              archived.changedFields.length === 0
+                ? `${current.canonicalName} was already archived.`
+                : `Archived ${current.canonicalName}.`,
           };
         }),
     }),

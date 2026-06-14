@@ -2,7 +2,7 @@
 
 import { Check, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { type ReactNode, useState, useTransition } from 'react';
 
 import { acceptSuggestionItemAction, rejectSuggestionItemAction } from '@/app/actions/suggestions';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
@@ -68,6 +68,22 @@ function summarize(name: string, input: unknown, output: unknown, state: string)
     if (state === 'approval-requested') return `Approval needed to update object ${field}`;
     if (state === 'output-denied') return `Denied object ${field} update`;
     return `Update object ${field}`;
+  }
+  if (name === 'execute_object_create') {
+    const out = output as { ok?: boolean; message?: string } | undefined;
+    if (out?.message) return out.message;
+    const type = typeof inp.type === 'string' ? inp.type : 'object';
+    const nameValue = typeof inp.canonicalName === 'string' ? inp.canonicalName : '';
+    if (state === 'approval-requested') return `Approval needed to create ${type} ${nameValue}`;
+    if (state === 'output-denied') return `Denied ${type} create`;
+    return `Create ${type} ${nameValue}`;
+  }
+  if (name === 'execute_object_archive') {
+    const out = output as { ok?: boolean; message?: string } | undefined;
+    if (out?.message) return out.message;
+    if (state === 'approval-requested') return 'Approval needed to archive object';
+    if (state === 'output-denied') return 'Denied object archive';
+    return 'Archive object';
   }
   if (name === 'execute_object_merge') {
     const out = output as { ok?: boolean; message?: string } | undefined;
@@ -371,6 +387,15 @@ function formatApprovalValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function ApprovalRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[6rem_1fr] gap-2">
+      <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">{label}</dt>
+      <dd className="break-words text-fg">{children}</dd>
+    </div>
+  );
+}
+
 function ToolApprovalCard({
   name,
   approval,
@@ -387,6 +412,7 @@ function ToolApprovalCard({
     ? record.objectIds.filter((id): id is string => typeof id === 'string')
     : [];
   const survivorId = typeof record.survivorId === 'string' ? record.survivorId : null;
+  const entityId = typeof record.entityId === 'string' ? record.entityId : null;
   const field = typeof record.field === 'string' ? record.field : 'field';
   const reason = typeof record.reason === 'string' ? record.reason : null;
   const mergedIds = survivorId ? objectIds.filter((id) => id !== survivorId) : [];
@@ -395,55 +421,67 @@ function ToolApprovalCard({
       <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-signal">
         approval required
       </p>
-      {name === 'execute_object_merge' ? (
+      {name === 'execute_object_create' ? (
+        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+          <ApprovalRow label="Type">{formatApprovalValue(record.type ?? 'other')}</ApprovalRow>
+          <ApprovalRow label="Name">{formatApprovalValue(record.canonicalName)}</ApprovalRow>
+          {record.status !== undefined ? (
+            <ApprovalRow label="Status">{formatApprovalValue(record.status)}</ApprovalRow>
+          ) : null}
+          {record.stage !== undefined ? (
+            <ApprovalRow label="Stage">{formatApprovalValue(record.stage)}</ApprovalRow>
+          ) : null}
+          {record.priority !== undefined ? (
+            <ApprovalRow label="Priority">{formatApprovalValue(record.priority)}</ApprovalRow>
+          ) : null}
+          {record.dueAt !== undefined ? (
+            <ApprovalRow label="Due">{formatApprovalValue(record.dueAt)}</ApprovalRow>
+          ) : null}
+          {Array.isArray(record.aliases) && record.aliases.length > 0 ? (
+            <ApprovalRow label="Aliases">{record.aliases.join(', ')}</ApprovalRow>
+          ) : null}
+          {typeof record.parentObjectId === 'string' ? (
+            <ApprovalRow label="Parent">
+              <ArtifactReferenceChip refValue={{ kind: 'object', id: record.parentObjectId }} />
+            </ApprovalRow>
+          ) : null}
+          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+        </dl>
+      ) : name === 'execute_object_archive' ? (
+        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+          {entityId ? (
+            <ApprovalRow label="Object">
+              <ArtifactReferenceChip refValue={{ kind: 'object', id: entityId }} />
+            </ApprovalRow>
+          ) : null}
+          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+        </dl>
+      ) : name === 'execute_object_merge' ? (
         <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
           {survivorId ? (
-            <div className="grid grid-cols-[6rem_1fr] gap-2">
-              <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Keep</dt>
-              <dd>
-                <ArtifactReferenceChip refValue={{ kind: 'object', id: survivorId }} />
-              </dd>
-            </div>
+            <ApprovalRow label="Keep">
+              <ArtifactReferenceChip refValue={{ kind: 'object', id: survivorId }} />
+            </ApprovalRow>
           ) : null}
           {mergedIds.length > 0 ? (
-            <div className="grid grid-cols-[6rem_1fr] gap-2">
-              <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Merge</dt>
-              <dd className="flex flex-wrap gap-1">
+            <ApprovalRow label="Merge">
+              <span className="flex flex-wrap gap-1">
                 {mergedIds.map((id) => (
                   <ArtifactReferenceChip key={id} refValue={{ kind: 'object', id }} />
                 ))}
-              </dd>
-            </div>
+              </span>
+            </ApprovalRow>
           ) : null}
-          {reason ? (
-            <div className="grid grid-cols-[6rem_1fr] gap-2">
-              <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Reason</dt>
-              <dd className="break-words text-fg">{reason}</dd>
-            </div>
-          ) : null}
+          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
         </dl>
       ) : (
         <dl className="mt-2 grid gap-1 text-[11px] text-fg-muted">
-          <div className="grid grid-cols-[6rem_1fr] gap-2">
-            <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Field</dt>
-            <dd className="text-fg">{field}</dd>
-          </div>
-          <div className="grid grid-cols-[6rem_1fr] gap-2">
-            <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Current</dt>
-            <dd className="break-words text-fg">
-              {formatApprovalValue(record.expectedCurrentValue)}
-            </dd>
-          </div>
-          <div className="grid grid-cols-[6rem_1fr] gap-2">
-            <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Proposed</dt>
-            <dd className="break-words text-fg">{formatApprovalValue(record.newValue)}</dd>
-          </div>
-          {reason ? (
-            <div className="grid grid-cols-[6rem_1fr] gap-2">
-              <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Reason</dt>
-              <dd className="break-words text-fg">{reason}</dd>
-            </div>
-          ) : null}
+          <ApprovalRow label="Field">{field}</ApprovalRow>
+          <ApprovalRow label="Current">
+            {formatApprovalValue(record.expectedCurrentValue)}
+          </ApprovalRow>
+          <ApprovalRow label="Proposed">{formatApprovalValue(record.newValue)}</ApprovalRow>
+          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
         </dl>
       )}
       <div className="mt-3 flex flex-wrap gap-2">
