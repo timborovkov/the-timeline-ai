@@ -52,6 +52,17 @@ export function isMeetingBotConfigured(): boolean {
   return Boolean(env.RECALL_API_KEY && env.RECALL_STATUS_WEBHOOK_SECRET);
 }
 
+export function meetingBotDisplayName(teamName: string | null | undefined): string {
+  const suffix = "'s thetimeline.cc bot";
+  const fallback = getEnv().RECALL_BOT_DISPLAY_NAME;
+  const trimmed = teamName?.trim();
+  if (!trimmed) return fallback;
+  const maxTeamNameLength = 100 - suffix.length;
+  const safeTeamName =
+    trimmed.length > maxTeamNameLength ? trimmed.slice(0, maxTeamNameLength).trimEnd() : trimmed;
+  return `${safeTeamName}${suffix}`;
+}
+
 /** Test-only reset of the cached provider. */
 export function resetMeetingBotProviderForTests(): void {
   _cached = undefined;

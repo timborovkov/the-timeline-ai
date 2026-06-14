@@ -34,14 +34,95 @@ import { users } from '#src/schema/users.js';
 
 export const meetingStatus = pgEnum('meeting_status', [
   'pending',
+  'scheduled',
   'joining',
   'active',
   'processing',
   'completed',
+  'completed_partial',
+  'skipped',
+  'no_show',
+  'cancelled',
   'failed',
 ]);
 
 export const meetingPlatform = pgEnum('meeting_platform', ['meet', 'teams', 'zoom']);
+
+export const meetingCaptureConfirmationStatus = pgEnum('meeting_capture_confirmation_status', [
+  'pending',
+  'confirmed',
+  'cancelled',
+  'expired',
+]);
+
+export const meetingCaptureConfirmationSource = pgEnum('meeting_capture_confirmation_source', [
+  'slack',
+  'telegram',
+  'web',
+]);
+
+export const savedMeetings = pgTable(
+  'saved_meetings',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    title: text('title').notNull(),
+    description: text('description'),
+    platform: meetingPlatform('platform').notNull(),
+    meetingUrl: text('meeting_url').notNull(),
+    defaultVisibility: eventVisibility('default_visibility').notNull().default('team'),
+    visibilityUserIds: uuid('visibility_user_ids').array(),
+    permissionConfirmedAt: timestamp('permission_confirmed_at', { withTimezone: true }).notNull(),
+    permissionConfirmedByUserId: uuid('permission_confirmed_by_user_id').references(
+      () => users.id,
+      {
+        onDelete: 'set null',
+      },
+    ),
+    scheduleConfig: jsonb('schedule_config'),
+    durationMinutes: integer('duration_minutes').notNull().default(30),
+    autoJoinEnabled: boolean('auto_join_enabled').notNull().default(false),
+    autoJoinPausedAt: timestamp('auto_join_paused_at', { withTimezone: true }),
+    autoJoinPausedReason: text('auto_join_paused_reason'),
+    consecutiveFailureCount: integer('consecutive_failure_count').notNull().default(0),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    archivedByUserId: uuid('archived_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    metadata: jsonb('metadata').notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('saved_meetings_team_active_idx').on(table.teamId, table.archivedAt),
+    index('saved_meetings_team_auto_join_idx').on(table.teamId, table.autoJoinEnabled),
+  ],
+);
+
+export const savedMeetingAliases = pgTable(
+  'saved_meeting_aliases',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    savedMeetingId: uuid('saved_meeting_id')
+      .notNull()
+      .references(() => savedMeetings.id, { onDelete: 'cascade' }),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    alias: text('alias').notNull(),
+    normalizedAlias: text('normalized_alias').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('saved_meeting_aliases_team_norm_unq').on(table.teamId, table.normalizedAlias),
+    index('saved_meeting_aliases_saved_idx').on(table.savedMeetingId),
+  ],
+);
 
 export const meetings = pgTable(
   'meetings',
@@ -60,10 +141,16 @@ export const meetings = pgTable(
     // the unsigned transcript webhook can look up the meeting in O(1).
     // Nullable until the provider responds with the id.
     providerBotId: text('provider_bot_id'),
+    savedMeetingId: uuid('saved_meeting_id').references(() => savedMeetings.id, {
+      onDelete: 'set null',
+    }),
     platform: meetingPlatform('platform').notNull(),
     meetingUrl: text('meeting_url').notNull(),
     title: text('title'),
     status: meetingStatus('status').notNull().default('pending'),
+    scheduledStartAt: timestamp('scheduled_start_at', { withTimezone: true }),
+    scheduledEndAt: timestamp('scheduled_end_at', { withTimezone: true }),
+    linkedCalendarEventId: uuid('linked_calendar_event_id'),
     // Visibility for the meeting itself + the visibility copied onto each
     // raw_event generated from its transcript. Reuses `event_visibility` so
     // the same predicate gates both.
@@ -90,6 +177,41 @@ export const meetings = pgTable(
     uniqueIndex('meetings_team_bot_unq')
       .on(table.teamId, table.providerBotId)
       .where(sql`${table.providerBotId} IS NOT NULL`),
+    uniqueIndex('meetings_team_saved_scheduled_unq')
+      .on(table.teamId, table.savedMeetingId, table.scheduledStartAt)
+      .where(sql`${table.savedMeetingId} IS NOT NULL AND ${table.scheduledStartAt} IS NOT NULL`),
+    index('meetings_team_calendar_idx').on(table.teamId, table.linkedCalendarEventId),
+  ],
+);
+
+export const meetingCaptureConfirmations = pgTable(
+  'meeting_capture_confirmations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    requestedByUserId: uuid('requested_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    source: meetingCaptureConfirmationSource('source').notNull(),
+    status: meetingCaptureConfirmationStatus('status').notNull().default('pending'),
+    platform: meetingPlatform('platform').notNull(),
+    meetingUrl: text('meeting_url').notNull(),
+    title: text('title'),
+    defaultVisibility: eventVisibility('default_visibility').notNull().default('team'),
+    visibilityUserIds: uuid('visibility_user_ids').array(),
+    sourceContext: jsonb('source_context').notNull().default({}),
+    meetingId: uuid('meeting_id').references(() => meetings.id, { onDelete: 'set null' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('meeting_capture_confirmations_team_status_idx').on(table.teamId, table.status),
+    index('meeting_capture_confirmations_expires_idx').on(table.expiresAt),
   ],
 );
 

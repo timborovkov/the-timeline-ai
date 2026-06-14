@@ -14,6 +14,9 @@ export const QUEUE_NAMES = {
   // worker process itself (BullMQ repeatable on startup); consumed by
   // startOverdueWorker.
   overdueScan: 'overdue-scan',
+  // Phase 11 calendar recurrence materializer. Keeps a rolling window of
+  // child occurrence rows warm for recurring calendar parents.
+  calendarRecurrence: 'calendar-recurrence',
   // Phase 9: document upload → text extract → chunk → embed pipeline.
   // The `documentExtract` worker fans out to many `embed` jobs (one per
   // chunk) once chunking succeeds; embed shares the existing queue.
@@ -22,6 +25,9 @@ export const QUEUE_NAMES = {
   // extraction, usage recording. Triggered by the Recall status webhook
   // on `bot.call_ended` / `transcript.done`.
   meetingFinalize: 'meeting-finalize',
+  // Saved meetings: 2-minute cadence that materializes upcoming saved
+  // meeting occurrences and starts due scheduled captures.
+  meetingScheduler: 'meeting-scheduler',
   // Hourly janitor: re-enqueues async-pipeline rows stuck in intermediate
   // states (the enqueue-after-commit pattern in the upload action isn't
   // atomic — if Redis hiccups after the DB write, the job is lost). Mirrors
@@ -533,6 +539,43 @@ export async function closeOverdueScanQueue(): Promise<void> {
   });
 }
 
+export interface CalendarRecurrenceJobData {
+  triggeredAt?: string;
+}
+
+let _calendarRecurrenceQueue: TimelineQueue<CalendarRecurrenceJobData> | undefined;
+
+export function getCalendarRecurrenceQueue(): TimelineQueue<CalendarRecurrenceJobData> {
+  if (_calendarRecurrenceQueue) return _calendarRecurrenceQueue;
+  _calendarRecurrenceQueue = createTimelineQueue<CalendarRecurrenceJobData>(
+    QUEUE_NAMES.calendarRecurrence,
+    {
+      attempts: 2,
+      backoff: { type: 'fixed', delay: 60_000 },
+      removeOnComplete: { age: 3600, count: 24 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  );
+  return _calendarRecurrenceQueue;
+}
+
+export async function scheduleCalendarRecurrenceMaterialization(): Promise<void> {
+  await getCalendarRecurrenceQueue().add(
+    'materialize',
+    {},
+    {
+      repeat: { pattern: '0 * * * *' },
+      jobId: 'calendar-recurrence-hourly',
+    },
+  );
+}
+
+export async function closeCalendarRecurrenceQueue(): Promise<void> {
+  await closeQueue(_calendarRecurrenceQueue, () => {
+    _calendarRecurrenceQueue = undefined;
+  });
+}
+
 export interface DocumentExtractJobData {
   documentVersionId: string;
   teamId: string;
@@ -598,6 +641,43 @@ export async function enqueueMeetingFinalizeJob(data: MeetingFinalizeJobData): P
 export async function closeMeetingFinalizeQueue(): Promise<void> {
   await closeQueue(_meetingFinalizeQueue, () => {
     _meetingFinalizeQueue = undefined;
+  });
+}
+
+export interface MeetingSchedulerJobData {
+  triggeredAt?: string;
+}
+
+let _meetingSchedulerQueue: TimelineQueue<MeetingSchedulerJobData> | undefined;
+
+export function getMeetingSchedulerQueue(): TimelineQueue<MeetingSchedulerJobData> {
+  if (_meetingSchedulerQueue) return _meetingSchedulerQueue;
+  _meetingSchedulerQueue = createTimelineQueue<MeetingSchedulerJobData>(
+    QUEUE_NAMES.meetingScheduler,
+    {
+      attempts: 2,
+      backoff: { type: 'fixed', delay: 30_000 },
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  );
+  return _meetingSchedulerQueue;
+}
+
+export async function scheduleMeetingSchedulerTick(): Promise<void> {
+  await getMeetingSchedulerQueue().add(
+    'meeting-scheduler-tick',
+    {},
+    {
+      repeat: { pattern: '*/2 * * * *' },
+      jobId: 'meeting-scheduler-tick-2min',
+    },
+  );
+}
+
+export async function closeMeetingSchedulerQueue(): Promise<void> {
+  await closeQueue(_meetingSchedulerQueue, () => {
+    _meetingSchedulerQueue = undefined;
   });
 }
 

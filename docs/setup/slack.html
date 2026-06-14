@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Slack conversational capture setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-01</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-14</span></div>
       <p class="tldr">
         Slack is a first-party Capture Surface like Telegram: install the app with OAuth, link Slack
         users with OAuth, bind channels from Timeline, and let DMs route through the user's active
@@ -51,7 +51,10 @@ SLACK_SIGNING_SECRET=
         </li>
         <li>Events Request URL: <code>https://thetimeline.cc/api/slack/events</code>.</li>
         <li>
-          Slash Commands → Create New Command:
+          Interactivity Request URL: <code>https://thetimeline.cc/api/slack/interactions</code>.
+        </li>
+        <li>
+          Slash Commands → Create New Command for timeline questions:
           <ul>
             <li>Command: <code>/ask</code></li>
             <li>Request URL: <code>https://thetimeline.cc/api/slack/commands</code></li>
@@ -67,9 +70,23 @@ SLACK_SIGNING_SECRET=
             </li>
           </ul>
         </li>
+        <li>
+          Slash Commands → Create New Command for meeting capture:
+          <ul>
+            <li>Command: <code>/timeline</code></li>
+            <li>Request URL: <code>https://thetimeline.cc/api/slack/commands</code></li>
+            <li>Short description: <code>Control Timeline capture</code></li>
+            <li>Usage hint: <code>join &lt;saved-meeting-alias-or-url&gt; [title]</code></li>
+            <li>
+              Saved Meeting aliases join immediately. Raw URLs send an ephemeral confirmation with
+              <strong>Confirm and join</strong> and <strong>Cancel</strong> buttons before any bot
+              is created.
+            </li>
+          </ul>
+        </li>
       </ul>
       <p>
-        The events and slash-command endpoints verify Slack's
+        The events, slash-command, and interaction endpoints verify Slack's
         <code>X-Slack-Signature</code> and reject timestamps older than five minutes.
       </p>
 
@@ -128,6 +145,11 @@ app_mention
         <li>
           Slack DMs get a best-effort <code>:eyes:</code> reaction after capture. Channels never get
           acknowledgement reactions.
+        </li>
+        <li>
+          <code>/timeline join</code> is the only Slack text path that starts meeting capture.
+          Ordinary messages such as "everyone join daily" are treated as normal conversation and
+          never invite a bot.
         </li>
         <li>
           Source edits create replacement raw rows and tombstone older visible revisions. Source

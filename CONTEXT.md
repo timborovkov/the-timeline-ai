@@ -711,6 +711,54 @@ the same commitment, such as converting a date-only all-day call into a timed
 call once the time is known.
 _Avoid_: Duplicate calendar event
 
+**Recurring Calendar Series**:
+A canonical calendar event with an RRULE schedule that materializes concrete
+occurrence rows for near-term display and search. The parent stores the rule;
+children store the occurrence time.
+_Avoid_: Copy-pasted repeated events
+
+**Calendar Occurrence Exception**:
+A materialized occurrence that has been moved, edited, or cancelled separately
+from its recurring series. Re-expansion must preserve exceptions instead of
+overwriting or recreating them.
+_Avoid_: Detached duplicate meeting
+
+**Tentative Slot Group**:
+A set of proposed meeting times that are visible as tentative calendar holds
+after approval. Once one slot is confirmed, the chosen slot becomes the meeting
+and sibling tentative holds are cancelled.
+_Avoid_: Five confirmed meetings
+
+**Saved Meeting**:
+A reusable meeting capture target, usually with a stable meeting link and
+aliases, where teammates expect Timeline to join without re-entering the link.
+Creating a saved meeting includes confirming that the team has permission to
+capture that meeting, so later joins do not ask again. A saved meeting can be
+linked to calendar events that represent the same scheduled conversation
+instead of duplicating them.
+_Avoid_: Calendar sync, imported event, internal call
+
+**Quick Meeting Capture**:
+An ad hoc request for Timeline to join a live meeting from a chat command or
+minimal form, where the title may be filled in after the transcript is
+finalized.
+_Avoid_: Scheduled meeting when the call is already happening
+
+**Meeting Capture Confirmation**:
+A short-lived acknowledgement that participants have been informed before
+Timeline joins a meeting. Confirmation should be attached to the specific
+capture prompt, such as a button press or direct reply. Saved meetings do not
+use per-join confirmation because permission is confirmed when the saved
+meeting is created.
+_Avoid_: General consent, implicit yes
+
+**Meeting No-Show Window**:
+The bounded time Timeline will wait after joining a meeting link when nobody
+admits or joins the call. It applies to every meeting capture path so forgotten
+or moved calls do not leave a transcriber running indefinitely. For Google Meet
+captures, Timeline uses a provider-safe 550-second no-show window.
+_Avoid_: Infinite lobby, standby bot
+
 **Support Request**:
 A public or signed-in request for help or sales contact. It belongs to platform
 operations, not to a team's timeline.
@@ -905,6 +953,20 @@ calendar event?"
 
 Domain expert: "No. That is a calendar refinement: update the existing event
 instead of duplicating the commitment."
+
+Developer: "If the team agrees on a daily call every weekday except Saturday,
+should each call be suggested separately?"
+
+Domain expert: "No. That is a recurring calendar series. The approval creates
+one series with materialized occurrences, and later movement of one call edits
+that occurrence as an exception."
+
+Developer: "If we propose five customer meeting times, should those become five
+busy meetings?"
+
+Domain expert: "No. After approval they are a tentative slot group: visible
+holds, not confirmed meetings. When one slot is confirmed, the chosen slot
+becomes confirmed and the alternatives are cancelled."
 
 Developer: "Can the chat agent calculate 'week 24' itself from the prompt?"
 

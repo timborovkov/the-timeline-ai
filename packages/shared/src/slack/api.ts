@@ -145,6 +145,7 @@ export class SlackApi {
     thread_ts?: string;
     response_url?: string;
     response_type?: 'ephemeral' | 'in_channel';
+    blocks?: unknown[];
   }): Promise<void> {
     if (input.response_url) {
       await fetch(input.response_url, {
@@ -154,6 +155,7 @@ export class SlackApi {
           text: input.text,
           mrkdwn: false,
           response_type: input.response_type ?? 'ephemeral',
+          ...(input.blocks ? { blocks: input.blocks } : {}),
           ...(input.thread_ts ? { thread_ts: input.thread_ts } : {}),
         }),
       });

@@ -1,5 +1,8 @@
 'use client';
 
+import { ExternalLink } from 'lucide-react';
+
+import { EvidenceLink } from '@/components/evidence-link';
 import { useObjectSectionQuery } from '@/lib/use-paginated-queries';
 
 interface Props {
@@ -82,11 +85,30 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     );
   }
   if (section === 'events') {
+    const eventId = text(row.id);
+    const previewText = text(row.contentText);
+    const contentText = previewText || '[empty event]';
+    const occurredAt = text(row.occurredAt);
+    const source = text(row.source);
     return (
-      <div>
-        <p className="whitespace-pre-wrap">{text(row.contentText, '[empty event]')}</p>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          {new Date(text(row.occurredAt)).toLocaleString()} · {text(row.source)}
+      <div className="space-y-2">
+        <div className="flex items-start gap-3">
+          <p className="min-w-0 flex-1 whitespace-pre-wrap">{contentText}</p>
+          {eventId ? (
+            <EvidenceLink
+              eventId={eventId}
+              previewText={previewText}
+              source={source}
+              occurredAt={occurredAt}
+              className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+            >
+              <ExternalLink className="size-3" />
+              View
+            </EvidenceLink>
+          ) : null}
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          {new Date(occurredAt).toLocaleString()} · {source}
         </p>
       </div>
     );

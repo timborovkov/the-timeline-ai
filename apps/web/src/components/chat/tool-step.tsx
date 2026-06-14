@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
 import { acceptSuggestionItemAction, rejectSuggestionItemAction } from '@/app/actions/suggestions';
+import { EvidenceLink } from '@/components/evidence-link';
 
 interface Props {
   name: string;
@@ -174,9 +175,15 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
           {suggestion.evidence.slice(0, 3).map((evidence) => (
             <div key={evidence.rawEventId} className="text-[11px] text-muted-foreground">
               {evidence.quote ? <span className="text-foreground">"{evidence.quote}"</span> : null}
-              <span className="ml-1 font-mono uppercase tracking-[0.12em]">
+              <EvidenceLink
+                eventId={evidence.rawEventId}
+                className="ml-1 font-mono uppercase tracking-[0.12em] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                previewText={evidence.quote}
+                source={evidence.source}
+                title="Approval evidence"
+              >
                 {evidence.source ?? 'event'} {evidence.rawEventId.slice(0, 8)}
-              </span>
+              </EvidenceLink>
             </div>
           ))}
         </div>

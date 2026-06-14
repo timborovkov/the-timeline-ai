@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
@@ -46,7 +46,6 @@ function NotificationRowContent({
   initiallyRead,
 }: Props) {
   const router = useRouter();
-  const search = useSearchParams();
   const [pending, startTransition] = useTransition();
   // Optimistic read state so clicking through to an object instantly
   // clears the unread dot — the server action runs async without
@@ -101,15 +100,15 @@ function NotificationRowContent({
     individuallyReadRef.current = true;
     readRef.current = true;
     setRead(true);
-    const onUnreadFilter = search.get('unread') === '1';
     startTransition(async () => {
       try {
         const result = await markNotificationReadAction(id);
         if (!('error' in result) || !result.error) {
           // On the unread-only view, the server filter excludes read rows —
           // refresh so the now-read row drops out instead of lingering with
-          // muted styling. On the All view, the optimistic state is enough.
-          if (onUnreadFilter) router.refresh();
+          // muted styling. On the All view, refresh still matters because the
+          // shell inbox badge and dropdown are loaded by the server layout.
+          router.refresh();
           return;
         }
       } catch {

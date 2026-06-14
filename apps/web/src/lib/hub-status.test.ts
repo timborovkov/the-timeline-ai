@@ -7,25 +7,21 @@ describe('hub status helpers', () => {
     expect(attentionCount(2, 0, -1, 3)).toBe(5);
   });
 
-  it('deduplicates unread approval notifications from work attention', () => {
+  it('keeps inbox notifications out of work attention', () => {
     expect(
       workAttentionCount({
         pendingApprovals: 3,
-        unreadNotifications: 5,
-        unreadApprovalNotifications: 3,
-        overdueTasks: 2,
-      }),
-    ).toBe(7);
-  });
-
-  it('never lets approval notification dedupe make unread work negative', () => {
-    expect(
-      workAttentionCount({
-        pendingApprovals: 3,
-        unreadNotifications: 1,
-        unreadApprovalNotifications: 3,
         overdueTasks: 2,
       }),
     ).toBe(5);
+  });
+
+  it('ignores negative work attention inputs', () => {
+    expect(
+      workAttentionCount({
+        pendingApprovals: 3,
+        overdueTasks: -2,
+      }),
+    ).toBe(3);
   });
 });

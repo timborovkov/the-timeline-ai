@@ -34,6 +34,7 @@ import {
   finalizeDocumentVersionAction,
   requestDocumentUploadAction,
 } from '@/app/actions/documents';
+import { EvidenceLink } from '@/components/evidence-link';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -686,13 +687,16 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {sourceEventId ? (
-            <Link
-              href={`/app/timeline?event=${sourceEventId}#ev-${sourceEventId}`}
+            <EvidenceLink
+              eventId={sourceEventId}
+              previewText={summary}
+              source={document.provenance.source}
+              occurredAt={document.provenance.occurredAt}
               className="inline-flex h-8 items-center gap-1 rounded-sm border border-border px-2 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
             >
               <Link2 className="size-3.5" />
               Event
-            </Link>
+            </EvidenceLink>
           ) : null}
           <span className="hidden font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim sm:inline">
             {updatedAt}

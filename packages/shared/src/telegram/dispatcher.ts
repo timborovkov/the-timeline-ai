@@ -22,8 +22,15 @@ import {
 } from '#src/conversational/attachments.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import { childLogger } from '#src/logger.js';
+import {
+  confirmRawUrlQuickJoin,
+  createRawUrlQuickJoinConfirmation,
+  joinSavedMeetingByCommand,
+} from '#src/meetings/quick-capture.js';
+import { detectMeetingPlatform } from '#src/meetings/scope.js';
 import { getRedisConnection } from '#src/queue/connection.js';
 import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '#src/rate-limit/index.js';
+import { withTeam } from '#src/team-scope.js';
 import { type TelegramApi } from '#src/telegram/api.js';
 import {
   tgUpdateSchema,
@@ -139,14 +146,58 @@ export async function handleUpdate(
       await routeMessage(deps, update.update_id, update.message, false);
     } else if (update.edited_message) {
       await routeMessage(deps, update.update_id, update.edited_message, true);
+    } else if (update.callback_query) {
+      await routeCallbackQuery(deps, update.callback_query);
     }
-    // callback_query: not used yet (Phase 2 has no inline keyboards
-    // beyond optional /team — kept simple by replying with text).
   } catch (err) {
     log.error({ err }, 'dispatch failed');
     return { ok: false };
   }
   return { ok: true };
+}
+
+async function routeCallbackQuery(deps: DispatcherDeps, query: TgUpdate['callback_query']) {
+  if (!query?.data || !query.message) return;
+  const [kind, confirmationId] = query.data.split(':');
+  if (kind !== 'timeline_join_confirm' && kind !== 'timeline_join_cancel') return;
+  await deps.tg.answerCallbackQuery({ callback_query_id: query.id, text: 'Working on it...' });
+  const tgUserRow = await upsertTelegramUser(deps.db, query.from);
+  const chat = query.message.chat;
+  const teamId =
+    chat.type === 'private'
+      ? await getActiveTeamId(deps.db, tgUserRow.id)
+      : ((await getChatBinding(deps.db, chat.id, chat.title ?? null))?.teamId ?? null);
+  if (!teamId || !tgUserRow.userId || !confirmationId) {
+    await deps.tg.editMessageText({
+      chat_id: chat.id,
+      message_id: query.message.message_id,
+      text: 'Could not confirm this join request. Make sure your Telegram user is linked.',
+    });
+    return;
+  }
+  if (kind === 'timeline_join_cancel') {
+    const scope = withTeam(deps.db, teamId, tgUserRow.userId);
+    await scope.meetings.markMeetingCaptureConfirmation(confirmationId, 'cancelled');
+    await deps.tg.editMessageText({
+      chat_id: chat.id,
+      message_id: query.message.message_id,
+      text: 'Cancelled.',
+    });
+    return;
+  }
+  const joined = await confirmRawUrlQuickJoin({
+    db: deps.db,
+    teamId,
+    userId: tgUserRow.userId,
+    confirmationId,
+  });
+  await deps.tg.editMessageText({
+    chat_id: chat.id,
+    message_id: query.message.message_id,
+    text: joined.ok
+      ? `Joining as ${joined.botName ?? 'Timeline bot'}.`
+      : (joined.error ?? 'Could not join call.'),
+  });
 }
 
 async function routeMessage(
@@ -205,6 +256,13 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
   // Edits of commands are ignored — Telegram lets users edit /commands but
   // re-running them on edit would be confusing.
   if (isEdit && command) return;
+
+  if (
+    !isEdit &&
+    (await maybeConfirmPendingQuickJoin(ctx, text, ctx.activeTeamId, ctx.tgUserRow.userId))
+  ) {
+    return;
+  }
 
   // Audio takes precedence over text/caption: a voice memo with a caption
   // is primarily an audio capture, and dropping the bytes to record only
@@ -304,12 +362,35 @@ async function dispatchCommand(
     case '/ask':
       await cmdAskDm(ctx, command.arg);
       return;
+    case '/join':
+      await cmdJoinDm(ctx, command.arg);
+      return;
     default:
       await ctx.tg.sendMessage({
         chat_id: ctx.message.chat.id,
         text: `Unknown command. Try /help.`,
       });
   }
+}
+
+async function cmdJoinDm(ctx: DmContext, arg: string): Promise<void> {
+  if (!ctx.activeTeamId || !ctx.tgUserRow.userId) {
+    await ctx.tg.sendMessage({
+      chat_id: ctx.message.chat.id,
+      text: 'Link your Telegram identity to Timeline before using /join.',
+    });
+    return;
+  }
+  await runTelegramJoinCommand({
+    db: ctx.db,
+    tg: ctx.tg,
+    chatId: ctx.message.chat.id,
+    messageId: ctx.message.message_id,
+    teamId: ctx.activeTeamId,
+    userId: ctx.tgUserRow.userId,
+    tgUserId: ctx.tgUser.id,
+    arg,
+  });
 }
 
 async function cmdStartDm(ctx: DmContext, arg: string): Promise<void> {
@@ -1043,6 +1124,15 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
   }
   if (isEdit && command) return;
 
+  if (
+    !isEdit &&
+    ctx.binding &&
+    ctx.tgUserRow?.userId &&
+    (await maybeConfirmPendingQuickJoin(ctx, text, ctx.binding.teamId, ctx.tgUserRow.userId))
+  ) {
+    return;
+  }
+
   // Unbound group: drop new messages silently (Phase 2 behavior). Edits
   // still flow through so an edit of a previously-recorded message can land
   // on its original team even after /unlink.
@@ -1175,6 +1265,25 @@ async function dispatchGroupCommand(
         question: command.arg,
         onAgentToolError: ctx.onAgentToolError,
         onAgentError: ctx.onAgentError,
+      });
+      return;
+    case '/join':
+      if (!ctx.binding || !ctx.tgUser || !ctx.tgUserRow?.userId) {
+        await ctx.tg.sendMessage({
+          chat_id: ctx.message.chat.id,
+          text: 'This group must be bound and your Telegram user must be linked before using /join.',
+        });
+        return;
+      }
+      await runTelegramJoinCommand({
+        db: ctx.db,
+        tg: ctx.tg,
+        chatId: ctx.message.chat.id,
+        messageId: ctx.message.message_id,
+        teamId: ctx.binding.teamId,
+        userId: ctx.tgUserRow.userId,
+        tgUserId: ctx.tgUser.id,
+        arg: command.arg,
       });
       return;
     case '/team':
@@ -1351,6 +1460,116 @@ async function cmdUnlinkGroup(ctx: GroupContext): Promise<void> {
 }
 
 // ---------- helpers ----------
+
+async function runTelegramJoinCommand(input: {
+  db: Db;
+  tg: TelegramApi;
+  chatId: number;
+  messageId: number;
+  teamId: string;
+  userId: string;
+  tgUserId: number;
+  arg: string;
+}): Promise<void> {
+  const [targetRaw = '', ...titleParts] = input.arg.trim().split(/\s+/);
+  if (!targetRaw) {
+    await input.tg.sendMessage({
+      chat_id: input.chatId,
+      text: 'Usage: /join <saved-meeting-alias-or-url> [optional title]',
+      reply_to_message_id: input.messageId,
+    });
+    return;
+  }
+  if (detectMeetingPlatform(targetRaw)) {
+    const confirmation = await createRawUrlQuickJoinConfirmation({
+      db: input.db,
+      teamId: input.teamId,
+      userId: input.userId,
+      meetingUrl: targetRaw,
+      title: titleParts.join(' ') || null,
+      source: 'telegram',
+      sourceContext: {
+        telegram_chat_id: input.chatId,
+        telegram_user_id: input.tgUserId,
+      },
+    });
+    if (!confirmation.needsConfirmation || !confirmation.confirmationId) {
+      await input.tg.sendMessage({
+        chat_id: input.chatId,
+        text: confirmation.error ?? 'Could not prepare meeting capture confirmation.',
+        reply_to_message_id: input.messageId,
+      });
+      return;
+    }
+    await input.tg.sendMessage({
+      chat_id: input.chatId,
+      text: 'Timeline will join after you confirm participants know this call will be transcribed.',
+      reply_to_message_id: input.messageId,
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: 'Confirm and join',
+              callback_data: `timeline_join_confirm:${confirmation.confirmationId}`,
+            },
+            {
+              text: 'Cancel',
+              callback_data: `timeline_join_cancel:${confirmation.confirmationId}`,
+            },
+          ],
+        ],
+      },
+    });
+    return;
+  }
+
+  const joined = await joinSavedMeetingByCommand({
+    db: input.db,
+    teamId: input.teamId,
+    userId: input.userId,
+    query: input.arg.trim(),
+  });
+  await input.tg.sendMessage({
+    chat_id: input.chatId,
+    text: joined.ok
+      ? `Joining as ${joined.botName ?? 'Timeline bot'}.`
+      : (joined.error ?? 'Could not join saved meeting.'),
+    reply_to_message_id: input.messageId,
+  });
+}
+
+async function maybeConfirmPendingQuickJoin(
+  ctx: Pick<DispatcherDeps, 'db' | 'tg'> & { message: TgMessage; tgUser?: TgUser | null },
+  text: string,
+  teamId: string | null,
+  userId: string | null,
+): Promise<boolean> {
+  if (!teamId || !userId || !ctx.tgUser) return false;
+  if (!/^(yes|y|yeah|yep|sure|yeah sure|ok|okay)$/i.test(text.trim())) return false;
+  const scope = withTeam(ctx.db, teamId, userId);
+  const pending = await scope.meetings.findPendingMeetingCaptureConfirmation({
+    source: 'telegram',
+    sourceContext: {
+      telegram_chat_id: ctx.message.chat.id,
+      telegram_user_id: ctx.tgUser.id,
+    },
+  });
+  if (!pending) return false;
+  const joined = await confirmRawUrlQuickJoin({
+    db: ctx.db,
+    teamId,
+    userId,
+    confirmationId: pending.id,
+  });
+  await ctx.tg.sendMessage({
+    chat_id: ctx.message.chat.id,
+    text: joined.ok
+      ? `Joining as ${joined.botName ?? 'Timeline bot'}.`
+      : (joined.error ?? 'Could not join call.'),
+    reply_to_message_id: ctx.message.message_id,
+  });
+  return true;
+}
 
 export function parseCommand(text: string): { name: string; arg: string } | null {
   if (!text.startsWith('/')) return null;

@@ -7,12 +7,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
+interface DeletePointsForSourceInput {
+  sourceId: string;
+}
+
 const fakes = vi.hoisted(() => ({
   enqueueCalendarEventEmbedJob: vi.fn(),
+  deletePoints: vi.fn(),
+  deletePointsForSource: vi.fn(),
 }));
 
 vi.mock('#src/queue/queues.js', () => ({
   enqueueCalendarEventEmbedJob: fakes.enqueueCalendarEventEmbedJob,
+}));
+vi.mock('#src/qdrant/client.js', () => ({
+  getQdrantClient: vi.fn(() => ({
+    deletePoints: fakes.deletePoints,
+    deletePointsForSource: fakes.deletePointsForSource,
+  })),
 }));
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -46,6 +58,10 @@ describe('calendar scope', () => {
     db = drizzle(pg);
     fakes.enqueueCalendarEventEmbedJob.mockReset();
     fakes.enqueueCalendarEventEmbedJob.mockResolvedValue(undefined);
+    fakes.deletePoints.mockReset();
+    fakes.deletePoints.mockResolvedValue(undefined);
+    fakes.deletePointsForSource.mockReset();
+    fakes.deletePointsForSource.mockResolvedValue(undefined);
   });
 
   it('keeps the occurrence timeline row rich enough for search hydration', async () => {
@@ -103,6 +119,683 @@ describe('calendar scope', () => {
 
     const rows = await db.select().from(calendarEvents).where(eq(calendarEvents.id, event.id));
     expect(rows[0]?.title).toBe('Queue-degraded planning updated');
+  });
+
+  it('materializes recurring daily calls except Saturdays', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR',
+    });
+
+    const rows = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-09T00:00:00Z'),
+      limit: 20,
+    });
+    const activeStarts = rows
+      .filter((row) => row.title === 'Daily call')
+      .map((row) => row.startAt.toISOString());
+
+    expect(parent.rrule).toBe('RRULE:FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR');
+    expect(activeStarts).toEqual([
+      '2026-07-01T16:00:00.000Z',
+      '2026-07-02T16:00:00.000Z',
+      '2026-07-03T16:00:00.000Z',
+      '2026-07-05T16:00:00.000Z',
+      '2026-07-06T16:00:00.000Z',
+      '2026-07-07T16:00:00.000Z',
+      '2026-07-08T16:00:00.000Z',
+    ]);
+    const embeddedIds = fakes.enqueueCalendarEventEmbedJob.mock.calls.map(
+      ([, eventId]) => eventId as string,
+    );
+    for (const row of rows) {
+      expect(embeddedIds).toContain(row.id);
+    }
+  });
+
+  it('uses the parent creator for raw timeline rows materialized by the worker scope', async () => {
+    const ownerScope = withTeam(db as never, TEAM_ID, USER_B_ID);
+    const workerScope = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {
+      skipMembershipCheck: true,
+    });
+    const parent = await ownerScope.calendar.createCalendarEvent({
+      title: 'Private daily call',
+      startAt: new Date('2026-01-01T16:00:00Z'),
+      endAt: new Date('2026-01-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'private',
+      rrule: 'FREQ=DAILY;COUNT=2',
+    });
+
+    await workerScope.calendar.materializeRecurringEvent(parent.id, {
+      from: new Date('2026-01-01T00:00:00Z'),
+      to: new Date('2026-01-03T00:00:00Z'),
+    });
+
+    const rows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.recurringParentId, parent.id));
+    expect(rows).toHaveLength(1);
+    const rawRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    const linked = rawRows.filter((row) =>
+      [rows[0]?.scheduledRawEventId, rows[0]?.startAtRawEventId].includes(row.id),
+    );
+    expect(linked).toHaveLength(2);
+    expect(linked.every((row) => row.authorUserId === USER_B_ID)).toBe(true);
+    expect(linked.every((row) => row.visibilityOwnerUserId === USER_B_ID)).toBe(true);
+  });
+
+  it('does not re-enqueue embeddings for already materialized recurrence rows', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=3',
+    });
+    fakes.enqueueCalendarEventEmbedJob.mockClear();
+
+    await expect(
+      scope.calendar.materializeRecurringEvent(parent.id, {
+        from: new Date('2026-07-01T00:00:00Z'),
+        to: new Date('2026-07-04T00:00:00Z'),
+      }),
+    ).resolves.toEqual([]);
+
+    expect(fakes.enqueueCalendarEventEmbedJob).not.toHaveBeenCalled();
+  });
+
+  it('materializes recurring parents beyond the first parent page', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parentRows = Array.from({ length: 501 }, (_, index) => ({
+      id: `00000000-0000-0000-0000-${String(index + 1000).padStart(12, '0')}`,
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      title: `Paged daily call ${index}`,
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team' as const,
+      rrule: 'RRULE:FREQ=DAILY;COUNT=2',
+      metadata: {},
+    }));
+    await db.insert(calendarEvents).values(parentRows);
+    fakes.enqueueCalendarEventEmbedJob.mockClear();
+
+    await expect(
+      scope.calendar.materializeRecurringEvents({
+        from: new Date('2026-07-01T00:00:00Z'),
+        to: new Date('2026-07-03T00:00:00Z'),
+      }),
+    ).resolves.toBe(501);
+
+    const rows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_ID));
+    const children = rows.filter((row) => row.recurringParentId !== null);
+    expect(children).toHaveLength(501);
+    expect(children.some((row) => row.recurringParentId === parentRows[500]?.id)).toBe(true);
+    expect(fakes.enqueueCalendarEventEmbedJob).toHaveBeenCalledTimes(501);
+  });
+
+  it('moves one recurring occurrence without changing sibling occurrences', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=5',
+    });
+    const rows = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
+      limit: 20,
+    });
+    const occurrence = rows.find(
+      (row) => row.originalStartAt?.toISOString() === '2026-07-02T16:00:00.000Z',
+    );
+    expect(occurrence).toBeDefined();
+
+    await scope.calendar.updateCalendarEvent(occurrence?.id ?? '', {
+      startAt: new Date('2026-07-02T15:00:00Z'),
+      endAt: new Date('2026-07-02T15:30:00Z'),
+      recurrenceEditMode: 'single',
+    });
+
+    await scope.calendar.materializeRecurringEvent(parent.id, {
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
+    });
+    const updatedRows = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
+      limit: 20,
+    });
+    const starts = updatedRows.map((row) => row.startAt.toISOString()).sort();
+    const moved = updatedRows.find((row) => row.id === occurrence?.id);
+    expect(moved).toMatchObject({ isException: true });
+    expect(starts).toContain('2026-07-02T15:00:00.000Z');
+    expect(starts).not.toContain('2026-07-02T16:00:00.000Z');
+    expect(starts).toContain('2026-07-03T16:00:00.000Z');
+  });
+
+  it('keeps a cancelled recurring occurrence cancelled after rematerialization', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=5',
+    });
+    const rows = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
+      limit: 20,
+    });
+    const occurrence = rows.find(
+      (row) => row.originalStartAt?.toISOString() === '2026-07-03T16:00:00.000Z',
+    );
+    expect(occurrence).toBeDefined();
+
+    await expect(scope.calendar.deleteCalendarEvent(occurrence?.id ?? '')).resolves.toBe(true);
+    await scope.calendar.materializeRecurringEvent(parent.id, {
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
+    });
+    const active = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
+      limit: 20,
+    });
+
+    expect(active.map((row) => row.startAt.toISOString())).not.toContain(
+      '2026-07-03T16:00:00.000Z',
+    );
+  });
+
+  it('marks deleted generated occurrences as exceptions so they do not reappear', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=3',
+    });
+    const rows = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-04T00:00:00Z'),
+      limit: 20,
+    });
+    const occurrence = rows.find(
+      (row) => row.originalStartAt?.toISOString() === '2026-07-02T16:00:00.000Z',
+    );
+    expect(occurrence).toBeDefined();
+    await scope.calendar.deleteCalendarEvent(occurrence?.id ?? '', {
+      recurrenceEditMode: 'series',
+    });
+
+    await scope.calendar.materializeRecurringEvent(parent.id, {
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-04T00:00:00Z'),
+    });
+
+    const active = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-04T00:00:00Z'),
+      limit: 20,
+    });
+    expect(active.map((row) => row.startAt.toISOString())).not.toContain(
+      '2026-07-02T16:00:00.000Z',
+    );
+    const allRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_ID));
+    const deletedOccurrence = allRows.find((row) => row.id === occurrence?.id);
+    expect(deletedOccurrence?.deletedAt).toBeInstanceOf(Date);
+    expect(deletedOccurrence?.isException).toBe(true);
+  });
+
+  it('recreates active children after a whole-series update rematerializes the parent', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=5',
+    });
+    const beforeRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_ID));
+    const oldChildRawIds = beforeRows
+      .filter((row) => row.recurringParentId === parent.id && !row.isException)
+      .flatMap((row) => [row.scheduledRawEventId, row.startAtRawEventId])
+      .filter((rawEventId): rawEventId is string => rawEventId !== null);
+
+    await scope.calendar.updateCalendarEvent(parent.id, {
+      title: 'Daily planning',
+      recurrenceEditMode: 'series',
+    });
+
+    const active = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
+      limit: 20,
+    });
+    const planningStarts = active
+      .filter((row) => row.title === 'Daily planning')
+      .map((row) => row.startAt.toISOString())
+      .sort();
+
+    expect(planningStarts).toEqual([
+      '2026-07-01T16:00:00.000Z',
+      '2026-07-02T16:00:00.000Z',
+      '2026-07-03T16:00:00.000Z',
+      '2026-07-04T16:00:00.000Z',
+      '2026-07-05T16:00:00.000Z',
+    ]);
+
+    const rawRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    for (const rawEventId of oldChildRawIds) {
+      expect(rawRows.find((row) => row.id === rawEventId)?.sourceMetadata).toMatchObject({
+        deleted: true,
+      });
+    }
+
+    await scope.calendar.materializeRecurringEvent(parent.id, {
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
+    });
+    const afterSecondMaterialize = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
+      limit: 20,
+    });
+    const activeChildStarts = afterSecondMaterialize
+      .filter((row) => row.recurringParentId === parent.id)
+      .map((row) => row.originalStartAt?.toISOString());
+    expect(new Set(activeChildStarts).size).toBe(activeChildStarts.length);
+    expect(afterSecondMaterialize).toHaveLength(5);
+  });
+
+  it('treats single-scope edits on recurring parents as series edits', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=3',
+    });
+
+    await scope.calendar.updateCalendarEvent(parent.id, {
+      startAt: new Date('2026-07-01T15:00:00Z'),
+      endAt: new Date('2026-07-01T15:30:00Z'),
+      recurrenceEditMode: 'single',
+    });
+
+    const active = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-04T00:00:00Z'),
+      limit: 20,
+    });
+    const starts = active.map((row) => row.startAt.toISOString()).sort();
+    expect(starts).toEqual([
+      '2026-07-01T15:00:00.000Z',
+      '2026-07-02T15:00:00.000Z',
+      '2026-07-03T15:00:00.000Z',
+    ]);
+    expect(starts).not.toContain('2026-07-02T16:00:00.000Z');
+  });
+
+  it('splits this-and-future recurring edits into a new parent series', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=6',
+    });
+    const rows = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-08T00:00:00Z'),
+      limit: 20,
+    });
+    const futureRawIds = rows
+      .filter(
+        (row) =>
+          row.recurringParentId === parent.id &&
+          row.originalStartAt !== null &&
+          row.originalStartAt >= new Date('2026-07-04T16:00:00Z'),
+      )
+      .flatMap((row) => [row.scheduledRawEventId, row.startAtRawEventId])
+      .filter((rawEventId): rawEventId is string => rawEventId !== null);
+    const occurrence = rows.find(
+      (row) => row.originalStartAt?.toISOString() === '2026-07-04T16:00:00.000Z',
+    );
+    expect(occurrence).toBeDefined();
+
+    const split = await scope.calendar.updateCalendarEvent(occurrence?.id ?? '', {
+      startAt: new Date('2026-07-04T15:00:00Z'),
+      endAt: new Date('2026-07-04T15:30:00Z'),
+      recurrenceEditMode: 'this_and_future',
+    });
+    expect(split?.recurringParentId).toBeNull();
+    expect(split?.id).not.toBe(parent.id);
+
+    const active = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-10T00:00:00Z'),
+      limit: 20,
+    });
+    const starts = active.map((row) => row.startAt.toISOString()).sort();
+    expect(starts).toContain('2026-07-03T16:00:00.000Z');
+    expect(starts).toContain('2026-07-04T15:00:00.000Z');
+    expect(starts).toContain('2026-07-05T15:00:00.000Z');
+    expect(starts).toContain('2026-07-06T15:00:00.000Z');
+    expect(starts).not.toContain('2026-07-04T16:00:00.000Z');
+    expect(starts).not.toContain('2026-07-07T15:00:00.000Z');
+
+    const rawRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    for (const rawEventId of futureRawIds) {
+      expect(rawRows.find((row) => row.id === rawEventId)?.sourceMetadata).toMatchObject({
+        deleted: true,
+      });
+    }
+  });
+
+  it('requires parent write access before splitting this-and-future from an occurrence', async () => {
+    const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const teammateScope = withTeam(db as never, TEAM_ID, USER_B_ID);
+    const parent = await ownerScope.calendar.createCalendarEvent({
+      title: 'Private daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'private',
+      rrule: 'FREQ=DAILY;COUNT=4',
+    });
+    const rows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_ID));
+    const occurrence = rows.find(
+      (row) =>
+        row.recurringParentId === parent.id &&
+        row.originalStartAt?.toISOString() === '2026-07-02T16:00:00.000Z',
+    );
+    expect(occurrence).toBeDefined();
+    await db
+      .update(calendarEvents)
+      .set({ visibility: 'team' })
+      .where(eq(calendarEvents.id, occurrence?.id ?? ''));
+
+    await expect(
+      teammateScope.calendar.updateCalendarEvent(occurrence?.id ?? '', {
+        startAt: new Date('2026-07-02T15:00:00Z'),
+        endAt: new Date('2026-07-02T15:30:00Z'),
+        recurrenceEditMode: 'this_and_future',
+      }),
+    ).rejects.toThrow('Recurring parent not found');
+
+    const parentRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.id, parent.id));
+    expect(parentRows[0]?.rrule).toBe('RRULE:FREQ=DAILY;COUNT=4');
+  });
+
+  it('deleting a recurring parent as a single event removes active children and tombstones their timeline rows', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=3',
+    });
+    const beforeRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_ID));
+    const childRows = beforeRows.filter((row) => row.recurringParentId === parent.id);
+    expect(childRows).toHaveLength(2);
+    const childRawIds = childRows
+      .flatMap((row) => [row.scheduledRawEventId, row.startAtRawEventId])
+      .filter((rawEventId): rawEventId is string => rawEventId !== null);
+
+    await expect(
+      scope.calendar.deleteCalendarEvent(parent.id, { recurrenceEditMode: 'single' }),
+    ).resolves.toBe(true);
+
+    const afterRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_ID));
+    expect(afterRows.find((row) => row.id === parent.id)?.deletedAt).toBeInstanceOf(Date);
+    for (const child of childRows) {
+      expect(afterRows.find((row) => row.id === child.id)?.deletedAt).toBeInstanceOf(Date);
+    }
+    const rawRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    for (const rawEventId of childRawIds) {
+      expect(rawRows.find((row) => row.id === rawEventId)?.sourceMetadata).toMatchObject({
+        deleted: true,
+      });
+    }
+  });
+
+  it('updates the recurring parent and siblings when editing an occurrence with series scope', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=4',
+    });
+    const rows = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-05T00:00:00Z'),
+      limit: 20,
+    });
+    const occurrence = rows.find(
+      (row) => row.originalStartAt?.toISOString() === '2026-07-03T16:00:00.000Z',
+    );
+    expect(occurrence).toBeDefined();
+
+    const updated = await scope.calendar.updateCalendarEvent(occurrence?.id ?? '', {
+      title: 'Daily planning',
+      startAt: new Date('2026-07-03T15:00:00Z'),
+      endAt: new Date('2026-07-03T15:30:00Z'),
+      recurrenceEditMode: 'series',
+    });
+
+    expect(updated?.id).toBe(parent.id);
+    const active = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-05T00:00:00Z'),
+      limit: 20,
+    });
+    expect(active.map((row) => row.startAt.toISOString()).sort()).toEqual([
+      '2026-07-01T15:00:00.000Z',
+      '2026-07-02T15:00:00.000Z',
+      '2026-07-03T15:00:00.000Z',
+      '2026-07-04T15:00:00.000Z',
+    ]);
+    expect(active.every((row) => row.title === 'Daily planning')).toBe(true);
+  });
+
+  it('rebuilds active exception rows when editing the whole recurring series', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=3',
+    });
+    const rows = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-04T00:00:00Z'),
+      limit: 20,
+    });
+    const occurrence = rows.find(
+      (row) => row.originalStartAt?.toISOString() === '2026-07-02T16:00:00.000Z',
+    );
+    expect(occurrence).toBeDefined();
+    await scope.calendar.updateCalendarEvent(occurrence?.id ?? '', {
+      title: 'Moved daily call',
+      startAt: new Date('2026-07-02T15:00:00Z'),
+      endAt: new Date('2026-07-02T15:30:00Z'),
+      showAs: 'tentative',
+      recurrenceEditMode: 'single',
+    });
+
+    await scope.calendar.updateCalendarEvent(parent.id, {
+      title: 'Daily planning',
+      startAt: new Date('2026-07-01T17:00:00Z'),
+      endAt: new Date('2026-07-01T17:45:00Z'),
+      showAs: 'free',
+      recurrenceEditMode: 'series',
+    });
+
+    const active = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-04T00:00:00Z'),
+      limit: 20,
+    });
+    expect(active.map((row) => row.startAt.toISOString()).sort()).toEqual([
+      '2026-07-01T17:00:00.000Z',
+      '2026-07-02T17:00:00.000Z',
+      '2026-07-03T17:00:00.000Z',
+    ]);
+    expect(active.every((row) => row.title === 'Daily planning')).toBe(true);
+    expect(active.every((row) => row.showAs === 'free')).toBe(true);
+    expect(active.some((row) => row.id === occurrence?.id)).toBe(false);
+
+    const allRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_ID));
+    const oldException = allRows.find((row) => row.id === occurrence?.id);
+    expect(oldException?.deletedAt).toBeInstanceOf(Date);
+    expect(oldException?.isException).toBe(false);
+  });
+
+  it('deleting a recurring occurrence with series scope removes the parent and active children', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=4',
+    });
+    const rows = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-05T00:00:00Z'),
+      limit: 20,
+    });
+    const occurrence = rows.find(
+      (row) => row.originalStartAt?.toISOString() === '2026-07-03T16:00:00.000Z',
+    );
+    expect(occurrence).toBeDefined();
+
+    await expect(
+      scope.calendar.deleteCalendarEvent(occurrence?.id ?? '', { recurrenceEditMode: 'series' }),
+    ).resolves.toBe(true);
+
+    const active = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-05T00:00:00Z'),
+      limit: 20,
+    });
+    expect(active).toHaveLength(0);
+    const allRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_ID));
+    expect(allRows.find((row) => row.id === parent.id)?.deletedAt).toBeInstanceOf(Date);
+    for (const row of allRows.filter((item) => item.recurringParentId === parent.id)) {
+      expect(row.deletedAt).toBeInstanceOf(Date);
+    }
+  });
+
+  it('deleting a recurring occurrence with this-and-future scope keeps earlier occurrences', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=5',
+    });
+    const rows = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
+      limit: 20,
+    });
+    const occurrence = rows.find(
+      (row) => row.originalStartAt?.toISOString() === '2026-07-03T16:00:00.000Z',
+    );
+    expect(occurrence).toBeDefined();
+    const futureChildIds = rows
+      .filter(
+        (row) =>
+          row.recurringParentId === parent.id &&
+          row.originalStartAt !== null &&
+          row.originalStartAt >= new Date('2026-07-03T16:00:00Z'),
+      )
+      .map((row) => row.id)
+      .sort();
+
+    await expect(
+      scope.calendar.deleteCalendarEvent(occurrence?.id ?? '', {
+        recurrenceEditMode: 'this_and_future',
+      }),
+    ).resolves.toBe(true);
+
+    const active = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
+      limit: 20,
+    });
+    const starts = active.map((row) => row.startAt.toISOString()).sort();
+    expect(starts).toEqual(['2026-07-01T16:00:00.000Z', '2026-07-02T16:00:00.000Z']);
+    const parentRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.id, parent.id));
+    expect(parentRows[0]?.rrule).toContain('UNTIL=20260703T155959Z');
+
+    const deleteSourceCalls = fakes.deletePointsForSource.mock.calls as [
+      DeletePointsForSourceInput,
+    ][];
+    const deletedSourceIds = deleteSourceCalls.map(([input]) => input.sourceId).sort();
+    expect(deletedSourceIds).not.toContain(parent.id);
+    expect(Array.from(new Set(deletedSourceIds))).toEqual(futureChildIds);
   });
 
   it('deleteCalendarEvent tombstones both linked timeline rows', async () => {

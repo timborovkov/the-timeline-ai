@@ -3,13 +3,71 @@
 import { useRouter } from 'next/navigation';
 import { useReducer, useState } from 'react';
 
-import { cancelMeetingBotAction, scheduleMeetingBotAction } from '@/app/actions/meetings';
+import type { SavedMeetingRow } from '@timeline/shared/meetings';
+
+import {
+  archiveSavedMeetingAction,
+  cancelMeetingBotAction,
+  createSavedMeetingAction,
+  joinSavedMeetingAction,
+  scheduleMeetingBotAction,
+  skipScheduledMeetingAction,
+  updateSavedMeetingAction,
+} from '@/app/actions/meetings';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
 type Visibility = 'team' | 'private' | 'specific_users';
+
+function formString(form: FormData, key: string, fallback = ''): string {
+  const value = form.get(key);
+  return typeof value === 'string' ? value : fallback;
+}
+
+function formNumber(form: FormData, key: string, fallback: number): number {
+  const value = Number(form.get(key) ?? fallback);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function formAliases(form: FormData): string[] {
+  return formString(form, 'aliases')
+    .split(',')
+    .flatMap((alias) => {
+      const trimmed = alias.trim();
+      return trimmed ? [trimmed] : [];
+    });
+}
+
+function formTimes(form: FormData): string[] {
+  return formString(form, 'times')
+    .split(',')
+    .flatMap((time) => {
+      const trimmed = time.trim();
+      return trimmed ? [trimmed] : [];
+    });
+}
+
+function formWeekdays(form: FormData): number[] {
+  return ['0', '1', '2', '3', '4', '5', '6']
+    .filter((day) => form.get(`weekday-${day}`) === 'on')
+    .map((day) => Number(day));
+}
+
+function formScheduleConfig(form: FormData, scheduled: boolean) {
+  const times = formTimes(form);
+  const weekdays = formWeekdays(form);
+  return scheduled && times.length > 0 && weekdays.length > 0
+    ? {
+        weekdays,
+        times,
+        timezone: formString(form, 'timezone', 'UTC').trim() || 'UTC',
+        joinOffsetMinutes: formNumber(form, 'joinOffsetMinutes', 2),
+      }
+    : null;
+}
+
 interface ScheduleMeetingState {
   pending: boolean;
   error: string | null;
@@ -39,6 +97,47 @@ function scheduleMeetingReducer(
       return { ...state, visibilityUserIds: action.visibilityUserIds };
     case 'consent':
       return { ...state, consent: action.consent };
+  }
+}
+
+interface SavedMeetingState {
+  pending: boolean;
+  error: string | null;
+  visibility: Visibility;
+  visibilityUserIds: string[];
+  scheduled: boolean;
+  autoJoin: boolean;
+}
+
+type SavedMeetingAction =
+  | { type: 'pending'; pending: boolean }
+  | { type: 'error'; error: string | null }
+  | { type: 'visibility'; visibility: Visibility }
+  | { type: 'visibilityUserIds'; visibilityUserIds: string[] }
+  | { type: 'scheduled'; scheduled: boolean }
+  | { type: 'autoJoin'; autoJoin: boolean };
+
+function savedMeetingReducer(
+  state: SavedMeetingState,
+  action: SavedMeetingAction,
+): SavedMeetingState {
+  switch (action.type) {
+    case 'pending':
+      return { ...state, pending: action.pending };
+    case 'error':
+      return { ...state, error: action.error };
+    case 'visibility':
+      return { ...state, visibility: action.visibility };
+    case 'visibilityUserIds':
+      return { ...state, visibilityUserIds: action.visibilityUserIds };
+    case 'scheduled':
+      return {
+        ...state,
+        scheduled: action.scheduled,
+        autoJoin: action.scheduled ? state.autoJoin : false,
+      };
+    case 'autoJoin':
+      return { ...state, autoJoin: action.autoJoin };
   }
 }
 
@@ -209,6 +308,489 @@ export function CancelMeetingButton({ meetingId }: { meetingId: string }) {
       }}
     >
       {pending ? 'Cancelling…' : 'Cancel notetaker'}
+    </Button>
+  );
+}
+
+export function SavedMeetingForm({
+  defaultVisibility = 'team',
+  defaultVisibilityUserIds = null,
+  members = EMPTY_MEMBERS,
+}: {
+  defaultVisibility?: Visibility;
+  defaultVisibilityUserIds?: string[] | null;
+  members?: { id: string; label: string }[];
+}) {
+  const router = useRouter();
+  const [{ pending, error, visibility, visibilityUserIds, scheduled, autoJoin }, dispatch] =
+    useReducer(savedMeetingReducer, {
+      pending: false,
+      error: null,
+      visibility: defaultVisibility,
+      visibilityUserIds: defaultVisibilityUserIds ?? [],
+      scheduled: false,
+      autoJoin: false,
+    });
+
+  async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
+    e.preventDefault();
+    dispatch({ type: 'error', error: null });
+    dispatch({ type: 'pending', pending: true });
+    const form = new FormData(e.currentTarget);
+    const scheduleConfig = formScheduleConfig(form, scheduled);
+    try {
+      const result = await createSavedMeetingAction({
+        title: formString(form, 'title').trim(),
+        description: formString(form, 'description').trim() || undefined,
+        meetingUrl: formString(form, 'meetingUrl').trim(),
+        aliases: formAliases(form),
+        visibility,
+        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
+        permissionConfirmed: form.get('permissionConfirmed') === 'on',
+        scheduleConfig,
+        durationMinutes: formNumber(form, 'durationMinutes', 30),
+        autoJoinEnabled: scheduled && autoJoin,
+      });
+      if (!result.ok) {
+        dispatch({ type: 'error', error: result.error ?? 'Failed to save meeting' });
+        return;
+      }
+      router.refresh();
+      e.currentTarget.reset();
+      dispatch({ type: 'scheduled', scheduled: false });
+      dispatch({ type: 'autoJoin', autoJoin: false });
+    } finally {
+      dispatch({ type: 'pending', pending: false });
+    }
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-4 rounded-lg border p-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="saved-title">Title</Label>
+          <Input id="saved-title" name="title" required placeholder="Internal daily meeting" />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="saved-url">Meeting URL</Label>
+          <Input
+            id="saved-url"
+            name="meetingUrl"
+            required
+            type="url"
+            placeholder="https://meet.google.com/abc-defg-hij"
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="saved-description">Description</Label>
+        <Input
+          id="saved-description"
+          name="description"
+          placeholder="Engineering sync for launch readiness"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="saved-aliases">Aliases</Label>
+        <Input id="saved-aliases" name="aliases" placeholder="daily, standup, team call" />
+        <p className="text-xs text-muted-foreground">
+          Works with commands like /join daily or /timeline join standup.
+        </p>
+      </div>
+      <div className="space-y-2">
+        <Label>Visibility</Label>
+        <div className="flex flex-wrap gap-2">
+          {(['team', 'private', 'specific_users'] as const).map((value) => (
+            <Button
+              key={value}
+              type="button"
+              variant={visibility === value ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                dispatch({ type: 'visibility', visibility: value });
+              }}
+            >
+              {value === 'specific_users'
+                ? 'Specific users'
+                : `${value[0]?.toUpperCase()}${value.slice(1)}`}
+            </Button>
+          ))}
+        </div>
+        {visibility === 'specific_users' ? (
+          <div className="flex flex-wrap gap-3">
+            {members.map((m) => (
+              <label key={m.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={visibilityUserIds.includes(m.id)}
+                  onChange={(event) => {
+                    dispatch({
+                      type: 'visibilityUserIds',
+                      visibilityUserIds: event.target.checked
+                        ? [...new Set([...visibilityUserIds, m.id])]
+                        : visibilityUserIds.filter((id) => id !== m.id),
+                    });
+                  }}
+                />
+                {m.label}
+              </label>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <div className="space-y-3 rounded-md border border-dashed p-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={scheduled}
+            onChange={(event) => {
+              dispatch({ type: 'scheduled', scheduled: event.target.checked });
+            }}
+          />
+          Add a recurring schedule
+        </label>
+        {scheduled ? (
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-4">
+              <div className="space-y-2">
+                <Label htmlFor="saved-times">Times</Label>
+                <Input id="saved-times" name="times" placeholder="16:00, 10:00" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="saved-timezone">Timezone</Label>
+                <Input id="saved-timezone" name="timezone" defaultValue="UTC" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="saved-duration">Duration</Label>
+                <Input id="saved-duration" name="durationMinutes" type="number" defaultValue={30} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="saved-join-offset">Join early</Label>
+                <Input
+                  id="saved-join-offset"
+                  name="joinOffsetMinutes"
+                  type="number"
+                  min={0}
+                  max={30}
+                  defaultValue={2}
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label, index) => (
+                <label key={label} className="flex items-center gap-1.5">
+                  <input
+                    name={`weekday-${index}`}
+                    type="checkbox"
+                    defaultChecked={index > 0 && index < 6}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={autoJoin}
+                onChange={(event) => {
+                  dispatch({ type: 'autoJoin', autoJoin: event.target.checked });
+                }}
+              />
+              Auto-join scheduled occurrences
+            </label>
+          </div>
+        ) : null}
+      </div>
+      <label className="flex items-start gap-2 text-sm">
+        <input name="permissionConfirmed" type="checkbox" className="mt-1" />
+        <span>
+          I confirm this team has permission for Timeline to capture this saved meeting whenever a
+          teammate joins or auto-join is enabled.
+        </span>
+      </label>
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <Button type="submit" disabled={pending}>
+        {pending ? 'Saving…' : 'Save meeting'}
+      </Button>
+    </form>
+  );
+}
+
+export function EditSavedMeetingForm({
+  saved,
+  members = EMPTY_MEMBERS,
+}: {
+  saved: SavedMeetingRow;
+  members?: { id: string; label: string }[];
+}) {
+  const router = useRouter();
+  const schedule = saved.scheduleConfig;
+  const [{ pending, error, visibility, visibilityUserIds, scheduled, autoJoin }, dispatch] =
+    useReducer(savedMeetingReducer, {
+      pending: false,
+      error: null,
+      visibility: saved.defaultVisibility,
+      visibilityUserIds: saved.visibilityUserIds ?? [],
+      scheduled: Boolean(schedule),
+      autoJoin: saved.autoJoinEnabled,
+    });
+
+  async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
+    e.preventDefault();
+    dispatch({ type: 'error', error: null });
+    dispatch({ type: 'pending', pending: true });
+    const form = new FormData(e.currentTarget);
+    const scheduleConfig = formScheduleConfig(form, scheduled);
+    try {
+      const result = await updateSavedMeetingAction({
+        savedMeetingId: saved.id,
+        title: formString(form, 'title').trim(),
+        description: formString(form, 'description').trim() || undefined,
+        aliases: formAliases(form),
+        visibility,
+        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
+        scheduleConfig,
+        durationMinutes: formNumber(form, 'durationMinutes', saved.durationMinutes),
+        autoJoinEnabled: scheduled && autoJoin,
+      });
+      if (!result.ok) {
+        dispatch({ type: 'error', error: result.error ?? 'Failed to update meeting' });
+        return;
+      }
+      router.refresh();
+    } finally {
+      dispatch({ type: 'pending', pending: false });
+    }
+  }
+
+  return (
+    <details className="space-y-3 text-sm">
+      <summary className="cursor-pointer text-muted-foreground">Edit saved meeting</summary>
+      <form onSubmit={onSubmit} className="space-y-4 pt-3">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor={`saved-title-${saved.id}`}>Title</Label>
+            <Input
+              id={`saved-title-${saved.id}`}
+              name="title"
+              required
+              defaultValue={saved.title}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`saved-aliases-${saved.id}`}>Aliases</Label>
+            <Input
+              id={`saved-aliases-${saved.id}`}
+              name="aliases"
+              defaultValue={saved.aliases.join(', ')}
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`saved-description-${saved.id}`}>Description</Label>
+          <Input
+            id={`saved-description-${saved.id}`}
+            name="description"
+            defaultValue={saved.description ?? ''}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Visibility</Label>
+          <div className="flex flex-wrap gap-2">
+            {(['team', 'private', 'specific_users'] as const).map((value) => (
+              <Button
+                key={value}
+                type="button"
+                variant={visibility === value ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => {
+                  dispatch({ type: 'visibility', visibility: value });
+                }}
+              >
+                {value === 'specific_users'
+                  ? 'Specific users'
+                  : `${value[0]?.toUpperCase()}${value.slice(1)}`}
+              </Button>
+            ))}
+          </div>
+          {visibility === 'specific_users' ? (
+            <div className="flex flex-wrap gap-3">
+              {members.map((m) => (
+                <label
+                  key={m.id}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                >
+                  <input
+                    type="checkbox"
+                    checked={visibilityUserIds.includes(m.id)}
+                    onChange={(event) => {
+                      dispatch({
+                        type: 'visibilityUserIds',
+                        visibilityUserIds: event.target.checked
+                          ? [...new Set([...visibilityUserIds, m.id])]
+                          : visibilityUserIds.filter((id) => id !== m.id),
+                      });
+                    }}
+                  />
+                  {m.label}
+                </label>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="space-y-3 rounded-md border border-dashed p-3">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={scheduled}
+              onChange={(event) => {
+                dispatch({ type: 'scheduled', scheduled: event.target.checked });
+              }}
+            />
+            Add a recurring schedule
+          </label>
+          {scheduled ? (
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-4">
+                <div className="space-y-2">
+                  <Label htmlFor={`saved-times-${saved.id}`}>Times</Label>
+                  <Input
+                    id={`saved-times-${saved.id}`}
+                    name="times"
+                    defaultValue={schedule?.times.join(', ') ?? ''}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`saved-timezone-${saved.id}`}>Timezone</Label>
+                  <Input
+                    id={`saved-timezone-${saved.id}`}
+                    name="timezone"
+                    defaultValue={schedule?.timezone ?? 'UTC'}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`saved-duration-${saved.id}`}>Duration</Label>
+                  <Input
+                    id={`saved-duration-${saved.id}`}
+                    name="durationMinutes"
+                    type="number"
+                    min={1}
+                    defaultValue={saved.durationMinutes}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`saved-join-offset-${saved.id}`}>Join early</Label>
+                  <Input
+                    id={`saved-join-offset-${saved.id}`}
+                    name="joinOffsetMinutes"
+                    type="number"
+                    min={0}
+                    max={30}
+                    defaultValue={schedule?.joinOffsetMinutes ?? 2}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label, index) => (
+                  <label key={label} className="flex items-center gap-1.5">
+                    <input
+                      name={`weekday-${index}`}
+                      type="checkbox"
+                      defaultChecked={
+                        schedule?.weekdays.includes(index) ?? (index > 0 && index < 6)
+                      }
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={autoJoin}
+                  onChange={(event) => {
+                    dispatch({ type: 'autoJoin', autoJoin: event.target.checked });
+                  }}
+                />
+                Auto-join scheduled occurrences
+              </label>
+            </div>
+          ) : null}
+        </div>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <Button type="submit" size="sm" disabled={pending}>
+          {pending ? 'Updating…' : 'Update meeting'}
+        </Button>
+      </form>
+    </details>
+  );
+}
+
+export function JoinSavedMeetingButton({ query }: { query: string }) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  return (
+    <Button
+      size="sm"
+      disabled={pending}
+      onClick={async () => {
+        setPending(true);
+        try {
+          const result = await joinSavedMeetingAction({ query });
+          if (result.meetingId) router.push(`/app/meetings/${result.meetingId}`);
+          else router.refresh();
+        } finally {
+          setPending(false);
+        }
+      }}
+    >
+      {pending ? 'Joining…' : 'Join'}
+    </Button>
+  );
+}
+
+export function ArchiveSavedMeetingButton({ savedMeetingId }: { savedMeetingId: string }) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={pending}
+      onClick={async () => {
+        setPending(true);
+        try {
+          await archiveSavedMeetingAction(savedMeetingId);
+          router.refresh();
+        } finally {
+          setPending(false);
+        }
+      }}
+    >
+      {pending ? 'Archiving…' : 'Archive'}
+    </Button>
+  );
+}
+
+export function SkipScheduledMeetingButton({ meetingId }: { meetingId: string }) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={pending}
+      onClick={async () => {
+        setPending(true);
+        try {
+          await skipScheduledMeetingAction(meetingId);
+          router.refresh();
+        } finally {
+          setPending(false);
+        }
+      }}
+    >
+      {pending ? 'Skipping…' : 'Skip once'}
     </Button>
   );
 }

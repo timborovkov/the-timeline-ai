@@ -1277,7 +1277,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
 
     list_calendar_events: tool({
       description:
-        "List calendar events for this team within a date range. Returns id, title, start_at, end_at, timezone, location, visibility. Use for 'what's on my calendar', 'what's scheduled this week', or 'any meetings Thursday'. Note: recurring events are materialized up to 3 months ahead; results may be incomplete for dates beyond that window.",
+        "List calendar events for this team within a date range. Returns id, title, start_at, end_at, timezone, location, visibility, recurrence, and tentative/proposal metadata. Use for 'what's on my calendar', 'what's scheduled this week', or 'any meetings Thursday'. Note: recurring events are materialized up to 3 months ahead; results may be incomplete for dates beyond that window.",
       inputSchema: z.object({
         from: z.iso.datetime().optional(),
         to: z.iso.datetime().optional(),
@@ -1308,7 +1308,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               timezone: e.timezone,
               all_day: e.allDay,
               location: e.location,
+              show_as: e.showAs,
+              rrule: e.rrule,
+              recurring_parent_id: e.recurringParentId,
+              original_start_at: e.originalStartAt?.toISOString() ?? null,
+              is_exception: e.isException,
               visibility: e.visibility,
+              metadata: e.redacted ? {} : e.metadata,
               redacted: e.redacted,
               agent_suggested: e.agentSuggested,
             })),
@@ -1381,7 +1387,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             timezone: event.timezone,
             all_day: event.allDay,
             location: event.redacted ? null : event.location,
+            show_as: event.showAs,
+            rrule: event.rrule,
+            recurring_parent_id: event.recurringParentId,
+            original_start_at: event.originalStartAt?.toISOString() ?? null,
+            is_exception: event.isException,
             visibility: event.visibility,
+            metadata: event.redacted ? {} : event.metadata,
             redacted: event.redacted,
             agent_suggested: event.agentSuggested,
             created_by_user_id: event.createdByUserId,
@@ -1391,7 +1403,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
 
     suggest_calendar_event: tool({
       description:
-        "Propose a new calendar event. Records an approval-queue suggestion only; it does not create the canonical event until a human accepts it. Date-only scheduling should be represented as an all-day event with startDate and exclusive endDate. Set visibility to 'private' for personal events like dentist appointments.",
+        "Propose a new calendar event. Records an approval-queue suggestion only; it does not create the canonical event until a human accepts it. Date-only scheduling should be represented as an all-day event with startDate and exclusive endDate. Use rrule for recurring schedules. Use showAs='tentative' and a shared proposalGroupId for proposed alternative slots.",
       inputSchema: z.object({
         title: z.string().trim().min(1).max(200),
         startAt: z.iso.datetime(),
@@ -1408,8 +1420,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         allDay: z.boolean().optional(),
         description: z.string().trim().max(1000).optional(),
         location: z.string().trim().max(500).optional(),
+        showAs: z.enum(['busy', 'free', 'tentative']).optional(),
+        rrule: z.string().trim().max(2000).optional(),
         visibility: z.enum(['team', 'private']).optional(),
         reminderMinutes: z.number().int().min(0).max(1440).optional(),
+        proposalGroupId: z.string().trim().max(120).optional(),
+        proposalStatus: z.enum(['tentative', 'confirmed']).optional(),
+        proposalRole: z.enum(['slot', 'selected_slot']).optional(),
       }),
       execute: async (raw) =>
         runSafe('suggest_calendar_event', async () => {
@@ -1430,8 +1447,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               allDay: z.boolean().optional(),
               description: z.string().trim().max(1000).optional(),
               location: z.string().trim().max(500).optional(),
+              showAs: z.enum(['busy', 'free', 'tentative']).optional(),
+              rrule: z.string().trim().max(2000).optional(),
               visibility: z.enum(['team', 'private']).optional(),
               reminderMinutes: z.number().int().min(0).max(1440).optional(),
+              proposalGroupId: z.string().trim().max(120).optional(),
+              proposalStatus: z.enum(['tentative', 'confirmed']).optional(),
+              proposalRole: z.enum(['slot', 'selected_slot']).optional(),
             })
             .parse(raw);
           const settings = await scope.calendar.getCalendarSettings();
@@ -1465,6 +1487,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             reminderMinutes: input.reminderMinutes ?? null,
             location: input.location ?? null,
             description: input.description ?? null,
+            showAs: input.showAs ?? 'busy',
+            rrule: input.rrule ?? null,
+            proposalGroupId: input.proposalGroupId ?? null,
           });
           const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
             source: 'chat',
@@ -1490,8 +1515,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                   allDay,
                   description: input.description ?? null,
                   location: input.location ?? null,
+                  showAs: input.showAs ?? 'busy',
+                  rrule: input.rrule ?? null,
                   visibility,
                   reminderMinutes: input.reminderMinutes ?? null,
+                  ...(input.proposalGroupId ? { proposalGroupId: input.proposalGroupId } : {}),
+                  ...(input.proposalStatus ? { proposalStatus: input.proposalStatus } : {}),
+                  ...(input.proposalRole ? { proposalRole: input.proposalRole } : {}),
                 },
               },
             ],
@@ -1518,8 +1548,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             timezone: z.string().max(100).optional(),
             allDay: z.boolean().optional(),
             location: z.string().trim().max(500).nullable().optional(),
+            showAs: z.enum(['busy', 'free', 'tentative']).optional(),
+            rrule: z.string().trim().max(2000).nullable().optional(),
+            recurrenceEditMode: z.enum(['single', 'series', 'this_and_future']).optional(),
             visibility: z.enum(['team', 'private']).optional(),
             reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+            proposalGroupId: z.string().trim().max(120).optional(),
+            proposalStatus: z.enum(['tentative', 'confirmed']).optional(),
+            proposalRole: z.enum(['slot', 'selected_slot']).optional(),
           })
           .optional(),
         cancel: z.boolean().optional(),

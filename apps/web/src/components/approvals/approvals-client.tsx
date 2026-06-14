@@ -12,6 +12,7 @@ import {
   rejectSuggestionItemAction,
 } from '@/app/actions/suggestions';
 import { EmptyAction } from '@/components/empty-action';
+import { EvidenceLink } from '@/components/evidence-link';
 import { Button } from '@/components/ui/button';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
@@ -89,10 +90,6 @@ function itemKindLabel(kind: string): string {
 function itemStatusLabel(status: string): string {
   if (status === 'failed') return 'needs retry';
   return status.replace(/_/g, ' ');
-}
-
-function evidenceHref(rawEventId: string): string {
-  return `/app/timeline?event=${rawEventId}#ev-${rawEventId}`;
 }
 
 function formatPayloadValue(value: unknown): string {
@@ -316,9 +313,12 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
                   Evidence
                 </div>
                 {bundle.evidence.map((ev) => (
-                  <Link
+                  <EvidenceLink
                     key={ev.rawEventId}
-                    href={evidenceHref(ev.rawEventId)}
+                    eventId={ev.rawEventId}
+                    previewText={ev.quote}
+                    source={ev.source}
+                    occurredAt={ev.occurredAt}
                     className="group grid gap-1 py-1 text-xs text-fg-dim transition-colors hover:text-fg"
                   >
                     <span className="inline-flex items-center gap-1.5 font-mono uppercase tracking-[0.1em]">
@@ -328,7 +328,7 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
                     <span className="line-clamp-2 text-fg-muted group-hover:text-fg">
                       {ev.quote ?? 'Open the source event on the timeline.'}
                     </span>
-                  </Link>
+                  </EvidenceLink>
                 ))}
               </div>
             ) : null}

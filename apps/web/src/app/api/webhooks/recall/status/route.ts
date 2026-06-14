@@ -15,12 +15,26 @@ export const dynamic = 'force-dynamic';
 const log = childLogger('web:api:recall:status');
 const MEETING_STATUS_RANK: Record<string, number> = {
   pending: 0,
+  scheduled: 0,
   joining: 1,
   active: 2,
   processing: 3,
   completed: 4,
+  completed_partial: 4,
   failed: 4,
+  skipped: 4,
+  no_show: 4,
+  cancelled: 4,
 };
+
+const TERMINAL_STATUSES = new Set([
+  'completed',
+  'completed_partial',
+  'failed',
+  'skipped',
+  'no_show',
+  'cancelled',
+]);
 
 // Svix-signed bot lifecycle webhook from Recall.ai. We flip the
 // meeting's status on each transition; on `bot.call_ended` /
@@ -76,6 +90,18 @@ function statusCodeFromEvent(event: string): string | null {
   const code = event.split('.')[1];
   if (!code) return null;
   return code;
+}
+
+function isNoShowCode(code: string | null | undefined): boolean {
+  if (!code) return false;
+  const normalized = code.toLowerCase();
+  return (
+    normalized.includes('waiting_room_timeout') ||
+    normalized.includes('timeout_exceeded_waiting_room') ||
+    normalized.includes('noone_joined') ||
+    normalized.includes('no_one_joined') ||
+    normalized.includes('no-one-joined')
+  );
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -166,7 +192,7 @@ export async function POST(req: Request): Promise<Response> {
   // not let a late `bot.status_change` regress them to `processing` or
   // re-enqueue finalize over a cancelled meeting. Return 200 so Recall
   // stops retrying; the event is a no-op from our perspective.
-  if (meeting.status === 'completed' || meeting.status === 'failed') {
+  if (TERMINAL_STATUSES.has(meeting.status)) {
     log.info(
       { botId, event: parsed.event, currentStatus: meeting.status },
       'ignoring_event_terminal_status',
@@ -189,8 +215,10 @@ export async function POST(req: Request): Promise<Response> {
   // dropped (Recall has shipped both shapes historically).
   const isFailureEvent =
     parsed.event === 'bot.fatal' || parsed.event === 'bot.failed' || mappedStatus === 'failed';
+  const isNoShowEvent = isNoShowCode(code);
   const shouldEnqueueFinalize =
     !isFailureEvent &&
+    !isNoShowEvent &&
     (parsed.event === 'bot.call_ended' ||
       parsed.event === 'bot.done' ||
       parsed.event === 'transcript.done' ||
@@ -214,13 +242,28 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
-    if (isFailureEvent) {
+    if (isNoShowEvent) {
+      await scope.meetings.updateMeetingStatus(meeting.id, 'no_show', {
+        endedAt: createdAt ? new Date(createdAt) : new Date(),
+        metadata: {
+          no_show_at: new Date().toISOString(),
+          no_show_code: code ?? 'unknown',
+          capture_status: 'no_show',
+        },
+      });
+      if (meeting.savedMeetingId) {
+        await scope.meetings.recordSavedMeetingJoinFailure(meeting.savedMeetingId, 'no_show');
+      }
+    } else if (isFailureEvent) {
       // `failed` is terminal — overrides any in-flight state including
       // `processing`. The terminal guard above only blocks transitions OUT
       // of failed/completed; transitioning INTO failed is always allowed.
       await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
         metadata: { failure_at: new Date().toISOString(), failure_code: code ?? 'unknown' },
       });
+      if (meeting.savedMeetingId) {
+        await scope.meetings.recordSavedMeetingJoinFailure(meeting.savedMeetingId, 'failure');
+      }
     } else if (mappedStatus) {
       // Cap at `processing` — never promote to `completed` here.
       const cappedStatus = mappedStatus === 'completed' ? 'processing' : mappedStatus;

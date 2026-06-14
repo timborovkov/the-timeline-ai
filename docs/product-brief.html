@@ -73,8 +73,10 @@
         event stream. An LLM extracts useful facts ("Tim discussed SaaS licensing with John Ternus
         at Apple"), links them to existing objects when possible, and proposes approval-backed
         object changes only when the evidence is durable. Documents are processed into searchable
-        chunks with version-aware citations. Everything important is embedded and indexed. An agent
-        answers questions over the timeline and knowledge base:
+        chunks with version-aware citations. Calendar suggestions use the same approval-backed path:
+        clear deadlines, meetings, recurring calls, proposed time slots, confirmations, and
+        reschedules become reviewable calendar changes before they materialize. Everything important
+        is embedded and indexed. An agent answers questions over the timeline and knowledge base:
         <em>what did the team work on yesterday</em>,
         <em>what changed on the Apple licensing deal</em>, <em>what's outstanding for Acme</em>,
         <em>what are our office rules</em>, <em>which projects have gone stale</em>.

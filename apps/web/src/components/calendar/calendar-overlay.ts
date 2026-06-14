@@ -7,6 +7,12 @@ export interface CalendarEvent {
   timezone: string;
   allDay: boolean;
   location: string | null;
+  showAs: 'busy' | 'free' | 'tentative';
+  rrule: string | null;
+  recurringParentId: string | null;
+  originalStartAt: string | null;
+  isException: boolean;
+  metadata: Record<string, unknown>;
   redacted: boolean;
   visibility: string;
   visibilityUserIds: string[] | null;
@@ -103,6 +109,12 @@ export function calendarEventsSignature(events: CalendarEvent[]): string {
         event.timezone,
         String(event.allDay),
         event.location ?? '',
+        event.showAs,
+        event.rrule ?? '',
+        event.recurringParentId ?? '',
+        event.originalStartAt ?? '',
+        String(event.isException),
+        JSON.stringify(event.metadata),
         String(event.redacted),
         event.visibility,
         event.visibilityUserIds?.join(',') ?? '',

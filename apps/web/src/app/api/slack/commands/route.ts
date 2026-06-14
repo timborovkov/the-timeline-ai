@@ -45,20 +45,25 @@ export async function POST(req: Request): Promise<Response> {
     response_url: form.get('response_url') ?? '',
     trigger_id: form.get('trigger_id') ?? undefined,
   };
-  if (input.command !== '/ask') {
+  if (input.command !== '/ask' && input.command !== '/timeline') {
     return Response.json({
       response_type: 'ephemeral',
-      text: 'Timeline only handles /ask from Slack.',
+      text: 'Timeline only handles /ask and /timeline from Slack.',
     });
   }
   const userLimit = await rateLimit.checkRateLimit({
-    key: rateLimit.rateLimitKey('slack', 'ask', input.team_id, input.user_id),
+    key: rateLimit.rateLimitKey(
+      'slack',
+      input.command === '/ask' ? 'ask' : 'timeline',
+      input.team_id,
+      input.user_id,
+    ),
     ...rateLimit.RATE_LIMITS.slackAsk,
   });
   if (!userLimit.ok) {
     return Response.json({
       response_type: 'ephemeral',
-      text: 'Timeline is rate-limiting Slack questions for a moment. Try again soon.',
+      text: 'Timeline is rate-limiting Slack commands for a moment. Try again soon.',
     });
   }
 
@@ -83,5 +88,11 @@ export async function POST(req: Request): Promise<Response> {
       log.error({ err }, 'slack slash command failed');
       reportCaughtError(err, { surface: 'background', operation: 'slack_slash_command' });
     });
-  return Response.json({ response_type: 'ephemeral', text: 'Asking Timeline...' }, { status: 200 });
+  return Response.json(
+    {
+      response_type: 'ephemeral',
+      text: input.command === '/ask' ? 'Asking Timeline...' : 'Working on it...',
+    },
+    { status: 200 },
+  );
 }
