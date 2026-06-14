@@ -436,6 +436,18 @@ describe('board scope', () => {
       templateKind: 'task_board',
       lanes: [{ name: 'Todo', kind: 'active' }],
     });
+    const task = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Refresh renamed board metadata',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      laneId: board.lanes[0]?.id ?? null,
+      responsibleUserId: USER_MEMBER,
+      dueAt: new Date('2026-10-01T09:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
     const oldUpdatedAt = new Date('2026-01-01T00:00:00.000Z');
     await setBoardUpdatedAt(board.id, oldUpdatedAt);
 
@@ -452,6 +464,35 @@ describe('board scope', () => {
       .where(eq(boards.id, board.id));
     expect(row?.name).toBe('Renamed board');
     expect(row?.updatedAt.getTime()).toBeGreaterThan(oldUpdatedAt.getTime());
+
+    const calendarRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_A));
+    expect(calendarRows).toEqual([
+      expect.objectContaining({
+        description: 'Board: Renamed board\nResponsible: member@test.local\nObject type: task',
+      }),
+    ]);
+    const inboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, task.id));
+    const dueNotifications = inboxRows.filter(
+      (notification) => notification.kind === 'board_item_due',
+    );
+    const oldNameNotification = dueNotifications.find(
+      (notification) =>
+        notification.summary ===
+        'Refresh renamed board metadata on Original board is due 2026-10-01',
+    );
+    const newNameNotification = dueNotifications.find(
+      (notification) =>
+        notification.summary ===
+        'Refresh renamed board metadata on Renamed board is due 2026-10-01',
+    );
+    expect(oldNameNotification?.readAt).toBeInstanceOf(Date);
+    expect(newNameNotification?.readAt).toBeNull();
   });
 
   it('rejects cross-team board item rows at the database boundary', async () => {

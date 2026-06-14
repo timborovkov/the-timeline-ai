@@ -7,7 +7,7 @@ import {
   boards,
   entities,
 } from '@timeline/db';
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import type { ActorKind, CreateObjectInput, ObjectRow, ObjectType } from '#src/objects/index.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
@@ -532,6 +532,30 @@ export function createBoardScope({
     return row ? toItemRow(row.item, row.object) : null;
   }
 
+  async function refreshBoardDueDateMetadata(
+    query: DbOrTx,
+    board: BoardSelect,
+  ): Promise<DueDateCalendarSyncResult> {
+    const rows = await query
+      .select({ item: boardItems, object: entities })
+      .from(boardItems)
+      .innerJoin(entities, eq(boardItems.entityId, entities.id))
+      .where(
+        and(
+          eq(boardItems.teamId, scope.teamId),
+          eq(boardItems.boardId, board.id),
+          isNull(boardItems.archivedAt),
+          isNotNull(boardItems.dueAt),
+        ),
+      );
+    const results: DueDateCalendarSyncResult[] = [];
+    for (const row of rows) {
+      results.push(await syncBoardItemDueDateCalendarEvent(query, row.item, row.object, board));
+      await notifyBoardItemDueDate(query, row.item, row.object, board, { kind: 'system' });
+    }
+    return mergeDueDateCalendarSyncResults(results);
+  }
+
   const api = {
     async listBoards(): Promise<BoardRow[]> {
       await scope.requireMembership();
@@ -721,14 +745,29 @@ export function createBoardScope({
 
     async renameBoard(input: RenameBoardInput): Promise<boolean> {
       await requireBoard(input.id);
-      const rows = await db
-        .update(boards)
-        .set({ name: normalizeName(input.name, 'Board name'), updatedAt: new Date() })
-        .where(
-          and(eq(boards.id, input.id), eq(boards.teamId, scope.teamId), isNull(boards.archivedAt)),
-        )
-        .returning({ id: boards.id });
-      return rows.length > 0;
+      const txResult = await db.transaction(async (tx) => {
+        const rows = await tx
+          .update(boards)
+          .set({ name: normalizeName(input.name, 'Board name'), updatedAt: new Date() })
+          .where(
+            and(
+              eq(boards.id, input.id),
+              eq(boards.teamId, scope.teamId),
+              isNull(boards.archivedAt),
+            ),
+          )
+          .returning();
+        const board = rows[0];
+        if (!board) {
+          return { renamed: false, dueDateCalendarSync: mergeDueDateCalendarSyncResults([]) };
+        }
+        return {
+          renamed: true,
+          dueDateCalendarSync: await refreshBoardDueDateMetadata(tx, board),
+        };
+      });
+      await afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync);
+      return txResult.renamed;
     },
 
     async updateBoardSettings(input: UpdateBoardSettingsInput): Promise<boolean> {
@@ -763,12 +802,12 @@ export function createBoardScope({
         .map((lane) => lane.id)
         .filter((laneId) => !keptLaneIds.has(laneId));
 
-      await db.transaction(async (tx) => {
+      const dueDateCalendarSync = await db.transaction(async (tx) => {
         const now = new Date();
         const boardPatch: Partial<typeof boards.$inferInsert> = { updatedAt: now };
         if (input.name !== undefined) boardPatch.name = normalizeName(input.name, 'Board name');
         if (input.purpose !== undefined) boardPatch.purpose = input.purpose.trim();
-        await tx
+        const [updatedBoard] = await tx
           .update(boards)
           .set(boardPatch)
           .where(
@@ -777,7 +816,8 @@ export function createBoardScope({
               eq(boards.teamId, scope.teamId),
               isNull(boards.archivedAt),
             ),
-          );
+          )
+          .returning();
 
         for (const lane of nextLanes ?? []) {
           if (lane.id) {
@@ -832,7 +872,11 @@ export function createBoardScope({
               ),
             );
         }
+        return input.name !== undefined && updatedBoard
+          ? refreshBoardDueDateMetadata(tx, updatedBoard)
+          : mergeDueDateCalendarSyncResults([]);
       });
+      await afterDueDateCalendarSync(scope.teamId, dueDateCalendarSync);
       return true;
     },
 
