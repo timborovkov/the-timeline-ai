@@ -1,7 +1,19 @@
 import { Temporal } from '@js-temporal/polyfill';
-import rrule from 'rrule';
+import * as rrule from 'rrule';
 
-const { rrulestr } = rrule;
+type RRuleParser = typeof rrule.rrulestr;
+
+function loadRRuleParser(): RRuleParser {
+  const rruleModule = rrule as Record<string, unknown>;
+  const rruleDefault = Reflect.get(rruleModule, 'default') as Record<string, unknown> | undefined;
+  const parser =
+    Reflect.get(rruleModule, 'rrulestr') ??
+    (rruleDefault ? Reflect.get(rruleDefault, 'rrulestr') : undefined);
+  if (typeof parser !== 'function') throw new Error('rrule parser export not found');
+  return parser as RRuleParser;
+}
+
+const rrulestr = loadRRuleParser();
 
 const RECURRENCE_WINDOW_MONTHS = 3;
 
