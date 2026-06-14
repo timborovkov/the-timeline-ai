@@ -36,7 +36,6 @@ interface Props {
 export function BoardDetailClient({
   boardId,
   boardName,
-  templateKind,
   purpose,
   pinned,
   view,
@@ -92,23 +91,24 @@ export function BoardDetailClient({
     setLocalItems((current) => current.filter((row) => row.id !== item.id));
   }
 
+  const boardHeaderLeading = useMemo(
+    () => <HistoryBackLink fallbackHref="/app/boards" label="Back" />,
+    [],
+  );
+  const boardHeaderTrailing = useMemo(
+    () => <BoardActionsMenu id={boardId} name={boardName} pinned={pinned} />,
+    [boardId, boardName, pinned],
+  );
+
   return (
     <>
       <IndexStrip
-        srLabel={`${boardName} · ${templateKind} · ${items.length} board items`}
-        segments={[
-          { value: 'BOARD' },
-          { label: 'kind', value: templateKind.replace('_', ' ') },
-          { label: 'name', value: boardName, signal: true },
-          { label: 'items', value: items.length },
-        ]}
+        srLabel={`Board · ${boardName}`}
+        segments={[{ value: 'BOARD' }, { value: boardName, signal: true }]}
+        leading={boardHeaderLeading}
         className={view === 'kanban' ? 'shrink-0 px-4 md:px-8' : 'mb-4 shrink-0'}
-      >
-        <span className="inline-flex items-center gap-2">
-          <HistoryBackLink fallbackHref="/app/boards" label="Back" />
-          <BoardActionsMenu id={boardId} name={boardName} pinned={pinned} />
-        </span>
-      </IndexStrip>
+        trailing={boardHeaderTrailing}
+      />
 
       <div
         className={

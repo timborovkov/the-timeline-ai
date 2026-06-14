@@ -167,7 +167,7 @@ describe('BoardDetailClient', () => {
     });
   });
 
-  it('updates the header count when an item is added optimistically', async () => {
+  it('keeps the board header compact when an item is added optimistically', async () => {
     const user = userEvent.setup();
     render(
       renderClient([
@@ -179,12 +179,17 @@ describe('BoardDetailClient', () => {
       ]),
     );
 
-    expect(screen.getByLabelText(/1 board items/)).toBeTruthy();
+    const header = screen.getByLabelText('Board · Pilot board');
+    expect(header.textContent).toContain('BOARD');
+    expect(header.textContent).toContain('Pilot board');
+    expect(header.textContent).not.toContain('kind');
+    expect(header.textContent).not.toContain('items');
 
     await user.click(screen.getByRole('button', { name: 'Fake optimistic add' }));
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/2 board items/)).toBeTruthy();
+      expect(screen.getByText('Beta')).toBeTruthy();
+      expect(screen.getByLabelText('Board · Pilot board').textContent).not.toContain('items');
     });
   });
 

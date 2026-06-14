@@ -214,9 +214,9 @@ Kanban:
 
 Table:
 
-- scan and edit responsible person, due date, priority, next step, lane, and
-  object summary
-- keep edits optimistic and field-scoped
+- scan responsible person, due date, priority, next step, lane, and object
+  summary
+- keep field editing deferred to the table/list polish slice
 
 List:
 
@@ -232,7 +232,6 @@ The panel shows:
 - board item properties
 - board-local notes
 - next step
-- evidence and related timeline moments
 - board item history
 - links to full object page, chat about object, and all timeline events
 
@@ -495,6 +494,7 @@ New or rewritten:
 - `BoardTable`
 - `BoardList`
 - `BoardAddItemDialog`
+- `BoardActionsMenu`
 - `BoardCardDetail`
 - `BoardItemHistory`
 - `ObjectBoardContext`
@@ -505,10 +505,12 @@ Board components should not imply that a board is just an object filter.
 
 - Quiet, dense, Linear-like surfaces.
 - Icons for templates and board actions.
+- Board rename, pin/unpin, and delete live in a compact board actions menu
+  instead of exposed destructive buttons.
 - Clear examples in the template picker.
 - No hero or marketing treatment inside the app.
 - Cards stay compact and stable in size.
-- Optimistic updates for moves and field edits.
+- Optimistic updates for moves and add-item flows.
 - Errors attach to the affected card, row, or field.
 - Pinned board snapshots are compact modules, not full boards.
 
@@ -550,7 +552,7 @@ noisy boards that showed every object matching a broad type.
 - company-type board does not show all companies by default
 - board card opens detail panel
 - failed move rolls back only affected card
-- table edits preserve layout and show field-level saving/error states
+- table and list views preserve layout while field editing remains deferred
 
 ### Agent and Suggestions
 

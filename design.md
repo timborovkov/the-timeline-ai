@@ -324,9 +324,9 @@ visible change.
   responsible person, due indicator, priority, and next step where present.
   Due-this-week = `text-signal`; overdue = `text-danger`.
 - Card clicks open a board-context detail panel first. The panel shows object
-  memory, board-local properties, board notes, item history, evidence, and a
-  direct link to the full object page.
-- Drag uses `@dnd-kit/core` with optimistic `updateObjectAction` calls.
+  memory, board-local properties, board notes, item history, and direct links
+  to the full object page and object chat.
+- Drag uses `@dnd-kit/core` with optimistic `updateBoardItemAction` calls.
 - Board moves should feel complete immediately. Show a quiet board-level
   saving state while moves are in flight, then a brief saved confirmation once
   server state catches up. Avoid per-move success toasts on kanban surfaces;
@@ -547,7 +547,7 @@ key/value pairs.
 - Lightweight, reversible product edits should update the local surface
   immediately, then reconcile with server state: kanban moves and board item
   adds, object status/stage/priority/due edits, object notes, relationship
-  changes, object-change approvals, archive/remove flows after explicit user
+  changes, object-change approvals, object archive state after explicit user
   confirmation, document renames, document folder create/delete, text capture,
   calendar create/edit, document upload placeholders, onboarding checklist
   actions, and inbox read-state changes.
