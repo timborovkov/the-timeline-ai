@@ -271,6 +271,12 @@ const executeObjectUpdateInput = z.object({
   reason: z.string().trim().min(1).max(500),
 });
 
+const executeObjectMergeInput = z.object({
+  objectIds: z.array(z.string().regex(UUID_RE)).min(2).max(10),
+  survivorId: z.string().regex(UUID_RE),
+  reason: z.string().trim().min(1).max(1000),
+});
+
 const searchAppGuideInput = z.object({
   query: z.string().trim().min(1).max(300),
   limit: z.number().int().min(1).max(10).optional(),
@@ -524,6 +530,34 @@ function previewValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function sortedUnique(values: string[]): string[] {
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
+}
+
+function sameIdSet(left: string[], right: string[]): boolean {
+  return JSON.stringify(sortedUnique(left)) === JSON.stringify(sortedUnique(right));
+}
+
+function compactMergePreview(
+  preview: Awaited<ReturnType<TeamScope['objects']['getObjectMergePreview']>>,
+) {
+  return {
+    survivor_id: preview.survivorId,
+    survivor_citation: artifactRefCitation({ kind: 'object', id: preview.survivorId }),
+    objects: preview.objects.map((object) => ({
+      id: object.id,
+      citation: artifactRefCitation({ kind: 'object', id: object.id }),
+      name: object.canonicalName,
+      type: object.type,
+      status: object.status,
+      stage: object.stage,
+      aliases: object.aliases,
+    })),
+    aliases_to_add: preview.aliasesToAdd,
+    counts: preview.counts,
+  };
+}
+
 export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}): ToolSet {
   const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
     safe(label, fn, options.onToolError);
@@ -578,6 +612,65 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
                 : `Updated ${current.canonicalName}: ${input.field} changed from ${previewValue(
                     currentValue,
                   )} to ${previewValue(newValue)}.`,
+          };
+        }),
+    }),
+
+    execute_object_merge: tool({
+      description:
+        'Approval-required dashboard action. Directly merge duplicate objects after the user approves in chat. Use only for explicit merge commands. First resolve and preview all target objects with search_objects/get_object/retrieve_workspace_context; then pass all objectIds and the survivorId. This re-previews before executing, rejects stale/resolved ids, runs the canonical merge path, and does NOT create a background approval queue item.',
+      inputSchema: executeObjectMergeInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_object_merge', async () => {
+          const input = executeObjectMergeInput.parse(raw);
+          const expectedIds = sortedUnique(input.objectIds);
+          const preview = await scope.objects.getObjectMergePreview(
+            input.objectIds,
+            input.survivorId,
+          );
+          const previewIds = preview.objects.map((object) => object.id);
+          if (preview.survivorId !== input.survivorId || !sameIdSet(previewIds, expectedIds)) {
+            return {
+              ok: false,
+              error: 'stale_state',
+              message:
+                'The merge targets changed since this action was prepared. Re-preview the objects before retrying.',
+              expected_object_ids: expectedIds,
+              current_object_ids: sortedUnique(previewIds),
+              preview: compactMergePreview(preview),
+            };
+          }
+          const mergedIds = input.objectIds.filter((id) => id !== input.survivorId);
+          const result = await scope.objects.mergeObjects({
+            survivorId: input.survivorId,
+            mergedIds,
+            actor: { kind: 'agent', userId: scope.userId },
+          });
+          const reconciledApprovals = await scope.suggestions
+            .reconcileObjectMerge({
+              survivorId: result.survivor.id,
+              mergedIds: result.mergedIds,
+              reason: 'The chat agent merged these objects after explicit in-chat approval.',
+            })
+            .catch((err: unknown) => {
+              log.warn({ err, survivorId: result.survivor.id }, 'object merge reconcile failed');
+              options.onToolError?.(err, { tool: 'execute_object_merge:reconcile' });
+              return 0;
+            });
+          return {
+            ok: true,
+            survivor_id: result.survivor.id,
+            survivor_citation: artifactRefCitation({ kind: 'object', id: result.survivor.id }),
+            merged_ids: result.mergedIds,
+            merged_citations: result.mergedIds.map((id) =>
+              artifactRefCitation({ kind: 'object', id }),
+            ),
+            aliases: result.survivor.aliases,
+            reconciled_approvals: reconciledApprovals,
+            message: `Merged ${String(result.mergedIds.length)} object${
+              result.mergedIds.length === 1 ? '' : 's'
+            } into ${result.survivor.canonicalName}.`,
           };
         }),
     }),

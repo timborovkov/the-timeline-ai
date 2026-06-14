@@ -391,15 +391,16 @@ caused this giant context window?"
 
 ## 7. In-Chat HITL And Two-Phase Action Contract
 
-Status: first vertical slice implemented for direct object field updates.
-Dashboard chat now has `execute_object_update`, an approval-required Vercel AI
-SDK tool that does not create a background approval-queue item. The tool
-requires the model to pass the observed current field value, renders an in-chat
-approval preview, rejects stale state before writing, and executes through the
-canonical `scope.objects.updateObject` path with normal object change/audit
-side effects. Remaining work is a persisted `preparedActionId` store for
-multi-step/high-risk actions and expanding the same direct HITL pattern to
-object create/archive/merge, calendar, board, and task mutations.
+Status: first object-action slices implemented. Dashboard chat now has
+`execute_object_update` and `execute_object_merge`, approval-required Vercel AI
+SDK tools that do not create background approval-queue items. Object updates
+require the observed current field value and reject stale state before writing.
+Object merges re-preview all target objects, render survivor/merged objects as
+preview chips, reject stale/resolved targets, execute through
+`scope.objects.mergeObjects`, and reconcile duplicate pending merge approvals.
+Remaining work is a persisted `preparedActionId` store for multi-step/high-risk
+actions and expanding the same direct HITL pattern to object create/archive,
+calendar, board, and task mutations.
 
 ### Goal
 

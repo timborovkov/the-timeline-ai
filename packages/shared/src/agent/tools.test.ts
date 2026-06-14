@@ -45,12 +45,15 @@ interface FakeScope {
   suggestions: {
     createOrMergeSuggestionBundle: ReturnType<typeof vi.fn>;
     listSuggestions: ReturnType<typeof vi.fn>;
+    reconcileObjectMerge: ReturnType<typeof vi.fn>;
   };
   objects: {
     searchObjects: ReturnType<typeof vi.fn>;
     listObjects: ReturnType<typeof vi.fn>;
     getObject: ReturnType<typeof vi.fn>;
     updateObject: ReturnType<typeof vi.fn>;
+    getObjectMergePreview: ReturnType<typeof vi.fn>;
+    mergeObjects: ReturnType<typeof vi.fn>;
   };
   boards: {
     listBoards: ReturnType<typeof vi.fn>;
@@ -84,12 +87,15 @@ function makeFakeScope(): FakeScope {
     suggestions: {
       createOrMergeSuggestionBundle: vi.fn(),
       listSuggestions: vi.fn(),
+      reconcileObjectMerge: vi.fn().mockResolvedValue(0),
     },
     objects: {
       searchObjects: vi.fn(),
       listObjects: vi.fn(),
       getObject: vi.fn(),
       updateObject: vi.fn(),
+      getObjectMergePreview: vi.fn(),
+      mergeObjects: vi.fn(),
     },
     boards: {
       listBoards: vi.fn(),
@@ -282,6 +288,136 @@ describe('buildAgentTools — team isolation', () => {
       field: 'status',
       expected_value: 'active',
       current_value: 'blocked',
+    });
+  });
+
+  it('execute_object_merge requires approval and applies a direct merge', async () => {
+    const scope = makeFakeScope();
+    const otherId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    scope.objects.getObjectMergePreview.mockResolvedValue({
+      survivorId: OBJECT_ID,
+      objects: [
+        {
+          id: OBJECT_ID,
+          type: 'person',
+          canonicalName: 'Otto Silventola',
+          status: 'active',
+          stage: null,
+          aliases: ['Otto'],
+        },
+        {
+          id: otherId,
+          type: 'person',
+          canonicalName: 'Otto S.',
+          status: 'active',
+          stage: null,
+          aliases: [],
+        },
+      ],
+      aliasesToAdd: ['Otto S.'],
+      counts: { facts: 2, notes: 1, relationships: 0, openTasks: 0 },
+      countsBySurvivorId: {},
+      factSamplesByObjectId: {},
+    });
+    scope.objects.mergeObjects.mockResolvedValue({
+      survivor: {
+        id: OBJECT_ID,
+        canonicalName: 'Otto Silventola',
+        aliases: ['Otto', 'Otto S.'],
+      },
+      mergedIds: [otherId],
+    });
+    scope.suggestions.reconcileObjectMerge.mockResolvedValue(1);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_object_merge?.needsApproval).toBe(true);
+    const exec = tools.execute_object_merge?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        objectIds: [OBJECT_ID, otherId],
+        survivorId: OBJECT_ID,
+        reason: 'User confirmed Otto S. is a duplicate.',
+      },
+      {},
+    );
+
+    expect(scope.objects.getObjectMergePreview).toHaveBeenCalledWith(
+      [OBJECT_ID, otherId],
+      OBJECT_ID,
+    );
+    expect(scope.objects.mergeObjects).toHaveBeenCalledWith({
+      survivorId: OBJECT_ID,
+      mergedIds: [otherId],
+      actor: { kind: 'agent', userId: scope.userId },
+    });
+    expect(scope.suggestions.reconcileObjectMerge).toHaveBeenCalledWith({
+      survivorId: OBJECT_ID,
+      mergedIds: [otherId],
+      reason: 'The chat agent merged these objects after explicit in-chat approval.',
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      survivor_id: OBJECT_ID,
+      survivor_citation: `[ent:${OBJECT_ID}]`,
+      merged_ids: [otherId],
+      merged_citations: [`[ent:${otherId}]`],
+      reconciled_approvals: 1,
+    });
+  });
+
+  it('execute_object_merge rejects stale merge targets before mutating', async () => {
+    const scope = makeFakeScope();
+    const otherId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const resolvedId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    scope.objects.getObjectMergePreview.mockResolvedValue({
+      survivorId: OBJECT_ID,
+      objects: [
+        {
+          id: OBJECT_ID,
+          type: 'person',
+          canonicalName: 'Otto Silventola',
+          status: 'active',
+          stage: null,
+          aliases: [],
+        },
+        {
+          id: resolvedId,
+          type: 'person',
+          canonicalName: 'Otto Resolved',
+          status: 'active',
+          stage: null,
+          aliases: [],
+        },
+      ],
+      aliasesToAdd: [],
+      counts: { facts: 0, notes: 0, relationships: 0, openTasks: 0 },
+      countsBySurvivorId: {},
+      factSamplesByObjectId: {},
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.execute_object_merge?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        objectIds: [OBJECT_ID, otherId],
+        survivorId: OBJECT_ID,
+        reason: 'User confirmed duplicate.',
+      },
+      {},
+    );
+
+    expect(scope.objects.mergeObjects).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'stale_state',
+      expected_object_ids: [OBJECT_ID, otherId].sort(),
+      current_object_ids: [OBJECT_ID, resolvedId].sort(),
     });
   });
 

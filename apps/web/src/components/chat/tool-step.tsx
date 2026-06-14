@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
 import { acceptSuggestionItemAction, rejectSuggestionItemAction } from '@/app/actions/suggestions';
+import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
 import { EvidenceLink } from '@/components/evidence-link';
 
 interface Props {
@@ -67,6 +68,14 @@ function summarize(name: string, input: unknown, output: unknown, state: string)
     if (state === 'approval-requested') return `Approval needed to update object ${field}`;
     if (state === 'output-denied') return `Denied object ${field} update`;
     return `Update object ${field}`;
+  }
+  if (name === 'execute_object_merge') {
+    const out = output as { ok?: boolean; message?: string } | undefined;
+    if (out?.message) return out.message;
+    const ids = Array.isArray(inp.objectIds) ? inp.objectIds.length : 0;
+    if (state === 'approval-requested') return `Approval needed to merge ${String(ids)} objects`;
+    if (state === 'output-denied') return 'Denied object merge';
+    return `Merge ${String(ids)} objects`;
   }
   if (name === 'search_boards') {
     const q = typeof inp.query === 'string' ? inp.query : '';
@@ -363,44 +372,80 @@ function formatApprovalValue(value: unknown): string {
 }
 
 function ToolApprovalCard({
+  name,
   approval,
   input,
   onApprovalResponse,
 }: {
+  name: string;
   approval: { id: string };
   input: unknown;
   onApprovalResponse: NonNullable<Props['onApprovalResponse']>;
 }) {
   const record = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+  const objectIds = Array.isArray(record.objectIds)
+    ? record.objectIds.filter((id): id is string => typeof id === 'string')
+    : [];
+  const survivorId = typeof record.survivorId === 'string' ? record.survivorId : null;
   const field = typeof record.field === 'string' ? record.field : 'field';
   const reason = typeof record.reason === 'string' ? record.reason : null;
+  const mergedIds = survivorId ? objectIds.filter((id) => id !== survivorId) : [];
   return (
     <div className="mt-2 rounded-sm border border-signal/40 bg-signal/5 p-3">
       <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-signal">
         approval required
       </p>
-      <dl className="mt-2 grid gap-1 text-[11px] text-fg-muted">
-        <div className="grid grid-cols-[6rem_1fr] gap-2">
-          <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Field</dt>
-          <dd className="text-fg">{field}</dd>
-        </div>
-        <div className="grid grid-cols-[6rem_1fr] gap-2">
-          <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Current</dt>
-          <dd className="break-words text-fg">
-            {formatApprovalValue(record.expectedCurrentValue)}
-          </dd>
-        </div>
-        <div className="grid grid-cols-[6rem_1fr] gap-2">
-          <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Proposed</dt>
-          <dd className="break-words text-fg">{formatApprovalValue(record.newValue)}</dd>
-        </div>
-        {reason ? (
+      {name === 'execute_object_merge' ? (
+        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+          {survivorId ? (
+            <div className="grid grid-cols-[6rem_1fr] gap-2">
+              <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Keep</dt>
+              <dd>
+                <ArtifactReferenceChip refValue={{ kind: 'object', id: survivorId }} />
+              </dd>
+            </div>
+          ) : null}
+          {mergedIds.length > 0 ? (
+            <div className="grid grid-cols-[6rem_1fr] gap-2">
+              <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Merge</dt>
+              <dd className="flex flex-wrap gap-1">
+                {mergedIds.map((id) => (
+                  <ArtifactReferenceChip key={id} refValue={{ kind: 'object', id }} />
+                ))}
+              </dd>
+            </div>
+          ) : null}
+          {reason ? (
+            <div className="grid grid-cols-[6rem_1fr] gap-2">
+              <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Reason</dt>
+              <dd className="break-words text-fg">{reason}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : (
+        <dl className="mt-2 grid gap-1 text-[11px] text-fg-muted">
           <div className="grid grid-cols-[6rem_1fr] gap-2">
-            <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Reason</dt>
-            <dd className="break-words text-fg">{reason}</dd>
+            <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Field</dt>
+            <dd className="text-fg">{field}</dd>
           </div>
-        ) : null}
-      </dl>
+          <div className="grid grid-cols-[6rem_1fr] gap-2">
+            <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Current</dt>
+            <dd className="break-words text-fg">
+              {formatApprovalValue(record.expectedCurrentValue)}
+            </dd>
+          </div>
+          <div className="grid grid-cols-[6rem_1fr] gap-2">
+            <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Proposed</dt>
+            <dd className="break-words text-fg">{formatApprovalValue(record.newValue)}</dd>
+          </div>
+          {reason ? (
+            <div className="grid grid-cols-[6rem_1fr] gap-2">
+              <dt className="font-mono uppercase tracking-[0.1em] text-fg-dim">Reason</dt>
+              <dd className="break-words text-fg">{reason}</dd>
+            </div>
+          ) : null}
+        </dl>
+      )}
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
@@ -474,6 +519,7 @@ export function ToolStep({ name, state, input, output, approval, onApprovalRespo
       ) : null}
       {needsApproval && approvalResponse ? (
         <ToolApprovalCard
+          name={name}
           approval={needsApproval}
           input={input}
           onApprovalResponse={approvalResponse}

@@ -57,4 +57,30 @@ describe('ToolStep', () => {
 
     expect(html).toContain('Updated Otto Silventola: status changed from active to done.');
   });
+
+  it('renders object preview chips for merge approvals', () => {
+    const survivorId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const mergedId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    const html = renderToStaticMarkup(
+      createElement(ToolStep, {
+        name: 'execute_object_merge',
+        state: 'approval-requested',
+        input: {
+          objectIds: [survivorId, mergedId],
+          survivorId,
+          reason: 'User confirmed these are duplicates.',
+        },
+        approval: { id: 'approval-2' },
+        onApprovalResponse: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('approval required');
+    expect(html).toContain('Keep');
+    expect(html).toContain('Merge');
+    expect(html).toContain('[ent:aaaaaaaa]');
+    expect(html).toContain('[ent:bbbbbbbb]');
+    expect(html).toContain('User confirmed these are duplicates.');
+  });
 });

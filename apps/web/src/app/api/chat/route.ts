@@ -193,6 +193,7 @@ const nativeToolGroups = {
   approvals: ['list_pending_approvals'],
   actions: [
     'execute_object_update',
+    'execute_object_merge',
     'suggest_task',
     'suggest_object_memory',
     'suggest_calendar_event',
