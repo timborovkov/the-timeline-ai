@@ -24,6 +24,7 @@ import {
   deleteNoteAction,
   rejectObjectChangeAction,
   removeRelationshipAction,
+  searchObjectsAction,
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
@@ -156,6 +157,7 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localDetailRef = useRef(detail);
   const serverDetailRef = useRef(detail);
+  const linkSearchSequenceRef = useRef(0);
   const queuedFieldValuesRef = useRef<Record<EditableField, EditableValue | undefined>>({
     status: undefined,
     stage: undefined,
@@ -196,24 +198,34 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
     };
   }, []);
 
-  useEffect(() => {
-    const query = linkQuery.trim();
-    if (!query) return;
-    const controller = new AbortController();
-    const params = new URLSearchParams({ q: query, exclude: detail.id });
-    void fetch(`/api/objects/search?${params.toString()}`, { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('search failed'))))
-      .then((data: { results?: ObjectSearchResult[] }) => {
-        setLinkResults(Array.isArray(data.results) ? data.results : []);
+  function searchLinkObjects(value: string): void {
+    setLinkQuery(value);
+    setSelectedLink(null);
+    const query = value.trim();
+    const sequence = linkSearchSequenceRef.current + 1;
+    linkSearchSequenceRef.current = sequence;
+    if (!query) {
+      setLinkResults([]);
+      return;
+    }
+    void searchObjectsAction({ query, exclude: detail.id })
+      .then((data) => {
+        if (linkSearchSequenceRef.current !== sequence) return;
+        setLinkResults(data.results);
       })
-      .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === 'AbortError') return;
+      .catch(() => {
+        if (linkSearchSequenceRef.current !== sequence) return;
         setLinkResults([]);
       });
-    return () => {
-      controller.abort();
-    };
-  }, [detail.id, linkQuery]);
+  }
+
+  function selectLinkResult(result: ObjectSearchResult): void {
+    linkSearchSequenceRef.current += 1;
+    setLinkQuery(result.canonicalName);
+    setSelectedLink(result);
+    setLinkResults([]);
+  }
+
   const visibleLinkResults = linkQuery.trim() ? linkResults : [];
 
   function patch(field: EditableField, value: EditableValue): void {
@@ -459,11 +471,8 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
         linkResults={visibleLinkResults}
         selectedLink={selectedLink}
         linkKind={linkKind}
-        onLinkQueryChange={(value) => {
-          setLinkQuery(value);
-          setSelectedLink(null);
-        }}
-        onSelectLink={setSelectedLink}
+        onLinkQueryChange={searchLinkObjects}
+        onSelectLink={selectLinkResult}
         dispatchObjectUi={dispatchObjectUi}
         onAddRelationship={addRelationship}
         onRemoveRelationship={removeRelationship}
@@ -917,7 +926,6 @@ function ObjectRelationshipsSection({
                 type="button"
                 className="w-full rounded-sm border border-border px-3 py-2 text-left text-sm hover:bg-surface"
                 onClick={() => {
-                  onLinkQueryChange(result.canonicalName);
                   onSelectLink(result);
                 }}
               >

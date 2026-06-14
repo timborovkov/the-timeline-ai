@@ -14,6 +14,10 @@ import { reportCaughtError } from '@/lib/sentry-report';
 // Derived from the Postgres enum so adding a new object type doesn't
 // require synchronizing this schema with the drizzle enum by hand.
 const objectTypeSchema = z.enum(objects.OBJECT_TYPES);
+const searchObjectsSchema = z.object({
+  query: z.string().max(200).default(''),
+  exclude: uuidSchema.optional(),
+});
 
 type ObjectSuggestionTargetKind = 'object' | 'task';
 
@@ -85,6 +89,39 @@ function revalidateObjectMutationSurfaces(ids: string | string[]): void {
   revalidatePath('/app/boards', 'layout');
   revalidatePath('/app/tasks');
   revalidatePath('/app/approvals');
+}
+
+function matchesObjectSearch(
+  row: { canonicalName: string; type: string; aliases: string[] },
+  query: string,
+): boolean {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const text = [row.canonicalName, row.type, ...row.aliases].join(' ').toLowerCase();
+  return tokens.every((token) => text.includes(token));
+}
+
+export async function searchObjectsAction(input: unknown): Promise<{
+  results: { id: string; canonicalName: string; type: string }[];
+}> {
+  return runSentryServerAction('search_objects', async () => {
+    const parsed = searchObjectsSchema.safeParse(input);
+    if (!parsed.success) return { results: [] };
+    const r = await resolveScope();
+    if (!r.ok) return { results: [] };
+    const rows = await r.scope.objects.listObjects({ archived: false, limit: 500 });
+    const results: { id: string; canonicalName: string; type: string }[] = [];
+    for (const row of rows) {
+      if (row.id === parsed.data.exclude || !matchesObjectSearch(row, parsed.data.query)) continue;
+      results.push({
+        id: row.id,
+        canonicalName: row.canonicalName,
+        type: row.type,
+      });
+      if (results.length >= 12) break;
+    }
+    return { results };
+  });
 }
 
 /**

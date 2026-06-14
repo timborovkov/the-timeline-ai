@@ -73,6 +73,7 @@ export function DocumentPreview({ target, label = 'Preview', className, compact 
           {preview.mediaKind === 'image' ? (
             <div className="flex min-h-72 w-full items-center justify-center">
               {/* Presigned S3/RustFS URLs include auth query params, so they load directly in the browser instead of through Next's image pipeline. */}
+              {/* react-doctor-disable-next-line react-doctor/nextjs-no-img-element */}
               <img
                 src={preview.url}
                 alt={preview.filename}

@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as slugModule from '@timeline/shared/slug';
-
 import {
   changeMemberRoleAction,
   createTeamAction,
@@ -10,6 +8,7 @@ import {
   renameTeamAction,
   resendInviteAction,
   revokeInviteAction,
+  updateInboundEmailWhitelistAction,
 } from '@/app/actions/teams';
 
 /**
@@ -58,12 +57,18 @@ vi.mock('@timeline/shared/email', () => ({ sendTeamInviteEmail: fakes.fakeSendIn
 vi.mock('@timeline/shared/team-roles', () => ({
   assertNotLastOwner: fakes.fakeAssertNotLastOwner,
 }));
-vi.mock('@timeline/shared/slug', async () => {
-  const actual = await vi.importActual<typeof slugModule>('@timeline/shared/slug');
+vi.mock('@timeline/shared/slug', () => {
   return {
-    ...actual,
+    buildInboundEmail: (slug: string, domain: string | undefined) =>
+      `${slug}@${domain ?? 'inbound.invalid'}`,
     randomSlugSuffix: () => 'sluggy',
     randomToken: () => 'invite-token',
+    slugify: (value: string) =>
+      value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, ''),
   };
 });
 
@@ -238,6 +243,74 @@ describe('renameTeamAction', () => {
       ok: true,
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app', 'layout');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+  });
+});
+
+describe('updateInboundEmailWhitelistAction', () => {
+  it('requires active team and admin membership', async () => {
+    fakes.fakeResolveActiveTeam.mockResolvedValue({ active: null });
+
+    await expect(
+      updateInboundEmailWhitelistAction({}, form({ senders: 'vendor@example.test' })),
+    ).resolves.toEqual({ error: 'No active team' });
+
+    fakes.fakeResolveActiveTeam.mockResolvedValue({
+      active: { teamId: TEAM_ID, teamName: 'Timeline E2E' },
+    });
+    fakes.fakeRequireMembership.mockRejectedValue(new Error('forbidden'));
+    await expect(
+      updateInboundEmailWhitelistAction({}, form({ senders: 'vendor@example.test' })),
+    ).resolves.toEqual({ error: 'Only admins can update email ingest settings' });
+    expect(fakes.fakeTransaction).not.toHaveBeenCalled();
+  });
+
+  it('validates sender addresses before writing', async () => {
+    await expect(
+      updateInboundEmailWhitelistAction({}, form({ senders: 'vendor@example.test, nope' })),
+    ).resolves.toEqual({ error: 'Enter valid email addresses only' });
+
+    expect(fakes.fakeTransaction).not.toHaveBeenCalled();
+  });
+
+  it('requires at least one sender when enabling the whitelist', async () => {
+    await expect(
+      updateInboundEmailWhitelistAction({}, form({ enabled: 'on', senders: '  ' })),
+    ).resolves.toEqual({ error: 'Add at least one sender before enabling the whitelist' });
+
+    expect(fakes.fakeTransaction).not.toHaveBeenCalled();
+  });
+
+  it('normalizes, dedupes, audits, and revalidates updates', async () => {
+    const { tx, inserts, updates } = makeTx([]);
+    mockTransactionWithTx(tx);
+
+    await expect(
+      updateInboundEmailWhitelistAction(
+        {},
+        form({
+          enabled: 'on',
+          senders: 'Vendor@Example.Test, vendor@example.test\npartner@example.test',
+        }),
+      ),
+    ).resolves.toEqual({ ok: true });
+
+    expect(updates).toEqual([
+      {
+        inboundSenderWhitelistEnabled: true,
+        inboundSenderWhitelist: ['vendor@example.test', 'partner@example.test'],
+      },
+    ]);
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        actorUserId: USER_ID,
+        metadata: {
+          setting: 'team.inbound_sender_whitelist',
+          enabled: true,
+          senderCount: 2,
+        },
+      }),
+    );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
   });
 });
