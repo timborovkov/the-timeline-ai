@@ -33,6 +33,9 @@ const { processDailyDigestJob } = await import('#src/workers/dailyDigest.js');
 describe('daily digest worker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.AUTH_URL;
+    delete process.env.VERCEL_URL;
+    delete process.env.NEXTAUTH_URL;
     fakes.defaultDigestWindow.mockReturnValue({
       start: new Date('2026-06-13T12:00:00Z'),
       end: new Date('2026-06-14T12:00:00Z'),
@@ -98,5 +101,25 @@ describe('daily digest worker', () => {
       },
     );
     expect(fakes.enqueueDailyDigestSendJob).not.toHaveBeenCalled();
+  });
+
+  it('uses VERCEL_URL for digest links when explicit auth URLs are absent', async () => {
+    process.env.VERCEL_URL = 'timeline-preview.vercel.app';
+    process.env.NEXTAUTH_URL = 'https://production.timeline.example';
+    fakes.sendDailyDigest.mockResolvedValue({ ok: true });
+
+    await expect(
+      processDailyDigestJob(
+        { db: {} as never },
+        { kind: 'send', digestId: 'digest-1', email: 'a@example.test' },
+      ),
+    ).resolves.toEqual({ digestId: 'digest-1', sent: true });
+
+    expect(fakes.sendDailyDigest).toHaveBeenCalledWith({
+      db: {},
+      digestId: 'digest-1',
+      to: 'a@example.test',
+      digestUrl: 'https://timeline-preview.vercel.app/app',
+    });
   });
 });

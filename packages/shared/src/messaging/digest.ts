@@ -7,7 +7,7 @@ import {
   teams,
   users,
 } from '@timeline/db';
-import { and, count, desc, eq, gte, isNull, lt } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { DailyDigestPayload } from '#src/messaging/types.js';
@@ -194,7 +194,13 @@ export async function latestDailyDigest(input: {
   const rows = await input.db
     .select()
     .from(dailyDigests)
-    .where(and(eq(dailyDigests.teamId, input.teamId), eq(dailyDigests.userId, input.userId)))
+    .where(
+      and(
+        eq(dailyDigests.teamId, input.teamId),
+        eq(dailyDigests.userId, input.userId),
+        inArray(dailyDigests.status, ['generated', 'sent']),
+      ),
+    )
     .orderBy(desc(dailyDigests.generatedAt))
     .limit(1);
   return rows[0] ?? null;

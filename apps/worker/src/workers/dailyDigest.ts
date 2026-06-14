@@ -9,6 +9,8 @@ const log = childLogger('worker:daily-digest');
 function siteUrl(): string {
   const authUrl = process.env.AUTH_URL;
   if (authUrl) return new URL(authUrl).origin;
+  const vercelUrl = process.env.VERCEL_URL;
+  if (vercelUrl) return new URL(`https://${vercelUrl}`).origin;
   const nextAuthUrl = process.env.NEXTAUTH_URL;
   if (nextAuthUrl) return new URL(nextAuthUrl).origin;
   return 'http://localhost:3000';
