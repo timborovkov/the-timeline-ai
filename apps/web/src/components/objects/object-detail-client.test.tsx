@@ -5,6 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const fakes = vi.hoisted(() => ({ refresh: vi.fn() }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
+vi.mock('@tanstack/react-query', () => ({
+  useQuery: () => ({ data: { query: '', results: [] } }),
+}));
 vi.mock('@/app/actions/objects', () => ({
   acceptObjectChangeAction: vi.fn(),
   addRelationshipAction: vi.fn(),
@@ -26,6 +29,7 @@ vi.mock('@/components/objects/object-section-feed', () => ({
 }));
 
 const { ObjectDetailClient } = await import('./object-detail-client.js');
+const { visibleObjectSearchResultsForQuery } = await import('./object-search-results.js');
 
 const detail = {
   id: 'object-1',
@@ -112,5 +116,15 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('Pending approvals');
     expect(html).toContain('Update proposal stage');
     expect(html).toContain('Move to proposal');
+  });
+
+  it('filters placeholder object search results against the current query', () => {
+    const staleData = {
+      query: 'Acme',
+      results: [{ id: 'object-2', canonicalName: 'Acme Renewal', type: 'deal' }],
+    };
+
+    expect(visibleObjectSearchResultsForQuery(staleData, 'Globex')).toEqual([]);
+    expect(visibleObjectSearchResultsForQuery(staleData, 'Acm')).toEqual(staleData.results);
   });
 });

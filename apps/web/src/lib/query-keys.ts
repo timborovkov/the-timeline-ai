@@ -1,6 +1,8 @@
 export const queryKeys = {
   timeline: (filters: Record<string, string | null | undefined>) => ['timeline', filters] as const,
   objectSection: (objectId: string, section: string) => ['object', objectId, section] as const,
+  objectSearch: (query: string, excludeId: string) =>
+    ['objects', 'search', query, excludeId] as const,
   documentList: (folderId: string | null) => ['documents', 'list', folderId] as const,
   documentSearch: (query: string, filters: Record<string, string | null | undefined>) =>
     ['documents', 'search', query, filters] as const,

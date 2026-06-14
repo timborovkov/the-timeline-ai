@@ -214,4 +214,39 @@ describe('accept-visible suggestions action', () => {
     });
     expectSuggestionSurfacesRevalidated();
   });
+
+  it('accepts visible suggestion groups in order before revalidating', async () => {
+    const secondSuggestionId = '55555555-5555-4555-8555-555555555555';
+    let resolveFirst!: (result: { accepted: number; failed: number }) => void;
+    const firstAcceptance = new Promise<{ accepted: number; failed: number }>((resolve) => {
+      resolveFirst = resolve;
+    });
+    fakes.fakeSuggestions.acceptSelected
+      .mockReturnValueOnce(firstAcceptance)
+      .mockResolvedValueOnce({ accepted: 1, failed: 0 });
+
+    const action = acceptVisibleSuggestionsAction({
+      suggestions: [
+        { suggestionId: SUGGESTION_ID, itemIds: [ITEM_ID] },
+        {
+          suggestionId: secondSuggestionId,
+          itemIds: ['66666666-6666-4666-8666-666666666666'],
+        },
+      ],
+    });
+
+    await vi.waitFor(() => {
+      expect(fakes.fakeSuggestions.acceptSelected).toHaveBeenCalledTimes(1);
+    });
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+
+    resolveFirst({ accepted: 1, failed: 0 });
+    await expect(action).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeSuggestions.acceptSelected).toHaveBeenNthCalledWith(2, {
+      suggestionId: secondSuggestionId,
+      itemIds: ['66666666-6666-4666-8666-666666666666'],
+    });
+    expectSuggestionSurfacesRevalidated();
+  });
 });

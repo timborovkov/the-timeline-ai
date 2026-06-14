@@ -35,7 +35,7 @@ const emptyCounts = {
   relationships: 0,
   openTasks: 0,
 };
-const emptyFactSamplesByObjectId: NonNullable<Props['factSamplesByObjectId']> = {};
+const emptyFactSamplesByObjectId: objects.ObjectMergePreview['factSamplesByObjectId'] = {};
 
 function aliasAdditions(rows: objects.ObjectRow[], survivorId: string): string[] {
   const survivor = rows.find((row) => row.id === survivorId);

@@ -1,4 +1,5 @@
 'use client';
+import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import {
   type ComponentProps,
@@ -24,12 +25,17 @@ import {
   deleteNoteAction,
   rejectObjectChangeAction,
   removeRelationshipAction,
-  searchObjectsAction,
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
+import {
+  type ObjectSearchResult,
+  visibleObjectSearchResultsForQuery,
+} from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
+import { readJson } from '@/lib/paginated-api';
+import { queryKeys } from '@/lib/query-keys';
 import { errorMessage } from '@/lib/utils';
 
 const RELATIONSHIP_KINDS = [
@@ -64,12 +70,6 @@ interface ObjectDetailUiState {
   editingNoteId: string | null;
   editingBody: string;
   linkKind: (typeof RELATIONSHIP_KINDS)[number];
-}
-
-interface ObjectSearchResult {
-  id: string;
-  canonicalName: string;
-  type: string;
 }
 
 type ObjectDetailUiAction =
@@ -148,7 +148,6 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
     dispatchObjectUi,
   ] = useReducer(objectDetailUiReducer, detail, initObjectDetailUiState);
   const [linkQuery, setLinkQuery] = useState('');
-  const [linkResults, setLinkResults] = useState<ObjectSearchResult[]>([]);
   const [selectedLink, setSelectedLink] = useState<ObjectSearchResult | null>(null);
   const localDetail = useMemo(
     () => applyObjectDetailOverrides(detail, overrides),
@@ -157,7 +156,6 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localDetailRef = useRef(detail);
   const serverDetailRef = useRef(detail);
-  const linkSearchSequenceRef = useRef(0);
   const queuedFieldValuesRef = useRef<Record<EditableField, EditableValue | undefined>>({
     status: undefined,
     stage: undefined,
@@ -192,41 +190,36 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
     }));
   }
 
+  const trimmedLinkQuery = linkQuery.trim();
+  const { data: linkResultsData } = useQuery({
+    queryKey: queryKeys.objectSearch(trimmedLinkQuery, detail.id),
+    enabled: trimmedLinkQuery.length > 0,
+    placeholderData: (previousData) => previousData,
+    queryFn: async () => {
+      const params = new URLSearchParams({ q: trimmedLinkQuery, exclude: detail.id });
+      const data = await readJson<{ results?: ObjectSearchResult[] }>(
+        await fetch(`/api/objects/search?${params.toString()}`),
+      );
+      return { query: trimmedLinkQuery, results: data.results };
+    },
+  });
+  const visibleLinkResults = visibleObjectSearchResultsForQuery(linkResultsData, trimmedLinkQuery);
+
+  function searchLinkObjects(value: string): void {
+    setLinkQuery(value);
+    setSelectedLink(null);
+  }
+
+  function selectLinkResult(result: ObjectSearchResult): void {
+    setLinkQuery(result.canonicalName);
+    setSelectedLink(result);
+  }
+
   useEffect(() => {
     return () => {
       if (savedTimer.current) clearTimeout(savedTimer.current);
     };
   }, []);
-
-  function searchLinkObjects(value: string): void {
-    setLinkQuery(value);
-    setSelectedLink(null);
-    const query = value.trim();
-    const sequence = linkSearchSequenceRef.current + 1;
-    linkSearchSequenceRef.current = sequence;
-    if (!query) {
-      setLinkResults([]);
-      return;
-    }
-    void searchObjectsAction({ query, exclude: detail.id })
-      .then((data) => {
-        if (linkSearchSequenceRef.current !== sequence) return;
-        setLinkResults(data.results);
-      })
-      .catch(() => {
-        if (linkSearchSequenceRef.current !== sequence) return;
-        setLinkResults([]);
-      });
-  }
-
-  function selectLinkResult(result: ObjectSearchResult): void {
-    linkSearchSequenceRef.current += 1;
-    setLinkQuery(result.canonicalName);
-    setSelectedLink(result);
-    setLinkResults([]);
-  }
-
-  const visibleLinkResults = linkQuery.trim() ? linkResults : [];
 
   function patch(field: EditableField, value: EditableValue): void {
     const currentValue = localDetailRef.current[field];
@@ -378,7 +371,6 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
         dispatchObjectUi({ error: result.error });
       } else {
         setLinkQuery('');
-        setLinkResults([]);
         setSelectedLink(null);
         router.refresh();
       }

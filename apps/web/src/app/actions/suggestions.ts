@@ -94,8 +94,16 @@ export async function acceptVisibleSuggestionsAction(input: unknown): Promise<Ac
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      const results = await Promise.all(
-        parsed.data.suggestions.map((suggestion) => r.scope.suggestions.acceptSelected(suggestion)),
+      const results = await parsed.data.suggestions.reduce<
+        Promise<{ accepted: number; failed: number }[]>
+      >(
+        (previousResults, suggestion) =>
+          previousResults.then((settledResults) =>
+            r.scope.suggestions
+              .acceptSelected(suggestion)
+              .then((result) => [...settledResults, result]),
+          ),
+        Promise.resolve([]),
       );
       const failed = results.reduce((sum, result) => sum + result.failed, 0);
       revalidateSuggestionSurfaces();
