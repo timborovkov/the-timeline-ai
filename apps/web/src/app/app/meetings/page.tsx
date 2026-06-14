@@ -8,6 +8,7 @@ import type { Metadata } from 'next';
 
 import {
   ArchiveSavedMeetingButton,
+  EditSavedMeetingForm,
   JoinSavedMeetingButton,
   SavedMeetingForm,
   ScheduleMeetingBotForm,
@@ -55,6 +56,10 @@ export default async function MeetingsPage({
           .where(inArray(users.id, memberIds))
       : [];
   const memberUserMap = new Map(memberUsers.map((u) => [u.id, u] as const));
+  const memberOptions = members.map((m) => {
+    const u = memberUserMap.get(m.userId);
+    return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
+  });
   const cap = settings.meetingMinutesCap;
 
   return (
@@ -90,19 +95,13 @@ export default async function MeetingsPage({
         <ScheduleMeetingBotForm
           defaultVisibility={defaultRow.visibility}
           defaultVisibilityUserIds={defaultRow.visibilityUserIds}
-          members={members.map((m) => {
-            const u = memberUserMap.get(m.userId);
-            return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
-          })}
+          members={memberOptions}
         />
       ) : (
         <SavedMeetingForm
           defaultVisibility={defaultRow.visibility}
           defaultVisibilityUserIds={defaultRow.visibilityUserIds}
-          members={members.map((m) => {
-            const u = memberUserMap.get(m.userId);
-            return { id: m.userId, label: u?.name ?? u?.email ?? m.userId };
-          })}
+          members={memberOptions}
         />
       )}
 
@@ -134,6 +133,7 @@ export default async function MeetingsPage({
                   {saved.description ? (
                     <p className="text-sm text-muted-foreground">{saved.description}</p>
                   ) : null}
+                  <EditSavedMeetingForm saved={saved} members={memberOptions} />
                 </li>
               ))}
             </ul>

@@ -56,9 +56,23 @@ const createSavedMeetingSchema = z.object({
   autoJoinEnabled: z.boolean().default(false),
 });
 
+const updateSavedMeetingSchema = createSavedMeetingSchema
+  .omit({ meetingUrl: true, permissionConfirmed: true })
+  .extend({
+    savedMeetingId: z.string().regex(UUID_RE),
+  });
+
 const joinSavedMeetingSchema = z.object({
   query: z.string().trim().min(1).max(200),
 });
+
+function joinOffsetMs(scheduleConfig: unknown): number {
+  if (!scheduleConfig || typeof scheduleConfig !== 'object') return 2 * 60 * 1000;
+  const raw = scheduleConfig as Record<string, unknown>;
+  return typeof raw.joinOffsetMinutes === 'number' && Number.isFinite(raw.joinOffsetMinutes)
+    ? Math.max(0, Math.min(30, Math.trunc(raw.joinOffsetMinutes))) * 60 * 1000
+    : 2 * 60 * 1000;
+}
 
 async function withScopeOrError() {
   const session = await auth();
@@ -247,6 +261,40 @@ export async function createSavedMeetingAction(
   });
 }
 
+export async function updateSavedMeetingAction(
+  input: z.input<typeof updateSavedMeetingSchema>,
+): Promise<Result & { savedMeetingId?: string }> {
+  return runSentryServerAction('update_saved_meeting', async () => {
+    const parsed = updateSavedMeetingSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    }
+    const got = await withScopeOrError();
+    if ('error' in got) return { ok: false, error: got.error };
+    try {
+      const saved = await got.scope.meetings.updateSavedMeeting(parsed.data.savedMeetingId, {
+        title: parsed.data.title,
+        description: parsed.data.description,
+        aliases: parsed.data.aliases,
+        defaultVisibility: parsed.data.visibility,
+        visibilityUserIds:
+          parsed.data.visibility === 'specific_users' ? parsed.data.visibilityUserIds : [],
+        scheduleConfig: parsed.data.scheduleConfig,
+        durationMinutes: parsed.data.durationMinutes,
+        autoJoinEnabled: parsed.data.autoJoinEnabled,
+      });
+      if (!saved) return { ok: false, error: 'Saved meeting not found' };
+      revalidatePath('/app/meetings');
+      revalidatePath('/app/calendar');
+      return { ok: true, savedMeetingId: saved.id };
+    } catch (err) {
+      log.error({ err }, 'update_saved_meeting_failed');
+      reportCaughtError(err, { surface: 'server_action', operation: 'update_saved_meeting' });
+      return { ok: false, error: err instanceof Error ? err.message : 'Failed to update meeting' };
+    }
+  });
+}
+
 export async function joinSavedMeetingAction(
   input: z.input<typeof joinSavedMeetingSchema>,
 ): Promise<Result> {
@@ -278,7 +326,11 @@ export async function joinSavedMeetingAction(
     if (active && (active.status === 'joining' || active.status === 'active')) {
       return { ok: true, meetingId: active.id };
     }
-    const scheduled = await scope.meetings.findNearbyScheduledOccurrence(resolved.savedMeeting.id);
+    const scheduled = await scope.meetings.findNearbyScheduledOccurrence(
+      resolved.savedMeeting.id,
+      new Date(),
+      joinOffsetMs(resolved.savedMeeting.scheduleConfig),
+    );
     const meeting =
       scheduled ??
       (await scope.meetings.createMeeting({

@@ -152,6 +152,32 @@ describe('processMeetingSchedulerTick', () => {
     expect(row?.status).toBe('joining');
   });
 
+  it('claims scheduled captures before calling the provider so concurrent ticks do not duplicate bots', async () => {
+    const { meeting } = await insertSavedAndScheduled(db);
+    let releaseJoin!: () => void;
+    const joinReleased = new Promise<void>((resolve) => {
+      releaseJoin = resolve;
+    });
+    joinMeetingMock.mockImplementation(async () => {
+      await joinReleased;
+      return { botId: 'bot-1', raw: { id: 'bot-1' } };
+    });
+
+    const firstTick = processMeetingSchedulerTick({ db: db as never });
+    await vi.waitFor(async () => {
+      const row = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
+      expect(row?.status).toBe('joining');
+    });
+
+    const secondTick = await processMeetingSchedulerTick({ db: db as never });
+    releaseJoin();
+    const firstResult = await firstTick;
+
+    expect(firstResult.joined).toBe(1);
+    expect(secondTick.joined).toBe(0);
+    expect(joinMeetingMock).toHaveBeenCalledTimes(1);
+  });
+
   it('does not create a duplicate bot when the same meeting URL is already active', async () => {
     const { meeting } = await insertSavedAndScheduled(db);
     await db.insert(meetings).values({

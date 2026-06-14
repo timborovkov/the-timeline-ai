@@ -1,7 +1,7 @@
 import { type Db, meetings, meetingUsage, savedMeetings, teamMeetingSettings } from '@timeline/db';
 import { childLogger, meetingBots, queue, withTeam } from '@timeline/shared';
 import { Worker, type Job } from 'bullmq';
-import { and, asc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 
 import { captureWorkerException } from '#src/monitoring.js';
 
@@ -117,19 +117,6 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
     ) {
       continue;
     }
-    const activeDuplicate = await deps.db
-      .select({ id: meetings.id })
-      .from(meetings)
-      .where(
-        and(
-          eq(meetings.teamId, meeting.teamId),
-          eq(meetings.meetingUrl, meeting.meetingUrl),
-          inArray(meetings.status, ['joining', 'active']),
-        ),
-      )
-      .limit(1);
-    if (activeDuplicate[0]) continue;
-
     const scope = withTeam(deps.db, meeting.teamId, PSEUDO_USER, { skipMembershipCheck: true });
     if (!(await teamHasMeetingCapacity(deps.db, meeting.teamId))) {
       await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
@@ -141,6 +128,30 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
     }
 
     try {
+      const claimed = await deps.db
+        .update(meetings)
+        .set({
+          status: 'joining',
+          updatedAt: new Date(),
+          metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || '{"scheduler_claimed":true}'::jsonb`,
+        })
+        .where(
+          and(
+            eq(meetings.id, meeting.id),
+            eq(meetings.teamId, meeting.teamId),
+            eq(meetings.status, 'scheduled'),
+            sql`NOT EXISTS (
+              SELECT 1 FROM meetings active
+              WHERE active.team_id = ${meetings.teamId}
+                AND active.meeting_url = ${meetings.meetingUrl}
+                AND active.status IN ('joining', 'active')
+                AND active.id <> ${meetings.id}
+            )`,
+          ),
+        )
+        .returning({ id: meetings.id });
+      if (!claimed[0]) continue;
+
       const team = await scope.timeline.team();
       const provider = meetingBots.getMeetingBotProvider(meeting.provider);
       const join = await provider.joinMeeting({

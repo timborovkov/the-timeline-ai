@@ -182,9 +182,15 @@ export function detectMeetingPlatform(url: string): MeetingPlatform | null {
   try {
     const u = new URL(url);
     const host = u.hostname.toLowerCase();
-    if (host.includes('meet.google.com')) return 'meet';
-    if (host.includes('teams.microsoft.com') || host.includes('teams.live.com')) return 'teams';
-    if (host.includes('zoom.us') || host.endsWith('.zoom.us') || host.includes('zoom.com')) {
+    if (host === 'meet.google.com') return 'meet';
+    if (host === 'teams.microsoft.com' || host.endsWith('.teams.microsoft.com')) return 'teams';
+    if (host === 'teams.live.com' || host.endsWith('.teams.live.com')) return 'teams';
+    if (
+      host === 'zoom.us' ||
+      host.endsWith('.zoom.us') ||
+      host === 'zoom.com' ||
+      host.endsWith('.zoom.com')
+    ) {
       return 'zoom';
     }
     return null;
@@ -641,12 +647,25 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
     OR (${meetings.defaultVisibility} = 'private' AND ${meetings.createdByUserId} = ${userId}::uuid)
     OR (${meetings.defaultVisibility} = 'specific_users' AND ${userId}::uuid = ANY(${meetings.visibilityUserIds}))
   )`;
+  const savedMeetingVisibility = sql`(
+    ${savedMeetings.defaultVisibility} = 'team'
+    OR (${savedMeetings.defaultVisibility} = 'private' AND ${savedMeetings.createdByUserId} = ${userId}::uuid)
+    OR (${savedMeetings.defaultVisibility} = 'specific_users' AND ${userId}::uuid = ANY(${savedMeetings.visibilityUserIds}))
+  )`;
 
-  async function listSavedMeetingsInternal(): Promise<SavedMeetingRow[]> {
+  async function listSavedMeetingsInternal(
+    opts: { enforceVisibility?: boolean } = {},
+  ): Promise<SavedMeetingRow[]> {
     const rows = await db
       .select()
       .from(savedMeetings)
-      .where(and(eq(savedMeetings.teamId, teamId), isNull(savedMeetings.archivedAt)))
+      .where(
+        and(
+          eq(savedMeetings.teamId, teamId),
+          isNull(savedMeetings.archivedAt),
+          ...(opts.enforceVisibility ? [savedMeetingVisibility] : []),
+        ),
+      )
       .orderBy(asc(savedMeetings.title), asc(savedMeetings.createdAt));
     if (rows.length === 0) return [];
     const ids = rows.map((row) => row.id);
@@ -664,11 +683,20 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
     return rows.map((row) => savedMeetingRow(row, aliasesBySavedId.get(row.id) ?? []));
   }
 
-  async function getSavedMeetingInternal(id: string): Promise<SavedMeetingRow | null> {
+  async function getSavedMeetingInternal(
+    id: string,
+    opts: { enforceVisibility?: boolean } = {},
+  ): Promise<SavedMeetingRow | null> {
     const rows = await db
       .select()
       .from(savedMeetings)
-      .where(and(eq(savedMeetings.id, id), eq(savedMeetings.teamId, teamId)))
+      .where(
+        and(
+          eq(savedMeetings.id, id),
+          eq(savedMeetings.teamId, teamId),
+          ...(opts.enforceVisibility ? [savedMeetingVisibility] : []),
+        ),
+      )
       .limit(1);
     const row = rows[0];
     if (!row) return null;
@@ -794,12 +822,12 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
 
     async listSavedMeetings(): Promise<SavedMeetingRow[]> {
       await ensureMember();
-      return listSavedMeetingsInternal();
+      return listSavedMeetingsInternal({ enforceVisibility: true });
     },
 
     async getSavedMeeting(id: string): Promise<SavedMeetingRow | null> {
       await ensureMember();
-      return getSavedMeetingInternal(id);
+      return getSavedMeetingInternal(id, { enforceVisibility: true });
     },
 
     async createSavedMeeting(input: CreateSavedMeetingInput): Promise<SavedMeetingRow> {
@@ -886,7 +914,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
       >,
     ): Promise<SavedMeetingRow | null> {
       await ensureMember();
-      const existing = await getSavedMeetingInternal(id);
+      const existing = await getSavedMeetingInternal(id, { enforceVisibility: true });
       if (!existing || existing.archivedAt) return null;
       const visibility = patch.defaultVisibility ?? existing.defaultVisibility;
       const visibilityUserIds = await validateVisibilityUserIds(
@@ -940,6 +968,17 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
             );
           }
         }
+        const futureScheduled = await tx
+          .select({ id: meetings.id, linkedCalendarEventId: meetings.linkedCalendarEventId })
+          .from(meetings)
+          .where(
+            and(
+              eq(meetings.teamId, teamId),
+              eq(meetings.savedMeetingId, id),
+              eq(meetings.status, 'scheduled'),
+              gte(meetings.scheduledStartAt, new Date()),
+            ),
+          );
         await tx
           .delete(meetings)
           .where(
@@ -950,6 +989,25 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
               gte(meetings.scheduledStartAt, new Date()),
             ),
           );
+        const calendarIds = futureScheduled.flatMap((row) =>
+          row.linkedCalendarEventId ? [row.linkedCalendarEventId] : [],
+        );
+        if (calendarIds.length > 0) {
+          await tx
+            .update(calendarEvents)
+            .set({
+              deletedAt: new Date(),
+              updatedAt: new Date(),
+              metadata: sql`COALESCE(${calendarEvents.metadata}, '{}'::jsonb) || '{"capture_status":"cancelled","cancelled_by_schedule_update":true}'::jsonb`,
+            })
+            .where(
+              and(
+                eq(calendarEvents.teamId, teamId),
+                inArray(calendarEvents.id, calendarIds),
+                sql`COALESCE(${calendarEvents.metadata}, '{}'::jsonb) @> '{"generated_from_saved_meeting":true}'::jsonb`,
+              ),
+            );
+        }
       });
       const updated = await getSavedMeetingInternal(id);
       if (updated?.scheduleConfig && updated.autoJoinEnabled) {
@@ -960,16 +1018,57 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
 
     async archiveSavedMeeting(id: string): Promise<boolean> {
       await ensureMember();
-      const updated = await db
-        .update(savedMeetings)
-        .set({
-          archivedAt: new Date(),
-          archivedByUserId: userId,
-          autoJoinEnabled: false,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(savedMeetings.id, id), eq(savedMeetings.teamId, teamId)))
-        .returning({ id: savedMeetings.id });
+      const existing = await getSavedMeetingInternal(id, { enforceVisibility: true });
+      if (!existing) return false;
+      const archivedAt = new Date();
+      const updated = await db.transaction(async (tx) => {
+        const rows = await tx
+          .update(savedMeetings)
+          .set({
+            archivedAt,
+            archivedByUserId: userId,
+            autoJoinEnabled: false,
+            updatedAt: archivedAt,
+          })
+          .where(and(eq(savedMeetings.id, id), eq(savedMeetings.teamId, teamId)))
+          .returning({ id: savedMeetings.id });
+        const futureScheduled = await tx
+          .update(meetings)
+          .set({
+            status: 'cancelled',
+            updatedAt: archivedAt,
+            metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || '{"capture_status":"cancelled","cancelled_by_saved_meeting_archive":true}'::jsonb`,
+          })
+          .where(
+            and(
+              eq(meetings.teamId, teamId),
+              eq(meetings.savedMeetingId, id),
+              eq(meetings.status, 'scheduled'),
+              gte(meetings.scheduledStartAt, archivedAt),
+            ),
+          )
+          .returning({ linkedCalendarEventId: meetings.linkedCalendarEventId });
+        const calendarIds = futureScheduled.flatMap((row) =>
+          row.linkedCalendarEventId ? [row.linkedCalendarEventId] : [],
+        );
+        if (calendarIds.length > 0) {
+          await tx
+            .update(calendarEvents)
+            .set({
+              deletedAt: archivedAt,
+              updatedAt: archivedAt,
+              metadata: sql`COALESCE(${calendarEvents.metadata}, '{}'::jsonb) || '{"capture_status":"cancelled","cancelled_by_saved_meeting_archive":true}'::jsonb`,
+            })
+            .where(
+              and(
+                eq(calendarEvents.teamId, teamId),
+                inArray(calendarEvents.id, calendarIds),
+                sql`COALESCE(${calendarEvents.metadata}, '{}'::jsonb) @> '{"generated_from_saved_meeting":true}'::jsonb`,
+              ),
+            );
+        }
+        return rows;
+      });
       return updated.length > 0;
     },
 
@@ -994,10 +1093,12 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
       if (aliasRows.length === 1) {
         const aliasRow = aliasRows[0];
         if (!aliasRow) return { kind: 'none' };
-        const saved = await getSavedMeetingInternal(aliasRow.savedMeetingId);
+        const saved = await getSavedMeetingInternal(aliasRow.savedMeetingId, {
+          enforceVisibility: true,
+        });
         return saved && !saved.archivedAt ? { kind: 'one', savedMeeting: saved } : { kind: 'none' };
       }
-      const all = await listSavedMeetingsInternal();
+      const all = await listSavedMeetingsInternal({ enforceVisibility: true });
       const exactTitle = all.filter((row) => normalizeSavedMeetingAlias(row.title) === normalized);
       const exactTitleMatch = exactTitle[0];
       if (exactTitle.length === 1 && exactTitleMatch) {
