@@ -36,10 +36,20 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
   const document = await scope.documents.getDocument(id);
   if (!document) notFound();
 
-  const [versions, folderPath] = await Promise.all([
+  const [versions, folderPath, folderPage] = await Promise.all([
     scope.documents.listDocumentVersions(document.id),
     scope.documents.folderPath(document.folderId),
+    scope.documents.listDocumentsWithProvenancePage({
+      folderId: document.folderId,
+      limit: 100,
+    }),
   ]);
+  const listEntry = folderPage.items.find((item) => item.id === document.id);
+  const currentVersion =
+    versions.find((version) => version.id === document.currentVersionId) ?? versions[0] ?? null;
+  const currentVersionChunks = currentVersion
+    ? await scope.documents.listDocumentVersionChunks(currentVersion.id)
+    : [];
   const requestedVersion = sp.version ? Number.parseInt(sp.version, 10) : null;
 
   return (
@@ -47,14 +57,24 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
       <DocumentDetail
         document={{
           id: document.id,
+          fileKind: document.fileKind,
           name: document.name,
+          metadata: document.metadata,
           folderId: document.folderId,
           folderPath,
           visibility: document.visibility,
           ownerUserId: document.ownerUserId,
           currentVersionId: document.currentVersionId,
+          sourceRawEventId: document.sourceRawEventId,
           createdAt: document.createdAt.toISOString(),
           updatedAt: document.updatedAt.toISOString(),
+          provenance: {
+            source: listEntry?.provenance.source ?? 'manual',
+            sourceEventId: listEntry?.provenance.sourceEventId ?? null,
+            parentEventId: listEntry?.provenance.parentEventId ?? null,
+            occurredAt: listEntry?.provenance.occurredAt?.toISOString() ?? null,
+            summary: listEntry?.provenance.summary ?? null,
+          },
         }}
         versions={versions.map((v) => ({
           id: v.id,
@@ -67,6 +87,13 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
           uploadedByUserId: v.uploadedByUserId,
         }))}
         requestedVersion={requestedVersion}
+        currentVersionChunks={currentVersionChunks.map((chunk) => ({
+          id: chunk.id,
+          representationKind: chunk.representationKind,
+          text: chunk.text,
+          summary: chunk.summary,
+          pageNumber: chunk.pageNumber,
+        }))}
       />
     </div>
   );

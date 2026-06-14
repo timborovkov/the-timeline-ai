@@ -1,5 +1,6 @@
 import {
   Clock,
+  Files,
   LayoutDashboard,
   LibraryBig,
   MessageSquare,
@@ -49,13 +50,18 @@ const NAV_ITEMS: readonly NavItem[] = [
     ],
   },
   {
+    href: '/app/documents',
+    label: 'Documents',
+    icon: Files,
+    activeHrefs: ['/app/documents'],
+  },
+  {
     href: '/app/sources',
     label: 'Sources',
     icon: Plug,
     badgeKey: 'sources',
     activeHrefs: [
       '/app/sources',
-      '/app/documents',
       '/app/meetings',
       '/app/team/telegram',
       '/app/team/slack',

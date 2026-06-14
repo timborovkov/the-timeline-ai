@@ -50,7 +50,9 @@ beforeEach(() => {
     items: [
       {
         id: 'doc-1',
+        fileKind: 'document',
         name: 'Plan.pdf',
+        metadata: {},
         visibility: 'team',
         updatedAt: new Date('2026-06-01T10:00:00.000Z'),
         ownerUserId: USER_ID,
@@ -74,6 +76,14 @@ beforeEach(() => {
             tg_file_id: 'upstream-file-id',
             parent_raw_event_id: '55555555-5555-4555-8555-555555555555',
           },
+        },
+        description: 'Extracted plan summary',
+        presentation: {
+          displayTitle: 'Plan.pdf',
+          storedName: 'Plan.pdf',
+          suggestedTitle: null,
+          isGeneratedName: false,
+          fallbackTitle: 'PDF attachment',
         },
       },
     ],
@@ -111,7 +121,9 @@ describe('GET /api/documents/list', () => {
       items: [
         {
           id: 'doc-1',
+          fileKind: 'document',
           name: 'Plan.pdf',
+          metadata: {},
           visibility: 'team',
           updatedAt: '2026-06-01T10:00:00.000Z',
           ownerUserId: USER_ID,
@@ -130,6 +142,14 @@ describe('GET /api/documents/list', () => {
             parentEventId: '55555555-5555-4555-8555-555555555555',
             occurredAt: '2026-06-01T09:54:00.000Z',
             summary: 'Uploaded Plan.pdf from Telegram',
+          },
+          description: 'Extracted plan summary',
+          presentation: {
+            displayTitle: 'Plan.pdf',
+            storedName: 'Plan.pdf',
+            suggestedTitle: null,
+            isGeneratedName: false,
+            fallbackTitle: 'PDF attachment',
           },
         },
       ],

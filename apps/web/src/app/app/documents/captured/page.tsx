@@ -24,18 +24,23 @@ export default async function CapturedFilesPage() {
 
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
-  const page = await scope.documents.listCapturedFilesPage({ limit: 50 });
+  const [page, folders, members] = await Promise.all([
+    scope.documents.listCapturedFilesPage({ limit: 50 }),
+    scope.documents.listFolders({ parentFolderId: null }),
+    scope.timeline.listMembers(),
+  ]);
   const ownerIds = [
     ...new Set(
       page.items.map((file) => file.ownerUserId).filter((id): id is string => Boolean(id)),
     ),
   ];
+  const memberIds = [...new Set([...ownerIds, ...members.map((member) => member.userId)])];
   const ownerRows =
-    ownerIds.length > 0
+    memberIds.length > 0
       ? await db
           .select({ id: users.id, name: users.name, email: users.email })
           .from(users)
-          .where(inArray(users.id, ownerIds))
+          .where(inArray(users.id, memberIds))
       : [];
   const ownerMap = new Map(ownerRows.map((owner) => [owner.id, owner] as const));
 
@@ -56,11 +61,17 @@ export default async function CapturedFilesPage() {
         </Link>
       </header>
       <CapturedFilesList
+        folders={folders.map((folder) => ({ id: folder.id, name: folder.name }))}
+        members={members.map((member) => {
+          const user = ownerMap.get(member.userId);
+          return { id: member.userId, label: user?.name ?? user?.email ?? member.userId };
+        })}
         files={page.items.map((file) => {
           const owner = file.ownerUserId ? ownerMap.get(file.ownerUserId) : null;
           return {
             id: file.id,
             name: file.name,
+            metadata: file.metadata,
             visibility: file.visibility,
             updatedAt: file.updatedAt.toISOString(),
             ownerUserId: file.ownerUserId,
@@ -68,9 +79,12 @@ export default async function CapturedFilesPage() {
             sourceRawEventId: file.sourceRawEventId,
             currentVersion: file.currentVersion
               ? {
+                  id: file.currentVersion.id,
+                  version: file.currentVersion.version,
                   contentType: file.currentVersion.contentType,
                   byteSize: file.currentVersion.byteSize,
                   processingStatus: file.currentVersion.processingStatus,
+                  createdAt: file.currentVersion.createdAt.toISOString(),
                 }
               : null,
             provenance: {
@@ -79,6 +93,8 @@ export default async function CapturedFilesPage() {
               occurredAt: file.provenance.occurredAt?.toISOString() ?? null,
               summary: file.provenance.summary,
             },
+            description: file.description,
+            presentation: file.presentation,
           };
         })}
       />

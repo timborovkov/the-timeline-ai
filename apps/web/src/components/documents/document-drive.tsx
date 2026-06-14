@@ -1,6 +1,7 @@
 'use client';
 
 import { type InfiniteData, useQueryClient } from '@tanstack/react-query';
+import { documentPresentation } from '@timeline/shared/documents/presentation';
 import {
   Clock3,
   FileText,
@@ -54,6 +55,7 @@ interface DocumentItem {
   id: string;
   fileKind: 'captured' | 'document';
   name: string;
+  metadata: Record<string, unknown>;
   visibility: string;
   updatedAt: string;
   ownerUserId: string | null;
@@ -72,6 +74,14 @@ interface DocumentItem {
     parentEventId: string | null;
     occurredAt: string | null;
     summary: string | null;
+  };
+  description: string | null;
+  presentation: {
+    displayTitle: string;
+    storedName: string;
+    suggestedTitle: string | null;
+    isGeneratedName: boolean;
+    fallbackTitle: string;
   };
   optimistic?: boolean;
 }
@@ -317,6 +327,7 @@ export function DocumentDrive({
           id: req.documentId,
           fileKind: 'document',
           name: file.name,
+          metadata: {},
           visibility,
           updatedAt: new Date().toISOString(),
           ownerUserId: null,
@@ -328,6 +339,13 @@ export function DocumentDrive({
             occurredAt: null,
             summary: null,
           },
+          description: null,
+          presentation: documentPresentation({
+            name: file.name,
+            contentType: file.type || 'application/octet-stream',
+            metadata: {},
+            fileKind: 'document',
+          }),
           optimistic: true,
         });
       }
@@ -731,18 +749,20 @@ function DocumentList({
           <DocumentListItem key={d.id} document={d} />
         ))}
       </ul>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="mt-3"
-        disabled={!query.hasNextPage || query.isFetchingNextPage}
-        onClick={() => {
-          void query.fetchNextPage();
-        }}
-      >
-        {query.isFetchingNextPage ? 'Loading...' : query.hasNextPage ? 'Load more' : 'End'}
-      </Button>
+      {query.hasNextPage || query.isFetchingNextPage ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          disabled={query.isFetchingNextPage}
+          onClick={() => {
+            void query.fetchNextPage();
+          }}
+        >
+          {query.isFetchingNextPage ? 'Loading...' : 'Load more'}
+        </Button>
+      ) : null}
     </section>
   );
 }
@@ -752,6 +772,9 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
   const sourceEventId = document.provenance.parentEventId ?? document.provenance.sourceEventId;
   const source = sourceDetails(document.provenance.source);
   const fileKind = fileKindDetails(document.name, version?.contentType ?? null);
+  const presentation = document.presentation;
+  const title = presentation.displayTitle;
+  const usingFriendlyTitle = presentation.isGeneratedName && title !== document.name;
   const updatedAt = formatDate(document.updatedAt);
   const capturedAt = document.provenance.occurredAt
     ? formatDate(document.provenance.occurredAt)
@@ -769,18 +792,26 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
         size ? { icon: HardDrive, label: size } : null,
         version ? { icon: FileText, label: `v${String(version.version)}` } : null,
       ];
-  const summary = document.optimistic ? null : document.provenance.summary;
+  const summary = document.optimistic
+    ? null
+    : (document.description ??
+      normalizeDocumentSummary(document.provenance.summary, document.name, title));
 
   return (
-    <li className="grid gap-3 rounded-sm border border-border bg-card p-3 transition-colors hover:border-border-strong md:grid-cols-[minmax(0,1fr)_auto]">
+    <li className="grid gap-3 rounded-sm border border-border bg-card px-3 py-2.5 transition-colors hover:border-border-strong lg:grid-cols-[minmax(0,1fr)_auto]">
       <div className="min-w-0">
-        <DocumentTitleRow document={document} fileKind={fileKind} />
+        <DocumentTitleRow
+          document={document}
+          fileKind={fileKind}
+          title={title}
+          storedName={usingFriendlyTitle ? document.name : null}
+        />
         <DocumentMetaLine items={metaItems} />
         {summary ? (
           <p className="mt-2 line-clamp-1 text-xs text-muted-foreground">{summary}</p>
         ) : null}
       </div>
-      <div className="flex items-center justify-between gap-2 md:justify-end">
+      <div className="flex items-center justify-between gap-2 lg:justify-end">
         <div className="flex flex-wrap items-center gap-2">
           <SourceBadge source={source} />
           <ProcessingBadge status={status} optimistic={document.optimistic === true} />
@@ -811,9 +842,13 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
 function DocumentTitleRow({
   document,
   fileKind,
+  title,
+  storedName,
 }: {
   document: DocumentItem;
   fileKind: { icon: LucideIcon; label: string };
+  title: string;
+  storedName: string | null;
 }) {
   const Icon = fileKind.icon;
   const content = (
@@ -822,11 +857,16 @@ function DocumentTitleRow({
         <Icon className="size-4" />
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold text-foreground">
-          {document.name}
+        <span className="block truncate text-sm font-semibold text-foreground" title={title}>
+          {title}
         </span>
-        <span className="mt-0.5 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-          {fileKind.label}
+        <span className="mt-0.5 flex min-w-0 items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+          <span className="shrink-0">{fileKind.label}</span>
+          {storedName ? (
+            <span className="min-w-0 truncate normal-case tracking-normal text-muted-foreground">
+              Stored as {storedName}
+            </span>
+          ) : null}
         </span>
       </span>
     </>
@@ -929,6 +969,18 @@ function fileKindDetails(
     return { icon: FileText, label: 'PDF' };
   }
   return { icon: FileText, label: contentType ?? 'document' };
+}
+
+function normalizeDocumentSummary(
+  summary: string | null,
+  storedName: string,
+  title: string,
+): string | null {
+  if (!summary) return null;
+  const trimmed = summary.trim();
+  if (!trimmed) return null;
+  if (trimmed === `Uploaded ${storedName}`) return title === storedName ? trimmed : null;
+  return trimmed.replace(storedName, title);
 }
 
 function formatDate(value: string): string {

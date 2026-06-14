@@ -161,20 +161,25 @@ Departs from the v1 centered `max-w-3xl` prose column. New shell:
 │Home   │  EVENTS · 2,847 · 14d · acme   │  citation src   │
 │Ask    │ ───────────────────────────────│  raw evidence   │
 │Work   │  feed / board / object / chat  │  related links  │
+│Docs   │                                │                 │
 │Sources│                                │                 │
 │Team   │                                │                 │
 └─────┴──────────────────────────────────┴─────────────────┘
 ```
 
 - **Left sidebar** (`w-64` = 256px default, foldable to `w-14` = 56px):
-  six primary destinations: Home, Timeline, Ask, Work, Sources, Team. Nav
-  labels and the current team are visible by default. Folded mode uses the
-  icon-only rail with tooltips. Active route shows a 2px signal-color bar at
-  its left edge plus `bg-surface-2 text-signal`. Work groups Objects, Tasks,
-  Boards, Calendar, and Approvals; Inbox lives as a notification bell in the
-  shell header with a compact unread badge and a dropdown preview. Sources
-  groups Email, Slack, Telegram, Documents, Meetings, Integrations, and MCP
-  servers. Work and Sources may show compact numeric attention badges; zero
+  seven primary destinations: Home, Timeline, Ask, Work, Documents, Sources,
+  Team. Nav labels and the current team are visible by default. Folded mode
+  uses the icon-only rail with tooltips. Active route shows a 2px signal-color
+  bar at its left edge plus `bg-surface-2 text-signal`. Work groups Objects,
+  Tasks, Boards, Calendar, and Approvals; Documents owns the document drive,
+  captured-file triage, version review, and previews. Documents is a
+  knowledge-first surface: curated uploads are the default team library, while
+  event-backed files live in a secondary Captured inbox until promoted. Inbox lives as a
+  notification bell in the shell header with a compact unread badge and a
+  dropdown preview. Sources groups Email, Slack, Telegram, Meetings,
+  Integrations, and MCP servers. Work and Sources may show compact numeric
+  attention badges; zero
   state stays hidden. Their hub pages use the same hairline grid as the
   sidebar IA and expose status chips for counts, health, and next actions.
 - **Main column** fills available width. **No `max-w-3xl` artificial
@@ -215,6 +220,17 @@ Linear-tight on operational surfaces. Comfortable on mobile and on forms.
   decorative page headers: `EVENTS · 2,847 TOTAL · LAST 14d · TEAM acme · FILTER →`.
   Top + bottom hairline border. Inspired by `git log --stat` and Bloomberg
   terminal header bars.
+- **Document row** — compact, dense, and operational. The headline is the
+  display title, not necessarily the stored filename: human names win,
+  generated filenames use `metadata.suggested_title`, and unsupported cases
+  fall back to generic attachment labels. The row exposes kind, source, size,
+  version, processing/indexing state, visibility, updated date, and one-line
+  model-generated understanding when available.
+- **Document detail command center** — preview/content is the primary pane.
+  Metadata, provenance, agent/indexing state, and actions sit beside it on
+  desktop or stack below on mobile. Images and PDFs render inline from signed
+  URLs. Unsupported files show extracted text or model-generated
+  representations plus download.
 - **Setup checklist** — `<TimelineOnboardingChecklist />`. A dense,
   dismissible tutorial panel for the Home Dashboard, not the dedicated
   timeline browser. It uses a hairline-bounded header, mono progress counter,
@@ -348,6 +364,7 @@ All icons from `lucide-react`. Canonical mapping:
 | Timeline    | `Clock`         |
 | Ask         | `MessageSquare` |
 | Work        | `LibraryBig`    |
+| Documents   | `Files`         |
 | Sources     | `Plug`          |
 | Team        | `Settings`      |
 

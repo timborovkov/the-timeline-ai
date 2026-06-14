@@ -53,6 +53,18 @@
       "import": "./dist/conversation-review/index.js",
       "default": "./dist/conversation-review/index.js"
     },
+    "./documents": {
+      "types": "./src/documents/index.ts",
+      "development": "./src/documents/index.ts",
+      "import": "./dist/documents/index.js",
+      "default": "./dist/documents/index.js"
+    },
+    "./documents/presentation": {
+      "types": "./src/documents/presentation.ts",
+      "development": "./src/documents/presentation.ts",
+      "import": "./dist/documents/presentation.js",
+      "default": "./dist/documents/presentation.js"
+    },
     "./logger": {
       "import": "./dist/logger.js",
       "types": "./dist/logger.d.ts"

@@ -2,7 +2,7 @@
 
 import { Eye, Loader2 } from 'lucide-react';
 import Image from 'next/image';
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { toast } from 'sonner';
 
 import { getDocumentPreviewUrlAction } from '@/app/actions/documents';
@@ -17,7 +17,7 @@ interface PreviewState {
   url: string;
   filename: string;
   contentType: string | null;
-  mediaKind: 'image' | 'audio';
+  mediaKind: 'image' | 'audio' | 'pdf';
 }
 
 interface Props {
@@ -25,11 +25,21 @@ interface Props {
   label?: string;
   className?: string;
   compact?: boolean;
+  autoLoad?: boolean;
+  showButton?: boolean;
 }
 
-export function DocumentPreview({ target, label = 'Preview', className, compact = false }: Props) {
+export function DocumentPreview({
+  target,
+  label = 'Preview',
+  className,
+  compact = false,
+  autoLoad = false,
+  showButton = true,
+}: Props) {
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [pending, startTransition] = useTransition();
+  const loadedKeyRef = useRef<string | null>(null);
 
   function openPreview(): void {
     startTransition(async () => {
@@ -51,28 +61,50 @@ export function DocumentPreview({ target, label = 'Preview', className, compact 
     });
   }
 
+  const targetKey = `${target.documentId ?? ''}:${target.versionId ?? ''}:${
+    target.versionNumber ?? ''
+  }`;
+
+  useEffect(() => {
+    if (!autoLoad || loadedKeyRef.current === targetKey) return;
+    loadedKeyRef.current = targetKey;
+    openPreview();
+  });
+
   return (
     <div className={cn('min-w-0', className)}>
-      <Button
-        type="button"
-        size={compact ? 'sm' : 'default'}
-        variant="outline"
-        onClick={openPreview}
-        disabled={pending}
-        className="gap-1.5"
-      >
-        {pending ? (
-          <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
-        ) : (
-          <Eye aria-hidden="true" className="size-3.5" />
-        )}
-        {pending ? 'Opening...' : preview ? 'Refresh preview' : label}
-      </Button>
+      {showButton ? (
+        <Button
+          type="button"
+          size={compact ? 'sm' : 'default'}
+          variant="outline"
+          onClick={openPreview}
+          disabled={pending}
+          className="gap-1.5"
+        >
+          {pending ? (
+            <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+          ) : (
+            <Eye aria-hidden="true" className="size-3.5" />
+          )}
+          {pending ? 'Opening...' : preview ? 'Refresh preview' : label}
+        </Button>
+      ) : pending ? (
+        <div className="flex min-h-48 items-center justify-center rounded-sm border border-border bg-bg text-sm text-muted-foreground">
+          <Loader2 aria-hidden="true" className="mr-2 size-4 animate-spin" />
+          Loading preview...
+        </div>
+      ) : null}
 
       {preview ? (
-        <div className="mt-3 min-w-0 overflow-hidden rounded-sm border border-border bg-bg">
+        <div
+          className={cn(
+            'min-w-0 overflow-hidden rounded-sm border border-border bg-bg',
+            showButton ? 'mt-3' : '',
+          )}
+        >
           {preview.mediaKind === 'image' ? (
-            <div className="relative flex h-[70vh] min-h-72 max-h-[48rem] w-full items-center justify-center">
+            <div className="relative flex h-[58vh] min-h-72 max-h-[42rem] w-full items-center justify-center">
               {/* Presigned S3/RustFS URLs include auth query params, so they load directly in the browser instead of through Next's image pipeline. */}
               <Image
                 src={preview.url}
@@ -83,6 +115,15 @@ export function DocumentPreview({ target, label = 'Preview', className, compact 
                 className="object-contain"
               />
             </div>
+          ) : preview.mediaKind === 'pdf' ? (
+            <object
+              data={preview.url}
+              type="application/pdf"
+              aria-label={preview.filename}
+              className="h-[72vh] min-h-96 w-full bg-bg"
+            >
+              <iframe src={preview.url} title={preview.filename} className="h-[72vh] w-full" />
+            </object>
           ) : (
             <div className="p-3">
               <audio

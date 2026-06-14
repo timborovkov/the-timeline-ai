@@ -34,6 +34,10 @@ evidence; documents are curated workspace knowledge.
 - Extracted representations are typed. Source text, transcript text, visual
   description, and metadata preview are distinct queryable representations, so
   generated descriptions are not quoted as literal source text.
+- Suggested titles for captured or generated filenames are UI metadata stored
+  on `documents.metadata.suggested_title`. They are not canonical source
+  filenames and must not overwrite `documents.name` unless a user explicitly
+  renames or promotes with that title.
 - Visual files need both faithful text extraction when available and semantic
   visual description when useful. Processing depth follows intent: curated
   documents can justify full indexing, while unpromoted conversational captures
@@ -77,6 +81,11 @@ evidence; documents are curated workspace knowledge.
   metadata preview instead of failed.
 - The document drive defaults to curated documents and folders, with a captured
   files triage surface for source evidence and promotion.
+- The Documents product surface is now two related workspaces: the default
+  knowledge library for curated uploads, and the Captured inbox for Telegram,
+  Slack, and other event-backed attachments. Captured rows show suggested
+  titles, source/type/status/date filters, preview affordances, event links,
+  and an explicit promotion flow.
 - Timeline-oriented retrieval includes captured-file evidence, while document
   search remains scoped to curated documents.
 
@@ -86,8 +95,9 @@ evidence; documents are curated workspace knowledge.
   run a targeted second-pass vision inspection on a specific original file.
 - Representation corrections are still planned as layered, audited edits over
   model output.
-- Captured-file triage can grow richer source/date/type/status filters beyond
-  the first-pass list and promotion path.
+- Captured-file triage can grow sender filters, bulk actions, and deeper
+  targeted inspection beyond the current source/date/type/status filters and
+  promotion path.
 
 ## Implementation Shape
 
@@ -106,6 +116,9 @@ stable.
   representations, using budget deferral where appropriate.
 - The document drive defaults to curated documents and folders only, with
   captured files available through a separate triage/source-evidence surface.
+- Display titles use a stable precedence everywhere: human `documents.name`,
+  then `metadata.suggested_title` for generated names, then a generic
+  attachment fallback such as "Image attachment" or "PDF attachment".
 - Agent retrieval includes source-evidence representations for timeline
   questions and curated documents for document/reference questions.
 - Existing "everything is a document" assumptions are removed rather than kept

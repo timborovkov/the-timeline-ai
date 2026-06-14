@@ -45,6 +45,7 @@ export interface ExtractTextFromMediaInput {
 
 export interface ExtractTextFromMediaResult {
   text: string;
+  suggestedTitle?: string;
   visualDescription?: string;
   model: string;
 }
@@ -72,7 +73,10 @@ function buildDefaultModel(modelId: string): LanguageModel {
   return provider(modelId);
 }
 
-const SYSTEM_PROMPT = `You are an OCR + visual description engine. Output two clearly labeled sections:
+const SYSTEM_PROMPT = `You are an OCR + visual description engine. Output three clearly labeled sections:
+
+SUGGESTED_TITLE:
+A short human-readable title for this file. Prefer observable content, not business conclusions. Examples: "Signed Acme MSA", "Telegram screenshot of CRM export", "Whiteboard planning photo". If there is no useful signal, write [no title].
 
 SOURCE_TEXT:
 The document's readable text as plain text, preserving:
@@ -85,10 +89,11 @@ VISUAL_DESCRIPTION:
 A concise, neutral description of what is visibly shown. Describe layout, objects, UI, charts, photos, scans, and other non-text context. Do not infer business conclusions.
 
 Rules:
-- Output ONLY those two sections. No commentary, no preamble, no "Here is the text:".
+- Output ONLY those three sections. No commentary, no preamble, no "Here is the text:".
 - If there is no readable text, leave SOURCE_TEXT blank or write [no readable text].
 - If text is illegible, write [illegible] inline.
 - If the document is multiple pages, separate pages with two blank lines.
+- Keep SUGGESTED_TITLE under 12 words.
 - Do not paraphrase source text. Transcribe faithfully.`;
 
 /**
@@ -140,7 +145,7 @@ export async function extractTextFromMedia(
               contentPart,
               {
                 type: 'text',
-                text: 'Extract readable text and write a neutral visual description. Follow the section format in the system prompt.',
+                text: 'Extract readable text, suggest a concise title, and write a neutral visual description. Follow the section format in the system prompt.',
               },
             ],
           },
@@ -166,6 +171,7 @@ export async function extractTextFromMedia(
   const parsed = parseVisionSections(result.text);
   return {
     text: parsed.text,
+    ...(parsed.suggestedTitle ? { suggestedTitle: parsed.suggestedTitle } : {}),
     ...(parsed.visualDescription ? { visualDescription: parsed.visualDescription } : {}),
     model: modelId,
   };
@@ -173,14 +179,24 @@ export async function extractTextFromMedia(
 
 export { resolveVisionModelId };
 
-function parseVisionSections(output: string): { text: string; visualDescription?: string } {
+function parseVisionSections(output: string): {
+  text: string;
+  suggestedTitle?: string;
+  visualDescription?: string;
+} {
+  const titleMatch =
+    /SUGGESTED_TITLE:\s*([\s\S]*?)(?:\n\s*SOURCE_TEXT:|\n\s*VISUAL_DESCRIPTION:|$)/i.exec(output);
   const sourceMatch = /SOURCE_TEXT:\s*([\s\S]*?)(?:\n\s*VISUAL_DESCRIPTION:|$)/i.exec(output);
   const visualMatch = /VISUAL_DESCRIPTION:\s*([\s\S]*)$/i.exec(output);
-  if (!sourceMatch && !visualMatch) return { text: output };
+  if (!titleMatch && !sourceMatch && !visualMatch) return { text: output };
+  const rawTitle = (titleMatch?.[1] ?? '').trim();
+  const suggestedTitle =
+    rawTitle && rawTitle !== '[no title]' ? rawTitle.replace(/\s+/g, ' ').slice(0, 96) : '';
   const text = (sourceMatch?.[1] ?? '').trim();
   const visualDescription = (visualMatch?.[1] ?? '').trim();
   return {
     text: text === '[no readable text]' ? '' : text,
+    ...(suggestedTitle ? { suggestedTitle } : {}),
     ...(visualDescription ? { visualDescription } : {}),
   };
 }
