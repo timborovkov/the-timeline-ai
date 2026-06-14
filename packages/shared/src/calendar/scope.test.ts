@@ -575,6 +575,64 @@ describe('calendar scope', () => {
     expect(active.every((row) => row.title === 'Daily planning')).toBe(true);
   });
 
+  it('rebuilds active exception rows when editing the whole recurring series', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=3',
+    });
+    const rows = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-04T00:00:00Z'),
+      limit: 20,
+    });
+    const occurrence = rows.find(
+      (row) => row.originalStartAt?.toISOString() === '2026-07-02T16:00:00.000Z',
+    );
+    expect(occurrence).toBeDefined();
+    await scope.calendar.updateCalendarEvent(occurrence?.id ?? '', {
+      title: 'Moved daily call',
+      startAt: new Date('2026-07-02T15:00:00Z'),
+      endAt: new Date('2026-07-02T15:30:00Z'),
+      showAs: 'tentative',
+      recurrenceEditMode: 'single',
+    });
+
+    await scope.calendar.updateCalendarEvent(parent.id, {
+      title: 'Daily planning',
+      startAt: new Date('2026-07-01T17:00:00Z'),
+      endAt: new Date('2026-07-01T17:45:00Z'),
+      showAs: 'free',
+      recurrenceEditMode: 'series',
+    });
+
+    const active = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-04T00:00:00Z'),
+      limit: 20,
+    });
+    expect(active.map((row) => row.startAt.toISOString()).sort()).toEqual([
+      '2026-07-01T17:00:00.000Z',
+      '2026-07-02T17:00:00.000Z',
+      '2026-07-03T17:00:00.000Z',
+    ]);
+    expect(active.every((row) => row.title === 'Daily planning')).toBe(true);
+    expect(active.every((row) => row.showAs === 'free')).toBe(true);
+    expect(active.some((row) => row.id === occurrence?.id)).toBe(false);
+
+    const allRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_ID));
+    const oldException = allRows.find((row) => row.id === occurrence?.id);
+    expect(oldException?.deletedAt).toBeInstanceOf(Date);
+    expect(oldException?.isException).toBe(false);
+  });
+
   it('deleting a recurring occurrence with series scope removes the parent and active children', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const parent = await scope.calendar.createCalendarEvent({

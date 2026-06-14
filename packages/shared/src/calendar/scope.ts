@@ -562,7 +562,6 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         and(
           eq(calendarEvents.teamId, teamId),
           eq(calendarEvents.recurringParentId, parent.id),
-          eq(calendarEvents.isException, false),
           isNull(calendarEvents.deletedAt),
         ),
       );
@@ -570,12 +569,11 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     await tombstoneLinkedRawEventsForCalendarEventIds(tx, { teamId, eventIds: deletedIds });
     await tx
       .update(calendarEvents)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .set({ deletedAt: new Date(), updatedAt: new Date(), isException: false })
       .where(
         and(
           eq(calendarEvents.teamId, teamId),
           eq(calendarEvents.recurringParentId, parent.id),
-          eq(calendarEvents.isException, false),
           isNull(calendarEvents.deletedAt),
         ),
       );
