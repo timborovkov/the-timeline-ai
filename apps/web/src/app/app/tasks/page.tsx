@@ -7,6 +7,7 @@ import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { KanbanBoard } from '@/components/boards/kanban-board';
 import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
+import { WORK_BACK_LINK } from '@/components/work-back-link';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -73,6 +74,7 @@ export default async function TasksPage() {
             ? ([{ label: 'overdue', value: overdue, danger: true }] as const)
             : ([] as const)),
         ]}
+        leading={WORK_BACK_LINK}
         className="shrink-0"
       />
 

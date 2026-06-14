@@ -13,11 +13,13 @@ export function RemoveBoardItemButton({
   itemId,
   objectName,
   view,
+  onRemoved,
 }: {
   boardId: string;
   itemId: string;
   objectName: string;
   view: BoardLayout;
+  onRemoved?: () => void;
 }) {
   const router = useRouter();
   const dialog = useAppDialog();
@@ -39,6 +41,7 @@ export function RemoveBoardItemButton({
         setError(result.error);
         return;
       }
+      onRemoved?.();
       router.push(boardViewHref(boardId, view, null));
       router.refresh();
     });

@@ -8,13 +8,14 @@ import { BoardCreateForm } from '@/components/boards/board-create-form';
 import { BoardPinButton } from '@/components/boards/board-pin-button';
 import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
+import { WORK_BACK_LINK } from '@/components/work-back-link';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
   title: 'Boards',
-  description: 'Browse curated boards for timeline work.',
+  description: 'Browse boards for timeline work.',
 };
 
 export default async function BoardsIndexPage() {
@@ -29,8 +30,9 @@ export default async function BoardsIndexPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <IndexStrip
-        srLabel={`Boards · ${boards.length} curated boards`}
-        segments={[{ value: 'BOARDS' }, { label: 'curated', value: boards.length }]}
+        srLabel={`Boards · ${boards.length} boards`}
+        segments={[{ value: 'BOARDS' }, { label: 'total', value: boards.length }]}
+        leading={WORK_BACK_LINK}
       />
 
       <section aria-label="Create board" className="rounded-sm border border-border bg-surface p-4">
@@ -40,7 +42,7 @@ export default async function BoardsIndexPage() {
       {boards.length === 0 ? (
         <EmptyAction
           title="No boards yet"
-          body="Boards are curated work surfaces over objects and tasks. Create a pipeline, task board, catalog, or custom board."
+          body="Boards are work surfaces over objects and tasks. Start with a preset, then tune the stages to match the way your team works."
           href="/app#capture"
           action="Capture source material"
         />
@@ -56,8 +58,7 @@ export default async function BoardsIndexPage() {
                   <BoardPinButton id={b.id} pinned={b.pinned} />
                 </span>
                 <span className="mt-1 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                  <span>{b.templateKind.replace('_', ' ')}</span>
-                  <span>· {b.itemCount} items</span>
+                  <span>{b.itemCount} items</span>
                 </span>
               </Link>
             </li>

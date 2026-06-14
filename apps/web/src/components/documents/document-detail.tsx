@@ -108,16 +108,19 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
       confirmLabel: 'Rename',
     });
     if (!name?.trim() || name === currentDocument.name) return;
+    const previousRename = optimisticRename;
+    const trimmedName = name.trim();
+    setOptimisticRename({
+      id: currentDocument.id,
+      name: trimmedName,
+      updatedAt: new Date().toISOString(),
+    });
     startTransition(async () => {
-      const trimmedName = name.trim();
       const res = await renameDocumentAction({ id: currentDocument.id, name: trimmedName });
-      if (!res.ok) toast.error(res.error ?? 'Rename failed');
-      else {
-        setOptimisticRename({
-          id: currentDocument.id,
-          name: trimmedName,
-          updatedAt: new Date().toISOString(),
-        });
+      if (!res.ok) {
+        setOptimisticRename(previousRename);
+        toast.error(res.error ?? 'Rename failed');
+      } else {
         router.refresh();
       }
     });

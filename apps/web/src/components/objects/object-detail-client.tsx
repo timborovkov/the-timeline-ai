@@ -10,7 +10,6 @@ import {
   useMemo,
   useReducer,
   useRef,
-  useState,
   useTransition,
 } from 'react';
 
@@ -78,6 +77,22 @@ type ObjectDetailUiAction =
   | Partial<ObjectDetailUiState>
   | ((state: ObjectDetailUiState) => ObjectDetailUiState);
 
+interface ObjectDetailLocalState {
+  linkQuery: string;
+  selectedLink: ObjectSearchResult | null;
+  pendingNotes: ObjectDetail['notes'];
+  noteUpdates: Record<string, ObjectDetail['notes'][number]>;
+  deletedNoteIds: readonly string[];
+  pendingRelationships: ObjectDetail['relationships'];
+  deletedRelationshipIds: readonly string[];
+  recentChangeStatuses: Record<string, ObjectDetail['recentChanges'][number]['status']>;
+  archivedAtOverride: ObjectDetail['archivedAt'] | undefined;
+}
+
+type ObjectDetailLocalAction =
+  | Partial<ObjectDetailLocalState>
+  | ((state: ObjectDetailLocalState) => ObjectDetailLocalState);
+
 // Per-type status vocabulary. Free-form text in the DB so callers can extend
 // without a migration; the dropdown lives in the UI.
 const STATUS_BY_TYPE: Record<string, string[]> = {
@@ -96,6 +111,33 @@ function statusOptions(type: string): string[] {
 
 function isDraftField(field: EditableField): field is DraftField {
   return field === 'stage' || field === 'dueAt';
+}
+
+function isEditableFieldName(field: string): field is EditableField {
+  return field === 'status' || field === 'stage' || field === 'priority' || field === 'dueAt';
+}
+
+function editableValueFromChange(field: EditableField, value: unknown): EditableValue {
+  if (field === 'dueAt') return toDateOrNull(value);
+  if (field === 'priority') {
+    if (value === null) return null;
+    const priority = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(priority) ? priority : null;
+  }
+  if (value === null) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return value.toString();
+  return null;
+}
+
+function localMutationId(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function isOptimisticRelationship(relationship: ObjectDetail['relationships'][number]): boolean {
+  return relationship.id.startsWith('optimistic-relationship-');
 }
 
 function initObjectDetailUiState(detail: ObjectDetail): ObjectDetailUiState {
@@ -120,6 +162,27 @@ function objectDetailUiReducer(
   return typeof action === 'function' ? action(state) : { ...state, ...action };
 }
 
+function initObjectDetailLocalState(): ObjectDetailLocalState {
+  return {
+    linkQuery: '',
+    selectedLink: null,
+    pendingNotes: [],
+    noteUpdates: {},
+    deletedNoteIds: [],
+    pendingRelationships: [],
+    deletedRelationshipIds: [],
+    recentChangeStatuses: {},
+    archivedAtOverride: undefined,
+  };
+}
+
+function objectDetailLocalReducer(
+  state: ObjectDetailLocalState,
+  action: ObjectDetailLocalAction,
+): ObjectDetailLocalState {
+  return typeof action === 'function' ? action(state) : { ...state, ...action };
+}
+
 function applyObjectDetailOverrides(
   detail: ObjectDetail,
   overrides: Partial<Record<EditableField, EditableValue>>,
@@ -127,11 +190,47 @@ function applyObjectDetailOverrides(
   return { ...detail, ...overrides } as ObjectDetail;
 }
 
-export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
-  return useObjectDetailView({ detail, userId, suggestions });
+function applyObjectDetailLocalState(
+  detail: ObjectDetail,
+  localState: ObjectDetailLocalState,
+): ObjectDetail {
+  const serverNoteIds = new Set(detail.notes.map((note) => note.id));
+  const deletedNoteIds = new Set(localState.deletedNoteIds);
+  const pendingNotes = localState.pendingNotes.filter(
+    (note) => !serverNoteIds.has(note.id) && !deletedNoteIds.has(note.id),
+  );
+  const notes = [...pendingNotes];
+  for (const note of detail.notes) {
+    if (!deletedNoteIds.has(note.id)) notes.push(localState.noteUpdates[note.id] ?? note);
+  }
+  const serverRelationshipIds = new Set(
+    detail.relationships.map((relationship) => relationship.id),
+  );
+  const deletedRelationshipIds = new Set(localState.deletedRelationshipIds);
+  const pendingRelationships = localState.pendingRelationships.filter(
+    (relationship) =>
+      !serverRelationshipIds.has(relationship.id) && !deletedRelationshipIds.has(relationship.id),
+  );
+  const relationships = [
+    ...pendingRelationships,
+    ...detail.relationships.filter((relationship) => !deletedRelationshipIds.has(relationship.id)),
+  ];
+  const recentChanges = detail.recentChanges.map((change) => {
+    const status = localState.recentChangeStatuses[change.id];
+    return status && change.status === 'suggested' ? { ...change, status } : change;
+  });
+  const archivedAt = detail.archivedAt ?? localState.archivedAtOverride ?? null;
+
+  return { ...detail, notes, relationships, recentChanges, archivedAt };
 }
 
-function useObjectDetailView({ detail, userId, suggestions }: Props) {
+export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
+  return (
+    <ObjectDetailView key={detail.id} detail={detail} userId={userId} suggestions={suggestions} />
+  );
+}
+
+function useObjectDetailController({ detail, userId, suggestions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const pendingApprovalItemCount = countPendingApprovalItems(suggestions);
@@ -150,12 +249,20 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
     },
     dispatchObjectUi,
   ] = useReducer(objectDetailUiReducer, detail, initObjectDetailUiState);
-  const [linkQuery, setLinkQuery] = useState('');
-  const [selectedLink, setSelectedLink] = useState<ObjectSearchResult | null>(null);
+  const [localDetailState, dispatchLocalDetail] = useReducer(
+    objectDetailLocalReducer,
+    detail,
+    initObjectDetailLocalState,
+  );
+  const { linkQuery, selectedLink } = localDetailState;
   const trimmedLinkQuery = linkQuery.trim();
   const localDetail = useMemo(
     () => applyObjectDetailOverrides(detail, overrides),
     [detail, overrides],
+  );
+  const viewDetail = useMemo(
+    () => applyObjectDetailLocalState(localDetail, localDetailState),
+    [localDetail, localDetailState],
   );
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localDetailRef = useRef(detail);
@@ -314,15 +421,39 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
   function addNote(): void {
     if (!noteBody.trim()) return;
     dispatchObjectUi({ error: null });
-    const body = noteBody;
+    const body = noteBody.trim();
+    const tempId = `optimistic-note-${localMutationId()}`;
+    const now = new Date();
+    const optimisticNote: ObjectDetail['notes'][number] = {
+      id: tempId,
+      body,
+      authorUserId: userId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    dispatchLocalDetail((current) => ({
+      ...current,
+      pendingNotes: [optimisticNote, ...current.pendingNotes],
+    }));
+    dispatchObjectUi({ noteBody: '' });
     startTransition(async () => {
       const result = await createNoteAction({ entityId: detail.id, body });
       if ('error' in result && result.error) {
-        // Keep the textarea contents so the user can retry without
-        // re-typing — mirrors the edit-note flow.
-        dispatchObjectUi({ error: result.error });
+        dispatchLocalDetail((current) => ({
+          ...current,
+          pendingNotes: current.pendingNotes.filter((note) => note.id !== tempId),
+        }));
+        dispatchObjectUi({ error: result.error, noteBody: body });
       } else {
-        dispatchObjectUi({ noteBody: '' });
+        const createdId = 'id' in result && typeof result.id === 'string' ? result.id : null;
+        if (createdId) {
+          dispatchLocalDetail((current) => ({
+            ...current,
+            pendingNotes: current.pendingNotes.map((note) =>
+              note.id === tempId ? { ...note, id: createdId } : note,
+            ),
+          }));
+        }
         router.refresh();
       }
     });
@@ -330,14 +461,29 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
 
   function saveNote(noteId: string, body: string): void {
     dispatchObjectUi({ error: null });
+    const trimmedBody = body.trim();
+    const currentNote = viewDetail.notes.find((note) => note.id === noteId);
+    if (!currentNote) return;
+    const previousNoteUpdates = localDetailState.noteUpdates;
+    dispatchLocalDetail((current) => ({
+      ...current,
+      noteUpdates: {
+        ...current.noteUpdates,
+        [noteId]: {
+          ...currentNote,
+          id: noteId,
+          body: trimmedBody,
+          updatedAt: new Date(),
+        },
+      },
+    }));
+    dispatchObjectUi({ editingNoteId: null });
     startTransition(async () => {
-      const result = await updateNoteAction({ noteId, entityId: detail.id, body });
+      const result = await updateNoteAction({ noteId, entityId: detail.id, body: trimmedBody });
       if ('error' in result && result.error) {
-        // Keep the editor open so the user can fix their input rather than
-        // losing the draft.
-        dispatchObjectUi({ error: result.error });
+        dispatchLocalDetail({ noteUpdates: previousNoteUpdates });
+        dispatchObjectUi({ error: result.error, editingNoteId: noteId, editingBody: body });
       } else {
-        dispatchObjectUi({ editingNoteId: null });
         router.refresh();
       }
     });
@@ -345,28 +491,68 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
 
   function deleteNote(noteId: string): void {
     dispatchObjectUi({ error: null });
+    const previousDeletedNoteIds = localDetailState.deletedNoteIds;
+    const previousPendingNotes = localDetailState.pendingNotes;
+    dispatchLocalDetail((current) => ({
+      ...current,
+      deletedNoteIds: [...current.deletedNoteIds, noteId],
+      pendingNotes: current.pendingNotes.filter((note) => note.id !== noteId),
+    }));
     startTransition(async () => {
       const result = await deleteNoteAction({ noteId, entityId: detail.id });
-      if ('error' in result && result.error) dispatchObjectUi({ error: result.error });
-      else router.refresh();
+      if ('error' in result && result.error) {
+        dispatchLocalDetail({
+          deletedNoteIds: previousDeletedNoteIds,
+          pendingNotes: previousPendingNotes,
+        });
+        dispatchObjectUi({ error: result.error });
+      } else router.refresh();
     });
   }
 
   function addRelationship(): void {
-    const toId = selectedLink?.id;
-    if (!toId) return;
+    const link = selectedLink;
+    if (!link) return;
     dispatchObjectUi({ error: null });
+    const tempId = `optimistic-relationship-${localMutationId()}`;
+    const optimisticRelationship: ObjectDetail['relationships'][number] = {
+      id: tempId,
+      direction: 'out',
+      kind: linkKind,
+      otherId: link.id,
+      otherName: link.canonicalName,
+      otherType: link.type as ObjectDetail['relationships'][number]['otherType'],
+    };
+    dispatchLocalDetail((current) => ({
+      ...current,
+      linkQuery: '',
+      selectedLink: null,
+      pendingRelationships: [optimisticRelationship, ...current.pendingRelationships],
+    }));
     startTransition(async () => {
       const result = await addRelationshipAction({
         fromEntityId: detail.id,
-        toEntityId: toId,
+        toEntityId: link.id,
         kind: linkKind,
       });
       if ('error' in result && result.error) {
+        dispatchLocalDetail((current) => ({
+          ...current,
+          pendingRelationships: current.pendingRelationships.filter(
+            (relationship) => relationship.id !== tempId,
+          ),
+        }));
         dispatchObjectUi({ error: result.error });
       } else {
-        setLinkQuery('');
-        setSelectedLink(null);
+        const relationshipId = 'id' in result && typeof result.id === 'string' ? result.id : null;
+        if (relationshipId) {
+          dispatchLocalDetail((current) => ({
+            ...current,
+            pendingRelationships: current.pendingRelationships.map((relationship) =>
+              relationship.id === tempId ? { ...relationship, id: relationshipId } : relationship,
+            ),
+          }));
+        }
         router.refresh();
       }
     });
@@ -374,64 +560,150 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
 
   function removeRelationship(id: string, otherEntityId: string): void {
     dispatchObjectUi({ error: null });
+    const previousDeletedRelationshipIds = localDetailState.deletedRelationshipIds;
+    const previousPendingRelationships = localDetailState.pendingRelationships;
+    dispatchLocalDetail((current) => ({
+      ...current,
+      deletedRelationshipIds: [...current.deletedRelationshipIds, id],
+      pendingRelationships: current.pendingRelationships.filter(
+        (relationship) => relationship.id !== id,
+      ),
+    }));
     startTransition(async () => {
       const result = await removeRelationshipAction({ id, entityId: detail.id, otherEntityId });
-      if ('error' in result && result.error) dispatchObjectUi({ error: result.error });
-      else router.refresh();
+      if ('error' in result && result.error) {
+        dispatchLocalDetail({
+          deletedRelationshipIds: previousDeletedRelationshipIds,
+          pendingRelationships: previousPendingRelationships,
+        });
+        dispatchObjectUi({ error: result.error });
+      } else router.refresh();
     });
   }
 
   function acceptChange(changeId: string): void {
     dispatchObjectUi({ error: null });
+    const previousRecentChangeStatuses = localDetailState.recentChangeStatuses;
+    const previousDetail = localDetailRef.current;
+    const change = viewDetail.recentChanges.find((item) => item.id === changeId);
+    dispatchLocalDetail((current) => ({
+      ...current,
+      recentChangeStatuses: { ...current.recentChangeStatuses, [changeId]: 'applied' },
+    }));
+    if (change && isEditableFieldName(change.field)) {
+      const localValue = editableValueFromChange(change.field, change.newValue);
+      updateLocalDetail((current) => ({ ...current, [change.field]: localValue }));
+      if (change.field === 'stage') {
+        dispatchObjectUi({ stageDraft: localValue === null ? '' : String(localValue) });
+      }
+      if (change.field === 'dueAt') {
+        dispatchObjectUi({ dueDraft: toLocalInputValue(localValue) });
+      }
+    }
     startTransition(async () => {
       const result = await acceptObjectChangeAction({ changeId, entityId: detail.id });
-      if ('error' in result && result.error) dispatchObjectUi({ error: result.error });
-      else router.refresh();
+      if ('error' in result && result.error) {
+        dispatchLocalDetail({ recentChangeStatuses: previousRecentChangeStatuses });
+        updateLocalDetail(() => previousDetail);
+        dispatchObjectUi({
+          stageDraft: previousDetail.stage ?? '',
+          dueDraft: toLocalInputValue(previousDetail.dueAt),
+        });
+        dispatchObjectUi({ error: result.error });
+      } else router.refresh();
     });
   }
 
   function rejectChange(changeId: string): void {
     dispatchObjectUi({ error: null });
+    const previousRecentChangeStatuses = localDetailState.recentChangeStatuses;
+    dispatchLocalDetail((current) => ({
+      ...current,
+      recentChangeStatuses: { ...current.recentChangeStatuses, [changeId]: 'rejected' },
+    }));
     startTransition(async () => {
       const result = await rejectObjectChangeAction({ changeId, entityId: detail.id });
-      if ('error' in result && result.error) dispatchObjectUi({ error: result.error });
-      else router.refresh();
+      if ('error' in result && result.error) {
+        dispatchLocalDetail({ recentChangeStatuses: previousRecentChangeStatuses });
+        dispatchObjectUi({ error: result.error });
+      } else router.refresh();
     });
   }
 
   function archiveObject(): void {
     dispatchObjectUi({ error: null });
+    const previousArchivedAtOverride = localDetailState.archivedAtOverride;
+    dispatchLocalDetail({ archivedAtOverride: new Date() });
     startTransition(async () => {
       const result = await archiveObjectAction({ id: detail.id });
-      if ('error' in result && result.error) dispatchObjectUi({ error: result.error });
-      else router.refresh();
+      if ('error' in result && result.error) {
+        dispatchLocalDetail({ archivedAtOverride: previousArchivedAtOverride });
+        dispatchObjectUi({ error: result.error });
+      } else router.refresh();
     });
   }
 
+  return {
+    acceptChange,
+    addNote,
+    addRelationship,
+    archiveObject,
+    detail,
+    dispatchLocalDetail,
+    dispatchObjectUi,
+    dueDraft,
+    editingBody,
+    editingNoteId,
+    error,
+    focusedDraftsRef,
+    linkKind,
+    linkQuery,
+    localDetail,
+    noteBody,
+    patch,
+    pending,
+    pendingApprovalItemCount,
+    rejectChange,
+    removeRelationship,
+    saveNote,
+    savingCount,
+    saveState,
+    selectedLink,
+    stageDraft,
+    suggestions,
+    userId,
+    viewDetail,
+    visibleLinkResults,
+    deleteNote,
+  };
+}
+
+function ObjectDetailView(props: Props) {
+  const view = useObjectDetailController(props);
   return (
     <div className="space-y-5">
       <ObjectDetailHeader
-        detail={detail}
-        error={error}
-        saveState={saveState}
-        savingCount={savingCount}
+        detail={view.viewDetail}
+        error={view.error}
+        saveState={view.saveState}
+        savingCount={view.savingCount}
       />
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <main className="min-w-0 space-y-6">
-          {suggestions.length > 0 ? (
+          {view.suggestions.length > 0 ? (
             <ObjectPanel
               title="Pending approvals"
-              eyebrow={`${pendingApprovalItemCount} waiting`}
+              eyebrow={`${view.pendingApprovalItemCount} waiting`}
               className="border-signal/40 bg-signal-soft/40"
             >
-              <ApprovalsClient suggestions={suggestions} allowBulkAccept={false} />
+              <ApprovalsClient suggestions={view.suggestions} allowBulkAccept={false} />
             </ObjectPanel>
           ) : null}
 
           <ObjectPanel title="Evidence" eyebrow="events">
             <ObjectSectionFeed
-              objectId={detail.id}
+              objectId={view.detail.id}
               section="events"
               title="Timeline events"
               showTitle={false}
@@ -440,7 +712,7 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
 
           <ObjectPanel title="Facts" eyebrow="extracted">
             <ObjectSectionFeed
-              objectId={detail.id}
+              objectId={view.detail.id}
               section="facts"
               title="Facts"
               showTitle={false}
@@ -448,62 +720,63 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
           </ObjectPanel>
 
           <ObjectNotesSection
-            notes={detail.notes}
-            userId={userId}
-            pending={pending}
-            noteBody={noteBody}
-            editingNoteId={editingNoteId}
-            editingBody={editingBody}
-            dispatchObjectUi={dispatchObjectUi}
-            onAddNote={addNote}
-            onSaveNote={saveNote}
-            onDeleteNote={deleteNote}
+            notes={view.viewDetail.notes}
+            userId={view.userId}
+            pending={view.pending}
+            noteBody={view.noteBody}
+            editingNoteId={view.editingNoteId}
+            editingBody={view.editingBody}
+            dispatchObjectUi={view.dispatchObjectUi}
+            onAddNote={view.addNote}
+            onSaveNote={view.saveNote}
+            onDeleteNote={view.deleteNote}
           />
         </main>
 
         <aside className="min-w-0 space-y-4 xl:sticky xl:top-6">
           <ObjectPanel title="Fields" eyebrow="editable">
             <ObjectEditableFields
-              detail={localDetail}
-              stageDraft={stageDraft}
-              dueDraft={dueDraft}
-              focusedDraftsRef={focusedDraftsRef}
-              patch={patch}
-              dispatchObjectUi={dispatchObjectUi}
+              detail={view.localDetail}
+              stageDraft={view.stageDraft}
+              dueDraft={view.dueDraft}
+              focusedDraftsRef={view.focusedDraftsRef}
+              patch={view.patch}
+              dispatchObjectUi={view.dispatchObjectUi}
               className="grid-cols-1 gap-4"
             />
           </ObjectPanel>
 
           <ObjectRelationshipsSection
-            relationships={detail.relationships}
-            pending={pending}
-            linkQuery={linkQuery}
-            linkResults={visibleLinkResults}
-            selectedLink={selectedLink}
-            linkKind={linkKind}
+            relationships={view.viewDetail.relationships}
+            pending={view.pending}
+            linkQuery={view.linkQuery}
+            linkResults={view.visibleLinkResults}
+            selectedLink={view.selectedLink}
+            linkKind={view.linkKind}
             onLinkQueryChange={(value) => {
-              setLinkQuery(value);
-              setSelectedLink(null);
+              view.dispatchLocalDetail({ linkQuery: value, selectedLink: null });
             }}
-            onSelectLink={setSelectedLink}
-            dispatchObjectUi={dispatchObjectUi}
-            onAddRelationship={addRelationship}
-            onRemoveRelationship={removeRelationship}
+            onSelectLink={(link) => {
+              view.dispatchLocalDetail({ selectedLink: link });
+            }}
+            dispatchObjectUi={view.dispatchObjectUi}
+            onAddRelationship={view.addRelationship}
+            onRemoveRelationship={view.removeRelationship}
           />
 
-          <ObjectOpenTasksSection tasks={detail.openTasks} />
+          <ObjectOpenTasksSection tasks={view.detail.openTasks} />
 
           <ObjectRecentChangesSection
-            changes={detail.recentChanges}
-            pending={pending}
-            onAcceptChange={acceptChange}
-            onRejectChange={rejectChange}
+            changes={view.viewDetail.recentChanges}
+            pending={view.pending}
+            onAcceptChange={view.acceptChange}
+            onRejectChange={view.rejectChange}
           />
 
           <ObjectArchiveFooter
-            archivedAt={detail.archivedAt}
-            pending={pending}
-            onArchiveObject={archiveObject}
+            archivedAt={view.viewDetail.archivedAt}
+            pending={view.pending}
+            onArchiveObject={view.archiveObject}
           />
         </aside>
       </div>
@@ -1029,7 +1302,7 @@ function ObjectRelationshipsSection({
                 {relationship.direction === 'out' || relationship.kind === 'related' ? (
                   <button
                     type="button"
-                    disabled={pending}
+                    disabled={pending || isOptimisticRelationship(relationship)}
                     onClick={() => {
                       onRemoveRelationship(relationship.id, relationship.otherId);
                     }}

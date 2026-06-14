@@ -9,6 +9,8 @@ import type { Metadata } from 'next';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CalendarSubscriptionPanel } from '@/components/calendar/calendar-subscription-panel';
 import { CalendarView } from '@/components/calendar/calendar-view';
+import { IndexStrip } from '@/components/index-strip';
+import { WORK_BACK_LINK } from '@/components/work-back-link';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -114,12 +116,11 @@ export default async function CalendarPage({ searchParams }: PageProps) {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Calendar</h1>
-        <p className="text-sm text-muted-foreground">
-          Track deadlines, meetings, and follow-ups. Events appear on the timeline.
-        </p>
-      </header>
+      <IndexStrip srLabel="Calendar" segments={[{ value: 'CALENDAR' }]} leading={WORK_BACK_LINK} />
+
+      <p className="text-sm text-muted-foreground">
+        Track deadlines, meetings, and follow-ups. Events appear on the timeline.
+      </p>
 
       {calendarSuggestions.length > 0 ? (
         <section className="space-y-3">

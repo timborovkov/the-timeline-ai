@@ -1,4 +1,8 @@
+// @vitest-environment happy-dom
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -50,12 +54,12 @@ const detail = {
   priority: 2,
   ownerUserId: 'user-1',
   assigneeUserId: null,
-  dueAt: '2026-06-05T12:00:00.000Z',
+  dueAt: new Date('2026-06-05T12:00:00.000Z'),
   sourceEventId: null,
   agentSuggested: false,
   archivedAt: null,
-  createdAt: '2026-06-01T10:00:00.000Z',
-  updatedAt: '2026-06-01T10:00:00.000Z',
+  createdAt: new Date('2026-06-01T10:00:00.000Z'),
+  updatedAt: new Date('2026-06-01T10:00:00.000Z'),
   notes: [],
   relationships: [],
   relatedObjects: [],
@@ -63,9 +67,12 @@ const detail = {
   recentChanges: [],
   facts: [],
   timelineEvents: [],
-} as never;
+  newSinceLastVisit: 0,
+  lastVisitedAt: null,
+} as Parameters<typeof ObjectDetailClient>[0]['detail'];
 
 beforeEach(() => {
+  cleanup();
   vi.clearAllMocks();
 });
 
@@ -77,6 +84,15 @@ function renderObjectDetail(props: Parameters<typeof ObjectDetailClient>[0]): st
       { client: queryClient },
       createElement(ObjectDetailClient, props),
     ),
+  );
+}
+
+function objectDetailElement(props: Parameters<typeof ObjectDetailClient>[0]) {
+  const queryClient = new QueryClient();
+  return createElement(
+    QueryClientProvider,
+    { client: queryClient },
+    createElement(ObjectDetailClient, props),
   );
 }
 
@@ -142,6 +158,73 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('2 waiting');
     expect(html).toContain('Update proposal stage');
     expect(html).toContain('Move to proposal');
+  });
+
+  it('applies refreshed server detail props without requiring updatedAt to change', async () => {
+    const refreshedDetail = {
+      ...detail,
+      archivedAt: '2026-06-02T10:00:00.000Z',
+      notes: [
+        {
+          id: 'note-1',
+          body: 'Server note',
+          authorUserId: 'user-1',
+          createdAt: new Date('2026-06-02T09:00:00.000Z'),
+          updatedAt: new Date('2026-06-02T09:00:00.000Z'),
+        },
+      ],
+      relationships: [
+        {
+          id: 'relationship-1',
+          direction: 'out',
+          kind: 'related',
+          otherId: 'object-2',
+          otherName: 'Acme',
+          otherType: 'company',
+        },
+      ],
+      recentChanges: [
+        {
+          id: 'change-1',
+          field: 'stage',
+          previousValue: 'proposal',
+          newValue: 'done',
+          actorKind: 'user',
+          confidence: 'high',
+          status: 'applied',
+          changedAt: new Date('2026-06-02T09:30:00.000Z'),
+          evidence: [],
+        },
+      ],
+    } as never;
+    const { rerender } = render(objectDetailElement({ detail, userId: 'user-1', suggestions: [] }));
+
+    expect(screen.queryByText('Server note')).toBeNull();
+
+    rerender(objectDetailElement({ detail: refreshedDetail, userId: 'user-1', suggestions: [] }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Server note')).toBeTruthy();
+      expect(screen.getByText('Acme')).toBeTruthy();
+      expect(screen.getByText('Archived')).toBeTruthy();
+      expect(screen.getByText('Recent changes')).toBeTruthy();
+    });
+  });
+
+  it('preserves local form state when refreshed server props change updatedAt', async () => {
+    const user = userEvent.setup();
+    const refreshedDetail = {
+      ...detail,
+      updatedAt: new Date('2026-06-01T10:01:00.000Z'),
+    };
+    const { rerender } = render(objectDetailElement({ detail, userId: 'user-1', suggestions: [] }));
+
+    const noteInput = screen.getByLabelText('New note');
+    await user.type(noteInput, 'Draft survives refresh');
+
+    rerender(objectDetailElement({ detail: refreshedDetail, userId: 'user-1', suggestions: [] }));
+
+    expect(screen.getByDisplayValue('Draft survives refresh')).toBeTruthy();
   });
 
   it('filters placeholder object search results against the current query', () => {

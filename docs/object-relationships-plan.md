@@ -33,7 +33,8 @@ without shipping the full graph or mind-map view yet.
    relationship together when each endpoint independently qualifies as durable
    information.
 5. Surface accepted and pending relationships on both existing endpoint object
-   pages, including cited evidence for why the edge exists.
+   pages, with relationship activity and nearby object evidence available while
+   cited per-edge explanations wait for the later graph/mind-map view.
 6. Replace manual UUID linking on object detail pages with object search/select.
 7. Keep the full graph/mind-map view out of this slice; revisit after real
    relationship data exists.

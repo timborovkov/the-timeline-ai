@@ -8,20 +8,20 @@ contracts, not private implementation structure.
 
 Last checked in this branch: full `pnpm validate`, `pnpm test:ci`, root
 `pnpm test`, and React Doctor `100 / 100` pass after syncing scoped provider
-connections with recurring meeting capture and Saved Meeting coverage. The
-suite includes provider-connection hardening, recurring meeting capture, Saved
-Meeting visibility enforcement, scheduler idempotency, strict meeting URL host
-matching, generated calendar cleanup, quick-join failure/capacity/reuse, and
-partial-cancel finalize queue regressions, including duplicate-bot suppression
-when manual joins race a scheduled occurrence. Current suite shape:
+connections with upstream board and global-search polish. The suite includes
+provider-connection hardening, recurring meeting capture, Saved Meeting
+visibility enforcement, scheduler idempotency, strict meeting URL host matching,
+generated calendar cleanup, quick-join failure/capacity/reuse, partial-cancel
+finalize queue regressions, and board/search UI regressions. Current suite
+shape:
 
 - DB Vitest: 1 file / 8 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 75 files / 750 passed tests plus 1 skipped, including PGlite
+- Shared Vitest: 75 files / 752 passed tests plus 1 skipped, including PGlite
   calendar, timeline, MCP, integration/provider-connection, meeting, document,
   object, assistant, Slack, recovery, connection-attention, and onboarding
   coverage.
-- Web Vitest: 112 files / 546 tests, including route/action/component coverage
+- Web Vitest: 115 files / 577 tests, including route/action/component coverage
   for core recovery, onboarding, object sections, board add-item interactions,
   provider-connection routes/UI, app dialog flows, and other high-value UI
   states.
