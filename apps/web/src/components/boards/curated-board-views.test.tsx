@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -98,6 +98,27 @@ describe('CuratedBoardTable', () => {
     await user.selectOptions(screen.getByLabelText('Lane for Launch review'), 'lane-2');
     await waitFor(() => {
       expect(fakes.updateItem).toHaveBeenCalledWith('item-1', { laneId: 'lane-2' });
+    });
+  });
+
+  it('uses the same date-only due timestamp as the detail panel', () => {
+    render(
+      <CuratedBoardTable
+        boardId="board-1"
+        view="table"
+        lanes={[]}
+        items={[boardItem()]}
+        members={[]}
+        onUpdateItem={fakes.updateItem}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Due date for Launch review'), {
+      target: { value: '2026-07-04' },
+    });
+
+    expect(fakes.updateItem).toHaveBeenCalledWith('item-1', {
+      dueAt: new Date('2026-07-04T00:00:00.000Z'),
     });
   });
 

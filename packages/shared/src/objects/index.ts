@@ -92,7 +92,9 @@ function shouldNotifyObjectDueDateOnUpdate(
   updated: Pick<typeof entities.$inferSelect, 'archivedAt' | 'assigneeUserId' | 'dueAt' | 'status'>,
 ): boolean {
   if (!updated.dueAt) return false;
-  if (changes.some((change) => change.field === 'dueAt' || change.field === 'assigneeUserId')) {
+  if (
+    changes.some((change) => ['canonicalName', 'dueAt', 'assigneeUserId'].includes(change.field))
+  ) {
     return true;
   }
   if (changes.some((change) => change.field === 'ownerUserId') && !updated.assigneeUserId) {
@@ -1625,13 +1627,15 @@ export async function updateObject(
       }
     }
     if (changes.some((c) => ['canonicalName', 'type', 'archivedAt'].includes(c.field))) {
+      const shouldNotifyActiveBoardItems = changes.some((c) => c.field === 'canonicalName');
       dueDateCalendarSyncResults.push(
         await syncBoardItemDueDatesForObject(tx, scope, updated, {
           actor,
           notifyActive:
-            current.archivedAt !== null &&
-            updated.archivedAt === null &&
-            changes.some((c) => c.field === 'archivedAt'),
+            shouldNotifyActiveBoardItems ||
+            (current.archivedAt !== null &&
+              updated.archivedAt === null &&
+              changes.some((c) => c.field === 'archivedAt')),
         }),
       );
     }

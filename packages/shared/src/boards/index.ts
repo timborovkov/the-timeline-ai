@@ -1158,11 +1158,13 @@ export function createBoardScope({
             dueSoonCount: sql<number>`count(*) filter (where ${boardItems.dueAt} >= ${now} and ${boardItems.dueAt} <= ${soon})::int`,
           })
           .from(boardItems)
+          .innerJoin(entities, eq(boardItems.entityId, entities.id))
           .where(
             and(
               eq(boardItems.teamId, scope.teamId),
               inArray(boardItems.boardId, boardIds),
               isNull(boardItems.archivedAt),
+              isNull(entities.archivedAt),
             ),
           )
           .groupBy(boardItems.boardId),

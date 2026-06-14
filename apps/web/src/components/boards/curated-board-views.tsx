@@ -117,7 +117,7 @@ export function CuratedBoardTable({
                     onChange={(event) => {
                       updateItem(item.id, {
                         dueAt: event.target.value
-                          ? new Date(`${event.target.value}T09:00:00.000Z`)
+                          ? new Date(`${event.target.value}T00:00:00.000Z`)
                           : null,
                       });
                     }}

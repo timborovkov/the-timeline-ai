@@ -788,4 +788,43 @@ describe('board scope', () => {
     const itemRows = await db.select().from(boardItems).where(eq(boardItems.entityId, company.id));
     expect(itemRows).toHaveLength(1);
   });
+
+  it('ignores archived objects in pinned board due counts', async () => {
+    const owner = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await owner.boards.createBoard({
+      name: 'Pinned due counts',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    const overdueTask = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Archived overdue task',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const dueSoonTask = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Archived due soon task',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.boards.addBoardItem(board.id, {
+      entityId: overdueTask.id,
+      dueAt: new Date('2020-01-01T00:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.boards.addBoardItem(board.id, {
+      entityId: dueSoonTask.id,
+      dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.objects.archiveObject(overdueTask.id, { kind: 'user', userId: USER_OWNER });
+    await owner.objects.archiveObject(dueSoonTask.id, { kind: 'user', userId: USER_OWNER });
+    await owner.boards.pinBoard(board.id);
+
+    await expect(owner.boards.listPinnedBoards()).resolves.toEqual([
+      expect.objectContaining({
+        dueSoonCount: 0,
+        overdueCount: 0,
+      }),
+    ]);
+  });
 });

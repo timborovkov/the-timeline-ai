@@ -407,6 +407,61 @@ describe('object scope — team ownership and audit behavior', () => {
     ).toEqual([]);
   });
 
+  it('refreshes due inbox summaries when a due task is renamed', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Old launch name',
+      assigneeUserId: USER_MEMBER,
+      dueAt: new Date('2026-07-14T09:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const board = await scope.boards.createBoard({
+      name: 'Rename board',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    await scope.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      responsibleUserId: USER_MEMBER,
+      dueAt: new Date('2026-07-15T09:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.objects.updateObject(
+      task.id,
+      { canonicalName: 'New launch name' },
+      { kind: 'user', userId: USER_OWNER },
+    );
+
+    const inboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, task.id));
+    expect(
+      inboxRows.find(
+        (row) => row.kind === 'task_due' && row.summary === 'Old launch name is due 2026-07-14',
+      )?.readAt,
+    ).toBeInstanceOf(Date);
+    expect(
+      inboxRows.find(
+        (row) => row.kind === 'board_item_due' && row.summary.includes('Old launch name'),
+      )?.readAt,
+    ).toBeInstanceOf(Date);
+    expect(inboxRows.filter((row) => row.kind === 'task_due' && row.readAt === null)).toEqual([
+      expect.objectContaining({
+        summary: 'New launch name is due 2026-07-14',
+      }),
+    ]);
+    expect(inboxRows.filter((row) => row.kind === 'board_item_due' && row.readAt === null)).toEqual(
+      [
+        expect.objectContaining({
+          summary: 'New launch name on Rename board is due 2026-07-15',
+        }),
+      ],
+    );
+  });
+
   it('tombstones board item due-date calendar events when the object is archived', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
     const board = await scope.boards.createBoard({
