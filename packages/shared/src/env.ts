@@ -181,6 +181,15 @@ const baseSchema = z.object({
   RECALL_STATUS_WEBHOOK_SECRET: z.string().optional(),
   RECALL_TRANSCRIPT_WEBHOOK_URL: z.url().optional(),
   /**
+   * Recall recording-media retention for meeting bots.
+   *
+   * Unset / empty => timed retention for 1 hour. A positive integer is
+   * interpreted as timed retention in hours. "forever" asks Recall to retain
+   * indefinitely. Zero retention is intentionally unsupported because Recall's
+   * zero-retention mode is incompatible with prioritize_accuracy transcription.
+   */
+  RECALL_RETENTION: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  /**
    * Bot display name. The bot still appears as a participant in silent
    * mode — meeting platforms surface it in the participant list. Defaults
    * to "Timeline" so attendees see a recognisable label rather than a
