@@ -7,6 +7,8 @@ import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 
+const EXPECTED_SUGGESTION_APPLY_FAILURE_CODE = 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE';
+
 function revalidateSuggestionSurfaces() {
   revalidatePath('/app');
   revalidatePath('/app/approvals');
@@ -19,16 +21,13 @@ function revalidateSuggestionSurfaces() {
 }
 
 function isExpectedSuggestionApplyFailure(err: unknown): boolean {
-  if (err instanceof z.ZodError) return true;
   if (!err || typeof err !== 'object') return false;
-  if ((err as { name?: unknown }).name === 'ZodError') return true;
   const code = (err as { code?: unknown }).code;
-  if (code === '23505') return true;
+  if (code === EXPECTED_SUGGESTION_APPLY_FAILURE_CODE) return true;
+  if ((err as { name?: unknown }).name === 'ExpectedSuggestionApplyFailure') return true;
   const cause = (err as { cause?: unknown }).cause;
   if (cause && isExpectedSuggestionApplyFailure(cause)) return true;
-  return (
-    err instanceof Error && /duplicate key value violates unique constraint/i.test(err.message)
-  );
+  return false;
 }
 
 function errorMessage(err: unknown, fallback: string): string {

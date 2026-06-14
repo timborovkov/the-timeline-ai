@@ -50,6 +50,51 @@ type TargetKind =
   | 'board_membership'
   | 'board_item_update';
 
+const EXPECTED_SUGGESTION_APPLY_FAILURE_CODE = 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE';
+const ENTITY_CANONICAL_NAME_UNIQUE_CONSTRAINT = 'entities_team_type_canonical_name_unq';
+
+class ExpectedSuggestionApplyFailure extends Error {
+  readonly code = EXPECTED_SUGGESTION_APPLY_FAILURE_CODE;
+
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'ExpectedSuggestionApplyFailure';
+  }
+}
+
+function errorCode(err: unknown): unknown {
+  return err && typeof err === 'object' ? (err as { code?: unknown }).code : undefined;
+}
+
+function errorConstraint(err: unknown): unknown {
+  return err && typeof err === 'object' ? (err as { constraint?: unknown }).constraint : undefined;
+}
+
+function errorCause(err: unknown): unknown {
+  return err && typeof err === 'object' ? (err as { cause?: unknown }).cause : undefined;
+}
+
+function errorMessageIncludes(err: unknown, value: string): boolean {
+  return err instanceof Error && err.message.includes(value);
+}
+
+function isEntityCanonicalNameDuplicate(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  if (
+    errorCode(err) === '23505' &&
+    (errorConstraint(err) === ENTITY_CANONICAL_NAME_UNIQUE_CONSTRAINT ||
+      errorMessageIncludes(err, ENTITY_CANONICAL_NAME_UNIQUE_CONSTRAINT))
+  ) {
+    return true;
+  }
+  const cause = errorCause(err);
+  return cause ? isEntityCanonicalNameDuplicate(cause) : false;
+}
+
+function isExpectedApplyFailure(err: unknown): boolean {
+  return err instanceof z.ZodError || isEntityCanonicalNameDuplicate(err);
+}
+
 export interface SuggestionScopeDeps {
   db: Db;
   teamId: string;
@@ -1566,43 +1611,16 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
   async function existingResultForItem(
     item: typeof agentSuggestionItems.$inferSelect,
-    opts: { allowCanonicalRetry?: boolean } = {},
   ): Promise<string | null> {
     if (item.operation !== 'create') return null;
     if (item.targetKind === 'task' || item.targetKind === 'object') {
-      const parsed =
-        opts.allowCanonicalRetry === true && item.status === 'failed'
-          ? objectCreatePayload.safeParse(normalizeLifecyclePayload(item))
-          : null;
       const rows = await db
         .select({ id: entities.id })
         .from(entities)
         .where(
           and(
             eq(entities.teamId, teamId),
-            or(
-              sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
-              ...(parsed?.success
-                ? [
-                    and(
-                      eq(
-                        entities.type,
-                        (item.targetKind === 'task'
-                          ? 'task'
-                          : (parsed.data.type ?? 'other')) as ObjectType,
-                      ),
-                      eq(
-                        entities.canonicalName,
-                        parsed.data.canonicalName && parsed.data.canonicalName.length > 0
-                          ? parsed.data.canonicalName
-                          : item.title,
-                      ),
-                      isNull(entities.mergedIntoId),
-                      isNull(entities.archivedAt),
-                    ),
-                  ]
-                : []),
-            ),
+            sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
           ),
         )
         .limit(1);
@@ -1749,7 +1767,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
     if (sibling.status !== 'pending' && sibling.status !== 'failed') return null;
 
-    const accepted = await acceptSuggestionItem(sibling.id, { allowCanonicalRetry: false });
+    const accepted = await acceptSuggestionItem(sibling.id);
     if (!accepted) throw new Error('Object note target sibling object could not be accepted');
     const [resolved] = await db
       .select({ resultId: agentSuggestionItems.resultId })
@@ -1881,18 +1899,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
   }
 
-  async function applyItem(
-    item: typeof agentSuggestionItems.$inferSelect,
-    opts: { allowCanonicalRetry?: boolean } = {},
-  ): Promise<string | null> {
+  async function applyItem(item: typeof agentSuggestionItems.$inferSelect): Promise<string | null> {
     if (item.resultId) return item.resultId;
     if (item.status !== 'pending' && item.status !== 'failed') return item.resultId;
     if (item.targetKind === 'object_merge') {
       throw new Error('Merge suggestions must be reviewed from the merge preview');
     }
-    const existingResultId = await existingResultForItem(item, {
-      allowCanonicalRetry: opts.allowCanonicalRetry !== false,
-    });
+    const existingResultId = await existingResultForItem(item);
     if (existingResultId) return existingResultId;
     const targetId = item.targetId;
     const payload = normalizeLifecyclePayload({
@@ -2184,10 +2197,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return targetId;
   }
 
-  async function acceptSuggestionItem(
-    itemId: string,
-    opts: { allowCanonicalRetry?: boolean } = {},
-  ): Promise<boolean> {
+  async function acceptSuggestionItem(itemId: string): Promise<boolean> {
     await ensureMember();
     const rows = await db
       .select({ item: agentSuggestionItems, suggestion: agentSuggestions })
@@ -2235,9 +2245,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (!claimed) return false;
     let resultId: string | null;
     try {
-      resultId = await applyItem(row.item, {
-        allowCanonicalRetry: opts.allowCanonicalRetry !== false,
-      });
+      resultId = await applyItem(row.item);
     } catch (err) {
       const failureReason = err instanceof Error ? err.message : 'Failed to apply suggestion';
       await db
@@ -2265,6 +2273,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         suggestionId: row.suggestion.id,
         op: 'accept_failure',
       });
+      if (isExpectedApplyFailure(err)) {
+        throw new ExpectedSuggestionApplyFailure(failureReason, { cause: err });
+      }
       throw err;
     }
     await db

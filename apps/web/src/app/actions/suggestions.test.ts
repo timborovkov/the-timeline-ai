@@ -141,7 +141,21 @@ describe('suggestion item actions', () => {
     expectSuggestionSurfacesRevalidated();
   });
 
-  it('does not report expected invalid proposal payload failures to Sentry', async () => {
+  it('does not report expected persisted apply failures to Sentry', async () => {
+    const err = Object.assign(new Error('Invalid proposal payload'), {
+      name: 'ExpectedSuggestionApplyFailure',
+      code: 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE',
+    });
+    fakes.fakeSuggestions.acceptSuggestionItem.mockRejectedValue(err);
+
+    await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
+      error: err.message,
+    });
+    expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('reports raw invalid proposal payload failures that were not marked expected', async () => {
     const err = new z.ZodError([
       {
         code: 'invalid_type',
@@ -156,11 +170,14 @@ describe('suggestion item actions', () => {
     await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
       error: err.message,
     });
-    expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
+      surface: 'server_action',
+      operation: 'accept_suggestion_item',
+    });
     expectSuggestionSurfacesRevalidated();
   });
 
-  it('does not report expected duplicate object approval failures to Sentry', async () => {
+  it('reports duplicate-key failures that were not marked expected', async () => {
     const err = Object.assign(new Error('duplicate key value violates unique constraint'), {
       code: '23505',
     });
@@ -169,7 +186,10 @@ describe('suggestion item actions', () => {
     await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({
       error: err.message,
     });
-    expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
+      surface: 'server_action',
+      operation: 'accept_suggestion_item',
+    });
     expectSuggestionSurfacesRevalidated();
   });
 

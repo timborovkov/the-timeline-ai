@@ -1713,7 +1713,7 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.count).toBe('1');
   });
 
-  it('finds an existing canonical create by unique object key when result bookkeeping was lost', async () => {
+  it('does not claim an unrelated same-name object when a failed create is retried', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'chat',
@@ -1733,9 +1733,9 @@ describe('suggestion scope', () => {
     });
     const itemId = bundle.items[0]?.id;
     expect(itemId).toBeDefined();
-    const existing = await scope.objects.createObject({
+    await scope.objects.createObject({
       type: 'task',
-      canonicalName: 'Schedule follow-up meeting with Digital Audit Company',
+      canonicalName: 'schedule follow-up meeting with digital audit company',
       actor: { kind: 'user', userId: USER_ID },
     });
     await pg.query(
@@ -1743,18 +1743,22 @@ describe('suggestion scope', () => {
       [itemId],
     );
 
-    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).rejects.toMatchObject({
+      name: 'ExpectedSuggestionApplyFailure',
+      code: 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE',
+    });
 
-    const result = await pg.query<{ count: string; result_id: string | null }>(
-      `SELECT count(*)::text, max(asi.result_id::text) AS result_id
+    const result = await pg.query<{ count: string; result_id: string | null; status: string }>(
+      `SELECT count(*)::text, max(asi.result_id::text) AS result_id, max(asi.status::text) AS status
        FROM entities e
        LEFT JOIN agent_suggestion_items asi ON asi.id = '${itemId}'
        WHERE e.team_id = '${TEAM_ID}'
          AND e.type = 'task'
-         AND e.canonical_name = 'Schedule follow-up meeting with Digital Audit Company'`,
+         AND lower(e.canonical_name) = lower('Schedule follow-up meeting with Digital Audit Company')`,
     );
     expect(result.rows[0]?.count).toBe('1');
-    expect(result.rows[0]?.result_id).toBe(existing.id);
+    expect(result.rows[0]?.result_id).toBeNull();
+    expect(result.rows[0]?.status).toBe('failed');
   });
 
   it('supersedes pending updates that target an accepted create result', async () => {
