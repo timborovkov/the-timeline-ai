@@ -274,11 +274,31 @@ const calendarCreatePayload = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-const calendarUpdatePayload = calendarCreatePayload.partial();
+const calendarUpdatePayload = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  description: z.string().trim().max(2000).nullable().optional(),
+  startAt: z.iso.datetime().optional(),
+  endAt: z.iso.datetime().optional(),
+  startDate: z.string().regex(LOCAL_DATE_RE).optional(),
+  endDate: z.string().regex(LOCAL_DATE_RE).optional(),
+  timezone: z.string().max(100).optional(),
+  allDay: z.boolean().optional(),
+  location: z.string().trim().max(500).nullable().optional(),
+  visibility: z.enum(['team', 'private', 'specific_users']).optional(),
+  visibilityUserIds: z.array(uuid).nullable().optional(),
+  reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+  linkedEntityIds: z.array(uuid).max(20).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
 
 function normalizeCalendarPayload(
   item: typeof agentSuggestionItems.$inferSelect,
-  opts: { fallbackTitle: boolean; defaultTimezone?: string },
+  opts: {
+    fallbackTitle: boolean;
+    defaultTimezone?: string;
+    inferAllDayFromDateOnly?: boolean;
+    materializeDefaultTimezone?: boolean;
+  },
 ): Record<string, unknown> {
   const payload = item.proposedPayload as Record<string, unknown>;
   const normalized = { ...payload };
@@ -301,6 +321,7 @@ function normalizeCalendarPayload(
     normalized.allDay = payload.all_day;
   }
   if (
+    opts.inferAllDayFromDateOnly === true &&
     !Object.hasOwn(normalized, 'allDay') &&
     typeof normalized.startDate === 'string' &&
     LOCAL_DATE_RE.test(normalized.startDate) &&
@@ -328,7 +349,9 @@ function normalizeCalendarPayload(
     const range = localDateSpanToUtcRange(normalized.startDate, endDate, timezone);
     if (!Object.hasOwn(normalized, 'startAt')) normalized.startAt = range.from.toISOString();
     if (!Object.hasOwn(normalized, 'endAt')) normalized.endAt = range.to.toISOString();
-    if (!Object.hasOwn(normalized, 'timezone')) normalized.timezone = timezone;
+    if (opts.materializeDefaultTimezone === true && !Object.hasOwn(normalized, 'timezone')) {
+      normalized.timezone = timezone;
+    }
   }
   return normalized;
 }
@@ -2010,6 +2033,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         normalizeCalendarPayload(item, {
           fallbackTitle: true,
           defaultTimezone: settings.defaultTimezone,
+          inferAllDayFromDateOnly: true,
+          materializeDefaultTimezone: true,
         }),
       );
       const normalizedRange = parsed.allDay
@@ -2048,7 +2073,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const defaultTimezone =
         event?.timezone ?? (await calendar.getCalendarSettings()).defaultTimezone;
       const parsed = calendarUpdatePayload.parse(
-        normalizeCalendarPayload(item, { fallbackTitle: false, defaultTimezone }),
+        normalizeCalendarPayload(item, {
+          fallbackTitle: false,
+          defaultTimezone,
+          inferAllDayFromDateOnly: event?.allDay ?? false,
+          materializeDefaultTimezone: false,
+        }),
       );
       const patch: UpdateCalendarEventInput = {};
       if (parsed.title !== undefined) patch.title = parsed.title;

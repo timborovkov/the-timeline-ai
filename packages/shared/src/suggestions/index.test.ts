@@ -2909,6 +2909,58 @@ describe('suggestion scope', () => {
     expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-20T21:00:00.000Z');
   });
 
+  it('does not infer all-day for legacy date-only updates to timed calendar events', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const event = await scope.calendar.createCalendarEvent({
+      title: 'Existing timed Helsinki meeting',
+      startAt: new Date('2026-06-15T09:00:00.000Z'),
+      endAt: new Date('2026-06-15T10:00:00.000Z'),
+      timezone: 'Europe/Helsinki',
+      allDay: false,
+      visibility: 'team',
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Retitle timed Helsinki meeting',
+      dedupeKey: 'calendar-update-timed-date-only-legacy-payload',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'calendar_event',
+          targetId: event.id,
+          title: 'Retitle timed Helsinki meeting',
+          dedupeKey: 'calendar-update-timed-date-only-legacy-payload:item',
+          proposedPayload: {
+            title: 'Renamed timed Helsinki meeting',
+            start_date: '2026-06-20',
+            end_date: '2026-06-21',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
+
+    const result = await pg.query<{
+      title: string;
+      start_at: Date;
+      end_at: Date;
+      timezone: string;
+      all_day: boolean;
+    }>(
+      `SELECT title, start_at, end_at, timezone, all_day FROM calendar_events WHERE id = '${event.id}'`,
+    );
+    expect(result.rows[0]).toMatchObject({
+      title: 'Renamed timed Helsinki meeting',
+      timezone: 'Europe/Helsinki',
+      all_day: false,
+    });
+    expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-15T09:00:00.000Z');
+    expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-15T10:00:00.000Z');
+  });
+
   it('does not silently ignore invalid canonical calendar update fields', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const event = await scope.calendar.createCalendarEvent({
