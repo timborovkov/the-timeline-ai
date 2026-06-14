@@ -2386,6 +2386,141 @@ describe('suggestion scope', () => {
     expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-17T15:00:00.000Z');
   });
 
+  it('accepts recurring calendar create suggestions and materializes occurrences', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create recurring daily call',
+      dedupeKey: 'calendar-recurring-create',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Daily call',
+          dedupeKey: 'calendar-recurring-create:item',
+          proposedPayload: {
+            title: 'Daily call',
+            startAt: '2026-06-01T16:00:00.000Z',
+            endAt: '2026-06-01T16:30:00.000Z',
+            timezone: 'UTC',
+            visibility: 'team',
+            rrule: 'FREQ=DAILY;COUNT=3',
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    const result = await pg.query<{ start_at: Date; rrule: string | null }>(
+      `SELECT start_at, rrule
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}' AND title = 'Daily call' AND deleted_at IS NULL
+       ORDER BY start_at`,
+    );
+    expect(result.rows.map((row) => new Date(row.start_at).toISOString())).toEqual([
+      '2026-06-01T16:00:00.000Z',
+      '2026-06-02T16:00:00.000Z',
+      '2026-06-03T16:00:00.000Z',
+    ]);
+    expect(result.rows[0]?.rrule).toBe('RRULE:FREQ=DAILY;COUNT=3');
+  });
+
+  it('confirms one tentative proposal slot and cancels sibling slots', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const create = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create Apple slot holds',
+      dedupeKey: 'calendar-proposal-slots',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Proposed Apple meeting',
+          dedupeKey: 'calendar-proposal-slots:one',
+          proposedPayload: {
+            title: 'Proposed Apple meeting',
+            startAt: '2026-06-01T16:00:00.000Z',
+            endAt: '2026-06-01T16:30:00.000Z',
+            timezone: 'UTC',
+            visibility: 'team',
+            showAs: 'tentative',
+            proposalGroupId: 'apple-meeting',
+            proposalStatus: 'tentative',
+            proposalRole: 'slot',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Proposed Apple meeting',
+          dedupeKey: 'calendar-proposal-slots:two',
+          proposedPayload: {
+            title: 'Proposed Apple meeting',
+            startAt: '2026-06-02T16:00:00.000Z',
+            endAt: '2026-06-02T16:30:00.000Z',
+            timezone: 'UTC',
+            visibility: 'team',
+            showAs: 'tentative',
+            proposalGroupId: 'apple-meeting',
+            proposalStatus: 'tentative',
+            proposalRole: 'slot',
+          },
+        },
+      ],
+    });
+    for (const item of create.items) {
+      await expect(scope.suggestions.acceptSuggestionItem(item.id)).resolves.toBe(true);
+    }
+    const slots = await pg.query<{ id: string; start_at: Date }>(
+      `SELECT id, start_at
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}' AND metadata ->> 'proposalGroupId' = 'apple-meeting'
+       ORDER BY start_at`,
+    );
+    const chosenId = slots.rows[0]?.id ?? '';
+    const confirm = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Confirm Apple slot',
+      dedupeKey: 'calendar-proposal-confirm',
+      items: [
+        {
+          operation: 'update',
+          targetKind: 'calendar_event',
+          targetId: chosenId,
+          title: 'Apple meeting',
+          dedupeKey: 'calendar-proposal-confirm:item',
+          proposedPayload: {
+            title: 'Apple meeting',
+            showAs: 'busy',
+            proposalStatus: 'confirmed',
+            proposalRole: 'selected_slot',
+          },
+        },
+      ],
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(confirm.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
+
+    const result = await pg.query<{ title: string; show_as: string; deleted_at: Date | null }>(
+      `SELECT title, show_as, deleted_at
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}' AND metadata ->> 'proposalGroupId' = 'apple-meeting'
+       ORDER BY start_at`,
+    );
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows[0]).toMatchObject({
+      title: 'Apple meeting',
+      show_as: 'busy',
+      deleted_at: null,
+    });
+    expect(result.rows[1]?.deleted_at).toBeInstanceOf(Date);
+  });
+
   it('normalizes all-day calendar updates when allDay is omitted from the patch', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const event = await scope.calendar.createCalendarEvent({

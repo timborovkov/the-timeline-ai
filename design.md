@@ -284,6 +284,9 @@ visible change.
   follow-ups, and approvals. Hydrate from existing source evidence, suggestion
   evidence, object/task changes, document versions, and calendar rows. Omit the
   strip when empty rather than inventing completeness.
+- **Calendar state.** Recurring calendar rows show a compact recurrence marker,
+  modified occurrences use the same marker plus their edited time, and proposed
+  slots render as visible tentative holds until one slot is confirmed.
 - **Preset filters + density.** Timeline presets cover All, Meetings, Slack,
   Email, Documents, Calendar, Approvals, Tasks, and Decisions. Density is a
   URL-backed control with Comfortable as default and Dense as a tighter

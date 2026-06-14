@@ -8,6 +8,12 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
+import {
+  expandRRuleBetween,
+  recurrenceWindowFrom,
+  rruleUntil,
+  validateRRule,
+} from '#src/calendar/recurrence.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
@@ -16,7 +22,9 @@ import { enqueueCalendarEventEmbedJob } from '#src/queue/queues.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
 
 type Visibility = 'private' | 'team' | 'specific_users';
+type CalendarShowAs = 'busy' | 'free' | 'tentative';
 type CalendarEventSource = 'internal' | 'google' | 'caldav';
+type RecurrenceEditMode = 'single' | 'series' | 'this_and_future';
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 type CalendarQdrantAction = 'embed' | 'delete' | null;
@@ -77,6 +85,11 @@ export interface CreateCalendarEventInput {
   visibility?: Visibility;
   visibilityUserIds?: string[] | null;
   reminderMinutes?: number | null;
+  showAs?: CalendarShowAs;
+  rrule?: string | null;
+  recurringParentId?: string | null;
+  originalStartAt?: Date | null;
+  isException?: boolean;
   agentSuggested?: boolean;
   linkedEntityIds?: string[];
   metadata?: Record<string, unknown>;
@@ -93,6 +106,9 @@ export interface UpdateCalendarEventInput {
   visibility?: Visibility;
   visibilityUserIds?: string[] | null;
   reminderMinutes?: number | null;
+  showAs?: CalendarShowAs;
+  rrule?: string | null;
+  recurrenceEditMode?: RecurrenceEditMode;
   metadata?: Record<string, unknown>;
 }
 
@@ -105,6 +121,12 @@ export interface ListCalendarEventsInput {
   to?: Date;
   limit?: number;
   includeDeleted?: boolean;
+}
+
+export interface MaterializeRecurringEventsInput {
+  from?: Date;
+  to?: Date;
+  parentId?: string;
 }
 
 async function insertCalendarRawEvents(
@@ -254,6 +276,21 @@ async function assertEntitiesBelongToTeam(
   return entityIds;
 }
 
+function showAsOrDefault(showAs: string | null | undefined): CalendarShowAs {
+  return showAs === 'free' || showAs === 'tentative' ? showAs : 'busy';
+}
+
+function eventMetadata(row: Pick<CalendarEventRow, 'metadata'>): Record<string, unknown> {
+  return row.metadata;
+}
+
+function mergeMetadata(
+  current: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  return { ...current, ...patch };
+}
+
 async function deleteCalendarEventPoints(teamId: string, eventId: string): Promise<void> {
   try {
     const client = getQdrantClient();
@@ -321,6 +358,164 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     return { ...row, redacted: false };
   }
 
+  async function insertOccurrence(
+    tx: DbOrTx,
+    parent: CalendarEventRow,
+    occurrenceStart: Date,
+  ): Promise<string | null> {
+    if (sameDate(occurrenceStart, parent.startAt)) return parent.id;
+    const durationMs = parent.endAt.getTime() - parent.startAt.getTime();
+    const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
+    const [existing] = await tx
+      .select({ id: calendarEvents.id })
+      .from(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.teamId, teamId),
+          eq(calendarEvents.recurringParentId, parent.id),
+          eq(calendarEvents.originalStartAt, occurrenceStart),
+        ),
+      )
+      .limit(1);
+    if (existing) return existing.id;
+
+    const [row] = await tx
+      .insert(calendarEvents)
+      .values({
+        teamId,
+        createdByUserId: parent.createdByUserId,
+        title: parent.title,
+        description: parent.description,
+        startAt: occurrenceStart,
+        endAt: occurrenceEnd,
+        timezone: parent.timezone,
+        allDay: parent.allDay,
+        location: parent.location,
+        showAs: parent.showAs,
+        visibility: parent.visibility,
+        visibilityUserIds: parent.visibilityUserIds,
+        recurringParentId: parent.id,
+        originalStartAt: occurrenceStart,
+        isException: false,
+        reminderMinutes: parent.reminderMinutes,
+        source: parent.source,
+        agentSuggested: parent.agentSuggested,
+        metadata: mergeMetadata(eventMetadata(parent), {
+          recurring_parent_id: parent.id,
+          original_start_at: occurrenceStart.toISOString(),
+        }),
+      })
+      .returning();
+    if (!row) return null;
+
+    const { scheduledRawEventId, startAtRawEventId } = await insertCalendarRawEvents(tx, {
+      teamId,
+      userId,
+      calendarEventId: row.id,
+      title: parent.title,
+      description: parent.description,
+      startAt: occurrenceStart,
+      endAt: occurrenceEnd,
+      timezone: parent.timezone,
+      location: parent.location,
+      visibility: parent.visibility,
+      visibilityUserIds: parent.visibilityUserIds,
+    });
+    await tx
+      .update(calendarEvents)
+      .set({ scheduledRawEventId, startAtRawEventId })
+      .where(eq(calendarEvents.id, row.id));
+    return row.id;
+  }
+
+  async function materializeParent(
+    tx: DbOrTx,
+    parent: CalendarEventRow,
+    opts: { from?: Date; to?: Date } = {},
+  ): Promise<string[]> {
+    if (!parent.rrule || parent.recurringParentId || parent.deletedAt) return [];
+    const window = recurrenceWindowFrom(parent.startAt);
+    const from = opts.from ?? window.from;
+    const to = opts.to ?? window.to;
+    const starts = expandRRuleBetween({
+      rrule: parent.rrule,
+      startAt: parent.startAt,
+      timezone: parent.timezone,
+      from,
+      to,
+    });
+    const ids: string[] = [];
+    for (const start of starts) {
+      const id = await insertOccurrence(tx, parent, start);
+      if (id) ids.push(id);
+    }
+    return ids;
+  }
+
+  async function materializeParentById(
+    tx: DbOrTx,
+    id: string,
+    opts: { from?: Date; to?: Date } = {},
+  ): Promise<string[]> {
+    const rows = await tx
+      .select()
+      .from(calendarEvents)
+      .where(and(eq(calendarEvents.id, id), eq(calendarEvents.teamId, teamId)))
+      .limit(1);
+    const parent = rows[0] as CalendarEventRow | undefined;
+    if (!parent) return [];
+    return materializeParent(tx, parent, opts);
+  }
+
+  async function rematerializeParent(
+    tx: DbOrTx,
+    parent: CalendarEventRow,
+    opts: { from?: Date; to?: Date } = {},
+  ): Promise<string[]> {
+    await tx
+      .update(calendarEvents)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(calendarEvents.teamId, teamId),
+          eq(calendarEvents.recurringParentId, parent.id),
+          eq(calendarEvents.isException, false),
+          isNull(calendarEvents.deletedAt),
+        ),
+      );
+    return materializeParent(tx, parent, opts);
+  }
+
+  async function confirmProposalGroup(
+    tx: DbOrTx,
+    chosen: CalendarEventRow,
+    patch: UpdateCalendarEventInput,
+  ): Promise<void> {
+    const metadata = eventMetadata(chosen);
+    const groupId =
+      typeof metadata.proposalGroupId === 'string'
+        ? metadata.proposalGroupId
+        : typeof metadata.proposal_group_id === 'string'
+          ? metadata.proposal_group_id
+          : null;
+    const status =
+      patch.metadata && typeof patch.metadata.proposalStatus === 'string'
+        ? patch.metadata.proposalStatus
+        : null;
+    if (!groupId || status !== 'confirmed') return;
+    await tx
+      .update(calendarEvents)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(calendarEvents.teamId, teamId),
+          sql`${calendarEvents.metadata} ->> 'proposalGroupId' = ${groupId}`,
+          sql`${calendarEvents.id} <> ${chosen.id}`,
+          isNull(calendarEvents.deletedAt),
+        ),
+      );
+  }
+
   return {
     async createCalendarEvent(
       input: CreateCalendarEventInput,
@@ -329,6 +524,10 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       if (input.endAt <= input.startAt) {
         throw new Error('End time must be after start time');
       }
+      const timezone = input.timezone ?? 'UTC';
+      const rrule = input.rrule?.trim()
+        ? validateRRule({ rrule: input.rrule, startAt: input.startAt, timezone })
+        : null;
 
       const created = await db.transaction(async (tx) => {
         const vis = input.visibility ?? 'team';
@@ -350,11 +549,16 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
             description: input.description ?? null,
             startAt: input.startAt,
             endAt: input.endAt,
-            timezone: input.timezone ?? 'UTC',
+            timezone,
             allDay: input.allDay ?? false,
             location: input.location ?? null,
+            showAs: showAsOrDefault(input.showAs),
             visibility: vis,
             visibilityUserIds: visUserIds,
+            recurringParentId: input.recurringParentId ?? null,
+            originalStartAt: input.originalStartAt ?? null,
+            isException: input.isException ?? false,
+            rrule,
             reminderMinutes: input.reminderMinutes ?? null,
             agentSuggested: input.agentSuggested ?? false,
             metadata: input.metadata ?? {},
@@ -371,7 +575,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           description: input.description ?? null,
           startAt: input.startAt,
           endAt: input.endAt,
-          timezone: input.timezone ?? 'UTC',
+          timezone,
           location: input.location ?? null,
           visibility: vis,
           visibilityUserIds: visUserIds,
@@ -397,6 +601,10 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           scheduledRawEventId,
           startAtRawEventId,
         };
+
+        if (rrule && !input.recurringParentId) {
+          await materializeParent(tx, updated);
+        }
 
         return redactIfNeeded(updated);
       });
@@ -475,6 +683,106 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
 
         const row = existing[0];
         if (!row) return null;
+        const current = row as CalendarEventRow;
+        const recurrenceMode: RecurrenceEditMode =
+          patch.recurrenceEditMode ?? (current.recurringParentId ? 'single' : 'series');
+
+        if (recurrenceMode === 'this_and_future' && current.recurringParentId) {
+          const [parent] = await tx
+            .select()
+            .from(calendarEvents)
+            .where(
+              and(
+                eq(calendarEvents.id, current.recurringParentId),
+                eq(calendarEvents.teamId, teamId),
+                isNull(calendarEvents.deletedAt),
+              ),
+            )
+            .limit(1);
+          const parentRow = parent as CalendarEventRow | undefined;
+          if (!parentRow?.rrule) throw new Error('Recurring parent not found');
+          const splitAt = current.originalStartAt ?? current.startAt;
+          await tx
+            .update(calendarEvents)
+            .set({
+              rrule: rruleUntil(parentRow.rrule, splitAt),
+              updatedAt: new Date(),
+            })
+            .where(eq(calendarEvents.id, parentRow.id));
+          await tx
+            .update(calendarEvents)
+            .set({ deletedAt: new Date(), updatedAt: new Date() })
+            .where(
+              and(
+                eq(calendarEvents.teamId, teamId),
+                eq(calendarEvents.recurringParentId, parentRow.id),
+                gte(calendarEvents.originalStartAt, splitAt),
+                isNull(calendarEvents.deletedAt),
+              ),
+            );
+
+          const newStart = patch.startAt ?? current.startAt;
+          const newEnd = patch.endAt ?? current.endAt;
+          if (newEnd <= newStart) throw new Error('End time must be after start time');
+          const newTimezone = patch.timezone ?? current.timezone;
+          const newRrule = patch.rrule?.trim()
+            ? validateRRule({ rrule: patch.rrule, startAt: newStart, timezone: newTimezone })
+            : parentRow.rrule;
+          const [newParent] = await tx
+            .insert(calendarEvents)
+            .values({
+              teamId,
+              createdByUserId: current.createdByUserId,
+              title: patch.title ?? current.title,
+              description: patch.description ?? current.description,
+              startAt: newStart,
+              endAt: newEnd,
+              timezone: newTimezone,
+              allDay: patch.allDay ?? current.allDay,
+              location: patch.location ?? current.location,
+              showAs: patch.showAs ?? showAsOrDefault(current.showAs),
+              visibility: patch.visibility ?? current.visibility,
+              visibilityUserIds: patch.visibilityUserIds ?? current.visibilityUserIds,
+              rrule: newRrule,
+              reminderMinutes: patch.reminderMinutes ?? current.reminderMinutes,
+              source: current.source,
+              metadata: patch.metadata
+                ? mergeMetadata(eventMetadata(current), patch.metadata)
+                : eventMetadata(current),
+            })
+            .returning();
+          if (!newParent) throw new Error('Failed to split recurring event');
+          const { scheduledRawEventId, startAtRawEventId } = await insertCalendarRawEvents(tx, {
+            teamId,
+            userId,
+            calendarEventId: newParent.id,
+            title: newParent.title,
+            description: newParent.description,
+            startAt: newParent.startAt,
+            endAt: newParent.endAt,
+            timezone: newParent.timezone,
+            location: newParent.location,
+            visibility: newParent.visibility,
+            visibilityUserIds: newParent.visibilityUserIds,
+          });
+          const [hydrated] = await tx
+            .update(calendarEvents)
+            .set({ scheduledRawEventId, startAtRawEventId })
+            .where(eq(calendarEvents.id, newParent.id))
+            .returning();
+          if (!hydrated) throw new Error('Failed to hydrate split recurring event');
+          await materializeParent(tx, hydrated as CalendarEventRow);
+          return {
+            event: redactIfNeeded(hydrated as CalendarEventRow),
+            changedFields: [
+              'startAt',
+              'endAt',
+              'rrule',
+              'recurrenceEditMode',
+            ] as (keyof UpdateCalendarEventInput)[],
+            qdrantAction: hydrated.visibility === 'team' ? ('embed' as const) : null,
+          };
+        }
 
         const changedFields = new Set<keyof UpdateCalendarEventInput>();
         if (patch.title !== undefined && patch.title !== row.title) changedFields.add('title');
@@ -496,8 +804,22 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         if (patch.location !== undefined && patch.location !== row.location) {
           changedFields.add('location');
         }
+        if (patch.showAs !== undefined && patch.showAs !== row.showAs) {
+          changedFields.add('showAs');
+        }
         if (patch.visibility !== undefined && patch.visibility !== row.visibility) {
           changedFields.add('visibility');
+        }
+        if (patch.rrule !== undefined) {
+          const nextRrule = patch.rrule?.trim()
+            ? validateRRule({
+                rrule: patch.rrule,
+                startAt: patch.startAt ?? row.startAt,
+                timezone: patch.timezone ?? row.timezone,
+              })
+            : null;
+          if (nextRrule !== row.rrule) changedFields.add('rrule');
+          patch.rrule = nextRrule;
         }
         if (
           patch.visibilityUserIds !== undefined &&
@@ -552,13 +874,19 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         if (patch.timezone !== undefined) setClause.timezone = patch.timezone;
         if (patch.allDay !== undefined) setClause.allDay = patch.allDay;
         if (patch.location !== undefined) setClause.location = patch.location;
+        if (patch.showAs !== undefined) setClause.showAs = patch.showAs;
         if (patch.visibility !== undefined) setClause.visibility = patch.visibility;
+        if (patch.rrule !== undefined) setClause.rrule = patch.rrule;
+        if (recurrenceMode === 'single' && row.recurringParentId) setClause.isException = true;
         if (hasVisibilityChange) {
           setClause.visibilityUserIds = newVisUserIds;
         }
         if (patch.reminderMinutes !== undefined) setClause.reminderMinutes = patch.reminderMinutes;
         if (patch.metadata !== undefined) {
-          setClause.metadata = patch.metadata;
+          setClause.metadata = mergeMetadata(
+            eventMetadata(row as CalendarEventRow),
+            patch.metadata,
+          );
         }
 
         const [updated] = await tx
@@ -580,6 +908,8 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           'location',
           'visibility',
           'visibilityUserIds',
+          'showAs',
+          'rrule',
         ];
         const hasTimelineChange = timelineFields.some((field) => changedFields.has(field));
         const hasEmbeddingChange = [
@@ -591,6 +921,8 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           'location',
           'visibility',
           'visibilityUserIds',
+          'showAs',
+          'rrule',
         ].some((field) => changedFields.has(field as keyof UpdateCalendarEventInput));
 
         // Sync linked raw_events: title, time, AND visibility must stay
@@ -661,6 +993,8 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           });
         }
 
+        await confirmProposalGroup(tx, updated as CalendarEventRow, patch);
+
         let qdrantAction: CalendarQdrantAction = null;
         // If the event is still team-visible, re-embed with updated content.
         // If it went non-team, delete the old Qdrant point so stale content
@@ -673,6 +1007,14 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           event: redactIfNeeded(updated as CalendarEventRow),
           changedFields: [...changedFields],
           qdrantAction,
+          rematerialize:
+            recurrenceMode === 'series' &&
+            !row.recurringParentId &&
+            (changedFields.has('startAt') ||
+              changedFields.has('endAt') ||
+              changedFields.has('timezone') ||
+              changedFields.has('allDay') ||
+              changedFields.has('rrule')),
         };
       });
 
@@ -682,11 +1024,25 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       } else if (result.qdrantAction === 'delete') {
         await deleteCalendarEventPoints(teamId, id);
       }
+      if ('rematerialize' in result && result.rematerialize) {
+        await db.transaction(async (tx) => {
+          const rows = await tx
+            .select()
+            .from(calendarEvents)
+            .where(eq(calendarEvents.id, result.event.id))
+            .limit(1);
+          const parent = rows[0] as CalendarEventRow | undefined;
+          if (parent) await rematerializeParent(tx, parent);
+        });
+      }
 
       return { ...result.event, changedFields: result.changedFields };
     },
 
-    async deleteCalendarEvent(id: string): Promise<boolean> {
+    async deleteCalendarEvent(
+      id: string,
+      opts: { recurrenceEditMode?: RecurrenceEditMode } = {},
+    ): Promise<boolean> {
       await ensureMember();
 
       const deleted = await db.transaction(async (tx) => {
@@ -705,11 +1061,33 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
 
         const row = existing[0];
         if (!row) return false;
+        const current = row as CalendarEventRow;
+        const recurrenceMode =
+          opts.recurrenceEditMode ?? (current.recurringParentId ? 'single' : 'series');
 
         await tx
           .update(calendarEvents)
-          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .set({
+            deletedAt: new Date(),
+            updatedAt: new Date(),
+            ...(current.recurringParentId && recurrenceMode === 'single'
+              ? { isException: true }
+              : {}),
+          })
           .where(eq(calendarEvents.id, id));
+
+        if (!current.recurringParentId && recurrenceMode === 'series') {
+          await tx
+            .update(calendarEvents)
+            .set({ deletedAt: new Date(), updatedAt: new Date() })
+            .where(
+              and(
+                eq(calendarEvents.teamId, teamId),
+                eq(calendarEvents.recurringParentId, id),
+                isNull(calendarEvents.deletedAt),
+              ),
+            );
+        }
 
         const linkedRawEventIds = [row.startAtRawEventId, row.scheduledRawEventId].filter(
           (rid): rid is string => rid !== null && rid.length > 0,
@@ -820,6 +1198,39 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           ),
         )
         .orderBy(asc(calendarEventEntities.createdAt));
+    },
+
+    async materializeRecurringEvent(
+      id: string,
+      opts: Omit<MaterializeRecurringEventsInput, 'parentId'> = {},
+    ): Promise<string[]> {
+      await ensureMember();
+      return db.transaction((tx) => materializeParentById(tx, id, opts));
+    },
+
+    async materializeRecurringEvents(opts: MaterializeRecurringEventsInput = {}): Promise<number> {
+      await ensureMember();
+      const conditions = [
+        eq(calendarEvents.teamId, teamId),
+        isNull(calendarEvents.deletedAt),
+        isNull(calendarEvents.recurringParentId),
+        sql`${calendarEvents.rrule} IS NOT NULL`,
+      ];
+      if (opts.parentId) conditions.push(eq(calendarEvents.id, opts.parentId));
+      const parents = await db
+        .select()
+        .from(calendarEvents)
+        .where(and(...conditions))
+        .orderBy(asc(calendarEvents.startAt))
+        .limit(500);
+      let count = 0;
+      await db.transaction(async (tx) => {
+        for (const parent of parents) {
+          const ids = await materializeParent(tx, parent as CalendarEventRow, opts);
+          count += ids.length;
+        }
+      });
+      return count;
     },
 
     async getCalendarSettings() {

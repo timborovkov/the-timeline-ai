@@ -67,12 +67,27 @@ interface Draft {
   location: string;
   visibility: 'team' | 'private' | 'specific_users';
   visibilityUserIds: string[];
+  showAs: 'busy' | 'free' | 'tentative';
+  rrule: string;
+  recurrenceEditMode: 'single' | 'series' | 'this_and_future';
   allDay: boolean;
   timezone: string;
   startDate: string;
   endDate: string;
   startDateTime: string;
   endDateTime: string;
+}
+
+const RECURRENCE_PRESETS = [
+  { label: 'Does not repeat', value: '', rrule: '' },
+  { label: 'Daily', value: 'daily', rrule: 'FREQ=DAILY' },
+  { label: 'Weekdays', value: 'weekdays', rrule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR' },
+  { label: 'Weekly', value: 'weekly', rrule: 'FREQ=WEEKLY' },
+  { label: 'Monthly', value: 'monthly', rrule: 'FREQ=MONTHLY' },
+] as const;
+
+function recurrencePresetValue(rrule: string): string {
+  return RECURRENCE_PRESETS.find((preset) => preset.rrule === rrule.trim())?.value ?? 'custom';
 }
 
 interface CalendarUiState {
@@ -204,6 +219,9 @@ function blankDraft(
     location: '',
     visibility,
     visibilityUserIds: visibility === 'specific_users' ? (visibilityUserIds ?? []) : [],
+    showAs: 'busy',
+    rrule: '',
+    recurrenceEditMode: 'series',
     allDay: true,
     timezone: assertValidTimezone(timezone),
     startDate: isoDate(anchor),
@@ -226,6 +244,9 @@ function draftFromEvent(event: CalendarEvent, timezone: string): Draft {
         ? event.visibility
         : 'team',
     visibilityUserIds: event.visibility === 'specific_users' ? (event.visibilityUserIds ?? []) : [],
+    showAs: event.showAs,
+    rrule: event.rrule ?? '',
+    recurrenceEditMode: event.recurringParentId ? 'single' : 'series',
     allDay: event.allDay,
     timezone: displayTimezone,
     startDate: start.toPlainDate().toString(),
@@ -399,6 +420,9 @@ function CalendarViewContent({
         allDay: draft.allDay,
         location: draft.location.trim() || undefined,
         visibility: draft.visibility,
+        showAs: draft.showAs,
+        rrule: draft.rrule.trim() || null,
+        recurrenceEditMode: draft.recurrenceEditMode,
         ...(draft.visibility === 'specific_users'
           ? { visibilityUserIds: draft.visibilityUserIds }
           : {}),
@@ -417,6 +441,12 @@ function CalendarViewContent({
         timezone: draft.timezone,
         allDay: draft.allDay,
         location: draft.location.trim() || null,
+        showAs: draft.showAs,
+        rrule: draft.rrule.trim() || null,
+        recurringParentId: editing?.recurringParentId ?? null,
+        originalStartAt: editing?.originalStartAt ?? null,
+        isException: editing?.isException ?? false,
+        metadata: editing?.metadata ?? {},
         redacted: false,
         visibility: draft.visibility,
         visibilityUserIds: draft.visibility === 'specific_users' ? draft.visibilityUserIds : null,
@@ -464,7 +494,9 @@ function CalendarViewContent({
   function remove() {
     if (!editing) return;
     startTransition(async () => {
-      const result = await deleteCalendarEventAction(editing.id);
+      const result = await deleteCalendarEventAction(editing.id, {
+        recurrenceEditMode: draft.recurrenceEditMode,
+      });
       if (!result.ok) {
         dispatchCalendarUi({ error: result.error ?? 'Failed to delete event.' });
         return;
@@ -786,6 +818,7 @@ function CalendarDraftFields({
       </div>
       <CalendarDraftOptions draft={draft} members={members} onDraftChange={onDraftChange} />
       <CalendarDraftTimes draft={draft} onDraftChange={onDraftChange} />
+      <CalendarDraftRecurrence draft={draft} onDraftChange={onDraftChange} />
       <div className="space-y-2">
         <Label htmlFor="calendar-location">Location</Label>
         <Input
@@ -850,6 +883,21 @@ function CalendarDraftOptions({
             <option value="specific_users">Specific users</option>
           </select>
         </div>
+        <div className="space-y-1">
+          <Label htmlFor="calendar-show-as">Show as</Label>
+          <select
+            id="calendar-show-as"
+            value={draft.showAs}
+            onChange={(e) => {
+              onDraftChange((d) => ({ ...d, showAs: e.target.value as Draft['showAs'] }));
+            }}
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          >
+            <option value="busy">Busy</option>
+            <option value="tentative">Tentative</option>
+            <option value="free">Free</option>
+          </select>
+        </div>
       </div>
       {draft.visibility === 'specific_users' ? (
         <div className="flex flex-wrap gap-3">
@@ -873,6 +921,69 @@ function CalendarDraftOptions({
         </div>
       ) : null}
     </>
+  );
+}
+
+function CalendarDraftRecurrence({
+  draft,
+  onDraftChange,
+}: {
+  draft: Draft;
+  onDraftChange: Dispatch<SetStateAction<Draft>>;
+}) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-[12rem_1fr_12rem]">
+      <div className="space-y-2">
+        <Label htmlFor="calendar-recurrence-preset">Repeats</Label>
+        <select
+          id="calendar-recurrence-preset"
+          value={recurrencePresetValue(draft.rrule)}
+          onChange={(e) => {
+            const preset = RECURRENCE_PRESETS.find((item) => item.value === e.target.value);
+            if (!preset) return;
+            onDraftChange((d) => ({ ...d, rrule: preset.rrule }));
+          }}
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+        >
+          {RECURRENCE_PRESETS.map((preset) => (
+            <option key={preset.value} value={preset.value}>
+              {preset.label}
+            </option>
+          ))}
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="calendar-rrule">RRULE</Label>
+        <Input
+          id="calendar-rrule"
+          placeholder="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
+          value={draft.rrule}
+          onChange={(e) => {
+            onDraftChange((d) => ({ ...d, rrule: e.target.value }));
+          }}
+          maxLength={2000}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="calendar-recurrence-edit">Edit scope</Label>
+        <select
+          id="calendar-recurrence-edit"
+          value={draft.recurrenceEditMode}
+          onChange={(e) => {
+            onDraftChange((d) => ({
+              ...d,
+              recurrenceEditMode: e.target.value as Draft['recurrenceEditMode'],
+            }));
+          }}
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+        >
+          <option value="single">This event</option>
+          <option value="this_and_future">This and future</option>
+          <option value="series">Series</option>
+        </select>
+      </div>
+    </div>
   );
 }
 
@@ -988,13 +1099,23 @@ function DayCell({
             className={`block w-full truncate rounded px-2 py-1 text-left text-xs ${
               event.redacted
                 ? 'bg-muted text-muted-foreground italic'
-                : event.allDay
-                  ? 'bg-signal/15 text-signal hover:bg-signal/25'
-                  : 'bg-primary/10 text-foreground hover:bg-primary/15'
+                : event.showAs === 'tentative'
+                  ? 'border border-warning/40 bg-warning/10 text-foreground hover:bg-warning/15'
+                  : event.allDay
+                    ? 'bg-signal/15 text-signal hover:bg-signal/25'
+                    : 'bg-primary/10 text-foreground hover:bg-primary/15'
             } disabled:opacity-70`}
           >
             <span className="inline-flex items-center gap-1">
               {event.allDay ? null : <Clock className="size-3" />}
+              {event.showAs === 'tentative' ? (
+                <span className="font-mono text-[10px] uppercase">Tentative</span>
+              ) : null}
+              {event.rrule || event.recurringParentId ? (
+                <span className="font-mono text-[10px]" aria-label="Recurring">
+                  R
+                </span>
+              ) : null}
               {event.allDay ? event.title : `${formatTime(event, timezone)} ${event.title}`}
               {!event.redacted ? <Pencil className="size-3 opacity-50" /> : null}
             </span>

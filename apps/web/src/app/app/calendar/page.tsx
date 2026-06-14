@@ -3,6 +3,7 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
+import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
 import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
@@ -20,6 +21,10 @@ export const metadata: Metadata = {
 
 interface PageProps {
   searchParams: Promise<{ date?: string; view?: string }>;
+}
+
+function calendarShowAs(showAs: string): CalendarEvent['showAs'] {
+  return showAs === 'free' || showAs === 'tentative' ? showAs : 'busy';
 }
 
 export default async function CalendarPage({ searchParams }: PageProps) {
@@ -74,6 +79,12 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     timezone: e.timezone,
     allDay: e.allDay,
     location: e.location,
+    showAs: calendarShowAs(e.showAs),
+    rrule: e.rrule,
+    recurringParentId: e.recurringParentId,
+    originalStartAt: e.originalStartAt?.toISOString() ?? null,
+    isException: e.isException,
+    metadata: e.metadata,
     redacted: e.redacted,
     visibility: e.visibility,
     visibilityUserIds: e.visibilityUserIds,

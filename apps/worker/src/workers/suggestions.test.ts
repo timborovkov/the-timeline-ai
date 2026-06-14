@@ -677,6 +677,138 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it('stores model-backed recurring calendar suggestions', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000f1';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'We agreed the daily call is every day except Saturday at 4pm.',
+      occurredAt: new Date('2026-06-01T10:00:00.000Z'),
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Create daily call',
+            summary: 'The team agreed on a recurring daily call.',
+            reason: 'The source gives a recurring schedule.',
+            confidence: 'high',
+            quote: 'daily call is every day except Saturday at 4pm',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'calendar_event',
+                title: 'Daily call',
+                proposedPayload: {
+                  title: 'Daily call',
+                  startAt: '2026-06-01T16:00:00.000Z',
+                  endAt: '2026-06-01T16:30:00.000Z',
+                  timezone: 'UTC',
+                  rrule: 'FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR',
+                  visibility: 'team',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const call = chat.mock.calls[0]?.[0] as { system: string } | undefined;
+    expect(call?.system).toContain('proposedPayload.rrule');
+    const bundle = (
+      await withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions()
+    )[0];
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'create',
+      targetKind: 'calendar_event',
+      proposedPayload: {
+        rrule: 'FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR',
+      },
+    });
+  });
+
+  it('stores grouped tentative slot suggestions from model output', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000f2';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Offer Apple Wednesday 3pm or Thursday 4pm for the meeting.',
+      occurredAt: new Date('2026-06-01T10:00:00.000Z'),
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Propose Apple meeting slots',
+            summary: 'Two tentative slots were proposed.',
+            reason: 'The source lists concrete alternatives.',
+            confidence: 'high',
+            quote: 'Wednesday 3pm or Thursday 4pm',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'calendar_event',
+                title: 'Proposed Apple meeting',
+                proposedPayload: {
+                  title: 'Proposed Apple meeting',
+                  startAt: '2026-06-03T15:00:00.000Z',
+                  endAt: '2026-06-03T15:30:00.000Z',
+                  timezone: 'UTC',
+                  showAs: 'tentative',
+                  proposalGroupId: 'apple-meeting',
+                  proposalStatus: 'tentative',
+                  proposalRole: 'slot',
+                },
+              },
+              {
+                operation: 'create',
+                targetKind: 'calendar_event',
+                title: 'Proposed Apple meeting',
+                proposedPayload: {
+                  title: 'Proposed Apple meeting',
+                  startAt: '2026-06-04T16:00:00.000Z',
+                  endAt: '2026-06-04T16:30:00.000Z',
+                  timezone: 'UTC',
+                  showAs: 'tentative',
+                  proposalGroupId: 'apple-meeting',
+                  proposalStatus: 'tentative',
+                  proposalRole: 'slot',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const bundle = (
+      await withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.listPendingSuggestions()
+    )[0];
+    expect(bundle?.items).toHaveLength(2);
+    expect(bundle?.items.map((item) => item.proposedPayload)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          showAs: 'tentative',
+          proposalGroupId: 'apple-meeting',
+          proposalStatus: 'tentative',
+        }),
+      ]),
+    );
+  });
+
   it('includes board context and payload rules for board suggestions', async () => {
     const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
     const board = await scope.boards.createBoard({
