@@ -86,7 +86,8 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
   }
   if (section === 'events') {
     const eventId = text(row.id);
-    const contentText = text(row.contentText, '[empty event]');
+    const previewText = text(row.contentText);
+    const contentText = previewText || '[empty event]';
     const occurredAt = text(row.occurredAt);
     const source = text(row.source);
     return (
@@ -96,7 +97,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
           {eventId ? (
             <EvidenceLink
               eventId={eventId}
-              previewText={contentText}
+              previewText={previewText}
               source={source}
               occurredAt={occurredAt}
               className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"

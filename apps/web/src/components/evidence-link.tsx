@@ -65,19 +65,25 @@ export function EvidenceLink({
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<{
     loading: boolean;
+    loadingEventId: string | null;
     error: string | null;
     event: TimelineEventPreview | null;
     audioUrl: string | null;
-  }>({ loading: false, error: null, event: null, audioUrl: null });
+  }>({ loading: false, loadingEventId: null, error: null, event: null, audioUrl: null });
   const requestRef = useRef<AbortController | null>(null);
   const href = useMemo(() => evidenceHref(eventId), [eventId]);
 
   const loadEvidence = useCallback(() => {
-    if (state.event || state.loading) return;
+    if (state.event?.id === eventId || (state.loading && state.loadingEventId === eventId)) return;
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
-    setState((current) => ({ ...current, loading: true, error: null }));
+    setState((current) => ({
+      ...current,
+      loading: true,
+      loadingEventId: eventId,
+      error: null,
+    }));
     fetch(`/api/timeline?event=${eventId}`, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error('Could not load evidence.');
@@ -87,6 +93,7 @@ export function EvidenceLink({
         const event = data.items?.find((item) => item.id === eventId) ?? null;
         setState({
           loading: false,
+          loadingEventId: null,
           error: event ? null : 'Evidence was not found.',
           event,
           audioUrl: event ? (data.audioUrls?.[event.id] ?? null) : null,
@@ -96,15 +103,17 @@ export function EvidenceLink({
         if (controller.signal.aborted) return;
         setState({
           loading: false,
+          loadingEventId: null,
           error: err instanceof Error ? err.message : 'Could not load evidence.',
           event: null,
           audioUrl: null,
         });
       });
-  }, [eventId, state.event, state.loading]);
+  }, [eventId, state.event, state.loading, state.loadingEventId]);
 
-  const body = state.event?.contentText ?? previewText ?? null;
-  const meta = [occurredLabel(state.event, occurredAt), eventLabel(state.event, source)]
+  const currentEvent = state.event?.id === eventId ? state.event : null;
+  const body = currentEvent?.contentText ?? previewText ?? null;
+  const meta = [occurredLabel(currentEvent, occurredAt), eventLabel(currentEvent, source)]
     .filter(Boolean)
     .join(' · ');
 

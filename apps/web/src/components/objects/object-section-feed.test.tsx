@@ -1,42 +1,118 @@
+// @vitest-environment happy-dom
+
+import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const fakes = vi.hoisted(() => ({
-  query: {
-    data: {
-      pages: [
+interface ObjectSectionQueryData {
+  pages: { items: Record<string, unknown>[] }[];
+}
+
+const fakes = vi.hoisted(() => {
+  const data: ObjectSectionQueryData = {
+    pages: [
+      {
+        items: [
+          {
+            id: 'fact-1',
+            statement: 'Atlas rollout depends on Northwind approval.',
+            confidence: 0.91,
+            sharedObjects: [
+              {
+                id: 'object-2',
+                canonicalName: 'Northwind',
+                type: 'company',
+                role: 'object',
+              },
+              {
+                id: 'object-3',
+                canonicalName: 'Mia Chen',
+                type: 'person',
+                role: 'topic',
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  return {
+    query: {
+      data,
+      isPending: false,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+    },
+  };
+});
+
+function factData(): ObjectSectionQueryData {
+  return {
+    pages: [
+      {
+        items: [
+          {
+            id: 'fact-1',
+            statement: 'Atlas rollout depends on Northwind approval.',
+            confidence: 0.91,
+            sharedObjects: [
+              {
+                id: 'object-2',
+                canonicalName: 'Northwind',
+                type: 'company',
+                role: 'object',
+              },
+              {
+                id: 'object-3',
+                canonicalName: 'Mia Chen',
+                type: 'person',
+                role: 'topic',
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function emptyEventData(): ObjectSectionQueryData {
+  return {
+    pages: [
+      {
+        items: [
+          {
+            id: 'event-1',
+            contentText: null,
+            occurredAt: '2026-06-14T12:00:00.000Z',
+            source: 'telegram',
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function emptyEventResponse() {
+  return new Response(
+    JSON.stringify({
+      items: [
         {
-          items: [
-            {
-              id: 'fact-1',
-              statement: 'Atlas rollout depends on Northwind approval.',
-              confidence: 0.91,
-              sharedObjects: [
-                {
-                  id: 'object-2',
-                  canonicalName: 'Northwind',
-                  type: 'company',
-                  role: 'object',
-                },
-                {
-                  id: 'object-3',
-                  canonicalName: 'Mia Chen',
-                  type: 'person',
-                  role: 'topic',
-                },
-              ],
-            },
-          ],
+          id: 'event-1',
+          source: 'telegram',
+          contentText: null,
+          contentAudioUrl: null,
+          occurredAt: '2026-06-14T12:00:00.000Z',
         },
       ],
-    },
-    isPending: false,
-    hasNextPage: false,
-    isFetchingNextPage: false,
-    fetchNextPage: vi.fn(),
-  },
-}));
+      audioUrls: {},
+    }),
+    { headers: { 'content-type': 'application/json' } },
+  );
+}
 
 vi.mock('@/lib/use-paginated-queries', () => ({
   useObjectSectionQuery: () => fakes.query,
@@ -46,6 +122,12 @@ const { ObjectSectionFeed } = await import('./object-section-feed.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.query.data = factData();
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
 });
 
 describe('ObjectSectionFeed', () => {
@@ -65,5 +147,26 @@ describe('ObjectSectionFeed', () => {
     expect(html).toContain('Northwind');
     expect(html).toContain('/app/objects/object-3');
     expect(html).toContain('Mia Chen');
+  });
+
+  it('keeps empty-event placeholder out of the evidence quick-view body', async () => {
+    fakes.query.data = emptyEventData();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(emptyEventResponse())),
+    );
+
+    render(
+      createElement(ObjectSectionFeed, {
+        objectId: 'object-1',
+        section: 'events',
+        title: 'Events',
+      }),
+    );
+
+    expect(screen.getByText('[empty event]')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'View' }));
+
+    expect(await screen.findByText('This event has no text preview.')).toBeTruthy();
   });
 });
