@@ -845,7 +845,7 @@ describe('board scope', () => {
         { name: 'Blocked', kind: 'blocked' },
       ],
     });
-    const [responsibleObject, teamDueObject, hiddenObject] = await Promise.all([
+    const [responsibleObject, teamDueObject, hiddenObject, teammateDueObject] = await Promise.all([
       owner.objects.createObject({
         type: 'deal',
         canonicalName: 'Responsible deal',
@@ -859,6 +859,11 @@ describe('board scope', () => {
       owner.objects.createObject({
         type: 'task',
         canonicalName: 'Unrelated task',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      owner.objects.createObject({
+        type: 'task',
+        canonicalName: 'Teammate due task',
         actor: { kind: 'user', userId: USER_OWNER },
       }),
     ]);
@@ -879,6 +884,12 @@ describe('board scope', () => {
       entityId: hiddenObject.id,
       actor: { kind: 'user', userId: USER_OWNER },
     });
+    const teammateDueItem = await owner.boards.addBoardItem(board.id, {
+      entityId: teammateDueObject.id,
+      responsibleUserId: USER_MEMBER,
+      dueAt: new Date('2026-06-18T00:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
 
     const ownerRows = await owner.boards.listWorkQueueItems({
       dueBefore: new Date('2026-06-30T00:00:00.000Z'),
@@ -886,6 +897,7 @@ describe('board scope', () => {
     expect(ownerRows.map((row) => row.id).sort()).toEqual(
       [responsibleItem.id, teamDueItem.id].sort(),
     );
+    expect(ownerRows.map((row) => row.id)).not.toContain(teammateDueItem.id);
     const teamDueRow = ownerRows.find((row) => row.id === teamDueItem.id);
     expect(teamDueRow?.boardName).toBe('Pilot pipeline');
     expect(teamDueRow?.laneName).toBe('Blocked');
@@ -896,7 +908,9 @@ describe('board scope', () => {
     const memberRows = await member.boards.listWorkQueueItems({
       dueBefore: new Date('2026-06-30T00:00:00.000Z'),
     });
-    expect(memberRows.map((row) => row.id)).toEqual([teamDueItem.id]);
+    expect(memberRows.map((row) => row.id).sort()).toEqual(
+      [teamDueItem.id, teammateDueItem.id].sort(),
+    );
   });
 
   it('excludes archived and cross-team rows from work queue board items', async () => {

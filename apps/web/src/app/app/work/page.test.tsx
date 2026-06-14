@@ -107,13 +107,23 @@ describe('WorkPage', () => {
     fakes.listWorkQueueItems.mockResolvedValue([
       boardQueueRow({
         id: 'responsible-item',
+        entityId: 'responsible-entity',
         responsibleUserId: USER_ID,
-        object: objectRow({ type: 'deal', canonicalName: 'Responsible deal' }),
+        object: objectRow({
+          id: 'responsible-entity',
+          type: 'deal',
+          canonicalName: 'Responsible deal',
+        }),
       }),
       boardQueueRow({
         id: 'team-due-item',
+        entityId: 'team-due-entity',
         dueAt: new Date('2026-06-16T00:00:00.000Z'),
-        object: objectRow({ type: 'project', canonicalName: 'Team due project' }),
+        object: objectRow({
+          id: 'team-due-entity',
+          type: 'project',
+          canonicalName: 'Team due project',
+        }),
       }),
     ]);
 
@@ -162,6 +172,35 @@ describe('WorkPage', () => {
     expect(html).toContain('Unassigned due deal');
     expect(html).toContain('Team due');
     expect(html).not.toContain('Completed task');
+  });
+
+  it('deduplicates board and object queue rows for the same entity', async () => {
+    fakes.listWorkQueueItems.mockResolvedValue([
+      boardQueueRow({
+        id: 'board-item-1',
+        entityId: 'shared-entity',
+        responsibleUserId: USER_ID,
+        object: objectRow({
+          id: 'shared-entity',
+          type: 'deal',
+          canonicalName: 'Revigo pilot',
+        }),
+      }),
+    ]);
+    fakes.listObjects.mockResolvedValue([
+      objectRow({
+        id: 'shared-entity',
+        type: 'deal',
+        canonicalName: 'Revigo pilot',
+        ownerUserId: USER_ID,
+      }),
+    ]);
+
+    const html = renderToStaticMarkup(await WorkPage());
+
+    expect((html.match(/Revigo pilot/g) ?? []).length).toBe(1);
+    expect(html).toContain('/app/boards/board-1?item=board-item-1');
+    expect(html).toContain('1/20');
   });
 
   it('renders empty state when no queue items exist', async () => {

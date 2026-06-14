@@ -15,6 +15,7 @@ import { db } from '@/lib/db';
 import {
   approvalQueueItem,
   boardQueueItem,
+  dedupeWorkQueueItems,
   objectQueueItem,
   reasonLabel,
   reasonTone,
@@ -89,14 +90,16 @@ export default async function WorkPage() {
     ]);
 
   const approvalsItem = approvalQueueItem(pendingApprovals, now);
-  const queue = sortWorkQueueItems([
-    ...(approvalsItem ? [approvalsItem] : []),
-    ...boardItems.map((item) => boardQueueItem(item, session.user.id, now, dueSoon)),
-    ...objects.flatMap((item) => {
-      const queued = objectQueueItem(item, session.user.id, now, dueSoon);
-      return queued ? [queued] : [];
-    }),
-  ]).slice(0, QUEUE_LIMIT);
+  const queue = dedupeWorkQueueItems(
+    sortWorkQueueItems([
+      ...(approvalsItem ? [approvalsItem] : []),
+      ...boardItems.map((item) => boardQueueItem(item, session.user.id, now, dueSoon)),
+      ...objects.flatMap((item) => {
+        const queued = objectQueueItem(item, session.user.id, now, dueSoon);
+        return queued ? [queued] : [];
+      }),
+    ]),
+  ).slice(0, QUEUE_LIMIT);
   const attentionCount = queue.filter((item) =>
     item.reasons.some(
       (reason) =>

@@ -1145,8 +1145,11 @@ export function createBoardScope({
             isNull(entities.mergedIntoId),
             or(
               eq(boardItems.responsibleUserId, scope.userId),
-              and(isNull(boardItems.responsibleUserId), sql`${boardItems.dueAt} IS NOT NULL`),
-              sql`${boardItems.dueAt} <= ${options.dueBefore.toISOString()}::timestamptz`,
+              and(
+                isNull(boardItems.responsibleUserId),
+                sql`${boardItems.dueAt} IS NOT NULL`,
+                sql`${boardItems.dueAt} <= ${options.dueBefore.toISOString()}::timestamptz`,
+              ),
             ),
           ),
         )

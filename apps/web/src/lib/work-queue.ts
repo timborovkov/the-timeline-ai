@@ -13,6 +13,7 @@ export type WorkQueueReason =
 
 export interface WorkQueueItem {
   id: string;
+  entityId?: string;
   href: string;
   title: string;
   subtitle: string;
@@ -105,6 +106,7 @@ export function boardQueueItem(
 ): WorkQueueItem {
   return {
     id: `board:${row.id}`,
+    entityId: row.entityId,
     href: `/app/boards/${row.boardId}?item=${row.id}`,
     title: row.object.canonicalName,
     subtitle: [row.boardName, row.laneName].filter(Boolean).join(' · '),
@@ -140,6 +142,7 @@ export function objectQueueItem(
   if (reasons.length === 0) return null;
   return {
     id: `object:${row.id}`,
+    entityId: row.id,
     href: row.type === 'task' ? '/app/tasks' : `/app/objects/${row.id}`,
     title: row.canonicalName,
     subtitle: `${row.type.replace('_', ' ')} · ${row.status}`,
@@ -175,5 +178,20 @@ export function sortWorkQueueItems(items: WorkQueueItem[]): WorkQueueItem[] {
     const bDue = b.dueAt?.getTime() ?? Number.POSITIVE_INFINITY;
     if (aDue !== bDue) return aDue - bDue;
     return b.updatedAt.getTime() - a.updatedAt.getTime();
+  });
+}
+
+function queueEntityKey(item: WorkQueueItem): string {
+  if (item.source === 'approval') return item.id;
+  return item.entityId ? `entity:${item.entityId}` : item.id;
+}
+
+export function dedupeWorkQueueItems(items: WorkQueueItem[]): WorkQueueItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = queueEntityKey(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
 }
