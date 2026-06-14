@@ -29,6 +29,7 @@ interface FakeScope {
     getEventWithFacts: ReturnType<typeof vi.fn>;
   };
   documents: {
+    listDocuments: ReturnType<typeof vi.fn>;
     searchDocumentChunks: ReturnType<typeof vi.fn>;
     getDocument: ReturnType<typeof vi.fn>;
     listDocumentVersions: ReturnType<typeof vi.fn>;
@@ -44,6 +45,15 @@ interface FakeScope {
     createOrMergeSuggestionBundle: ReturnType<typeof vi.fn>;
     listSuggestions: ReturnType<typeof vi.fn>;
   };
+  objects: {
+    searchObjects: ReturnType<typeof vi.fn>;
+    listObjects: ReturnType<typeof vi.fn>;
+  };
+  boards: {
+    listBoards: ReturnType<typeof vi.fn>;
+    getBoard: ReturnType<typeof vi.fn>;
+    listObjectBoardContext: ReturnType<typeof vi.fn>;
+  };
 }
 
 function makeFakeScope(): FakeScope {
@@ -55,6 +65,7 @@ function makeFakeScope(): FakeScope {
       getEventWithFacts: vi.fn(),
     },
     documents: {
+      listDocuments: vi.fn(),
       searchDocumentChunks: vi.fn(),
       getDocument: vi.fn(),
       listDocumentVersions: vi.fn(),
@@ -70,15 +81,37 @@ function makeFakeScope(): FakeScope {
       createOrMergeSuggestionBundle: vi.fn(),
       listSuggestions: vi.fn(),
     },
+    objects: {
+      searchObjects: vi.fn(),
+      listObjects: vi.fn(),
+    },
+    boards: {
+      listBoards: vi.fn(),
+      getBoard: vi.fn(),
+      listObjectBoardContext: vi.fn(),
+    },
   };
 }
 
 const TEAM_B_EVENT_ID = '11111111-2222-3333-4444-555555555555';
 const TEAM_B_ENTITY_ID = '99999999-8888-7777-6666-555555555555';
+const OBJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const BOARD_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const BOARD_ITEM_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const LANE_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const DOCUMENT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 
 interface GuideToolResult {
   count: number;
   results: unknown[];
+}
+
+interface SearchToolResult {
+  count: number;
+  results: {
+    board?: { citation?: string };
+    matching_items?: { citation?: string; object_citation?: string }[];
+  }[];
 }
 
 describe('buildAgentTools — team isolation', () => {
@@ -145,6 +178,195 @@ describe('buildAgentTools — team isolation', () => {
       group: 'help',
     });
     await expect(exec({ routeId: 'unknown/route' }, {})).resolves.toEqual({ found: false });
+  });
+
+  it('search_objects forwards structured filters and returns typed citations', async () => {
+    const scope = makeFakeScope();
+    scope.objects.searchObjects.mockResolvedValue([
+      {
+        id: OBJECT_ID,
+        type: 'person',
+        canonicalName: 'Otto Silventola',
+        status: 'active',
+        stage: null,
+        priority: null,
+        ownerUserId: null,
+        assigneeUserId: null,
+        dueAt: null,
+        agentSuggested: false,
+        archivedAt: null,
+        aliases: ['Otto'],
+        metadata: {},
+        updatedAt: new Date('2026-06-14T09:00:00.000Z'),
+        createdAt: new Date('2026-06-01T09:00:00.000Z'),
+      },
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.search_objects?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec({ query: 'otto', type: 'person', archived: false }, {});
+
+    expect(scope.objects.searchObjects).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'otto', type: 'person', archived: false, limit: 20 }),
+    );
+    expect(result).toMatchObject({
+      count: 1,
+      mode: 'structured',
+      objects: [
+        expect.objectContaining({
+          id: OBJECT_ID,
+          citation: `[ent:${OBJECT_ID}]`,
+          name: 'Otto Silventola',
+        }),
+      ],
+    });
+  });
+
+  it('search_boards filters item-level matches and returns board-item citations', async () => {
+    const scope = makeFakeScope();
+    scope.boards.listBoards.mockResolvedValue([
+      {
+        id: BOARD_ID,
+        name: 'Pilot Pipeline',
+        purpose: 'Track pilot partners',
+        templateKind: 'pipeline',
+        recommendedObjectTypes: ['deal'],
+        strictObjectTypes: false,
+        candidateFilter: {},
+        isShared: true,
+        archivedAt: null,
+        createdBy: null,
+        createdAt: new Date('2026-06-01T09:00:00.000Z'),
+        updatedAt: new Date('2026-06-14T09:00:00.000Z'),
+        itemCount: 1,
+        laneCounts: [],
+        dueSoonCount: 0,
+        overdueCount: 0,
+        pinned: true,
+      },
+    ]);
+    scope.boards.getBoard.mockResolvedValue({
+      id: BOARD_ID,
+      name: 'Pilot Pipeline',
+      purpose: 'Track pilot partners',
+      templateKind: 'pipeline',
+      recommendedObjectTypes: ['deal'],
+      strictObjectTypes: false,
+      candidateFilter: {},
+      isShared: true,
+      archivedAt: null,
+      createdBy: null,
+      createdAt: new Date('2026-06-01T09:00:00.000Z'),
+      updatedAt: new Date('2026-06-14T09:00:00.000Z'),
+      itemCount: 1,
+      laneCounts: [],
+      dueSoonCount: 0,
+      overdueCount: 0,
+      pinned: true,
+      lanes: [],
+      items: [
+        {
+          id: BOARD_ITEM_ID,
+          boardId: BOARD_ID,
+          entityId: OBJECT_ID,
+          laneId: LANE_ID,
+          position: 0,
+          responsibleUserId: null,
+          dueAt: new Date('2026-06-20T09:00:00.000Z'),
+          priority: 2,
+          nextStep: 'Send pilot proposal',
+          notes: null,
+          customFields: {},
+          archivedAt: null,
+          createdAt: new Date('2026-06-01T09:00:00.000Z'),
+          updatedAt: new Date('2026-06-14T09:00:00.000Z'),
+          object: {
+            id: OBJECT_ID,
+            type: 'deal',
+            canonicalName: 'AuditAI pilot',
+            status: 'open',
+            stage: null,
+            priority: null,
+            ownerUserId: null,
+            assigneeUserId: null,
+            dueAt: null,
+            agentSuggested: false,
+            archivedAt: null,
+            aliases: [],
+            metadata: {},
+            updatedAt: new Date('2026-06-14T09:00:00.000Z'),
+            createdAt: new Date('2026-06-01T09:00:00.000Z'),
+          },
+        },
+      ],
+    });
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.search_boards?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec({ itemText: 'proposal', pinned: true }, {});
+
+    expect(scope.boards.listBoards).toHaveBeenCalled();
+    expect(scope.boards.getBoard).toHaveBeenCalledWith(BOARD_ID, { itemLimit: 50 });
+    const searchResult = result as SearchToolResult;
+    expect(searchResult.count).toBe(1);
+    expect(searchResult.results[0]?.board?.citation).toBe(`[board:${BOARD_ID}]`);
+    expect(searchResult.results[0]?.matching_items?.[0]?.citation).toBe(
+      `[board-item:${BOARD_ITEM_ID}]`,
+    );
+    expect(searchResult.results[0]?.matching_items?.[0]?.object_citation).toBe(
+      `[ent:${OBJECT_ID}]`,
+    );
+  });
+
+  it('search_documents_structured lists document metadata without semantic search', async () => {
+    const scope = makeFakeScope();
+    scope.documents.listDocuments.mockResolvedValue([
+      {
+        id: DOCUMENT_ID,
+        teamId: 'team',
+        folderId: null,
+        name: 'Pilot agreement.pdf',
+        fileKind: 'document',
+        mimeType: 'application/pdf',
+        byteSize: 123,
+        checksumSha256: null,
+        currentVersionId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        visibility: 'team',
+        visibilityUserIds: [],
+        ownerUserId: null,
+        metadata: {},
+        deletedAt: null,
+        createdAt: new Date('2026-06-01T09:00:00.000Z'),
+        updatedAt: new Date('2026-06-14T09:00:00.000Z'),
+      },
+    ]);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.search_documents_structured?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec({ name: 'agreement', limit: 10 }, {});
+
+    expect(scope.documents.listDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({ fileKind: 'document', includeDeleted: false, limit: 100 }),
+    );
+    expect(scope.documents.searchDocumentChunks).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      count: 1,
+      documents: [
+        expect.objectContaining({
+          document_id: DOCUMENT_ID,
+          href: `/app/documents/${DOCUMENT_ID}`,
+        }),
+      ],
+    });
   });
 
   it('get_event with a cross-team event_id returns { found: false } (scope returns null)', async () => {

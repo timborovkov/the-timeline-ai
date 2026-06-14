@@ -188,6 +188,13 @@ search timeline data for this.
 
 ## 4. Deterministic Structured Search Tools
 
+Status: initial agent-facing structured tools implemented. The agent now has
+`search_objects`, `search_boards`, and `search_documents_structured` for
+deterministic metadata/filter queries alongside existing event, calendar, task,
+object, and semantic document/timeline tools. Remaining work is deeper
+event/calendar substring filters and folding these tools into the shared
+retrieval planner/fusion recipes.
+
 ### Goal
 
 Give agents reliable search/filter tools for workspace records, not only

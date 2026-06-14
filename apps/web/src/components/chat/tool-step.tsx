@@ -39,6 +39,32 @@ function summarize(name: string, input: unknown, output: unknown): string {
     if (out?.found === false) return `Looked up entity "${idOrName}" — not found`;
     return `Looked up entity "${idOrName}"`;
   }
+  if (name === 'search_objects') {
+    const q = typeof inp.query === 'string' ? inp.query : '';
+    const out = output as { count?: number } | undefined;
+    const count = out?.count;
+    return count === undefined
+      ? `Searched objects for "${q}"`
+      : `Searched objects for "${q}" — ${String(count)} result${count === 1 ? '' : 's'}`;
+  }
+  if (name === 'search_boards') {
+    const q = typeof inp.query === 'string' ? inp.query : '';
+    const out = output as { count?: number } | undefined;
+    const count = out?.count;
+    const target = q ? ` for "${q}"` : '';
+    return count === undefined
+      ? `Searched boards${target}`
+      : `Searched boards${target} — ${String(count)} result${count === 1 ? '' : 's'}`;
+  }
+  if (name === 'search_documents_structured') {
+    const q = typeof inp.name === 'string' ? inp.name : '';
+    const out = output as { count?: number } | undefined;
+    const count = out?.count;
+    const target = q ? ` for "${q}"` : '';
+    return count === undefined
+      ? `Searched documents${target}`
+      : `Searched documents${target} — ${String(count)} result${count === 1 ? '' : 's'}`;
+  }
   if (name === 'list_events') {
     const out = output as { count?: number } | undefined;
     const count = out?.count;

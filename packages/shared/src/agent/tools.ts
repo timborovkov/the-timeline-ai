@@ -2,6 +2,8 @@ import { getDb } from '@timeline/db';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
+import type * as boards from '#src/boards/index.js';
+
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
@@ -191,6 +193,46 @@ const getAppRouteInput = z.object({
   routeId: z.string().trim().min(1).max(100),
 });
 
+const searchObjectsStructuredInput = z.object({
+  query: z.string().trim().min(1).max(300),
+  type: z.union([objectTypeSchema, z.array(objectTypeSchema).max(10)]).optional(),
+  status: z
+    .union([z.string().trim().max(40), z.array(z.string().trim().max(40)).max(20)])
+    .optional(),
+  stage: z
+    .union([z.string().trim().max(40), z.array(z.string().trim().max(40)).max(20)])
+    .optional(),
+  ownerUserId: z.string().regex(UUID_RE).nullable().optional(),
+  assigneeUserId: z.string().regex(UUID_RE).nullable().optional(),
+  dueAfter: z.iso.datetime().optional(),
+  dueBefore: z.iso.datetime().optional(),
+  archived: z.boolean().optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+
+const searchBoardsInput = z.object({
+  query: z.string().trim().max(300).optional(),
+  boardId: z.string().regex(UUID_RE).optional(),
+  templateKind: z.enum(['pipeline', 'task_board', 'catalog', 'custom']).optional(),
+  pinned: z.boolean().optional(),
+  objectId: z.string().regex(UUID_RE).optional(),
+  laneId: z.string().regex(UUID_RE).optional(),
+  responsibleUserId: z.string().regex(UUID_RE).nullable().optional(),
+  dueAfter: z.iso.datetime().optional(),
+  dueBefore: z.iso.datetime().optional(),
+  priority: z.number().int().min(0).max(100).optional(),
+  itemText: z.string().trim().min(1).max(300).optional(),
+  limit: z.number().int().min(1).max(20).optional(),
+});
+
+const searchDocumentsStructuredInput = z.object({
+  name: z.string().trim().min(1).max(300).optional(),
+  folderId: z.string().regex(UUID_RE).nullable().optional(),
+  fileKind: z.enum(['document', 'captured']).optional(),
+  includeDeleted: z.boolean().optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+
 const searchAppGuideInput = z.object({
   query: z.string().trim().min(1).max(300),
   limit: z.number().int().min(1).max(10).optional(),
@@ -235,6 +277,77 @@ function fenceExternalContent(
   const source = fenceAttr(attrs.source);
   const eventId = fenceAttr(attrs.eventId);
   return `<external_content source="${source}" event_id="${eventId}">${sanitized}</external_content>`;
+}
+
+function textMatches(value: string | null | undefined, query: string | undefined): boolean {
+  if (!query) return true;
+  return (value ?? '').toLowerCase().includes(query.toLowerCase());
+}
+
+function dateInRange(value: Date | null | undefined, from?: string, to?: string): boolean {
+  if (!value) return !from && !to;
+  if (from && value < new Date(from)) return false;
+  if (to && value >= new Date(to)) return false;
+  return true;
+}
+
+function serializeObjectRow(row: objects.ObjectRow): Record<string, unknown> {
+  return {
+    id: row.id,
+    citation: artifactRefCitation({
+      kind: row.type === 'task' || row.type === 'follow_up' ? 'task' : 'object',
+      id: row.id,
+    }),
+    name: row.canonicalName,
+    type: row.type,
+    status: row.status,
+    stage: row.stage,
+    priority: row.priority,
+    owner_user_id: row.ownerUserId,
+    assignee_user_id: row.assigneeUserId,
+    due_at: row.dueAt?.toISOString() ?? null,
+    updated_at: row.updatedAt.toISOString(),
+    archived: row.archivedAt !== null,
+    aliases: row.aliases.slice(0, 20),
+  };
+}
+
+function serializeBoardRow(row: boards.BoardRow): Record<string, unknown> {
+  return {
+    id: row.id,
+    citation: artifactRefCitation({ kind: 'board', id: row.id }),
+    name: row.name,
+    purpose: row.purpose,
+    template_kind: row.templateKind,
+    recommended_object_types: row.recommendedObjectTypes,
+    item_count: row.itemCount,
+    due_soon_count: row.dueSoonCount,
+    overdue_count: row.overdueCount,
+    pinned: row.pinned,
+    updated_at: row.updatedAt.toISOString(),
+  };
+}
+
+function serializeBoardItemRow(row: boards.BoardItemRow): Record<string, unknown> {
+  return {
+    id: row.id,
+    citation: artifactRefCitation({ kind: 'board_item', id: row.id }),
+    board_id: row.boardId,
+    object_id: row.entityId,
+    object_citation: artifactRefCitation({
+      kind: row.object.type === 'task' || row.object.type === 'follow_up' ? 'task' : 'object',
+      id: row.object.id,
+    }),
+    object_name: row.object.canonicalName,
+    object_type: row.object.type,
+    lane_id: row.laneId,
+    responsible_user_id: row.responsibleUserId,
+    due_at: row.dueAt?.toISOString() ?? null,
+    priority: row.priority,
+    next_step: row.nextStep,
+    notes: row.notes,
+    updated_at: row.updatedAt.toISOString(),
+  };
 }
 
 async function safe<T>(
@@ -541,6 +654,34 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
+    search_objects: tool({
+      description:
+        'Deterministic structured search over workspace objects by name/alias/text plus type, status, stage, owner, assignee, due range, archived, and limit. Prefer this over semantic search when the user gives object names, fields, statuses, dates, or route context. Returns object/task citations.',
+      inputSchema: searchObjectsStructuredInput,
+      execute: async (raw) =>
+        runSafe('search_objects', async () => {
+          const input = searchObjectsStructuredInput.parse(raw);
+          const filter: objects.ObjectSearchFilter = {
+            query: input.query,
+            limit: input.limit ?? 20,
+          };
+          if (input.type) filter.type = input.type;
+          if (input.status) filter.status = input.status;
+          if (input.stage) filter.stage = input.stage;
+          if (input.ownerUserId !== undefined) filter.ownerUserId = input.ownerUserId;
+          if (input.assigneeUserId !== undefined) filter.assigneeUserId = input.assigneeUserId;
+          if (input.dueAfter) filter.dueAfter = new Date(input.dueAfter);
+          if (input.dueBefore) filter.dueBefore = new Date(input.dueBefore);
+          if (input.archived !== undefined) filter.archived = input.archived;
+          const rows = await scope.objects.searchObjects(filter);
+          return {
+            count: rows.length,
+            mode: 'structured',
+            objects: rows.map(serializeObjectRow),
+          };
+        }),
+    }),
+
     list_objects: tool({
       description:
         "List workspace objects with optional filters. Use this for 'what deals are open' or 'show me suggested tasks'. Returns id, name, type, status, stage, owner, and due_at for each match. Capped at 50; narrow the filter if you need fewer.",
@@ -573,16 +714,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const rows = await scope.objects.listObjects(filter);
           return {
             count: rows.length,
-            objects: rows.map((r) => ({
-              id: r.id,
-              name: r.canonicalName,
-              type: r.type,
-              status: r.status,
-              stage: r.stage,
-              owner_user_id: r.ownerUserId,
-              due_at: r.dueAt?.toISOString() ?? null,
-              agent_suggested: r.agentSuggested,
-            })),
+            objects: rows.map(serializeObjectRow),
           };
         }),
     }),
@@ -626,6 +758,108 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               status: r.status,
               owner_user_id: r.ownerUserId,
               due_at: r.dueAt?.toISOString() ?? null,
+            })),
+          };
+        }),
+    }),
+
+    search_boards: tool({
+      description:
+        'Deterministic structured search over boards and board items. Filter by board id, board name/purpose/template, pinned state, object membership, lane, responsible user, due range, priority, and item text. Returns board and board-item citations.',
+      inputSchema: searchBoardsInput,
+      execute: async (raw) =>
+        runSafe('search_boards', async () => {
+          const input = searchBoardsInput.parse(raw);
+          const limit = input.limit ?? 10;
+          let boardRows: boards.BoardRow[];
+          if (input.boardId) {
+            const board = await scope.boards.getBoard(input.boardId, { itemLimit: 50 });
+            boardRows = board ? [board] : [];
+          } else if (input.objectId) {
+            const contexts = await scope.boards.listObjectBoardContext(input.objectId);
+            const boardIds = Array.from(new Set(contexts.map((context) => context.boardId)));
+            const details = await Promise.all(
+              boardIds.map((boardId) => scope.boards.getBoard(boardId, { itemLimit: 50 })),
+            );
+            boardRows = details.filter((board): board is boards.BoardDetail => board !== null);
+          } else {
+            boardRows = await scope.boards.listBoards();
+          }
+
+          const needsItems =
+            Boolean(input.objectId) ||
+            Boolean(input.laneId) ||
+            input.responsibleUserId !== undefined ||
+            Boolean(input.dueAfter) ||
+            Boolean(input.dueBefore) ||
+            input.priority !== undefined ||
+            Boolean(input.itemText);
+
+          const hydrated = await Promise.all(
+            boardRows.map(async (board) => {
+              if ('items' in board) return board;
+              if (!needsItems) return board;
+              return scope.boards.getBoard(board.id, { itemLimit: 50 });
+            }),
+          );
+
+          const results = hydrated
+            .filter((board): board is boards.BoardRow | boards.BoardDetail => board !== null)
+            .filter((board) => {
+              if (input.templateKind && board.templateKind !== input.templateKind) return false;
+              if (input.pinned !== undefined && board.pinned !== input.pinned) return false;
+              if (
+                input.query &&
+                !(
+                  textMatches(board.name, input.query) ||
+                  textMatches(board.purpose, input.query) ||
+                  textMatches(board.templateKind, input.query)
+                )
+              ) {
+                return false;
+              }
+              return true;
+            })
+            .map((board) => {
+              const items =
+                'items' in board
+                  ? board.items.filter((item) => {
+                      if (input.objectId && item.entityId !== input.objectId) return false;
+                      if (input.laneId && item.laneId !== input.laneId) return false;
+                      if (
+                        input.responsibleUserId !== undefined &&
+                        item.responsibleUserId !== input.responsibleUserId
+                      ) {
+                        return false;
+                      }
+                      if (!dateInRange(item.dueAt, input.dueAfter, input.dueBefore)) return false;
+                      if (input.priority !== undefined && item.priority !== input.priority) {
+                        return false;
+                      }
+                      if (
+                        input.itemText &&
+                        !(
+                          textMatches(item.nextStep, input.itemText) ||
+                          textMatches(item.notes, input.itemText) ||
+                          textMatches(item.object.canonicalName, input.itemText)
+                        )
+                      ) {
+                        return false;
+                      }
+                      return true;
+                    })
+                  : [];
+              return { board, items };
+            })
+            .filter((result) => !needsItems || result.items.length > 0)
+            .slice(0, limit);
+
+          return {
+            count: results.length,
+            mode: 'structured',
+            results: results.map(({ board, items }) => ({
+              board: serializeBoardRow(board),
+              matching_items: items.slice(0, 10).map(serializeBoardItemRow),
             })),
           };
         }),
@@ -1052,6 +1286,44 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               entity_id: e.id,
               name: e.canonicalName,
               type: e.type,
+            })),
+          };
+        }),
+    }),
+
+    search_documents_structured: tool({
+      description:
+        'Deterministic structured search/list over document records by name substring, folder id, file kind, deleted state, and limit. Use this when the user asks to find a file/document by name or browse document metadata. Use search_documents for semantic chunk/text search.',
+      inputSchema: searchDocumentsStructuredInput,
+      execute: async (raw) =>
+        runSafe('search_documents_structured', async () => {
+          const input = searchDocumentsStructuredInput.parse(raw);
+          const args = {
+            fileKind: input.fileKind ?? 'document',
+            includeDeleted: input.includeDeleted ?? false,
+            limit: Math.max(input.limit ?? 20, input.name ? 100 : (input.limit ?? 20)),
+          };
+          const docs = await scope.documents.listDocuments(
+            input.folderId === undefined ? args : { ...args, folderId: input.folderId },
+          );
+          const filtered = docs
+            .filter((document) => textMatches(document.name, input.name))
+            .slice(0, input.limit ?? 20);
+          return {
+            count: filtered.length,
+            mode: 'structured',
+            documents: filtered.map((document) => ({
+              document_id: document.id,
+              href: `/app/documents/${document.id}`,
+              name: document.name,
+              file_kind: document.fileKind,
+              folder_id: document.folderId,
+              current_version_id: document.currentVersionId,
+              visibility: document.visibility,
+              owner_user_id: document.ownerUserId,
+              created_at: document.createdAt.toISOString(),
+              updated_at: document.updatedAt.toISOString(),
+              deleted: document.deletedAt !== null,
             })),
           };
         }),
