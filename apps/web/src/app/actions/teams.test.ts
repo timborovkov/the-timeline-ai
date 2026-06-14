@@ -267,10 +267,41 @@ describe('updateInboundEmailWhitelistAction', () => {
 
   it('validates sender addresses before writing', async () => {
     await expect(
-      updateInboundEmailWhitelistAction({}, form({ senders: 'vendor@example.test, nope' })),
+      updateInboundEmailWhitelistAction(
+        {},
+        form({ enabled: 'on', senders: 'vendor@example.test, nope' }),
+      ),
     ).resolves.toEqual({ error: 'Enter valid email addresses only' });
 
     expect(fakes.fakeTransaction).not.toHaveBeenCalled();
+  });
+
+  it('allows disabling the whitelist even when saved sender text contains invalid entries', async () => {
+    const { tx, inserts, updates } = makeTx([]);
+    mockTransactionWithTx(tx);
+
+    await expect(
+      updateInboundEmailWhitelistAction(
+        {},
+        form({ senders: 'Vendor@Example.Test, typo, partner@example.test' }),
+      ),
+    ).resolves.toEqual({ ok: true });
+
+    expect(updates).toEqual([
+      {
+        inboundSenderWhitelistEnabled: false,
+        inboundSenderWhitelist: ['vendor@example.test', 'partner@example.test'],
+      },
+    ]);
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        metadata: {
+          setting: 'team.inbound_sender_whitelist',
+          enabled: false,
+          senderCount: 2,
+        },
+      }),
+    );
   });
 
   it('requires at least one sender when enabling the whitelist', async () => {

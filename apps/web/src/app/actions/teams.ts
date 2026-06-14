@@ -161,6 +161,16 @@ function parseSenderWhitelist(raw: FormDataEntryValue | null): string[] | null {
   return parsed.success ? parsed.data : null;
 }
 
+function parseDisabledSenderWhitelist(raw: FormDataEntryValue | null): string[] {
+  if (typeof raw !== 'string') return [];
+  const out = new Set<string>();
+  for (const item of raw.split(/[\n,]+/)) {
+    const email = item.trim().toLowerCase();
+    if (z.email().safeParse(email).success) out.add(email);
+  }
+  return Array.from(out);
+}
+
 export async function updateInboundEmailWhitelistAction(
   _prev: InboundEmailWhitelistState,
   formData: FormData,
@@ -172,7 +182,10 @@ export async function updateInboundEmailWhitelistAction(
     if (!active) return { error: 'No active team' };
 
     const enabled = formData.get('enabled') === 'on';
-    const whitelist = parseSenderWhitelist(formData.get('senders'));
+    const rawSenders = formData.get('senders');
+    const whitelist = enabled
+      ? parseSenderWhitelist(rawSenders)
+      : parseDisabledSenderWhitelist(rawSenders);
     if (!whitelist) return { error: 'Enter valid email addresses only' };
     if (enabled && whitelist.length === 0) {
       return { error: 'Add at least one sender before enabling the whitelist' };
