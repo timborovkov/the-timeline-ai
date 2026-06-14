@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 
 import { type Db, users, verificationTokens } from '@timeline/db';
 import { sendMessage } from '@timeline/shared/messaging';
-import { and, eq, lt } from 'drizzle-orm';
+import { and, eq, lt, sql } from 'drizzle-orm';
 
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -75,14 +75,16 @@ export async function verifyEmailToken(input: {
     return 'expired';
   }
 
-  await input.db.transaction(async (tx) => {
-    await tx
+  const updated = await input.db.transaction(async (tx) => {
+    const updatedUsers = await tx
       .update(users)
       .set({ emailVerified: now, updatedAt: now })
-      .where(eq(users.email, email));
+      .where(sql`lower(${users.email}) = ${email}`)
+      .returning({ id: users.id });
     await tx
       .delete(verificationTokens)
       .where(and(eq(verificationTokens.identifier, email), eq(verificationTokens.token, digest)));
+    return updatedUsers.length > 0;
   });
-  return 'verified';
+  return updated ? 'verified' : 'invalid';
 }
