@@ -71,6 +71,16 @@ describe('githubProvider.listSyncableResources', () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (requestUrl.includes('/user/orgs')) {
+        const page = new URL(requestUrl).searchParams.get('page');
+        const body = page === '1' ? [{ id: 1, login: 'acme' }] : [];
+        return Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
       const page = new URL(requestUrl).searchParams.get('page');
       const body =
         page === '1'
@@ -96,19 +106,26 @@ describe('githubProvider.listSyncableResources', () => {
       access_token: 'gho_token',
     });
 
-    expect(resources).toHaveLength(100);
+    expect(resources).toHaveLength(101);
     expect(resources[0]).toEqual({
+      externalId: 'acme',
+      label: 'acme (all accessible repos)',
+      kind: 'github.org',
+    });
+    expect(resources[1]).toEqual({
       externalId: 'acme/app',
       label: 'acme/app (private)',
       kind: 'github.repo',
     });
     const [firstUrl, firstInit] = fetchMock.mock.calls[0] ?? [];
     const [secondUrl] = fetchMock.mock.calls[1] ?? [];
-    expect(firstUrl).toBe(
-      'https://api.github.com/user/repos?sort=updated&direction=desc&per_page=100&page=1',
-    );
+    expect(firstUrl).toBe('https://api.github.com/user/orgs?per_page=100&page=1');
     expect(firstInit?.headers).toMatchObject({ authorization: 'Bearer gho_token' });
     expect(secondUrl).toBe(
+      'https://api.github.com/user/repos?sort=updated&direction=desc&per_page=100&page=1',
+    );
+    const [thirdUrl] = fetchMock.mock.calls[2] ?? [];
+    expect(thirdUrl).toBe(
       'https://api.github.com/user/repos?sort=updated&direction=desc&per_page=100&page=2',
     );
   });
@@ -338,7 +355,7 @@ describe('githubProvider.incrementalSync', () => {
     });
     globalThis.fetch = fetchMock;
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
-    const saveCursor = vi.fn().mockResolvedValue(undefined);
+    const saveCursor = vi.fn<SyncContext['saveCursor']>().mockResolvedValue(undefined);
 
     await githubProvider.incrementalSync({
       integration: {} as never,
@@ -362,6 +379,84 @@ describe('githubProvider.incrementalSync', () => {
       'github.repo:acme/app',
       expect.objectContaining({ last_sha: 'sha-001' }),
     );
+  });
+
+  it('expands org selections at sync time and de-dupes explicit repo selections', async () => {
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const requestUrl =
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(requestUrl);
+      if (url.pathname === '/orgs/acme/repos') {
+        return Promise.resolve(
+          jsonResponse(
+            url.searchParams.get('page') === '1'
+              ? [
+                  {
+                    id: 1,
+                    full_name: 'acme/app',
+                    name: 'app',
+                    owner: { login: 'acme' },
+                    private: true,
+                    default_branch: 'main',
+                  },
+                  {
+                    id: 2,
+                    full_name: 'acme/api',
+                    name: 'api',
+                    owner: { login: 'acme' },
+                    private: true,
+                    default_branch: 'main',
+                  },
+                ]
+              : [],
+          ),
+        );
+      }
+      if (url.pathname === '/repos/acme/api') {
+        return Promise.resolve(
+          jsonResponse({
+            id: 2,
+            full_name: 'acme/api',
+            name: 'api',
+            owner: { login: 'acme' },
+            private: true,
+            default_branch: 'main',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+      const base = emptyGithubFetch(input);
+      return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
+    });
+    globalThis.fetch = fetchMock;
+    const saveCursor = vi.fn().mockResolvedValue(undefined);
+
+    await githubProvider.incrementalSync({
+      integration: {} as never,
+      tokens: { access_token: 'gho_token' },
+      selections: [
+        { kind: 'github.repo', externalId: 'acme/app' },
+        { kind: 'github.org', externalId: 'acme' },
+      ],
+      ctx: {
+        writeEvents: vi.fn().mockResolvedValue([]),
+        recordAudit: vi.fn(),
+        saveCursor,
+        loadCursor: vi.fn().mockResolvedValue({}),
+        persistTokens: vi.fn(),
+      },
+    });
+
+    expect(new Set(saveCursor.mock.calls.map(([resourceType]) => String(resourceType)))).toEqual(
+      new Set(['github.repo:acme/api', 'github.repo:acme/app']),
+    );
+    expect(
+      fetchMock.mock.calls.filter(([input]) => {
+        const requestUrl =
+          typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        return new URL(requestUrl).pathname === '/repos/acme/app';
+      }),
+    ).toHaveLength(1);
   });
 
   it('paginates PR reviews so polling replaces the removed webhook surface', async () => {

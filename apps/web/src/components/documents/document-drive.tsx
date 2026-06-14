@@ -35,6 +35,7 @@ import {
   requestDocumentUploadAction,
 } from '@/app/actions/documents';
 import { EvidenceLink } from '@/components/evidence-link';
+import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { queryKeys } from '@/lib/query-keys';
@@ -198,6 +199,7 @@ export function DocumentDrive({
 }: Props) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const dialog = useAppDialog();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
   const [
@@ -375,8 +377,13 @@ export function DocumentDrive({
     e.target.value = '';
   }
 
-  function onNewFolder(): void {
-    const name = window.prompt('Folder name');
+  async function onNewFolder(): Promise<void> {
+    const name = await dialog.input({
+      title: 'New folder',
+      description: 'Create a folder in the current location.',
+      inputLabel: 'Folder name',
+      confirmLabel: 'Create folder',
+    });
     if (!name?.trim()) return;
     const trimmedName = name.trim();
     const tempId = `optimistic-folder-${uploadStateId()}`;
@@ -408,8 +415,14 @@ export function DocumentDrive({
     });
   }
 
-  function onDeleteFolder(id: string): void {
-    if (!window.confirm('Delete folder? Documents inside stay where they are.')) return;
+  async function onDeleteFolder(id: string): Promise<void> {
+    const confirmed = await dialog.confirm({
+      title: 'Delete folder?',
+      description: 'Documents inside stay where they are.',
+      confirmLabel: 'Delete folder',
+      destructive: true,
+    });
+    if (!confirmed) return;
     dispatchDriveUi({ type: 'hide-folder', id });
     startTransition(async () => {
       const res = await deleteFolderAction(id);
@@ -457,6 +470,7 @@ export function DocumentDrive({
         onDrop={onDrop}
         onDeleteFolder={onDeleteFolder}
       />
+      {dialog.node}
     </div>
   );
 }
@@ -475,7 +489,7 @@ function DocumentDriveHeader({
   uploadButtonLabel: string;
   uploadDisabled: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
-  onNewFolder: () => void;
+  onNewFolder: () => Promise<void>;
   onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
 }) {
   return (
@@ -488,7 +502,14 @@ function DocumentDriveHeader({
             Captured
           </Link>
         </Button>
-        <Button variant="outline" size="sm" onClick={onNewFolder} disabled={pending}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            void onNewFolder();
+          }}
+          disabled={pending}
+        >
           <FolderPlus className="mr-2 size-4" />
           New folder
         </Button>
@@ -617,7 +638,7 @@ function DocumentDropZone({
   query: ReturnType<typeof useDocumentListQuery>;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onDrop: (e: DragEvent<HTMLDivElement>) => void;
-  onDeleteFolder: (id: string) => void;
+  onDeleteFolder: (id: string) => Promise<void>;
 }) {
   const isEmpty = folders.length === 0 && documents.length === 0;
   return (
@@ -668,7 +689,7 @@ function FolderList({
   onDeleteFolder,
 }: {
   folders: FolderItem[];
-  onDeleteFolder: (id: string) => void;
+  onDeleteFolder: (id: string) => Promise<void>;
 }) {
   if (folders.length === 0) return null;
   return (
@@ -699,7 +720,7 @@ function FolderList({
             <button
               type="button"
               onClick={() => {
-                onDeleteFolder(f.id);
+                void onDeleteFolder(f.id);
               }}
               disabled={f.optimistic}
               className="text-xs text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-foreground"

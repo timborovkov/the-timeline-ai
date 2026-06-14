@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 
 import type { SavedMeetingRow } from '@timeline/shared/meetings';
 
@@ -20,6 +20,40 @@ import { Label } from '@/components/ui/label';
 
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
 type Visibility = 'team' | 'private' | 'specific_users';
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+const COMMON_TIMEZONES = [
+  'UTC',
+  'Europe/Helsinki',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Asia/Dubai',
+  'Asia/Kolkata',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+] as const;
+
+function localTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
+
+function timezoneOptions(selectedTimezone: string): string[] {
+  const intlWithTimezones = Intl as typeof Intl & {
+    supportedValuesOf?: (key: 'timeZone') => string[];
+  };
+  const supported =
+    typeof intlWithTimezones.supportedValuesOf === 'function'
+      ? intlWithTimezones.supportedValuesOf('timeZone')
+      : [];
+  return Array.from(new Set([selectedTimezone, localTimezone(), ...COMMON_TIMEZONES, ...supported]))
+    .filter(Boolean)
+    .sort((a, b) => (a === 'UTC' ? -1 : b === 'UTC' ? 1 : a.localeCompare(b)));
+}
 
 function formString(form: FormData, key: string, fallback = ''): string {
   const value = form.get(key);
@@ -107,6 +141,7 @@ interface SavedMeetingState {
   visibilityUserIds: string[];
   scheduled: boolean;
   autoJoin: boolean;
+  timezone: string;
 }
 
 type SavedMeetingAction =
@@ -115,7 +150,8 @@ type SavedMeetingAction =
   | { type: 'visibility'; visibility: Visibility }
   | { type: 'visibilityUserIds'; visibilityUserIds: string[] }
   | { type: 'scheduled'; scheduled: boolean }
-  | { type: 'autoJoin'; autoJoin: boolean };
+  | { type: 'autoJoin'; autoJoin: boolean }
+  | { type: 'timezone'; timezone: string };
 
 function savedMeetingReducer(
   state: SavedMeetingState,
@@ -138,7 +174,161 @@ function savedMeetingReducer(
       };
     case 'autoJoin':
       return { ...state, autoJoin: action.autoJoin };
+    case 'timezone':
+      return { ...state, timezone: action.timezone };
   }
+}
+
+function TimezoneSelect({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (timezone: string) => void;
+}) {
+  const options = useMemo(() => timezoneOptions(value), [value]);
+  return (
+    <select
+      id={id}
+      name="timezone"
+      value={value}
+      onChange={(event) => {
+        onChange(event.target.value);
+      }}
+      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    >
+      {options.map((timezone) => (
+        <option key={timezone} value={timezone}>
+          {timezone}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function NumberWithUnit({
+  id,
+  name,
+  defaultValue,
+  min,
+  max,
+}: {
+  id: string;
+  name: string;
+  defaultValue: number;
+  min?: number;
+  max?: number;
+}) {
+  return (
+    <div className="relative">
+      <Input
+        id={id}
+        name={name}
+        type="number"
+        min={min}
+        max={max}
+        defaultValue={defaultValue}
+        className="pr-16"
+      />
+      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+        min
+      </span>
+    </div>
+  );
+}
+
+function ScheduleFields({
+  idPrefix,
+  timezone,
+  onTimezoneChange,
+  times,
+  weekdays,
+  durationMinutes,
+  joinOffsetMinutes,
+  compact = false,
+}: {
+  idPrefix: string;
+  timezone: string;
+  onTimezoneChange: (timezone: string) => void;
+  times?: string[];
+  weekdays?: number[];
+  durationMinutes: number;
+  joinOffsetMinutes: number;
+  compact?: boolean;
+}) {
+  return (
+    <div className="space-y-4 rounded-md border bg-surface/40 p-4">
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1.15fr)_minmax(14rem,1fr)]">
+        <div className="space-y-2">
+          <Label htmlFor={`${idPrefix}-times`}>Start times</Label>
+          <Input
+            id={`${idPrefix}-times`}
+            name="times"
+            defaultValue={times?.join(', ') ?? ''}
+            placeholder="09:00, 16:30"
+            inputMode="text"
+          />
+          <p className="text-xs text-muted-foreground">
+            Use 24-hour local times, separated by commas.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`${idPrefix}-timezone`}>Timezone</Label>
+          <TimezoneSelect
+            id={`${idPrefix}-timezone`}
+            value={timezone}
+            onChange={onTimezoneChange}
+          />
+          <p className="text-xs text-muted-foreground">Defaults to your current timezone.</p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor={`${idPrefix}-duration`}>Meeting duration</Label>
+          <NumberWithUnit
+            id={`${idPrefix}-duration`}
+            name="durationMinutes"
+            min={1}
+            defaultValue={durationMinutes}
+          />
+          <p className="text-xs text-muted-foreground">How long Timeline should expect the call.</p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`${idPrefix}-join-offset`}>Join before start</Label>
+          <NumberWithUnit
+            id={`${idPrefix}-join-offset`}
+            name="joinOffsetMinutes"
+            min={0}
+            max={30}
+            defaultValue={joinOffsetMinutes}
+          />
+          <p className="text-xs text-muted-foreground">Lead time before each scheduled start.</p>
+        </div>
+      </div>
+
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium">Repeat on</legend>
+        <div className="flex flex-wrap gap-2">
+          {WEEKDAYS.map((label, index) => (
+            <label
+              key={label}
+              className="flex h-9 min-w-14 items-center justify-center gap-1.5 rounded-sm border px-2 text-sm"
+            >
+              <input
+                name={`weekday-${index}`}
+                type="checkbox"
+                defaultChecked={weekdays?.includes(index) ?? (index > 0 && index < 6)}
+              />
+              {compact ? label.slice(0, 1) : label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+    </div>
+  );
 }
 
 export function ScheduleMeetingBotForm({
@@ -315,22 +505,31 @@ export function CancelMeetingButton({ meetingId }: { meetingId: string }) {
 export function SavedMeetingForm({
   defaultVisibility = 'team',
   defaultVisibilityUserIds = null,
+  defaultTimezone = 'UTC',
   members = EMPTY_MEMBERS,
 }: {
   defaultVisibility?: Visibility;
   defaultVisibilityUserIds?: string[] | null;
+  defaultTimezone?: string;
   members?: { id: string; label: string }[];
 }) {
   const router = useRouter();
-  const [{ pending, error, visibility, visibilityUserIds, scheduled, autoJoin }, dispatch] =
-    useReducer(savedMeetingReducer, {
-      pending: false,
-      error: null,
-      visibility: defaultVisibility,
-      visibilityUserIds: defaultVisibilityUserIds ?? [],
-      scheduled: false,
-      autoJoin: false,
-    });
+  const [
+    { pending, error, visibility, visibilityUserIds, scheduled, autoJoin, timezone },
+    dispatch,
+  ] = useReducer(savedMeetingReducer, {
+    pending: false,
+    error: null,
+    visibility: defaultVisibility,
+    visibilityUserIds: defaultVisibilityUserIds ?? [],
+    scheduled: false,
+    autoJoin: false,
+    timezone: defaultTimezone,
+  });
+
+  useEffect(() => {
+    dispatch({ type: 'timezone', timezone: localTimezone() });
+  }, []);
 
   async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -359,6 +558,7 @@ export function SavedMeetingForm({
       e.currentTarget.reset();
       dispatch({ type: 'scheduled', scheduled: false });
       dispatch({ type: 'autoJoin', autoJoin: false });
+      dispatch({ type: 'timezone', timezone: localTimezone() });
     } finally {
       dispatch({ type: 'pending', pending: false });
     }
@@ -450,44 +650,16 @@ export function SavedMeetingForm({
           Add a recurring schedule
         </label>
         {scheduled ? (
-          <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-4">
-              <div className="space-y-2">
-                <Label htmlFor="saved-times">Times</Label>
-                <Input id="saved-times" name="times" placeholder="16:00, 10:00" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="saved-timezone">Timezone</Label>
-                <Input id="saved-timezone" name="timezone" defaultValue="UTC" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="saved-duration">Duration</Label>
-                <Input id="saved-duration" name="durationMinutes" type="number" defaultValue={30} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="saved-join-offset">Join early</Label>
-                <Input
-                  id="saved-join-offset"
-                  name="joinOffsetMinutes"
-                  type="number"
-                  min={0}
-                  max={30}
-                  defaultValue={2}
-                />
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label, index) => (
-                <label key={label} className="flex items-center gap-1.5">
-                  <input
-                    name={`weekday-${index}`}
-                    type="checkbox"
-                    defaultChecked={index > 0 && index < 6}
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
+          <div className="space-y-4">
+            <ScheduleFields
+              idPrefix="saved"
+              timezone={timezone}
+              onTimezoneChange={(next) => {
+                dispatch({ type: 'timezone', timezone: next });
+              }}
+              durationMinutes={30}
+              joinOffsetMinutes={2}
+            />
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -518,22 +690,32 @@ export function SavedMeetingForm({
 
 export function EditSavedMeetingForm({
   saved,
+  defaultTimezone = 'UTC',
   members = EMPTY_MEMBERS,
 }: {
   saved: SavedMeetingRow;
+  defaultTimezone?: string;
   members?: { id: string; label: string }[];
 }) {
   const router = useRouter();
   const schedule = saved.scheduleConfig;
-  const [{ pending, error, visibility, visibilityUserIds, scheduled, autoJoin }, dispatch] =
-    useReducer(savedMeetingReducer, {
-      pending: false,
-      error: null,
-      visibility: saved.defaultVisibility,
-      visibilityUserIds: saved.visibilityUserIds ?? [],
-      scheduled: Boolean(schedule),
-      autoJoin: saved.autoJoinEnabled,
-    });
+  const [
+    { pending, error, visibility, visibilityUserIds, scheduled, autoJoin, timezone },
+    dispatch,
+  ] = useReducer(savedMeetingReducer, {
+    pending: false,
+    error: null,
+    visibility: saved.defaultVisibility,
+    visibilityUserIds: saved.visibilityUserIds ?? [],
+    scheduled: Boolean(schedule),
+    autoJoin: saved.autoJoinEnabled,
+    timezone: schedule?.timezone ?? defaultTimezone,
+  });
+
+  function onScheduleToggle(checked: boolean) {
+    dispatch({ type: 'scheduled', scheduled: checked });
+    if (checked && !schedule) dispatch({ type: 'timezone', timezone: localTimezone() });
+  }
 
   async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -644,66 +826,25 @@ export function EditSavedMeetingForm({
               type="checkbox"
               checked={scheduled}
               onChange={(event) => {
-                dispatch({ type: 'scheduled', scheduled: event.target.checked });
+                onScheduleToggle(event.target.checked);
               }}
             />
             Add a recurring schedule
           </label>
           {scheduled ? (
-            <div className="space-y-3">
-              <div className="grid gap-3 sm:grid-cols-4">
-                <div className="space-y-2">
-                  <Label htmlFor={`saved-times-${saved.id}`}>Times</Label>
-                  <Input
-                    id={`saved-times-${saved.id}`}
-                    name="times"
-                    defaultValue={schedule?.times.join(', ') ?? ''}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={`saved-timezone-${saved.id}`}>Timezone</Label>
-                  <Input
-                    id={`saved-timezone-${saved.id}`}
-                    name="timezone"
-                    defaultValue={schedule?.timezone ?? 'UTC'}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={`saved-duration-${saved.id}`}>Duration</Label>
-                  <Input
-                    id={`saved-duration-${saved.id}`}
-                    name="durationMinutes"
-                    type="number"
-                    min={1}
-                    defaultValue={saved.durationMinutes}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={`saved-join-offset-${saved.id}`}>Join early</Label>
-                  <Input
-                    id={`saved-join-offset-${saved.id}`}
-                    name="joinOffsetMinutes"
-                    type="number"
-                    min={0}
-                    max={30}
-                    defaultValue={schedule?.joinOffsetMinutes ?? 2}
-                  />
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label, index) => (
-                  <label key={label} className="flex items-center gap-1.5">
-                    <input
-                      name={`weekday-${index}`}
-                      type="checkbox"
-                      defaultChecked={
-                        schedule?.weekdays.includes(index) ?? (index > 0 && index < 6)
-                      }
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
+            <div className="space-y-4">
+              <ScheduleFields
+                idPrefix={`saved-${saved.id}`}
+                timezone={timezone}
+                onTimezoneChange={(next) => {
+                  dispatch({ type: 'timezone', timezone: next });
+                }}
+                times={schedule?.times}
+                weekdays={schedule?.weekdays}
+                durationMinutes={saved.durationMinutes}
+                joinOffsetMinutes={schedule?.joinOffsetMinutes ?? 2}
+                compact
+              />
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"

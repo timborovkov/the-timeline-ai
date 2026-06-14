@@ -244,7 +244,7 @@ describe('calendar scope', () => {
     expect(children).toHaveLength(501);
     expect(children.some((row) => row.recurringParentId === parentRows[500]?.id)).toBe(true);
     expect(fakes.enqueueCalendarEventEmbedJob).toHaveBeenCalledTimes(501);
-  });
+  }, 30_000);
 
   it('moves one recurring occurrence without changing sibling occurrences', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);

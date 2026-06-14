@@ -1,4 +1,7 @@
-import type { integrations as integrationsTable } from '@timeline/db';
+import type {
+  integrations as integrationsTable,
+  providerConnections as providerConnectionsTable,
+} from '@timeline/db';
 
 // Phase 11 — Provider adapter interface.
 //
@@ -7,6 +10,7 @@ import type { integrations as integrationsTable } from '@timeline/db';
 // this surface so business logic stays out of route handlers and webhooks.
 
 export type IntegrationRow = typeof integrationsTable.$inferSelect;
+export type ProviderConnectionRow = typeof providerConnectionsTable.$inferSelect;
 
 /**
  * Workspace object mapping hint. When a provider sets this on an
