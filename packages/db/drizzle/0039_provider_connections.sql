@@ -140,9 +140,9 @@ CREATE TABLE "connection_attention" (
   "last_emailed_at" timestamp with time zone
 );--> statement-breakpoint
 ALTER TABLE "connection_attention" ADD CONSTRAINT "connection_attention_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "connection_attention" ADD CONSTRAINT "connection_attention_provider_connection_id_provider_connections_id_fk" FOREIGN KEY ("provider_connection_id") REFERENCES "public"."provider_connections"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "connection_attention" ADD CONSTRAINT "connection_attention_integration_id_integrations_id_fk" FOREIGN KEY ("integration_id") REFERENCES "public"."integrations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "connection_attention" ADD CONSTRAINT "connection_attention_resource_share_id_team_provider_resource_shares_id_fk" FOREIGN KEY ("resource_share_id") REFERENCES "public"."team_provider_resource_shares"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "connection_attention" ADD CONSTRAINT "connection_attention_provider_connection_id_provider_connections_id_fk" FOREIGN KEY ("provider_connection_id") REFERENCES "public"."provider_connections"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "connection_attention" ADD CONSTRAINT "connection_attention_integration_id_integrations_id_fk" FOREIGN KEY ("integration_id") REFERENCES "public"."integrations"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "connection_attention" ADD CONSTRAINT "connection_attention_resource_share_id_team_provider_resource_shares_id_fk" FOREIGN KEY ("resource_share_id") REFERENCES "public"."team_provider_resource_shares"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "connection_attention_team_idx" ON "connection_attention" USING btree ("team_id");--> statement-breakpoint
 CREATE INDEX "connection_attention_provider_connection_idx" ON "connection_attention" USING btree ("provider_connection_id");--> statement-breakpoint
 CREATE INDEX "connection_attention_integration_idx" ON "connection_attention" USING btree ("integration_id");--> statement-breakpoint

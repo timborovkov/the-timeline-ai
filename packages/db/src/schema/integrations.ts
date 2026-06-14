@@ -208,13 +208,13 @@ export const connectionAttention = pgTable(
       .notNull()
       .references(() => teams.id, { onDelete: 'cascade' }),
     providerConnectionId: uuid('provider_connection_id').references(() => providerConnections.id, {
-      onDelete: 'cascade',
+      onDelete: 'set null',
     }),
     integrationId: uuid('integration_id').references(() => integrations.id, {
-      onDelete: 'cascade',
+      onDelete: 'set null',
     }),
     resourceShareId: uuid('resource_share_id').references(() => teamProviderResourceShares.id, {
-      onDelete: 'cascade',
+      onDelete: 'set null',
     }),
     category: connectionAttentionCategory('category').notNull(),
     summary: text('summary').notNull(),

@@ -145,7 +145,7 @@ export function createIntegrationScope(deps: {
   }
 
   async function getProviderConnectionTokens(id: string): Promise<Record<string, unknown> | null> {
-    const row = await getProviderConnection(id);
+    const row = await getOwnedProviderConnection(id);
     if (!row) return null;
     return decryptJson({
       ciphertext: row.authSecretCiphertext,
@@ -630,6 +630,10 @@ export function createIntegrationScope(deps: {
       .limit(1);
     const connection = connectionRows[0];
     if (!connection) throw new Error('Provider connection not found');
+    const ownerStillMember = await adminVerifyTeamMember(db, teamId, connection.ownerUserId);
+    if (!ownerStillMember) {
+      throw new Error('Provider connection owner is no longer a team member');
+    }
     const shares =
       input.resourceShareIds.length > 0
         ? await db

@@ -48,6 +48,12 @@ export async function GET(
   }
   const integration = await scope.integrations.getIntegration(id);
   if (!integration) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (integration.providerConnectionId) {
+    return NextResponse.json(
+      { error: 'provider_connection_scoped', message: 'Use team shared sources.' },
+      { status: 409 },
+    );
+  }
   const [tokens, selections] = await Promise.all([
     scope.integrations.getIntegrationTokens(id),
     scope.integrations.listSelections(id),
@@ -82,6 +88,12 @@ export async function PUT(
   }
   const integration = await scope.integrations.getIntegration(id);
   if (!integration) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (integration.providerConnectionId) {
+    return NextResponse.json(
+      { error: 'provider_connection_scoped', message: 'Use team shared sources.' },
+      { status: 409 },
+    );
+  }
   const body: unknown = await req.json();
   const parsed = selectionsSchema.safeParse(body);
   if (!parsed.success) {

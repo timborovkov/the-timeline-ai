@@ -103,7 +103,7 @@ _Avoid_: Team connection, shared account
 **Integration Scope**:
 The team-approved set of external resources Timeline may sync through a
 provider connection, such as selected GitHub repositories, a GitHub
-organization, Linear projects, or Drive folders. Team admins may manage the
+organization, Linear teams, or Drive folders. Team admins may manage the
 active scope within the resources the provider-connection owner has made
 available to the team. A provider-native group such as a GitHub organization is
 a living scope that includes future resources in that group when the provider

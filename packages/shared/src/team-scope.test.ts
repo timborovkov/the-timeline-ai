@@ -1329,6 +1329,9 @@ describe('withTeam namespaced port', () => {
     ).resolves.toEqual({
       access_token: 'owner-token',
     });
+    await expect(
+      memberScope.integrations.getProviderConnectionTokens(ownerConnection.id),
+    ).resolves.toBeNull();
 
     await expect(
       memberScope.integrations.shareProviderResources(ownerConnection.id, [
@@ -1384,6 +1387,26 @@ describe('withTeam namespaced port', () => {
       category: 'needs_new_owner',
       summary: 'Connection owner left team — choose a replacement connection',
     });
+    await pg.query(
+      `UPDATE team_members SET removed_at = now() WHERE team_id = $1 AND user_id = $2`,
+      [TEAM_A, USER_A],
+    );
+    await expect(
+      adminScope.integrations.activateSharedResources({
+        providerConnectionId: ownerConnection.id,
+        resourceShareIds: [ownerRepoShare?.id ?? ''],
+      }),
+    ).rejects.toThrow('Provider connection owner is no longer a team member');
+    const [ownerLeftAttention] = await db
+      .select()
+      .from(connectionAttention)
+      .where(eq(connectionAttention.integrationId, ownerIntegration.id));
+    expect(ownerLeftAttention?.category).toBe('needs_new_owner');
+    expect(ownerLeftAttention?.resolvedAt).toBeNull();
+    await pg.query(
+      `UPDATE team_members SET removed_at = NULL WHERE team_id = $1 AND user_id = $2`,
+      [TEAM_A, USER_A],
+    );
 
     const memberIntegration = await adminScope.integrations.activateSharedResources({
       providerConnectionId: memberConnection.id,
@@ -1440,6 +1463,57 @@ describe('withTeam namespaced port', () => {
       .where(eq(connectionAttention.resourceShareId, orgShare?.id ?? ''));
     expect(resolvedOrgAttention?.category).toBe('access_changed');
     expect(resolvedOrgAttention?.resolvedAt).toBeInstanceOf(Date);
+  });
+
+  it('preserves connection-attention history when a provider connection is deleted', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'github',
+      displayName: 'GitHub — delete me',
+      externalAccountId: 'owner-gh-delete',
+      scopes: ['repo'],
+      tokens: { access_token: 'owner-token' },
+    });
+    await ownerScope.integrations.shareProviderResources(connection.id, [
+      { kind: 'github.repo', externalId: 'acme/history', label: 'acme/history' },
+    ]);
+    const [shareRow] = await ownerScope.integrations.listOwnedTeamResourceShares();
+    if (!shareRow) throw new Error('Expected owner share');
+    const integration = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [shareRow.share.id],
+    });
+    await ownerScope.integrations.recordConnectionAttention({
+      providerConnectionId: connection.id,
+      integrationId: integration.id,
+      resourceShareId: shareRow.share.id,
+      category: 'needs_reconnect',
+      summary: 'Reconnect before deleting',
+    });
+
+    await ownerScope.integrations.deleteOwnedProviderConnection(connection.id);
+
+    const attentionRows = await db.select().from(connectionAttention);
+    const preservedReconnectAttention = attentionRows.find(
+      (row) => row.category === 'needs_reconnect',
+    );
+    expect(preservedReconnectAttention).toMatchObject({
+      providerConnectionId: null,
+      integrationId: integration.id,
+      resourceShareId: null,
+      summary: 'Reconnect before deleting',
+    });
+    expect(preservedReconnectAttention?.resolvedAt).toBeInstanceOf(Date);
+    expect(attentionRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          integrationId: integration.id,
+          category: 'needs_new_owner',
+          resolvedAt: null,
+        }),
+      ]),
+    );
   });
 
   it('updates active attention without duplicate notifications and resolves reconnect attention on refresh', async () => {
