@@ -1,5 +1,5 @@
 import { type Db, dailyDigests, messageDeliveries } from '@timeline/db';
-import { eq } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
 
 import type {
   MessageChannel,
@@ -18,6 +18,8 @@ interface PostmarkResult {
   providerMessageId?: string;
   error?: string;
 }
+
+const PENDING_DELIVERY_RETRY_AFTER_MS = 30_000;
 
 export interface SendMessageOptions {
   db?: Db;
@@ -131,6 +133,49 @@ async function findDeliveryByDedupeKey(input: {
   return rows[0] ?? null;
 }
 
+async function claimFailedDeliveryForRetry(input: {
+  db: Db;
+  deliveryId: string;
+}): Promise<boolean> {
+  const rows = await input.db
+    .update(messageDeliveries)
+    .set({
+      status: 'pending',
+      providerMessageId: null,
+      error: null,
+      sentAt: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(messageDeliveries.id, input.deliveryId), eq(messageDeliveries.status, 'failed')))
+    .returning({ id: messageDeliveries.id });
+  return rows.length > 0;
+}
+
+async function claimStalePendingDeliveryForRetry(input: {
+  db: Db;
+  deliveryId: string;
+  staleBefore: Date;
+}): Promise<boolean> {
+  const rows = await input.db
+    .update(messageDeliveries)
+    .set({
+      status: 'pending',
+      providerMessageId: null,
+      error: null,
+      sentAt: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(messageDeliveries.id, input.deliveryId),
+        eq(messageDeliveries.status, 'pending'),
+        lt(messageDeliveries.updatedAt, input.staleBefore),
+      ),
+    )
+    .returning({ id: messageDeliveries.id });
+  return rows.length > 0;
+}
+
 export async function markDeliveryResult(input: {
   db: Db;
   deliveryId: string;
@@ -145,6 +190,7 @@ export async function markDeliveryResult(input: {
       providerMessageId: input.providerMessageId ?? null,
       error: input.error ?? null,
       sentAt: input.status === 'sent' ? new Date() : null,
+      updatedAt: new Date(),
     })
     .where(eq(messageDeliveries.id, input.deliveryId));
 }
@@ -181,11 +227,29 @@ export async function sendMessage<TIntent extends MessageIntent>(
       dedupeKey: options.dedupeKey,
     });
     if (existing?.status === 'sent') {
-      return { ok: true, deliveryId: existing.id, skipped: true };
+      return { ok: true, deliveryId: existing.id, skipped: true, skippedStatus: 'sent' };
     }
-    if (existing) {
+    if (existing?.status === 'failed') {
+      const claimed = await claimFailedDeliveryForRetry({
+        db: options.db,
+        deliveryId: existing.id,
+      });
+      if (!claimed) {
+        return { ok: true, deliveryId: existing.id, skipped: true, skippedStatus: 'pending' };
+      }
       deliveryId = existing.id;
-      await markDeliveryResult({ db: options.db, deliveryId, status: 'pending' });
+    } else if (existing?.status === 'pending') {
+      const claimed = await claimStalePendingDeliveryForRetry({
+        db: options.db,
+        deliveryId: existing.id,
+        staleBefore: new Date(Date.now() - PENDING_DELIVERY_RETRY_AFTER_MS),
+      });
+      if (!claimed) {
+        return { ok: true, deliveryId: existing.id, skipped: true, skippedStatus: 'pending' };
+      }
+      deliveryId = existing.id;
+    } else if (existing) {
+      return { ok: true, deliveryId: existing.id, skipped: true, skippedStatus: existing.status };
     }
   }
 
@@ -240,18 +304,25 @@ export async function sendDailyDigest(input: {
       ...(input.fetch ? { fetch: input.fetch } : {}),
     },
   );
-  const digestUpdate = result.skipped
-    ? {
-        status: 'sent' as const,
-        error: null,
-        deliveryId: result.deliveryId ?? null,
-      }
-    : {
-        status: result.ok ? ('sent' as const) : ('failed' as const),
-        sentAt: result.ok ? new Date() : null,
-        error: result.error ?? null,
-        deliveryId: result.deliveryId ?? null,
-      };
+  const digestUpdate =
+    result.skipped && result.skippedStatus === 'sent'
+      ? {
+          status: 'sent' as const,
+          error: null,
+          deliveryId: result.deliveryId ?? null,
+        }
+      : result.skipped
+        ? {
+            status: 'generated' as const,
+            error: null,
+            deliveryId: result.deliveryId ?? null,
+          }
+        : {
+            status: result.ok ? ('sent' as const) : ('failed' as const),
+            sentAt: result.ok ? new Date() : null,
+            error: result.error ?? null,
+            deliveryId: result.deliveryId ?? null,
+          };
   await input.db.update(dailyDigests).set(digestUpdate).where(eq(dailyDigests.id, input.digestId));
   return result;
 }

@@ -56,6 +56,7 @@ export const messageDeliveries = pgTable(
     dedupeKey: text('dedupe_key'),
     metadata: jsonb('metadata').notNull().default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     sentAt: timestamp('sent_at', { withTimezone: true }),
     readAt: timestamp('read_at', { withTimezone: true }),
   },

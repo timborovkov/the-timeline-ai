@@ -17,6 +17,7 @@ CREATE TABLE "message_deliveries" (
   "dedupe_key" text,
   "metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
   "sent_at" timestamp with time zone,
   "read_at" timestamp with time zone
 );
@@ -41,7 +42,7 @@ CREATE TABLE "message_preferences" (
   "team_id" uuid,
   "user_id" uuid,
   "daily_digest_enabled" boolean DEFAULT true NOT NULL,
-	"daily_digest_hour" integer DEFAULT 12 NOT NULL,
+  "daily_digest_hour" integer DEFAULT 12 NOT NULL,
   "timezone" text DEFAULT 'UTC' NOT NULL,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL

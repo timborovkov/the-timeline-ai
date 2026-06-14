@@ -110,4 +110,5 @@ export interface SendMessageResult {
   providerMessageId?: string;
   error?: string;
   skipped?: boolean;
+  skippedStatus?: MessageDeliveryStatus;
 }
