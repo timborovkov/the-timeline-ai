@@ -41,6 +41,13 @@ type PageAction =
   | { type: 'source'; value: string }
   | { type: 'from'; value: string }
   | { type: 'to'; value: string }
+  | {
+      type: 'route_sync';
+      query: string;
+      source: string;
+      from: string;
+      to: string;
+    }
   | { type: 'search_start' }
   | { type: 'search_success'; results: GlobalSearchResult[]; warnings: string[] }
   | { type: 'search_error'; error: string };
@@ -77,6 +84,25 @@ function pageReducer(state: PageState, action: PageAction): PageState {
   if (action.type === 'source') return { ...state, source: action.value };
   if (action.type === 'from') return { ...state, from: action.value };
   if (action.type === 'to') return { ...state, to: action.value };
+  if (action.type === 'route_sync') {
+    if (
+      state.query === action.query &&
+      state.draft === action.query &&
+      state.source === action.source &&
+      state.from === action.from &&
+      state.to === action.to
+    ) {
+      return state;
+    }
+    return {
+      ...state,
+      draft: action.query,
+      query: action.query,
+      source: action.source,
+      from: action.from,
+      to: action.to,
+    };
+  }
   if (action.type === 'search_start') return { ...state, loading: true, error: null };
   if (action.type === 'search_success') {
     return {
@@ -171,20 +197,42 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
   );
 }
 
-export function GlobalSearchPage({ initialQuery }: { initialQuery: string }) {
+interface GlobalSearchPageProps {
+  initialQuery: string;
+  initialSource?: string;
+  initialFrom?: string;
+  initialTo?: string;
+}
+
+export function GlobalSearchPage({
+  initialQuery,
+  initialSource = '',
+  initialFrom = '',
+  initialTo = '',
+}: GlobalSearchPageProps) {
   const router = useRouter();
   const [state, dispatch] = useReducer(pageReducer, {
     draft: initialQuery,
     query: initialQuery,
     activeFilter: 'All',
-    source: '',
-    from: '',
-    to: '',
+    source: initialSource,
+    from: initialFrom,
+    to: initialTo,
     loading: false,
     results: [],
     warnings: [],
     error: null,
   });
+
+  useEffect(() => {
+    dispatch({
+      type: 'route_sync',
+      query: initialQuery,
+      source: initialSource,
+      from: initialFrom,
+      to: initialTo,
+    });
+  }, [initialFrom, initialQuery, initialSource, initialTo]);
 
   const kinds = useMemo(
     () => FILTERS.find((filter) => filter.label === state.activeFilter)?.kinds ?? null,
@@ -229,6 +277,9 @@ export function GlobalSearchPage({ initialQuery }: { initialQuery: string }) {
     dispatch({ type: 'query', value: trimmed });
     const params = new URLSearchParams();
     if (trimmed) params.set('q', trimmed);
+    if (state.source) params.set('source', state.source);
+    if (state.from) params.set('from', state.from);
+    if (state.to) params.set('to', state.to);
     router.replace(params.toString() ? `/app/search?${params.toString()}` : '/app/search');
   }
 

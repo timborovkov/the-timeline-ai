@@ -119,6 +119,7 @@ async function searchObjectNotes(
   input: Parsed,
   scope: Scope,
   existing: GlobalSearchResult[],
+  kinds: Set<GlobalSearchKind> | null,
   warnings: GlobalSearchWarning[],
 ): Promise<GlobalSearchResult[]> {
   if (input.mode !== 'full' || input.query.trim().length < 3) return existing;
@@ -127,6 +128,7 @@ async function searchObjectNotes(
     const byId = new Map(existing.map((result) => [result.href, result]));
     for (const note of notes) {
       const kind: GlobalSearchKind = note.objectType === 'task' ? 'task' : 'object';
+      if (!wants(kinds, kind)) continue;
       const href = `/app/objects/${note.objectId}`;
       const current = byId.get(href);
       if (current) {
@@ -395,6 +397,7 @@ export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
   const semanticReady = Boolean(env.OPENROUTER_API_KEY && env.QDRANT_URL);
   const runSemantic = semanticReady && query.length >= 3;
+  const wantsObjectsOrTasks = wants(kinds, 'object') || wants(kinds, 'task');
   if (!semanticReady && query.length >= 3) {
     warnings.push({ source: 'semantic', message: 'Semantic search is not configured.' });
   }
@@ -407,7 +410,7 @@ export async function POST(req: Request): Promise<Response> {
   });
 
   const [objectRows, boardRows, calendarRows, timelineRows, documentRows] = await Promise.all([
-    wants(kinds, 'object') || wants(kinds, 'task')
+    wantsObjectsOrTasks
       ? guardedSearch(warnings, 'object', 'Object search is temporarily unavailable.', [], () =>
           scope.objects.listObjects({ archived: false, limit: 500 }),
         )
@@ -435,9 +438,10 @@ export async function POST(req: Request): Promise<Response> {
   ]);
 
   const lexicalObjectRows = searchObjectsAndTasks({ ...input, query }, objectRows, kinds);
-  const objectResults = runSemantic
-    ? await searchObjectNotes({ ...input, query }, scope, lexicalObjectRows, warnings)
-    : lexicalObjectRows;
+  const objectResults =
+    runSemantic && wantsObjectsOrTasks
+      ? await searchObjectNotes({ ...input, query }, scope, lexicalObjectRows, kinds, warnings)
+      : lexicalObjectRows;
   const boardResults = searchBoards({ ...input, query }, boardRows);
   const limit = input.limit ?? (input.mode === 'preview' ? 12 : 50);
   const results = rankGlobalSearchResults([

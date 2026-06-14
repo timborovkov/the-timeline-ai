@@ -25,6 +25,13 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   });
 }
 
+function formControlValue(element: HTMLElement): string {
+  if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement) {
+    return element.value;
+  }
+  throw new Error('Expected an input or select element.');
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal(
@@ -102,6 +109,59 @@ describe('GlobalSearchPage', () => {
       expect(parsed.from).toBe('2026-06-01T00:00:00.000Z');
       expect(parsed.to).toBe('2026-07-01T00:00:00.000Z');
     });
+  });
+
+  it('initializes source and date filters from URL props', async () => {
+    const fetchMock = vi.mocked(fetch);
+
+    render(
+      <GlobalSearchPage
+        initialQuery="launch"
+        initialSource="slack"
+        initialFrom="2026-06-01"
+        initialTo="2026-06-30"
+      />,
+    );
+
+    await waitFor(() => {
+      const lastBody = fetchMock.mock.calls.at(-1)?.[1]?.body;
+      expect(typeof lastBody).toBe('string');
+      const parsed = JSON.parse(lastBody as string) as {
+        query?: string;
+        source?: string;
+        from?: string;
+        to?: string;
+      };
+      expect(parsed.query).toBe('launch');
+      expect(parsed.source).toBe('slack');
+      expect(parsed.from).toBe('2026-06-01T00:00:00.000Z');
+      expect(parsed.to).toBe('2026-07-01T00:00:00.000Z');
+    });
+    expect(formControlValue(screen.getByRole('combobox'))).toBe('slack');
+    expect(formControlValue(screen.getByLabelText('From'))).toBe('2026-06-01');
+    expect(formControlValue(screen.getByLabelText('To'))).toBe('2026-06-30');
+  });
+
+  it('syncs the search query when URL props change', async () => {
+    const fetchMock = vi.mocked(fetch);
+    const { rerender } = render(<GlobalSearchPage initialQuery="launch" />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    fetchMock.mockClear();
+
+    rerender(<GlobalSearchPage initialQuery="github docs" />);
+
+    await waitFor(() => {
+      const lastBody = fetchMock.mock.calls.at(-1)?.[1]?.body;
+      expect(typeof lastBody).toBe('string');
+      const parsed = JSON.parse(lastBody as string) as { query?: string };
+      expect(parsed.query).toBe('github docs');
+    });
+    expect(formControlValue(screen.getByRole('searchbox', { name: 'Search everything' }))).toBe(
+      'github docs',
+    );
   });
 
   it('renders warnings and internal/external result links', async () => {

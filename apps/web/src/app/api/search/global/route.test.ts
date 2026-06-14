@@ -241,6 +241,18 @@ describe('POST /api/search/global', () => {
   });
 
   it('honors kind filters', async () => {
+    fakes.fakeSearchObjectNotes.mockResolvedValue([
+      {
+        noteId: 'note-hidden',
+        objectId: 'object-hidden',
+        objectName: 'Hidden object note',
+        objectType: 'person',
+        body: 'This object note should not appear in document-only search.',
+        score: 0.99,
+        updatedAt: '2026-06-12T00:00:00.000Z',
+      },
+    ]);
+
     const response = await POST(
       request({ query: 'docs', mode: 'full', kinds: ['document_chunk'] }),
     );
@@ -250,6 +262,7 @@ describe('POST /api/search/global', () => {
     expect(data.results.every((item) => item.kind === 'document_chunk')).toBe(true);
     expect(fakes.fakeListObjects).not.toHaveBeenCalled();
     expect(fakes.fakeListBoards).not.toHaveBeenCalled();
+    expect(fakes.fakeSearchObjectNotes).not.toHaveBeenCalled();
   });
 
   it('forwards timeline source and date filters to semantic timeline and calendar search', async () => {
