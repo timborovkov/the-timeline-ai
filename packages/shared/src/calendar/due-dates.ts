@@ -416,7 +416,6 @@ export async function notifyObjectDueDate(
     return;
   }
   const userId = object.assigneeUserId ?? object.ownerUserId;
-  if (!userId) return;
   await retractDueDateNotifications(db, {
     source: 'object',
     teamId: object.teamId,
@@ -426,6 +425,7 @@ export async function notifyObjectDueDate(
     dueAt: object.dueAt,
     responsibleUserId: userId,
   });
+  if (!userId) return;
   await db.insert(notifications).values({
     teamId: object.teamId,
     userId,
@@ -452,13 +452,7 @@ export async function notifyBoardItemDueDate(
   board: Pick<typeof boards.$inferSelect, 'name' | 'archivedAt'>,
   actor: DueDateActor,
 ): Promise<void> {
-  if (
-    !item.dueAt ||
-    !item.responsibleUserId ||
-    item.archivedAt ||
-    board.archivedAt ||
-    object.archivedAt
-  ) {
+  if (!item.dueAt || item.archivedAt || board.archivedAt || object.archivedAt) {
     return;
   }
   await retractDueDateNotifications(db, {
@@ -472,6 +466,7 @@ export async function notifyBoardItemDueDate(
     boardName: board.name,
     boardItemId: item.id,
   });
+  if (!item.responsibleUserId) return;
   await db.insert(notifications).values({
     teamId: item.teamId,
     userId: item.responsibleUserId,

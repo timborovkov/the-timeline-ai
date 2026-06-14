@@ -237,6 +237,20 @@ describe('board scope', () => {
         summary: 'Northstar Labs on Partnership pipeline is due 2026-08-13',
       }),
     ]);
+
+    await scope.boards.updateBoardItem(
+      item.id,
+      { responsibleUserId: null },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    const afterUnassignInboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, company.id));
+    expect(
+      afterUnassignInboxRows.filter((row) => row.kind === 'board_item_due' && row.readAt === null),
+    ).toEqual([]);
+
     const startRawRows = await db
       .select()
       .from(rawEvents)

@@ -359,6 +359,16 @@ describe('object scope — team ownership and audit behavior', () => {
         summary: 'Assign owner for launch note is due 2026-07-12',
       }),
     ]);
+
+    await scope.updateObject(task.id, { ownerUserId: null }, { kind: 'user', userId: USER_OWNER });
+
+    const afterUnassignRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, task.id));
+    expect(
+      afterUnassignRows.filter((row) => row.kind === 'task_due' && row.readAt === null),
+    ).toEqual([]);
   });
 
   it('tombstones board item due-date calendar events when the object is archived', async () => {
