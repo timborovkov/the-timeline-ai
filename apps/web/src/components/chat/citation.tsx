@@ -8,6 +8,7 @@ import { parseCitations } from '@timeline/shared/citation';
 import { Fragment, type ReactNode } from 'react';
 
 import { CitationChip } from '@/components/citation-chip';
+import { EvidenceChip } from '@/components/evidence-link';
 
 interface Props {
   text: string;
@@ -15,8 +16,8 @@ interface Props {
 
 /**
  * Splits the assistant's text into runs and citation chips. Each chip is
- * a {@link CitationChip} in `href` mode:
- *  - `[ev:<id>]` → `/app/timeline?event=<id>#ev-<id>` (loads + scrolls to the row)
+ * a citation chip:
+ *  - `[ev:<id>]` → opens an evidence preview first, with a timeline link inside
  *  - `[ent:<id>]` → `/app/objects/<id>`
  *  - `[doc:<id>#v<n>:chunk:<id>]` →
  *    `/app/documents/<id>?version=<n>#chunk-<id>`
@@ -265,11 +266,7 @@ function InlineText({ text, keyPrefix }: { text: string; keyPrefix: string }) {
         if (p.type === 'ev') {
           return (
             <span key={key} className="mx-0.5">
-              <CitationChip
-                id={`ev:${p.value.slice(0, 8)}`}
-                source="Event"
-                href={`/app/timeline?event=${p.value}#ev-${p.value}`}
-              />
+              <EvidenceChip eventId={p.value} />
             </span>
           );
         }

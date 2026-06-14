@@ -184,9 +184,10 @@ Departs from the v1 centered `max-w-3xl` prose column. New shell:
   citation source, summarized raw event evidence, related objects, and audit
   trail. Long ids truncate visually with full values available on hover. Large
   raw-event groups are capped with an overflow count. Hidden by default;
-  opens when the user clicks a citation chip, an object reference, or the
-  inspector toggle. This pane is the structural expression of "every claim is
-  cited."
+  opens when the user clicks an object reference or the inspector toggle. Raw
+  event evidence links use a quick-view dialog first, with a direct link to the
+  full timeline row inside. This inspect-before-navigation pattern is the
+  structural expression of "every claim is cited."
 - **Command bar** persistent across the top of the main column. Cmd+K
   focuses. The product's center of gravity is search/jump/ask, not the
   sidebar.
@@ -205,10 +206,10 @@ Linear-tight on operational surfaces. Comfortable on mobile and on forms.
 
 - **Citation chip** — `<CitationChip id="c:1923" />`. Monospace,
   signal-color foreground on `--signal-soft` background, 1px signal-tinted
-  border, `rounded-sm` (2px), literal brackets in the text. Hover/click
-  opens the inspector pane with the raw event source. This is the
-  product's primary visual symbol — it should be recognizable from a
-  thumbnail.
+  border, `rounded-sm` (2px), literal brackets in the text. Event evidence
+  chips open a quick-view dialog with the raw event preview first; the dialog
+  carries the link to the full timeline row. This is the product's primary
+  visual symbol — it should be recognizable from a thumbnail.
 - **Index strip** — `<IndexStrip />`. A mono uppercase one-liner replacing
   decorative page headers: `EVENTS · 2,847 TOTAL · LAST 14d · TEAM acme · FILTER →`.
   Top + bottom hairline border. Inspired by `git log --stat` and Bloomberg
@@ -456,7 +457,8 @@ keyboard or assistive-tech users.
     the primary sidebar parent; registered in
     [apps/web/src/components/keymap.tsx](apps/web/src/components/keymap.tsx)).
 - **Citation chip** is a `<button>` (not a link) — Enter / Space opens the
-  inspector pane and moves focus into it. Escape returns focus to the chip.
+  evidence quick-view dialog or inspector pane. Escape returns focus to the
+  chip.
 - **Inspector pane** is a `<aside aria-label="Inspector">` with
   `aria-live="polite"` on the body. When opened from a chip click, focus
   moves to the inspector head close button.
@@ -490,15 +492,15 @@ should hear "citation 1923, source email":
 <button
   aria-label={`Citation ${id}, source ${source}. Press Enter to view source.`}
   aria-haspopup="dialog"
-  aria-expanded={inspectorOpen}
-  aria-controls="inspector-pane"
+  aria-expanded={previewOpen}
+  aria-controls="evidence-preview"
 >
   <span aria-hidden="true">[c:{id}]</span>
 </button>
 ```
 
-The inspector pane that opens has `aria-labelledby="inspector-title"` and
-the title element reads the citation ID in plain language.
+The dialog or inspector pane that opens has a plain-language title and returns
+focus to the triggering chip on close.
 
 ### Index strips and metadata
 
