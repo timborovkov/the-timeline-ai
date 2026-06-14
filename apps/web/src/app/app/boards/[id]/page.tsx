@@ -43,7 +43,7 @@ export default async function BoardDetailPage({
   if (!board) notFound();
   const view = viewParam(query.view);
   const selectedItemId = itemParam(query.item);
-  const selectedBoardItemId = board.items.some((item) => item.id === selectedItemId)
+  const selectedServerItemId = board.items.some((item) => item.id === selectedItemId)
     ? selectedItemId
     : null;
   const [candidates, history, members] = await Promise.all([
@@ -51,8 +51,8 @@ export default async function BoardDetailPage({
       archived: false,
       limit: 200,
     }),
-    selectedBoardItemId
-      ? scope.boards.listBoardItemHistory(selectedBoardItemId)
+    selectedServerItemId
+      ? scope.boards.listBoardItemHistory(selectedServerItemId)
       : Promise.resolve([]),
     scope.timeline.listMembers(),
   ]);
@@ -94,7 +94,7 @@ export default async function BoardDetailPage({
         initialCandidates={candidates}
         recommendedTypes={board.recommendedObjectTypes}
         defaultLaneId={firstLaneId}
-        selectedItemId={selectedBoardItemId}
+        selectedItemId={selectedItemId}
         history={history}
         members={memberOptions}
       />
