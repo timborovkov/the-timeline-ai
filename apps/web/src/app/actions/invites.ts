@@ -170,13 +170,13 @@ export async function declineInviteAction(formData: FormData): Promise<void> {
     const parsed = recipientInviteSchema.safeParse({ inviteId: formData.get('inviteId') });
     if (!parsed.success) return;
     const currentUsers = await db
-      .select({ email: users.email, emailVerified: users.emailVerified })
+      .select({ email: users.email })
       .from(users)
       .where(eq(users.id, session.user.id))
       .limit(1);
     const currentUser = currentUsers[0];
-    if (!currentUser?.emailVerified) return;
-    const verifiedEmail = currentUser.email.toLowerCase();
+    if (!currentUser?.email) return;
+    const currentEmail = currentUser.email.toLowerCase();
 
     await db
       .update(teamInvites)
@@ -184,7 +184,7 @@ export async function declineInviteAction(formData: FormData): Promise<void> {
       .where(
         and(
           eq(teamInvites.id, parsed.data.inviteId),
-          sql`lower(${teamInvites.email}) = ${verifiedEmail}`,
+          sql`lower(${teamInvites.email}) = ${currentEmail}`,
           isNull(teamInvites.acceptedAt),
           isNull(teamInvites.revokedAt),
         ),
@@ -206,12 +206,12 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
     try {
       accepted = await db.transaction(async (tx) => {
         const currentUsers = await tx
-          .select({ email: users.email, emailVerified: users.emailVerified })
+          .select({ email: users.email })
           .from(users)
           .where(eq(users.id, userId))
           .limit(1);
         const currentUser = currentUsers[0];
-        if (!currentUser?.emailVerified) throw new Error('wrong-account');
+        if (!currentUser?.email) throw new Error('wrong-account');
 
         const invites = await tx
           .select()

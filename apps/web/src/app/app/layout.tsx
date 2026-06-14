@@ -45,8 +45,7 @@ export default async function AppLayout({
 
   const { active, memberships } = activeTeam;
   const currentUser = currentUsers[0];
-  const currentEmail =
-    currentUser?.email && currentUser.emailVerified ? currentUser.email.toLowerCase() : null;
+  const currentEmail = currentUser?.email ? currentUser.email.toLowerCase() : null;
   const recipientInvites = currentEmail
     ? await db
         .select({
