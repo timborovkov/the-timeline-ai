@@ -358,8 +358,9 @@ function CalendarViewContent({
   }, []);
 
   useEffect(() => {
-    const signature = calendarEventsSignature(events);
-    const ids = events.map((event) => event.id);
+    const serverEvents = [...events, ...eventListEvents];
+    const signature = calendarEventsSignature(serverEvents);
+    const ids = Array.from(new Set(serverEvents.map((event) => event.id)));
     const previous = serverEventsSnapshotRef.current;
     if (!previous) {
       serverEventsSnapshotRef.current = { signature, ids };
@@ -372,7 +373,7 @@ function CalendarViewContent({
       currentIds: ids,
       previousIds: previous.ids,
     });
-  }, [events, pending]);
+  }, [events, eventListEvents, pending]);
 
   const displayEvents = useMemo(
     () => mergeCalendarEvents(events, eventOverlay),

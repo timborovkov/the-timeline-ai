@@ -3,7 +3,7 @@
 import { Check, CheckCheck, ExternalLink, GitMerge, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 
 import {
   acceptAllSuggestionAction,
@@ -155,6 +155,11 @@ export function ApprovalsClient({
   const [error, setError] = useState<string | null>(null);
   const [resolvedItemIds, setResolvedItemIds] = useState<Set<string>>(() => new Set());
   const [busyItemIds, setBusyItemIds] = useState<Set<string>>(() => new Set());
+  const inFlightItemIdsRef = useRef<Set<string>>(new Set());
+  const serverItemIds = useMemo(
+    () => new Set(suggestions.flatMap((bundle) => bundle.items.map((item) => item.id))),
+    [suggestions],
+  );
   const visibleSuggestions = useMemo(
     () =>
       suggestions.flatMap((bundle) => {
@@ -189,6 +194,16 @@ export function ApprovalsClient({
     onVisiblePendingItemCountChange?.(visiblePendingItemCount);
   }, [onVisiblePendingItemCountChange, visiblePendingItemCount]);
 
+  useEffect(() => {
+    setResolvedItemIds((previous) => {
+      const next = new Set(previous);
+      for (const id of previous) {
+        if (serverItemIds.has(id) && !inFlightItemIdsRef.current.has(id)) next.delete(id);
+      }
+      return next.size === previous.size ? previous : next;
+    });
+  }, [serverItemIds]);
+
   function markBusy(itemIds: string[]) {
     if (itemIds.length === 0) return;
     setBusyItemIds((previous) => new Set([...previous, ...itemIds]));
@@ -221,6 +236,8 @@ export function ApprovalsClient({
     action: () => Promise<{ ok?: boolean; error?: string }>,
     optimisticItemIds: string[],
   ) {
+    if (optimisticItemIds.some((id) => inFlightItemIdsRef.current.has(id))) return;
+    for (const id of optimisticItemIds) inFlightItemIdsRef.current.add(id);
     setError(null);
     resolveItems(optimisticItemIds);
     markBusy(optimisticItemIds);
@@ -235,6 +252,7 @@ export function ApprovalsClient({
         restoreItems(optimisticItemIds);
         setError(err instanceof Error ? err.message : 'Approval action failed');
       } finally {
+        for (const id of optimisticItemIds) inFlightItemIdsRef.current.delete(id);
         clearBusy(optimisticItemIds);
         router.refresh();
       }

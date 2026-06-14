@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -415,5 +415,99 @@ describe('ApprovalsClient', () => {
       expect(onVisiblePendingItemCountChange).toHaveBeenLastCalledWith(0);
     });
     expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId: 'item-1' });
+  });
+
+  it('restores optimistic hidden rows when refreshed suggestions still contain them', async () => {
+    const user = userEvent.setup();
+    const onVisiblePendingItemCountChange = vi.fn();
+    const suggestion = {
+      id: 'bundle-1',
+      source: 'background',
+      status: 'pending',
+      title: 'Schedule follow-up',
+      summary: null,
+      reason: null,
+      confidence: 'high',
+      createdAt: '2026-06-01T10:00:00.000Z',
+      evidence: [],
+      items: [
+        {
+          id: 'item-1',
+          status: 'pending',
+          operation: 'create',
+          targetKind: 'calendar_event',
+          targetId: null,
+          title: 'Customer follow-up',
+          description: null,
+          proposedPayload: { title: 'Customer follow-up' },
+          failureReason: null,
+        },
+      ],
+    };
+
+    const { getByRole, rerender } = render(
+      createElement(ApprovalsClient, {
+        onVisiblePendingItemCountChange,
+        suggestions: [suggestion],
+      }),
+    );
+
+    await user.click(getByRole('button', { name: /^Accept$/ }));
+    await waitFor(() => {
+      expect(onVisiblePendingItemCountChange).toHaveBeenLastCalledWith(0);
+    });
+
+    rerender(
+      createElement(ApprovalsClient, {
+        onVisiblePendingItemCountChange,
+        suggestions: [{ ...suggestion, items: [...suggestion.items] }],
+      }),
+    );
+
+    await waitFor(() => {
+      expect(onVisiblePendingItemCountChange).toHaveBeenLastCalledWith(1);
+    });
+    expect(getByRole('button', { name: /^Accept$/ })).toBeTruthy();
+  });
+
+  it('guards per-item actions against same-tick duplicate clicks', () => {
+    fakes.acceptSuggestionItemAction.mockReturnValue(new Promise(() => undefined));
+
+    const { getByRole } = render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Schedule follow-up',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Customer follow-up',
+                description: null,
+                proposedPayload: { title: 'Customer follow-up' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const accept = getByRole('button', { name: /^Accept$/ });
+    fireEvent.click(accept);
+    fireEvent.click(accept);
+
+    expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledTimes(1);
   });
 });

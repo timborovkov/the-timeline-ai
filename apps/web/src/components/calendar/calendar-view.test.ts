@@ -8,7 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
 
-import { calendarOverlayReducer } from '@/components/calendar/calendar-overlay';
+import {
+  applyCalendarPageOverlay,
+  calendarOverlayReducer,
+} from '@/components/calendar/calendar-overlay';
 
 const fakes = vi.hoisted(() => ({
   createCalendarEventAction: vi.fn(),
@@ -95,6 +98,22 @@ describe('calendarOverlayReducer', () => {
         currentIds: [],
       }),
     ).toEqual({ upserts: {}, removedIds: [] });
+  });
+
+  it('reconciles optimistic edits for refreshed list-only events', () => {
+    const state = {
+      upserts: { 'event-1': event('event-1', 'Stale optimistic list title') },
+      removedIds: [],
+    };
+    const refreshedState = calendarOverlayReducer(state, {
+      type: 'reconcile-server-events',
+      previousIds: ['event-1'],
+      currentIds: ['event-1'],
+    });
+
+    expect(
+      applyCalendarPageOverlay([event('event-1', 'Server list title')], refreshedState),
+    ).toEqual([event('event-1', 'Server list title')]);
   });
 });
 
