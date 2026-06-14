@@ -13,6 +13,8 @@ const fakes = vi.hoisted(() => ({
     getMeeting: vi.fn(),
     listChunks: vi.fn(),
     createMeeting: vi.fn(),
+    claimMeetingForJoin: vi.fn(),
+    findActiveMeetingForUrl: vi.fn(),
     updateMeetingStatus: vi.fn(),
   },
   fakeCheckRateLimit: vi.fn(),
@@ -66,6 +68,13 @@ beforeEach(() => {
     meetingMinutesAdminOverride: false,
   });
   fakes.fakeMeetings.createMeeting.mockResolvedValue({ id: MEETING_ID });
+  fakes.fakeMeetings.claimMeetingForJoin.mockResolvedValue({
+    id: MEETING_ID,
+    provider: 'recall',
+    platform: 'meet',
+    meetingUrl: 'https://meet.google.com/abc-defg-hij',
+  });
+  fakes.fakeMeetings.findActiveMeetingForUrl.mockResolvedValue(null);
   fakes.fakeMeetings.getMeeting.mockResolvedValue(null);
   fakes.fakeMeetings.listChunks.mockResolvedValue([]);
   fakes.fakeMeetings.updateMeetingStatus.mockResolvedValue(undefined);

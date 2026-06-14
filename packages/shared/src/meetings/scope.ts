@@ -1180,11 +1180,38 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
           and(
             eq(meetings.teamId, teamId),
             eq(meetings.meetingUrl, meetingUrl),
-            inArray(meetings.status, ['pending', 'scheduled', 'joining', 'active']),
+            inArray(meetings.status, ['joining', 'active']),
           ),
         )
         .orderBy(desc(meetings.createdAt))
         .limit(1);
+      return (rows[0] as MeetingRow | undefined) ?? null;
+    },
+
+    async claimMeetingForJoin(meetingId: string): Promise<MeetingRow | null> {
+      await ensureMember();
+      const rows = await db
+        .update(meetings)
+        .set({
+          status: 'joining',
+          updatedAt: new Date(),
+          metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || '{"manual_join_claimed":true}'::jsonb`,
+        })
+        .where(
+          and(
+            eq(meetings.id, meetingId),
+            eq(meetings.teamId, teamId),
+            inArray(meetings.status, ['pending', 'scheduled']),
+            sql`NOT EXISTS (
+              SELECT 1 FROM meetings active
+              WHERE active.team_id = ${meetings.teamId}
+                AND active.meeting_url = ${meetings.meetingUrl}
+                AND active.status IN ('joining', 'active')
+                AND active.id <> ${meetings.id}
+            )`,
+          ),
+        )
+        .returning();
       return (rows[0] as MeetingRow | undefined) ?? null;
     },
 

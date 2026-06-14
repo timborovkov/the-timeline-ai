@@ -41,32 +41,45 @@ async function startBot(input: {
   teamId: string;
   meeting: MeetingRow;
 }): Promise<QuickJoinResult> {
+  const claimed = await input.scope.meetings.claimMeetingForJoin(input.meeting.id);
+  if (!claimed) {
+    const active = await input.scope.meetings.findActiveMeetingForUrl(input.meeting.meetingUrl);
+    if (active && (active.status === 'joining' || active.status === 'active')) {
+      const team = await input.scope.timeline.team();
+      return {
+        ok: true,
+        meetingId: active.id,
+        botName: meetingBots.meetingBotDisplayName(team?.name),
+      };
+    }
+    return { ok: false, meetingId: input.meeting.id, error: 'Meeting is no longer joinable.' };
+  }
   const team = await input.scope.timeline.team();
   const botName = meetingBots.meetingBotDisplayName(team?.name);
-  const provider = meetingBots.getMeetingBotProvider(input.meeting.provider);
+  const provider = meetingBots.getMeetingBotProvider(claimed.provider);
   try {
     const join = await provider.joinMeeting({
-      meetingId: input.meeting.id,
+      meetingId: claimed.id,
       teamId: input.teamId,
-      meetingUrl: input.meeting.meetingUrl,
-      platform: input.meeting.platform,
+      meetingUrl: claimed.meetingUrl,
+      platform: claimed.platform,
       botName,
       transcriptWebhookUrl: meetingBots.resolveTranscriptWebhookUrl(),
     });
-    await input.scope.meetings.updateMeetingStatus(input.meeting.id, 'joining', {
+    await input.scope.meetings.updateMeetingStatus(claimed.id, 'joining', {
       providerBotId: join.botId,
       metadata: { provider_join_result: join.raw ?? {}, source: 'quick_join' },
     });
-    return { ok: true, meetingId: input.meeting.id, botName };
+    return { ok: true, meetingId: claimed.id, botName };
   } catch (err) {
-    await input.scope.meetings.updateMeetingStatus(input.meeting.id, 'failed', {
+    await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
       metadata: {
         join_failed_at: new Date().toISOString(),
         join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
         source: 'quick_join',
       },
     });
-    return { ok: false, meetingId: input.meeting.id, error: 'Failed to invite notetaker' };
+    return { ok: false, meetingId: claimed.id, error: 'Failed to invite notetaker' };
   }
 }
 

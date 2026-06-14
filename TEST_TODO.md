@@ -11,7 +11,8 @@ Recall status, Slack quick-join, Telegram quick-join, scheduler, and finalizer
 suites pass after adding recurring meeting capture coverage, Saved Meeting
 visibility enforcement, scheduler idempotency, strict meeting URL host matching,
 generated calendar cleanup, quick-join failure/capacity/reuse, and partial-cancel
-finalize queue regressions. Current suite shape:
+finalize queue regressions, including duplicate-bot suppression when manual
+joins race a scheduled occurrence. Current suite shape:
 
 - DB Vitest: 1 file / 7 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.

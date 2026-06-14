@@ -111,29 +111,37 @@ async function startMeetingBot(input: {
   platform: 'meet' | 'teams' | 'zoom';
   provider?: string;
 }): Promise<Result> {
+  const claimed = await input.scope.meetings.claimMeetingForJoin(input.meetingId);
+  if (!claimed) {
+    const active = await input.scope.meetings.findActiveMeetingForUrl(input.meetingUrl);
+    if (active && (active.status === 'joining' || active.status === 'active')) {
+      return { ok: true, meetingId: active.id };
+    }
+    return { ok: false, meetingId: input.meetingId, error: 'Meeting is no longer joinable.' };
+  }
   const transcriptWebhookUrl = meetingBots.resolveTranscriptWebhookUrl();
   try {
     const [provider, team] = await Promise.all([
-      Promise.resolve(meetingBots.getMeetingBotProvider(input.provider ?? 'recall')),
+      Promise.resolve(meetingBots.getMeetingBotProvider(claimed.provider)),
       input.scope.timeline.team(),
     ]);
     const join = await provider.joinMeeting({
-      meetingId: input.meetingId,
+      meetingId: claimed.id,
       teamId: input.teamId,
-      meetingUrl: input.meetingUrl,
-      platform: input.platform,
+      meetingUrl: claimed.meetingUrl,
+      platform: claimed.platform,
       botName: meetingBots.meetingBotDisplayName(team?.name),
       transcriptWebhookUrl,
     });
-    await input.scope.meetings.updateMeetingStatus(input.meetingId, 'joining', {
+    await input.scope.meetings.updateMeetingStatus(claimed.id, 'joining', {
       providerBotId: join.botId,
       metadata: { provider_join_result: join.raw ?? {} },
     });
-    return { ok: true, meetingId: input.meetingId };
+    return { ok: true, meetingId: claimed.id };
   } catch (err) {
-    log.error({ err, meetingId: input.meetingId }, 'recall_join_failed');
+    log.error({ err, meetingId: claimed.id }, 'recall_join_failed');
     reportCaughtError(err, { surface: 'server_action', operation: 'recall_join_meeting' });
-    await input.scope.meetings.updateMeetingStatus(input.meetingId, 'failed', {
+    await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
       metadata: {
         join_failed_at: new Date().toISOString(),
         join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',

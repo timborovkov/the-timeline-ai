@@ -212,4 +212,45 @@ describe('quick meeting capture', () => {
     expect(rows[0]?.id).toBe(scheduled.id);
     expect(rows[0]?.status).toBe('joining');
   });
+
+  it('does not call the provider again when the due saved occurrence is already joining', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID).meetings;
+    const saved = await scope.createSavedMeeting({
+      title: 'Already joining daily',
+      meetingUrl: 'https://meet.google.com/raw-url-joining',
+      permissionConfirmed: true,
+      defaultVisibility: 'team',
+    });
+    const joining = await scope.createMeeting({
+      platform: saved.platform,
+      meetingUrl: saved.meetingUrl,
+      title: saved.title,
+      savedMeetingId: saved.id,
+      status: 'joining',
+      scheduledStartAt: new Date(),
+      defaultVisibility: 'team',
+      metadata: { source: 'already_joining' },
+    });
+    const prompt = await createRawUrlQuickJoinConfirmation({
+      db: db as never,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      source: 'telegram',
+      meetingUrl: saved.meetingUrl,
+    });
+    const confirmationId = prompt.confirmationId;
+    if (!confirmationId) throw new Error('expected confirmation id');
+
+    const result = await confirmRawUrlQuickJoin({
+      db: db as never,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      confirmationId,
+    });
+
+    expect(result).toMatchObject({ ok: true, meetingId: joining.id });
+    expect(joinMeetingMock).not.toHaveBeenCalled();
+    const rows = await db.select().from(meetings).where(eq(meetings.teamId, TEAM_ID));
+    expect(rows).toHaveLength(1);
+  });
 });
