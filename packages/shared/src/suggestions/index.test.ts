@@ -1888,6 +1888,54 @@ describe('suggestion scope', () => {
     expect(result.rows[0]?.count).toBe('1');
   });
 
+  it('does not claim an unrelated same-name object when a failed create is retried', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Retry duplicate create task',
+      dedupeKey: 'retry-with-canonical-duplicate',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Schedule follow-up meeting with Digital Audit Company',
+          dedupeKey: 'retry-with-canonical-duplicate:item',
+          proposedPayload: {
+            canonicalName: 'Schedule follow-up meeting with Digital Audit Company',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+    await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'schedule follow-up meeting with digital audit company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    await pg.query(
+      `UPDATE agent_suggestion_items SET status = 'failed', result_id = NULL WHERE id = $1`,
+      [itemId],
+    );
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).rejects.toMatchObject({
+      name: 'ExpectedSuggestionApplyFailure',
+      code: 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE',
+    });
+
+    const result = await pg.query<{ count: string; result_id: string | null; status: string }>(
+      `SELECT count(*)::text, max(asi.result_id::text) AS result_id, max(asi.status::text) AS status
+       FROM entities e
+       LEFT JOIN agent_suggestion_items asi ON asi.id = '${itemId}'
+       WHERE e.team_id = '${TEAM_ID}'
+         AND e.type = 'task'
+         AND lower(e.canonical_name) = lower('Schedule follow-up meeting with Digital Audit Company')`,
+    );
+    expect(result.rows[0]?.count).toBe('1');
+    expect(result.rows[0]?.result_id).toBeNull();
+    expect(result.rows[0]?.status).toBe('failed');
+  });
+
   it('supersedes pending updates that target an accepted create result', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const createBundle = await scope.suggestions.createOrMergeSuggestionBundle({
@@ -3363,6 +3411,48 @@ describe('suggestion scope', () => {
     );
     expect(new Date(result.rows[0]?.start_at ?? '').toISOString()).toBe('2026-06-17T14:00:00.000Z');
     expect(new Date(result.rows[0]?.end_at ?? '').toISOString()).toBe('2026-06-17T15:00:00.000Z');
+    const item = await pg.query<{ status: string; failure_reason: string | null }>(
+      `SELECT status, failure_reason FROM agent_suggestion_items WHERE id = '${itemId}'`,
+    );
+    expect(item.rows[0]?.status).toBe('failed');
+    expect(item.rows[0]?.failure_reason).toMatch(/expected string/i);
+  });
+
+  it('keeps invalid calendar create payloads as failed approval state', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create malformed meeting event',
+      dedupeKey: 'calendar-create-missing-range',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Malformed meeting',
+          dedupeKey: 'calendar-create-missing-range:item',
+          proposedPayload: {
+            title: 'Malformed meeting',
+            visibility: 'team',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id;
+    expect(itemId).toBeDefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).rejects.toThrow(
+      /expected string/i,
+    );
+
+    const events = await pg.query<{ count: string }>(
+      `SELECT count(*)::text FROM calendar_events WHERE team_id = '${TEAM_ID}' AND title = 'Malformed meeting'`,
+    );
+    expect(events.rows[0]?.count).toBe('0');
+    const item = await pg.query<{ status: string; failure_reason: string | null }>(
+      `SELECT status, failure_reason FROM agent_suggestion_items WHERE id = '${itemId}'`,
+    );
+    expect(item.rows[0]?.status).toBe('failed');
+    expect(item.rows[0]?.failure_reason).toMatch(/expected string/i);
   });
 
   it('rejecting a create suggestion leaves durable state unchanged', async () => {
