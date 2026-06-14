@@ -8,6 +8,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
 vi.mock('@/app/actions/suggestions', () => ({
   acceptAllSuggestionAction: vi.fn(),
   acceptSuggestionItemAction: vi.fn(),
+  acceptVisibleSuggestionsAction: vi.fn(),
   rejectSuggestionItemAction: vi.fn(),
 }));
 
@@ -133,6 +134,109 @@ describe('ApprovalsClient', () => {
     expect(html).not.toContain('Accept all');
     expect(html).toContain('Send proposal');
     expect(html).toContain('Book review');
+  });
+
+  it('renders a page-level accept all for multiple visible actionable bundles', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Follow up with Acme',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send proposal',
+                description: null,
+                proposedPayload: { canonicalName: 'Send proposal' },
+                failureReason: null,
+              },
+            ],
+          },
+          {
+            id: 'bundle-2',
+            source: 'background',
+            status: 'pending',
+            title: 'Book review',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:05:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-2',
+                status: 'failed',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Proposal meeting',
+                description: null,
+                proposedPayload: { title: 'Proposal meeting' },
+                failureReason: 'Calendar conflict',
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('Accept all visible');
+    expect(html).toContain('Follow up with Acme');
+    expect(html).toContain('Book review');
+  });
+
+  it('does not render page-level accept all for merge-only visible bundles', () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Merge duplicate objects',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'merge',
+                targetKind: 'object_merge',
+                targetId: null,
+                title: 'Merge Acme duplicates',
+                description: null,
+                proposedPayload: {
+                  objectIds: [
+                    '11111111-1111-4111-8111-111111111111',
+                    '22222222-2222-4222-8222-222222222222',
+                  ],
+                  survivorId: '11111111-1111-4111-8111-111111111111',
+                },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).not.toContain('Accept all visible');
+    expect(html).toContain('Review merge');
   });
 
   it('renders relationship bundle local refs as sibling object names', () => {

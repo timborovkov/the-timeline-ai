@@ -2385,6 +2385,35 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       }
       return { accepted, failed };
     },
+
+    async acceptSelected(input: {
+      suggestionId: string;
+      itemIds: string[];
+    }): Promise<{ accepted: number; failed: number }> {
+      const itemIds = [...new Set(input.itemIds)];
+      const bundle = await loadBundle(input.suggestionId);
+      if (!bundle) return { accepted: 0, failed: itemIds.length };
+      const selectedIds = new Set(itemIds);
+      let accepted = 0;
+      let failed = 0;
+      for (const item of orderSuggestionItemsForAcceptance(
+        bundle.items.filter(
+          (i) =>
+            selectedIds.has(i.id) &&
+            (i.status === 'pending' || i.status === 'failed') &&
+            i.targetKind !== 'object_merge',
+        ),
+      )) {
+        try {
+          if (await acceptSuggestionItem(item.id)) accepted += 1;
+          else failed += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      failed += itemIds.length - accepted - failed;
+      return { accepted, failed };
+    },
   };
 }
 
