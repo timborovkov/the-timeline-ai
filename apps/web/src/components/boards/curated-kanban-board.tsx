@@ -150,7 +150,7 @@ export function CuratedKanbanBoard({ boardId, lanes, items }: Props) {
       onDragEnd={onDragEnd}
     >
       <div className="flex h-full min-h-0 min-w-0 flex-col">
-        <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden pb-2">
+        <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-4 pb-2 md:px-8">
           {lanes.map((lane) => (
             <KanbanColumn
               key={lane.id}
@@ -244,9 +244,10 @@ function KanbanCard({
   saving: boolean;
   error?: string;
 }) {
+  const optimistic = item.id.startsWith('optimistic-');
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: item.id,
-    disabled: saving,
+    disabled: saving || optimistic,
   });
   const style = transform
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
@@ -261,15 +262,20 @@ function KanbanCard({
         'cursor-grab rounded-sm border border-border bg-bg px-3 py-2 text-sm transition-colors hover:border-border-strong',
         isDragging && 'opacity-50',
         saving && 'cursor-progress opacity-80',
+        optimistic && 'cursor-wait opacity-80',
         error && 'border-danger/50',
       )}
     >
-      <Link
-        href={`/app/boards/${boardId}?item=${item.id}`}
-        className="block min-w-0 truncate font-medium hover:underline"
-      >
-        {item.object.canonicalName}
-      </Link>
+      {optimistic ? (
+        <span className="block min-w-0 truncate font-medium">{item.object.canonicalName}</span>
+      ) : (
+        <Link
+          href={`/app/boards/${boardId}?item=${item.id}`}
+          className="block min-w-0 truncate font-medium hover:underline"
+        >
+          {item.object.canonicalName}
+        </Link>
+      )}
       <div className="mt-1.5 flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
         <span>{item.object.type}</span>
         {item.responsibleUserId ? <span>· owner</span> : null}

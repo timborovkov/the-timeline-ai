@@ -10,7 +10,6 @@ import {
   useMemo,
   useReducer,
   useRef,
-  useState,
   useTransition,
 } from 'react';
 
@@ -78,6 +77,19 @@ type ObjectDetailUiAction =
   | Partial<ObjectDetailUiState>
   | ((state: ObjectDetailUiState) => ObjectDetailUiState);
 
+interface ObjectDetailLocalState {
+  linkQuery: string;
+  selectedLink: ObjectSearchResult | null;
+  notes: ObjectDetail['notes'];
+  relationships: ObjectDetail['relationships'];
+  recentChanges: ObjectDetail['recentChanges'];
+  archivedAt: ObjectDetail['archivedAt'];
+}
+
+type ObjectDetailLocalAction =
+  | Partial<ObjectDetailLocalState>
+  | ((state: ObjectDetailLocalState) => ObjectDetailLocalState);
+
 // Per-type status vocabulary. Free-form text in the DB so callers can extend
 // without a migration; the dropdown lives in the UI.
 const STATUS_BY_TYPE: Record<string, string[]> = {
@@ -96,6 +108,33 @@ function statusOptions(type: string): string[] {
 
 function isDraftField(field: EditableField): field is DraftField {
   return field === 'stage' || field === 'dueAt';
+}
+
+function isEditableFieldName(field: string): field is EditableField {
+  return field === 'status' || field === 'stage' || field === 'priority' || field === 'dueAt';
+}
+
+function editableValueFromChange(field: EditableField, value: unknown): EditableValue {
+  if (field === 'dueAt') return toDateOrNull(value);
+  if (field === 'priority') {
+    if (value === null) return null;
+    const priority = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(priority) ? priority : null;
+  }
+  if (value === null) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return value.toString();
+  return null;
+}
+
+function localMutationId(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function isOptimisticRelationship(relationship: ObjectDetail['relationships'][number]): boolean {
+  return relationship.id.startsWith('optimistic-relationship-');
 }
 
 function initObjectDetailUiState(detail: ObjectDetail): ObjectDetailUiState {
@@ -120,6 +159,24 @@ function objectDetailUiReducer(
   return typeof action === 'function' ? action(state) : { ...state, ...action };
 }
 
+function initObjectDetailLocalState(detail: ObjectDetail): ObjectDetailLocalState {
+  return {
+    linkQuery: '',
+    selectedLink: null,
+    notes: detail.notes,
+    relationships: detail.relationships,
+    recentChanges: detail.recentChanges,
+    archivedAt: detail.archivedAt,
+  };
+}
+
+function objectDetailLocalReducer(
+  state: ObjectDetailLocalState,
+  action: ObjectDetailLocalAction,
+): ObjectDetailLocalState {
+  return typeof action === 'function' ? action(state) : { ...state, ...action };
+}
+
 function applyObjectDetailOverrides(
   detail: ObjectDetail,
   overrides: Partial<Record<EditableField, EditableValue>>,
@@ -128,10 +185,17 @@ function applyObjectDetailOverrides(
 }
 
 export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
-  return useObjectDetailView({ detail, userId, suggestions });
+  return (
+    <ObjectDetailView
+      key={`${detail.id}-${String(detail.updatedAt)}`}
+      detail={detail}
+      userId={userId}
+      suggestions={suggestions}
+    />
+  );
 }
 
-function useObjectDetailView({ detail, userId, suggestions }: Props) {
+function useObjectDetailController({ detail, userId, suggestions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const pendingApprovalItemCount = countPendingApprovalItems(suggestions);
@@ -150,12 +214,24 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
     },
     dispatchObjectUi,
   ] = useReducer(objectDetailUiReducer, detail, initObjectDetailUiState);
-  const [linkQuery, setLinkQuery] = useState('');
-  const [selectedLink, setSelectedLink] = useState<ObjectSearchResult | null>(null);
+  const [
+    { linkQuery, selectedLink, notes, relationships, recentChanges, archivedAt },
+    dispatchLocalDetail,
+  ] = useReducer(objectDetailLocalReducer, detail, initObjectDetailLocalState);
   const trimmedLinkQuery = linkQuery.trim();
   const localDetail = useMemo(
     () => applyObjectDetailOverrides(detail, overrides),
     [detail, overrides],
+  );
+  const viewDetail = useMemo(
+    () => ({
+      ...localDetail,
+      notes,
+      relationships,
+      recentChanges,
+      archivedAt,
+    }),
+    [archivedAt, localDetail, notes, recentChanges, relationships],
   );
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localDetailRef = useRef(detail);
@@ -314,15 +390,36 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
   function addNote(): void {
     if (!noteBody.trim()) return;
     dispatchObjectUi({ error: null });
-    const body = noteBody;
+    const body = noteBody.trim();
+    const tempId = `optimistic-note-${localMutationId()}`;
+    const now = new Date();
+    const optimisticNote: ObjectDetail['notes'][number] = {
+      id: tempId,
+      body,
+      authorUserId: userId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    dispatchLocalDetail((current) => ({ ...current, notes: [optimisticNote, ...current.notes] }));
+    dispatchObjectUi({ noteBody: '' });
     startTransition(async () => {
       const result = await createNoteAction({ entityId: detail.id, body });
       if ('error' in result && result.error) {
-        // Keep the textarea contents so the user can retry without
-        // re-typing — mirrors the edit-note flow.
-        dispatchObjectUi({ error: result.error });
+        dispatchLocalDetail((current) => ({
+          ...current,
+          notes: current.notes.filter((note) => note.id !== tempId),
+        }));
+        dispatchObjectUi({ error: result.error, noteBody: body });
       } else {
-        dispatchObjectUi({ noteBody: '' });
+        const createdId = 'id' in result && typeof result.id === 'string' ? result.id : null;
+        if (createdId) {
+          dispatchLocalDetail((current) => ({
+            ...current,
+            notes: current.notes.map((note) =>
+              note.id === tempId ? { ...note, id: createdId } : note,
+            ),
+          }));
+        }
         router.refresh();
       }
     });
@@ -330,14 +427,21 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
 
   function saveNote(noteId: string, body: string): void {
     dispatchObjectUi({ error: null });
+    const trimmedBody = body.trim();
+    const previousNotes = notes;
+    dispatchLocalDetail((current) => ({
+      ...current,
+      notes: current.notes.map((note) =>
+        note.id === noteId ? { ...note, body: trimmedBody, updatedAt: new Date() } : note,
+      ),
+    }));
+    dispatchObjectUi({ editingNoteId: null });
     startTransition(async () => {
-      const result = await updateNoteAction({ noteId, entityId: detail.id, body });
+      const result = await updateNoteAction({ noteId, entityId: detail.id, body: trimmedBody });
       if ('error' in result && result.error) {
-        // Keep the editor open so the user can fix their input rather than
-        // losing the draft.
-        dispatchObjectUi({ error: result.error });
+        dispatchLocalDetail({ notes: previousNotes });
+        dispatchObjectUi({ error: result.error, editingNoteId: noteId, editingBody: body });
       } else {
-        dispatchObjectUi({ editingNoteId: null });
         router.refresh();
       }
     });
@@ -345,28 +449,61 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
 
   function deleteNote(noteId: string): void {
     dispatchObjectUi({ error: null });
+    const previousNotes = notes;
+    dispatchLocalDetail((current) => ({
+      ...current,
+      notes: current.notes.filter((note) => note.id !== noteId),
+    }));
     startTransition(async () => {
       const result = await deleteNoteAction({ noteId, entityId: detail.id });
-      if ('error' in result && result.error) dispatchObjectUi({ error: result.error });
-      else router.refresh();
+      if ('error' in result && result.error) {
+        dispatchLocalDetail({ notes: previousNotes });
+        dispatchObjectUi({ error: result.error });
+      } else router.refresh();
     });
   }
 
   function addRelationship(): void {
-    const toId = selectedLink?.id;
-    if (!toId) return;
+    const link = selectedLink;
+    if (!link) return;
     dispatchObjectUi({ error: null });
+    const tempId = `optimistic-relationship-${localMutationId()}`;
+    const optimisticRelationship: ObjectDetail['relationships'][number] = {
+      id: tempId,
+      direction: 'out',
+      kind: linkKind,
+      otherId: link.id,
+      otherName: link.canonicalName,
+      otherType: link.type as ObjectDetail['relationships'][number]['otherType'],
+    };
+    dispatchLocalDetail((current) => ({
+      ...current,
+      linkQuery: '',
+      selectedLink: null,
+      relationships: [optimisticRelationship, ...current.relationships],
+    }));
     startTransition(async () => {
       const result = await addRelationshipAction({
         fromEntityId: detail.id,
-        toEntityId: toId,
+        toEntityId: link.id,
         kind: linkKind,
       });
       if ('error' in result && result.error) {
+        dispatchLocalDetail((current) => ({
+          ...current,
+          relationships: current.relationships.filter((relationship) => relationship.id !== tempId),
+        }));
         dispatchObjectUi({ error: result.error });
       } else {
-        setLinkQuery('');
-        setSelectedLink(null);
+        const relationshipId = 'id' in result && typeof result.id === 'string' ? result.id : null;
+        if (relationshipId) {
+          dispatchLocalDetail((current) => ({
+            ...current,
+            relationships: current.relationships.map((relationship) =>
+              relationship.id === tempId ? { ...relationship, id: relationshipId } : relationship,
+            ),
+          }));
+        }
         router.refresh();
       }
     });
@@ -374,64 +511,147 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
 
   function removeRelationship(id: string, otherEntityId: string): void {
     dispatchObjectUi({ error: null });
+    const previousRelationships = relationships;
+    dispatchLocalDetail((current) => ({
+      ...current,
+      relationships: current.relationships.filter((relationship) => relationship.id !== id),
+    }));
     startTransition(async () => {
       const result = await removeRelationshipAction({ id, entityId: detail.id, otherEntityId });
-      if ('error' in result && result.error) dispatchObjectUi({ error: result.error });
-      else router.refresh();
+      if ('error' in result && result.error) {
+        dispatchLocalDetail({ relationships: previousRelationships });
+        dispatchObjectUi({ error: result.error });
+      } else router.refresh();
     });
   }
 
   function acceptChange(changeId: string): void {
     dispatchObjectUi({ error: null });
+    const previousChanges = recentChanges;
+    const previousDetail = localDetailRef.current;
+    const change = recentChanges.find((item) => item.id === changeId);
+    dispatchLocalDetail((current) => ({
+      ...current,
+      recentChanges: current.recentChanges.map((item) =>
+        item.id === changeId ? { ...item, status: 'applied' } : item,
+      ),
+    }));
+    if (change && isEditableFieldName(change.field)) {
+      const localValue = editableValueFromChange(change.field, change.newValue);
+      updateLocalDetail((current) => ({ ...current, [change.field]: localValue }));
+      if (change.field === 'stage') {
+        dispatchObjectUi({ stageDraft: localValue === null ? '' : String(localValue) });
+      }
+      if (change.field === 'dueAt') {
+        dispatchObjectUi({ dueDraft: toLocalInputValue(localValue) });
+      }
+    }
     startTransition(async () => {
       const result = await acceptObjectChangeAction({ changeId, entityId: detail.id });
-      if ('error' in result && result.error) dispatchObjectUi({ error: result.error });
-      else router.refresh();
+      if ('error' in result && result.error) {
+        dispatchLocalDetail({ recentChanges: previousChanges });
+        updateLocalDetail(() => previousDetail);
+        dispatchObjectUi({
+          stageDraft: previousDetail.stage ?? '',
+          dueDraft: toLocalInputValue(previousDetail.dueAt),
+        });
+        dispatchObjectUi({ error: result.error });
+      } else router.refresh();
     });
   }
 
   function rejectChange(changeId: string): void {
     dispatchObjectUi({ error: null });
+    const previousChanges = recentChanges;
+    dispatchLocalDetail((current) => ({
+      ...current,
+      recentChanges: current.recentChanges.map((item) =>
+        item.id === changeId ? { ...item, status: 'rejected' } : item,
+      ),
+    }));
     startTransition(async () => {
       const result = await rejectObjectChangeAction({ changeId, entityId: detail.id });
-      if ('error' in result && result.error) dispatchObjectUi({ error: result.error });
-      else router.refresh();
+      if ('error' in result && result.error) {
+        dispatchLocalDetail({ recentChanges: previousChanges });
+        dispatchObjectUi({ error: result.error });
+      } else router.refresh();
     });
   }
 
   function archiveObject(): void {
     dispatchObjectUi({ error: null });
+    const previousArchivedAt = archivedAt;
+    dispatchLocalDetail({ archivedAt: new Date() });
     startTransition(async () => {
       const result = await archiveObjectAction({ id: detail.id });
-      if ('error' in result && result.error) dispatchObjectUi({ error: result.error });
-      else router.refresh();
+      if ('error' in result && result.error) {
+        dispatchLocalDetail({ archivedAt: previousArchivedAt });
+        dispatchObjectUi({ error: result.error });
+      } else router.refresh();
     });
   }
 
+  return {
+    acceptChange,
+    addNote,
+    addRelationship,
+    archiveObject,
+    detail,
+    dispatchLocalDetail,
+    dispatchObjectUi,
+    dueDraft,
+    editingBody,
+    editingNoteId,
+    error,
+    focusedDraftsRef,
+    linkKind,
+    linkQuery,
+    localDetail,
+    noteBody,
+    patch,
+    pending,
+    pendingApprovalItemCount,
+    rejectChange,
+    removeRelationship,
+    saveNote,
+    savingCount,
+    saveState,
+    selectedLink,
+    stageDraft,
+    suggestions,
+    userId,
+    viewDetail,
+    visibleLinkResults,
+    deleteNote,
+  };
+}
+
+function ObjectDetailView(props: Props) {
+  const view = useObjectDetailController(props);
   return (
     <div className="space-y-5">
       <ObjectDetailHeader
-        detail={detail}
-        error={error}
-        saveState={saveState}
-        savingCount={savingCount}
+        detail={view.viewDetail}
+        error={view.error}
+        saveState={view.saveState}
+        savingCount={view.savingCount}
       />
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <main className="min-w-0 space-y-6">
-          {suggestions.length > 0 ? (
+          {view.suggestions.length > 0 ? (
             <ObjectPanel
               title="Pending approvals"
-              eyebrow={`${pendingApprovalItemCount} waiting`}
+              eyebrow={`${view.pendingApprovalItemCount} waiting`}
               className="border-signal/40 bg-signal-soft/40"
             >
-              <ApprovalsClient suggestions={suggestions} allowBulkAccept={false} />
+              <ApprovalsClient suggestions={view.suggestions} allowBulkAccept={false} />
             </ObjectPanel>
           ) : null}
 
           <ObjectPanel title="Evidence" eyebrow="events">
             <ObjectSectionFeed
-              objectId={detail.id}
+              objectId={view.detail.id}
               section="events"
               title="Timeline events"
               showTitle={false}
@@ -440,7 +660,7 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
 
           <ObjectPanel title="Facts" eyebrow="extracted">
             <ObjectSectionFeed
-              objectId={detail.id}
+              objectId={view.detail.id}
               section="facts"
               title="Facts"
               showTitle={false}
@@ -448,62 +668,63 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
           </ObjectPanel>
 
           <ObjectNotesSection
-            notes={detail.notes}
-            userId={userId}
-            pending={pending}
-            noteBody={noteBody}
-            editingNoteId={editingNoteId}
-            editingBody={editingBody}
-            dispatchObjectUi={dispatchObjectUi}
-            onAddNote={addNote}
-            onSaveNote={saveNote}
-            onDeleteNote={deleteNote}
+            notes={view.viewDetail.notes}
+            userId={view.userId}
+            pending={view.pending}
+            noteBody={view.noteBody}
+            editingNoteId={view.editingNoteId}
+            editingBody={view.editingBody}
+            dispatchObjectUi={view.dispatchObjectUi}
+            onAddNote={view.addNote}
+            onSaveNote={view.saveNote}
+            onDeleteNote={view.deleteNote}
           />
         </main>
 
         <aside className="min-w-0 space-y-4 xl:sticky xl:top-6">
           <ObjectPanel title="Fields" eyebrow="editable">
             <ObjectEditableFields
-              detail={localDetail}
-              stageDraft={stageDraft}
-              dueDraft={dueDraft}
-              focusedDraftsRef={focusedDraftsRef}
-              patch={patch}
-              dispatchObjectUi={dispatchObjectUi}
+              detail={view.localDetail}
+              stageDraft={view.stageDraft}
+              dueDraft={view.dueDraft}
+              focusedDraftsRef={view.focusedDraftsRef}
+              patch={view.patch}
+              dispatchObjectUi={view.dispatchObjectUi}
               className="grid-cols-1 gap-4"
             />
           </ObjectPanel>
 
           <ObjectRelationshipsSection
-            relationships={detail.relationships}
-            pending={pending}
-            linkQuery={linkQuery}
-            linkResults={visibleLinkResults}
-            selectedLink={selectedLink}
-            linkKind={linkKind}
+            relationships={view.viewDetail.relationships}
+            pending={view.pending}
+            linkQuery={view.linkQuery}
+            linkResults={view.visibleLinkResults}
+            selectedLink={view.selectedLink}
+            linkKind={view.linkKind}
             onLinkQueryChange={(value) => {
-              setLinkQuery(value);
-              setSelectedLink(null);
+              view.dispatchLocalDetail({ linkQuery: value, selectedLink: null });
             }}
-            onSelectLink={setSelectedLink}
-            dispatchObjectUi={dispatchObjectUi}
-            onAddRelationship={addRelationship}
-            onRemoveRelationship={removeRelationship}
+            onSelectLink={(link) => {
+              view.dispatchLocalDetail({ selectedLink: link });
+            }}
+            dispatchObjectUi={view.dispatchObjectUi}
+            onAddRelationship={view.addRelationship}
+            onRemoveRelationship={view.removeRelationship}
           />
 
-          <ObjectOpenTasksSection tasks={detail.openTasks} />
+          <ObjectOpenTasksSection tasks={view.detail.openTasks} />
 
           <ObjectRecentChangesSection
-            changes={detail.recentChanges}
-            pending={pending}
-            onAcceptChange={acceptChange}
-            onRejectChange={rejectChange}
+            changes={view.viewDetail.recentChanges}
+            pending={view.pending}
+            onAcceptChange={view.acceptChange}
+            onRejectChange={view.rejectChange}
           />
 
           <ObjectArchiveFooter
-            archivedAt={detail.archivedAt}
-            pending={pending}
-            onArchiveObject={archiveObject}
+            archivedAt={view.viewDetail.archivedAt}
+            pending={view.pending}
+            onArchiveObject={view.archiveObject}
           />
         </aside>
       </div>
@@ -1029,7 +1250,7 @@ function ObjectRelationshipsSection({
                 {relationship.direction === 'out' || relationship.kind === 'related' ? (
                   <button
                     type="button"
-                    disabled={pending}
+                    disabled={pending || isOptimisticRelationship(relationship)}
                     onClick={() => {
                       onRemoveRelationship(relationship.id, relationship.otherId);
                     }}

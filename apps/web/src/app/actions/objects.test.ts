@@ -114,7 +114,9 @@ beforeEach(() => {
     survivor: { id: OBJECT_ID },
     mergedIds: [OTHER_OBJECT_ID],
   });
-  fakes.fakeObjects.addRelationship.mockResolvedValue(undefined);
+  fakes.fakeObjects.addRelationship.mockResolvedValue({
+    id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+  });
   fakes.fakeObjects.removeRelationship.mockResolvedValue(undefined);
   fakes.fakeObjects.createNote.mockResolvedValue({ id: NOTE_ID });
   fakes.fakeObjects.updateNote.mockResolvedValue(true);
@@ -468,7 +470,7 @@ describe('object relationship, note, notification, and suggestion actions', () =
         toEntityId: OTHER_OBJECT_ID,
         kind: 'related',
       }),
-    ).resolves.toEqual({ ok: true });
+    ).resolves.toEqual({ ok: true, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' });
     expect(fakes.fakeObjects.addRelationship).toHaveBeenCalledWith({
       fromEntityId: OBJECT_ID,
       toEntityId: OTHER_OBJECT_ID,

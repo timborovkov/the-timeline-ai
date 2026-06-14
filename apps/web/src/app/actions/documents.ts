@@ -42,6 +42,10 @@ interface Result {
   error?: string;
 }
 
+interface CreateFolderResult extends Result {
+  id?: string;
+}
+
 interface PreviewDocument {
   id: string;
   currentVersionId: string | null;
@@ -77,26 +81,26 @@ const createFolderSchema = z.object({
 
 export async function createFolderAction(
   input: z.input<typeof createFolderSchema>,
-): Promise<Result> {
+): Promise<CreateFolderResult> {
   return runSentryServerAction('create_folder', async () => {
     const got = await withScopeOrError();
     if ('error' in got) return { ok: false, error: got.error };
     const parsed = createFolderSchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid' };
     try {
-      await got.scope.documents.createFolder({
+      const folder = await got.scope.documents.createFolder({
         name: parsed.data.name,
         parentFolderId: parsed.data.parentFolderId ?? null,
         visibility: parsed.data.visibility,
         visibilityUserIds: parsed.data.visibilityUserIds ?? null,
       });
+      revalidatePath('/app/documents');
+      return { ok: true, id: folder.id };
     } catch (err) {
       log.error({ err }, 'createFolder failed');
       reportCaughtError(err, { surface: 'server_action', operation: 'create_folder' });
       return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
     }
-    revalidatePath('/app/documents');
-    return { ok: true };
   });
 }
 

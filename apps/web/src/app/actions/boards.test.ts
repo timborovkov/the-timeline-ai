@@ -49,6 +49,7 @@ beforeEach(() => {
     id: ITEM_ID,
     boardId: BOARD_ID,
     entityId: ENTITY_ID,
+    object: { id: ENTITY_ID },
   });
   fakes.fakeBoards.updateBoardItem.mockResolvedValue({
     id: ITEM_ID,
@@ -98,10 +99,12 @@ describe('deleteBoardAction', () => {
 
 describe('addBoardItemAction', () => {
   it('adds an existing object to the board with a user actor', async () => {
-    await expect(addBoardItemAction({ boardId: BOARD_ID, entityId: ENTITY_ID })).resolves.toEqual({
-      ok: true,
-      id: ITEM_ID,
-    });
+    const result = await addBoardItemAction({ boardId: BOARD_ID, entityId: ENTITY_ID });
+
+    expect(result.ok).toBe(true);
+    expect(result.id).toBe(ITEM_ID);
+    expect(result.item?.id).toBe(ITEM_ID);
+    expect(result.item?.entityId).toBe(ENTITY_ID);
 
     expect(fakes.fakeBoards.addBoardItem).toHaveBeenCalledWith(BOARD_ID, {
       entityId: ENTITY_ID,

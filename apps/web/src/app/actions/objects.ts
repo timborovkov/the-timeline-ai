@@ -383,13 +383,13 @@ export async function addRelationshipAction(input: unknown): Promise<ActionState
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      await r.scope.objects.addRelationship({
+      const relationship = await r.scope.objects.addRelationship({
         ...parsed.data,
         actorUserId: r.userId,
       });
       revalidatePath(`/app/objects/${parsed.data.fromEntityId}`);
       revalidatePath(`/app/objects/${parsed.data.toEntityId}`);
-      return { ok: true };
+      return { ok: true, id: relationship?.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to link') };
     }

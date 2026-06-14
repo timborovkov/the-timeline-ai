@@ -545,14 +545,15 @@ key/value pairs.
 ### Optimistic updates
 
 - Lightweight, reversible product edits should update the local surface
-  immediately, then reconcile with server state: kanban moves, object
-  status/stage/priority/due edits, text capture, calendar create/edit,
-  document upload placeholders, onboarding checklist actions, and inbox
-  read-state changes.
-- Compound, destructive, security-sensitive, or external-provider actions
-  wait for server confirmation: invites, meeting bot scheduling/cancel,
-  archive/delete, relationship changes, exports, OAuth/integration setup,
-  and approval accept/reject.
+  immediately, then reconcile with server state: kanban moves and board item
+  adds, object status/stage/priority/due edits, object notes, relationship
+  changes, object-change approvals, archive/remove flows after explicit user
+  confirmation, document renames, document folder create/delete, text capture,
+  calendar create/edit, document upload placeholders, onboarding checklist
+  actions, and inbox read-state changes.
+- Security-sensitive or external-provider actions wait for server
+  confirmation: invites, meeting bot scheduling/cancel, exports, OAuth/
+  integration setup, and irreversible destructive operations.
 - Success feedback should be quiet and local (`Saving...` then `Saved`).
   Use prominent alerts only for failures, and rollback the smallest affected
   thing so the user can tell what changed.

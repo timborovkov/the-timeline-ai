@@ -127,7 +127,9 @@ export async function deleteBoardAction(input: unknown): Promise<ActionState> {
   });
 }
 
-export async function addBoardItemAction(input: unknown): Promise<ActionState> {
+export async function addBoardItemAction(
+  input: unknown,
+): Promise<ActionState & { item?: boardDomain.BoardItemRow }> {
   return runSentryServerAction('add_board_item', async () => {
     const parsed = addExistingSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -140,14 +142,16 @@ export async function addBoardItemAction(input: unknown): Promise<ActionState> {
         actor: { kind: 'user', userId: r.userId },
       });
       revalidateBoardSurfaces(parsed.data.boardId, item.entityId);
-      return { ok: true, id: item.id };
+      return { ok: true, id: item.id, item };
     } catch (err) {
       return { error: friendlyError(err, 'add_board_item') };
     }
   });
 }
 
-export async function quickCreateBoardItemAction(input: unknown): Promise<ActionState> {
+export async function quickCreateBoardItemAction(
+  input: unknown,
+): Promise<ActionState & { item?: boardDomain.BoardItemRow }> {
   return runSentryServerAction('quick_create_board_item', async () => {
     const parsed = quickCreateSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -166,7 +170,7 @@ export async function quickCreateBoardItemAction(input: unknown): Promise<Action
         },
       );
       revalidateBoardSurfaces(parsed.data.boardId, item.entityId);
-      return { ok: true, id: item.id };
+      return { ok: true, id: item.id, item };
     } catch (err) {
       return { error: friendlyError(err, 'quick_create_board_item') };
     }
