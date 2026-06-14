@@ -41,6 +41,7 @@ import {
 } from '@/app/actions/calendar';
 import {
   EMPTY_CALENDAR_OVERLAY,
+  applyCalendarPageOverlay,
   calendarEventsSignature,
   calendarOverlayReducer,
   mergeCalendarEvents,
@@ -378,7 +379,7 @@ function CalendarViewContent({
     [events, eventOverlay],
   );
   const displayEventListEvents = useMemo(
-    () => mergeCalendarEvents(eventListEvents, eventOverlay),
+    () => applyCalendarPageOverlay(eventListEvents, eventOverlay),
     [eventListEvents, eventOverlay],
   );
 

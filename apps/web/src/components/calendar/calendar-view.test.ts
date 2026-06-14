@@ -231,4 +231,30 @@ describe('CalendarView recurrence and tentative UI', () => {
       { timeout: 1000 },
     );
   });
+
+  it('does not append optimistic creates to the server-paginated event list', async () => {
+    const user = userEvent.setup();
+    fakes.createCalendarEventAction.mockResolvedValue({ ok: true, id: 'created-event' });
+
+    render(
+      createElement(CalendarView, {
+        events: [],
+        eventListEvents: [event('event-1', 'Roadmap review')],
+        eventListTotal: 1,
+        eventListPage: 0,
+        eventListQuery: '',
+        eventListScope: 'future',
+        timezone: 'UTC',
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /New/ }));
+    await user.type(screen.getByLabelText('Title'), 'New sales sync');
+    await user.click(screen.getByRole('button', { name: /^Save$/ }));
+
+    expect(await screen.findByRole('button', { name: /New sales sync/ })).toBeTruthy();
+    expect(screen.getByText('1 upcoming event')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Roadmap review/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Jun 3.*New sales sync/s })).toBeNull();
+  });
 });

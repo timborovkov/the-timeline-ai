@@ -97,6 +97,16 @@ export function mergeCalendarEvents(
   return Array.from(merged.values());
 }
 
+export function applyCalendarPageOverlay(
+  events: CalendarEvent[],
+  overlay: CalendarOverlayState,
+): CalendarEvent[] {
+  const removed = new Set(overlay.removedIds);
+  return events
+    .filter((event) => !removed.has(event.id))
+    .map((event) => overlay.upserts[event.id] ?? event);
+}
+
 export function calendarEventsSignature(events: CalendarEvent[]): string {
   return events
     .map((event) =>
