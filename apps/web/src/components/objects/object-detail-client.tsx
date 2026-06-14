@@ -29,6 +29,10 @@ import {
   updateObjectAction,
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
+import {
+  type ObjectSearchResult,
+  visibleObjectSearchResultsForQuery,
+} from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
@@ -68,12 +72,6 @@ interface ObjectDetailUiState {
   linkKind: (typeof RELATIONSHIP_KINDS)[number];
 }
 
-interface ObjectSearchResult {
-  id: string;
-  canonicalName: string;
-  type: string;
-}
-
 type ObjectDetailUiAction =
   | Partial<ObjectDetailUiState>
   | ((state: ObjectDetailUiState) => ObjectDetailUiState);
@@ -96,16 +94,6 @@ function statusOptions(type: string): string[] {
 
 function isDraftField(field: EditableField): field is DraftField {
   return field === 'stage' || field === 'dueAt';
-}
-
-function isObjectSearchResult(value: unknown): value is ObjectSearchResult {
-  if (!value || typeof value !== 'object') return false;
-  const row = value as Record<string, unknown>;
-  return (
-    typeof row.id === 'string' &&
-    typeof row.canonicalName === 'string' &&
-    typeof row.type === 'string'
-  );
 }
 
 function initObjectDetailUiState(detail: ObjectDetail): ObjectDetailUiState {
@@ -209,14 +197,13 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
     placeholderData: (previousData) => previousData,
     queryFn: async () => {
       const params = new URLSearchParams({ q: trimmedLinkQuery, exclude: detail.id });
-      return readJson<{ results?: ObjectSearchResult[] }>(
+      const data = await readJson<{ results?: ObjectSearchResult[] }>(
         await fetch(`/api/objects/search?${params.toString()}`),
       );
+      return { query: trimmedLinkQuery, results: data.results };
     },
   });
-  const visibleLinkResults = trimmedLinkQuery
-    ? (linkResultsData?.results?.filter(isObjectSearchResult) ?? [])
-    : [];
+  const visibleLinkResults = visibleObjectSearchResultsForQuery(linkResultsData, trimmedLinkQuery);
 
   function searchLinkObjects(value: string): void {
     setLinkQuery(value);
