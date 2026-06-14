@@ -549,6 +549,86 @@ describe('object scope — relationships', () => {
   });
 });
 
+describe('object scope — section feeds', () => {
+  it('includes other active objects attached to the same fact', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const project = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Atlas rollout',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const customer = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Northwind',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const owner = await scope.createObject({
+      type: 'person',
+      canonicalName: 'Mia Chen',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const otherTeamObject = await withTeam(db, TEAM_B, USER_OTHER_TEAM).objects.createObject({
+      type: 'company',
+      canonicalName: 'Other Team Co',
+      actor: { kind: 'user', userId: USER_OTHER_TEAM },
+    });
+    const event = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'system',
+        contentText: 'Atlas rollout evidence',
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    const eventId = event[0]?.id;
+    if (!eventId) throw new Error('Failed to insert test raw event');
+    const fact = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: eventId,
+        statement: 'Atlas rollout depends on Northwind approval from Mia Chen.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    const factId = fact[0]?.id;
+    if (!factId) throw new Error('Failed to insert test fact');
+    await db.insert(factEntities).values([
+      { factId, entityId: project.id, role: 'subject' },
+      { factId, entityId: customer.id, role: 'object' },
+      { factId, entityId: owner.id, role: 'subject' },
+      { factId, entityId: owner.id, role: 'topic' },
+      { factId, entityId: otherTeamObject.id, role: 'topic' },
+    ]);
+
+    const page = await scope.getObjectSectionPage(project.id, 'facts');
+
+    expect(page?.items).toEqual([
+      expect.objectContaining({
+        id: factId,
+        statement: 'Atlas rollout depends on Northwind approval from Mia Chen.',
+        sharedObjects: [
+          {
+            id: owner.id,
+            canonicalName: 'Mia Chen',
+            type: 'person',
+            role: 'subject, topic',
+          },
+          {
+            id: customer.id,
+            canonicalName: 'Northwind',
+            type: 'company',
+            role: 'object',
+          },
+        ],
+      }),
+    ]);
+  });
+});
+
 describe('object scope — merge cleanup', () => {
   it('merges compatible objects, moves derived rows, dedupes edges, and hides merged rows', async () => {
     const workspace = withTeam(db, TEAM_A, USER_OWNER);

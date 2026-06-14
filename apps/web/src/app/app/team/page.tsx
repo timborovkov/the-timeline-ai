@@ -1,4 +1,4 @@
-import { teamExports, teamInvites, teamMembers, users } from '@timeline/db';
+import { teamExports, teamInvites, teamMembers, teams, users } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
@@ -14,7 +14,12 @@ import {
 } from '@/app/actions/teams';
 import { ActionChip } from '@/components/action-chip';
 import { IndexStrip } from '@/components/index-strip';
-import { InviteMemberForm, RenameTeamForm, TeamExportPanel } from '@/components/team-forms';
+import {
+  InboundEmailWhitelistForm,
+  InviteMemberForm,
+  RenameTeamForm,
+  TeamExportPanel,
+} from '@/components/team-forms';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -59,6 +64,7 @@ interface RemovedMemberRow {
 type TeamExportRows = ComponentProps<typeof TeamExportPanel>['exports'];
 type VisibilityDefaults = ComponentProps<typeof VisibilityDefaultSettings>['defaults'];
 type VisibilityMembers = ComponentProps<typeof VisibilityDefaultSettings>['members'];
+type InboundEmailWhitelistSettings = ComponentProps<typeof InboundEmailWhitelistForm>;
 
 export default async function TeamSettingsPage() {
   const session = await auth();
@@ -72,6 +78,19 @@ export default async function TeamSettingsPage() {
   const isOwner = role === 'owner';
 
   const memberRows = await scope.timeline.listMembers();
+  const inboundEmailSettings: InboundEmailWhitelistSettings = isAdmin
+    ? ((
+        await db
+          .select({
+            inboundEmail: teams.inboundEmail,
+            enabled: teams.inboundSenderWhitelistEnabled,
+            senders: teams.inboundSenderWhitelist,
+          })
+          .from(teams)
+          .where(eq(teams.id, active.teamId))
+          .limit(1)
+      )[0] ?? { inboundEmail: null, enabled: false, senders: [] })
+    : { inboundEmail: null, enabled: false, senders: [] };
   if (isAdmin) {
     await db
       .update(teamExports)
@@ -181,6 +200,7 @@ export default async function TeamSettingsPage() {
         exportRows={exportRows}
         visibilityDefaults={visibilityDefaults}
         visibilityMembers={visibilityMembers}
+        inboundEmailSettings={inboundEmailSettings}
       />
       <MembersCard
         members={memberRows}
@@ -217,6 +237,7 @@ function AdminSettingsCards({
   exportRows,
   visibilityDefaults,
   visibilityMembers,
+  inboundEmailSettings,
 }: {
   isAdmin: boolean;
   teamName: string;
@@ -224,6 +245,7 @@ function AdminSettingsCards({
   exportRows: TeamExportRows;
   visibilityDefaults: VisibilityDefaults;
   visibilityMembers: VisibilityMembers;
+  inboundEmailSettings: InboundEmailWhitelistSettings;
 }) {
   if (!isAdmin) return null;
   return (
@@ -242,6 +264,14 @@ function AdminSettingsCards({
         </CardHeader>
         <CardContent>
           <TeamExportPanel exports={exportRows} />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Email sender whitelist</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <InboundEmailWhitelistForm {...inboundEmailSettings} />
         </CardContent>
       </Card>
       <Card>

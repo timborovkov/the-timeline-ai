@@ -1,6 +1,7 @@
 'use client';
 
 import { Eye, Loader2 } from 'lucide-react';
+import Image from 'next/image';
 import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
 
@@ -71,12 +72,15 @@ export function DocumentPreview({ target, label = 'Preview', className, compact 
       {preview ? (
         <div className="mt-3 min-w-0 overflow-hidden rounded-sm border border-border bg-bg">
           {preview.mediaKind === 'image' ? (
-            <div className="flex min-h-72 w-full items-center justify-center">
+            <div className="relative flex h-[70vh] min-h-72 max-h-[48rem] w-full items-center justify-center">
               {/* Presigned S3/RustFS URLs include auth query params, so they load directly in the browser instead of through Next's image pipeline. */}
-              <img
+              <Image
                 src={preview.url}
                 alt={preview.filename}
-                className="max-h-[70vh] max-w-full object-contain"
+                fill
+                unoptimized
+                sizes="100vw"
+                className="object-contain"
               />
             </div>
           ) : (

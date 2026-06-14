@@ -143,6 +143,25 @@ export async function handleInbound(
     return { ok: false, inserted: 0, reason: 'no_matching_team' };
   }
 
+  const senderEmail = inboundSenderEmail(payload);
+  const allowedTeams = matchedTeams.filter((team) => {
+    if (!team.inboundSenderWhitelistEnabled) return true;
+    if (senderEmail && team.inboundSenderWhitelist.includes(senderEmail)) return true;
+    log.warn(
+      {
+        teamId: team.id,
+        from: senderEmail,
+        messageId:
+          normalizeMessageId(getHeader(payload.Headers, 'Message-ID')) ?? payload.MessageID,
+      },
+      'inbound sender blocked by whitelist',
+    );
+    return false;
+  });
+  if (allowedTeams.length === 0) {
+    return { ok: false, inserted: 0, reason: 'blocked_sender' };
+  }
+
   // Pre-decode each attachment once. Decoding inside the per-team loop would
   // re-parse the base64 N times when an email is CC'd to multiple team
   // addresses (rare but legitimate).
@@ -160,7 +179,7 @@ export async function handleInbound(
   // and silently dropped the inbound during a total DB outage.
   let inserted = 0;
   let threwCount = 0;
-  for (const team of matchedTeams) {
+  for (const team of allowedTeams) {
     try {
       const didInsert = await ingestForTeam(deps, payload, team, decoded, dropped);
       if (didInsert) inserted += 1;
@@ -169,7 +188,7 @@ export async function handleInbound(
       log.error({ teamId: team.id, err }, 'team ingest failed');
     }
   }
-  if (threwCount > 0 && threwCount === matchedTeams.length) {
+  if (threwCount > 0 && threwCount === allowedTeams.length) {
     return { ok: false, inserted: 0, reason: 'all_teams_failed' };
   }
   return { ok: true, inserted };
@@ -200,6 +219,8 @@ function collectRecipients(payload: PostmarkInbound): string[] {
 interface MatchedTeam {
   id: string;
   inboundEmail: string;
+  inboundSenderWhitelistEnabled: boolean;
+  inboundSenderWhitelist: string[];
 }
 
 /**
@@ -211,7 +232,12 @@ interface MatchedTeam {
  */
 async function resolveTeamBySlug(db: Db, slug: string): Promise<MatchedTeam | null> {
   const rows = await db
-    .select({ id: teams.id, inboundEmail: teams.inboundEmail })
+    .select({
+      id: teams.id,
+      inboundEmail: teams.inboundEmail,
+      inboundSenderWhitelistEnabled: teams.inboundSenderWhitelistEnabled,
+      inboundSenderWhitelist: teams.inboundSenderWhitelist,
+    })
     .from(teams)
     .where(sql`lower(${teams.slug}) = ${slug}`)
     .limit(1);
@@ -221,7 +247,12 @@ async function resolveTeamBySlug(db: Db, slug: string): Promise<MatchedTeam | nu
   // team — fall back to a synthetic local string when somehow missing so
   // downstream MatchedTeam.inboundEmail is never undefined (it's only used
   // for logging in this path).
-  return { id: r.id, inboundEmail: r.inboundEmail ?? `${slug}@mailbox-hash` };
+  return {
+    id: r.id,
+    inboundEmail: r.inboundEmail ?? `${slug}@mailbox-hash`,
+    inboundSenderWhitelistEnabled: r.inboundSenderWhitelistEnabled,
+    inboundSenderWhitelist: normalizeSenderWhitelist(r.inboundSenderWhitelist),
+  };
 }
 
 async function resolveTeams(
@@ -238,12 +269,37 @@ async function resolveTeams(
   const candidates = recipients.filter((r) => r.endsWith(domainSuffix));
   if (candidates.length === 0) return [];
   const rows = await db
-    .select({ id: teams.id, inboundEmail: teams.inboundEmail })
+    .select({
+      id: teams.id,
+      inboundEmail: teams.inboundEmail,
+      inboundSenderWhitelistEnabled: teams.inboundSenderWhitelistEnabled,
+      inboundSenderWhitelist: teams.inboundSenderWhitelist,
+    })
     .from(teams)
     .where(inArray(teams.inboundEmail, candidates));
   return rows
     .filter((r): r is MatchedTeam => typeof r.inboundEmail === 'string' && Boolean(r.inboundEmail))
-    .map((r) => ({ id: r.id, inboundEmail: r.inboundEmail }));
+    .map((r) => ({
+      id: r.id,
+      inboundEmail: r.inboundEmail,
+      inboundSenderWhitelistEnabled: r.inboundSenderWhitelistEnabled,
+      inboundSenderWhitelist: normalizeSenderWhitelist(r.inboundSenderWhitelist),
+    }));
+}
+
+function inboundSenderEmail(payload: PostmarkInbound): string {
+  return toParsed(payload.FromFull)?.email ?? normalizeEmail(payload.From);
+}
+
+function normalizeSenderWhitelist(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    const email = normalizeEmail(item);
+    if (email) out.add(email);
+  }
+  return Array.from(out);
 }
 
 interface DecodedAttachment {

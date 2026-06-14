@@ -28,14 +28,15 @@ export async function GET(req: Request): Promise<Response> {
   const exclude = url.searchParams.get('exclude');
   const scope = withTeam(db, active.teamId, session.user.id);
   const rows = await scope.objects.listObjects({ archived: false, limit: 500 });
-  const results = rows
-    .filter((row) => row.id !== exclude)
-    .filter((row) => matchesObject(row, query))
-    .slice(0, 12)
-    .map((row) => ({
+  const results: { id: string; canonicalName: string; type: string }[] = [];
+  for (const row of rows) {
+    if (row.id === exclude || !matchesObject(row, query)) continue;
+    results.push({
       id: row.id,
       canonicalName: row.canonicalName,
       type: row.type,
-    }));
+    });
+    if (results.length >= 12) break;
+  }
   return Response.json({ results });
 }

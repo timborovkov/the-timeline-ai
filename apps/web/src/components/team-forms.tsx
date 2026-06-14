@@ -12,13 +12,16 @@ import {
   createTeamAction,
   inviteMemberAction,
   renameTeamAction,
+  updateInboundEmailWhitelistAction,
   type CreateTeamState,
+  type InboundEmailWhitelistState,
   type InviteState,
   type RenameTeamState,
 } from '@/app/actions/teams';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
 function Submit({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -59,6 +62,55 @@ export function RenameTeamForm({ currentName, teamId }: { currentName: string; t
       </div>
       {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
       {state.ok ? <p className="text-sm text-muted-foreground">Team name updated.</p> : null}
+    </form>
+  );
+}
+
+export function InboundEmailWhitelistForm({
+  inboundEmail,
+  enabled,
+  senders,
+}: {
+  inboundEmail: string | null;
+  enabled: boolean;
+  senders: string[];
+}) {
+  const [state, action] = useActionState<InboundEmailWhitelistState, FormData>(
+    updateInboundEmailWhitelistAction,
+    {},
+  );
+  return (
+    <form action={action} className="space-y-4">
+      <div className="space-y-1">
+        <Label>Team email address</Label>
+        <code className="block break-all rounded-md bg-muted px-3 py-2 text-[12px]">
+          {inboundEmail ?? 'Not configured'}
+        </code>
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          name="enabled"
+          defaultChecked={enabled}
+          className="size-4 rounded border-input"
+        />
+        Enable sender whitelist
+      </label>
+      <div className="space-y-2">
+        <Label htmlFor="inbound-email-senders">Allowed senders</Label>
+        <Textarea
+          id="inbound-email-senders"
+          name="senders"
+          defaultValue={senders.join(', ')}
+          placeholder="alice@example.com, vendor@example.net"
+          className="min-h-28"
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Submit label="Save email settings" />
+        {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+        {state.ok ? <p className="text-sm text-muted-foreground">Email settings updated.</p> : null}
+      </div>
     </form>
   );
 }

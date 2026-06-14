@@ -35,6 +35,12 @@
       "import": "./dist/analytics/posthog-node.js",
       "default": "./dist/analytics/posthog-node.js"
     },
+    "./calendar": {
+      "types": "./src/calendar/index.ts",
+      "development": "./src/calendar/index.ts",
+      "import": "./dist/calendar/index.js",
+      "default": "./dist/calendar/index.js"
+    },
     "./job-recovery": {
       "types": "./src/job-recovery/index.ts",
       "development": "./src/job-recovery/index.ts",

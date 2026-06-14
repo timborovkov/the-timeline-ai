@@ -11,6 +11,7 @@ import { applyDbMigrations } from '#src/test/pglite.js';
 import { textQueueDeps } from '#src/test/queue-deps.js';
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
+const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 function inboundPayload(messageId: string): PostmarkInbound {
@@ -129,6 +130,88 @@ describe('email dispatcher', () => {
       rawEventId: row?.id,
       teamId: TEAM_ID,
     });
+  });
+
+  it('allows whitelisted senders case-insensitively when the whitelist is enabled', async () => {
+    await db
+      .update(teams)
+      .set({
+        inboundSenderWhitelistEnabled: true,
+        inboundSenderWhitelist: ['Vendor@Example.NET'],
+      })
+      .where(eq(teams.id, TEAM_ID));
+    const queues = textQueueDeps();
+
+    await expect(
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', ...queues },
+        inboundPayload('whitelisted-vendor'),
+      ),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+
+    const rows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    expect(rows).toHaveLength(1);
+    expect(queues.extract.enqueueExtract).toHaveBeenCalledOnce();
+  });
+
+  it('blocks non-whitelisted senders before raw events or agent work', async () => {
+    await db
+      .update(teams)
+      .set({
+        inboundSenderWhitelistEnabled: true,
+        inboundSenderWhitelist: ['member@example.com'],
+      })
+      .where(eq(teams.id, TEAM_ID));
+    const queues = textQueueDeps();
+
+    await expect(
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', ...queues },
+        inboundPayload('blocked-vendor'),
+      ),
+    ).resolves.toMatchObject({ ok: false, inserted: 0, reason: 'blocked_sender' });
+
+    const rows = await db.select().from(rawEvents);
+    expect(rows).toHaveLength(0);
+    expect(queues.extract.enqueueExtract).not.toHaveBeenCalled();
+    expect(queues.embed.enqueueEmbed).not.toHaveBeenCalled();
+    expect(queues.suggestions.enqueueSuggestion).not.toHaveBeenCalled();
+  });
+
+  it('applies sender whitelist independently for multi-team CC ingest', async () => {
+    await db.insert(teams).values({
+      id: OTHER_TEAM_ID,
+      slug: 'team-b',
+      name: 'Team B',
+      inboundEmail: 'team-b@inbound.test',
+      inboundSenderWhitelistEnabled: true,
+      inboundSenderWhitelist: ['partner@example.net'],
+    });
+    await db.insert(teamMembers).values({
+      teamId: OTHER_TEAM_ID,
+      userId: USER_ID,
+      role: 'owner',
+    });
+    await db
+      .update(teams)
+      .set({
+        inboundSenderWhitelistEnabled: true,
+        inboundSenderWhitelist: ['vendor@example.net'],
+      })
+      .where(eq(teams.id, TEAM_ID));
+    const payload = inboundPayload('cc-two-teams');
+    payload.MailboxHash = '';
+    payload.CcFull = [{ Email: 'team-b@inbound.test', Name: 'Team B', MailboxHash: '' }];
+    const queues = textQueueDeps();
+
+    await expect(
+      handleInbound({ db: db as never, inboundDomain: 'inbound.test', ...queues }, payload),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+
+    const rows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.teamId).toBe(TEAM_ID);
+    expect(queues.extract.enqueueExtract).toHaveBeenCalledOnce();
   });
 
   it('attributes verified member senders and honors private email defaults', async () => {

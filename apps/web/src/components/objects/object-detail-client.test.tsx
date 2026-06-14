@@ -1,10 +1,20 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as ReactQuery from '@tanstack/react-query';
+
 const fakes = vi.hoisted(() => ({ refresh: vi.fn() }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
+vi.mock('@tanstack/react-query', async (importOriginal) => {
+  const actual = await importOriginal<typeof ReactQuery>();
+  return {
+    ...actual,
+    useQuery: () => ({ data: { query: '', results: [] } }),
+  };
+});
 vi.mock('@/app/actions/objects', () => ({
   acceptObjectChangeAction: vi.fn(),
   addRelationshipAction: vi.fn(),
@@ -26,6 +36,7 @@ vi.mock('@/components/objects/object-section-feed', () => ({
 }));
 
 const { ObjectDetailClient } = await import('./object-detail-client.js');
+const { visibleObjectSearchResultsForQuery } = await import('./object-search-results.js');
 
 const detail = {
   id: 'object-1',
@@ -58,11 +69,20 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+function renderObjectDetail(props: Parameters<typeof ObjectDetailClient>[0]): string {
+  const queryClient = new QueryClient();
+  return renderToStaticMarkup(
+    createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      createElement(ObjectDetailClient, props),
+    ),
+  );
+}
+
 describe('ObjectDetailClient', () => {
   it('renders object detail sections and archive control', () => {
-    const html = renderToStaticMarkup(
-      createElement(ObjectDetailClient, { detail, userId: 'user-1', suggestions: [] }),
-    );
+    const html = renderObjectDetail({ detail, userId: 'user-1', suggestions: [] });
 
     expect(html).toContain('Send proposal');
     expect(html).toContain('Notes');
@@ -76,41 +96,61 @@ describe('ObjectDetailClient', () => {
   });
 
   it('renders pending approvals on the object detail surface', () => {
-    const html = renderToStaticMarkup(
-      createElement(ObjectDetailClient, {
-        detail,
-        userId: 'user-1',
-        suggestions: [
-          {
-            id: 'bundle-1',
-            source: 'background',
-            status: 'pending',
-            title: 'Update proposal stage',
-            summary: null,
-            reason: null,
-            confidence: 'medium',
-            createdAt: '2026-06-01T10:00:00.000Z',
-            evidence: [],
-            items: [
-              {
-                id: 'item-1',
-                status: 'pending',
-                operation: 'update',
-                targetKind: 'object',
-                targetId: 'object-1',
-                title: 'Move to proposal',
-                description: null,
-                proposedPayload: { stage: 'proposal' },
-                failureReason: null,
-              },
-            ],
-          },
-        ],
-      }),
-    );
+    const html = renderObjectDetail({
+      detail,
+      userId: 'user-1',
+      suggestions: [
+        {
+          id: 'bundle-1',
+          source: 'background',
+          status: 'pending',
+          title: 'Update proposal stage',
+          summary: null,
+          reason: null,
+          confidence: 'medium',
+          createdAt: '2026-06-01T10:00:00.000Z',
+          evidence: [],
+          items: [
+            {
+              id: 'item-1',
+              status: 'pending',
+              operation: 'update',
+              targetKind: 'object',
+              targetId: 'object-1',
+              title: 'Move to proposal',
+              description: null,
+              proposedPayload: { stage: 'proposal' },
+              failureReason: null,
+            },
+            {
+              id: 'item-2',
+              status: 'failed',
+              operation: 'create',
+              targetKind: 'task',
+              targetId: null,
+              title: 'Create follow-up task',
+              description: null,
+              proposedPayload: { title: 'Follow up' },
+              failureReason: 'temporary failure',
+            },
+          ],
+        },
+      ],
+    });
 
     expect(html).toContain('Pending approvals');
+    expect(html).toContain('2 waiting');
     expect(html).toContain('Update proposal stage');
     expect(html).toContain('Move to proposal');
+  });
+
+  it('filters placeholder object search results against the current query', () => {
+    const staleData = {
+      query: 'Acme',
+      results: [{ id: 'object-2', canonicalName: 'Acme Renewal', type: 'deal' }],
+    };
+
+    expect(visibleObjectSearchResultsForQuery(staleData, 'Globex')).toEqual([]);
+    expect(visibleObjectSearchResultsForQuery(staleData, 'Acm')).toEqual(staleData.results);
   });
 });

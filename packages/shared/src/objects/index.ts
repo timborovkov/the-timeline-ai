@@ -569,6 +569,42 @@ export async function getObjectSectionPage(
         confidence: factsTable.confidence,
         rawEventId: factsTable.rawEventId,
         extractedAt: factsTable.extractedAt,
+        sharedObjects: sql<
+          { id: string; canonicalName: string; type: ObjectType; role: string }[]
+        >`coalesce(
+          (
+            select json_agg(
+              json_build_object(
+                'id', shared_objects.id,
+                'canonicalName', shared_objects.canonical_name,
+                'type', shared_objects.type,
+                'role', shared_objects.role
+              )
+              order by shared_objects.canonical_name, shared_objects.id
+            )
+            from (
+              select
+                shared_entities.id,
+                shared_entities.canonical_name,
+                shared_entities.type,
+                string_agg(
+                  distinct shared_fact_entities.role::text,
+                  ', '
+                  order by shared_fact_entities.role::text
+                ) as role
+              from fact_entities shared_fact_entities
+              inner join entities shared_entities
+                on shared_entities.id = shared_fact_entities.entity_id
+              where shared_fact_entities.fact_id = ${factsTable.id}
+                and shared_fact_entities.entity_id <> ${entityId}
+                and shared_entities.team_id = ${scope.teamId}
+                and shared_entities.merged_into_id is null
+              group by shared_entities.id, shared_entities.canonical_name, shared_entities.type
+            )
+            shared_objects
+          ),
+          '[]'::json
+        )`,
       })
       .from(factEntities)
       .innerJoin(factsTable, eq(factsTable.id, factEntities.factId))

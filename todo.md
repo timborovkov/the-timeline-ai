@@ -7,9 +7,9 @@ actionable.
 
 The product baseline through Phase 13 is largely shipped: foundations, capture
 surfaces, workers, extraction, embeddings, agent chat, objects, curated boards,
-tasks, documents, meeting bots, calendar basics, integrations/custom MCPs,
-Slack, onboarding, visibility controls, exports, job recovery, public
-help/legal, and approval-backed object and board memory.
+tasks, documents, meeting bots, calendar basics/subscriptions,
+integrations/custom MCPs, Slack, onboarding, visibility controls, exports, job
+recovery, public help/legal, and approval-backed object and board memory.
 
 This file now tracks only remaining work and recurring operating obligations.
 Use the repository history, release notes, and phase PRs for shipped
