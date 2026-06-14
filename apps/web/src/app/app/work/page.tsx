@@ -30,6 +30,7 @@ export const metadata: Metadata = {
 
 const DUE_SOON_DAYS = 14;
 const QUEUE_LIMIT = 20;
+const OBJECT_FETCH_PAGE_SIZE = 500;
 const RECENT_CHANGE_LIMIT = 5;
 const WORK_OBJECT_TYPES: objects.ObjectType[] = ['task', 'follow_up', 'project', 'deal'];
 
@@ -75,15 +76,11 @@ export default async function WorkPage() {
   const scope = withTeam(db, active.teamId, session.user.id);
   const now = new Date();
   const dueSoon = new Date(now.getTime() + DUE_SOON_DAYS * 24 * 60 * 60 * 1000);
-  const [pendingApprovals, boardItems, objects, pinnedBoards, boards, recentChanges] =
+  const [pendingApprovals, boardItems, queueObjects, pinnedBoards, boards, recentChanges] =
     await Promise.all([
       scope.suggestions.countPendingSuggestions(),
       scope.boards.listWorkQueueItems({ dueBefore: dueSoon, limit: 100 }),
-      scope.objects.listObjects({
-        type: WORK_OBJECT_TYPES,
-        archived: false,
-        limit: 500,
-      }),
+      listWorkQueueObjects(scope.objects, session.user.id, dueSoon),
       scope.boards.listPinnedBoards(),
       scope.boards.listBoards(),
       scope.timeline.listEventsPage({ limit: RECENT_CHANGE_LIMIT }),
@@ -94,7 +91,7 @@ export default async function WorkPage() {
     sortWorkQueueItems([
       ...(approvalsItem ? [approvalsItem] : []),
       ...boardItems.map((item) => boardQueueItem(item, session.user.id, now, dueSoon)),
-      ...objects.flatMap((item) => {
+      ...queueObjects.flatMap((item) => {
         const queued = objectQueueItem(item, session.user.id, now, dueSoon);
         return queued ? [queued] : [];
       }),
@@ -236,6 +233,41 @@ export default async function WorkPage() {
       </div>
     </div>
   );
+}
+
+async function listObjectPages(
+  listObjects: (filter: objects.ObjectListFilter) => Promise<objects.ObjectRow[]>,
+  filter: objects.ObjectListFilter,
+  offset = 0,
+  collected: objects.ObjectRow[] = [],
+): Promise<objects.ObjectRow[]> {
+  const page = await listObjects({ ...filter, limit: OBJECT_FETCH_PAGE_SIZE, offset });
+  const rows = [...collected, ...page];
+  if (page.length < OBJECT_FETCH_PAGE_SIZE) return rows;
+  return listObjectPages(listObjects, filter, offset + OBJECT_FETCH_PAGE_SIZE, rows);
+}
+
+async function listWorkQueueObjects(
+  objectScope: { listObjects(filter: objects.ObjectListFilter): Promise<objects.ObjectRow[]> },
+  userId: string,
+  dueBefore: Date,
+): Promise<objects.ObjectRow[]> {
+  const baseFilter = {
+    type: WORK_OBJECT_TYPES,
+    archived: false,
+  } satisfies objects.ObjectListFilter;
+  const listObjects = (filter: objects.ObjectListFilter) => objectScope.listObjects(filter);
+  const [owned, assigned, teamDue] = await Promise.all([
+    listObjectPages(listObjects, { ...baseFilter, ownerUserId: userId }),
+    listObjectPages(listObjects, { ...baseFilter, assigneeUserId: userId }),
+    listObjectPages(listObjects, {
+      ...baseFilter,
+      ownerUserId: null,
+      assigneeUserId: null,
+      dueBefore,
+    }),
+  ]);
+  return [...owned, ...assigned, ...teamDue];
 }
 
 function WorkQueueRow({ item }: { item: WorkQueueItem }) {

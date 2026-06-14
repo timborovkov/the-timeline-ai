@@ -257,6 +257,49 @@ describe('BoardCardDetail', () => {
     expect(onUpdateItem).not.toHaveBeenCalled();
   });
 
+  it('syncs a clean next-step draft when the selected item refreshes', async () => {
+    const user = userEvent.setup();
+    const onUpdateItem = vi.fn(() => Promise.resolve({ ok: true }));
+    const { rerender } = render(
+      <BoardCardDetail
+        boardId="board-1"
+        view="kanban"
+        item={boardItem({
+          id: 'item-1',
+          entityId: 'object-1',
+          canonicalName: 'Alpha',
+          nextStep: 'Old server step',
+        })}
+        history={[]}
+        lanes={lanes}
+        onUpdateItem={onUpdateItem}
+      />,
+    );
+
+    expect(screen.getByDisplayValue('Old server step')).toBeTruthy();
+
+    rerender(
+      <BoardCardDetail
+        boardId="board-1"
+        view="kanban"
+        item={boardItem({
+          id: 'item-1',
+          entityId: 'object-1',
+          canonicalName: 'Alpha',
+          nextStep: 'Fresh server step',
+        })}
+        history={[]}
+        lanes={lanes}
+        onUpdateItem={onUpdateItem}
+      />,
+    );
+
+    await user.click(screen.getByDisplayValue('Fresh server step'));
+    await user.tab();
+
+    expect(onUpdateItem).not.toHaveBeenCalled();
+  });
+
   it('keeps the note editor open when saving notes fails', async () => {
     const user = userEvent.setup();
     const onUpdateItem = vi.fn(() => Promise.resolve({ error: 'Save failed' }));

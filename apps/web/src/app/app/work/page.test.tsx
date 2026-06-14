@@ -174,6 +174,44 @@ describe('WorkPage', () => {
     expect(html).not.toContain('Completed task');
   });
 
+  it('pages eligible object subsets instead of only reading the newest objects', async () => {
+    const filler = Array.from({ length: 500 }, (_, index) =>
+      objectRow({
+        id: `done-task-${index}`,
+        canonicalName: `Completed task ${index}`,
+        status: 'done',
+        ownerUserId: USER_ID,
+      }),
+    );
+    fakes.listObjects.mockImplementation((filter: Record<string, unknown>) => {
+      if (filter.ownerUserId !== USER_ID) return [];
+      if (filter.offset === 0) return filler;
+      if (filter.offset === 500) {
+        return [
+          objectRow({
+            id: 'stale-owned-task',
+            canonicalName: 'Stale owned task',
+            ownerUserId: USER_ID,
+            updatedAt: new Date('2025-01-01T00:00:00.000Z'),
+          }),
+        ];
+      }
+      return [];
+    });
+
+    const html = renderToStaticMarkup(await WorkPage());
+
+    expect(html).toContain('Stale owned task');
+    expect(fakes.listObjects).toHaveBeenCalledWith(
+      expect.objectContaining({
+        archived: false,
+        ownerUserId: USER_ID,
+        limit: 500,
+        offset: 500,
+      }),
+    );
+  });
+
   it('deduplicates board and object queue rows for the same entity', async () => {
     fakes.listWorkQueueItems.mockResolvedValue([
       boardQueueRow({
