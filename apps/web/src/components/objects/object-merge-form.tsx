@@ -35,6 +35,7 @@ const emptyCounts = {
   relationships: 0,
   openTasks: 0,
 };
+const emptyFactSamplesByObjectId: NonNullable<Props['factSamplesByObjectId']> = {};
 
 function aliasAdditions(rows: objects.ObjectRow[], survivorId: string): string[] {
   const survivor = rows.find((row) => row.id === survivorId);
@@ -64,7 +65,7 @@ export function ObjectMergeForm({
   objects,
   initialSurvivorId,
   countsBySurvivorId,
-  factSamplesByObjectId = {},
+  factSamplesByObjectId = emptyFactSamplesByObjectId,
   suggestionItemId,
   onCancel,
   onReject,
@@ -123,7 +124,7 @@ export function ObjectMergeForm({
                   onChange={() => {
                     setSurvivorId(object.id);
                   }}
-                  className="h-4 w-4 accent-[var(--signal)]"
+                  className="size-4 accent-[var(--signal)]"
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-fg">{object.canonicalName}</span>
@@ -217,7 +218,7 @@ export function ObjectMergeForm({
             href="/app/objects"
             className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-border px-3 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
           >
-            <X className="h-3.5 w-3.5" aria-hidden />
+            <X className="size-3.5" aria-hidden />
             Cancel
           </Link>
         )}

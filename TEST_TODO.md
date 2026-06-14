@@ -12,10 +12,10 @@ shape:
 
 - DB Vitest: 1 file / 7 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 68 files / 656 passed tests plus 1 skipped, including PGlite
+- Shared Vitest: 68 files / 659 passed tests plus 1 skipped, including PGlite
   calendar, timeline, MCP, integration, meeting, document, object, assistant,
   Slack, recovery, connection, and onboarding coverage.
-- Web Vitest: 92 files / 462 tests, including route/action/component coverage
+- Web Vitest: 92 files / 466 tests, including route/action/component coverage
   for core recovery, onboarding, object sections, board add-item interactions,
   and other high-value UI states.
 - Worker Vitest: 11 files / 154 tests, including extract, transcribe,
@@ -49,7 +49,7 @@ Legend:
 | Slack | Missing Slack settings E2E | Partial: events webhook covered; commands/install/user-link missing | Missing Slack action tests | Strong dispatcher/API/security/source-capture coverage, including text/file capture, linked attribution, visibility defaults, downstream queues, and idempotent edits | Missing provider-specific worker coverage | Missing Slack settings UI | Slash command/install/user-link routes, settings UI, provider-backed canary coverage |
 | Telegram | Partial: browser verifies deterministic Telegram voice transcript approval acceptance | Partial: webhook covered, including media env wiring | Missing Telegram action tests | Strong API/dispatcher coverage, including DM text, voice/audio, caption/photo, document routing, duplicate delivery, and media skip behavior | Partial: transcribe processor handoff from audio transcript to extract/embed/suggestions is covered | Missing Telegram settings UI | Bind/unbind/settings actions and UI, provider-backed Telegram/OpenRouter canary, richer image/OCR-to-approval behavior |
 | MCP inbound/outbound | Missing MCP settings/key E2E | Strong MCP OAuth/server/key/server/tool route contracts | Missing MCP-specific actions if/when added | Strong auth/OAuth state/tool namespace/server handler, tool namespace, and deterministic untrusted-output/failure/reauth evals | MCP health worker missing | Missing MCP UI | MCP health worker, private-vs-team E2E, UI management states, provider-backed MCP behavior |
-| Email inbound/outbound | Missing E2E inbound email journey | Partial: inbound webhook covered, including Redis queue wiring | Invite/support email action gaps remain | Strong parser/dispatcher/outbound/IP allowlist/source-capture coverage, including sender auth, visibility defaults, attachment/audio routing, downstream queues, and duplicate delivery recovery | Missing extract processor coverage for email attachments | Missing UI | Support action, inbound attachment extraction E2E/integration, provider-backed Postmark canary |
+| Email inbound/outbound | Missing E2E inbound email journey | Partial: inbound webhook covered, including Redis queue wiring | Whitelist action covered; invite/support email action gaps remain | Strong parser/dispatcher/outbound/IP allowlist/source-capture coverage, including sender auth, sender whitelist filtering, visibility defaults, attachment/audio routing, downstream queues, and duplicate delivery recovery | Missing extract processor coverage for email attachments | Missing UI | Support action, sender whitelist UI component/E2E, inbound attachment extraction E2E/integration, provider-backed Postmark canary |
 | Meeting bots and meetings | Missing E2E scheduling/finalization | Partial Recall status/transcript webhooks covered | Thin meetings action coverage | Strong meetings scope, Recall/Svix/url helpers | Strong meeting-finalize worker | Missing meeting UI states | Meeting action breadth, consent/failure E2E, meeting UI states |
 | Job recovery and failed work | Missing dashboard E2E | Strong retry/dismiss/dashboard route coverage plus cron reconcile auth/failure behavior and direct finished archive route coverage | N/A | Strong job-recovery PGlite coverage, including retained finished-job archive pagination | Janitor worker covered | Partial job recovery list component with retry status and finished archive states | Retry/dismiss E2E flow |
 | Onboarding | Missing E2E checklist/dismissal | Strong checklist route coverage | Strong onboarding action coverage | Strong PGlite checklist inference, dismiss/reopen, manual completion, and team isolation | Missing | Partial checklist static states | Checklist E2E and richer interaction states |
@@ -252,8 +252,9 @@ Covered shared areas include:
 - Qdrant client/point-id behavior, deterministic timeline retrieval ranking,
   and raw-event embedding source planning.
 - Email parser/dispatcher/outbound behavior, including inbound source-capture
-  raw events, sender-auth handling, visibility defaults, attachment/audio
-  routing, direct text queue handoff, and duplicate delivery recovery.
+  raw events, sender-auth handling, sender whitelist filtering, visibility
+  defaults, attachment/audio routing, direct text queue handoff, and duplicate
+  delivery recovery.
 - Crypto secrets, rate limiting, citations, pagination, chunking, env reset,
   and embedding source planning.
 

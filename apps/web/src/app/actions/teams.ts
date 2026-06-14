@@ -38,6 +38,7 @@ const renameTeamSchema = z.object({
   teamId: z.uuid(),
   name: z.string().trim().min(1).max(80),
 });
+const emailListSchema = z.array(z.email());
 
 export interface CreateTeamState {
   error?: string;
@@ -139,6 +140,99 @@ export async function renameTeamAction(
     }
 
     revalidatePath('/app', 'layout');
+    revalidatePath('/app/team');
+    return { ok: true };
+  });
+}
+
+export interface InboundEmailWhitelistState {
+  error?: string;
+  ok?: boolean;
+}
+
+function parseSenderWhitelist(raw: FormDataEntryValue | null): string[] | null {
+  if (typeof raw !== 'string') return [];
+  const items = raw
+    .split(/[\n,]+/)
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => item.length > 0);
+  const deduped = Array.from(new Set(items));
+  const parsed = emailListSchema.safeParse(deduped);
+  return parsed.success ? parsed.data : null;
+}
+
+function parseDisabledSenderWhitelist(raw: FormDataEntryValue | null): string[] {
+  if (typeof raw !== 'string') return [];
+  const out = new Set<string>();
+  for (const item of raw.split(/[\n,]+/)) {
+    const email = item.trim().toLowerCase();
+    if (z.email().safeParse(email).success) out.add(email);
+  }
+  return Array.from(out);
+}
+
+export async function updateInboundEmailWhitelistAction(
+  _prev: InboundEmailWhitelistState,
+  formData: FormData,
+): Promise<InboundEmailWhitelistState> {
+  return runSentryServerAction('update_inbound_email_whitelist', async () => {
+    const session = await auth();
+    if (!session?.user) return { error: 'Not signed in' };
+    const { active } = await resolveActiveTeam(session.user.id);
+    if (!active) return { error: 'No active team' };
+
+    const enabled = formData.get('enabled') === 'on';
+    const rawSenders = formData.get('senders');
+    const whitelist = enabled
+      ? parseSenderWhitelist(rawSenders)
+      : parseDisabledSenderWhitelist(rawSenders);
+    if (!whitelist) return { error: 'Enter valid email addresses only' };
+    if (enabled && whitelist.length === 0) {
+      return { error: 'Add at least one sender before enabling the whitelist' };
+    }
+
+    const scope = withTeam(db, active.teamId, session.user.id);
+    try {
+      await scope.requireMembership('admin');
+    } catch (err) {
+      reportCaughtError(err, {
+        surface: 'server_action',
+        operation: 'update_inbound_email_whitelist_auth',
+      });
+      return { error: 'Only admins can update email ingest settings' };
+    }
+
+    try {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(teams)
+          .set({
+            inboundSenderWhitelistEnabled: enabled,
+            inboundSenderWhitelist: whitelist,
+          })
+          .where(eq(teams.id, active.teamId));
+        await tx.insert(auditLog).values({
+          teamId: active.teamId,
+          actorUserId: session.user.id,
+          action: 'settings.change',
+          targetType: 'team',
+          targetId: active.teamId,
+          targetVisibility: 'team',
+          metadata: {
+            setting: 'team.inbound_sender_whitelist',
+            enabled,
+            senderCount: whitelist.length,
+          },
+        });
+      });
+    } catch (err) {
+      reportCaughtError(err, {
+        surface: 'server_action',
+        operation: 'update_inbound_email_whitelist',
+      });
+      return { error: 'Failed to update email sender whitelist' };
+    }
+
     revalidatePath('/app/team');
     return { ok: true };
   });

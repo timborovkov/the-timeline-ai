@@ -1,4 +1,14 @@
-import { index, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  jsonb,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { users } from '#src/schema/users.js';
 
@@ -20,6 +30,10 @@ export const teams = pgTable('teams', {
   // not a state. Unique across teams so cross-team routing in the inbound
   // dispatcher cannot ambiguously match.
   inboundEmail: text('inbound_email').unique(),
+  inboundSenderWhitelistEnabled: boolean('inbound_sender_whitelist_enabled')
+    .notNull()
+    .default(false),
+  inboundSenderWhitelist: jsonb('inbound_sender_whitelist').$type<string[]>().notNull().default([]),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

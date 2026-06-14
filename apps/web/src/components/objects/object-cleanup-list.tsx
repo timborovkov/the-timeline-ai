@@ -114,7 +114,7 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
                     : 'pointer-events-none border-border text-fg-dim opacity-50'
                 }`}
               >
-                <GitMerge className="h-3.5 w-3.5" aria-hidden />
+                <GitMerge className="size-3.5" aria-hidden />
                 Merge
               </Link>
               <button
@@ -123,7 +123,7 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
                 disabled={selectedCount === 0 || isPending}
                 className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-2.5 font-mono text-[11px] uppercase tracking-[0.1em] text-fg transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:text-fg-dim disabled:opacity-50"
               >
-                <Archive className="h-3.5 w-3.5" aria-hidden />
+                <Archive className="size-3.5" aria-hidden />
                 Archive
               </button>
               <button
@@ -131,7 +131,7 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
                 onClick={clearSelection}
                 className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-2.5 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
               >
-                <X className="h-3.5 w-3.5" aria-hidden />
+                <X className="size-3.5" aria-hidden />
                 Clear
               </button>
             </>
@@ -143,7 +143,7 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
               }}
               className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-2.5 font-mono text-[11px] uppercase tracking-[0.1em] text-fg transition-colors hover:bg-surface-2"
             >
-              <SquareCheckBig className="h-3.5 w-3.5" aria-hidden />
+              <SquareCheckBig className="size-3.5" aria-hidden />
               Select
             </button>
           )}
@@ -195,7 +195,7 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
                                 toggle(object.id);
                               }}
                               aria-label={`Select ${object.canonicalName}`}
-                              className="mr-2.5 h-4 w-4 accent-[var(--signal)]"
+                              className="mr-2.5 size-4 accent-[var(--signal)]"
                             />
                           ) : null}
                           <Link
