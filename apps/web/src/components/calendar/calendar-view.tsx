@@ -15,10 +15,20 @@ import {
   Clock,
   Pencil,
   Plus,
+  Search,
   Trash2,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useReducer, useRef, useTransition } from 'react';
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 
 import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
 import type { SaveState } from '@/lib/utils';
@@ -53,6 +63,11 @@ type CalendarViewMode = 'month' | 'week' | 'day';
 
 interface CalendarViewProps {
   events: CalendarEvent[];
+  eventListEvents?: CalendarEvent[];
+  eventListTotal?: number;
+  eventListPage?: number;
+  eventListQuery?: string;
+  eventListScope?: 'future' | 'past' | 'all';
   timezone: string;
   defaultVisibility?: 'team' | 'private' | 'specific_users';
   defaultVisibilityUserIds?: string[] | null;
@@ -102,6 +117,7 @@ interface CalendarUiState {
 type CalendarUiAction = Partial<CalendarUiState> | ((state: CalendarUiState) => CalendarUiState);
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const EVENT_LIST_PAGE_SIZE = 12;
 
 function initCalendarUiState({
   anchor,
@@ -190,6 +206,31 @@ function formatTime(event: CalendarEvent, timezone: string): string {
   return start.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatEventDateTime(value: string, timezone: string): string {
+  return Temporal.Instant.from(value).toZonedDateTimeISO(timezone).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatEventRange(event: CalendarEvent, timezone: string): string {
+  if (event.allDay) {
+    const start = Temporal.Instant.from(event.startAt)
+      .toZonedDateTimeISO(assertValidTimezone(event.timezone))
+      .toPlainDate();
+    const end = Temporal.Instant.from(event.endAt)
+      .toZonedDateTimeISO(assertValidTimezone(event.timezone))
+      .toPlainDate()
+      .subtract({ days: 1 });
+    return Temporal.PlainDate.compare(start, end) === 0
+      ? start.toLocaleString('en-US', { month: 'short', day: 'numeric' })
+      : `${start.toLocaleString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleString('en-US', { month: 'short', day: 'numeric' })}`;
+  }
+  return `${formatEventDateTime(event.startAt, timezone)} - ${formatEventDateTime(event.endAt, timezone)}`;
+}
+
 function eventTouchesDate(
   event: CalendarEvent,
   date: Temporal.PlainDate,
@@ -266,6 +307,11 @@ export function CalendarView(props: CalendarViewProps) {
 
 function CalendarViewContent({
   events,
+  eventListEvents = events,
+  eventListTotal = eventListEvents.length,
+  eventListPage = 0,
+  eventListQuery = '',
+  eventListScope = 'future',
   timezone,
   defaultVisibility = 'team',
   defaultVisibilityUserIds = null,
@@ -296,6 +342,7 @@ function CalendarViewContent({
     initCalendarUiState,
   );
   const [pending, startTransition] = useTransition();
+  const [eventSearch, setEventSearch] = useState(eventListQuery);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialogContextRef = useRef(0);
   const serverEventsSnapshotRef = useRef<{
@@ -326,9 +373,17 @@ function CalendarViewContent({
     });
   }, [events, pending]);
 
+  const displayEvents = useMemo(
+    () => mergeCalendarEvents(events, eventOverlay),
+    [events, eventOverlay],
+  );
+  const displayEventListEvents = useMemo(
+    () => mergeCalendarEvents(eventListEvents, eventOverlay),
+    [eventListEvents, eventOverlay],
+  );
+
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
-    const displayEvents = mergeCalendarEvents(events, eventOverlay);
     for (const day of visibleDays) {
       const matches = displayEvents
         .filter((event) => eventTouchesDate(event, day, timezone))
@@ -336,10 +391,54 @@ function CalendarViewContent({
       map.set(day.toString(), matches);
     }
     return map;
-  }, [events, eventOverlay, timezone, visibleDays]);
+  }, [displayEvents, timezone, visibleDays]);
+
+  const updateEventListParams = useCallback(
+    ({
+      query,
+      scope,
+      page,
+    }: {
+      query?: string;
+      scope?: 'future' | 'past' | 'all';
+      page?: number;
+    }) => {
+      const next = new URLSearchParams(searchParams.toString());
+      const nextQuery = query ?? eventListQuery;
+      const nextScope = scope ?? eventListScope;
+      const nextPage = page ?? eventListPage;
+
+      if (nextQuery.trim()) next.set('eventQ', nextQuery.trim());
+      else next.delete('eventQ');
+      if (nextScope === 'future') next.delete('eventScope');
+      else next.set('eventScope', nextScope);
+      if (nextPage > 0) next.set('eventPage', String(nextPage + 1));
+      else next.delete('eventPage');
+
+      router.push(`/app/calendar?${next.toString()}`);
+    },
+    [eventListPage, eventListQuery, eventListScope, router, searchParams],
+  );
+
+  useEffect(() => {
+    setEventSearch(eventListQuery);
+  }, [eventListQuery]);
+
+  useEffect(() => {
+    if (eventSearch === eventListQuery) return;
+    const timer = setTimeout(() => {
+      updateEventListParams({ query: eventSearch, page: 0 });
+    }, 350);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [eventSearch, eventListQuery, updateEventListParams]);
 
   function push(nextMode: CalendarViewMode, nextDate: Temporal.PlainDate) {
-    router.push(`/app/calendar?view=${nextMode}&date=${nextDate.toString()}`);
+    const next = new URLSearchParams(searchParams.toString());
+    next.set('view', nextMode);
+    next.set('date', nextDate.toString());
+    router.push(`/app/calendar?${next.toString()}`);
   }
 
   function move(direction: -1 | 1) {
@@ -535,6 +634,22 @@ function CalendarViewContent({
         onCreate={openCreate}
         onEdit={openEdit}
       />
+      <CalendarEventList
+        events={displayEventListEvents}
+        total={eventListTotal}
+        timezone={timezone}
+        query={eventSearch}
+        scope={eventListScope}
+        page={eventListPage}
+        onQueryChange={setEventSearch}
+        onScopeChange={(scope) => {
+          updateEventListParams({ scope, page: 0 });
+        }}
+        onPageChange={(page) => {
+          updateEventListParams({ page });
+        }}
+        onEdit={openEdit}
+      />
       <CalendarEventDialog
         open={open}
         editing={editing}
@@ -556,6 +671,146 @@ function CalendarViewContent({
         onRemove={remove}
       />
     </div>
+  );
+}
+
+function CalendarEventList({
+  events,
+  total,
+  timezone,
+  query,
+  scope,
+  page,
+  onQueryChange,
+  onScopeChange,
+  onPageChange,
+  onEdit,
+}: {
+  events: CalendarEvent[];
+  total: number;
+  timezone: string;
+  query: string;
+  scope: 'future' | 'past' | 'all';
+  page: number;
+  onQueryChange: (query: string) => void;
+  onScopeChange: (scope: 'future' | 'past' | 'all') => void;
+  onPageChange: (page: number) => void;
+  onEdit: (event: CalendarEvent) => void;
+}) {
+  const pageCount = Math.max(1, Math.ceil(total / EVENT_LIST_PAGE_SIZE));
+  const effectivePage = Math.min(page, pageCount - 1);
+  const pageStart = effectivePage * EVENT_LIST_PAGE_SIZE;
+
+  return (
+    <section className="border-t border-border pt-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+            Calendar events
+          </h2>
+          <p className="mt-1 text-sm text-fg-muted">
+            {total} {scope === 'future' ? 'upcoming' : scope} event
+            {total === 1 ? '' : 's'}
+          </p>
+        </div>
+        <div className="flex min-w-64 items-center gap-2 rounded-md border border-input bg-background px-3">
+          <Search className="size-4 text-fg-dim" />
+          <Input
+            value={query}
+            onChange={(event) => {
+              onQueryChange(event.target.value);
+            }}
+            placeholder="Search events"
+            className="h-9 border-0 px-0 ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          {(['future', 'past', 'all'] as const).map((nextScope) => (
+            <Button
+              key={nextScope}
+              type="button"
+              size="sm"
+              variant={scope === nextScope ? 'default' : 'outline'}
+              onClick={() => {
+                onScopeChange(nextScope);
+              }}
+            >
+              {nextScope === 'future' ? 'Today+' : nextScope}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-3 divide-y divide-border border border-border bg-bg">
+        {events.length > 0 ? (
+          events.map((event) => (
+            <button
+              key={event.id}
+              type="button"
+              className="grid w-full gap-3 p-3 text-left transition-colors hover:bg-muted/30 md:grid-cols-[minmax(10rem,0.45fr)_minmax(0,1fr)_8rem]"
+              onClick={() => {
+                onEdit(event);
+              }}
+            >
+              <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                {formatEventRange(event, timezone)}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-fg">
+                  {event.redacted ? 'Busy' : event.title}
+                </span>
+                <span className="mt-1 block truncate text-xs text-fg-muted">
+                  {[event.location, event.description].filter(Boolean).join(' · ') ||
+                    (event.allDay ? 'All day' : event.showAs)}
+                </span>
+              </span>
+              <span className="self-center justify-self-start rounded-sm border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim md:justify-self-end">
+                {event.visibility}
+              </span>
+            </button>
+          ))
+        ) : (
+          <p className="p-4 text-sm text-fg-muted">No calendar events match these filters.</p>
+        )}
+      </div>
+
+      {total > EVENT_LIST_PAGE_SIZE ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+            {pageStart + 1}-{Math.min(pageStart + events.length, total)} of {total}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              disabled={effectivePage === 0}
+              aria-label="Previous events"
+              onClick={() => {
+                onPageChange(Math.max(0, effectivePage - 1));
+              }}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+              Page {effectivePage + 1} / {pageCount}
+            </p>
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              disabled={effectivePage >= pageCount - 1}
+              aria-label="Next events"
+              onClick={() => {
+                onPageChange(Math.min(pageCount - 1, effectivePage + 1));
+              }}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

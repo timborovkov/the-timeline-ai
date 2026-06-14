@@ -109,6 +109,7 @@ describe('CalendarView recurrence and tentative UI', () => {
             rrule: 'FREQ=WEEKLY;BYDAY=WE',
           },
         ],
+        eventListEvents: [],
         timezone: 'UTC',
       }),
     );
@@ -129,6 +130,7 @@ describe('CalendarView recurrence and tentative UI', () => {
             rrule: 'FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR,SU',
           },
         ],
+        eventListEvents: [],
         timezone: 'UTC',
       }),
     );
@@ -172,6 +174,7 @@ describe('CalendarView recurrence and tentative UI', () => {
             originalStartAt: '2026-06-03T09:00:00Z',
           },
         ],
+        eventListEvents: [],
         timezone: 'UTC',
       }),
     );
@@ -188,5 +191,44 @@ describe('CalendarView recurrence and tentative UI', () => {
       });
     });
     expect(fakes.refresh).toHaveBeenCalled();
+  });
+
+  it('drives the event list filters and pagination through URL params', async () => {
+    const user = userEvent.setup();
+    fakes.searchParams = 'view=month&date=2026-06-03';
+
+    render(
+      createElement(CalendarView, {
+        events: [],
+        eventListEvents: [event('event-1', 'Roadmap review')],
+        eventListTotal: 13,
+        eventListPage: 0,
+        eventListQuery: '',
+        eventListScope: 'future',
+        timezone: 'UTC',
+      }),
+    );
+
+    expect(screen.getByText('13 upcoming events')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'past' }));
+    expect(fakes.push).toHaveBeenLastCalledWith(
+      '/app/calendar?view=month&date=2026-06-03&eventScope=past',
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Next events' }));
+    expect(fakes.push).toHaveBeenLastCalledWith(
+      '/app/calendar?view=month&date=2026-06-03&eventPage=2',
+    );
+
+    await user.type(screen.getByPlaceholderText('Search events'), 'budget');
+    await waitFor(
+      () => {
+        expect(fakes.push).toHaveBeenLastCalledWith(
+          '/app/calendar?view=month&date=2026-06-03&eventQ=budget',
+        );
+      },
+      { timeout: 1000 },
+    );
   });
 });

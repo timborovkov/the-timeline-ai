@@ -420,13 +420,22 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <main className="min-w-0 space-y-6">
           {suggestions.length > 0 ? (
-            <ObjectPanel
-              title="Pending approvals"
-              eyebrow={`${pendingApprovalItemCount} waiting`}
-              className="border-signal/40 bg-signal-soft/40"
-            >
-              <ApprovalsClient suggestions={suggestions} allowBulkAccept={false} />
-            </ObjectPanel>
+            <details className="border border-signal/40 bg-signal-soft/20">
+              <summary className="cursor-pointer list-none px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-semibold tracking-tight">Pending approvals</h2>
+                    <p className="mt-1 text-xs text-fg-muted">{pendingApprovalItemCount} waiting</p>
+                  </div>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+                    Open
+                  </span>
+                </div>
+              </summary>
+              <div className="border-t border-border p-4">
+                <ApprovalsClient suggestions={suggestions} allowBulkAccept={false} />
+              </div>
+            </details>
           ) : null}
 
           <ObjectPanel title="Evidence" eyebrow="events">

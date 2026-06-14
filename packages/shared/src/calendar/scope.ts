@@ -6,7 +6,7 @@ import {
   rawEvents,
   teamCalendarSettings,
 } from '@timeline/db';
-import { and, asc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import {
   expandRRuleBetween,
@@ -125,10 +125,25 @@ export interface ListCalendarEventsInput {
   includeDeleted?: boolean;
 }
 
+export interface ListCalendarEventPageInput extends ListCalendarEventsInput {
+  offset?: number;
+  order?: 'asc' | 'desc';
+  search?: string;
+}
+
+export interface CalendarEventPage {
+  events: CalendarEventWithRedaction[];
+  total: number;
+}
+
 export interface MaterializeRecurringEventsInput {
   from?: Date;
   to?: Date;
   parentId?: string;
+}
+
+function escapeSqlLike(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
 }
 
 async function insertCalendarRawEvents(
@@ -774,6 +789,51 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         .limit(opts.limit ?? 200);
 
       return (rows as CalendarEventRow[]).map(redactIfNeeded);
+    },
+
+    async listCalendarEventPage(opts: ListCalendarEventPageInput = {}): Promise<CalendarEventPage> {
+      await ensureMember();
+      const conditions = [eq(calendarEvents.teamId, teamId), calendarReadVisibility];
+
+      if (!opts.includeDeleted) {
+        conditions.push(isNull(calendarEvents.deletedAt));
+      }
+      if (opts.from) {
+        conditions.push(gte(calendarEvents.endAt, opts.from));
+      }
+      if (opts.to) {
+        conditions.push(lt(calendarEvents.startAt, opts.to));
+      }
+      const search = opts.search?.trim();
+      if (search) {
+        const needle = `%${escapeSqlLike(search.toLowerCase())}%`;
+        conditions.push(sql`lower(
+          CASE
+            WHEN ${calendarEvents.visibility} = 'private'
+              AND ${calendarEvents.createdByUserId} IS DISTINCT FROM ${userId}::uuid
+            THEN 'busy'
+            ELSE concat_ws(' ', ${calendarEvents.title}, ${calendarEvents.description}, ${calendarEvents.location})
+          END
+        ) LIKE ${needle} ESCAPE '\\'`);
+      }
+
+      const where = and(...conditions);
+      const totalRows = await db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(calendarEvents)
+        .where(where);
+      const rows = await db
+        .select()
+        .from(calendarEvents)
+        .where(where)
+        .orderBy(opts.order === 'desc' ? desc(calendarEvents.startAt) : asc(calendarEvents.startAt))
+        .limit(opts.limit ?? 50)
+        .offset(opts.offset ?? 0);
+
+      return {
+        events: (rows as CalendarEventRow[]).map(redactIfNeeded),
+        total: totalRows[0]?.total ?? 0,
+      };
     },
 
     async updateCalendarEvent(

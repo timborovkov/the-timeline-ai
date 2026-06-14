@@ -3,7 +3,7 @@
 import { Check, CheckCheck, ExternalLink, GitMerge, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 
 import {
   acceptAllSuggestionAction,
@@ -148,7 +148,17 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const bulkAcceptSuggestions = suggestions.flatMap((bundle) => {
+  const [resolvedItemIds, setResolvedItemIds] = useState<Set<string>>(() => new Set());
+  const [busyItemIds, setBusyItemIds] = useState<Set<string>>(() => new Set());
+  const visibleSuggestions = useMemo(
+    () =>
+      suggestions.flatMap((bundle) => {
+        const items = bundle.items.filter((item) => !resolvedItemIds.has(item.id));
+        return items.length > 0 ? [{ ...bundle, items }] : [];
+      }),
+    [resolvedItemIds, suggestions],
+  );
+  const bulkAcceptSuggestions = visibleSuggestions.flatMap((bundle) => {
     const itemIds = bundle.items.reduce<string[]>((ids, item) => {
       if (isActionableSuggestionStatus(item.status) && item.targetKind !== 'object_merge') {
         ids.push(item.id);
@@ -162,12 +172,55 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
     0,
   );
 
-  function run(action: () => Promise<{ ok?: boolean; error?: string }>) {
+  function markBusy(itemIds: string[]) {
+    if (itemIds.length === 0) return;
+    setBusyItemIds((previous) => new Set([...previous, ...itemIds]));
+  }
+
+  function clearBusy(itemIds: string[]) {
+    if (itemIds.length === 0) return;
+    setBusyItemIds((previous) => {
+      const next = new Set(previous);
+      for (const id of itemIds) next.delete(id);
+      return next;
+    });
+  }
+
+  function resolveItems(itemIds: string[]) {
+    if (itemIds.length === 0) return;
+    setResolvedItemIds((previous) => new Set([...previous, ...itemIds]));
+  }
+
+  function restoreItems(itemIds: string[]) {
+    if (itemIds.length === 0) return;
+    setResolvedItemIds((previous) => {
+      const next = new Set(previous);
+      for (const id of itemIds) next.delete(id);
+      return next;
+    });
+  }
+
+  function run(
+    action: () => Promise<{ ok?: boolean; error?: string }>,
+    optimisticItemIds: string[],
+  ) {
     setError(null);
+    resolveItems(optimisticItemIds);
+    markBusy(optimisticItemIds);
     startTransition(async () => {
-      const result = await action();
-      if (result.error) setError(result.error);
-      router.refresh();
+      try {
+        const result = await action();
+        if (result.error) {
+          restoreItems(optimisticItemIds);
+          setError(result.error);
+        }
+      } catch (err) {
+        restoreItems(optimisticItemIds);
+        setError(err instanceof Error ? err.message : 'Approval action failed');
+      } finally {
+        clearBusy(optimisticItemIds);
+        router.refresh();
+      }
     });
   }
 
@@ -197,7 +250,10 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
             size="sm"
             disabled={pending}
             onClick={() => {
-              run(() => acceptVisibleSuggestionsAction({ suggestions: bulkAcceptSuggestions }));
+              run(
+                () => acceptVisibleSuggestionsAction({ suggestions: bulkAcceptSuggestions }),
+                bulkAcceptSuggestions.flatMap((suggestion) => suggestion.itemIds),
+              );
             }}
           >
             <CheckCheck className="size-4" />
@@ -206,20 +262,20 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
         </div>
       ) : null}
 
-      {suggestions.map((bundle) => {
+      {visibleSuggestions.map((bundle) => {
         const pendingItems = bundle.items.filter((item) =>
           isActionableSuggestionStatus(item.status),
         );
         const bulkAcceptItems = pendingItems.filter((item) => item.targetKind !== 'object_merge');
         return (
-          <article key={bundle.id} className="border-y border-border py-4">
-            <div className="flex flex-wrap items-start gap-3">
+          <article key={bundle.id} className="border-t border-border py-3">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="min-w-0 flex-1">
                 <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
                   {bundle.source} · {bundle.confidence} ·{' '}
                   {new Date(bundle.createdAt).toLocaleString()}
                 </div>
-                <h2 className="mt-1 text-lg font-semibold tracking-tight text-fg">
+                <h2 className="mt-1 text-base font-semibold tracking-tight text-fg">
                   {bundle.title}
                 </h2>
                 {bundle.summary ? (
@@ -235,7 +291,10 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
                   size="sm"
                   disabled={pending}
                   onClick={() => {
-                    run(() => acceptAllSuggestionAction({ suggestionId: bundle.id }));
+                    run(
+                      () => acceptAllSuggestionAction({ suggestionId: bundle.id }),
+                      bulkAcceptItems.map((item) => item.id),
+                    );
                   }}
                 >
                   <CheckCheck className="size-4" />
@@ -244,18 +303,25 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
               ) : null}
             </div>
 
-            <ul className="mt-4 divide-y divide-border border border-border bg-bg">
+            <ul className="mt-3 divide-y divide-border border border-border bg-bg">
               {bundle.items.map((item) => (
-                <li key={item.id} className="grid gap-3 p-3 md:grid-cols-[1fr_auto]">
-                  <div className="min-w-0">
+                <li
+                  key={item.id}
+                  className="grid gap-3 p-3 md:grid-cols-[minmax(0,1.3fr)_minmax(10rem,0.8fr)_minmax(9rem,auto)]"
+                >
+                  <div className="min-w-0 self-center">
                     <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
                       Proposal · {itemStatusLabel(item.status)}
                     </div>
                     <div className="mt-1 font-medium text-fg">{item.title}</div>
-                    <div className="mt-1 text-xs text-fg-muted">{itemActionLabel(item)}</div>
                     {item.description ? (
                       <p className="mt-1 text-sm text-fg-muted">{item.description}</p>
                     ) : null}
+                  </div>
+                  <div className="min-w-0 self-center">
+                    <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                      {itemActionLabel(item)}
+                    </div>
                     {(relationshipPayloadSummary(item, bundle) ??
                     formatPayload(item.proposedPayload)) ? (
                       <p className="mt-1 truncate font-mono text-[11px] text-fg-dim">
@@ -268,9 +334,9 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
                     ) : null}
                   </div>
                   {isActionableSuggestionStatus(item.status) ? (
-                    <div className="flex items-start gap-2">
+                    <div className="flex items-center justify-end gap-1.5">
                       {item.targetKind === 'object_merge' ? (
-                        <Button asChild size="sm" disabled={pending}>
+                        <Button asChild size="sm" variant="outline" disabled={pending}>
                           <Link href={objectMergeHref(item)}>
                             <GitMerge className="size-4" />
                             Review merge
@@ -280,9 +346,10 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
                         <Button
                           type="button"
                           size="sm"
-                          disabled={pending}
+                          variant="outline"
+                          disabled={busyItemIds.has(item.id)}
                           onClick={() => {
-                            run(() => acceptSuggestionItemAction({ itemId: item.id }));
+                            run(() => acceptSuggestionItemAction({ itemId: item.id }), [item.id]);
                           }}
                         >
                           <Check className="size-4" />
@@ -292,10 +359,10 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
                       <Button
                         type="button"
                         size="sm"
-                        variant="outline"
-                        disabled={pending}
+                        variant="ghost"
+                        disabled={busyItemIds.has(item.id)}
                         onClick={() => {
-                          run(() => rejectSuggestionItemAction({ itemId: item.id }));
+                          run(() => rejectSuggestionItemAction({ itemId: item.id }), [item.id]);
                         }}
                       >
                         <X className="size-4" />
@@ -308,10 +375,10 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
             </ul>
 
             {bundle.evidence.length > 0 ? (
-              <div className="mt-3 border-l border-border pl-3">
-                <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                  Evidence
-                </div>
+              <details className="mt-2 border-l border-border pl-3">
+                <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim hover:text-fg">
+                  Evidence · {bundle.evidence.length}
+                </summary>
                 {bundle.evidence.map((ev) => (
                   <EvidenceLink
                     key={ev.rawEventId}
@@ -330,7 +397,7 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
                     </span>
                   </EvidenceLink>
                 ))}
-              </div>
+              </details>
             ) : null}
           </article>
         );

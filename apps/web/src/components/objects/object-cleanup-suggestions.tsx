@@ -202,146 +202,162 @@ export function ObjectCleanupSuggestions({
 
   return (
     <section className="border-y border-border py-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="min-w-0 flex-1">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-            Cleanup suggestions
-          </h2>
-          <p className="mt-1 text-sm text-fg-muted">
-            {pendingItems.length > 0
-              ? `${pendingItems.length} pending cleanup ${pendingItems.length === 1 ? 'suggestion' : 'suggestions'}`
-              : 'No cleanup suggestions pending'}
-          </p>
+      <details>
+        <summary className="cursor-pointer list-none">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+                Cleanup suggestions
+              </h2>
+              <p className="mt-1 text-sm text-fg-muted">
+                {pendingItems.length > 0
+                  ? `${pendingItems.length} pending cleanup ${pendingItems.length === 1 ? 'suggestion' : 'suggestions'}`
+                  : 'No cleanup suggestions pending'}
+              </p>
+            </div>
+            <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+              Open
+            </span>
+          </div>
+        </summary>
+
+        <div className="mt-4 flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={state.findingSuggestions}
+            onClick={() => {
+              void run(findObjectCleanupSuggestionsAction);
+            }}
+          >
+            <RefreshCw className="size-4" />
+            Find suggestions
+          </Button>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={state.findingSuggestions}
-          onClick={() => {
-            void run(findObjectCleanupSuggestionsAction);
-          }}
-        >
-          <RefreshCw className="size-4" />
-          Find suggestions
-        </Button>
-      </div>
 
-      {state.message ? <p className="mt-3 text-sm text-fg-muted">{state.message}</p> : null}
+        {state.message ? <p className="mt-3 text-sm text-fg-muted">{state.message}</p> : null}
 
-      {pendingItems.length > 0 ? (
-        <ul className="mt-4 divide-y divide-border border border-border">
-          {visibleItems.map(({ bundle, item }) => {
-            const mergeIds = item.targetKind === 'object_merge' ? objectIdsForMerge(item) : [];
-            const itemBusy = state.busyItemIds.has(item.id);
-            return (
-              <li key={item.id} className="grid gap-3 bg-bg p-3 md:grid-cols-[1fr_auto]">
-                <div className="min-w-0">
-                  <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                    {item.targetKind === 'object_merge' ? 'merge' : 'archive'} · {bundle.confidence}
+        {pendingItems.length > 0 ? (
+          <ul className="mt-4 divide-y divide-border border border-border">
+            {visibleItems.map(({ bundle, item }) => {
+              const mergeIds = item.targetKind === 'object_merge' ? objectIdsForMerge(item) : [];
+              const itemBusy = state.busyItemIds.has(item.id);
+              return (
+                <li
+                  key={item.id}
+                  className="grid gap-3 bg-bg p-3 md:grid-cols-[minmax(0,1fr)_auto]"
+                >
+                  <div className="min-w-0">
+                    <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                      {item.targetKind === 'object_merge' ? 'merge' : 'archive'} ·{' '}
+                      {bundle.confidence}
+                    </div>
+                    <div className="mt-1 font-medium text-fg">{item.title}</div>
+                    <p className="mt-1 truncate text-sm text-fg-muted">
+                      {item.description ?? bundle.summary ?? 'Review this cleanup suggestion.'}
+                    </p>
                   </div>
-                  <div className="mt-1 font-medium text-fg">{item.title}</div>
-                  <p className="mt-1 text-sm text-fg-muted">
-                    {item.description ?? bundle.summary ?? 'Review this cleanup suggestion.'}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-start gap-2">
-                  {item.targetKind === 'object_merge' ? (
-                    mergePreviewsByItemId[item.id] ? (
+                  <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    {item.targetKind === 'object_merge' ? (
+                      mergePreviewsByItemId[item.id] ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={itemBusy || mergeIds.length < 2}
+                          onClick={() => {
+                            dispatch({ type: 'review_item', itemId: item.id });
+                          }}
+                        >
+                          <GitMerge className="size-4" />
+                          Review
+                        </Button>
+                      ) : itemBusy || mergeIds.length < 2 ? (
+                        <Button type="button" size="sm" variant="outline" disabled>
+                          <GitMerge className="size-4" />
+                          Review
+                        </Button>
+                      ) : (
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={objectMergeSuggestionHref(item, mergeIds)}>
+                            <GitMerge className="size-4" />
+                            Review
+                          </Link>
+                        </Button>
+                      )
+                    ) : (
                       <Button
                         type="button"
                         size="sm"
-                        disabled={itemBusy || mergeIds.length < 2}
+                        variant="outline"
+                        disabled={itemBusy || !item.targetId}
                         onClick={() => {
-                          dispatch({ type: 'review_item', itemId: item.id });
+                          if (!item.targetId) return;
+                          void run(() => acceptSuggestionItemAction({ itemId: item.id }), item.id);
                         }}
                       >
-                        <GitMerge className="size-4" />
-                        Review
+                        <Archive className="size-4" />
+                        Archive
                       </Button>
-                    ) : itemBusy || mergeIds.length < 2 ? (
-                      <Button type="button" size="sm" disabled>
-                        <GitMerge className="size-4" />
-                        Review
-                      </Button>
-                    ) : (
-                      <Button asChild size="sm">
-                        <Link href={objectMergeSuggestionHref(item, mergeIds)}>
-                          <GitMerge className="size-4" />
-                          Review
-                        </Link>
-                      </Button>
-                    )
-                  ) : (
+                    )}
                     <Button
                       type="button"
                       size="sm"
-                      disabled={itemBusy || !item.targetId}
+                      variant="ghost"
+                      disabled={itemBusy}
                       onClick={() => {
-                        if (!item.targetId) return;
-                        void run(() => acceptSuggestionItemAction({ itemId: item.id }), item.id);
+                        rejectItem(item.id);
                       }}
                     >
-                      <Archive className="size-4" />
-                      Archive
+                      <X className="size-4" />
+                      Dismiss
                     </Button>
-                  )}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={itemBusy}
-                    onClick={() => {
-                      rejectItem(item.id);
-                    }}
-                  >
-                    <X className="size-4" />
-                    Dismiss
-                  </Button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
 
-      {pendingItems.length > PAGE_SIZE ? (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-          <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-            {pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, pendingItems.length)} of{' '}
-            {pendingItems.length}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              disabled={effectivePage === 0}
-              title="Previous suggestions"
-              onClick={() => {
-                dispatch({ type: 'page', page: Math.max(0, state.page - 1) });
-              }}
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
+        {pendingItems.length > PAGE_SIZE ? (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
             <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-              Page {effectivePage + 1} / {pageCount}
+              {pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, pendingItems.length)} of{' '}
+              {pendingItems.length}
             </p>
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              disabled={effectivePage >= pageCount - 1}
-              title="Next suggestions"
-              onClick={() => {
-                dispatch({ type: 'page', page: Math.min(pageCount - 1, state.page + 1) });
-              }}
-            >
-              <ChevronRight className="size-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                disabled={effectivePage === 0}
+                title="Previous suggestions"
+                onClick={() => {
+                  dispatch({ type: 'page', page: Math.max(0, state.page - 1) });
+                }}
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                Page {effectivePage + 1} / {pageCount}
+              </p>
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                disabled={effectivePage >= pageCount - 1}
+                title="Next suggestions"
+                onClick={() => {
+                  dispatch({ type: 'page', page: Math.min(pageCount - 1, state.page + 1) });
+                }}
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </details>
 
       <Dialog
         open={Boolean(state.reviewingItemId)}

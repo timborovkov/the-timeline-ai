@@ -549,8 +549,10 @@ key/value pairs.
   read-state changes.
 - Compound, destructive, security-sensitive, or external-provider actions
   wait for server confirmation: invites, meeting bot scheduling/cancel,
-  archive/delete, relationship changes, exports, OAuth/integration setup,
-  and approval accept/reject.
+  archive/delete, relationship changes, exports, and OAuth/integration setup.
+  Approval accept/reject may optimistically remove only the affected review row
+  when the action is reversible in the UI; restore the row and show a local
+  error if the server rejects the change.
 - Success feedback should be quiet and local (`Saving...` then `Saved`).
   Use prominent alerts only for failures, and rollback the smallest affected
   thing so the user can tell what changed.
