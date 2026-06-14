@@ -30,13 +30,15 @@ import {
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import {
+  type ObjectSearchResponse,
   type ObjectSearchResult,
   visibleObjectSearchResultsForQuery,
 } from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
-import { errorMessage } from '@/lib/utils';
+import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
+import { cn, errorMessage } from '@/lib/utils';
 
 const RELATIONSHIP_KINDS = [
   'related',
@@ -132,6 +134,7 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
 function useObjectDetailView({ detail, userId, suggestions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const pendingApprovalItemCount = countPendingApprovalItems(suggestions);
   const [
     {
       overrides,
@@ -149,6 +152,7 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
   ] = useReducer(objectDetailUiReducer, detail, initObjectDetailUiState);
   const [linkQuery, setLinkQuery] = useState('');
   const [selectedLink, setSelectedLink] = useState<ObjectSearchResult | null>(null);
+  const trimmedLinkQuery = linkQuery.trim();
   const localDetail = useMemo(
     () => applyObjectDetailOverrides(detail, overrides),
     [detail, overrides],
@@ -190,30 +194,21 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
     }));
   }
 
-  const trimmedLinkQuery = linkQuery.trim();
-  const { data: linkResultsData } = useQuery({
+  const { data: linkResultsData } = useQuery<ObjectSearchResponse>({
     queryKey: queryKeys.objectSearch(trimmedLinkQuery, detail.id),
     enabled: trimmedLinkQuery.length > 0,
+    staleTime: 0,
+    gcTime: 30_000,
     placeholderData: (previousData) => previousData,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams({ q: trimmedLinkQuery, exclude: detail.id });
       const data = await readJson<{ results?: ObjectSearchResult[] }>(
-        await fetch(`/api/objects/search?${params.toString()}`),
+        await fetch(`/api/objects/search?${params.toString()}`, { signal }),
       );
       return { query: trimmedLinkQuery, results: data.results };
     },
   });
   const visibleLinkResults = visibleObjectSearchResultsForQuery(linkResultsData, trimmedLinkQuery);
-
-  function searchLinkObjects(value: string): void {
-    setLinkQuery(value);
-    setSelectedLink(null);
-  }
-
-  function selectLinkResult(result: ObjectSearchResult): void {
-    setLinkQuery(result.canonicalName);
-    setSelectedLink(result);
-  }
 
   useEffect(() => {
     return () => {
@@ -414,7 +409,7 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       <ObjectDetailHeader
         detail={detail}
         error={error}
@@ -422,67 +417,134 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
         savingCount={savingCount}
       />
 
-      {suggestions.length > 0 ? (
-        <section className="space-y-3">
-          <h2 className="text-sm font-medium tracking-tight">Pending approvals</h2>
-          <ApprovalsClient suggestions={suggestions} allowBulkAccept={false} />
-        </section>
-      ) : null}
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
+        <main className="min-w-0 space-y-6">
+          {suggestions.length > 0 ? (
+            <ObjectPanel
+              title="Pending approvals"
+              eyebrow={`${pendingApprovalItemCount} waiting`}
+              className="border-signal/40 bg-signal-soft/40"
+            >
+              <ApprovalsClient suggestions={suggestions} allowBulkAccept={false} />
+            </ObjectPanel>
+          ) : null}
 
-      <ObjectEditableFields
-        detail={localDetail}
-        stageDraft={stageDraft}
-        dueDraft={dueDraft}
-        focusedDraftsRef={focusedDraftsRef}
-        patch={patch}
-        dispatchObjectUi={dispatchObjectUi}
-      />
+          <ObjectPanel title="Evidence" eyebrow="events">
+            <ObjectSectionFeed
+              objectId={detail.id}
+              section="events"
+              title="Timeline events"
+              showTitle={false}
+            />
+          </ObjectPanel>
 
-      <ObjectSectionFeed objectId={detail.id} section="events" title="Timeline events" />
-      <ObjectSectionFeed objectId={detail.id} section="facts" title="Facts" />
+          <ObjectPanel title="Facts" eyebrow="extracted">
+            <ObjectSectionFeed
+              objectId={detail.id}
+              section="facts"
+              title="Facts"
+              showTitle={false}
+            />
+          </ObjectPanel>
 
-      <ObjectNotesSection
-        notes={detail.notes}
-        userId={userId}
-        pending={pending}
-        noteBody={noteBody}
-        editingNoteId={editingNoteId}
-        editingBody={editingBody}
-        dispatchObjectUi={dispatchObjectUi}
-        onAddNote={addNote}
-        onSaveNote={saveNote}
-        onDeleteNote={deleteNote}
-      />
+          <ObjectNotesSection
+            notes={detail.notes}
+            userId={userId}
+            pending={pending}
+            noteBody={noteBody}
+            editingNoteId={editingNoteId}
+            editingBody={editingBody}
+            dispatchObjectUi={dispatchObjectUi}
+            onAddNote={addNote}
+            onSaveNote={saveNote}
+            onDeleteNote={deleteNote}
+          />
+        </main>
 
-      <ObjectOpenTasksSection tasks={detail.openTasks} />
+        <aside className="min-w-0 space-y-4 xl:sticky xl:top-6">
+          <ObjectPanel title="Fields" eyebrow="editable">
+            <ObjectEditableFields
+              detail={localDetail}
+              stageDraft={stageDraft}
+              dueDraft={dueDraft}
+              focusedDraftsRef={focusedDraftsRef}
+              patch={patch}
+              dispatchObjectUi={dispatchObjectUi}
+              className="grid-cols-1 gap-4"
+            />
+          </ObjectPanel>
 
-      <ObjectRelationshipsSection
-        relationships={detail.relationships}
-        pending={pending}
-        linkQuery={linkQuery}
-        linkResults={visibleLinkResults}
-        selectedLink={selectedLink}
-        linkKind={linkKind}
-        onLinkQueryChange={searchLinkObjects}
-        onSelectLink={selectLinkResult}
-        dispatchObjectUi={dispatchObjectUi}
-        onAddRelationship={addRelationship}
-        onRemoveRelationship={removeRelationship}
-      />
+          <ObjectRelationshipsSection
+            relationships={detail.relationships}
+            pending={pending}
+            linkQuery={linkQuery}
+            linkResults={visibleLinkResults}
+            selectedLink={selectedLink}
+            linkKind={linkKind}
+            onLinkQueryChange={(value) => {
+              setLinkQuery(value);
+              setSelectedLink(null);
+            }}
+            onSelectLink={setSelectedLink}
+            dispatchObjectUi={dispatchObjectUi}
+            onAddRelationship={addRelationship}
+            onRemoveRelationship={removeRelationship}
+          />
 
-      <ObjectRecentChangesSection
-        changes={detail.recentChanges}
-        pending={pending}
-        onAcceptChange={acceptChange}
-        onRejectChange={rejectChange}
-      />
+          <ObjectOpenTasksSection tasks={detail.openTasks} />
 
-      <ObjectArchiveFooter
-        archivedAt={detail.archivedAt}
-        pending={pending}
-        onArchiveObject={archiveObject}
-      />
+          <ObjectRecentChangesSection
+            changes={detail.recentChanges}
+            pending={pending}
+            onAcceptChange={acceptChange}
+            onRejectChange={rejectChange}
+          />
+
+          <ObjectArchiveFooter
+            archivedAt={detail.archivedAt}
+            pending={pending}
+            onArchiveObject={archiveObject}
+          />
+        </aside>
+      </div>
     </div>
+  );
+}
+
+function countPendingApprovalItems(suggestions: LocalSuggestion[]): number {
+  return suggestions.reduce(
+    (count, bundle) =>
+      count +
+      bundle.items.filter(
+        (item) => isActionableSuggestionStatus(item.status) && item.targetKind !== 'object_merge',
+      ).length,
+    0,
+  );
+}
+
+function ObjectPanel({
+  title,
+  eyebrow,
+  className,
+  children,
+}: {
+  title: string;
+  eyebrow?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className={cn('border border-border bg-bg', className)}>
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
+        <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
+        {eyebrow ? (
+          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
+            {eyebrow}
+          </span>
+        ) : null}
+      </div>
+      <div className="p-4">{children}</div>
+    </section>
   );
 }
 
@@ -510,48 +572,54 @@ function ObjectDetailHeader({
 }) {
   const pendingCount = detail.recentChanges.filter((c) => c.status === 'suggested').length;
   return (
-    <header>
+    <header className="border border-border bg-bg">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-y border-border py-3 font-mono text-xs uppercase tracking-[0.12em] text-fg-muted">
         <span className="text-fg">{detail.type}</span>
         <span className="text-fg-dim">·</span>
         <span className="text-signal">{detail.canonicalName}</span>
         <span className="ml-auto text-fg-dim">id&nbsp;{detail.id.slice(0, 8)}</span>
       </div>
-      <h1 className="mt-4 text-2xl font-semibold tracking-tight">{detail.canonicalName}</h1>
-      {detail.aliases.length > 0 && (
-        <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-          aka {detail.aliases.join(' · ')}
-        </p>
-      )}
-      {detail.newSinceLastVisit > 0 && (
-        <output className="mt-4 rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
-          {detail.newSinceLastVisit} new change{detail.newSinceLastVisit === 1 ? '' : 's'} since
-          your last visit
-        </output>
-      )}
-      {pendingCount > 0 ? (
-        <output className="mt-3 rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
-          {pendingCount} agent suggestion{pendingCount === 1 ? '' : 's'} awaiting review below
-        </output>
-      ) : null}
-      {error ? (
-        <div
-          role="alert"
-          className="mt-4 rounded-sm border border-danger/40 bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-danger"
-        >
-          {error}
+      <div className="grid gap-5 px-4 py-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="min-w-0">
+          <h1 className="truncate text-2xl font-semibold tracking-tight">{detail.canonicalName}</h1>
+          {detail.aliases.length > 0 && (
+            <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+              aka {detail.aliases.join(' · ')}
+            </p>
+          )}
         </div>
-      ) : null}
-      {saveState !== 'idle' ? (
-        <output
-          aria-live="polite"
-          className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-        >
-          {saveState === 'saving'
-            ? `Saving${savingCount > 1 ? ` ${savingCount} changes` : ''}...`
-            : 'Saved'}
-        </output>
-      ) : null}
+        <div className="space-y-2">
+          {detail.newSinceLastVisit > 0 && (
+            <output className="block rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
+              {detail.newSinceLastVisit} new change
+              {detail.newSinceLastVisit === 1 ? '' : 's'} since your last visit
+            </output>
+          )}
+          {pendingCount > 0 ? (
+            <output className="block rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
+              {pendingCount} suggestion{pendingCount === 1 ? '' : 's'} awaiting review
+            </output>
+          ) : null}
+          {error ? (
+            <div
+              role="alert"
+              className="rounded-sm border border-danger/40 bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-danger"
+            >
+              {error}
+            </div>
+          ) : null}
+          {saveState !== 'idle' ? (
+            <output
+              aria-live="polite"
+              className="block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
+            >
+              {saveState === 'saving'
+                ? `Saving${savingCount > 1 ? ` ${savingCount} changes` : ''}...`
+                : 'Saved'}
+            </output>
+          ) : null}
+        </div>
+      </div>
     </header>
   );
 }
@@ -563,6 +631,7 @@ function ObjectEditableFields({
   focusedDraftsRef,
   patch,
   dispatchObjectUi,
+  className = 'grid-cols-1 gap-6 sm:grid-cols-2',
 }: {
   detail: ObjectDetail;
   stageDraft: string;
@@ -570,17 +639,18 @@ function ObjectEditableFields({
   focusedDraftsRef: RefObject<Record<DraftField, boolean>>;
   patch: (field: EditableField, value: EditableValue) => void;
   dispatchObjectUi: Dispatch<ObjectDetailUiAction>;
+  className?: string;
 }) {
   const options = statusOptions(detail.type);
   return (
-    <section className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+    <section className={cn('grid', className)}>
       <Field label="Status">
         <select
           value={detail.status}
           onChange={(e) => {
             patch('status', e.target.value);
           }}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
         >
           {options.map((s) => (
             <option key={s} value={s}>
@@ -608,7 +678,7 @@ function ObjectEditableFields({
             dispatchObjectUi({ stageDraft: v });
             patch('stage', v === '' ? null : v);
           }}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
           placeholder="e.g. discovery"
         />
       </Field>
@@ -618,7 +688,7 @@ function ObjectEditableFields({
           onChange={(e) => {
             patch('priority', e.target.value === '' ? null : Number(e.target.value));
           }}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
         >
           <option value="">None</option>
           <option value="1">1 (urgent)</option>
@@ -643,7 +713,7 @@ function ObjectEditableFields({
             const v = e.target.value;
             patch('dueAt', v === '' ? null : new Date(v));
           }}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
         />
       </Field>
     </section>
@@ -674,8 +744,7 @@ function ObjectNotesSection({
   onDeleteNote: (noteId: string) => void;
 }) {
   return (
-    <section>
-      <h2 className="mb-3 text-sm font-medium tracking-tight">Notes</h2>
+    <ObjectPanel title="Notes" eyebrow={`${notes.length} saved`}>
       <div className="mb-4 space-y-2">
         <textarea
           aria-label="New note"
@@ -684,7 +753,7 @@ function ObjectNotesSection({
             dispatchObjectUi({ noteBody: e.target.value });
           }}
           placeholder="Add a note. Each note also lands on the timeline."
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
           rows={3}
         />
         <button
@@ -715,7 +784,7 @@ function ObjectNotesSection({
           ))}
         </ul>
       )}
-    </section>
+    </ObjectPanel>
   );
 }
 
@@ -748,7 +817,7 @@ function ObjectNoteItem({
             onChange={(e) => {
               dispatchObjectUi({ editingBody: e.target.value });
             }}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
             rows={3}
           />
           <div className="flex gap-2">
@@ -809,8 +878,7 @@ function ObjectNoteItem({
 
 function ObjectOpenTasksSection({ tasks }: { tasks: ObjectDetail['openTasks'] }) {
   return (
-    <section>
-      <h2 className="mb-3 text-sm font-medium tracking-tight">Open tasks</h2>
+    <ObjectPanel title="Open tasks" eyebrow={String(tasks.length)}>
       {tasks.length === 0 ? (
         <p className="text-sm text-muted-foreground">No open tasks linked to this object.</p>
       ) : (
@@ -831,7 +899,7 @@ function ObjectOpenTasksSection({ tasks }: { tasks: ObjectDetail['openTasks'] })
           ))}
         </ul>
       )}
-    </section>
+    </ObjectPanel>
   );
 }
 
@@ -861,10 +929,9 @@ function ObjectRelationshipsSection({
   onRemoveRelationship: (id: string, otherEntityId: string) => void;
 }) {
   return (
-    <section>
-      <h2 className="mb-3 text-sm font-medium tracking-tight">Related</h2>
-      <div className="mb-4 flex flex-wrap items-end gap-2">
-        <label className="min-w-64 flex-1">
+    <ObjectPanel title="Related" eyebrow={String(relationships.length)}>
+      <div className="mb-4 grid gap-2">
+        <label>
           <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
             Link to object
           </span>
@@ -874,37 +941,39 @@ function ObjectRelationshipsSection({
               onLinkQueryChange(e.target.value);
             }}
             placeholder="Search objects"
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
           />
         </label>
-        <label>
-          <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
-            Kind
-          </span>
-          <select
-            value={linkKind}
-            onChange={(e) => {
-              dispatchObjectUi({
-                linkKind: e.target.value as (typeof RELATIONSHIP_KINDS)[number],
-              });
-            }}
-            className="rounded-md border bg-background px-3 py-2 text-sm"
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
+          <label>
+            <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
+              Kind
+            </span>
+            <select
+              value={linkKind}
+              onChange={(e) => {
+                dispatchObjectUi({
+                  linkKind: e.target.value as (typeof RELATIONSHIP_KINDS)[number],
+                });
+              }}
+              className="w-full rounded-md border bg-surface px-3 py-2 text-sm"
+            >
+              {RELATIONSHIP_KINDS.map((kind) => (
+                <option key={kind} value={kind}>
+                  {kind}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            disabled={pending || !selectedLink}
+            onClick={onAddRelationship}
+            className="rounded-md border border-signal/40 bg-signal-soft px-3 py-2 text-sm text-signal hover:bg-signal/25 disabled:opacity-50"
           >
-            {RELATIONSHIP_KINDS.map((kind) => (
-              <option key={kind} value={kind}>
-                {kind}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          disabled={pending || !selectedLink}
-          onClick={onAddRelationship}
-          className="rounded-md border border-signal/40 bg-signal-soft px-3 py-2 text-sm text-signal hover:bg-signal/25 disabled:opacity-50"
-        >
-          Link
-        </button>
+            Link
+          </button>
+        </div>
       </div>
       {selectedLink ? (
         <p className="mb-3 text-xs text-muted-foreground">
@@ -918,6 +987,7 @@ function ObjectRelationshipsSection({
                 type="button"
                 className="w-full rounded-sm border border-border px-3 py-2 text-left text-sm hover:bg-surface"
                 onClick={() => {
+                  onLinkQueryChange(result.canonicalName);
                   onSelectLink(result);
                 }}
               >
@@ -935,15 +1005,15 @@ function ObjectRelationshipsSection({
           {relationships.map((relationship) => (
             <li
               key={`${relationship.direction}-${relationship.id}`}
-              className="flex items-center justify-between rounded-sm border border-border bg-surface px-4 py-2 text-sm"
+              className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
             >
               <a
                 href={`/app/objects/${relationship.otherId}`}
-                className="font-medium hover:underline"
+                className="min-w-0 truncate font-medium hover:underline"
               >
                 {relationship.otherName}
               </a>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center justify-between gap-3">
                 <span className="text-xs uppercase tracking-wide text-muted-foreground">
                   {relationship.kind === 'related'
                     ? relationship.kind
@@ -969,7 +1039,7 @@ function ObjectRelationshipsSection({
           ))}
         </ul>
       )}
-    </section>
+    </ObjectPanel>
   );
 }
 
@@ -985,8 +1055,7 @@ function ObjectRecentChangesSection({
   onRejectChange: (changeId: string) => void;
 }) {
   return (
-    <section>
-      <h2 className="mb-3 text-sm font-medium tracking-tight">Recent changes</h2>
+    <ObjectPanel title="Recent changes" eyebrow={String(changes.length)}>
       {changes.length === 0 ? (
         <p className="text-sm text-muted-foreground">No changes recorded.</p>
       ) : (
@@ -1002,7 +1071,7 @@ function ObjectRecentChangesSection({
           ))}
         </ul>
       )}
-    </section>
+    </ObjectPanel>
   );
 }
 
@@ -1073,7 +1142,7 @@ function ObjectArchiveFooter({
   onArchiveObject: () => void;
 }) {
   return (
-    <footer className="border-t pt-6">
+    <footer className="border border-border bg-bg p-4">
       <button
         type="button"
         disabled={pending || archivedAt !== null}

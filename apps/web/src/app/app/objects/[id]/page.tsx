@@ -66,7 +66,7 @@ export default async function ObjectDetailPage({ params }: PageProps) {
   });
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
+    <div className="space-y-4">
       <HistoryBackLink fallbackHref="/app/objects" label="Back" />
       <ObjectBoardContext rows={boardContext} />
       <ObjectDetailClient detail={detail} userId={session.user.id} suggestions={suggestions} />

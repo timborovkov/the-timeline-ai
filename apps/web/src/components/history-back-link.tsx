@@ -18,7 +18,7 @@ interface HistoryBackLinkProps {
 export function HistoryBackLink({ fallbackHref, label, className }: HistoryBackLinkProps) {
   const router = useRouter();
 
-  function navigateBackFromHistory(event: MouseEvent<HTMLAnchorElement>): void {
+  function navigateBack(event: MouseEvent<HTMLAnchorElement>): void {
     if (!shouldUseHistoryBackClick(event)) return;
     event.preventDefault();
     router.back();
@@ -27,7 +27,7 @@ export function HistoryBackLink({ fallbackHref, label, className }: HistoryBackL
   return (
     <Link
       href={fallbackHref}
-      onClick={navigateBackFromHistory}
+      onClick={navigateBack}
       className={cn(
         'inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.12em]',
         'text-fg-muted hover:text-fg hover:underline',
