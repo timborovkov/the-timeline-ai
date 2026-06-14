@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -56,6 +56,7 @@ function boardItem(): boards.BoardItemRow {
 
 describe('CuratedBoardTable', () => {
   beforeEach(() => {
+    cleanup();
     fakes.refresh.mockReset();
     fakes.updateBoardItemAction.mockReset();
     fakes.updateBoardItemAction.mockResolvedValue({ ok: true });
@@ -108,5 +109,28 @@ describe('CuratedBoardTable', () => {
         laneId: 'lane-2',
       });
     });
+  });
+
+  it('syncs the next step editor when refreshed item props change', () => {
+    const item = { ...boardItem(), nextStep: 'Call customer' };
+    const { rerender } = render(
+      <CuratedBoardTable boardId="board-1" view="table" lanes={[]} items={[item]} members={[]} />,
+    );
+
+    expect(screen.getByLabelText<HTMLInputElement>('Next step for Launch review').value).toBe(
+      'Call customer',
+    );
+
+    rerender(
+      <CuratedBoardTable
+        boardId="board-1"
+        view="table"
+        lanes={[]}
+        items={[{ ...item, nextStep: null }]}
+        members={[]}
+      />,
+    );
+
+    expect(screen.getByLabelText<HTMLInputElement>('Next step for Launch review').value).toBe('');
   });
 });

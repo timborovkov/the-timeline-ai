@@ -105,7 +105,7 @@ export function BoardCardDetail({
             {sourceEvents.slice(0, 5).map((change) => (
               <li key={change.id}>
                 <Link
-                  href={`/app/timeline?q=${encodeURIComponent(change.sourceEventId ?? '')}`}
+                  href={`/app/timeline?event=${change.sourceEventId}#ev-${change.sourceEventId}`}
                   className="text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
                 >
                   {change.field} source · {change.changedAt.toLocaleDateString('en-CA')}

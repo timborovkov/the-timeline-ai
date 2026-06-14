@@ -155,17 +155,13 @@ export function CuratedBoardTable({
                 </select>
               </td>
               <td className="min-w-64 px-3 py-2">
-                <input
-                  defaultValue={item.nextStep ?? ''}
-                  onBlur={(event) => {
-                    const nextStep = event.currentTarget.value.trim();
-                    if ((item.nextStep ?? '') !== nextStep) {
-                      updateItem(item.id, { nextStep: nextStep || null });
-                    }
+                <BoardNextStepInput
+                  key={`${item.id}:${item.nextStep ?? ''}`}
+                  objectName={item.object.canonicalName}
+                  nextStep={item.nextStep}
+                  onSave={(nextStep) => {
+                    updateItem(item.id, { nextStep });
                   }}
-                  className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                  aria-label={`Next step for ${item.object.canonicalName}`}
-                  placeholder="Next step"
                 />
                 {saving[item.id] ? (
                   <span className="mt-1 block font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
@@ -181,6 +177,36 @@ export function CuratedBoardTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function BoardNextStepInput({
+  objectName,
+  nextStep,
+  onSave,
+}: {
+  objectName: string;
+  nextStep: string | null;
+  onSave: (nextStep: string | null) => void;
+}) {
+  const [draft, setDraft] = useState(nextStep ?? '');
+
+  return (
+    <input
+      value={draft}
+      onChange={(event) => {
+        setDraft(event.currentTarget.value);
+      }}
+      onBlur={() => {
+        const trimmed = draft.trim();
+        if ((nextStep ?? '') !== trimmed) {
+          onSave(trimmed || null);
+        }
+      }}
+      className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+      aria-label={`Next step for ${objectName}`}
+      placeholder="Next step"
+    />
   );
 }
 
