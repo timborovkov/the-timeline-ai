@@ -26,6 +26,7 @@
           <li><a href="#agent-suggestions">Agent suggestions</a></li>
           <li><a href="#recurring-events">Recurring events</a></li>
           <li><a href="#tentative-slots">Tentative slots</a></li>
+          <li><a href="#calendar-subscriptions">Calendar subscriptions</a></li>
           <li><a href="#manual-editing">Manual editing</a></li>
           <li><a href="#implementation-reference">Implementation reference</a></li>
         </ul>
@@ -100,6 +101,20 @@
         the old options as active.
       </p>
 
+      <h2 id="calendar-subscriptions">Calendar subscriptions</h2>
+      <p>
+        Each member can create a read-only calendar subscription URL for their Timeline calendar.
+        The URL is a bearer credential: it is shown only when created or reset, can be disabled at
+        any time, and exports the subscriber's visible calendar surface without cookies.
+      </p>
+      <p>
+        Subscription feeds include team events, the subscriber's private event details, authorized
+        specific-user events, and other members' private events only as redacted busy blocks.
+        Materialized recurring occurrences export as individual feed events, so external calendar
+        apps see the concrete schedule in the current materialization window. Tentative holds export
+        as tentative iCalendar events instead of confirmed meetings.
+      </p>
+
       <h2 id="manual-editing">Manual editing</h2>
       <p>
         The calendar UI accepts raw RRULE input and common recurrence presets. Event details show
@@ -131,6 +146,11 @@
         <li>
           Manual calendar controls live in
           <code>apps/web/src/components/calendar/calendar-view.tsx</code>.
+        </li>
+        <li>
+          Read-only subscription URLs are managed by
+          <code>apps/web/src/components/calendar/calendar-subscription-panel.tsx</code> and served
+          from <code>apps/web/src/app/api/calendar/feed/[token]/route.ts</code>.
         </li>
       </ul>
 

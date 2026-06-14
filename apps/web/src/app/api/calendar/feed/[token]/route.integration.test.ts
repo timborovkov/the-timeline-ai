@@ -187,6 +187,29 @@ describe('/api/calendar/feed/[token] integration', () => {
         timezone: 'UTC',
         visibility: 'team',
       },
+      {
+        id: '00000000-0000-4000-8000-000000000008',
+        teamId: TEAM_ID,
+        createdByUserId: USER_ID,
+        title: 'Daily call',
+        startAt: new Date('2026-06-27T16:00:00.000Z'),
+        endAt: new Date('2026-06-27T16:30:00.000Z'),
+        timezone: 'UTC',
+        visibility: 'team',
+        rrule: 'RRULE:FREQ=DAILY;COUNT=2',
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000009',
+        teamId: TEAM_ID,
+        createdByUserId: USER_ID,
+        title: 'Daily call',
+        startAt: new Date('2026-06-28T16:00:00.000Z'),
+        endAt: new Date('2026-06-28T16:30:00.000Z'),
+        timezone: 'UTC',
+        visibility: 'team',
+        recurringParentId: '00000000-0000-4000-8000-000000000008',
+        originalStartAt: new Date('2026-06-28T16:00:00.000Z'),
+      },
     ]);
   });
 
@@ -217,5 +240,8 @@ describe('/api/calendar/feed/[token] integration', () => {
     expect(body).not.toContain('Unshared specific-user event');
     expect(body).not.toContain('Deleted event');
     expect(body).not.toContain('Other team event');
+    expect(body).toContain('UID:00000000-0000-4000-8000-000000000008');
+    expect(body).toContain('UID:00000000-0000-4000-8000-000000000009');
+    expect(body.match(/SUMMARY:Daily call/g)).toHaveLength(2);
   });
 });
