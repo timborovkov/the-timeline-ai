@@ -1,8 +1,20 @@
 import { users } from '@timeline/db';
+import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/messaging';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
-import { ArrowRight, CircleCheckBig, FileText, Mail, Plug, Send, Video } from 'lucide-react';
+import {
+  ArrowRight,
+  CircleCheckBig,
+  Clock,
+  FileText,
+  LibraryBig,
+  Mail,
+  Plug,
+  Send,
+  Settings,
+  Video,
+} from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -62,16 +74,25 @@ export default async function HomeDashboardPage() {
   const role = await scope.requireMembership();
   const isAdmin = role === 'owner' || role === 'admin';
 
-  const [onboardingState, team, pendingApprovals, eventPage, members, webDefault, pinnedBoards] =
-    await Promise.all([
-      scope.onboarding.getChecklistState(),
-      scope.timeline.team(),
-      scope.suggestions.countPendingSuggestions(),
-      scope.timeline.listEventsPage({ limit: 12 }),
-      scope.timeline.listMembers(),
-      scope.timeline.resolveVisibilityDefault('web'),
-      scope.boards.listPinnedBoards(),
-    ]);
+  const [
+    onboardingState,
+    team,
+    pendingApprovals,
+    eventPage,
+    members,
+    webDefault,
+    pinnedBoards,
+    latestDigest,
+  ] = await Promise.all([
+    scope.onboarding.getChecklistState(),
+    scope.timeline.team(),
+    scope.suggestions.countPendingSuggestions(),
+    scope.timeline.listEventsPage({ limit: 12 }),
+    scope.timeline.listMembers(),
+    scope.timeline.resolveVisibilityDefault('web'),
+    scope.boards.listPinnedBoards(),
+    latestDailyDigest({ db, teamId: active.teamId, userId: session.user.id }),
+  ]);
 
   const telegramConnectionCount =
     onboardingState.connectionCounts.telegramUserTeams +
@@ -123,6 +144,8 @@ export default async function HomeDashboardPage() {
         ]}
       />
 
+      <DailyDigestBlock digest={latestDigest?.payload as DailyDigestPayload | undefined} />
+
       {showFirstRunGuide ? (
         <FirstRunGuide
           completed={completedGuideCount}
@@ -150,9 +173,9 @@ export default async function HomeDashboardPage() {
           />
         </section>
 
-        <section aria-label="Needs attention" className="space-y-3">
+        <section aria-label="Quick actions" className="space-y-3">
           <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-            Needs attention
+            Quick actions
           </h2>
           <div className="grid gap-2">
             <AttentionLink
@@ -166,14 +189,34 @@ export default async function HomeDashboardPage() {
               active={pendingApprovals > 0}
             />
             <AttentionLink
-              href="/app/meetings"
-              icon={<Video className="size-4" aria-hidden="true" />}
-              label="Invite notetaker"
+              href="/app/objects"
+              icon={<LibraryBig className="size-4" aria-hidden="true" />}
+              label="Objects"
+            />
+            <AttentionLink
+              href="/app/tasks"
+              icon={<FileText className="size-4" aria-hidden="true" />}
+              label="Tasks"
+            />
+            <AttentionLink
+              href="/app/calendar"
+              icon={<Clock className="size-4" aria-hidden="true" />}
+              label="Calendar"
+            />
+            <AttentionLink
+              href="/app/boards"
+              icon={<Settings className="size-4" aria-hidden="true" />}
+              label="Boards"
             />
             <AttentionLink
               href="#email-ingest"
               icon={<Mail className="size-4" aria-hidden="true" />}
               label={team?.inboundEmail ? 'Email ingest ready' : 'Configure email ingest'}
+            />
+            <AttentionLink
+              href="/app/meetings"
+              icon={<Video className="size-4" aria-hidden="true" />}
+              label="Invite notetaker"
             />
           </div>
         </section>
@@ -252,6 +295,91 @@ function countFirstRunGuideCompleted(steps: { step: string; completed: boolean }
     completed.has('first_document'),
     completed.has('first_integration') || completed.has('telegram') || completed.has('slack'),
   ].filter(Boolean).length;
+}
+
+function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | undefined }) {
+  if (!digest?.summary) return null;
+  const sourceEntries = Object.entries(digest.sourceDistribution);
+  const objectEntries = Object.entries(digest.objectChangesByType);
+  return (
+    <details className="group rounded-sm border border-border bg-surface" open>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+        <span>
+          <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+            Daily digest
+          </span>
+          <span className="mt-1 block text-sm font-medium text-fg">
+            {new Date(digest.windowEnd).toLocaleDateString('en', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })}
+          </span>
+        </span>
+        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted group-open:hidden">
+          Open
+        </span>
+        <span className="hidden font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted group-open:inline">
+          Fold
+        </span>
+      </summary>
+      <div className="border-t border-border p-4">
+        <p className="max-w-3xl text-sm leading-6 text-fg-muted">{digest.summary}</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <DigestStat label="Events" value={String(digest.eventCount)} />
+          <DigestStat label="Approvals" value={String(digest.pendingApprovals)} />
+          <DigestStat label="Tasks" value={String(digest.tasks.length)} />
+        </div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <DigestList
+            label="Sources"
+            items={
+              sourceEntries.length
+                ? sourceEntries.map(([source, count]) => `${source} · ${count}`)
+                : ['No new source activity']
+            }
+          />
+          <DigestList
+            label="Objects"
+            items={
+              objectEntries.length
+                ? objectEntries.map(([type, count]) => `${type.replace('_', ' ')} · ${count}`)
+                : ['No changed objects']
+            }
+          />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {digest.links.map((link) => (
+            <Button key={link.href} asChild variant="outline" size="sm">
+              <Link href={link.href}>{link.label}</Link>
+            </Button>
+          ))}
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function DigestStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border border-border bg-bg px-3 py-2">
+      <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">{label}</p>
+      <p className="mt-1 text-lg font-semibold text-fg">{value}</p>
+    </div>
+  );
+}
+
+function DigestList({ label, items }: { label: string; items: string[] }) {
+  return (
+    <div>
+      <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">{label}</p>
+      <ul className="mt-2 space-y-1 text-sm text-fg-muted">
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function FirstRunGuide({

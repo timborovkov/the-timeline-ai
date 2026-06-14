@@ -301,7 +301,9 @@ export function GlobalSearchPage({
     };
   }, [kinds, state.from, state.query, state.source, state.to]);
 
-  function replaceSearchUrl(next: Partial<PageState>): void {
+  function replaceSearchUrl(
+    next: Partial<Pick<PageState, 'query' | 'activeFilter' | 'source' | 'from' | 'to'>>,
+  ): void {
     router.replace(
       searchPath({
         query: next.query ?? state.query,
@@ -374,9 +376,9 @@ export function GlobalSearchPage({
           <select
             value={state.source}
             onChange={(event) => {
-              const source = event.target.value;
-              dispatch({ type: 'source', value: source });
-              replaceSearchUrl({ source });
+              const value = event.target.value;
+              dispatch({ type: 'source', value });
+              replaceSearchUrl({ source: value });
             }}
             className="h-9 rounded-sm border border-border bg-bg px-2 text-sm focus:border-border-strong focus:outline-none"
           >
@@ -392,9 +394,9 @@ export function GlobalSearchPage({
             value={state.from}
             aria-label="From"
             onChange={(event) => {
-              const from = event.target.value;
-              dispatch({ type: 'from', value: from });
-              replaceSearchUrl({ from });
+              const value = event.target.value;
+              dispatch({ type: 'from', value });
+              replaceSearchUrl({ from: value });
             }}
             className="h-9 rounded-sm border border-border bg-bg px-2 text-sm font-mono focus:border-border-strong focus:outline-none"
           />
@@ -403,9 +405,9 @@ export function GlobalSearchPage({
             value={state.to}
             aria-label="To"
             onChange={(event) => {
-              const to = event.target.value;
-              dispatch({ type: 'to', value: to });
-              replaceSearchUrl({ to });
+              const value = event.target.value;
+              dispatch({ type: 'to', value });
+              replaceSearchUrl({ to: value });
             }}
             className="h-9 rounded-sm border border-border bg-bg px-2 text-sm font-mono focus:border-border-strong focus:outline-none"
           />

@@ -10,8 +10,10 @@ import {
 } from '@/app/actions/team-exports';
 import {
   createTeamAction,
+  type DigestPreferenceState,
   inviteMemberAction,
   renameTeamAction,
+  updateDigestPreferenceAction,
   updateInboundEmailWhitelistAction,
   type CreateTeamState,
   type InboundEmailWhitelistState,
@@ -110,6 +112,37 @@ export function InboundEmailWhitelistForm({
         <Submit label="Save email settings" />
         {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
         {state.ok ? <p className="text-sm text-muted-foreground">Email settings updated.</p> : null}
+      </div>
+    </form>
+  );
+}
+
+export function DigestPreferenceForm({ enabled }: { enabled: boolean }) {
+  const [state, action] = useActionState<DigestPreferenceState, FormData>(
+    updateDigestPreferenceAction,
+    {},
+  );
+  return (
+    <form action={action} className="space-y-4">
+      <label className="flex items-start gap-3 text-sm">
+        <input
+          type="checkbox"
+          name="dailyDigestEnabled"
+          defaultChecked={enabled}
+          className="mt-0.5 size-4 rounded border-input"
+        />
+        <span>
+          <span className="block font-medium">Send me the daily team digest</span>
+          <span className="block text-muted-foreground">
+            One email per day with the generated summary and team updates. Individual inbox
+            notifications are not emailed.
+          </span>
+        </span>
+      </label>
+      <div className="flex flex-wrap items-center gap-3">
+        <Submit label="Save digest setting" />
+        {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+        {state.ok ? <p className="text-sm text-muted-foreground">Digest setting updated.</p> : null}
       </div>
     </form>
   );

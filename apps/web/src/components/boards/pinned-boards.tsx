@@ -8,9 +8,7 @@ export function PinnedBoards({ boards: rows }: { boards: boards.BoardRow[] }) {
   return (
     <section className="space-y-3" aria-label="Pinned boards">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          Pinned boards
-        </h2>
+        <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">Boards</h2>
         <Link
           href="/app/boards"
           className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg"

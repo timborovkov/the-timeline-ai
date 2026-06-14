@@ -22,7 +22,7 @@ interface Props {
   active: TeamMembership;
   memberships: TeamMembership[];
   recipientInvites: RecipientInvite[];
-  user: { name?: string | null; email?: string | null };
+  user: { name?: string | null; email?: string | null; emailVerified?: Date | string | null };
   badges?: NavBadgeMap;
   inbox?: {
     unreadCount: number;

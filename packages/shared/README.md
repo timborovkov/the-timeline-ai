@@ -1,6 +1,6 @@
 # @timeline/shared
 
-Cross-package code: the `withTeam` team workspace port, the single `llm` inference layer, Qdrant + S3 wrappers, Telegram and Postmark dispatchers, BullMQ queue names, the shared embedding source planner, the objects module, the documents module (Phase 9 — folders/documents/versions/chunks scope + RustFS object-key builder + text chunker), the meeting-bots module (Phase 10 — Recall.ai provider + Svix webhook verifier) and meetings scope (meeting/chunk/usage helpers), and shared env parsing.
+Cross-package code: the `withTeam` team workspace port, the single `llm` inference layer, Qdrant + S3 wrappers, Telegram dispatch, shared messaging and email templates, BullMQ queue names, the shared embedding source planner, the objects module, the documents module (Phase 9 — folders/documents/versions/chunks scope + RustFS object-key builder + text chunker), the meeting-bots module (Phase 10 — Recall.ai provider + Svix webhook verifier) and meetings scope (meeting/chunk/usage helpers), and shared env parsing.
 
 ## Why it exists
 
@@ -36,5 +36,5 @@ pnpm --filter @timeline/shared test
 
 - DB layer: [packages/db/README.md](../db/README.md).
 - Provider strategy and pinning: [docs/setup/openrouter.html](../../docs/setup/openrouter.html).
-- Telegram / Postmark dispatchers: [docs/setup/telegram.html](../../docs/setup/telegram.html), [docs/setup/postmark.html](../../docs/setup/postmark.html).
+- Telegram dispatch and Postmark-backed messaging: [docs/setup/telegram.html](../../docs/setup/telegram.html), [docs/setup/postmark.html](../../docs/setup/postmark.html).
 - Meeting bots (Phase 10): [docs/setup/meeting-bots.html](../../docs/setup/meeting-bots.html).
