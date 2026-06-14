@@ -1,36 +1,52 @@
 import { calendarEvents, type Db } from '@timeline/db';
 import { childLogger, queue, withTeam } from '@timeline/shared';
 import { Worker, type Job } from 'bullmq';
-import { sql } from 'drizzle-orm';
+import { and, asc, gt, isNotNull, isNull, type SQL } from 'drizzle-orm';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
+const TEAM_PAGE_SIZE = 1000;
 const log = childLogger('worker:calendar-recurrence');
 
 interface CalendarRecurrenceWorkerDeps {
   db: Db;
 }
 
-async function processCalendarRecurrenceTick(
+export async function processCalendarRecurrenceTick(
   deps: CalendarRecurrenceWorkerDeps,
   jobId: string | undefined = 'manual',
 ): Promise<{ materialized: number }> {
-  const teams = await deps.db
-    .selectDistinct({ teamId: calendarEvents.teamId })
-    .from(calendarEvents)
-    .where(
-      sql`${calendarEvents.rrule} IS NOT NULL
-        AND ${calendarEvents.recurringParentId} IS NULL
-        AND ${calendarEvents.deletedAt} IS NULL`,
-    )
-    .limit(1000);
   let materialized = 0;
-  for (const row of teams) {
-    const scope = withTeam(deps.db, row.teamId, PSEUDO_USER, { skipMembershipCheck: true });
-    materialized += await scope.calendar.materializeRecurringEvents();
+  let lastTeamId: string | null = null;
+  let pageCount = 0;
+
+  for (;;) {
+    const conditions: SQL[] = [
+      isNotNull(calendarEvents.rrule),
+      isNull(calendarEvents.recurringParentId),
+      isNull(calendarEvents.deletedAt),
+    ];
+    if (lastTeamId) conditions.push(gt(calendarEvents.teamId, lastTeamId));
+
+    const teams = await deps.db
+      .selectDistinct({ teamId: calendarEvents.teamId })
+      .from(calendarEvents)
+      .where(and(...conditions))
+      .orderBy(asc(calendarEvents.teamId))
+      .limit(TEAM_PAGE_SIZE);
+
+    pageCount += 1;
+    for (const row of teams) {
+      const scope = withTeam(deps.db, row.teamId, PSEUDO_USER, { skipMembershipCheck: true });
+      materialized += await scope.calendar.materializeRecurringEvents();
+    }
+
+    if (teams.length < TEAM_PAGE_SIZE) break;
+    lastTeamId = teams[teams.length - 1]?.teamId ?? null;
+    if (!lastTeamId) break;
   }
-  log.info({ jobId, materialized }, 'calendar recurrence materialization complete');
+  log.info({ jobId, materialized, pageCount }, 'calendar recurrence materialization complete');
   return { materialized };
 }
 

@@ -247,6 +247,34 @@ function sameDate(a: Date | null | undefined, b: Date | null | undefined): boole
   return a.getTime() === b.getTime();
 }
 
+function withTimeFrom(baseDate: Date, timeSource: Date): Date {
+  const next = new Date(baseDate);
+  next.setUTCHours(
+    timeSource.getUTCHours(),
+    timeSource.getUTCMinutes(),
+    timeSource.getUTCSeconds(),
+    timeSource.getUTCMilliseconds(),
+  );
+  return next;
+}
+
+function patchForSeriesParent(
+  patch: UpdateCalendarEventInput,
+  parent: CalendarEventRow,
+): UpdateCalendarEventInput {
+  const next: UpdateCalendarEventInput = { ...patch, recurrenceEditMode: 'series' };
+  if (patch.startAt) {
+    const startAt = withTimeFrom(parent.startAt, patch.startAt);
+    next.startAt = startAt;
+    if (patch.endAt) {
+      next.endAt = new Date(startAt.getTime() + (patch.endAt.getTime() - patch.startAt.getTime()));
+    }
+  } else if (patch.endAt) {
+    next.endAt = withTimeFrom(parent.endAt, patch.endAt);
+  }
+  return next;
+}
+
 function sameStringArray(a: string[] | null | undefined, b: string[] | null | undefined): boolean {
   const left = a ?? [];
   const right = b ?? [];
@@ -765,9 +793,11 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           )
           .limit(1);
 
-        const row = existing[0];
+        let row = existing[0];
         if (!row) return null;
-        const current = row as CalendarEventRow;
+        let current = row as CalendarEventRow;
+        let targetId = id;
+        let effectivePatch = patch;
         const requestedRecurrenceMode: RecurrenceEditMode =
           patch.recurrenceEditMode ?? (current.recurringParentId ? 'single' : 'series');
         const recurrenceMode: RecurrenceEditMode = !current.recurringParentId
@@ -894,55 +924,89 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           };
         }
 
+        if (recurrenceMode === 'series' && current.recurringParentId) {
+          const [parent] = await tx
+            .select()
+            .from(calendarEvents)
+            .where(
+              and(
+                eq(calendarEvents.id, current.recurringParentId),
+                eq(calendarEvents.teamId, teamId),
+                isNull(calendarEvents.deletedAt),
+                calendarWriteVisibility,
+              ),
+            )
+            .limit(1);
+          if (!parent) throw new Error('Recurring parent not found');
+          row = parent;
+          current = parent as CalendarEventRow;
+          targetId = current.id;
+          effectivePatch = patchForSeriesParent(patch, current);
+        }
+
         const changedFields = new Set<keyof UpdateCalendarEventInput>();
-        if (patch.title !== undefined && patch.title !== row.title) changedFields.add('title');
-        if (patch.description !== undefined && patch.description !== row.description) {
+        if (effectivePatch.title !== undefined && effectivePatch.title !== row.title) {
+          changedFields.add('title');
+        }
+        if (
+          effectivePatch.description !== undefined &&
+          effectivePatch.description !== row.description
+        ) {
           changedFields.add('description');
         }
-        if (patch.startAt !== undefined && !sameDate(patch.startAt, row.startAt)) {
+        if (
+          effectivePatch.startAt !== undefined &&
+          !sameDate(effectivePatch.startAt, row.startAt)
+        ) {
           changedFields.add('startAt');
         }
-        if (patch.endAt !== undefined && !sameDate(patch.endAt, row.endAt)) {
+        if (effectivePatch.endAt !== undefined && !sameDate(effectivePatch.endAt, row.endAt)) {
           changedFields.add('endAt');
         }
-        if (patch.timezone !== undefined && patch.timezone !== row.timezone) {
+        if (effectivePatch.timezone !== undefined && effectivePatch.timezone !== row.timezone) {
           changedFields.add('timezone');
         }
-        if (patch.allDay !== undefined && patch.allDay !== row.allDay) {
+        if (effectivePatch.allDay !== undefined && effectivePatch.allDay !== row.allDay) {
           changedFields.add('allDay');
         }
-        if (patch.location !== undefined && patch.location !== row.location) {
+        if (effectivePatch.location !== undefined && effectivePatch.location !== row.location) {
           changedFields.add('location');
         }
-        if (patch.showAs !== undefined && patch.showAs !== row.showAs) {
+        if (effectivePatch.showAs !== undefined && effectivePatch.showAs !== row.showAs) {
           changedFields.add('showAs');
         }
-        if (patch.visibility !== undefined && patch.visibility !== row.visibility) {
+        if (
+          effectivePatch.visibility !== undefined &&
+          effectivePatch.visibility !== row.visibility
+        ) {
           changedFields.add('visibility');
         }
-        if (patch.rrule !== undefined) {
-          const nextRrule = patch.rrule?.trim()
+        if (effectivePatch.rrule !== undefined) {
+          const nextRrule = effectivePatch.rrule?.trim()
             ? validateRRule({
-                rrule: patch.rrule,
-                startAt: patch.startAt ?? row.startAt,
-                timezone: patch.timezone ?? row.timezone,
+                rrule: effectivePatch.rrule,
+                startAt: effectivePatch.startAt ?? row.startAt,
+                timezone: effectivePatch.timezone ?? row.timezone,
               })
             : null;
           if (nextRrule !== row.rrule) changedFields.add('rrule');
-          patch.rrule = nextRrule;
+          effectivePatch.rrule = nextRrule;
         }
         if (
-          patch.visibilityUserIds !== undefined &&
-          !sameStringArray(patch.visibilityUserIds, row.visibilityUserIds)
+          effectivePatch.visibilityUserIds !== undefined &&
+          !sameStringArray(effectivePatch.visibilityUserIds, row.visibilityUserIds)
         ) {
           changedFields.add('visibilityUserIds');
         }
-        if (patch.reminderMinutes !== undefined && patch.reminderMinutes !== row.reminderMinutes) {
+        if (
+          effectivePatch.reminderMinutes !== undefined &&
+          effectivePatch.reminderMinutes !== row.reminderMinutes
+        ) {
           changedFields.add('reminderMinutes');
         }
         if (
-          patch.metadata !== undefined &&
-          !sameJson(patch.metadata, row.metadata as Record<string, unknown>)
+          effectivePatch.metadata !== undefined &&
+          !sameJson(effectivePatch.metadata, row.metadata as Record<string, unknown>)
         ) {
           changedFields.add('metadata');
         }
@@ -955,8 +1019,8 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           };
         }
 
-        const effectiveStart = patch.startAt ?? row.startAt;
-        const effectiveEnd = patch.endAt ?? row.endAt;
+        const effectiveStart = effectivePatch.startAt ?? row.startAt;
+        const effectiveEnd = effectivePatch.endAt ?? row.endAt;
         if (effectiveEnd <= effectiveStart) {
           throw new Error('End time must be after start time');
         }
@@ -967,47 +1031,52 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           throw new Error('Only the visibility owner can change this event');
         }
 
-        const newVis = patch.visibility ?? row.visibility;
+        const newVis = effectivePatch.visibility ?? row.visibility;
         const newVisUserIds = hasVisibilityChange
           ? await validateVisibilityUserIds(
               newVis,
-              patch.visibilityUserIds ?? row.visibilityUserIds,
+              effectivePatch.visibilityUserIds ?? row.visibilityUserIds,
               requireTeamMember,
             )
           : row.visibilityUserIds;
 
         const setClause: Record<string, unknown> = { updatedAt: new Date() };
-        if (patch.title !== undefined) setClause.title = patch.title;
-        if (patch.description !== undefined) setClause.description = patch.description;
-        if (patch.startAt !== undefined) setClause.startAt = patch.startAt;
-        if (patch.endAt !== undefined) setClause.endAt = patch.endAt;
-        if (patch.timezone !== undefined) setClause.timezone = patch.timezone;
-        if (patch.allDay !== undefined) setClause.allDay = patch.allDay;
-        if (patch.location !== undefined) setClause.location = patch.location;
-        if (patch.showAs !== undefined) setClause.showAs = patch.showAs;
-        if (patch.visibility !== undefined) setClause.visibility = patch.visibility;
-        if (patch.rrule !== undefined) setClause.rrule = patch.rrule;
+        if (effectivePatch.title !== undefined) setClause.title = effectivePatch.title;
+        if (effectivePatch.description !== undefined) {
+          setClause.description = effectivePatch.description;
+        }
+        if (effectivePatch.startAt !== undefined) setClause.startAt = effectivePatch.startAt;
+        if (effectivePatch.endAt !== undefined) setClause.endAt = effectivePatch.endAt;
+        if (effectivePatch.timezone !== undefined) setClause.timezone = effectivePatch.timezone;
+        if (effectivePatch.allDay !== undefined) setClause.allDay = effectivePatch.allDay;
+        if (effectivePatch.location !== undefined) setClause.location = effectivePatch.location;
+        if (effectivePatch.showAs !== undefined) setClause.showAs = effectivePatch.showAs;
+        if (effectivePatch.visibility !== undefined)
+          setClause.visibility = effectivePatch.visibility;
+        if (effectivePatch.rrule !== undefined) setClause.rrule = effectivePatch.rrule;
         if (recurrenceMode === 'single' && row.recurringParentId) setClause.isException = true;
         if (hasVisibilityChange) {
           setClause.visibilityUserIds = newVisUserIds;
         }
-        if (patch.reminderMinutes !== undefined) setClause.reminderMinutes = patch.reminderMinutes;
-        if (patch.metadata !== undefined) {
+        if (effectivePatch.reminderMinutes !== undefined) {
+          setClause.reminderMinutes = effectivePatch.reminderMinutes;
+        }
+        if (effectivePatch.metadata !== undefined) {
           setClause.metadata = mergeMetadata(
             eventMetadata(row as CalendarEventRow),
-            patch.metadata,
+            effectivePatch.metadata,
           );
         }
 
         const [updated] = await tx
           .update(calendarEvents)
           .set(setClause)
-          .where(eq(calendarEvents.id, id))
+          .where(eq(calendarEvents.id, targetId))
           .returning();
 
         if (!updated) return null;
 
-        const newTitle = patch.title ?? row.title;
+        const newTitle = effectivePatch.title ?? row.title;
         const timelineFields: (keyof UpdateCalendarEventInput)[] = [
           'title',
           'description',
@@ -1065,24 +1134,24 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           const startRawPatch: Record<string, unknown> = {
             contentText: buildCalendarTimelineText({
               title: newTitle,
-              description: patch.description ?? row.description,
+              description: effectivePatch.description ?? row.description,
               startAt: effectiveStart,
               endAt: effectiveEnd,
-              timezone: patch.timezone ?? row.timezone,
-              location: patch.location ?? row.location,
+              timezone: effectivePatch.timezone ?? row.timezone,
+              location: effectivePatch.location ?? row.location,
             }),
           };
-          if (patch.startAt) startRawPatch.occurredAt = patch.startAt;
+          if (effectivePatch.startAt) startRawPatch.occurredAt = effectivePatch.startAt;
           await tx
             .update(rawEvents)
             .set(startRawPatch)
             .where(eq(rawEvents.id, row.startAtRawEventId));
         }
 
-        if (patch.title && row.scheduledRawEventId) {
+        if (effectivePatch.title && row.scheduledRawEventId) {
           await tx
             .update(rawEvents)
-            .set({ contentText: `Scheduled: ${patch.title}` })
+            .set({ contentText: `Scheduled: ${effectivePatch.title}` })
             .where(eq(rawEvents.id, row.scheduledRawEventId));
         }
 
@@ -1097,7 +1166,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
             visibilityUserIds: newVisUserIds,
             visibilityOwnerUserId: row.createdByUserId,
             sourceMetadata: {
-              calendar_event_id: id,
+              calendar_event_id: targetId,
               action: 'updated',
             },
           });
@@ -1106,7 +1175,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         const cancelledProposalEventIds = await confirmProposalGroup(
           tx,
           updated as CalendarEventRow,
-          patch,
+          effectivePatch,
         );
 
         let qdrantAction: CalendarQdrantAction = null;
