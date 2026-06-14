@@ -7,6 +7,7 @@ import type { BoardItemOptimisticPatch } from '@/components/boards/board-detail-
 import type * as boards from '@timeline/shared/boards';
 
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
+import { displayText } from '@/lib/display-dates';
 
 export interface BoardMemberOption {
   id: string;
@@ -80,13 +81,15 @@ export function CuratedBoardTable({
               <tr key={item.id} className="border-t border-border transition-colors hover:bg-bg">
                 <td className="px-3 py-2">
                   {optimistic ? (
-                    <span className="font-medium text-fg">{item.object.canonicalName}</span>
+                    <span className="font-medium text-fg">
+                      {displayText(item.object.canonicalName)}
+                    </span>
                   ) : (
                     <Link
                       href={boardViewHref(boardId, view, item.id)}
                       className="font-medium hover:underline"
                     >
-                      {item.object.canonicalName}
+                      {displayText(item.object.canonicalName)}
                     </Link>
                   )}
                 </td>
@@ -99,7 +102,7 @@ export function CuratedBoardTable({
                       updateItem(item.id, { responsibleUserId: event.target.value || null });
                     }}
                     className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-                    aria-label={`Responsible person for ${item.object.canonicalName}`}
+                    aria-label={`Responsible person for ${displayText(item.object.canonicalName)}`}
                   >
                     <option value="">Unassigned</option>
                     {members.map((member) => (
@@ -122,7 +125,7 @@ export function CuratedBoardTable({
                       });
                     }}
                     className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-                    aria-label={`Due date for ${item.object.canonicalName}`}
+                    aria-label={`Due date for ${displayText(item.object.canonicalName)}`}
                   />
                 </td>
                 <td className="min-w-28 px-3 py-2">
@@ -135,7 +138,7 @@ export function CuratedBoardTable({
                       });
                     }}
                     className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-                    aria-label={`Priority for ${item.object.canonicalName}`}
+                    aria-label={`Priority for ${displayText(item.object.canonicalName)}`}
                   >
                     <option value="">None</option>
                     {[1, 2, 3, 4].map((priority) => (
@@ -153,12 +156,12 @@ export function CuratedBoardTable({
                       updateItem(item.id, { laneId: event.target.value || null });
                     }}
                     className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-                    aria-label={`Lane for ${item.object.canonicalName}`}
+                    aria-label={`Lane for ${displayText(item.object.canonicalName)}`}
                   >
                     <option value="">Unset</option>
                     {lanes.map((lane) => (
                       <option key={lane.id} value={lane.id}>
-                        {lane.name}
+                        {displayText(lane.name)}
                       </option>
                     ))}
                   </select>
@@ -218,7 +221,7 @@ function BoardNextStepInput({
         }
       }}
       className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-      aria-label={`Next step for ${objectName}`}
+      aria-label={`Next step for ${displayText(objectName)}`}
       placeholder="Next step"
     />
   );
@@ -240,7 +243,7 @@ export function CuratedBoardList({
         const content = (
           <>
             <span className="min-w-0 flex-1 truncate font-medium text-fg">
-              {item.object.canonicalName}
+              {displayText(item.object.canonicalName)}
             </span>
             <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
               {item.object.type}

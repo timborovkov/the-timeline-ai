@@ -2,6 +2,8 @@ import Link from 'next/link';
 
 import type * as boards from '@timeline/shared/boards';
 
+import { displayText } from '@/lib/display-dates';
+
 export function ObjectBoardContext({ rows }: { rows: boards.ObjectBoardContextRow[] }) {
   if (rows.length === 0) return null;
   return (
@@ -14,10 +16,10 @@ export function ObjectBoardContext({ rows }: { rows: boards.ObjectBoardContextRo
               href={`/app/boards/${row.boardId}?item=${row.itemId}`}
               className="font-medium hover:underline"
             >
-              {row.boardName}
+              {displayText(row.boardName)}
             </Link>
             <div className="mt-2 flex flex-wrap gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-              {row.laneName ? <span>{row.laneName}</span> : <span>No stage</span>}
+              {row.laneName ? <span>{displayText(row.laneName)}</span> : <span>No stage</span>}
               {row.responsibleUserId ? <span>· assigned</span> : null}
               {row.dueAt ? <span>· due {row.dueAt.toLocaleDateString('en-CA')}</span> : null}
               {row.priority ? <span>· p{row.priority}</span> : null}

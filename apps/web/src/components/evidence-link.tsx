@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 
 interface EvidenceLinkProps {
@@ -49,8 +50,8 @@ function occurredLabel(event: TimelineEventPreview | null, fallbackOccurredAt?: 
   const value = event?.occurredAt ?? fallbackOccurredAt;
   if (!value) return null;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+  if (Number.isNaN(date.getTime())) return displayText(value);
+  return formatDisplayDateTime(date);
 }
 
 export function EvidenceLink({
@@ -112,7 +113,7 @@ export function EvidenceLink({
   }, [eventId, state.event, state.loading, state.loadingEventId]);
 
   const currentEvent = state.event?.id === eventId ? state.event : null;
-  const body = currentEvent?.contentText ?? previewText ?? null;
+  const body = displayText(currentEvent?.contentText ?? previewText ?? '');
   const meta = [occurredLabel(currentEvent, occurredAt), eventLabel(currentEvent, source)]
     .filter(Boolean)
     .join(' · ');
