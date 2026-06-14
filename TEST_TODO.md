@@ -84,7 +84,9 @@ Legend:
 - `pnpm --filter @timeline/db test` runs DB/PGlite schema contract tests.
 - `pnpm test:eval` runs the fast deterministic shared agent/retrieval eval
   slice.
-- `pnpm validate` runs format, typecheck, lint, tests, and knip.
+- `pnpm validate` runs format, typecheck, lint, and knip. Tests run through
+  `pnpm test`, `pnpm test:ci`, package-filtered Vitest commands, or E2E
+  commands depending on the change.
 - `pnpm e2e` runs local Playwright E2E through `scripts/run-e2e-strict.ts`.
 - `pnpm e2e:prod-smoke` runs the production-ish Playwright smoke suite.
 
@@ -678,7 +680,9 @@ Once the suite is mature, split commands by layer:
 - `pnpm e2e`: local core Playwright E2E.
 - `pnpm e2e:prod-smoke`: production-ish smoke.
 - `pnpm test:eval`: fast deterministic agent evals.
-- `pnpm validate`: format, typecheck, lint, `pnpm test`, and knip.
+- `pnpm validate`: format, typecheck, lint, and knip.
+- `pnpm test:ci`: focused CI regression lane for deterministic shared
+  agent/retrieval evals.
 - CI PR gate: validate plus core E2E when stable.
 - CI scheduled/manual gate: provider-backed E2E, production-ish smoke, and
   slower evals.
