@@ -4,19 +4,22 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { BoardCreateForm } from '@/components/boards/board-create-form';
+import { BoardCreateDialog } from '@/components/boards/board-create-form';
 import { BoardPinButton } from '@/components/boards/board-pin-button';
 import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
 import { WORK_BACK_LINK } from '@/components/work-back-link';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { visibleBoardDescription } from '@/lib/board-description';
 import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
   title: 'Boards',
   description: 'Browse boards for timeline work.',
 };
+
+const BOARD_CREATE_DIALOG = <BoardCreateDialog />;
 
 export default async function BoardsIndexPage() {
   const session = await auth();
@@ -33,11 +36,8 @@ export default async function BoardsIndexPage() {
         srLabel={`Boards · ${boards.length} boards`}
         segments={[{ value: 'BOARDS' }, { label: 'total', value: boards.length }]}
         leading={WORK_BACK_LINK}
+        trailing={BOARD_CREATE_DIALOG}
       />
-
-      <section aria-label="Create board" className="rounded-sm border border-border bg-surface p-4">
-        <BoardCreateForm />
-      </section>
 
       {boards.length === 0 ? (
         <EmptyAction
@@ -47,22 +47,35 @@ export default async function BoardsIndexPage() {
           action="Capture source material"
         />
       ) : (
-        <ul className="grid grid-cols-1 gap-px overflow-hidden border border-border sm:grid-cols-2">
-          {boards.map((b) => (
-            <li key={b.id} className="bg-bg">
-              <Link href={`/app/boards/${b.id}`} className="block px-3 py-2.5 hover:bg-surface">
-                <span className="flex items-center justify-between gap-3">
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
-                    {b.name}
-                  </span>
-                  <BoardPinButton id={b.id} pinned={b.pinned} />
-                </span>
-                <span className="mt-1 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-                  <span>{b.itemCount} items</span>
-                </span>
-              </Link>
-            </li>
-          ))}
+        <ul className="divide-y divide-border border border-border" aria-label="Boards">
+          {boards.map((b) => {
+            const description = visibleBoardDescription(b.purpose);
+            return (
+              <li key={b.id} className="bg-bg transition-colors hover:bg-surface">
+                <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start">
+                  <Link href={`/app/boards/${b.id}`} className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-fg">{b.name}</span>
+                    {description ? (
+                      <span className="mt-1 block line-clamp-2 text-sm text-fg-muted">
+                        {description}
+                      </span>
+                    ) : null}
+                    <span className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                      <span>{b.templateKind.replaceAll('_', ' ')}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{b.updatedAt.toLocaleDateString('en-CA')}</span>
+                    </span>
+                  </Link>
+                  <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-start">
+                    <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+                      {b.itemCount} items
+                    </span>
+                    <BoardPinButton id={b.id} pinned={b.pinned} />
+                  </div>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
