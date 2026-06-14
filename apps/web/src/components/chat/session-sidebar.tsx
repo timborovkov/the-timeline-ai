@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useTransition } from 'react';
 
 import { archiveChatSessionAction } from '@/app/actions/chat';
+import { useAppDialog } from '@/components/ui/app-dialog';
 import { cn } from '@/lib/utils';
 
 interface SessionEntry {
@@ -36,6 +37,7 @@ function SessionSidebarContent({
   const router = useRouter();
   const pathname = usePathname();
   const search = useSearchParams();
+  const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
 
   function newChat(): void {
@@ -85,8 +87,14 @@ function SessionSidebarContent({
                   type="button"
                   disabled={pending}
                   aria-label="Archive chat"
-                  onClick={() => {
-                    if (!confirm('Archive this chat?')) return;
+                  onClick={async () => {
+                    const confirmed = await dialog.confirm({
+                      title: 'Archive chat?',
+                      description: 'This hides the conversation from the sidebar.',
+                      confirmLabel: 'Archive chat',
+                      destructive: true,
+                    });
+                    if (!confirmed) return;
                     startTransition(async () => {
                       await archiveChatSessionAction({ sessionId: s.id });
                       if (isActive) {
@@ -108,6 +116,7 @@ function SessionSidebarContent({
           })}
         </ul>
       )}
+      {dialog.node}
     </aside>
   );
 }

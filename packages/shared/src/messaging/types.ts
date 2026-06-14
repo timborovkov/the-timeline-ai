@@ -5,7 +5,8 @@ export type MessageIntent =
   | 'support_request'
   | 'welcome'
   | 'email_verification'
-  | 'daily_digest';
+  | 'daily_digest'
+  | 'connection_attention';
 
 export type MessageChannel = 'email' | 'in_app_digest';
 
@@ -90,12 +91,20 @@ export interface DailyDigestMessageInput {
   payload: DailyDigestPayload;
 }
 
+export interface ConnectionAttentionMessageInput {
+  to: string;
+  teamName: string;
+  summary: string;
+  actionUrl: string;
+}
+
 export interface MessageInputByIntent {
   team_invite: TeamInviteMessageInput;
   support_request: SupportRequestMessageInput;
   welcome: WelcomeMessageInput;
   email_verification: EmailVerificationMessageInput;
   daily_digest: DailyDigestMessageInput;
+  connection_attention: ConnectionAttentionMessageInput;
 }
 
 export type MessageInput<TIntent extends MessageIntent = MessageIntent> =

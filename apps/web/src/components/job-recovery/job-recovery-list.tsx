@@ -2,10 +2,11 @@
 
 import { CheckCircle2, CircleAlert, LoaderCircle, RotateCcw, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useMemo, useReducer, useState } from 'react';
 
 import type * as jobRecovery from '@timeline/shared/job-recovery';
 
+import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,6 +33,23 @@ interface RetryFailedResponse {
   failedIds?: string[];
 }
 
+interface JobRecoveryUiState {
+  actionError: string | null;
+  busy: string | null;
+  dismissedKeys: Set<string>;
+  filter: JobRecoveryKind | 'all';
+  retrySnapshots: RetryStates;
+}
+
+type JobRecoveryUiAction =
+  | { type: 'busy'; busy: string | null }
+  | { type: 'dismiss'; key: string }
+  | { type: 'dismissMany'; keys: string[] }
+  | { type: 'error'; error: string | null }
+  | { type: 'filter'; filter: JobRecoveryKind | 'all' }
+  | { type: 'retryQueued'; id: string; startedAt: number }
+  | { type: 'retryQueuedMany'; ids: string[]; startedAt: number };
+
 const FILTERS: { kind: JobRecoveryKind | 'all'; label: string }[] = [
   { kind: 'all', label: 'All' },
   { kind: 'transcription', label: 'Transcription' },
@@ -42,13 +60,61 @@ const FILTERS: { kind: JobRecoveryKind | 'all'; label: string }[] = [
   { kind: 'integration_sync', label: 'Integrations' },
 ];
 
+const initialJobRecoveryUiState: JobRecoveryUiState = {
+  actionError: null,
+  busy: null,
+  dismissedKeys: new Set<string>(),
+  filter: 'all',
+  retrySnapshots: {},
+};
+
+function jobRecoveryUiReducer(
+  state: JobRecoveryUiState,
+  action: JobRecoveryUiAction,
+): JobRecoveryUiState {
+  switch (action.type) {
+    case 'busy':
+      return { ...state, busy: action.busy };
+    case 'dismiss':
+      return {
+        ...state,
+        dismissedKeys: new Set(state.dismissedKeys).add(action.key),
+      };
+    case 'dismissMany': {
+      const dismissedKeys = new Set(state.dismissedKeys);
+      for (const key of action.keys) dismissedKeys.add(key);
+      return { ...state, dismissedKeys };
+    }
+    case 'error':
+      return { ...state, actionError: action.error };
+    case 'filter':
+      return { ...state, filter: action.filter };
+    case 'retryQueued':
+      return {
+        ...state,
+        retrySnapshots: {
+          ...state.retrySnapshots,
+          [action.id]: { startedAt: action.startedAt, status: 'queued', error: null },
+        },
+      };
+    case 'retryQueuedMany': {
+      const retrySnapshots = { ...state.retrySnapshots };
+      for (const id of action.ids) {
+        retrySnapshots[id] = { startedAt: action.startedAt, status: 'queued', error: null };
+      }
+      return { ...state, retrySnapshots };
+    }
+  }
+}
+
 export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const finishedJobs = useFinishedJobsInfiniteQuery();
-  const [filter, setFilter] = useState<JobRecoveryKind | 'all'>('all');
-  const [busy, setBusy] = useState<string | null>(null);
-  const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(() => new Set());
-  const [retrySnapshots, setRetrySnapshots] = useState<Record<string, RetrySnapshot>>({});
+  const [{ actionError, busy, dismissedKeys, filter, retrySnapshots }, dispatchUi] = useReducer(
+    jobRecoveryUiReducer,
+    initialJobRecoveryUiState,
+  );
 
   const visibleItems = useMemo(
     () => items.filter((item) => !dismissedKeys.has(itemSnapshotKey(item))),
@@ -109,40 +175,47 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
 
   async function call(action: 'retry' | 'dismiss', id: string) {
     const retryStartedAt = Date.now();
-    setBusy(`${action}:${id}`);
+    dispatchUi({ type: 'busy', busy: `${action}:${id}` });
+    dispatchUi({ type: 'error', error: null });
     try {
       const res = await fetch(`/api/team/job-recovery/${encodeURIComponent(id)}/${action}`, {
         method: 'POST',
       });
       if (!res.ok) {
         const text = await res.text();
-        alert(`${action === 'retry' ? 'Retry' : 'Dismiss'} failed: ${text}`);
+        dispatchUi({
+          type: 'error',
+          error: `${action === 'retry' ? 'Retry' : 'Dismiss'} failed: ${text}`,
+        });
         return;
       }
       if (action === 'retry') {
-        setRetrySnapshots((previous) => ({
-          ...previous,
-          [id]: { startedAt: retryStartedAt, status: 'queued', error: null },
-        }));
+        dispatchUi({ type: 'retryQueued', id, startedAt: retryStartedAt });
         void finishedJobs.refetch();
       } else {
         const dismissed = items.find((item) => item.id === id);
         if (dismissed) {
-          setDismissedKeys((previous) => new Set(previous).add(itemSnapshotKey(dismissed)));
+          dispatchUi({ type: 'dismiss', key: itemSnapshotKey(dismissed) });
         }
         router.refresh();
       }
     } finally {
-      setBusy(null);
+      dispatchUi({ type: 'busy', busy: null });
     }
   }
 
   async function dismissFailed() {
     if (failedCount === 0) return;
     const scopeLabel = filter === 'all' ? 'all failed jobs' : `failed ${filter.replace(/_/g, ' ')}`;
-    const ok = window.confirm(`Dismiss ${String(failedCount)} ${scopeLabel}?`);
-    if (!ok) return;
-    setBusy('dismiss-failed');
+    const confirmed = await dialog.confirm({
+      title: 'Dismiss failed jobs?',
+      description: `Dismiss ${String(failedCount)} ${scopeLabel}?`,
+      confirmLabel: 'Dismiss failed',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    dispatchUi({ type: 'busy', busy: 'dismiss-failed' });
+    dispatchUi({ type: 'error', error: null });
     try {
       const res = await fetch('/api/team/job-recovery/dismiss-failed', {
         method: 'POST',
@@ -158,24 +231,24 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
       });
       if (!res.ok) {
         const text = await res.text();
-        alert(`Dismiss failed jobs failed: ${text}`);
+        dispatchUi({ type: 'error', error: `Dismiss failed jobs failed: ${text}` });
         return;
       }
-      setDismissedKeys((previous) => {
-        const next = new Set(previous);
-        for (const item of failedItems) next.add(itemSnapshotKey(item));
-        return next;
+      dispatchUi({
+        type: 'dismissMany',
+        keys: failedItems.map((item) => itemSnapshotKey(item)),
       });
       router.refresh();
     } finally {
-      setBusy(null);
+      dispatchUi({ type: 'busy', busy: null });
     }
   }
 
   async function retryFailed() {
     if (failedCount === 0) return;
     const retryStartedAt = Date.now();
-    setBusy('retry-failed');
+    dispatchUi({ type: 'busy', busy: 'retry-failed' });
+    dispatchUi({ type: 'error', error: null });
     try {
       const res = await fetch('/api/team/job-recovery/retry-failed', {
         method: 'POST',
@@ -191,30 +264,32 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
       });
       if (!res.ok) {
         const text = await res.text();
-        alert(`Retry failed jobs failed: ${text}`);
+        dispatchUi({ type: 'error', error: `Retry failed jobs failed: ${text}` });
         return;
       }
       const body = (await res.json().catch(() => ({}))) as RetryFailedResponse;
       const failedRetryIds = new Set(body.failedIds ?? []);
-      setRetrySnapshots((previous) => {
-        const next = { ...previous };
-        for (const item of failedItems) {
-          if (failedRetryIds.has(item.id)) continue;
-          next[item.id] = { startedAt: retryStartedAt, status: 'queued', error: null };
-        }
-        return next;
+      const retryQueuedIds: string[] = [];
+      for (const item of failedItems) {
+        if (!failedRetryIds.has(item.id)) retryQueuedIds.push(item.id);
+      }
+      dispatchUi({
+        type: 'retryQueuedMany',
+        ids: retryQueuedIds,
+        startedAt: retryStartedAt,
       });
       if ((body.failed ?? failedRetryIds.size) > 0) {
-        alert(
-          `Retried ${String(body.retried ?? failedCount - failedRetryIds.size)} failed jobs; ${String(
+        dispatchUi({
+          type: 'error',
+          error: `Retried ${String(body.retried ?? failedCount - failedRetryIds.size)} failed jobs; ${String(
             body.failed ?? failedRetryIds.size,
           )} could not be queued.`,
-        );
+        });
       }
       void finishedJobs.refetch();
       router.refresh();
     } finally {
-      setBusy(null);
+      dispatchUi({ type: 'busy', busy: null });
     }
   }
 
@@ -226,6 +301,12 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
         }}
       />
 
+      {actionError ? (
+        <div className="rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {actionError}
+        </div>
+      ) : null}
+
       <JobRecoveryToolbar
         busy={busy}
         failedCount={failedCount}
@@ -233,11 +314,14 @@ export function JobRecoveryList({ items }: { items: JobRecoveryItem[] }) {
         hasQueuedFailedRetry={hasQueuedFailedRetry}
         onDismissFailed={dismissFailed}
         onRetryFailed={retryFailed}
-        onSetFilter={setFilter}
+        onSetFilter={(nextFilter) => {
+          dispatchUi({ type: 'filter', filter: nextFilter });
+        }}
       />
 
       <JobRecoveryItems busy={busy} items={filtered} onAction={call} retryStates={retryStates} />
       <FinishedJobsArchive items={finishedArchiveItems} query={finishedJobs} />
+      {dialog.node}
     </section>
   );
 }
@@ -428,7 +512,7 @@ function ConversationSuggestionRecovery({ onQueued }: { onQueued: () => void }) 
       });
       if (!res.ok) {
         const text = await res.text();
-        alert(`Queue suggestions failed: ${text}`);
+        setStatus(`Queue suggestions failed: ${text}`);
         return;
       }
       const body = (await res.json()) as {

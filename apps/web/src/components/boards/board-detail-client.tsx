@@ -25,7 +25,10 @@ export interface BoardMemberOption {
 }
 
 export type BoardItemOptimisticPatch = Partial<
-  Pick<boards.BoardItemRow, 'responsibleUserId' | 'dueAt' | 'priority' | 'nextStep' | 'notes'>
+  Pick<
+    boards.BoardItemRow,
+    'laneId' | 'responsibleUserId' | 'dueAt' | 'priority' | 'nextStep' | 'notes'
+  >
 >;
 
 interface BoardItemPatchOverlay {
@@ -254,7 +257,16 @@ export function BoardDetailClient({
               members={members}
             />
           )}
-          {view === 'table' && <CuratedBoardTable boardId={boardId} view={view} items={items} />}
+          {view === 'table' && (
+            <CuratedBoardTable
+              boardId={boardId}
+              view={view}
+              lanes={lanes}
+              items={items}
+              members={members}
+              onUpdateItem={updateItem}
+            />
+          )}
           {view === 'list' && <CuratedBoardList boardId={boardId} view={view} items={items} />}
         </div>
         {selectedItem ? (

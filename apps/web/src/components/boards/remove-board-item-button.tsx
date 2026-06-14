@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
 import { removeBoardItemAction } from '@/app/actions/boards';
+import { useAppDialog } from '@/components/ui/app-dialog';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 
 export function RemoveBoardItemButton({
@@ -21,8 +22,30 @@ export function RemoveBoardItemButton({
   onRemoved?: () => void;
 }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  async function removeItem(): Promise<void> {
+    const confirmed = await dialog.confirm({
+      title: 'Remove from board?',
+      description: `${objectName} will leave this board. The object itself will stay.`,
+      confirmLabel: 'Remove',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await removeBoardItemAction({ id: itemId, boardId });
+      if ('error' in result && result.error) {
+        setError(result.error);
+        return;
+      }
+      onRemoved?.();
+      router.push(boardViewHref(boardId, view, null));
+      router.refresh();
+    });
+  }
 
   return (
     <span className="inline-flex flex-col gap-1">
@@ -30,20 +53,7 @@ export function RemoveBoardItemButton({
         type="button"
         disabled={pending}
         onClick={() => {
-          if (!confirm(`Remove ${objectName} from this board? The object itself will stay.`)) {
-            return;
-          }
-          setError(null);
-          startTransition(async () => {
-            const result = await removeBoardItemAction({ id: itemId, boardId });
-            if ('error' in result && result.error) {
-              setError(result.error);
-              return;
-            }
-            onRemoved?.();
-            router.push(boardViewHref(boardId, view, null));
-            router.refresh();
-          });
+          void removeItem();
         }}
         className="inline-flex items-center gap-1.5 rounded-sm border border-danger/40 px-2 py-1 text-xs font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-40"
       >
@@ -51,6 +61,7 @@ export function RemoveBoardItemButton({
         {pending ? 'Removing...' : 'Remove from board'}
       </button>
       {error ? <span className="text-xs text-danger">{error}</span> : null}
+      {dialog.node}
     </span>
   );
 }

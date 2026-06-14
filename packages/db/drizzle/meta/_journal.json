@@ -288,6 +288,20 @@
       "when": 1795652760000,
       "tag": "0040_messaging",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795652820000,
+      "tag": "0041_provider_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1795652880000,
+      "tag": "0042_due_date_notifications",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type {
   DailyDigestMessageInput,
   EmailVerificationMessageInput,
+  ConnectionAttentionMessageInput,
   MessageInput,
   MessageIntent,
   RenderedMessage,
@@ -311,6 +312,36 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
   };
 }
 
+function renderConnectionAttention(input: ConnectionAttentionMessageInput): RenderedMessage {
+  const subject = `Timeline integration needs attention for ${input.teamName}`;
+  const preview = input.summary;
+  const textBody = [
+    input.summary,
+    '',
+    `Open integrations: ${input.actionUrl}`,
+    '',
+    'Existing timeline events remain available; this only affects future sync.',
+  ].join('\n');
+  const htmlBody = htmlLayout({
+    preview,
+    title: 'Integration needs attention',
+    body: [
+      `<p style="font-size: 14px; line-height: 1.55;">${escapeHtml(input.summary)}</p>`,
+      '<p style="font-size: 13px; color: #747b7b;">Existing timeline events remain available; this only affects future sync.</p>',
+    ].join('\n'),
+    cta: { href: input.actionUrl, label: 'Open integrations' },
+  });
+  return {
+    intent: 'connection_attention',
+    to: input.to,
+    subject,
+    textBody,
+    htmlBody,
+    previewText: preview,
+    metadata: { message_intent: 'connection_attention' },
+  };
+}
+
 export function renderMessage<TIntent extends MessageIntent>(
   intent: TIntent,
   input: MessageInput<TIntent>,
@@ -326,6 +357,8 @@ export function renderMessage<TIntent extends MessageIntent>(
       return renderEmailVerification(input as EmailVerificationMessageInput);
     case 'daily_digest':
       return renderDailyDigest(input as DailyDigestMessageInput);
+    case 'connection_attention':
+      return renderConnectionAttention(input as ConnectionAttentionMessageInput);
     default:
       intent satisfies never;
       throw new Error(`Unsupported message intent: ${String(intent)}`);

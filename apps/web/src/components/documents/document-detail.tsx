@@ -12,6 +12,7 @@ import {
 } from '@/app/actions/documents';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { HistoryBackLink } from '@/components/history-back-link';
+import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -80,6 +81,7 @@ function displayDocumentName(name: string, contentType: string | null): string {
 
 export function DocumentDetail({ document, versions, requestedVersion }: Props) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
   const [optimisticRename, setOptimisticRename] = useState<{
     id: string;
@@ -97,8 +99,14 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
   );
   const usingFriendlyName = visibleDocumentName !== currentDocument.name;
 
-  function onRename(): void {
-    const name = window.prompt('New name', currentDocument.name);
+  async function onRename(): Promise<void> {
+    const name = await dialog.input({
+      title: 'Rename document',
+      description: 'Choose a new display name for this document.',
+      inputLabel: 'Name',
+      defaultValue: currentDocument.name,
+      confirmLabel: 'Rename',
+    });
     if (!name?.trim() || name === currentDocument.name) return;
     const previousRename = optimisticRename;
     const trimmedName = name.trim();
@@ -118,11 +126,14 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
     });
   }
 
-  function onDelete(): void {
-    if (
-      !window.confirm('Delete this document? Versions stay in storage; the drive entry is hidden.')
-    )
-      return;
+  async function onDelete(): Promise<void> {
+    const confirmed = await dialog.confirm({
+      title: 'Delete document?',
+      description: 'Versions stay in storage; the drive entry is hidden.',
+      confirmLabel: 'Delete document',
+      destructive: true,
+    });
+    if (!confirmed) return;
     startTransition(async () => {
       const res = await deleteDocumentAction(currentDocument.id);
       if (!res.ok) toast.error(res.error ?? 'Delete failed');
@@ -185,10 +196,15 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
             {currentDocument.visibility !== 'team' && (
               <Badge variant="outline">{currentDocument.visibility}</Badge>
             )}
-            <Button size="sm" variant="outline" onClick={onRename} disabled={pending}>
+            <Button size="sm" variant="outline" onClick={() => void onRename()} disabled={pending}>
               Rename
             </Button>
-            <Button size="sm" variant="destructive" onClick={onDelete} disabled={pending}>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => void onDelete()}
+              disabled={pending}
+            >
               <Trash2 className="mr-1 size-3.5" />
               Delete
             </Button>
@@ -269,6 +285,7 @@ export function DocumentDetail({ document, versions, requestedVersion }: Props) 
           </ul>
         </CardContent>
       </Card>
+      {dialog.node}
     </div>
   );
 }

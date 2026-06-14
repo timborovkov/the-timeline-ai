@@ -24,6 +24,7 @@
         <ul>
           <li><a href="#mental-model">Mental model</a></li>
           <li><a href="#agent-suggestions">Agent suggestions</a></li>
+          <li><a href="#due-dates">Due dates</a></li>
           <li><a href="#recurring-events">Recurring events</a></li>
           <li><a href="#tentative-slots">Tentative slots</a></li>
           <li><a href="#calendar-subscriptions">Calendar subscriptions</a></li>
@@ -62,6 +63,20 @@
       <p>
         Agent tools should report that a suggestion was recorded, not that an event was created. The
         accepted suggestion is the handoff point where the visible calendar changes.
+      </p>
+
+      <h2 id="due-dates">Due dates</h2>
+      <p>
+        Task and follow-up due dates are mirrored to the team calendar as free due-date events.
+        Timeline uses the assignee first, then the owner, as the responsible person for the inbox
+        notification and calendar title. Suggested tasks do not notify anyone or appear on the
+        calendar until a human accepts them.
+      </p>
+      <p>
+        Board item due dates use the board-local responsible person instead of the underlying
+        object's owner or assignee. When that person is set, the in-app inbox receives a
+        board-specific due-date notification, and the calendar event description includes the board
+        name and responsible person so teammates can see who owns the deadline.
       </p>
 
       <h2 id="recurring-events">Recurring events</h2>
@@ -143,9 +158,14 @@
         <li>
           Shared calendar behavior lives in
           <code>packages/shared/src/calendar/scope.ts</code> and
-          <code>packages/shared/src/calendar/recurrence.ts</code>. The scoped calendar port exposes
-          <code>listCalendarEventPage</code> for the paged/searchable event list in addition to the
-          grid-oriented <code>listCalendarEvents</code> range query.
+          <code>packages/shared/src/calendar/recurrence.ts</code>, with raw timeline event helpers
+          in <code>packages/shared/src/calendar/raw-events.ts</code>. The scoped calendar port
+          exposes <code>listCalendarEventPage</code> for the paged/searchable event list in addition
+          to the grid-oriented <code>listCalendarEvents</code> range query.
+        </li>
+        <li>
+          Task and board due-date calendar mirroring lives in
+          <code>packages/shared/src/calendar/due-dates.ts</code>.
         </li>
         <li>
           Calendar suggestion acceptance lives in

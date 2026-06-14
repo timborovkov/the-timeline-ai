@@ -67,4 +67,19 @@ describe('messaging templates', () => {
     expect(message.htmlBody).toContain('Verify email');
     expect(message.metadata).toMatchObject({ message_intent: 'email_verification' });
   });
+
+  it('renders connection attention without exposing raw HTML', () => {
+    const message = renderMessage('connection_attention', {
+      to: 'owner@example.test',
+      teamName: 'Audit & AI',
+      summary: 'Reconnect GitHub <now>',
+      actionUrl: 'https://timeline.test/app/team/integrations',
+    });
+
+    expect(message.subject).toBe('Timeline integration needs attention for Audit & AI');
+    expect(message.textBody).toContain('Open integrations: https://timeline.test/app/team');
+    expect(message.htmlBody).toContain('Reconnect GitHub &lt;now&gt;');
+    expect(message.htmlBody).not.toContain('Reconnect GitHub <now>');
+    expect(message.metadata).toMatchObject({ message_intent: 'connection_attention' });
+  });
 });

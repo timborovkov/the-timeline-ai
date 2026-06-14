@@ -129,6 +129,11 @@ interface GhRepo {
   default_branch: string;
 }
 
+interface GhOrg {
+  login: string;
+  id: number;
+}
+
 interface GhPullRequest {
   id: number;
   number: number;
@@ -694,6 +699,36 @@ async function syncRepo(
   return next;
 }
 
+async function listOrgRepos(tokens: GithubTokens, org: string): Promise<string[]> {
+  const repos: string[] = [];
+  for (let page = 1; page <= 20; page++) {
+    const batch = await ghGet<GhRepo[]>(
+      tokens,
+      `/orgs/${encodeURIComponent(org)}/repos?type=all&sort=updated&direction=desc&per_page=100&page=${String(page)}`,
+    );
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    repos.push(...batch.map((repo) => repo.full_name));
+    if (batch.length < 100) break;
+  }
+  return repos;
+}
+
+async function expandGithubSelections(
+  tokens: GithubTokens,
+  selections: { kind: string; externalId: string }[],
+): Promise<string[]> {
+  const repos = new Set<string>();
+  for (const sel of selections) {
+    if (sel.kind === 'github.repo') repos.add(sel.externalId);
+  }
+  for (const sel of selections) {
+    if (sel.kind !== 'github.org') continue;
+    const orgRepos = await listOrgRepos(tokens, sel.externalId);
+    for (const repo of orgRepos) repos.add(repo);
+  }
+  return [...repos].sort();
+}
+
 export const githubProvider: IntegrationProvider = {
   id: 'github',
   displayLabel: 'GitHub',
@@ -764,6 +799,28 @@ export const githubProvider: IntegrationProvider = {
     // Cap at 20 pages = 2000 repos: large enough that no real user hits
     // it, small enough that a misbehaving token can't brick a sync tick.
     const ghTokens = tokens as GithubTokens;
+    const orgResources: ProviderResource[] = [];
+    try {
+      const orgs: GhOrg[] = [];
+      for (let page = 1; page <= 20; page++) {
+        const batch = await ghGet<GhOrg[]>(
+          ghTokens,
+          `/user/orgs?per_page=100&page=${String(page)}`,
+        );
+        if (!Array.isArray(batch) || batch.length === 0) break;
+        orgs.push(...batch);
+        if (batch.length < 100) break;
+      }
+      orgResources.push(
+        ...orgs.map((org) => ({
+          externalId: org.login,
+          label: `${org.login} (all accessible repos)`,
+          kind: 'github.org',
+        })),
+      );
+    } catch (err) {
+      log.warn({ err }, 'listing github orgs failed');
+    }
     const all: GhRepo[] = [];
     for (let page = 1; page <= 20; page++) {
       const path = `/user/repos?sort=updated&direction=desc&per_page=100&page=${String(page)}`;
@@ -772,11 +829,14 @@ export const githubProvider: IntegrationProvider = {
       all.push(...batch);
       if (batch.length < 100) break;
     }
-    return all.map((r) => ({
-      externalId: r.full_name,
-      label: r.full_name + (r.private ? ' (private)' : ''),
-      kind: 'github.repo',
-    }));
+    return [
+      ...orgResources,
+      ...all.map((r) => ({
+        externalId: r.full_name,
+        label: r.full_name + (r.private ? ' (private)' : ''),
+        kind: 'github.repo',
+      })),
+    ];
   },
 
   async backfill({ tokens, selections, ctx }) {
@@ -786,15 +846,15 @@ export const githubProvider: IntegrationProvider = {
       await ctx.persistTokens(fresh as unknown as Record<string, unknown>);
     }
     const failures: { repo: string; error: string }[] = [];
-    for (const sel of selections) {
-      if (sel.kind !== 'github.repo') continue;
+    const repos = await expandGithubSelections(fresh, selections);
+    for (const repo of repos) {
       try {
-        const next = await syncRepo(fresh, sel.externalId, {}, ctx);
-        await ctx.saveCursor(`github.repo:${sel.externalId}`, next);
+        const next = await syncRepo(fresh, repo, {}, ctx);
+        await ctx.saveCursor(`github.repo:${repo}`, next);
       } catch (err) {
-        log.warn({ err, repo: sel.externalId }, 'github backfill failed for repo');
+        log.warn({ err, repo }, 'github backfill failed for repo');
         failures.push({
-          repo: sel.externalId,
+          repo,
           error: err instanceof Error ? err.message : String(err),
         });
       }
@@ -820,16 +880,16 @@ export const githubProvider: IntegrationProvider = {
       await ctx.persistTokens(fresh as unknown as Record<string, unknown>);
     }
     const failures: { repo: string; error: string }[] = [];
-    for (const sel of selections) {
-      if (sel.kind !== 'github.repo') continue;
-      const cursor = (await ctx.loadCursor(`github.repo:${sel.externalId}`)) as RepoCursor;
+    const repos = await expandGithubSelections(fresh, selections);
+    for (const repo of repos) {
+      const cursor = (await ctx.loadCursor(`github.repo:${repo}`)) as RepoCursor;
       try {
-        const next = await syncRepo(fresh, sel.externalId, cursor, ctx);
-        await ctx.saveCursor(`github.repo:${sel.externalId}`, next);
+        const next = await syncRepo(fresh, repo, cursor, ctx);
+        await ctx.saveCursor(`github.repo:${repo}`, next);
       } catch (err) {
-        log.warn({ err, repo: sel.externalId }, 'github incremental sync failed for repo');
+        log.warn({ err, repo }, 'github incremental sync failed for repo');
         failures.push({
-          repo: sel.externalId,
+          repo,
           error: err instanceof Error ? err.message : String(err),
         });
       }
