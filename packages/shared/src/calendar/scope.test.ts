@@ -7,12 +7,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
+interface DeletePointsForSourceInput {
+  sourceId: string;
+}
+
 const fakes = vi.hoisted(() => ({
   enqueueCalendarEventEmbedJob: vi.fn(),
+  deletePoints: vi.fn(),
+  deletePointsForSource: vi.fn(),
 }));
 
 vi.mock('#src/queue/queues.js', () => ({
   enqueueCalendarEventEmbedJob: fakes.enqueueCalendarEventEmbedJob,
+}));
+vi.mock('#src/qdrant/client.js', () => ({
+  getQdrantClient: vi.fn(() => ({
+    deletePoints: fakes.deletePoints,
+    deletePointsForSource: fakes.deletePointsForSource,
+  })),
 }));
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -46,6 +58,10 @@ describe('calendar scope', () => {
     db = drizzle(pg);
     fakes.enqueueCalendarEventEmbedJob.mockReset();
     fakes.enqueueCalendarEventEmbedJob.mockResolvedValue(undefined);
+    fakes.deletePoints.mockReset();
+    fakes.deletePoints.mockResolvedValue(undefined);
+    fakes.deletePointsForSource.mockReset();
+    fakes.deletePointsForSource.mockResolvedValue(undefined);
   });
 
   it('keeps the occurrence timeline row rich enough for search hydration', async () => {
@@ -692,6 +708,15 @@ describe('calendar scope', () => {
       (row) => row.originalStartAt?.toISOString() === '2026-07-03T16:00:00.000Z',
     );
     expect(occurrence).toBeDefined();
+    const futureChildIds = rows
+      .filter(
+        (row) =>
+          row.recurringParentId === parent.id &&
+          row.originalStartAt !== null &&
+          row.originalStartAt >= new Date('2026-07-03T16:00:00Z'),
+      )
+      .map((row) => row.id)
+      .sort();
 
     await expect(
       scope.calendar.deleteCalendarEvent(occurrence?.id ?? '', {
@@ -711,6 +736,13 @@ describe('calendar scope', () => {
       .from(calendarEvents)
       .where(eq(calendarEvents.id, parent.id));
     expect(parentRows[0]?.rrule).toContain('UNTIL=20260703T155959Z');
+
+    const deleteSourceCalls = fakes.deletePointsForSource.mock.calls as [
+      DeletePointsForSourceInput,
+    ][];
+    const deletedSourceIds = deleteSourceCalls.map(([input]) => input.sourceId).sort();
+    expect(deletedSourceIds).not.toContain(parent.id);
+    expect(Array.from(new Set(deletedSourceIds))).toEqual(futureChildIds);
   });
 
   it('deleteCalendarEvent tombstones both linked timeline rows', async () => {

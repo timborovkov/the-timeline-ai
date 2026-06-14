@@ -1379,7 +1379,11 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
                 : {}),
             },
           });
-          return { deleted: true, deletedEventIds: [parentId, ...deletedIds] };
+          return {
+            deleted: true,
+            deletedEventIds:
+              recurrenceMode === 'this_and_future' ? deletedIds : [parentId, ...deletedIds],
+          };
         }
 
         await tx
