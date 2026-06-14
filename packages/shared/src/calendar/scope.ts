@@ -443,7 +443,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     if (sameDate(occurrenceStart, parent.startAt)) return { id: parent.id, inserted: false };
     const durationMs = parent.endAt.getTime() - parent.startAt.getTime();
     const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
-    const [existing] = await tx
+    const existingRows = await tx
       .select({
         id: calendarEvents.id,
         deletedAt: calendarEvents.deletedAt,
@@ -456,10 +456,12 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           eq(calendarEvents.recurringParentId, parent.id),
           eq(calendarEvents.originalStartAt, occurrenceStart),
         ),
-      )
-      .limit(1);
-    if (existing?.isException || (existing && !existing.deletedAt)) {
-      return { id: existing.id, inserted: false };
+      );
+    const activeExisting = existingRows.find((existing) => !existing.deletedAt);
+    if (activeExisting) return { id: activeExisting.id, inserted: false };
+    const exception = existingRows.find((existing) => existing.isException);
+    if (exception) {
+      return { id: exception.id, inserted: false };
     }
 
     const [row] = await tx
@@ -814,6 +816,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
                 eq(calendarEvents.id, current.recurringParentId),
                 eq(calendarEvents.teamId, teamId),
                 isNull(calendarEvents.deletedAt),
+                calendarWriteVisibility,
               ),
             )
             .limit(1);

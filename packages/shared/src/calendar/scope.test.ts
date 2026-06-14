@@ -418,6 +418,21 @@ describe('calendar scope', () => {
         deleted: true,
       });
     }
+
+    await scope.calendar.materializeRecurringEvent(parent.id, {
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
+    });
+    const afterSecondMaterialize = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
+      limit: 20,
+    });
+    const activeChildStarts = afterSecondMaterialize
+      .filter((row) => row.recurringParentId === parent.id)
+      .map((row) => row.originalStartAt?.toISOString());
+    expect(new Set(activeChildStarts).size).toBe(activeChildStarts.length);
+    expect(afterSecondMaterialize).toHaveLength(5);
   });
 
   it('treats single-scope edits on recurring parents as series edits', async () => {
@@ -507,6 +522,44 @@ describe('calendar scope', () => {
         deleted: true,
       });
     }
+  });
+
+  it('requires parent write access before splitting this-and-future from an occurrence', async () => {
+    const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const teammateScope = withTeam(db as never, TEAM_ID, USER_B_ID);
+    const parent = await ownerScope.calendar.createCalendarEvent({
+      title: 'Private daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'private',
+      rrule: 'FREQ=DAILY;COUNT=4',
+    });
+    const rows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_ID));
+    const occurrence = rows.find(
+      (row) =>
+        row.recurringParentId === parent.id &&
+        row.originalStartAt?.toISOString() === '2026-07-02T16:00:00.000Z',
+    );
+    expect(occurrence).toBeDefined();
+    await db
+      .update(calendarEvents)
+      .set({ visibility: 'team' })
+      .where(eq(calendarEvents.id, occurrence?.id ?? ''));
+
+    await expect(
+      teammateScope.calendar.updateCalendarEvent(occurrence?.id ?? '', {
+        startAt: new Date('2026-07-02T15:00:00Z'),
+        endAt: new Date('2026-07-02T15:30:00Z'),
+        recurrenceEditMode: 'this_and_future',
+      }),
+    ).rejects.toThrow('Recurring parent not found');
+
+    const parentRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.id, parent.id));
+    expect(parentRows[0]?.rrule).toBe('RRULE:FREQ=DAILY;COUNT=4');
   });
 
   it('deleting a recurring parent as a single event removes active children and tombstones their timeline rows', async () => {
