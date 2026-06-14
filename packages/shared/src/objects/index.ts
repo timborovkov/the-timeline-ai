@@ -33,7 +33,9 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 import {
+  enqueueDueDateCalendarEventEmbeddings,
   notifyObjectDueDate,
+  notifyBoardItemDueDate,
   syncBoardItemDueDateCalendarEvent,
   syncObjectDueDateCalendarEvent,
   tombstoneObjectDueDateCalendarEventsForEntities,
@@ -70,14 +72,21 @@ function uniqueIds(ids: string[]): string[] {
 
 function shouldNotifyObjectDueDateOnUpdate(
   changes: { field: string }[],
-  current: Pick<typeof entities.$inferSelect, 'status'>,
-  updated: Pick<typeof entities.$inferSelect, 'assigneeUserId' | 'dueAt' | 'status'>,
+  current: Pick<typeof entities.$inferSelect, 'archivedAt' | 'status'>,
+  updated: Pick<typeof entities.$inferSelect, 'archivedAt' | 'assigneeUserId' | 'dueAt' | 'status'>,
 ): boolean {
   if (!updated.dueAt) return false;
   if (changes.some((change) => change.field === 'dueAt' || change.field === 'assigneeUserId')) {
     return true;
   }
   if (changes.some((change) => change.field === 'ownerUserId') && !updated.assigneeUserId) {
+    return true;
+  }
+  if (
+    changes.some((change) => change.field === 'archivedAt') &&
+    current.archivedAt !== null &&
+    updated.archivedAt === null
+  ) {
     return true;
   }
   return (
@@ -91,7 +100,8 @@ async function syncBoardItemDueDatesForObject(
   db: DbOrTx,
   scope: TeamScopeCore,
   object: Pick<typeof entities.$inferSelect, 'id' | 'canonicalName' | 'type' | 'archivedAt'>,
-): Promise<void> {
+  opts: { actor?: UpdateActor; notifyActive?: boolean } = {},
+): Promise<string[]> {
   const rows = await db
     .select({ item: boardItems, board: boards })
     .from(boardItems)
@@ -103,9 +113,16 @@ async function syncBoardItemDueDatesForObject(
         isNull(boardItems.archivedAt),
       ),
     );
+  const embedCalendarEventIds: string[] = [];
   for (const row of rows) {
-    await syncBoardItemDueDateCalendarEvent(db, row.item, object, row.board);
+    embedCalendarEventIds.push(
+      ...(await syncBoardItemDueDateCalendarEvent(db, row.item, object, row.board)),
+    );
+    if (opts.notifyActive && opts.actor) {
+      await notifyBoardItemDueDate(db, row.item, object, row.board, opts.actor);
+    }
   }
+  return embedCalendarEventIds;
 }
 
 async function deleteMergedObjectEmbeddingPoints(teamId: string, entityId: string): Promise<void> {
@@ -1167,7 +1184,7 @@ export async function createObject(
     await scope.requireTeamMember(input.assigneeUserId);
   }
 
-  const result = await db.transaction(async (tx) => {
+  const txResult = await db.transaction(async (tx) => {
     const insertRows = await tx
       .insert(entities)
       .values({
@@ -1286,27 +1303,31 @@ export async function createObject(
         .onConflictDoNothing();
     }
 
-    await syncObjectDueDateCalendarEvent(tx, row);
+    const dueDateCalendarEventIds = await syncObjectDueDateCalendarEvent(tx, row);
     await notifyObjectDueDate(tx, row, input.actor);
 
-    return toObjectRow(row);
+    return { object: toObjectRow(row), dueDateCalendarEventIds };
   });
 
   // Embed AFTER the transaction commits so the worker (which reads from a
   // separate connection) sees the row. Two points per object: the workspace
   // narrative ('object' scope) and the entity disambiguation text ('entity'
   // scope) — different retrieval modes share the row.
-  fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, result.id), {
+  fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, txResult.object.id), {
     teamId: scope.teamId,
-    objectId: result.id,
+    objectId: txResult.object.id,
     op: 'createObject',
   });
-  fireAndForgetEmbed(() => embedQueue.enqueueEntityEmbedJob(scope.teamId, result.id), {
+  fireAndForgetEmbed(() => embedQueue.enqueueEntityEmbedJob(scope.teamId, txResult.object.id), {
     teamId: scope.teamId,
-    entityId: result.id,
+    entityId: txResult.object.id,
     op: 'createObject',
   });
-  return result;
+  fireAndForgetEmbed(
+    () => enqueueDueDateCalendarEventEmbeddings(scope.teamId, txResult.dueDateCalendarEventIds),
+    { teamId: scope.teamId, op: 'createObjectDueDateCalendar' },
+  );
+  return txResult.object;
 }
 
 export interface UpdateActor {
@@ -1485,20 +1506,30 @@ export async function updateObject(
         'archivedAt',
       ].includes(c.field),
     );
+    const dueDateCalendarEventIds: string[] = [];
     if (dueDateRelevantChange) {
-      await syncObjectDueDateCalendarEvent(tx, updated);
+      dueDateCalendarEventIds.push(...(await syncObjectDueDateCalendarEvent(tx, updated)));
       if (shouldNotifyObjectDueDateOnUpdate(changes, current, updated)) {
         await notifyObjectDueDate(tx, updated, actor);
       }
     }
     if (changes.some((c) => ['canonicalName', 'type', 'archivedAt'].includes(c.field))) {
-      await syncBoardItemDueDatesForObject(tx, scope, updated);
+      dueDateCalendarEventIds.push(
+        ...(await syncBoardItemDueDatesForObject(tx, scope, updated, {
+          actor,
+          notifyActive:
+            current.archivedAt !== null &&
+            updated.archivedAt === null &&
+            changes.some((c) => c.field === 'archivedAt'),
+        })),
+      );
     }
 
     return {
       object: toObjectRow(updated),
       changedFields: changes.map((c) => c.field),
       changeIds: changeRows.map((r) => r.id),
+      dueDateCalendarEventIds,
     };
   });
 
@@ -1532,6 +1563,11 @@ export async function updateObject(
       });
     }
   }
+  fireAndForgetEmbed(
+    () =>
+      enqueueDueDateCalendarEventEmbeddings(scope.teamId, txResult.dueDateCalendarEventIds ?? []),
+    { teamId: scope.teamId, op: 'updateObjectDueDateCalendar' },
+  );
   return { object: txResult.object, changedFields: txResult.changedFields };
 }
 
@@ -1715,6 +1751,7 @@ export async function mergeObjects(
       );
 
     const now = new Date();
+    const dueDateCalendarEventIds: string[] = [];
     const loserBoardItems = await tx
       .select({ item: boardItems, board: boards })
       .from(boardItems)
@@ -1727,7 +1764,9 @@ export async function mergeObjects(
           .update(boardItems)
           .set({ entityId: updatedItem.entityId, updatedAt: updatedItem.updatedAt })
           .where(and(eq(boardItems.id, item.id), eq(boardItems.teamId, scope.teamId)));
-        await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board);
+        dueDateCalendarEventIds.push(
+          ...(await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board)),
+        );
         continue;
       }
 
@@ -1753,14 +1792,18 @@ export async function mergeObjects(
             updatedAt: updatedItem.updatedAt,
           })
           .where(and(eq(boardItems.id, item.id), eq(boardItems.teamId, scope.teamId)));
-        await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board);
+        dueDateCalendarEventIds.push(
+          ...(await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board)),
+        );
       } else {
         const updatedItem = { ...item, entityId: survivor.id, updatedAt: now };
         await tx
           .update(boardItems)
           .set({ entityId: updatedItem.entityId, updatedAt: updatedItem.updatedAt })
           .where(and(eq(boardItems.id, item.id), eq(boardItems.teamId, scope.teamId)));
-        await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board);
+        dueDateCalendarEventIds.push(
+          ...(await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board)),
+        );
       }
     }
     await tx
@@ -1957,9 +2000,13 @@ export async function mergeObjects(
       .limit(1);
     const updated = updatedRows[0];
     if (!updated) throw new Error('Merge failed');
-    return { survivor: toObjectRow(updated), mergedIds: loserIds };
+    return { survivor: toObjectRow(updated), mergedIds: loserIds, dueDateCalendarEventIds };
   });
 
+  fireAndForgetEmbed(
+    () => enqueueDueDateCalendarEventEmbeddings(scope.teamId, result.dueDateCalendarEventIds),
+    { teamId: scope.teamId, op: 'mergeObjectsDueDateCalendar' },
+  );
   fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, result.survivor.id), {
     teamId: scope.teamId,
     objectId: result.survivor.id,

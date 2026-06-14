@@ -608,5 +608,3 @@ noisy boards that showed every object matching a broad type.
 - Should moving to terminal lanes such as Won/Lost require a reason?
 - Should "responsible" be singular in v1, or should boards support multiple
   responsible people later?
-- Should board item due dates generate notifications or reuse existing task
-  overdue scanning?

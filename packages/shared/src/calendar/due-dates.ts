@@ -111,7 +111,7 @@ function descriptionFor(target: DueDateTarget, responsible: string | null): stri
     .join('\n');
 }
 
-async function syncDueDateCalendarEvent(db: DbOrTx, target: DueDateTarget): Promise<void> {
+async function syncDueDateCalendarEvent(db: DbOrTx, target: DueDateTarget): Promise<string[]> {
   const [existing] = await db
     .select({
       id: calendarEvents.id,
@@ -136,7 +136,7 @@ async function syncDueDateCalendarEvent(db: DbOrTx, target: DueDateTarget): Prom
         ),
       );
     }
-    return;
+    return [];
   }
   const activeTarget = { ...target, dueAt: target.dueAt };
 
@@ -179,9 +179,9 @@ async function syncDueDateCalendarEvent(db: DbOrTx, target: DueDateTarget): Prom
     if (updated) {
       await ensureDueDateRawEvents(db, activeTarget, updated, title, description);
       await ensureDueDateEntityLink(db, target, updated.id);
-      await enqueueDueDateCalendarEventEmbedding(target.teamId, updated.id);
+      return [updated.id];
     }
-    return;
+    return [];
   }
 
   const [created] = await db
@@ -208,8 +208,9 @@ async function syncDueDateCalendarEvent(db: DbOrTx, target: DueDateTarget): Prom
   if (created) {
     await ensureDueDateRawEvents(db, activeTarget, created, title, description);
     await ensureDueDateEntityLink(db, target, created.id);
-    await enqueueDueDateCalendarEventEmbedding(target.teamId, created.id);
+    return [created.id];
   }
+  return [];
 }
 
 async function ensureDueDateEntityLink(
@@ -276,15 +277,19 @@ async function ensureDueDateRawEvents(
     .where(and(eq(calendarEvents.id, event.id), eq(calendarEvents.teamId, target.teamId)));
 }
 
-async function enqueueDueDateCalendarEventEmbedding(
+export async function enqueueDueDateCalendarEventEmbeddings(
   teamId: string,
-  eventId: string,
+  eventIds: string[],
 ): Promise<void> {
-  try {
-    await enqueueCalendarEventEmbedJob(teamId, eventId);
-  } catch (err) {
-    log.warn({ err, teamId, eventId }, 'due-date calendar embed enqueue failed');
-  }
+  await Promise.all(
+    [...new Set(eventIds)].map(async (eventId) => {
+      try {
+        await enqueueCalendarEventEmbedJob(teamId, eventId);
+      } catch (err) {
+        log.warn({ err, teamId, eventId }, 'due-date calendar embed enqueue failed');
+      }
+    }),
+  );
 }
 
 export async function syncObjectDueDateCalendarEvent(
@@ -302,8 +307,8 @@ export async function syncObjectDueDateCalendarEvent(
     | 'mergedIntoId'
     | 'status'
   >,
-): Promise<void> {
-  await syncDueDateCalendarEvent(db, {
+): Promise<string[]> {
+  return syncDueDateCalendarEvent(db, {
     source: 'object',
     teamId: object.teamId,
     entityId: object.id,
@@ -372,8 +377,8 @@ export async function syncBoardItemDueDateCalendarEvent(
   >,
   object: Pick<typeof entities.$inferSelect, 'canonicalName' | 'type' | 'archivedAt'>,
   board: Pick<typeof boards.$inferSelect, 'name' | 'archivedAt'>,
-): Promise<void> {
-  await syncDueDateCalendarEvent(db, {
+): Promise<string[]> {
+  return syncDueDateCalendarEvent(db, {
     source: 'board_item',
     teamId: item.teamId,
     entityId: item.entityId,

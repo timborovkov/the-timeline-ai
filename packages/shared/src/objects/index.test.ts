@@ -304,6 +304,42 @@ describe('object scope — team ownership and audit behavior', () => {
     ]);
   });
 
+  it('restores due inbox notifications when an archived task is unarchived', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Restart archived launch task',
+      assigneeUserId: USER_MEMBER,
+      dueAt: new Date('2026-07-13T09:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.archiveObject(task.id, { kind: 'user', userId: USER_OWNER });
+    let inboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, task.id));
+    expect(inboxRows.find((row) => row.kind === 'task_due')?.readAt).toBeInstanceOf(Date);
+
+    await scope.unarchiveObject(task.id, { kind: 'user', userId: USER_OWNER });
+
+    inboxRows = await db.select().from(notifications).where(eq(notifications.entityId, task.id));
+    expect(inboxRows.filter((row) => row.kind === 'task_due' && row.readAt === null)).toEqual([
+      expect.objectContaining({
+        userId: USER_MEMBER,
+        summary: 'Restart archived launch task is due 2026-07-13',
+      }),
+    ]);
+    await expect(
+      db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A)),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        deletedAt: null,
+        title: 'Due: Restart archived launch task - member@test.local',
+      }),
+    ]);
+  });
+
   it('notifies the owner when ownership changes on an unassigned due task', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const task = await scope.createObject({
@@ -402,6 +438,28 @@ describe('object scope — team ownership and audit behavior', () => {
       .from(notifications)
       .where(eq(notifications.entityId, company.id));
     expect(inboxRows.find((row) => row.kind === 'board_item_due')?.readAt).toBeInstanceOf(Date);
+
+    await scope.objects.unarchiveObject(company.id, { kind: 'user', userId: USER_OWNER });
+
+    const afterUnarchiveRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, company.id));
+    expect(
+      afterUnarchiveRows.filter((row) => row.kind === 'board_item_due' && row.readAt === null),
+    ).toEqual([
+      expect.objectContaining({
+        userId: USER_MEMBER,
+        summary: 'Soft Archive LLC on Renewal pipeline is due 2026-10-01',
+      }),
+    ]);
+    eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
+    expect(eventRows[0]).toEqual(
+      expect.objectContaining({
+        deletedAt: null,
+        title: 'Due: Soft Archive LLC - member@test.local',
+      }),
+    );
   });
 });
 

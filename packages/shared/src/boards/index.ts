@@ -13,6 +13,7 @@ import type { ActorKind, CreateObjectInput, ObjectRow, ObjectType } from '#src/o
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 import {
+  enqueueDueDateCalendarEventEmbeddings,
   notifyBoardItemDueDate,
   syncBoardItemDueDateCalendarEvent,
 } from '#src/calendar/due-dates.js';
@@ -643,14 +644,14 @@ export function createBoardScope({
     async archiveBoard(boardId: string): Promise<boolean> {
       await requireBoard(boardId);
       const now = new Date();
-      const rows = await db.transaction(async (tx) => {
+      const txResult = await db.transaction(async (tx) => {
         const updatedRows = await tx
           .update(boards)
           .set({ archivedAt: now, updatedAt: now })
           .where(and(eq(boards.id, boardId), eq(boards.teamId, scope.teamId)))
           .returning();
         const archivedBoard = updatedRows[0];
-        if (!archivedBoard) return [];
+        if (!archivedBoard) return { rows: [], dueDateCalendarEventIds: [] };
         const itemRows = await tx
           .select({ item: boardItems, object: entities })
           .from(boardItems)
@@ -662,12 +663,16 @@ export function createBoardScope({
               isNull(boardItems.archivedAt),
             ),
           );
+        const dueDateCalendarEventIds: string[] = [];
         for (const row of itemRows) {
-          await syncBoardItemDueDateCalendarEvent(tx, row.item, row.object, archivedBoard);
+          dueDateCalendarEventIds.push(
+            ...(await syncBoardItemDueDateCalendarEvent(tx, row.item, row.object, archivedBoard)),
+          );
         }
-        return updatedRows;
+        return { rows: updatedRows, dueDateCalendarEventIds };
       });
-      return rows.length > 0;
+      await enqueueDueDateCalendarEventEmbeddings(scope.teamId, txResult.dueDateCalendarEventIds);
+      return txResult.rows.length > 0;
     },
 
     async addBoardItem(boardId: string, input: AddBoardItemInput): Promise<BoardItemRow> {
@@ -675,7 +680,7 @@ export function createBoardScope({
       const object = await requireObject(input.entityId);
       await requireLane(boardId, input.laneId);
       if (input.responsibleUserId) await scope.requireTeamMember(input.responsibleUserId);
-      return db.transaction(async (tx) => {
+      const txResult = await db.transaction(async (tx) => {
         const rows = await tx
           .insert(boardItems)
           .values({
@@ -704,10 +709,17 @@ export function createBoardScope({
           newValue: { boardId, entityId: item.entityId, laneId: item.laneId },
         });
         await touchBoard(boardId, tx);
-        await syncBoardItemDueDateCalendarEvent(tx, item, object, board);
+        const dueDateCalendarEventIds = await syncBoardItemDueDateCalendarEvent(
+          tx,
+          item,
+          object,
+          board,
+        );
         await notifyBoardItemDueDate(tx, item, object, board, input.actor);
-        return toItemRow(item, object);
+        return { item: toItemRow(item, object), dueDateCalendarEventIds };
       });
+      await enqueueDueDateCalendarEventEmbeddings(scope.teamId, txResult.dueDateCalendarEventIds);
+      return txResult.item;
     },
 
     async createObjectAndAddBoardItem(
@@ -749,7 +761,7 @@ export function createBoardScope({
         return !stableEqual(current[key], value);
       });
       if (changed.length === 0) return current;
-      await db.transaction(async (tx) => {
+      const dueDateCalendarEventIds = await db.transaction(async (tx) => {
         const now = new Date();
         const updatedRows = await tx
           .update(boardItems)
@@ -791,11 +803,13 @@ export function createBoardScope({
           ),
         );
         await touchBoard(current.boardId, tx, now);
-        await syncBoardItemDueDateCalendarEvent(tx, updated, current.object, board);
+        const ids = await syncBoardItemDueDateCalendarEvent(tx, updated, current.object, board);
         if (changed.some(([field]) => field === 'dueAt' || field === 'responsibleUserId')) {
           await notifyBoardItemDueDate(tx, updated, current.object, board, actor);
         }
+        return ids;
       });
+      await enqueueDueDateCalendarEventEmbeddings(scope.teamId, dueDateCalendarEventIds);
       return itemWithObject(itemId);
     },
 
