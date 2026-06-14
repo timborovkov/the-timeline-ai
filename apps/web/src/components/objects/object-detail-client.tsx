@@ -217,6 +217,16 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
     ? (linkResultsData?.results?.filter(isObjectSearchResult) ?? [])
     : [];
 
+  function searchLinkObjects(value: string): void {
+    setLinkQuery(value);
+    setSelectedLink(null);
+  }
+
+  function selectLinkResult(result: ObjectSearchResult): void {
+    setLinkQuery(result.canonicalName);
+    setSelectedLink(result);
+  }
+
   useEffect(() => {
     return () => {
       if (savedTimer.current) clearTimeout(savedTimer.current);
@@ -465,11 +475,8 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
         linkResults={visibleLinkResults}
         selectedLink={selectedLink}
         linkKind={linkKind}
-        onLinkQueryChange={(value) => {
-          setLinkQuery(value);
-          setSelectedLink(null);
-        }}
-        onSelectLink={setSelectedLink}
+        onLinkQueryChange={searchLinkObjects}
+        onSelectLink={selectLinkResult}
         dispatchObjectUi={dispatchObjectUi}
         onAddRelationship={addRelationship}
         onRemoveRelationship={removeRelationship}
@@ -923,7 +930,6 @@ function ObjectRelationshipsSection({
                 type="button"
                 className="w-full rounded-sm border border-border px-3 py-2 text-left text-sm hover:bg-surface"
                 onClick={() => {
-                  onLinkQueryChange(result.canonicalName);
                   onSelectLink(result);
                 }}
               >

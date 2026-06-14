@@ -12,7 +12,7 @@ import {
 } from '@dnd-kit/core';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useId, useOptimistic, useRef, useState, useTransition } from 'react';
+import { useEffect, useId, useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
 
 import type * as boards from '@timeline/shared/boards';
 
@@ -48,7 +48,14 @@ export function CuratedKanbanBoard({ boardId, lanes, items }: Props) {
   const batchHadFailureRef = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const laneIds = new Set(lanes.map((lane) => lane.id));
+  // react-doctor-disable-next-line react-doctor/exhaustive-deps
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
+
+  const laneIds = useMemo(() => new Set(lanes.map((lane) => lane.id)), [lanes]);
   const byLane = new Map<string | null, boards.BoardItemRow[]>();
   for (const lane of lanes) byLane.set(lane.id, []);
   byLane.set(null, []);

@@ -136,9 +136,9 @@ bundling, deployment output, or server/client import boundaries.
 - [`docs/adr/`](./docs/adr/) — durable architecture decisions.
 
 Setup guides for external services live under [`docs/setup`](./docs/setup/):
-Telegram, Slack, OpenRouter, LangSmith, Postmark, Resend transactional email,
-Recall.ai meeting bots, PostHog analytics, Sentry, Railway, third-party
-integrations, and Timeline-as-MCP-server.
+Telegram, Slack, OpenRouter, LangSmith, Postmark transactional/inbound email,
+Recall.ai meeting bots, PostHog analytics, Sentry, Railway, third-party integrations,
+and Timeline-as-MCP-server.
 
 ## Contributing
 
