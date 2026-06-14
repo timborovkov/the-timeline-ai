@@ -80,6 +80,44 @@ describe('BoardCardDetail', () => {
     expect(html).not.toContain('Delete object');
   });
 
+  it('links source evidence to the focused timeline event', () => {
+    const sourceEventId = '11111111-1111-4111-8111-111111111111';
+    const item = boardItem({
+      id: 'item-1',
+      entityId: 'object-1',
+      canonicalName: 'MyAuditor',
+    });
+    const history: boards.BoardItemChangeRow[] = [
+      {
+        id: 'change-1',
+        boardId: 'board-1',
+        boardItemId: item.id,
+        entityId: item.entityId,
+        field: 'laneId',
+        previousValue: null,
+        newValue: 'lane-1',
+        note: null,
+        sourceEventId,
+        suggestionItemId: null,
+        actorUserId: null,
+        actorKind: 'agent',
+        status: 'applied',
+        changedAt: new Date('2026-01-02T00:00:00.000Z'),
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      createElement(BoardCardDetail, {
+        boardId: 'board-1',
+        view: 'kanban',
+        item,
+        history,
+      }),
+    );
+
+    expect(html).toContain(`/app/timeline?event=${sourceEventId}#ev-${sourceEventId}`);
+  });
+
   it('clears unsaved note draft when the selected board item changes', async () => {
     const user = userEvent.setup();
     const onUpdateItem = vi.fn(() => Promise.resolve({ ok: true }));

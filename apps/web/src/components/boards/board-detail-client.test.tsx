@@ -293,7 +293,7 @@ describe('BoardDetailClient', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Set P1' }));
 
     await waitFor(() => {
-      expect(screen.getByText('p1')).toBeTruthy();
+      expect(screen.getByLabelText<HTMLSelectElement>('Priority for Alpha').value).toBe('1');
     });
 
     rerender(
@@ -312,7 +312,7 @@ describe('BoardDetailClient', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('p1')).toBeTruthy();
+      expect(screen.getByLabelText<HTMLSelectElement>('Priority for Alpha').value).toBe('1');
     });
 
     rerender(
@@ -331,8 +331,7 @@ describe('BoardDetailClient', () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByText('p1')).toBeNull();
-      expect(screen.getByText('p2')).toBeTruthy();
+      expect(screen.getByLabelText<HTMLSelectElement>('Priority for Alpha').value).toBe('2');
     });
   });
 

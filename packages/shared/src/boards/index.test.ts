@@ -1,5 +1,14 @@
 import { PGlite } from '@electric-sql/pglite';
-import { boardItemChanges, boardItems, boardLanes, boards, type Db } from '@timeline/db';
+import {
+  boardItemChanges,
+  boardItems,
+  boardLanes,
+  boards,
+  calendarEvents,
+  notifications,
+  rawEvents,
+  type Db,
+} from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,17 +17,21 @@ import { defaultBoardLanes } from '#src/boards/index.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
+const qdrantFakes = vi.hoisted(() => ({
+  deletePoints: vi.fn().mockResolvedValue(undefined),
+  deletePointsForSource: vi.fn().mockResolvedValue(undefined),
+  getQdrantClient: vi.fn(),
+}));
+
 vi.mock('#src/queue/queues.js', () => ({
   enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectNoteEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
+  enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#src/qdrant/client.js', () => ({
-  getQdrantClient: vi.fn(() => ({
-    deletePoints: vi.fn().mockResolvedValue(undefined),
-    deletePointsForSource: vi.fn().mockResolvedValue(undefined),
-  })),
+  getQdrantClient: qdrantFakes.getQdrantClient,
 }));
 
 const TEAM_A = '11111111-1111-1111-1111-111111111111';
@@ -65,11 +78,16 @@ async function boardUpdatedAt(boardId: string): Promise<Date> {
 }
 
 beforeEach(async () => {
+  vi.clearAllMocks();
+  qdrantFakes.getQdrantClient.mockReturnValue({
+    deletePoints: qdrantFakes.deletePoints,
+    deletePointsForSource: qdrantFakes.deletePointsForSource,
+  });
   pg = new PGlite();
   await applyDbMigrations(pg);
   await seedWorkspace();
   db = drizzle(pg) as unknown as Db;
-});
+}, 60_000);
 
 afterEach(async () => {
   await pg.close();
@@ -153,6 +171,225 @@ describe('board scope', () => {
     expect(changes.map((change) => change.field).sort()).toEqual(['__add__', 'laneId', 'priority']);
   });
 
+  it('notifies the responsible user and mirrors board item due dates to the team calendar', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Partnership pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Scoping', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Northstar Labs',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const dueAt = new Date('2026-08-12T10:00:00.000Z');
+
+    const item = await scope.boards.addBoardItem(board.id, {
+      entityId: company.id,
+      laneId: board.lanes[0]?.id ?? null,
+      responsibleUserId: USER_MEMBER,
+      dueAt,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const inboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, company.id));
+    expect(inboxRows).toEqual([
+      expect.objectContaining({
+        userId: USER_MEMBER,
+        kind: 'board_item_due',
+        summary: 'Northstar Labs on Partnership pipeline is due 2026-08-12',
+      }),
+    ]);
+
+    let eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
+    expect(eventRows).toEqual([
+      expect.objectContaining({
+        title: 'Due: Northstar Labs - member@test.local',
+        description:
+          'Board: Partnership pipeline\nResponsible: member@test.local\nObject type: company',
+        startAt: dueAt,
+        showAs: 'free',
+      }),
+    ]);
+    expect(eventRows[0]?.metadata).toEqual(
+      expect.objectContaining({
+        kind: 'due_date',
+        source: 'board_item',
+        board_id: board.id,
+        board_item_id: item.id,
+      }),
+    );
+    expect(eventRows[0]?.scheduledRawEventId).toEqual(expect.any(String));
+    expect(eventRows[0]?.startAtRawEventId).toEqual(expect.any(String));
+
+    const movedDueAt = new Date('2026-08-13T10:00:00.000Z');
+    await scope.boards.updateBoardItem(
+      item.id,
+      { dueAt: movedDueAt },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
+    expect(eventRows).toHaveLength(1);
+    expect(eventRows[0]?.startAt).toEqual(movedDueAt);
+    const afterMoveInboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, company.id));
+    expect(
+      afterMoveInboxRows.filter((row) => row.kind === 'board_item_due' && row.readAt === null),
+    ).toEqual([
+      expect.objectContaining({
+        summary: 'Northstar Labs on Partnership pipeline is due 2026-08-13',
+      }),
+    ]);
+
+    await scope.boards.updateBoardItem(
+      item.id,
+      { responsibleUserId: null },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    const afterUnassignInboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, company.id));
+    expect(
+      afterUnassignInboxRows.filter((row) => row.kind === 'board_item_due' && row.readAt === null),
+    ).toEqual([]);
+
+    const startRawRows = await db
+      .select()
+      .from(rawEvents)
+      .where(eq(rawEvents.id, eventRows[0]?.startAtRawEventId ?? ''));
+    expect(startRawRows[0]).toEqual(
+      expect.objectContaining({
+        occurredAt: movedDueAt,
+      }),
+    );
+    expect(startRawRows[0]?.contentText).toContain(movedDueAt.toISOString());
+  });
+
+  it('mirrors board item due dates without responsible-person inbox notifications', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Unassigned deadlines',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Open', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'No Owner LLC',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const dueAt = new Date('2026-08-20T14:00:00.000Z');
+
+    await scope.boards.addBoardItem(board.id, {
+      entityId: company.id,
+      dueAt,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const inboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, company.id));
+    expect(inboxRows).toEqual([]);
+
+    const eventRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_A));
+    expect(eventRows).toEqual([
+      expect.objectContaining({
+        title: 'Due: No Owner LLC',
+        description: 'Board: Unassigned deadlines\nObject type: company',
+        startAt: dueAt,
+        showAs: 'free',
+      }),
+    ]);
+  });
+
+  it('does not notify for board item due dates when the object is archived', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Archived object board',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Open', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Archived Co',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await scope.objects.archiveObject(company.id, { kind: 'user', userId: USER_OWNER });
+
+    await scope.boards.addBoardItem(board.id, {
+      entityId: company.id,
+      responsibleUserId: USER_MEMBER,
+      dueAt: new Date('2026-08-21T14:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(
+      db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A)),
+    ).resolves.toEqual([]);
+    await expect(
+      db.select().from(notifications).where(eq(notifications.entityId, company.id)),
+    ).resolves.toEqual([]);
+  });
+
+  it('tombstones board item due-date calendar events when the board is archived', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Archive me',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Open', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Calendar Ghost Inc',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.boards.addBoardItem(board.id, {
+      entityId: company.id,
+      responsibleUserId: USER_MEMBER,
+      dueAt: new Date('2026-09-01T09:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    let eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
+    const calendarEventId = eventRows[0]?.id;
+    const rawIds = [eventRows[0]?.scheduledRawEventId, eventRows[0]?.startAtRawEventId].filter(
+      (id): id is string => id !== null && id !== undefined,
+    );
+
+    await scope.boards.archiveBoard(board.id);
+
+    eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
+    expect(eventRows[0]?.deletedAt).toBeInstanceOf(Date);
+    const inboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, company.id));
+    expect(inboxRows.find((row) => row.kind === 'board_item_due')?.readAt).toBeInstanceOf(Date);
+    const rawRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_A));
+    expect(
+      rawRows
+        .filter((row) => rawIds.includes(row.id))
+        .every((row) => (row.sourceMetadata as { deleted?: boolean }).deleted === true),
+    ).toBe(true);
+    expect(qdrantFakes.deletePointsForSource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: TEAM_A,
+        scope: 'calendar_event',
+        sourceId: calendarEventId,
+      }),
+    );
+  });
+
   it('bumps board activity when items are added, updated, and removed', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
     const board = await scope.boards.createBoard({
@@ -199,6 +436,18 @@ describe('board scope', () => {
       templateKind: 'task_board',
       lanes: [{ name: 'Todo', kind: 'active' }],
     });
+    const task = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Refresh renamed board metadata',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      laneId: board.lanes[0]?.id ?? null,
+      responsibleUserId: USER_MEMBER,
+      dueAt: new Date('2026-10-01T09:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
     const oldUpdatedAt = new Date('2026-01-01T00:00:00.000Z');
     await setBoardUpdatedAt(board.id, oldUpdatedAt);
 
@@ -215,6 +464,35 @@ describe('board scope', () => {
       .where(eq(boards.id, board.id));
     expect(row?.name).toBe('Renamed board');
     expect(row?.updatedAt.getTime()).toBeGreaterThan(oldUpdatedAt.getTime());
+
+    const calendarRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_A));
+    expect(calendarRows).toEqual([
+      expect.objectContaining({
+        description: 'Board: Renamed board\nResponsible: member@test.local\nObject type: task',
+      }),
+    ]);
+    const inboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, task.id));
+    const dueNotifications = inboxRows.filter(
+      (notification) => notification.kind === 'board_item_due',
+    );
+    const oldNameNotification = dueNotifications.find(
+      (notification) =>
+        notification.summary ===
+        'Refresh renamed board metadata on Original board is due 2026-10-01',
+    );
+    const newNameNotification = dueNotifications.find(
+      (notification) =>
+        notification.summary ===
+        'Refresh renamed board metadata on Renamed board is due 2026-10-01',
+    );
+    expect(oldNameNotification?.readAt).toBeInstanceOf(Date);
+    expect(newNameNotification?.readAt).toBeNull();
   });
 
   it('rejects cross-team board item rows at the database boundary', async () => {
@@ -509,5 +787,46 @@ describe('board scope', () => {
 
     const itemRows = await db.select().from(boardItems).where(eq(boardItems.entityId, company.id));
     expect(itemRows).toHaveLength(1);
+  });
+
+  it('ignores archived objects in pinned board due counts', async () => {
+    const owner = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await owner.boards.createBoard({
+      name: 'Pinned due counts',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    const overdueTask = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Archived overdue task',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const dueSoonTask = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Archived due soon task',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.boards.addBoardItem(board.id, {
+      entityId: overdueTask.id,
+      dueAt: new Date('2020-01-01T00:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.boards.addBoardItem(board.id, {
+      entityId: dueSoonTask.id,
+      dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.objects.archiveObject(overdueTask.id, { kind: 'user', userId: USER_OWNER });
+    await owner.objects.archiveObject(dueSoonTask.id, { kind: 'user', userId: USER_OWNER });
+    await owner.boards.pinBoard(board.id);
+
+    await expect(owner.boards.listPinnedBoards()).resolves.toEqual([
+      expect.objectContaining({
+        itemCount: 0,
+        laneCounts: [],
+        dueSoonCount: 0,
+        overdueCount: 0,
+      }),
+    ]);
   });
 });

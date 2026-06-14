@@ -53,6 +53,8 @@ export function BoardCardDetail({
   const [noteDraft, setNoteDraft] = useState(item?.notes ?? '');
   const [pending, startTransition] = useTransition();
   if (!item) return null;
+  const timelineHref = `/app/timeline?q=${encodeURIComponent(item.object.canonicalName)}`;
+  const sourceEvents = history.filter((change) => change.sourceEventId);
 
   function savePatch(patch: BoardItemOptimisticPatch, onSuccess?: () => void): void {
     if (!item || !onUpdateItem) return;
@@ -198,6 +200,12 @@ export function BoardCardDetail({
         >
           Ask about object
         </Link>
+        <Link
+          href={timelineHref}
+          className="rounded-sm border border-border px-2 py-1 text-xs font-medium hover:bg-bg"
+        >
+          Timeline events
+        </Link>
         <RemoveBoardItemButton
           boardId={boardId}
           itemId={item.id}
@@ -210,6 +218,28 @@ export function BoardCardDetail({
       </div>
 
       <section className="p-4">
+        <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+          Evidence
+        </h3>
+        {sourceEvents.length === 0 ? (
+          <p className="text-sm text-fg-muted">No source evidence linked to board changes yet.</p>
+        ) : (
+          <ul className="space-y-1">
+            {sourceEvents.slice(0, 5).map((change) => (
+              <li key={change.id}>
+                <Link
+                  href={`/app/timeline?event=${change.sourceEventId}#ev-${change.sourceEventId}`}
+                  className="text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
+                >
+                  {change.field} source · {change.changedAt.toLocaleDateString('en-CA')}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="mt-5">
         <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
           History
         </h3>

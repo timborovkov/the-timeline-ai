@@ -9,6 +9,11 @@ import {
 import { and, asc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import {
+  buildCalendarTimelineText,
+  insertCalendarRawEvents,
+  tombstoneCalendarRawEventIds,
+} from '#src/calendar/raw-events.js';
+import {
   expandRRuleBetween,
   recurrenceWindowFrom,
   rruleForSplit,
@@ -129,114 +134,6 @@ export interface MaterializeRecurringEventsInput {
   from?: Date;
   to?: Date;
   parentId?: string;
-}
-
-async function insertCalendarRawEvents(
-  tx: DbOrTx,
-  args: {
-    teamId: string;
-    userId: string;
-    calendarEventId: string;
-    title: string;
-    description: string | null;
-    startAt: Date;
-    endAt: Date;
-    timezone: string;
-    location: string | null;
-    visibility: Visibility;
-    visibilityUserIds: string[] | null;
-  },
-): Promise<{ scheduledRawEventId: string; startAtRawEventId: string }> {
-  const baseMetadata = {
-    calendar_event_id: args.calendarEventId,
-  };
-
-  const [scheduledRow] = await tx
-    .insert(rawEvents)
-    .values({
-      teamId: args.teamId,
-      authorUserId: args.userId,
-      source: 'calendar',
-      contentText: `Scheduled: ${args.title}`,
-      occurredAt: new Date(),
-      visibility: args.visibility,
-      visibilityUserIds: args.visibilityUserIds,
-      visibilityOwnerUserId: args.userId,
-      sourceMetadata: { ...baseMetadata, action: 'scheduled' },
-    })
-    .onConflictDoNothing()
-    .returning({ id: rawEvents.id });
-
-  let scheduledId = scheduledRow?.id;
-  if (!scheduledId) {
-    const existing = await tx
-      .select({ id: rawEvents.id })
-      .from(rawEvents)
-      .where(
-        and(
-          eq(rawEvents.teamId, args.teamId),
-          sql`(${rawEvents.sourceMetadata} ->> 'calendar_event_id') = ${args.calendarEventId}`,
-          sql`(${rawEvents.sourceMetadata} ->> 'action') = 'scheduled'`,
-        ),
-      )
-      .limit(1);
-    scheduledId = existing[0]?.id;
-  }
-
-  const [startAtRow] = await tx
-    .insert(rawEvents)
-    .values({
-      teamId: args.teamId,
-      authorUserId: args.userId,
-      source: 'calendar',
-      contentText: buildCalendarTimelineText(args),
-      occurredAt: args.startAt,
-      visibility: args.visibility,
-      visibilityUserIds: args.visibilityUserIds,
-      visibilityOwnerUserId: args.userId,
-      sourceMetadata: { ...baseMetadata, action: 'event' },
-    })
-    .onConflictDoNothing()
-    .returning({ id: rawEvents.id });
-
-  let startAtId = startAtRow?.id;
-  if (!startAtId) {
-    const existing = await tx
-      .select({ id: rawEvents.id })
-      .from(rawEvents)
-      .where(
-        and(
-          eq(rawEvents.teamId, args.teamId),
-          sql`(${rawEvents.sourceMetadata} ->> 'calendar_event_id') = ${args.calendarEventId}`,
-          sql`(${rawEvents.sourceMetadata} ->> 'action') = 'event'`,
-        ),
-      )
-      .limit(1);
-    startAtId = existing[0]?.id;
-  }
-
-  return {
-    scheduledRawEventId: scheduledId ?? '',
-    startAtRawEventId: startAtId ?? '',
-  };
-}
-
-function buildCalendarTimelineText(args: {
-  title: string;
-  description?: string | null;
-  location?: string | null;
-  startAt: Date;
-  endAt: Date;
-  timezone: string;
-}): string {
-  const parts = [
-    args.title,
-    args.description ?? '',
-    args.location ? `at ${args.location}` : '',
-    `${args.startAt.toISOString()} to ${args.endAt.toISOString()}`,
-    args.timezone !== 'UTC' ? `(${args.timezone})` : '',
-  ];
-  return parts.filter((p) => p.length > 0).join(' | ');
 }
 
 function uniqueIds(ids: string[]): string[] {
@@ -362,18 +259,6 @@ async function deleteCalendarEventPointsForIds(teamId: string, eventIds: string[
   await Promise.all(
     uniqueIds(eventIds).map((eventId) => deleteCalendarEventPoints(teamId, eventId)),
   );
-}
-
-async function tombstoneCalendarRawEventIds(tx: DbOrTx, rawEventIds: string[]): Promise<void> {
-  const ids = uniqueIds(rawEventIds.filter((id) => id.length > 0));
-  if (ids.length === 0) return;
-  const tombstone = JSON.stringify({ deleted: true });
-  await tx
-    .update(rawEvents)
-    .set({
-      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${tombstone}::jsonb`,
-    })
-    .where(inArray(rawEvents.id, ids));
 }
 
 async function tombstoneLinkedRawEventsForCalendarEventIds(
