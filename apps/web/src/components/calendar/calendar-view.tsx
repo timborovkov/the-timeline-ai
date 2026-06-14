@@ -372,7 +372,28 @@ function useCalendarViewModel({
     signature: string;
     ids: string[];
   } | null>(null);
-  const eventListUrlParams = useMemo(() => eventListParamsFromSearch(searchParams), [searchParams]);
+  const eventListRawUrlParams = useMemo(
+    () => eventListParamsFromSearch(searchParams),
+    [searchParams],
+  );
+  const eventListServerParams = useMemo(
+    () => ({
+      query: eventListQuery.trim(),
+      scope: eventListScope,
+      page: eventListPage,
+    }),
+    [eventListPage, eventListQuery, eventListScope],
+  );
+  const eventListUrlParams = useMemo(() => {
+    if (
+      eventListRawUrlParams.query === eventListServerParams.query &&
+      eventListRawUrlParams.scope === eventListServerParams.scope &&
+      eventListRawUrlParams.page !== eventListServerParams.page
+    ) {
+      return eventListServerParams;
+    }
+    return eventListRawUrlParams;
+  }, [eventListRawUrlParams, eventListServerParams]);
   eventListParamsRef.current ??= eventListUrlParams;
 
   useEffect(() => {

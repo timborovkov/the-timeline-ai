@@ -85,6 +85,17 @@ function startOfToday(timezone: string): Date {
 const EVENT_LIST_PAGE_SIZE = 12;
 const EVENT_LIST_RANGE_DAYS = 730;
 
+function calendarEventPageUrl(params: Awaited<PageProps['searchParams']>, page: number): string {
+  const next = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value === 'string') next.set(key, value);
+  }
+  if (page > 1) next.set('eventPage', String(page));
+  else next.delete('eventPage');
+  const query = next.toString();
+  return query ? `/app/calendar?${query}` : '/app/calendar';
+}
+
 export default async function CalendarPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -165,15 +176,10 @@ export default async function CalendarPage({ searchParams }: PageProps) {
       )
       .limit(1),
   ]);
-  let eventList = initialEventList;
-  let effectiveEventPage = eventPage;
+  const eventList = initialEventList;
   const eventPageCount = Math.max(1, Math.ceil(eventList.total / EVENT_LIST_PAGE_SIZE));
   if (eventPage > eventPageCount) {
-    effectiveEventPage = eventPageCount;
-    eventList = await scope.calendar.listCalendarEventPage({
-      ...eventListInput,
-      offset: (effectiveEventPage - 1) * EVENT_LIST_PAGE_SIZE,
-    });
+    redirect(calendarEventPageUrl(params, eventPageCount));
   }
   const memberIds = members.map((m) => m.userId);
   const memberUsers =
@@ -205,7 +211,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         events={serialized}
         eventListEvents={serializedEventList}
         eventListTotal={eventList.total}
-        eventListPage={effectiveEventPage - 1}
+        eventListPage={eventPage - 1}
         eventListQuery={eventQuery}
         eventListScope={eventScope}
         timezone={settings.defaultTimezone}

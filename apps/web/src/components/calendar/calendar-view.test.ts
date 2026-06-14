@@ -283,6 +283,28 @@ describe('CalendarView recurrence and tentative UI', () => {
     }
   });
 
+  it('uses the server-clamped event page when URL params lag behind props', async () => {
+    const user = userEvent.setup();
+    fakes.searchParams = 'view=month&date=2026-06-03&eventPage=999';
+
+    render(
+      createElement(CalendarView, {
+        events: [],
+        eventListEvents: [event('event-1', 'Roadmap review')],
+        eventListTotal: 36,
+        eventListPage: 2,
+        eventListQuery: '',
+        eventListScope: 'future',
+        timezone: 'UTC',
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Previous events' }));
+    expect(fakes.push).toHaveBeenLastCalledWith(
+      '/app/calendar?view=month&date=2026-06-03&eventPage=2',
+    );
+  });
+
   it('does not append optimistic creates to the server-paginated event list', async () => {
     const user = userEvent.setup();
     fakes.createCalendarEventAction.mockResolvedValue({ ok: true, id: 'created-event' });
