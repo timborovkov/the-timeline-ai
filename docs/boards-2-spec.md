@@ -64,6 +64,12 @@ workflow context:
 Board item properties are local to the board unless a user explicitly promotes
 the change to object memory or a task object.
 
+When a board item has both a responsible team member and a due date, Timeline
+notifies that responsible person in the in-app inbox and mirrors the due date to
+the team calendar. The calendar event stays board-scoped, links back to the
+underlying workspace object, and names the responsible person when the user
+record has a display name or email.
+
 ### Board View
 
 A board view is a layout over the same board items:
@@ -106,6 +112,7 @@ Ship one coherent Boards 2.0 slice:
 - object page board-membership summaries
 - personal pinned board snapshots on Home
 - preserved board item history
+- responsible-person due-date notifications and team-calendar due-date rows
 - approval-backed board membership and board item update suggestions
 - route-level affordances for opening boards and adding objects; global
   command/search actions remain deferred until the command system has a clear

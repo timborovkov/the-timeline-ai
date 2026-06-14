@@ -11,6 +11,7 @@ import {
   type Db,
   boardItemChanges,
   boardItems,
+  boards,
   calendarEventEntities,
   chatMessages,
   chatSessions,
@@ -31,6 +32,11 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 
 
 import type { TeamScopeCore } from '#src/team-scope.js';
 
+import {
+  notifyObjectDueDate,
+  syncBoardItemDueDateCalendarEvent,
+  syncObjectDueDateCalendarEvent,
+} from '#src/calendar/due-dates.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
@@ -40,6 +46,8 @@ import * as embedQueue from '#src/queue/queues.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
 const embedLog = childLogger('objects:embed');
+type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
+type DbOrTx = Db | DbTx;
 
 /**
  * Best-effort enqueue of a workspace-object embed job. Failures are logged
@@ -57,6 +65,27 @@ function fireAndForgetEmbed(fn: () => Promise<void>, context: Record<string, unk
 
 function uniqueIds(ids: string[]): string[] {
   return Array.from(new Set(ids));
+}
+
+async function syncBoardItemDueDatesForObject(
+  db: DbOrTx,
+  scope: TeamScopeCore,
+  object: Pick<typeof entities.$inferSelect, 'id' | 'canonicalName' | 'type' | 'archivedAt'>,
+): Promise<void> {
+  const rows = await db
+    .select({ item: boardItems, board: boards })
+    .from(boardItems)
+    .innerJoin(boards, eq(boardItems.boardId, boards.id))
+    .where(
+      and(
+        eq(boardItems.teamId, scope.teamId),
+        eq(boardItems.entityId, object.id),
+        isNull(boardItems.archivedAt),
+      ),
+    );
+  for (const row of rows) {
+    await syncBoardItemDueDateCalendarEvent(db, row.item, object, row.board);
+  }
 }
 
 async function deleteMergedObjectEmbeddingPoints(teamId: string, entityId: string): Promise<void> {
@@ -1237,6 +1266,9 @@ export async function createObject(
         .onConflictDoNothing();
     }
 
+    await syncObjectDueDateCalendarEvent(tx, row);
+    await notifyObjectDueDate(tx, row, input.actor);
+
     return toObjectRow(row);
   });
 
@@ -1420,6 +1452,27 @@ export async function updateObject(
           },
         })),
       );
+    }
+
+    const dueDateRelevantChange = changes.some((c) =>
+      [
+        'canonicalName',
+        'type',
+        'status',
+        'ownerUserId',
+        'assigneeUserId',
+        'dueAt',
+        'archivedAt',
+      ].includes(c.field),
+    );
+    if (dueDateRelevantChange) {
+      await syncObjectDueDateCalendarEvent(tx, updated);
+      if (changes.some((c) => c.field === 'dueAt' || c.field === 'assigneeUserId')) {
+        await notifyObjectDueDate(tx, updated, actor);
+      }
+    }
+    if (changes.some((c) => ['canonicalName', 'type', 'archivedAt'].includes(c.field))) {
+      await syncBoardItemDueDatesForObject(tx, scope, updated);
     }
 
     return {
@@ -1643,15 +1696,18 @@ export async function mergeObjects(
 
     const now = new Date();
     const loserBoardItems = await tx
-      .select()
+      .select({ item: boardItems, board: boards })
       .from(boardItems)
+      .innerJoin(boards, eq(boardItems.boardId, boards.id))
       .where(and(eq(boardItems.teamId, scope.teamId), inArray(boardItems.entityId, loserIds)));
-    for (const item of loserBoardItems) {
+    for (const { item, board } of loserBoardItems) {
       if (item.archivedAt) {
+        const updatedItem = { ...item, entityId: survivor.id, updatedAt: now };
         await tx
           .update(boardItems)
-          .set({ entityId: survivor.id, updatedAt: now })
+          .set({ entityId: updatedItem.entityId, updatedAt: updatedItem.updatedAt })
           .where(and(eq(boardItems.id, item.id), eq(boardItems.teamId, scope.teamId)));
+        await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board);
         continue;
       }
 
@@ -1668,15 +1724,23 @@ export async function mergeObjects(
         )
         .limit(1);
       if (duplicateActive[0]) {
+        const updatedItem = { ...item, entityId: survivor.id, archivedAt: now, updatedAt: now };
         await tx
           .update(boardItems)
-          .set({ archivedAt: now, updatedAt: now })
+          .set({
+            entityId: updatedItem.entityId,
+            archivedAt: updatedItem.archivedAt,
+            updatedAt: updatedItem.updatedAt,
+          })
           .where(and(eq(boardItems.id, item.id), eq(boardItems.teamId, scope.teamId)));
+        await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board);
       } else {
+        const updatedItem = { ...item, entityId: survivor.id, updatedAt: now };
         await tx
           .update(boardItems)
-          .set({ entityId: survivor.id, updatedAt: now })
+          .set({ entityId: updatedItem.entityId, updatedAt: updatedItem.updatedAt })
           .where(and(eq(boardItems.id, item.id), eq(boardItems.teamId, scope.teamId)));
+        await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board);
       }
     }
     await tx
@@ -2625,6 +2689,7 @@ export interface NotificationRow {
   kind:
     | 'object_changed'
     | 'task_due'
+    | 'board_item_due'
     | 'task_overdue'
     | 'follow_up_overdue'
     | 'mention'

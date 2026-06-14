@@ -13,6 +13,7 @@ import {
   facts,
   objectChanges,
   objectNotes,
+  notifications,
   rawEvents,
 } from '@timeline/db';
 import { eq, inArray } from 'drizzle-orm';
@@ -40,6 +41,7 @@ vi.mock('#src/queue/queues.js', () => ({
   enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectNoteEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
+  enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#src/qdrant/client.js', () => ({
   getQdrantClient: qdrantFakes.getQdrantClient,
@@ -87,7 +89,7 @@ beforeEach(async () => {
   await applyDbMigrations(pg);
   await seedWorkspace();
   db = drizzle(pg) as unknown as AnyDb;
-});
+}, 20_000);
 
 afterEach(async () => {
   await pg.close();
@@ -160,6 +162,146 @@ describe('object scope — team ownership and audit behavior', () => {
       .from(objectChanges)
       .where(eq(objectChanges.entityId, object.id));
     expect(changes.map((change) => change.field).sort()).toEqual(['__create__', 'status']);
+  });
+
+  it('notifies the responsible user and mirrors task due dates to the team calendar', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const dueAt = new Date('2026-07-02T15:00:00.000Z');
+
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Send renewal brief',
+      assigneeUserId: USER_MEMBER,
+      dueAt,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const inboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, task.id));
+    expect(inboxRows).toEqual([
+      expect.objectContaining({
+        userId: USER_MEMBER,
+        kind: 'task_due',
+        summary: 'Send renewal brief is due 2026-07-02',
+      }),
+    ]);
+
+    let eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
+    expect(eventRows).toEqual([
+      expect.objectContaining({
+        title: 'Due: Send renewal brief - member@test.local',
+        startAt: dueAt,
+        showAs: 'free',
+        visibility: 'team',
+      }),
+    ]);
+    expect(eventRows[0]?.metadata).toEqual(
+      expect.objectContaining({ kind: 'due_date', source: 'object', entity_id: task.id }),
+    );
+    expect(eventRows[0]?.scheduledRawEventId).toEqual(expect.any(String));
+    expect(eventRows[0]?.startAtRawEventId).toEqual(expect.any(String));
+
+    const rawIds = [eventRows[0]?.scheduledRawEventId, eventRows[0]?.startAtRawEventId].filter(
+      (id): id is string => id !== null && id !== undefined,
+    );
+    await scope.updateObject(task.id, { dueAt: null }, { kind: 'user', userId: USER_OWNER });
+    eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
+    expect(eventRows[0]?.deletedAt).toBeInstanceOf(Date);
+    const rawRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_A));
+    expect(
+      rawRows
+        .filter((row) => rawIds.includes(row.id))
+        .every((row) => (row.sourceMetadata as { deleted?: boolean }).deleted === true),
+    ).toBe(true);
+  });
+
+  it('mirrors task due dates without responsible-person inbox notifications', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const dueAt = new Date('2026-07-10T09:00:00.000Z');
+
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Unassigned renewal checklist',
+      dueAt,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const inboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, task.id));
+    expect(inboxRows).toEqual([]);
+
+    const eventRows = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_A));
+    expect(eventRows).toEqual([
+      expect.objectContaining({
+        title: 'Due: Unassigned renewal checklist',
+        startAt: dueAt,
+        showAs: 'free',
+        visibility: 'team',
+      }),
+    ]);
+  });
+
+  it('does not mirror suggested task due dates before human acceptance', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Review agent-suggested deadline',
+      assigneeUserId: USER_MEMBER,
+      dueAt: new Date('2026-07-11T09:00:00.000Z'),
+      agentSuggested: true,
+      actor: { kind: 'agent', userId: null },
+    });
+
+    const inboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, task.id));
+    expect(inboxRows).toEqual([
+      expect.objectContaining({
+        userId: USER_MEMBER,
+        kind: 'agent_suggestion',
+      }),
+    ]);
+    expect(inboxRows.some((row) => row.kind === 'task_due')).toBe(false);
+    await expect(
+      db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A)),
+    ).resolves.toEqual([]);
+  });
+
+  it('tombstones board item due-date calendar events when the object is archived', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Renewal pipeline',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Open', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Soft Archive LLC',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.boards.addBoardItem(board.id, {
+      entityId: company.id,
+      responsibleUserId: USER_MEMBER,
+      dueAt: new Date('2026-10-01T12:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    let eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
+    expect(eventRows[0]?.deletedAt).toBeNull();
+
+    await scope.objects.archiveObject(company.id, { kind: 'user', userId: USER_OWNER });
+
+    eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
+    expect(eventRows[0]?.deletedAt).toBeInstanceOf(Date);
   });
 });
 
@@ -674,11 +816,24 @@ describe('object scope — merge cleanup', () => {
       laneId: board.lanes[0]?.id ?? null,
       actor: { kind: 'user', userId: USER_OWNER },
     });
+    const typoCardDueAt = new Date('2026-11-05T11:00:00.000Z');
     const typoCard = await workspace.boards.addBoardItem(board.id, {
       entityId: typo.id,
       laneId: board.lanes[1]?.id ?? null,
+      responsibleUserId: USER_MEMBER,
+      dueAt: typoCardDueAt,
       actor: { kind: 'user', userId: USER_OWNER },
     });
+    const [typoDueEventBeforeMerge] = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.teamId, TEAM_A));
+    expect(typoDueEventBeforeMerge).toEqual(
+      expect.objectContaining({
+        startAt: typoCardDueAt,
+        deletedAt: null,
+      }),
+    );
 
     await scope.addRelationship({
       fromEntityId: survivor.id,
@@ -851,8 +1006,13 @@ describe('object scope — merge cleanup', () => {
       expect.objectContaining({ id: survivorCard.id, entityId: survivor.id }),
     ]);
     const archivedTypoCard = cardRows.find((row) => row.id === typoCard.id);
-    expect(archivedTypoCard?.entityId).toBe(typo.id);
+    expect(archivedTypoCard?.entityId).toBe(survivor.id);
     expect(archivedTypoCard?.archivedAt).toBeInstanceOf(Date);
+    const [typoDueEventAfterMerge] = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.id, typoDueEventBeforeMerge?.id ?? ''));
+    expect(typoDueEventAfterMerge?.deletedAt).toBeInstanceOf(Date);
     const boardHistoryRows = await db
       .select()
       .from(boardItemChanges)

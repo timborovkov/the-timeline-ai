@@ -12,6 +12,11 @@ import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { ActorKind, CreateObjectInput, ObjectRow, ObjectType } from '#src/objects/index.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 
+import {
+  notifyBoardItemDueDate,
+  syncBoardItemDueDateCalendarEvent,
+} from '#src/calendar/due-dates.js';
+
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
@@ -637,16 +642,36 @@ export function createBoardScope({
 
     async archiveBoard(boardId: string): Promise<boolean> {
       await requireBoard(boardId);
-      const rows = await db
-        .update(boards)
-        .set({ archivedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(boards.id, boardId), eq(boards.teamId, scope.teamId)))
-        .returning({ id: boards.id });
+      const now = new Date();
+      const rows = await db.transaction(async (tx) => {
+        const updatedRows = await tx
+          .update(boards)
+          .set({ archivedAt: now, updatedAt: now })
+          .where(and(eq(boards.id, boardId), eq(boards.teamId, scope.teamId)))
+          .returning();
+        const archivedBoard = updatedRows[0];
+        if (!archivedBoard) return [];
+        const itemRows = await tx
+          .select({ item: boardItems, object: entities })
+          .from(boardItems)
+          .innerJoin(entities, eq(boardItems.entityId, entities.id))
+          .where(
+            and(
+              eq(boardItems.boardId, boardId),
+              eq(boardItems.teamId, scope.teamId),
+              isNull(boardItems.archivedAt),
+            ),
+          );
+        for (const row of itemRows) {
+          await syncBoardItemDueDateCalendarEvent(tx, row.item, row.object, archivedBoard);
+        }
+        return updatedRows;
+      });
       return rows.length > 0;
     },
 
     async addBoardItem(boardId: string, input: AddBoardItemInput): Promise<BoardItemRow> {
-      await requireBoard(boardId);
+      const board = await requireBoard(boardId);
       const object = await requireObject(input.entityId);
       await requireLane(boardId, input.laneId);
       if (input.responsibleUserId) await scope.requireTeamMember(input.responsibleUserId);
@@ -679,6 +704,8 @@ export function createBoardScope({
           newValue: { boardId, entityId: item.entityId, laneId: item.laneId },
         });
         await touchBoard(boardId, tx);
+        await syncBoardItemDueDateCalendarEvent(tx, item, object, board);
+        await notifyBoardItemDueDate(tx, item, object, board, input.actor);
         return toItemRow(item, object);
       });
     },
@@ -704,7 +731,7 @@ export function createBoardScope({
       if (!UUID_RE.test(itemId)) return null;
       const current = await itemWithObject(itemId);
       if (!current || current.archivedAt) return null;
-      await requireBoard(current.boardId);
+      const board = await requireBoard(current.boardId);
       if (patch.laneId !== undefined) await requireLane(current.boardId, patch.laneId);
       if (patch.responsibleUserId) await scope.requireTeamMember(patch.responsibleUserId);
       const nextEntries: [keyof BoardItemPatch, unknown][] = [
@@ -724,7 +751,7 @@ export function createBoardScope({
       if (changed.length === 0) return current;
       await db.transaction(async (tx) => {
         const now = new Date();
-        const updated = await tx
+        const updatedRows = await tx
           .update(boardItems)
           .set({
             ...(patch.laneId !== undefined ? { laneId: patch.laneId } : {}),
@@ -746,8 +773,9 @@ export function createBoardScope({
               isNull(boardItems.archivedAt),
             ),
           )
-          .returning({ id: boardItems.id });
-        if (updated.length === 0) throw new Error('Board item not found');
+          .returning();
+        const updated = updatedRows[0];
+        if (!updated) throw new Error('Board item not found');
         await Promise.all(
           changed.map(([field, value]) =>
             writeChange({
@@ -763,6 +791,10 @@ export function createBoardScope({
           ),
         );
         await touchBoard(current.boardId, tx, now);
+        await syncBoardItemDueDateCalendarEvent(tx, updated, current.object, board);
+        if (changed.some(([field]) => field === 'dueAt' || field === 'responsibleUserId')) {
+          await notifyBoardItemDueDate(tx, updated, current.object, board, actor);
+        }
       });
       return itemWithObject(itemId);
     },
@@ -774,7 +806,7 @@ export function createBoardScope({
       if (!UUID_RE.test(itemId)) return null;
       const current = await itemWithObject(itemId);
       if (!current || current.archivedAt) return null;
-      await requireBoard(current.boardId);
+      const board = await requireBoard(current.boardId);
       const now = new Date();
       await db.transaction(async (tx) => {
         const updated = await tx
@@ -799,6 +831,12 @@ export function createBoardScope({
           previousValue: { boardId: current.boardId, laneId: current.laneId },
         });
         await touchBoard(current.boardId, tx, now);
+        await syncBoardItemDueDateCalendarEvent(
+          tx,
+          { ...current, teamId: scope.teamId, archivedAt: now },
+          current.object,
+          board,
+        );
       });
       return { ...current, archivedAt: now };
     },

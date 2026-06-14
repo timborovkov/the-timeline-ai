@@ -22,6 +22,7 @@ import { users } from '#src/schema/users.js';
 export const notificationKind = pgEnum('notification_kind', [
   'object_changed',
   'task_due',
+  'board_item_due',
   'task_overdue',
   'follow_up_overdue',
   'mention',
