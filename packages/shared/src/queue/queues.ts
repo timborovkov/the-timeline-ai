@@ -14,6 +14,9 @@ export const QUEUE_NAMES = {
   // worker process itself (BullMQ repeatable on startup); consumed by
   // startOverdueWorker.
   overdueScan: 'overdue-scan',
+  // Phase 11 calendar recurrence materializer. Keeps a rolling window of
+  // child occurrence rows warm for recurring calendar parents.
+  calendarRecurrence: 'calendar-recurrence',
   // Phase 9: document upload → text extract → chunk → embed pipeline.
   // The `documentExtract` worker fans out to many `embed` jobs (one per
   // chunk) once chunking succeeds; embed shares the existing queue.
@@ -533,6 +536,43 @@ export async function scheduleOverdueScan(): Promise<void> {
 export async function closeOverdueScanQueue(): Promise<void> {
   await closeQueue(_overdueScanQueue, () => {
     _overdueScanQueue = undefined;
+  });
+}
+
+export interface CalendarRecurrenceJobData {
+  triggeredAt?: string;
+}
+
+let _calendarRecurrenceQueue: TimelineQueue<CalendarRecurrenceJobData> | undefined;
+
+export function getCalendarRecurrenceQueue(): TimelineQueue<CalendarRecurrenceJobData> {
+  if (_calendarRecurrenceQueue) return _calendarRecurrenceQueue;
+  _calendarRecurrenceQueue = createTimelineQueue<CalendarRecurrenceJobData>(
+    QUEUE_NAMES.calendarRecurrence,
+    {
+      attempts: 2,
+      backoff: { type: 'fixed', delay: 60_000 },
+      removeOnComplete: { age: 3600, count: 24 },
+      removeOnFail: { age: 24 * 3600 },
+    },
+  );
+  return _calendarRecurrenceQueue;
+}
+
+export async function scheduleCalendarRecurrenceMaterialization(): Promise<void> {
+  await getCalendarRecurrenceQueue().add(
+    'materialize',
+    {},
+    {
+      repeat: { pattern: '0 * * * *' },
+      jobId: 'calendar-recurrence-hourly',
+    },
+  );
+}
+
+export async function closeCalendarRecurrenceQueue(): Promise<void> {
+  await closeQueue(_calendarRecurrenceQueue, () => {
+    _calendarRecurrenceQueue = undefined;
   });
 }
 

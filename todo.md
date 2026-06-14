@@ -62,14 +62,18 @@ implementation detail.
 
 ### Recurrence
 
-- [ ] Add recurring event schema support: parent `rrule`, materialized
-      occurrence rows on a 3-month rolling window, `recurring_parent_id`,
+- [x] Add recurring event schema support: parent `rrule`, materialized
+      occurrence rows on a recent-past/future rolling window, `recurring_parent_id`,
       `original_start_at`, and `is_exception`.
-- [ ] Add recurrence expansion worker and re-expansion semantics: "this event"
+- [x] Add recurrence expansion worker and re-expansion semantics: "this event"
       marks an exception; "this and all future" deletes and re-expands
       non-exception children from the chosen occurrence onward.
-- [ ] Add recurring event editing UI with "this event", "this and all future",
+- [x] Add recurring event editing UI with "this event", "this and all future",
       and "all events" modes, plus an exception badge on modified occurrences.
+- [x] Extend approval-backed calendar suggestions so recurring events,
+      tentative proposed slots, confirmed-slot updates, and occurrence-level
+      reschedules materialize through the same approval path as tasks and
+      objects.
 
 ### External Sync
 

@@ -267,11 +267,17 @@ const calendarCreatePayload = z.object({
   timezone: z.string().max(100).default('UTC'),
   allDay: z.boolean().default(false),
   location: z.string().trim().max(500).nullable().optional(),
+  showAs: z.enum(['busy', 'free', 'tentative']).optional(),
+  rrule: z.string().trim().max(2000).nullable().optional(),
+  recurrenceEditMode: z.enum(['single', 'series', 'this_and_future']).optional(),
   visibility: z.enum(['team', 'private', 'specific_users']).default('team'),
   visibilityUserIds: z.array(uuid).nullable().optional(),
   reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
   linkedEntityIds: z.array(uuid).max(20).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  proposalGroupId: z.string().trim().max(120).optional(),
+  proposalStatus: z.enum(['tentative', 'confirmed']).optional(),
+  proposalRole: z.enum(['slot', 'selected_slot']).optional(),
 });
 
 const calendarUpdatePayload = z.object({
@@ -284,11 +290,17 @@ const calendarUpdatePayload = z.object({
   timezone: z.string().max(100).optional(),
   allDay: z.boolean().optional(),
   location: z.string().trim().max(500).nullable().optional(),
+  showAs: z.enum(['busy', 'free', 'tentative']).optional(),
+  rrule: z.string().trim().max(2000).nullable().optional(),
+  recurrenceEditMode: z.enum(['single', 'series', 'this_and_future']).optional(),
   visibility: z.enum(['team', 'private', 'specific_users']).optional(),
   visibilityUserIds: z.array(uuid).nullable().optional(),
   reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
   linkedEntityIds: z.array(uuid).max(20).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  proposalGroupId: z.string().trim().max(120).optional(),
+  proposalStatus: z.enum(['tentative', 'confirmed']).optional(),
+  proposalRole: z.enum(['slot', 'selected_slot']).optional(),
 });
 
 function normalizeCalendarPayload(
@@ -2054,12 +2066,17 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         timezone: parsed.timezone,
         allDay: parsed.allDay,
         location: parsed.location ?? null,
+        showAs: parsed.showAs ?? 'busy',
+        rrule: parsed.rrule ?? null,
         visibility: parsed.visibility,
         visibilityUserIds: parsed.visibilityUserIds ?? null,
         reminderMinutes: parsed.reminderMinutes ?? null,
         agentSuggested: false,
         metadata: {
           ...(parsed.metadata ?? {}),
+          ...(parsed.proposalGroupId ? { proposalGroupId: parsed.proposalGroupId } : {}),
+          ...(parsed.proposalStatus ? { proposalStatus: parsed.proposalStatus } : {}),
+          ...(parsed.proposalRole ? { proposalRole: parsed.proposalRole } : {}),
           agent_suggestion_item_id: item.id,
         },
       };
@@ -2101,14 +2118,37 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (parsed.timezone !== undefined) patch.timezone = parsed.timezone;
       if (parsed.allDay !== undefined) patch.allDay = parsed.allDay;
       if (parsed.location !== undefined) patch.location = parsed.location;
+      if (parsed.showAs !== undefined) patch.showAs = parsed.showAs;
+      if (parsed.rrule !== undefined) patch.rrule = parsed.rrule;
+      if (parsed.recurrenceEditMode !== undefined)
+        patch.recurrenceEditMode = parsed.recurrenceEditMode;
       if (parsed.visibility !== undefined) patch.visibility = parsed.visibility;
       if (parsed.visibilityUserIds !== undefined)
         patch.visibilityUserIds = parsed.visibilityUserIds;
       if (parsed.reminderMinutes !== undefined) patch.reminderMinutes = parsed.reminderMinutes;
+      if (
+        parsed.metadata !== undefined ||
+        parsed.proposalGroupId !== undefined ||
+        parsed.proposalStatus !== undefined ||
+        parsed.proposalRole !== undefined
+      ) {
+        patch.metadata = {
+          ...(parsed.metadata ?? {}),
+          ...(parsed.proposalGroupId ? { proposalGroupId: parsed.proposalGroupId } : {}),
+          ...(parsed.proposalStatus ? { proposalStatus: parsed.proposalStatus } : {}),
+          ...(parsed.proposalRole ? { proposalRole: parsed.proposalRole } : {}),
+        };
+      }
       await calendar.updateCalendarEvent(targetId, patch);
       return targetId;
     }
-    await calendar.deleteCalendarEvent(targetId);
+    const parsed = calendarUpdatePayload.parse(
+      normalizeCalendarPayload(item, { fallbackTitle: false }),
+    );
+    await calendar.deleteCalendarEvent(
+      targetId,
+      parsed.recurrenceEditMode ? { recurrenceEditMode: parsed.recurrenceEditMode } : {},
+    );
     return targetId;
   }
 

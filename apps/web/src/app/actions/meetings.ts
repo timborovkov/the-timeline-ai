@@ -121,6 +121,7 @@ async function startMeetingBot(input: {
   }
   const transcriptWebhookUrl = meetingBots.resolveTranscriptWebhookUrl();
   try {
+    // react-doctor-disable-next-line react-doctor/async-parallel -- Provider lookup and team load already run together; the later status update depends on the join result.
     const [provider, team] = await Promise.all([
       Promise.resolve(meetingBots.getMeetingBotProvider(claimed.provider)),
       input.scope.timeline.team(),

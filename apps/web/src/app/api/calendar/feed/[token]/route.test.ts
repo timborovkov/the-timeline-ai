@@ -223,6 +223,21 @@ beforeEach(() => {
       createdAt: new Date('2026-06-09T00:00:00.000Z'),
       updatedAt: new Date('2026-06-10T00:00:00.000Z'),
     },
+    {
+      id: 'event-tentative',
+      title: 'Proposed Apple slot',
+      description: 'Option under discussion',
+      startAt: new Date('2026-06-24T15:00:00.000Z'),
+      endAt: new Date('2026-06-24T15:30:00.000Z'),
+      timezone: 'UTC',
+      allDay: false,
+      location: 'Zoom',
+      showAs: 'tentative',
+      visibility: 'team',
+      createdByUserId: USER_ID,
+      createdAt: new Date('2026-06-11T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-12T00:00:00.000Z'),
+    },
   ];
   fakes.subscriptionJoins = [];
   fakes.subscriptionWhere = null;
@@ -277,6 +292,10 @@ describe('/api/calendar/feed/[token]', () => {
     expect(body).toContain('UID:event-specific-user');
     expect(body).toContain('SUMMARY:Subscriber-only planning');
     expect(body).toContain('DESCRIPTION:Visible to this subscriber');
+    expect(body).toContain('UID:event-tentative');
+    expect(body).toContain('SUMMARY:Proposed Apple slot');
+    expect(body).toContain('STATUS:TENTATIVE');
+    expect(body).toContain('X-MICROSOFT-CDO-BUSYSTATUS:TENTATIVE');
     expect(fakes.afterCallbacks).toHaveLength(1);
   });
 

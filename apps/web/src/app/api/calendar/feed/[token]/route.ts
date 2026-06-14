@@ -41,6 +41,18 @@ function eventUrl(origin: string, startAt: Date): string {
   ).toString();
 }
 
+function eventStatus(showAs: string, redacted: boolean): ICalEventStatus {
+  if (!redacted && showAs === 'tentative') return ICalEventStatus.TENTATIVE;
+  return ICalEventStatus.CONFIRMED;
+}
+
+function eventBusyStatus(showAs: string, redacted: boolean): ICalEventBusyStatus {
+  if (redacted) return ICalEventBusyStatus.BUSY;
+  if (showAs === 'free') return ICalEventBusyStatus.FREE;
+  if (showAs === 'tentative') return ICalEventBusyStatus.TENTATIVE;
+  return ICalEventBusyStatus.BUSY;
+}
+
 function calendarFeedVisibility(userId: string) {
   return sql`(
     ${calendarEvents.visibility} = 'team'
@@ -131,10 +143,9 @@ export async function GET(req: Request, context: RouteContext): Promise<Response
       description: redacted ? null : event.description,
       location: redacted ? null : event.location,
       url: eventUrl(origin, event.startAt),
-      status: ICalEventStatus.CONFIRMED,
+      status: eventStatus(event.showAs, redacted),
       class: event.visibility === 'team' ? ICalEventClass.PUBLIC : ICalEventClass.PRIVATE,
-      busystatus:
-        !redacted && event.showAs === 'free' ? ICalEventBusyStatus.FREE : ICalEventBusyStatus.BUSY,
+      busystatus: eventBusyStatus(event.showAs, redacted),
       created: event.createdAt,
       lastModified: event.updatedAt,
     });
