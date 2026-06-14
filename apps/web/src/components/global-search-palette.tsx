@@ -176,7 +176,7 @@ export function GlobalSearchPalette({ hint, className }: Props) {
     <div ref={rootRef} className={cn('relative flex-1', className)}>
       <div
         className={cn(
-          'flex h-10 items-center gap-2 rounded-sm border border-border bg-surface px-3',
+          'flex h-10 w-full items-center gap-2 rounded-sm border border-border bg-surface px-3',
           'focus-within:border-border-strong',
           'transition-colors',
         )}
@@ -254,9 +254,9 @@ export function GlobalSearchPalette({ hint, className }: Props) {
       {open ? (
         <div className="absolute left-0 right-0 top-12 z-50 max-h-[min(34rem,calc(100vh-5rem))] overflow-y-auto rounded-sm border border-border bg-bg shadow-xl">
           {view.error ? (
-            <p className="px-3 py-3 text-sm text-destructive">{view.error}</p>
+            <p className="p-3 text-sm text-destructive">{view.error}</p>
           ) : grouped.length === 0 && !view.loading ? (
-            <p className="px-3 py-3 text-sm text-fg-muted">No matches.</p>
+            <p className="p-3 text-sm text-fg-muted">No matches.</p>
           ) : (
             <div className="py-2">
               {grouped.map(([group, items]) => (

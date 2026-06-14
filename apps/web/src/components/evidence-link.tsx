@@ -145,7 +145,7 @@ export function EvidenceLink({
           <div className="space-y-3">
             <div className="rounded-sm border border-border bg-surface p-4">
               {state.loading ? (
-                <p className="text-sm text-muted-foreground">Loading evidence...</p>
+                <p className="text-sm text-muted-foreground">Loading evidence&hellip;</p>
               ) : state.error ? (
                 <p className="text-sm text-danger">{state.error}</p>
               ) : body ? (

@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useReducer, useRef } from 'react';
+import { useEffect, useMemo, useReducer } from 'react';
 
 import type { GlobalSearchKind, GlobalSearchResult } from '@timeline/shared/search';
 import type { ComponentType, SVGProps, SyntheticEvent } from 'react';
@@ -178,7 +178,7 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
   const Icon = iconFor(result.kind);
   const date = resultDate(result);
   const content = (
-    <span className="flex min-w-0 items-start gap-3 px-3 py-3">
+    <span className="flex min-w-0 items-start gap-3 p-3">
       <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-fg-muted" />
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 flex-wrap items-center gap-2">
@@ -239,7 +239,6 @@ export function GlobalSearchPage({
   initialTo = '',
 }: GlobalSearchPageProps) {
   const router = useRouter();
-  const didSyncUrl = useRef(false);
   const initialFilter = filterFromParam(initialType);
   const [state, dispatch] = useReducer(pageReducer, {
     draft: initialQuery,
@@ -302,26 +301,23 @@ export function GlobalSearchPage({
     };
   }, [kinds, state.from, state.query, state.source, state.to]);
 
-  useEffect(() => {
-    if (!didSyncUrl.current) {
-      didSyncUrl.current = true;
-      return;
-    }
+  function replaceSearchUrl(next: Partial<PageState>): void {
     router.replace(
       searchPath({
-        query: state.query,
-        activeFilter: state.activeFilter,
-        source: state.source,
-        from: state.from,
-        to: state.to,
+        query: next.query ?? state.query,
+        activeFilter: next.activeFilter ?? state.activeFilter,
+        source: next.source ?? state.source,
+        from: next.from ?? state.from,
+        to: next.to ?? state.to,
       }),
     );
-  }, [router, state.activeFilter, state.from, state.query, state.source, state.to]);
+  }
 
   function submit(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault();
     const trimmed = state.draft.trim();
     dispatch({ type: 'query', value: trimmed });
+    replaceSearchUrl({ query: trimmed });
   }
 
   return (
@@ -361,6 +357,7 @@ export function GlobalSearchPage({
               type="button"
               onClick={() => {
                 dispatch({ type: 'filter', value: filter.label });
+                replaceSearchUrl({ activeFilter: filter.label });
               }}
               className={cn(
                 'inline-flex min-h-8 items-center rounded-sm border px-2.5 font-mono text-[11px] uppercase tracking-[0.12em] transition-colors',
@@ -377,7 +374,9 @@ export function GlobalSearchPage({
           <select
             value={state.source}
             onChange={(event) => {
-              dispatch({ type: 'source', value: event.target.value });
+              const source = event.target.value;
+              dispatch({ type: 'source', value: source });
+              replaceSearchUrl({ source });
             }}
             className="h-9 rounded-sm border border-border bg-bg px-2 text-sm focus:border-border-strong focus:outline-none"
           >
@@ -393,7 +392,9 @@ export function GlobalSearchPage({
             value={state.from}
             aria-label="From"
             onChange={(event) => {
-              dispatch({ type: 'from', value: event.target.value });
+              const from = event.target.value;
+              dispatch({ type: 'from', value: from });
+              replaceSearchUrl({ from });
             }}
             className="h-9 rounded-sm border border-border bg-bg px-2 text-sm font-mono focus:border-border-strong focus:outline-none"
           />
@@ -402,7 +403,9 @@ export function GlobalSearchPage({
             value={state.to}
             aria-label="To"
             onChange={(event) => {
-              dispatch({ type: 'to', value: event.target.value });
+              const to = event.target.value;
+              dispatch({ type: 'to', value: to });
+              replaceSearchUrl({ to });
             }}
             className="h-9 rounded-sm border border-border bg-bg px-2 text-sm font-mono focus:border-border-strong focus:outline-none"
           />
