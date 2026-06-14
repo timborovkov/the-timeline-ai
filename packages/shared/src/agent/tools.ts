@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import type * as boards from '#src/boards/index.js';
 
+import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
@@ -233,6 +234,26 @@ const searchDocumentsStructuredInput = z.object({
   limit: z.number().int().min(1).max(50).optional(),
 });
 
+const retrieveWorkspaceContextInput = z.object({
+  query: z.string().trim().min(1).max(500),
+  recipe: z
+    .enum([
+      'auto',
+      'object_profile',
+      'timeline_evidence',
+      'task_status',
+      'calendar',
+      'board_state',
+      'document_knowledge',
+      'product_guide',
+    ])
+    .optional(),
+  objectId: z.string().regex(UUID_RE).optional(),
+  limit: z.number().int().min(1).max(10).optional(),
+  includeDocuments: z.boolean().optional(),
+  includeCalendar: z.boolean().optional(),
+});
+
 const searchAppGuideInput = z.object({
   query: z.string().trim().min(1).max(300),
   limit: z.number().int().min(1).max(10).optional(),
@@ -453,6 +474,28 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
   const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
     safe(label, fn, options.onToolError);
   return {
+    retrieve_workspace_context: tool({
+      description:
+        'Read-only retrieval planner/fusion tool. Use first for broad questions like "what do we know about X?", object/person/company profiles, task/board/calendar/document context, or when current route context implies a target object. Returns a compact context packet with typed citations across objects, notes, timeline events, tasks, boards, calendar, documents, and route guides.',
+      inputSchema: retrieveWorkspaceContextInput,
+      execute: async (raw) =>
+        runSafe('retrieve_workspace_context', async () => {
+          const input = retrieveWorkspaceContextInput.parse(raw);
+          return retrieveWorkspaceContext(scope, {
+            query: input.query,
+            ...(input.recipe === undefined ? {} : { recipe: input.recipe }),
+            ...(input.objectId === undefined ? {} : { objectId: input.objectId }),
+            ...(input.limit === undefined ? {} : { limit: input.limit }),
+            ...(input.includeDocuments === undefined
+              ? {}
+              : { includeDocuments: input.includeDocuments }),
+            ...(input.includeCalendar === undefined
+              ? {}
+              : { includeCalendar: input.includeCalendar }),
+          });
+        }),
+    }),
+
     search_timeline: tool({
       description:
         "Semantic search across the current team's timeline. Returns ranked events with event_id (use for [ev:<id>] citations), fact statements, and entity_ids. Use this for 'what was discussed about X' or 'find anything mentioning Y'.",

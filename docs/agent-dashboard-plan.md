@@ -242,6 +242,13 @@ dashboard chat, Slack/Telegram, and background agents.
 
 ## 5. Unified Retrieval Planner And Fusion Layer
 
+Status: initial shared read-only planner implemented. `retrieveWorkspaceContext`
+now lives in `@timeline/shared/agent` and is exposed to agents as
+`retrieve_workspace_context`, returning a compact packet of object/profile,
+note, event/fact, task, board, calendar, document, and route-guide refs for
+broad context questions. Remaining work is deeper reranking/observability and
+expanding the recipes with deterministic event/calendar substring filters.
+
 ### Goal
 
 Make all agents retrieve context consistently and measurably better.

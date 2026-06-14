@@ -47,6 +47,17 @@ function summarize(name: string, input: unknown, output: unknown): string {
       ? `Searched objects for "${q}"`
       : `Searched objects for "${q}" — ${String(count)} result${count === 1 ? '' : 's'}`;
   }
+  if (name === 'retrieve_workspace_context') {
+    const q = typeof inp.query === 'string' ? inp.query : '';
+    const out = output as { recipe?: string; refs?: unknown[] } | undefined;
+    const count = Array.isArray(out?.refs) ? out.refs.length : undefined;
+    const recipe = out?.recipe ? ` (${out.recipe.replaceAll('_', ' ')})` : '';
+    return count === undefined
+      ? `Retrieved workspace context${recipe} for "${q}"`
+      : `Retrieved workspace context${recipe} for "${q}" — ${String(count)} ref${
+          count === 1 ? '' : 's'
+        }`;
+  }
   if (name === 'search_boards') {
     const q = typeof inp.query === 'string' ? inp.query : '';
     const out = output as { count?: number } | undefined;
