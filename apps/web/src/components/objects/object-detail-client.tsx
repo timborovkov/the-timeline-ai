@@ -80,10 +80,13 @@ type ObjectDetailUiAction =
 interface ObjectDetailLocalState {
   linkQuery: string;
   selectedLink: ObjectSearchResult | null;
-  notes: ObjectDetail['notes'];
-  relationships: ObjectDetail['relationships'];
-  recentChanges: ObjectDetail['recentChanges'];
-  archivedAt: ObjectDetail['archivedAt'];
+  pendingNotes: ObjectDetail['notes'];
+  noteUpdates: Record<string, ObjectDetail['notes'][number]>;
+  deletedNoteIds: readonly string[];
+  pendingRelationships: ObjectDetail['relationships'];
+  deletedRelationshipIds: readonly string[];
+  recentChangeStatuses: Record<string, ObjectDetail['recentChanges'][number]['status']>;
+  archivedAtOverride: ObjectDetail['archivedAt'] | undefined;
 }
 
 type ObjectDetailLocalAction =
@@ -159,14 +162,17 @@ function objectDetailUiReducer(
   return typeof action === 'function' ? action(state) : { ...state, ...action };
 }
 
-function initObjectDetailLocalState(detail: ObjectDetail): ObjectDetailLocalState {
+function initObjectDetailLocalState(): ObjectDetailLocalState {
   return {
     linkQuery: '',
     selectedLink: null,
-    notes: detail.notes,
-    relationships: detail.relationships,
-    recentChanges: detail.recentChanges,
-    archivedAt: detail.archivedAt,
+    pendingNotes: [],
+    noteUpdates: {},
+    deletedNoteIds: [],
+    pendingRelationships: [],
+    deletedRelationshipIds: [],
+    recentChangeStatuses: {},
+    archivedAtOverride: undefined,
   };
 }
 
@@ -182,6 +188,40 @@ function applyObjectDetailOverrides(
   overrides: Partial<Record<EditableField, EditableValue>>,
 ): ObjectDetail {
   return { ...detail, ...overrides } as ObjectDetail;
+}
+
+function applyObjectDetailLocalState(
+  detail: ObjectDetail,
+  localState: ObjectDetailLocalState,
+): ObjectDetail {
+  const serverNoteIds = new Set(detail.notes.map((note) => note.id));
+  const deletedNoteIds = new Set(localState.deletedNoteIds);
+  const pendingNotes = localState.pendingNotes.filter(
+    (note) => !serverNoteIds.has(note.id) && !deletedNoteIds.has(note.id),
+  );
+  const notes = [...pendingNotes];
+  for (const note of detail.notes) {
+    if (!deletedNoteIds.has(note.id)) notes.push(localState.noteUpdates[note.id] ?? note);
+  }
+  const serverRelationshipIds = new Set(
+    detail.relationships.map((relationship) => relationship.id),
+  );
+  const deletedRelationshipIds = new Set(localState.deletedRelationshipIds);
+  const pendingRelationships = localState.pendingRelationships.filter(
+    (relationship) =>
+      !serverRelationshipIds.has(relationship.id) && !deletedRelationshipIds.has(relationship.id),
+  );
+  const relationships = [
+    ...pendingRelationships,
+    ...detail.relationships.filter((relationship) => !deletedRelationshipIds.has(relationship.id)),
+  ];
+  const recentChanges = detail.recentChanges.map((change) => {
+    const status = localState.recentChangeStatuses[change.id];
+    return status && change.status === 'suggested' ? { ...change, status } : change;
+  });
+  const archivedAt = detail.archivedAt ?? localState.archivedAtOverride ?? null;
+
+  return { ...detail, notes, relationships, recentChanges, archivedAt };
 }
 
 export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
@@ -214,24 +254,20 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     },
     dispatchObjectUi,
   ] = useReducer(objectDetailUiReducer, detail, initObjectDetailUiState);
-  const [
-    { linkQuery, selectedLink, notes, relationships, recentChanges, archivedAt },
-    dispatchLocalDetail,
-  ] = useReducer(objectDetailLocalReducer, detail, initObjectDetailLocalState);
+  const [localDetailState, dispatchLocalDetail] = useReducer(
+    objectDetailLocalReducer,
+    detail,
+    initObjectDetailLocalState,
+  );
+  const { linkQuery, selectedLink } = localDetailState;
   const trimmedLinkQuery = linkQuery.trim();
   const localDetail = useMemo(
     () => applyObjectDetailOverrides(detail, overrides),
     [detail, overrides],
   );
   const viewDetail = useMemo(
-    () => ({
-      ...localDetail,
-      notes,
-      relationships,
-      recentChanges,
-      archivedAt,
-    }),
-    [archivedAt, localDetail, notes, recentChanges, relationships],
+    () => applyObjectDetailLocalState(localDetail, localDetailState),
+    [localDetail, localDetailState],
   );
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localDetailRef = useRef(detail);
@@ -400,14 +436,17 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       createdAt: now,
       updatedAt: now,
     };
-    dispatchLocalDetail((current) => ({ ...current, notes: [optimisticNote, ...current.notes] }));
+    dispatchLocalDetail((current) => ({
+      ...current,
+      pendingNotes: [optimisticNote, ...current.pendingNotes],
+    }));
     dispatchObjectUi({ noteBody: '' });
     startTransition(async () => {
       const result = await createNoteAction({ entityId: detail.id, body });
       if ('error' in result && result.error) {
         dispatchLocalDetail((current) => ({
           ...current,
-          notes: current.notes.filter((note) => note.id !== tempId),
+          pendingNotes: current.pendingNotes.filter((note) => note.id !== tempId),
         }));
         dispatchObjectUi({ error: result.error, noteBody: body });
       } else {
@@ -415,7 +454,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         if (createdId) {
           dispatchLocalDetail((current) => ({
             ...current,
-            notes: current.notes.map((note) =>
+            pendingNotes: current.pendingNotes.map((note) =>
               note.id === tempId ? { ...note, id: createdId } : note,
             ),
           }));
@@ -428,18 +467,26 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
   function saveNote(noteId: string, body: string): void {
     dispatchObjectUi({ error: null });
     const trimmedBody = body.trim();
-    const previousNotes = notes;
+    const currentNote = viewDetail.notes.find((note) => note.id === noteId);
+    if (!currentNote) return;
+    const previousNoteUpdates = localDetailState.noteUpdates;
     dispatchLocalDetail((current) => ({
       ...current,
-      notes: current.notes.map((note) =>
-        note.id === noteId ? { ...note, body: trimmedBody, updatedAt: new Date() } : note,
-      ),
+      noteUpdates: {
+        ...current.noteUpdates,
+        [noteId]: {
+          ...currentNote,
+          id: noteId,
+          body: trimmedBody,
+          updatedAt: new Date(),
+        },
+      },
     }));
     dispatchObjectUi({ editingNoteId: null });
     startTransition(async () => {
       const result = await updateNoteAction({ noteId, entityId: detail.id, body: trimmedBody });
       if ('error' in result && result.error) {
-        dispatchLocalDetail({ notes: previousNotes });
+        dispatchLocalDetail({ noteUpdates: previousNoteUpdates });
         dispatchObjectUi({ error: result.error, editingNoteId: noteId, editingBody: body });
       } else {
         router.refresh();
@@ -449,15 +496,20 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
 
   function deleteNote(noteId: string): void {
     dispatchObjectUi({ error: null });
-    const previousNotes = notes;
+    const previousDeletedNoteIds = localDetailState.deletedNoteIds;
+    const previousPendingNotes = localDetailState.pendingNotes;
     dispatchLocalDetail((current) => ({
       ...current,
-      notes: current.notes.filter((note) => note.id !== noteId),
+      deletedNoteIds: [...current.deletedNoteIds, noteId],
+      pendingNotes: current.pendingNotes.filter((note) => note.id !== noteId),
     }));
     startTransition(async () => {
       const result = await deleteNoteAction({ noteId, entityId: detail.id });
       if ('error' in result && result.error) {
-        dispatchLocalDetail({ notes: previousNotes });
+        dispatchLocalDetail({
+          deletedNoteIds: previousDeletedNoteIds,
+          pendingNotes: previousPendingNotes,
+        });
         dispatchObjectUi({ error: result.error });
       } else router.refresh();
     });
@@ -480,7 +532,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       ...current,
       linkQuery: '',
       selectedLink: null,
-      relationships: [optimisticRelationship, ...current.relationships],
+      pendingRelationships: [optimisticRelationship, ...current.pendingRelationships],
     }));
     startTransition(async () => {
       const result = await addRelationshipAction({
@@ -491,7 +543,9 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       if ('error' in result && result.error) {
         dispatchLocalDetail((current) => ({
           ...current,
-          relationships: current.relationships.filter((relationship) => relationship.id !== tempId),
+          pendingRelationships: current.pendingRelationships.filter(
+            (relationship) => relationship.id !== tempId,
+          ),
         }));
         dispatchObjectUi({ error: result.error });
       } else {
@@ -499,7 +553,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         if (relationshipId) {
           dispatchLocalDetail((current) => ({
             ...current,
-            relationships: current.relationships.map((relationship) =>
+            pendingRelationships: current.pendingRelationships.map((relationship) =>
               relationship.id === tempId ? { ...relationship, id: relationshipId } : relationship,
             ),
           }));
@@ -511,15 +565,22 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
 
   function removeRelationship(id: string, otherEntityId: string): void {
     dispatchObjectUi({ error: null });
-    const previousRelationships = relationships;
+    const previousDeletedRelationshipIds = localDetailState.deletedRelationshipIds;
+    const previousPendingRelationships = localDetailState.pendingRelationships;
     dispatchLocalDetail((current) => ({
       ...current,
-      relationships: current.relationships.filter((relationship) => relationship.id !== id),
+      deletedRelationshipIds: [...current.deletedRelationshipIds, id],
+      pendingRelationships: current.pendingRelationships.filter(
+        (relationship) => relationship.id !== id,
+      ),
     }));
     startTransition(async () => {
       const result = await removeRelationshipAction({ id, entityId: detail.id, otherEntityId });
       if ('error' in result && result.error) {
-        dispatchLocalDetail({ relationships: previousRelationships });
+        dispatchLocalDetail({
+          deletedRelationshipIds: previousDeletedRelationshipIds,
+          pendingRelationships: previousPendingRelationships,
+        });
         dispatchObjectUi({ error: result.error });
       } else router.refresh();
     });
@@ -527,14 +588,12 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
 
   function acceptChange(changeId: string): void {
     dispatchObjectUi({ error: null });
-    const previousChanges = recentChanges;
+    const previousRecentChangeStatuses = localDetailState.recentChangeStatuses;
     const previousDetail = localDetailRef.current;
-    const change = recentChanges.find((item) => item.id === changeId);
+    const change = viewDetail.recentChanges.find((item) => item.id === changeId);
     dispatchLocalDetail((current) => ({
       ...current,
-      recentChanges: current.recentChanges.map((item) =>
-        item.id === changeId ? { ...item, status: 'applied' } : item,
-      ),
+      recentChangeStatuses: { ...current.recentChangeStatuses, [changeId]: 'applied' },
     }));
     if (change && isEditableFieldName(change.field)) {
       const localValue = editableValueFromChange(change.field, change.newValue);
@@ -549,7 +608,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     startTransition(async () => {
       const result = await acceptObjectChangeAction({ changeId, entityId: detail.id });
       if ('error' in result && result.error) {
-        dispatchLocalDetail({ recentChanges: previousChanges });
+        dispatchLocalDetail({ recentChangeStatuses: previousRecentChangeStatuses });
         updateLocalDetail(() => previousDetail);
         dispatchObjectUi({
           stageDraft: previousDetail.stage ?? '',
@@ -562,17 +621,15 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
 
   function rejectChange(changeId: string): void {
     dispatchObjectUi({ error: null });
-    const previousChanges = recentChanges;
+    const previousRecentChangeStatuses = localDetailState.recentChangeStatuses;
     dispatchLocalDetail((current) => ({
       ...current,
-      recentChanges: current.recentChanges.map((item) =>
-        item.id === changeId ? { ...item, status: 'rejected' } : item,
-      ),
+      recentChangeStatuses: { ...current.recentChangeStatuses, [changeId]: 'rejected' },
     }));
     startTransition(async () => {
       const result = await rejectObjectChangeAction({ changeId, entityId: detail.id });
       if ('error' in result && result.error) {
-        dispatchLocalDetail({ recentChanges: previousChanges });
+        dispatchLocalDetail({ recentChangeStatuses: previousRecentChangeStatuses });
         dispatchObjectUi({ error: result.error });
       } else router.refresh();
     });
@@ -580,12 +637,12 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
 
   function archiveObject(): void {
     dispatchObjectUi({ error: null });
-    const previousArchivedAt = archivedAt;
-    dispatchLocalDetail({ archivedAt: new Date() });
+    const previousArchivedAtOverride = localDetailState.archivedAtOverride;
+    dispatchLocalDetail({ archivedAtOverride: new Date() });
     startTransition(async () => {
       const result = await archiveObjectAction({ id: detail.id });
       if ('error' in result && result.error) {
-        dispatchLocalDetail({ archivedAt: previousArchivedAt });
+        dispatchLocalDetail({ archivedAtOverride: previousArchivedAtOverride });
         dispatchObjectUi({ error: result.error });
       } else router.refresh();
     });
