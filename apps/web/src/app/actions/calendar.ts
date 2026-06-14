@@ -53,6 +53,8 @@ const createSchema = z.object({
   timezone: z.string().max(100).default('UTC'),
   allDay: z.boolean().default(false),
   location: z.string().trim().max(500).optional(),
+  showAs: z.enum(['busy', 'free', 'tentative']).default('busy'),
+  rrule: z.string().trim().max(2000).nullable().optional(),
   visibility: visibilitySchema.default('team'),
   visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
   reminderMinutes: z.number().int().min(0).max(1440).optional(),
@@ -82,6 +84,8 @@ export async function createCalendarEventAction(
         timezone: parsed.data.timezone,
         allDay: parsed.data.allDay,
         location: parsed.data.location ?? null,
+        showAs: parsed.data.showAs,
+        rrule: parsed.data.rrule ?? null,
         visibility: parsed.data.visibility,
         visibilityUserIds: parsed.data.visibilityUserIds ?? null,
         reminderMinutes: parsed.data.reminderMinutes ?? null,
@@ -106,6 +110,9 @@ const updateSchema = z.object({
   timezone: z.string().max(100).optional(),
   allDay: z.boolean().optional(),
   location: z.string().trim().max(500).optional(),
+  showAs: z.enum(['busy', 'free', 'tentative']).optional(),
+  rrule: z.string().trim().max(2000).nullable().optional(),
+  recurrenceEditMode: z.enum(['single', 'series', 'this_and_future']).optional(),
   visibility: visibilitySchema.optional(),
   visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
   reminderMinutes: z.number().int().min(0).max(1440).optional(),
@@ -130,6 +137,10 @@ export async function updateCalendarEventAction(
       if (parsed.data.timezone !== undefined) patch.timezone = parsed.data.timezone;
       if (parsed.data.allDay !== undefined) patch.allDay = parsed.data.allDay;
       if (parsed.data.location !== undefined) patch.location = parsed.data.location;
+      if (parsed.data.showAs !== undefined) patch.showAs = parsed.data.showAs;
+      if (parsed.data.rrule !== undefined) patch.rrule = parsed.data.rrule;
+      if (parsed.data.recurrenceEditMode !== undefined)
+        patch.recurrenceEditMode = parsed.data.recurrenceEditMode;
       if (parsed.data.visibility !== undefined) patch.visibility = parsed.data.visibility;
       if (parsed.data.visibilityUserIds !== undefined)
         patch.visibilityUserIds = parsed.data.visibilityUserIds;
@@ -164,14 +175,21 @@ export async function updateCalendarEventAction(
   });
 }
 
-export async function deleteCalendarEventAction(id: string): Promise<Result> {
+export async function deleteCalendarEventAction(
+  id: string,
+  opts: { recurrenceEditMode?: 'single' | 'series' | 'this_and_future' } = {},
+): Promise<Result> {
   return runSentryServerAction('delete_calendar_event', async () => {
     if (!UUID_RE.test(id)) return { ok: false, error: 'Invalid event id' };
     const got = await withScopeOrError();
     if ('error' in got) return { ok: false, error: got.error };
 
     try {
-      const deleted = await got.scope.calendar.deleteCalendarEvent(id);
+      const deleted = opts.recurrenceEditMode
+        ? await got.scope.calendar.deleteCalendarEvent(id, {
+            recurrenceEditMode: opts.recurrenceEditMode,
+          })
+        : await got.scope.calendar.deleteCalendarEvent(id);
       if (!deleted) return { ok: false, error: 'Event not found' };
       await reconcileCanonicalChangeBestEffort(
         'reconcile_calendar_delete_after_delete',

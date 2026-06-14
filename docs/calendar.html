@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>The Timeline — Calendar</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <main id="main">
+      <h1>The Timeline — Calendar</h1>
+      <div class="meta">
+        <span class="kind">Product guide</span><span>Last updated 2026-06-14</span>
+      </div>
+      <p class="tldr">
+        Calendar state is approval-backed workspace memory. The agent can suggest one-off events,
+        recurring series, occurrence changes, cancellations, and proposed time slots, but canonical
+        calendar rows change only after a teammate accepts the suggestion.
+      </p>
+
+      <nav class="toc" aria-label="On this page">
+        <strong>On this page</strong>
+        <ul>
+          <li><a href="#mental-model">Mental model</a></li>
+          <li><a href="#agent-suggestions">Agent suggestions</a></li>
+          <li><a href="#recurring-events">Recurring events</a></li>
+          <li><a href="#tentative-slots">Tentative slots</a></li>
+          <li><a href="#calendar-subscriptions">Calendar subscriptions</a></li>
+          <li><a href="#manual-editing">Manual editing</a></li>
+          <li><a href="#implementation-reference">Implementation reference</a></li>
+        </ul>
+      </nav>
+
+      <h2 id="mental-model">Mental model</h2>
+      <p>
+        Calendar events are canonical workspace artifacts, separate from workspace objects and
+        tasks. They are still part of the same suggestion review loop: when Slack, Telegram, email,
+        meetings, or chat evidence says something should be scheduled, the product records a
+        calendar suggestion with cited raw-event evidence. Accepting that suggestion creates or
+        updates real <code>calendar_events</code> rows.
+      </p>
+      <p>
+        A calendar suggestion needs a concrete timed range or an all-day date span. If the evidence
+        only implies future work without a schedule, it should become a task or object-memory
+        suggestion instead of a placeholder calendar event.
+      </p>
+
+      <h2 id="agent-suggestions">Agent suggestions</h2>
+      <p>The agent can propose these calendar changes from background extraction or chat tools:</p>
+      <ul>
+        <li>One-off meetings, deadlines, and all-day date-only commitments.</li>
+        <li>Recurring event series using full RFC 5545 <code>RRULE</code> strings.</li>
+        <li>Single-occurrence moves, edits, and cancellations for materialized recurring rows.</li>
+        <li>
+          <code>this_and_future</code> changes that split a recurring series from one occurrence
+          onward.
+        </li>
+        <li>Grouped tentative slots for scheduling with customers or other third parties.</li>
+        <li>Confirmation updates that keep the selected slot and cancel the alternatives.</li>
+      </ul>
+      <p>
+        Agent tools should report that a suggestion was recorded, not that an event was created. The
+        accepted suggestion is the handoff point where the visible calendar changes.
+      </p>
+
+      <h2 id="recurring-events">Recurring events</h2>
+      <p>
+        Recurrence is stored on a parent event. The parent owns <code>startAt</code>,
+        <code>endAt</code>, <code>timezone</code>, and <code>rrule</code>. A worker expands a
+        rolling window of recent past and future occurrences into child rows with
+        <code>recurringParentId</code> and <code>originalStartAt</code>.
+      </p>
+      <p>
+        For a daily call at 16:00 every day except Saturday, the canonical schedule is a recurring
+        parent with an RRULE such as
+        <code>FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR,SU</code>. If the team later agrees to move tomorrow's
+        call to 15:00, the suggestion should target tomorrow's materialized occurrence with
+        <code>recurrenceEditMode: "single"</code>. Re-expansion preserves that exception and does
+        not recreate the original 16:00 row for that date.
+      </p>
+      <p>
+        Whole-series edits update the parent and rematerialize active child rows. A
+        <code>this_and_future</code> edit ends the old parent before the changed occurrence, creates
+        a new parent for the future schedule, preserves finite <code>COUNT</code> semantics where
+        applicable, and rematerializes the new window.
+      </p>
+
+      <h2 id="tentative-slots">Tentative slots</h2>
+      <p>
+        Proposed slots are visible calendar holds after approval. For example, if the team proposes
+        five Apple meeting times, accepting the suggestion creates five events with
+        <code>showAs: "tentative"</code> and shared proposal-group metadata. They should look
+        tentative in the UI and should not pretend the meeting is confirmed.
+      </p>
+      <p>
+        When later evidence confirms one slot, the confirmation suggestion updates the chosen event
+        to confirmed busy time, changes its title from a proposal label to the actual meeting title,
+        and cancels the sibling tentative events in the same group. The sibling raw audit events are
+        tombstoned and their vector points are deleted so search and calendar context stop treating
+        the old options as active.
+      </p>
+
+      <h2 id="calendar-subscriptions">Calendar subscriptions</h2>
+      <p>
+        Each member can create a read-only calendar subscription URL for their Timeline calendar.
+        The URL is a bearer credential: it is shown only when created or reset, can be disabled at
+        any time, and exports the subscriber's visible calendar surface without cookies.
+      </p>
+      <p>
+        Subscription feeds include team events, the subscriber's private event details, authorized
+        specific-user events, and other members' private events only as redacted busy blocks.
+        Materialized recurring occurrences export as individual feed events, so external calendar
+        apps see the concrete schedule in the current materialization window. Tentative holds export
+        as tentative iCalendar events instead of confirmed meetings.
+      </p>
+
+      <h2 id="manual-editing">Manual editing</h2>
+      <p>
+        The calendar UI accepts raw RRULE input and common recurrence presets. Event details show
+        recurrence and tentative status, and editing a recurring occurrence asks whether the change
+        applies to this event, this and all future events, or the whole series.
+      </p>
+      <p>
+        Manual edits use the same recurrence modes as accepted suggestions:
+        <code>single</code>, <code>series</code>, and <code>this_and_future</code>. This keeps
+        direct calendar edits and agent-approved edits consistent.
+      </p>
+
+      <h2 id="implementation-reference">Implementation reference</h2>
+      <ul>
+        <li>
+          Shared calendar behavior lives in
+          <code>packages/shared/src/calendar/scope.ts</code> and
+          <code>packages/shared/src/calendar/recurrence.ts</code>.
+        </li>
+        <li>
+          Calendar suggestion acceptance lives in
+          <code>packages/shared/src/suggestions/index.ts</code>.
+        </li>
+        <li>
+          Recurrence materialization is queued through
+          <code>calendar-recurrence</code> and handled by
+          <code>apps/worker/src/workers/calendarRecurrence.ts</code>.
+        </li>
+        <li>
+          Manual calendar controls live in
+          <code>apps/web/src/components/calendar/calendar-view.tsx</code>.
+        </li>
+        <li>
+          Read-only subscription URLs are managed by
+          <code>apps/web/src/components/calendar/calendar-subscription-panel.tsx</code> and served
+          from <code>apps/web/src/app/api/calendar/feed/[token]/route.ts</code>.
+        </li>
+      </ul>
+
+      <footer>
+        Related source docs: <a href="../CONTEXT.md">CONTEXT.md</a>,
+        <a href="../design.md">design.md</a>, and <a href="../todo.md">todo.md</a>.
+      </footer>
+    </main>
+  </body>
+</html>

@@ -2641,23 +2641,35 @@ export interface NotificationRow {
 export async function listNotifications(
   db: Db,
   scope: TeamScopeCore,
-  filter: { unreadOnly?: boolean; limit?: number } = {},
+  filter: {
+    unreadOnly?: boolean;
+    limit?: number;
+    offset?: number;
+    order?: 'inbox' | 'latest';
+  } = {},
 ): Promise<NotificationRow[]> {
   await scope.requireMembership();
   const conds = [eq(notifications.teamId, scope.teamId), eq(notifications.userId, scope.userId)];
   if (filter.unreadOnly) conds.push(isNull(notifications.readAt));
+  const limit = Math.min(Math.max(filter.limit ?? 100, 1), 500);
+  const offset = Math.max(filter.offset ?? 0, 0);
   // Unread-first, then newest. Matches the shape of
   // `notifications_team_user_inbox_idx` (team_id, user_id, read_at,
   // created_at) so the planner can satisfy the inbox query directly from
   // the index without re-sorting. Postgres default for ASC is NULLS LAST,
   // but we want unread (NULL read_at) at the TOP — hence the explicit
   // NULLS FIRST.
+  const orderBy =
+    filter.order === 'latest'
+      ? [desc(notifications.createdAt)]
+      : [sql`${notifications.readAt} ASC NULLS FIRST`, desc(notifications.createdAt)];
   const rows = await db
     .select()
     .from(notifications)
     .where(and(...conds))
-    .orderBy(sql`${notifications.readAt} ASC NULLS FIRST`, desc(notifications.createdAt))
-    .limit(Math.min(Math.max(filter.limit ?? 100, 1), 500));
+    .orderBy(...orderBy)
+    .limit(limit)
+    .offset(offset);
   return rows.map((r) => ({
     id: r.id,
     kind: r.kind,
@@ -2669,6 +2681,21 @@ export async function listNotifications(
     createdAt: r.createdAt,
     readAt: r.readAt,
   }));
+}
+
+export async function notificationCount(
+  db: Db,
+  scope: TeamScopeCore,
+  filter: { unreadOnly?: boolean } = {},
+): Promise<number> {
+  await scope.requireMembership();
+  const conds = [eq(notifications.teamId, scope.teamId), eq(notifications.userId, scope.userId)];
+  if (filter.unreadOnly) conds.push(isNull(notifications.readAt));
+  const rows = await db
+    .select({ c: sql<number>`COUNT(*)::int` })
+    .from(notifications)
+    .where(and(...conds));
+  return rows[0]?.c ?? 0;
 }
 
 export async function unreadNotificationCount(db: Db, scope: TeamScopeCore): Promise<number> {
@@ -3511,6 +3538,8 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     markVisited: (entityId: string) => markVisited(db, scope, entityId),
     listNotifications: (filter?: Parameters<typeof listNotifications>[2]) =>
       listNotifications(db, scope, filter),
+    notificationCount: (filter?: Parameters<typeof notificationCount>[2]) =>
+      notificationCount(db, scope, filter),
     unreadNotificationCount: () => unreadNotificationCount(db, scope),
     markNotificationRead: (id: string) => markNotificationRead(db, scope, id),
     markAllNotificationsRead: () => markAllNotificationsRead(db, scope),
