@@ -59,6 +59,30 @@ function sourcePredicate(target: DueDateTarget) {
   );
 }
 
+function notificationKindForSource(source: DueDateTarget['source']) {
+  return source === 'board_item' ? 'board_item_due' : 'task_due';
+}
+
+function notificationTargetPredicate(target: DueDateTarget) {
+  const targetPredicate =
+    target.source === 'board_item'
+      ? sql`${notifications.payload} ->> 'board_item_id' = ${target.boardItemId ?? ''}`
+      : eq(notifications.entityId, target.entityId);
+  return and(
+    eq(notifications.teamId, target.teamId),
+    eq(notifications.kind, notificationKindForSource(target.source)),
+    targetPredicate,
+    sql`${notifications.readAt} IS NULL`,
+  );
+}
+
+async function retractDueDateNotifications(db: DbOrTx, target: DueDateTarget): Promise<void> {
+  await db
+    .update(notifications)
+    .set({ readAt: new Date() })
+    .where(notificationTargetPredicate(target));
+}
+
 async function displayName(db: DbOrTx, userId: string | null): Promise<string | null> {
   if (!userId) return null;
   const [row] = await db
@@ -99,6 +123,7 @@ async function syncDueDateCalendarEvent(db: DbOrTx, target: DueDateTarget): Prom
     .limit(1);
 
   if (!target.dueAt || target.inactive) {
+    await retractDueDateNotifications(db, target);
     if (existing) {
       await db
         .update(calendarEvents)
@@ -392,6 +417,15 @@ export async function notifyObjectDueDate(
   }
   const userId = object.assigneeUserId ?? object.ownerUserId;
   if (!userId) return;
+  await retractDueDateNotifications(db, {
+    source: 'object',
+    teamId: object.teamId,
+    entityId: object.id,
+    objectName: object.canonicalName,
+    objectType: object.type,
+    dueAt: object.dueAt,
+    responsibleUserId: userId,
+  });
   await db.insert(notifications).values({
     teamId: object.teamId,
     userId,
@@ -414,11 +448,30 @@ export async function notifyBoardItemDueDate(
     typeof boardItems.$inferSelect,
     'id' | 'teamId' | 'entityId' | 'boardId' | 'dueAt' | 'responsibleUserId' | 'archivedAt'
   >,
-  object: Pick<typeof entities.$inferSelect, 'canonicalName'>,
+  object: Pick<typeof entities.$inferSelect, 'canonicalName' | 'archivedAt'>,
   board: Pick<typeof boards.$inferSelect, 'name' | 'archivedAt'>,
   actor: DueDateActor,
 ): Promise<void> {
-  if (!item.dueAt || !item.responsibleUserId || item.archivedAt || board.archivedAt) return;
+  if (
+    !item.dueAt ||
+    !item.responsibleUserId ||
+    item.archivedAt ||
+    board.archivedAt ||
+    object.archivedAt
+  ) {
+    return;
+  }
+  await retractDueDateNotifications(db, {
+    source: 'board_item',
+    teamId: item.teamId,
+    entityId: item.entityId,
+    objectName: object.canonicalName,
+    dueAt: item.dueAt,
+    responsibleUserId: item.responsibleUserId,
+    boardId: item.boardId,
+    boardName: board.name,
+    boardItemId: item.id,
+  });
   await db.insert(notifications).values({
     teamId: item.teamId,
     userId: item.responsibleUserId,

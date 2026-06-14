@@ -226,6 +226,17 @@ describe('board scope', () => {
     eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
     expect(eventRows).toHaveLength(1);
     expect(eventRows[0]?.startAt).toEqual(movedDueAt);
+    const afterMoveInboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, company.id));
+    expect(
+      afterMoveInboxRows.filter((row) => row.kind === 'board_item_due' && row.readAt === null),
+    ).toEqual([
+      expect.objectContaining({
+        summary: 'Northstar Labs on Partnership pipeline is due 2026-08-13',
+      }),
+    ]);
     const startRawRows = await db
       .select()
       .from(rawEvents)
@@ -278,6 +289,35 @@ describe('board scope', () => {
     ]);
   });
 
+  it('does not notify for board item due dates when the object is archived', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Archived object board',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Open', kind: 'active' }],
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Archived Co',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await scope.objects.archiveObject(company.id, { kind: 'user', userId: USER_OWNER });
+
+    await scope.boards.addBoardItem(board.id, {
+      entityId: company.id,
+      responsibleUserId: USER_MEMBER,
+      dueAt: new Date('2026-08-21T14:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(
+      db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A)),
+    ).resolves.toEqual([]);
+    await expect(
+      db.select().from(notifications).where(eq(notifications.entityId, company.id)),
+    ).resolves.toEqual([]);
+  });
+
   it('tombstones board item due-date calendar events when the board is archived', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER);
     const board = await scope.boards.createBoard({
@@ -306,6 +346,11 @@ describe('board scope', () => {
 
     eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
     expect(eventRows[0]?.deletedAt).toBeInstanceOf(Date);
+    const inboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, company.id));
+    expect(inboxRows.find((row) => row.kind === 'board_item_due')?.readAt).toBeInstanceOf(Date);
     const rawRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_A));
     expect(
       rawRows

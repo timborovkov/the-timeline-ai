@@ -209,6 +209,11 @@ describe('object scope — team ownership and audit behavior', () => {
     await scope.updateObject(task.id, { dueAt: null }, { kind: 'user', userId: USER_OWNER });
     eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
     expect(eventRows[0]?.deletedAt).toBeInstanceOf(Date);
+    const afterClearInboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, task.id));
+    expect(afterClearInboxRows.find((row) => row.kind === 'task_due')?.readAt).toBeInstanceOf(Date);
     const rawRows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_A));
     expect(
       rawRows
@@ -335,6 +340,25 @@ describe('object scope — team ownership and audit behavior', () => {
         title: 'Due: Assign owner for launch note - member@test.local',
       }),
     ]);
+
+    await scope.updateObject(
+      task.id,
+      { ownerUserId: USER_OWNER },
+      { kind: 'user', userId: USER_MEMBER },
+    );
+
+    const afterOwnerChangeRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, task.id));
+    expect(
+      afterOwnerChangeRows.filter((row) => row.kind === 'task_due' && row.readAt === null),
+    ).toEqual([
+      expect.objectContaining({
+        userId: USER_OWNER,
+        summary: 'Assign owner for launch note is due 2026-07-12',
+      }),
+    ]);
   });
 
   it('tombstones board item due-date calendar events when the object is archived', async () => {
@@ -363,6 +387,11 @@ describe('object scope — team ownership and audit behavior', () => {
 
     eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
     expect(eventRows[0]?.deletedAt).toBeInstanceOf(Date);
+    const inboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, company.id));
+    expect(inboxRows.find((row) => row.kind === 'board_item_due')?.readAt).toBeInstanceOf(Date);
   });
 });
 
