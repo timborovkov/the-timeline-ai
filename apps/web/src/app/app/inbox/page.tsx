@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { EmptyAction } from '@/components/empty-action';
+import { HistoryBackLink } from '@/components/history-back-link';
 import { MarkAllReadButton } from '@/components/inbox/mark-all-read-button';
 import { NotificationRow } from '@/components/inbox/notification-row';
 import { IndexStrip } from '@/components/index-strip';
@@ -17,10 +18,20 @@ export const metadata: Metadata = {
   description: 'Review notifications and timeline updates.',
 };
 
+const PAGE_SIZE = 25;
+
+function pageHref(page: number, unreadOnly: boolean): string {
+  const params = new URLSearchParams();
+  if (unreadOnly) params.set('unread', '1');
+  if (page > 1) params.set('page', String(page));
+  const query = params.toString();
+  return query ? `/app/inbox?${query}` : '/app/inbox';
+}
+
 export default async function InboxPage({
   searchParams,
 }: {
-  searchParams: Promise<{ unread?: string }>;
+  searchParams: Promise<{ page?: string; unread?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -30,20 +41,33 @@ export default async function InboxPage({
   const scope = withTeam(db, active.teamId, session.user.id);
   const params = await searchParams;
   const unreadOnly = params.unread === '1';
+  const page = Math.max(Number.parseInt(params.page ?? '1', 10) || 1, 1);
+  const offset = (page - 1) * PAGE_SIZE;
 
-  const rows = await scope.objects.listNotifications({
-    unreadOnly,
-    limit: 200,
-  });
-  const unreadCount = rows.filter((r) => r.readAt === null).length;
+  const [rows, totalCount, unreadCount] = await Promise.all([
+    scope.objects.listNotifications({
+      unreadOnly,
+      limit: PAGE_SIZE,
+      offset,
+    }),
+    scope.objects.notificationCount(),
+    scope.objects.notificationCount({ unreadOnly: true }),
+  ]);
+  const filteredTotal = unreadOnly ? unreadCount : totalCount;
+  const hasPrevious = page > 1;
+  const hasNext = offset + rows.length < filteredTotal;
+  const firstVisible = rows.length > 0 ? offset + 1 : 0;
+  const lastVisible = offset + rows.length;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
+      <HistoryBackLink fallbackHref="/app" label="Back" />
+
       <IndexStrip
-        srLabel={`Inbox · ${rows.length} notifications · ${unreadCount} unread${unreadOnly ? ' · unread filter on' : ''}`}
+        srLabel={`Inbox · ${totalCount} notifications · ${unreadCount} unread${unreadOnly ? ' · unread filter on' : ''}`}
         segments={[
           { value: 'INBOX' },
-          { label: 'total', value: rows.length },
+          { label: 'total', value: totalCount },
           { label: 'unread', value: unreadCount, signal: unreadCount > 0 },
         ]}
       >
@@ -78,20 +102,43 @@ export default async function InboxPage({
           action={unreadOnly ? 'Show all notifications' : 'Open objects'}
         />
       ) : (
-        <ul className="border-t border-border">
-          {rows.map((n) => (
-            <NotificationRow
-              key={n.id}
-              id={n.id}
-              kind={n.kind}
-              summary={n.summary}
-              entityId={n.entityId}
-              agentSuggestionId={n.agentSuggestionId}
-              createdAt={n.createdAt.toISOString()}
-              initiallyRead={n.readAt !== null}
-            />
-          ))}
-        </ul>
+        <>
+          <div className="flex items-center justify-between gap-3 border-y border-border py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+            <span>
+              Showing {firstVisible}-{lastVisible} of {filteredTotal}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Link
+                href={pageHref(page - 1, unreadOnly)}
+                aria-disabled={!hasPrevious}
+                className={`rounded-sm border px-2.5 py-1 transition-colors ${hasPrevious ? 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg' : 'pointer-events-none border-border text-fg-dim opacity-45'}`}
+              >
+                Previous
+              </Link>
+              <Link
+                href={pageHref(page + 1, unreadOnly)}
+                aria-disabled={!hasNext}
+                className={`rounded-sm border px-2.5 py-1 transition-colors ${hasNext ? 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg' : 'pointer-events-none border-border text-fg-dim opacity-45'}`}
+              >
+                Next
+              </Link>
+            </div>
+          </div>
+          <ul>
+            {rows.map((n) => (
+              <NotificationRow
+                key={n.id}
+                id={n.id}
+                kind={n.kind}
+                summary={n.summary}
+                entityId={n.entityId}
+                agentSuggestionId={n.agentSuggestionId}
+                createdAt={n.createdAt.toISOString()}
+                initiallyRead={n.readAt !== null}
+              />
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );

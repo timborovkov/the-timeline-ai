@@ -4,13 +4,12 @@ import {
   documents,
   documentVersions,
   entities,
-  notifications,
   type integrations,
   type meetingStatus,
   type mcpServers,
 } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
-import { and, eq, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import { and, eq, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 
@@ -26,7 +25,6 @@ export interface WorkStatusSummary {
   tasksOverdue: number;
   boardsTotal: number;
   upcomingCalendarEvents: number;
-  unreadNotifications: number;
   pendingApprovals: number;
 }
 
@@ -59,20 +57,12 @@ export function attentionCount(...counts: number[]): number {
 
 export function workAttentionCount({
   pendingApprovals,
-  unreadNotifications,
-  unreadApprovalNotifications,
   overdueTasks,
 }: {
   pendingApprovals: number;
-  unreadNotifications: number;
-  unreadApprovalNotifications: number;
   overdueTasks: number;
 }): number {
-  const unreadNonApprovalNotifications = Math.max(
-    0,
-    unreadNotifications - unreadApprovalNotifications,
-  );
-  return attentionCount(pendingApprovals, unreadNonApprovalNotifications, overdueTasks);
+  return attentionCount(pendingApprovals, overdueTasks);
 }
 
 function countIntegrationErrors(rows: IntegrationRow[]): number {
@@ -156,21 +146,6 @@ async function countTeamRows(conditions: Parameters<typeof and>): Promise<number
   return rows[0]?.total ?? 0;
 }
 
-async function countUnreadApprovalNotifications(teamId: string, userId: string): Promise<number> {
-  const rows = await db
-    .select({ total: sql<number>`COUNT(*)::int` })
-    .from(notifications)
-    .where(
-      and(
-        eq(notifications.teamId, teamId),
-        eq(notifications.userId, userId),
-        isNull(notifications.readAt),
-        isNotNull(notifications.agentSuggestionId),
-      ),
-    );
-  return rows[0]?.total ?? 0;
-}
-
 async function getWorkInventoryCounts(teamId: string, userId: string, now: Date, inTwoWeeks: Date) {
   const nowIso = now.toISOString();
   const inTwoWeeksIso = inTwoWeeks.toISOString();
@@ -227,19 +202,14 @@ export async function getWorkStatusSummary(scope: TeamScope): Promise<WorkStatus
   const now = new Date();
   const inTwoWeeks = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
   await scope.requireMembership();
-  const [inventory, unreadNotifications, unreadApprovalNotifications, pendingApprovals] =
-    await Promise.all([
-      getWorkInventoryCounts(scope.teamId, scope.userId, now, inTwoWeeks),
-      scope.objects.unreadNotificationCount(),
-      countUnreadApprovalNotifications(scope.teamId, scope.userId),
-      scope.suggestions.countPendingSuggestions(),
-    ]);
+  const [inventory, pendingApprovals] = await Promise.all([
+    getWorkInventoryCounts(scope.teamId, scope.userId, now, inTwoWeeks),
+    scope.suggestions.countPendingSuggestions(),
+  ]);
 
   return {
     attention: workAttentionCount({
       pendingApprovals,
-      unreadNotifications,
-      unreadApprovalNotifications,
       overdueTasks: inventory.tasksOverdue,
     }),
     objectsTotal: inventory.objectsTotal,
@@ -247,7 +217,6 @@ export async function getWorkStatusSummary(scope: TeamScope): Promise<WorkStatus
     tasksOverdue: inventory.tasksOverdue,
     boardsTotal: inventory.boardsTotal,
     upcomingCalendarEvents: inventory.upcomingCalendarEvents,
-    unreadNotifications,
     pendingApprovals,
   };
 }

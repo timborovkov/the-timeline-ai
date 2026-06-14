@@ -1,4 +1,5 @@
 import { teamInvites, teams, users } from '@timeline/db';
+import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
@@ -81,13 +82,38 @@ export default async function AppLayout({
     );
   }
 
-  const badges = await getNavAttentionSummary(active.teamId, session.user.id).catch(
-    (err: unknown) => {
+  const [badges, inbox] = await Promise.all([
+    getNavAttentionSummary(active.teamId, session.user.id).catch((err: unknown) => {
       console.error('[app-shell] failed to load navigation attention badges', err);
       reportCaughtError(err, { surface: 'layout', operation: 'nav_attention_summary' });
       return {};
-    },
-  );
+    }),
+    (async () => {
+      try {
+        const scope = withTeam(db, active.teamId, session.user.id);
+        const [unreadCount, notifications] = await Promise.all([
+          scope.objects.unreadNotificationCount(),
+          scope.objects.listNotifications({ limit: 5, order: 'latest' }),
+        ]);
+        return {
+          unreadCount,
+          notifications: notifications.map((notification) => ({
+            id: notification.id,
+            kind: notification.kind,
+            summary: notification.summary,
+            entityId: notification.entityId,
+            agentSuggestionId: notification.agentSuggestionId,
+            createdAt: notification.createdAt.toISOString(),
+            readAt: notification.readAt?.toISOString() ?? null,
+          })),
+        };
+      } catch (err) {
+        console.error('[app-shell] failed to load inbox preview', err);
+        reportCaughtError(err, { surface: 'layout', operation: 'inbox_preview' });
+        return { unreadCount: 0, notifications: [] };
+      }
+    })(),
+  ]);
 
   return (
     <AnalyticsProvider userId={session.user.id} teamId={active.teamId}>
@@ -104,6 +130,7 @@ export default async function AppLayout({
           }))}
           user={session.user}
           badges={badges}
+          inbox={inbox}
         >
           {children}
           {modal}
