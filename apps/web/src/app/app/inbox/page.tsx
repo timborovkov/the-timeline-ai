@@ -54,6 +54,9 @@ export default async function InboxPage({
     scope.objects.notificationCount({ unreadOnly: true }),
   ]);
   const filteredTotal = unreadOnly ? unreadCount : totalCount;
+  const lastPage = Math.max(Math.ceil(filteredTotal / PAGE_SIZE), 1);
+  if (page > lastPage) redirect(pageHref(lastPage, unreadOnly));
+
   const hasPrevious = page > 1;
   const hasNext = offset + rows.length < filteredTotal;
   const firstVisible = rows.length > 0 ? offset + 1 : 0;
