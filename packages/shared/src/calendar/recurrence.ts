@@ -1,5 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { rrulestr } from 'rrule';
+import rrule from 'rrule';
+
+const { rrulestr } = rrule;
 
 const RECURRENCE_WINDOW_MONTHS = 3;
 

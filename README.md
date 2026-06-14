@@ -103,8 +103,9 @@ For the full walkthrough, see
 pnpm dev                  # Next.js app + worker in watch mode
 pnpm validate             # format check, typecheck, lint, knip
 pnpm test                 # unit and integration tests (package suites run sequentially)
-pnpm test:ci              # focused CI test lane
+pnpm test:ci              # focused evals plus compiled-package import smoke checks
 pnpm test:eval            # fast deterministic agent and retrieval evals
+pnpm test:dist-imports    # build db/shared and import compiled runtime modules with Node
 pnpm e2e                  # Playwright core journey tests
 pnpm run doctor           # React Doctor scan for React/Next health regressions
 pnpm db:generate          # generate Drizzle migrations after schema changes
