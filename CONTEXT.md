@@ -85,6 +85,63 @@ rewrite unrelated workspace state; related Timeline-owned artifacts still need
 approval unless they are explicitly part of the same owned artifact cluster.
 _Avoid_: Trusted source when it implies general authority
 
+**Provider Connection**:
+A person-owned login or credential grant to an external provider, such as a
+team member's GitHub account. A provider connection can expose more external
+resources than a Timeline team should use, and only the owning team member can
+expand or revoke what any Timeline team may draw from it, even when that access
+is actively syncing. One provider connection may serve multiple Timeline teams,
+with a separate integration scope for each team. Native integrations share this
+ownership model even when their resource vocabulary differs by provider. If the
+owning team member leaves a Timeline team, that team's scopes using the
+provider connection pause until a current team member supplies a replacement
+connection. A team may use multiple provider connections for the same provider.
+Any team member may create their own provider connection; team admins decide
+which shared integration scopes use available provider connections.
+_Avoid_: Team connection, shared account
+
+**Integration Scope**:
+The team-approved set of external resources Timeline may sync through a
+provider connection, such as selected GitHub repositories, a GitHub
+organization, Linear projects, or Drive folders. Team admins may manage the
+active scope within the resources the provider-connection owner has made
+available to the team. A provider-native group such as a GitHub organization is
+a living scope that includes future resources in that group when the provider
+connection can access them. When access to a scoped resource is revoked, new
+sync stops while previously captured raw events remain part of the timeline.
+Team integration views emphasize integration scopes; personal connection views
+emphasize provider connections. A group-level scope can be replaced at the
+group level when another provider connection can access the same group. Only a
+provider-connection owner can browse resources that have not been shared with a
+Timeline team. A provider connection can be available to a team before any
+sources are actively syncing. Sharing a resource with a team records the
+connection owner's consent; activating it in an integration scope records the
+team's consent.
+_Avoid_: OAuth scope, provider access, manage scope
+
+**Active Source Path**:
+The single provider connection and scoped external resource that currently feed
+one external source into a Timeline team. A team should not sync the same
+external source through multiple provider connections at the same time. Team
+admins may replace an active source path with another provider connection that
+can access the same external source, without transferring the original
+connection owner's credentials.
+_Avoid_: Duplicate integration, parallel sync
+
+**Connection Attention**:
+A user-actionable state where a provider connection or integration scope needs
+someone to restore, replace, narrow, or retry external access before sync can
+continue normally. Connection attention is surfaced to the people who can act,
+such as the connection owner for reconnects or team admins for replacement.
+Deterministic auth, permission, or owner-availability problems become
+connection attention immediately; transient provider instability should become
+attention only after it persists. Durable connection attention may trigger email
+when it first appears or changes category, but routine transient sync failures
+should avoid noisy mail. Product surfaces should show connection attention where
+users can notice it quickly, then send them to the integration view for details
+and action.
+_Avoid_: Raw integration error, generic failure
+
 **Artifact Cluster**:
 A set of derived workspace artifacts that represent the same real-world
 commitment, object, schedule, decision, or follow-up across product surfaces.

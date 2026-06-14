@@ -9,17 +9,14 @@ const fakes = vi.hoisted(() => ({
   getProvider: vi.fn(),
   handleOAuthCallback: vi.fn(),
   requireMembership: vi.fn(),
-  resolveVisibilityDefault: vi.fn(),
-  createIntegration: vi.fn(),
+  upsertProviderConnection: vi.fn(),
   recordAudit: vi.fn(),
-  safeMarkOnboardingStep: vi.fn(),
   trackProductEventBestEffort: vi.fn(),
   loggerWarn: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/onboarding', () => ({ safeMarkOnboardingStep: fakes.safeMarkOnboardingStep }));
 vi.mock('@/lib/analytics', () => ({
   trackProductEventBestEffort: fakes.trackProductEventBestEffort,
 }));
@@ -32,11 +29,8 @@ vi.mock('@timeline/shared/logger', () => ({
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.requireMembership,
-    timeline: {
-      resolveVisibilityDefault: fakes.resolveVisibilityDefault,
-    },
     integrations: {
-      createIntegration: fakes.createIntegration,
+      upsertProviderConnection: fakes.upsertProviderConnection,
       recordAudit: fakes.recordAudit,
     },
   }),
@@ -46,7 +40,7 @@ const { GET } = await import('./route.js');
 
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
-const INTEGRATION_ID = '55555555-5555-4555-8555-555555555555';
+const CONNECTION_ID = '55555555-5555-4555-8555-555555555555';
 const PUBLIC_ORIGIN = 'https://thetimeline.cc';
 
 function signState(): string {
@@ -74,10 +68,8 @@ beforeEach(() => {
   delete process.env.NEXTAUTH_URL;
   delete process.env.VERCEL_URL;
   fakes.auth.mockResolvedValue({ user: { id: USER_ID } });
-  fakes.requireMembership.mockResolvedValue('admin');
-  fakes.resolveVisibilityDefault.mockResolvedValue({ visibility: 'team', visibilityUserIds: [] });
-  fakes.createIntegration.mockResolvedValue({ id: INTEGRATION_ID });
-  fakes.safeMarkOnboardingStep.mockResolvedValue(false);
+  fakes.requireMembership.mockResolvedValue('member');
+  fakes.upsertProviderConnection.mockResolvedValue({ id: CONNECTION_ID });
   fakes.getProvider.mockReturnValue({ handleOAuthCallback: fakes.handleOAuthCallback });
   fakes.handleOAuthCallback.mockResolvedValue({
     displayName: 'timeline-ai',
@@ -98,11 +90,18 @@ describe('GET /api/integrations/[provider]/callback', () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe(
-      `${PUBLIC_ORIGIN}/app/team/integrations?connected=github&integrationId=${INTEGRATION_ID}`,
+      `${PUBLIC_ORIGIN}/app/me/connections?connected=github&providerConnectionId=${CONNECTION_ID}`,
     );
     expect(fakes.handleOAuthCallback).toHaveBeenCalledWith({
       code: 'auth-code',
       redirectUri: `${PUBLIC_ORIGIN}/api/integrations/github/callback`,
+    });
+    expect(fakes.upsertProviderConnection).toHaveBeenCalledWith({
+      provider: 'github',
+      displayName: 'timeline-ai',
+      externalAccountId: 'owner/repo',
+      scopes: ['repo'],
+      tokens: { accessToken: 'encrypted' },
     });
   });
 

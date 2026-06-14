@@ -2628,7 +2628,8 @@ export interface NotificationRow {
     | 'task_overdue'
     | 'follow_up_overdue'
     | 'mention'
-    | 'agent_suggestion';
+    | 'agent_suggestion'
+    | 'connection_attention';
   entityId: string | null;
   objectChangeId: string | null;
   agentSuggestionId: string | null;

@@ -38,6 +38,42 @@ export const integrationProvider = pgEnum('integration_provider', [
   'mcp',
 ]);
 
+export const connectionAttentionCategory = pgEnum('connection_attention_category', [
+  'needs_reconnect',
+  'needs_new_owner',
+  'access_changed',
+  'sync_error',
+]);
+
+export const providerConnections = pgTable(
+  'provider_connections',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    ownerUserId: uuid('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    provider: integrationProvider('provider').notNull(),
+    displayName: text('display_name').notNull(),
+    externalAccountId: text('external_account_id').notNull(),
+    scopes: text('scopes').array(),
+    authSecretCiphertext: bytea('auth_secret_ciphertext').notNull(),
+    authSecretIv: bytea('auth_secret_iv').notNull(),
+    authSecretTag: bytea('auth_secret_tag').notNull(),
+    lastError: text('last_error'),
+    lastConnectedAt: timestamp('last_connected_at', { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('provider_connections_owner_idx').on(table.ownerUserId),
+    uniqueIndex('provider_connections_owner_provider_account_unq').on(
+      table.ownerUserId,
+      table.provider,
+      table.externalAccountId,
+    ),
+  ],
+);
+
 export const integrations = pgTable(
   'integrations',
   {
@@ -46,6 +82,9 @@ export const integrations = pgTable(
       .notNull()
       .references(() => teams.id, { onDelete: 'cascade' }),
     connectedByUserId: uuid('connected_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    providerConnectionId: uuid('provider_connection_id').references(() => providerConnections.id, {
       onDelete: 'set null',
     }),
     provider: integrationProvider('provider').notNull(),
@@ -73,9 +112,39 @@ export const integrations = pgTable(
   },
   (table) => [
     index('integrations_team_provider_idx').on(table.teamId, table.provider),
+    index('integrations_provider_connection_idx').on(table.providerConnectionId),
     uniqueIndex('integrations_team_provider_account_unq')
       .on(table.teamId, table.provider, table.externalAccountId)
       .where(sql`${table.externalAccountId} IS NOT NULL`),
+  ],
+);
+
+export const teamProviderResourceShares = pgTable(
+  'team_provider_resource_shares',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    providerConnectionId: uuid('provider_connection_id')
+      .notNull()
+      .references(() => providerConnections.id, { onDelete: 'cascade' }),
+    resourceKind: text('resource_kind').notNull(),
+    externalId: text('external_id').notNull(),
+    externalLabel: text('external_label'),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('team_provider_resource_shares_team_idx').on(table.teamId),
+    index('team_provider_resource_shares_connection_idx').on(table.providerConnectionId),
+    uniqueIndex('team_provider_resource_shares_unq').on(
+      table.teamId,
+      table.providerConnectionId,
+      table.resourceKind,
+      table.externalId,
+    ),
   ],
 );
 
@@ -111,6 +180,9 @@ export const integrationSelections = pgTable(
     integrationId: uuid('integration_id')
       .notNull()
       .references(() => integrations.id, { onDelete: 'cascade' }),
+    resourceShareId: uuid('resource_share_id').references(() => teamProviderResourceShares.id, {
+      onDelete: 'set null',
+    }),
     selectionKind: text('selection_kind').notNull(),
     externalId: text('external_id').notNull(),
     externalLabel: text('external_label'),
@@ -124,6 +196,38 @@ export const integrationSelections = pgTable(
       table.externalId,
     ),
     index('integration_selections_integration_idx').on(table.integrationId),
+    index('integration_selections_share_idx').on(table.resourceShareId),
+  ],
+);
+
+export const connectionAttention = pgTable(
+  'connection_attention',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    providerConnectionId: uuid('provider_connection_id').references(() => providerConnections.id, {
+      onDelete: 'cascade',
+    }),
+    integrationId: uuid('integration_id').references(() => integrations.id, {
+      onDelete: 'cascade',
+    }),
+    resourceShareId: uuid('resource_share_id').references(() => teamProviderResourceShares.id, {
+      onDelete: 'cascade',
+    }),
+    category: connectionAttentionCategory('category').notNull(),
+    summary: text('summary').notNull(),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).defaultNow().notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    lastEmailedAt: timestamp('last_emailed_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('connection_attention_team_idx').on(table.teamId),
+    index('connection_attention_provider_connection_idx').on(table.providerConnectionId),
+    index('connection_attention_integration_idx').on(table.integrationId),
+    index('connection_attention_resource_share_idx').on(table.resourceShareId),
   ],
 );
 

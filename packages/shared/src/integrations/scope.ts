@@ -1,20 +1,27 @@
 import {
   type Db,
   auditLog,
+  connectionAttention,
   entities,
   integrationAuditLog,
   integrationProvider,
   integrationSelections,
   integrationSyncState,
   integrations as integrationsTable,
+  notifications,
+  providerConnections,
   rawEvents,
+  teamProviderResourceShares,
   teamMembers,
+  teams,
+  users,
 } from '@timeline/db';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
-import type { IntegrationRow } from '#src/integrations/types.js';
+import type { IntegrationRow, ProviderConnectionRow } from '#src/integrations/types.js';
 
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
+import { sendConnectionAttentionEmail } from '#src/email/outbound.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
 // Phase 11 — Team-scoped integration helpers. Every read/write goes
@@ -28,10 +35,27 @@ export interface CreateIntegrationInput {
   provider: IntegrationProviderName;
   displayName: string;
   externalAccountId?: string | null;
+  providerConnectionId?: string | null;
   scopes?: string[];
   tokens?: Record<string, unknown>;
   visibilityDefault?: 'team' | 'private' | 'specific_users';
   visibilityDefaultUserIds?: string[] | null;
+}
+
+export interface UpsertProviderConnectionInput {
+  provider: Exclude<IntegrationProviderName, 'mcp'>;
+  displayName: string;
+  externalAccountId: string;
+  scopes?: string[];
+  tokens: Record<string, unknown>;
+}
+
+export interface ConnectionAttentionInput {
+  providerConnectionId?: string | null;
+  integrationId?: string | null;
+  resourceShareId?: string | null;
+  category: 'needs_reconnect' | 'needs_new_owner' | 'access_changed' | 'sync_error';
+  summary: string;
 }
 
 export function createIntegrationScope(deps: {
@@ -64,12 +88,126 @@ export function createIntegrationScope(deps: {
 
   async function getIntegrationTokens(id: string): Promise<Record<string, unknown> | null> {
     const row = await getIntegration(id);
+    if (row?.providerConnectionId) {
+      return getProviderConnectionTokens(row.providerConnectionId);
+    }
     if (!row?.authSecretCiphertext || !row.authSecretIv || !row.authSecretTag) return null;
     return decryptJson({
       ciphertext: row.authSecretCiphertext,
       iv: row.authSecretIv,
       tag: row.authSecretTag,
     }) as Record<string, unknown>;
+  }
+
+  async function listOwnedProviderConnections(): Promise<ProviderConnectionRow[]> {
+    await ensureMember();
+    return db
+      .select()
+      .from(providerConnections)
+      .where(eq(providerConnections.ownerUserId, userId))
+      .orderBy(desc(providerConnections.updatedAt));
+  }
+
+  async function getProviderConnection(id: string): Promise<ProviderConnectionRow | null> {
+    await ensureMember();
+    const rows = await db
+      .select()
+      .from(providerConnections)
+      .where(eq(providerConnections.id, id))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  async function getOwnedProviderConnection(id: string): Promise<ProviderConnectionRow | null> {
+    await ensureMember();
+    const rows = await db
+      .select()
+      .from(providerConnections)
+      .where(and(eq(providerConnections.id, id), eq(providerConnections.ownerUserId, userId)))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  async function getProviderConnectionTokens(id: string): Promise<Record<string, unknown> | null> {
+    const row = await getProviderConnection(id);
+    if (!row) return null;
+    return decryptJson({
+      ciphertext: row.authSecretCiphertext,
+      iv: row.authSecretIv,
+      tag: row.authSecretTag,
+    }) as Record<string, unknown>;
+  }
+
+  async function upsertProviderConnection(
+    input: UpsertProviderConnectionInput,
+  ): Promise<ProviderConnectionRow> {
+    await ensureMember();
+    const encrypted = encryptJson(input.tokens);
+    const rows = await db
+      .insert(providerConnections)
+      .values({
+        ownerUserId: userId,
+        provider: input.provider,
+        displayName: input.displayName,
+        externalAccountId: input.externalAccountId,
+        scopes: input.scopes ?? [],
+        authSecretCiphertext: encrypted.ciphertext,
+        authSecretIv: encrypted.iv,
+        authSecretTag: encrypted.tag,
+        lastError: null,
+        lastConnectedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [
+          providerConnections.ownerUserId,
+          providerConnections.provider,
+          providerConnections.externalAccountId,
+        ],
+        set: {
+          displayName: input.displayName,
+          scopes: input.scopes ?? [],
+          authSecretCiphertext: encrypted.ciphertext,
+          authSecretIv: encrypted.iv,
+          authSecretTag: encrypted.tag,
+          lastError: null,
+          lastConnectedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) throw new Error('Failed to create provider connection');
+    return row;
+  }
+
+  async function deleteOwnedProviderConnection(id: string): Promise<void> {
+    await ensureMember();
+    const connection = await getOwnedProviderConnection(id);
+    if (!connection) return;
+    const affected = await db
+      .select({ teamId: integrationsTable.teamId, integrationId: integrationsTable.id })
+      .from(integrationsTable)
+      .where(eq(integrationsTable.providerConnectionId, id));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(integrationsTable)
+        .set({
+          enabled: false,
+          lastError: 'Provider connection deleted — replacement required',
+          updatedAt: new Date(),
+        })
+        .where(eq(integrationsTable.providerConnectionId, id));
+      await tx.delete(providerConnections).where(eq(providerConnections.id, id));
+    });
+    await Promise.all(
+      affected.map((row) =>
+        adminRecordConnectionAttention(db, row.teamId, {
+          integrationId: row.integrationId,
+          category: 'needs_new_owner',
+          summary: `${connection.displayName} was deleted; choose a replacement connection.`,
+        }),
+      ),
+    );
   }
 
   async function createIntegration(input: CreateIntegrationInput): Promise<IntegrationRow> {
@@ -110,6 +248,7 @@ export function createIntegrationScope(deps: {
         .values({
           teamId,
           connectedByUserId: userId,
+          providerConnectionId: input.providerConnectionId ?? null,
           provider: input.provider,
           displayName: input.displayName,
           externalAccountId,
@@ -139,6 +278,7 @@ export function createIntegrationScope(deps: {
             // id, which can mis-attribute or fail on visibility checks
             // if that user has since left the team.
             connectedByUserId: userId,
+            providerConnectionId: input.providerConnectionId ?? null,
             displayName: input.displayName,
             scopes: input.scopes ?? [],
             authSecretCiphertext: encrypted?.ciphertext ?? null,
@@ -263,6 +403,299 @@ export function createIntegrationScope(deps: {
       .update(integrationsTable)
       .set({ lastSyncedAt: new Date(), lastError: null, updatedAt: new Date() })
       .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)));
+  }
+
+  // ---------------- provider resource sharing ----------------
+
+  async function listTeamResourceShares() {
+    await ensureMember('admin');
+    return db
+      .select({
+        share: teamProviderResourceShares,
+        connection: providerConnections,
+      })
+      .from(teamProviderResourceShares)
+      .innerJoin(
+        providerConnections,
+        eq(teamProviderResourceShares.providerConnectionId, providerConnections.id),
+      )
+      .where(eq(teamProviderResourceShares.teamId, teamId))
+      .orderBy(desc(teamProviderResourceShares.updatedAt));
+  }
+
+  async function listOwnedTeamResourceShares() {
+    await ensureMember();
+    return db
+      .select({
+        share: teamProviderResourceShares,
+        connection: providerConnections,
+      })
+      .from(teamProviderResourceShares)
+      .innerJoin(
+        providerConnections,
+        eq(teamProviderResourceShares.providerConnectionId, providerConnections.id),
+      )
+      .where(
+        and(
+          eq(teamProviderResourceShares.teamId, teamId),
+          eq(providerConnections.ownerUserId, userId),
+        ),
+      )
+      .orderBy(desc(teamProviderResourceShares.updatedAt));
+  }
+
+  async function shareProviderResources(
+    providerConnectionId: string,
+    resources: { kind: string; externalId: string; label?: string | null }[],
+  ): Promise<void> {
+    await ensureMember();
+    const connection = await getOwnedProviderConnection(providerConnectionId);
+    if (!connection) throw new Error('Provider connection not found');
+    const revokedForAttention: (typeof teamProviderResourceShares.$inferSelect)[] = [];
+    await db.transaction(async (tx) => {
+      const keepKeys = new Set(resources.map((r) => `${r.kind}\x00${r.externalId}`));
+      const existing = await tx
+        .select()
+        .from(teamProviderResourceShares)
+        .where(
+          and(
+            eq(teamProviderResourceShares.teamId, teamId),
+            eq(teamProviderResourceShares.providerConnectionId, providerConnectionId),
+          ),
+        );
+      const revokedShares = existing.filter(
+        (share) => !keepKeys.has(`${share.resourceKind}\x00${share.externalId}`),
+      );
+      revokedForAttention.push(...revokedShares);
+      for (const share of revokedShares) {
+        await tx
+          .update(teamProviderResourceShares)
+          .set({ revokedAt: new Date(), updatedAt: new Date() })
+          .where(eq(teamProviderResourceShares.id, share.id));
+        await tx
+          .delete(integrationSelections)
+          .where(eq(integrationSelections.resourceShareId, share.id));
+      }
+      if (resources.length > 0) {
+        await tx
+          .insert(teamProviderResourceShares)
+          .values(
+            resources.map((resource) => ({
+              teamId,
+              providerConnectionId,
+              resourceKind: resource.kind,
+              externalId: resource.externalId,
+              externalLabel: resource.label ?? null,
+              revokedAt: null,
+              updatedAt: new Date(),
+            })),
+          )
+          .onConflictDoUpdate({
+            target: [
+              teamProviderResourceShares.teamId,
+              teamProviderResourceShares.providerConnectionId,
+              teamProviderResourceShares.resourceKind,
+              teamProviderResourceShares.externalId,
+            ],
+            set: {
+              externalLabel: sql`excluded.external_label`,
+              revokedAt: null,
+              updatedAt: new Date(),
+            },
+          });
+      }
+      await tx.insert(auditLog).values({
+        teamId,
+        actorUserId: userId,
+        action: 'integration.resource_share',
+        targetType: 'provider_connection',
+        targetId: providerConnectionId,
+        targetVisibility: 'team',
+        metadata: { provider: connection.provider, resource_count: resources.length },
+      });
+    });
+    await Promise.all(
+      revokedForAttention.map((share) =>
+        recordConnectionAttention({
+          providerConnectionId,
+          resourceShareId: share.id,
+          category: 'access_changed',
+          summary: `${share.externalLabel ?? share.externalId} was revoked by ${connection.displayName}.`,
+        }),
+      ),
+    );
+  }
+
+  async function revokeProviderResourceShare(resourceShareId: string): Promise<void> {
+    await ensureMember();
+    const rows = await db
+      .select({
+        share: teamProviderResourceShares,
+        connection: providerConnections,
+      })
+      .from(teamProviderResourceShares)
+      .innerJoin(
+        providerConnections,
+        eq(teamProviderResourceShares.providerConnectionId, providerConnections.id),
+      )
+      .where(
+        and(
+          eq(teamProviderResourceShares.id, resourceShareId),
+          eq(teamProviderResourceShares.teamId, teamId),
+          eq(providerConnections.ownerUserId, userId),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row) throw new Error('Resource share not found');
+    await db.transaction(async (tx) => {
+      await tx
+        .update(teamProviderResourceShares)
+        .set({ revokedAt: new Date(), updatedAt: new Date() })
+        .where(eq(teamProviderResourceShares.id, resourceShareId));
+      await tx
+        .delete(integrationSelections)
+        .where(eq(integrationSelections.resourceShareId, resourceShareId));
+      await tx.insert(auditLog).values({
+        teamId,
+        actorUserId: userId,
+        action: 'integration.resource_revoke',
+        targetType: 'provider_connection',
+        targetId: row.connection.id,
+        targetVisibility: 'team',
+        metadata: {
+          provider: row.connection.provider,
+          resource_kind: row.share.resourceKind,
+          external_id: row.share.externalId,
+        },
+      });
+    });
+    await recordConnectionAttention({
+      providerConnectionId: row.connection.id,
+      resourceShareId,
+      category: 'access_changed',
+      summary: `${row.share.externalLabel ?? row.share.externalId} was revoked by ${row.connection.displayName}.`,
+    });
+  }
+
+  async function activateSharedResources(input: {
+    providerConnectionId: string;
+    resourceShareIds: string[];
+  }): Promise<IntegrationRow> {
+    await ensureMember('admin');
+    const connectionRows = await db
+      .select()
+      .from(providerConnections)
+      .where(eq(providerConnections.id, input.providerConnectionId))
+      .limit(1);
+    const connection = connectionRows[0];
+    if (!connection) throw new Error('Provider connection not found');
+    const shares =
+      input.resourceShareIds.length > 0
+        ? await db
+            .select()
+            .from(teamProviderResourceShares)
+            .where(
+              and(
+                eq(teamProviderResourceShares.teamId, teamId),
+                eq(teamProviderResourceShares.providerConnectionId, input.providerConnectionId),
+                isNull(teamProviderResourceShares.revokedAt),
+                inArray(teamProviderResourceShares.id, input.resourceShareIds),
+              ),
+            )
+        : [];
+    if (shares.length !== input.resourceShareIds.length) {
+      throw new Error('One or more selected sources are unavailable');
+    }
+
+    return db.transaction(async (tx) => {
+      const integrationRows = await tx
+        .insert(integrationsTable)
+        .values({
+          teamId,
+          connectedByUserId: connection.ownerUserId,
+          providerConnectionId: connection.id,
+          provider: connection.provider,
+          displayName: connection.displayName,
+          externalAccountId: connection.externalAccountId,
+          scopes: connection.scopes ?? [],
+          visibilityDefault: 'team',
+          visibilityDefaultUserIds: null,
+        })
+        .onConflictDoUpdate({
+          target: [
+            integrationsTable.teamId,
+            integrationsTable.provider,
+            integrationsTable.externalAccountId,
+          ],
+          targetWhere: sql`${integrationsTable.externalAccountId} IS NOT NULL`,
+          set: {
+            connectedByUserId: connection.ownerUserId,
+            providerConnectionId: connection.id,
+            displayName: connection.displayName,
+            scopes: connection.scopes ?? [],
+            enabled: true,
+            lastError: null,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+      const integration = integrationRows[0];
+      if (!integration) throw new Error('Failed to activate sources');
+      await tx
+        .delete(integrationSelections)
+        .where(eq(integrationSelections.integrationId, integration.id));
+      const teamIntegrationRows = await tx
+        .select({ id: integrationsTable.id })
+        .from(integrationsTable)
+        .where(eq(integrationsTable.teamId, teamId));
+      const teamIntegrationIds = teamIntegrationRows.map((row) => row.id);
+      for (const share of shares) {
+        await tx
+          .delete(integrationSelections)
+          .where(
+            and(
+              inArray(integrationSelections.integrationId, teamIntegrationIds),
+              eq(integrationSelections.selectionKind, share.resourceKind),
+              eq(integrationSelections.externalId, share.externalId),
+            ),
+          );
+      }
+      if (shares.length > 0) {
+        await tx.insert(integrationSelections).values(
+          shares.map((share) => ({
+            integrationId: integration.id,
+            resourceShareId: share.id,
+            selectionKind: share.resourceKind,
+            externalId: share.externalId,
+            externalLabel: share.externalLabel,
+          })),
+        );
+      }
+      await tx.insert(auditLog).values({
+        teamId,
+        actorUserId: userId,
+        action: 'integration.settings_change',
+        targetType: 'integration',
+        targetId: integration.id,
+        targetVisibility: 'team',
+        metadata: { field: 'active_source_paths', selection_count: shares.length },
+      });
+      return integration;
+    });
+  }
+
+  async function listConnectionAttention() {
+    await ensureMember();
+    return db
+      .select()
+      .from(connectionAttention)
+      .where(and(eq(connectionAttention.teamId, teamId), isNull(connectionAttention.resolvedAt)))
+      .orderBy(desc(connectionAttention.lastSeenAt));
+  }
+
+  async function recordConnectionAttention(input: ConnectionAttentionInput): Promise<void> {
+    await adminRecordConnectionAttention(db, teamId, input);
   }
 
   // ---------------- selections (folders / projects / repos) ----------------
@@ -455,6 +888,12 @@ export function createIntegrationScope(deps: {
     listIntegrations,
     getIntegration,
     getIntegrationTokens,
+    listOwnedProviderConnections,
+    getProviderConnection,
+    getOwnedProviderConnection,
+    getProviderConnectionTokens,
+    upsertProviderConnection,
+    deleteOwnedProviderConnection,
     createIntegration,
     updateIntegrationTokens,
     setIntegrationEnabled,
@@ -462,6 +901,13 @@ export function createIntegrationScope(deps: {
     deleteIntegration,
     recordError,
     markSynced,
+    listTeamResourceShares,
+    listOwnedTeamResourceShares,
+    shareProviderResources,
+    revokeProviderResourceShare,
+    activateSharedResources,
+    listConnectionAttention,
+    recordConnectionAttention,
     listSelections,
     setSelections,
     loadCursor,
@@ -504,11 +950,49 @@ export function adminDecryptTokens(row: IntegrationRow): Record<string, unknown>
   }) as Record<string, unknown>;
 }
 
+export async function adminLoadProviderConnection(
+  db: Db,
+  providerConnectionId: string,
+): Promise<ProviderConnectionRow | null> {
+  const rows = await db
+    .select()
+    .from(providerConnections)
+    .where(eq(providerConnections.id, providerConnectionId))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export function decryptProviderConnectionTokens(
+  row: ProviderConnectionRow,
+): Record<string, unknown> {
+  return decryptJson({
+    ciphertext: row.authSecretCiphertext,
+    iv: row.authSecretIv,
+    tag: row.authSecretTag,
+  }) as Record<string, unknown>;
+}
+
+export async function adminDecryptIntegrationTokens(
+  db: Db,
+  row: IntegrationRow,
+): Promise<Record<string, unknown> | null> {
+  if (row.providerConnectionId) {
+    const connection = await adminLoadProviderConnection(db, row.providerConnectionId);
+    return connection ? decryptProviderConnectionTokens(connection) : null;
+  }
+  return adminDecryptTokens(row);
+}
+
 export async function adminPersistTokens(
   db: Db,
   integrationId: string,
   tokens: Record<string, unknown>,
 ): Promise<void> {
+  const integration = await adminLoadIntegration(db, integrationId);
+  if (integration?.providerConnectionId) {
+    await adminPersistProviderConnectionTokens(db, integration.providerConnectionId, tokens);
+    return;
+  }
   const enc = encryptJson(tokens);
   await db
     .update(integrationsTable)
@@ -519,6 +1003,24 @@ export async function adminPersistTokens(
       updatedAt: new Date(),
     })
     .where(eq(integrationsTable.id, integrationId));
+}
+
+export async function adminPersistProviderConnectionTokens(
+  db: Db,
+  providerConnectionId: string,
+  tokens: Record<string, unknown>,
+): Promise<void> {
+  const enc = encryptJson(tokens);
+  await db
+    .update(providerConnections)
+    .set({
+      authSecretCiphertext: enc.ciphertext,
+      authSecretIv: enc.iv,
+      authSecretTag: enc.tag,
+      lastError: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(providerConnections.id, providerConnectionId));
 }
 
 export async function adminVerifyTeamMember(
@@ -619,6 +1121,134 @@ export async function adminRecordError(
     .update(integrationsTable)
     .set({ lastError: error, updatedAt: new Date() })
     .where(eq(integrationsTable.id, integrationId));
+}
+
+export async function adminRecordConnectionAttention(
+  db: Db,
+  teamId: string,
+  input: ConnectionAttentionInput,
+): Promise<void> {
+  const conditions = [
+    eq(connectionAttention.teamId, teamId),
+    eq(connectionAttention.category, input.category),
+    isNull(connectionAttention.resolvedAt),
+    input.providerConnectionId
+      ? eq(connectionAttention.providerConnectionId, input.providerConnectionId)
+      : isNull(connectionAttention.providerConnectionId),
+    input.integrationId
+      ? eq(connectionAttention.integrationId, input.integrationId)
+      : isNull(connectionAttention.integrationId),
+    input.resourceShareId
+      ? eq(connectionAttention.resourceShareId, input.resourceShareId)
+      : isNull(connectionAttention.resourceShareId),
+  ];
+  const existing = await db
+    .select({ id: connectionAttention.id, lastEmailedAt: connectionAttention.lastEmailedAt })
+    .from(connectionAttention)
+    .where(and(...conditions))
+    .limit(1);
+  const existingRow = existing[0];
+  if (existingRow) {
+    await db
+      .update(connectionAttention)
+      .set({ summary: input.summary, lastSeenAt: new Date() })
+      .where(eq(connectionAttention.id, existingRow.id));
+  } else {
+    const inserted = await db
+      .insert(connectionAttention)
+      .values({
+        teamId,
+        providerConnectionId: input.providerConnectionId ?? null,
+        integrationId: input.integrationId ?? null,
+        resourceShareId: input.resourceShareId ?? null,
+        category: input.category,
+        summary: input.summary,
+      })
+      .returning({ id: connectionAttention.id });
+    const attentionId = inserted[0]?.id ?? null;
+    await notifyConnectionAttentionActors(db, teamId, input, attentionId);
+  }
+}
+
+async function notifyConnectionAttentionActors(
+  db: Db,
+  teamId: string,
+  input: ConnectionAttentionInput,
+  attentionId: string | null,
+): Promise<void> {
+  const recipients = new Set<string>();
+  if (
+    (input.category === 'needs_reconnect' || input.category === 'access_changed') &&
+    input.providerConnectionId
+  ) {
+    const connection = await adminLoadProviderConnection(db, input.providerConnectionId);
+    if (connection) recipients.add(connection.ownerUserId);
+  }
+  if (input.category === 'needs_new_owner' || input.category === 'sync_error') {
+    const admins = await db
+      .select({ userId: teamMembers.userId })
+      .from(teamMembers)
+      .where(
+        and(
+          eq(teamMembers.teamId, teamId),
+          isNull(teamMembers.removedAt),
+          or(eq(teamMembers.role, 'owner'), eq(teamMembers.role, 'admin')),
+        ),
+      );
+    for (const admin of admins) recipients.add(admin.userId);
+  }
+  if (recipients.size === 0) return;
+  await db.insert(notifications).values(
+    [...recipients].map((recipient) => ({
+      teamId,
+      userId: recipient,
+      kind: 'connection_attention' as const,
+      summary: input.summary,
+      payload: {
+        category: input.category,
+        provider_connection_id: input.providerConnectionId ?? null,
+        integration_id: input.integrationId ?? null,
+        resource_share_id: input.resourceShareId ?? null,
+      },
+    })),
+  );
+  await emailConnectionAttentionActors(db, teamId, input, [...recipients], attentionId);
+}
+
+async function emailConnectionAttentionActors(
+  db: Db,
+  teamId: string,
+  input: ConnectionAttentionInput,
+  recipientIds: string[],
+  attentionId: string | null,
+): Promise<void> {
+  if (!attentionId || recipientIds.length === 0) return;
+  const [teamRow] = await db
+    .select({ name: teams.name })
+    .from(teams)
+    .where(eq(teams.id, teamId))
+    .limit(1);
+  const recipients = await db
+    .select({ email: users.email })
+    .from(users)
+    .where(inArray(users.id, recipientIds));
+  const actionUrl = `${process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc'}/app/team/integrations`;
+  const results = await Promise.all(
+    recipients.map((recipient) =>
+      sendConnectionAttentionEmail({
+        to: recipient.email,
+        teamName: teamRow?.name ?? 'Timeline',
+        summary: input.summary,
+        actionUrl,
+      }),
+    ),
+  );
+  if (results.some((result) => result.ok)) {
+    await db
+      .update(connectionAttention)
+      .set({ lastEmailedAt: new Date() })
+      .where(eq(connectionAttention.id, attentionId));
+  }
 }
 
 export async function adminListSelections(

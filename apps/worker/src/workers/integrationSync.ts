@@ -28,7 +28,7 @@ interface IntegrationSyncDeps {
   db: Db;
 }
 
-async function runOneIntegration(
+export async function runOneIntegration(
   db: Db,
   integrationId: string,
   kind: 'backfill' | 'incremental',
@@ -74,9 +74,34 @@ async function runOneIntegration(
       // additive.
       return;
     }
-    const tokens = integrationsLib.adminDecryptTokens(integration);
+    if (integration.connectedByUserId) {
+      const ownerStillMember = await integrationsLib.adminVerifyTeamMember(
+        db,
+        integration.teamId,
+        integration.connectedByUserId,
+      );
+      if (!ownerStillMember) {
+        const msg = 'Connection owner left team — choose a replacement connection';
+        await integrationsLib.adminRecordError(db, integrationId, msg);
+        await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
+          providerConnectionId: integration.providerConnectionId,
+          integrationId,
+          category: 'needs_new_owner',
+          summary: msg,
+        });
+        return;
+      }
+    }
+    const tokens = await integrationsLib.adminDecryptIntegrationTokens(db, integration);
     if (!tokens) {
-      await integrationsLib.adminRecordError(db, integrationId, 'No tokens — reconnect required');
+      const msg = 'No tokens — reconnect required';
+      await integrationsLib.adminRecordError(db, integrationId, msg);
+      await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
+        providerConnectionId: integration.providerConnectionId,
+        integrationId,
+        category: 'needs_reconnect',
+        summary: msg,
+      });
       return;
     }
     const provider = integrationsLib.getProvider(integration.provider);
@@ -235,6 +260,16 @@ async function runOneIntegration(
       const msg = err instanceof Error ? err.message : String(err);
       log.warn({ err, integrationId }, 'integration sync failed');
       await integrationsLib.adminRecordError(db, integrationId, msg);
+      const attentionCategory =
+        /reconnect|required|expired|401|403|404|unauthorized|forbidden/i.test(msg)
+          ? 'needs_reconnect'
+          : 'sync_error';
+      await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
+        providerConnectionId: integration.providerConnectionId,
+        integrationId,
+        category: attentionCategory,
+        summary: msg.slice(0, 500),
+      });
       await integrationsLib.adminRecordAudit(
         db,
         integration.teamId,

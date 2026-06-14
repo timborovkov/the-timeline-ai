@@ -26,6 +26,7 @@ export const notificationKind = pgEnum('notification_kind', [
   'follow_up_overdue',
   'mention',
   'agent_suggestion',
+  'connection_attention',
 ]);
 
 export const notifications = pgTable(

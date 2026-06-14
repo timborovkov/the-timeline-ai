@@ -2,12 +2,16 @@ import { PGlite } from '@electric-sql/pglite';
 import {
   auditLog,
   calendarEvents,
+  connectionAttention,
   documents,
   documentVersions,
   integrations,
+  integrationSelections,
   objectIdentityFacets,
   objectNotes,
+  providerConnections,
   rawEvents,
+  teamProviderResourceShares,
   teamVisibilityDefaults,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
@@ -16,6 +20,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 
+import { resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
+import { resetEnvForTests } from '#src/env.js';
+import { adminDecryptIntegrationTokens } from '#src/integrations/scope.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -116,6 +123,9 @@ describe('withTeam namespaced port', () => {
   let db: ReturnType<typeof drizzle>;
 
   beforeEach(async () => {
+    process.env.SECRETS_ENCRYPTION_KEY = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+    resetEnvForTests();
+    resetSecretsKeyCacheForTests();
     pg = new PGlite();
     await applyDbMigrations(pg);
     await seed(pg);
@@ -1285,6 +1295,121 @@ describe('withTeam namespaced port', () => {
         'team',
       ),
     ).rejects.toThrow('Integration not found');
+  });
+
+  // Provider connections are personal grants, while team integration scopes are
+  // admin-activated source paths. This regression covers the ownership,
+  // activation, duplicate-source, token, and revocation contracts together.
+  it('shares owner resources, activates team sources, replaces duplicate source paths, and records revoked-source attention', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const memberScope = withTeam(db as never, TEAM_A, USER_B);
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+
+    const ownerConnection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'github',
+      displayName: 'GitHub — owner',
+      externalAccountId: 'owner-gh',
+      scopes: ['repo', 'read:org'],
+      tokens: { access_token: 'owner-token' },
+    });
+
+    const [storedConnection] = await db
+      .select()
+      .from(providerConnections)
+      .where(eq(providerConnections.id, ownerConnection.id));
+    expect(storedConnection?.authSecretCiphertext.toString('utf8')).not.toContain('owner-token');
+    await expect(
+      ownerScope.integrations.getProviderConnectionTokens(ownerConnection.id),
+    ).resolves.toEqual({
+      access_token: 'owner-token',
+    });
+
+    await expect(
+      memberScope.integrations.shareProviderResources(ownerConnection.id, [
+        { kind: 'github.repo', externalId: 'acme/app', label: 'acme/app' },
+      ]),
+    ).rejects.toThrow('Provider connection not found');
+
+    await ownerScope.integrations.shareProviderResources(ownerConnection.id, [
+      { kind: 'github.org', externalId: 'acme', label: 'acme (all accessible repos)' },
+      { kind: 'github.repo', externalId: 'acme/app', label: 'acme/app' },
+    ]);
+    const ownerShares = await ownerScope.integrations.listOwnedTeamResourceShares();
+    const orgShare = ownerShares.find((row) => row.share.resourceKind === 'github.org')?.share;
+    const ownerRepoShare = ownerShares.find(
+      (row) => row.share.resourceKind === 'github.repo',
+    )?.share;
+    expect(orgShare).toBeDefined();
+    expect(ownerRepoShare).toBeDefined();
+
+    await expect(
+      memberScope.integrations.activateSharedResources({
+        providerConnectionId: ownerConnection.id,
+        resourceShareIds: [orgShare?.id ?? '', ownerRepoShare?.id ?? ''],
+      }),
+    ).rejects.toThrow('admin');
+
+    const ownerIntegration = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: ownerConnection.id,
+      resourceShareIds: [orgShare?.id ?? '', ownerRepoShare?.id ?? ''],
+    });
+    await expect(adminDecryptIntegrationTokens(db as never, ownerIntegration)).resolves.toEqual({
+      access_token: 'owner-token',
+    });
+
+    const memberConnection = await memberScope.integrations.upsertProviderConnection({
+      provider: 'github',
+      displayName: 'GitHub — member',
+      externalAccountId: 'member-gh',
+      scopes: ['repo'],
+      tokens: { access_token: 'member-token' },
+    });
+    await memberScope.integrations.shareProviderResources(memberConnection.id, [
+      { kind: 'github.repo', externalId: 'acme/app', label: 'acme/app' },
+    ]);
+    const memberRepoShare = (await memberScope.integrations.listOwnedTeamResourceShares()).find(
+      (row) => row.share.providerConnectionId === memberConnection.id,
+    )?.share;
+    expect(memberRepoShare).toBeDefined();
+
+    const memberIntegration = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: memberConnection.id,
+      resourceShareIds: [memberRepoShare?.id ?? ''],
+    });
+
+    const repoSelections = (await db.select().from(integrationSelections)).filter(
+      (row) => row.selectionKind === 'github.repo' && row.externalId === 'acme/app',
+    );
+    expect(repoSelections).toHaveLength(1);
+    expect(repoSelections[0]).toMatchObject({
+      integrationId: memberIntegration.id,
+      resourceShareId: memberRepoShare?.id,
+    });
+
+    await ownerScope.integrations.shareProviderResources(ownerConnection.id, [
+      { kind: 'github.repo', externalId: 'acme/app', label: 'acme/app' },
+    ]);
+
+    const orgSelections = (await db.select().from(integrationSelections)).filter(
+      (row) => row.selectionKind === 'github.org' && row.externalId === 'acme',
+    );
+    expect(orgSelections).toHaveLength(0);
+    const [revokedOrgShare] = await db
+      .select()
+      .from(teamProviderResourceShares)
+      .where(eq(teamProviderResourceShares.id, orgShare?.id ?? ''));
+    expect(revokedOrgShare?.revokedAt).toBeInstanceOf(Date);
+    const attentionRows = await db.select().from(connectionAttention);
+    expect(attentionRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          providerConnectionId: ownerConnection.id,
+          resourceShareId: orgShare?.id,
+          category: 'access_changed',
+          resolvedAt: null,
+        }),
+      ]),
+    );
   });
 
   it('preserves per-integration visibility defaults when reconnecting', async () => {

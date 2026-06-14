@@ -1,6 +1,7 @@
 'use server';
 
 import {
+  type Db,
   auditLog,
   integrations,
   slackConversationBindings,
@@ -16,6 +17,7 @@ import {
   users,
 } from '@timeline/db';
 import { sendTeamInviteEmail } from '@timeline/shared/email';
+import * as integrationsLib from '@timeline/shared/integrations';
 import { buildInboundEmail, randomSlugSuffix, randomToken, slugify } from '@timeline/shared/slug';
 import { assertNotLastOwner } from '@timeline/shared/team-roles';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -706,6 +708,7 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
           .select({
             id: integrations.id,
             connectedByUserId: integrations.connectedByUserId,
+            providerConnectionId: integrations.providerConnectionId,
             visibilityDefault: integrations.visibilityDefault,
             visibilityDefaultUserIds: integrations.visibilityDefaultUserIds,
           })
@@ -736,9 +739,27 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
             .set({
               visibilityDefault: nextVisibility,
               visibilityDefaultUserIds: nextUserIds.length > 0 ? nextUserIds : null,
+              ...(ownedByRemovedMember
+                ? {
+                    enabled: false,
+                    lastError: 'Connection owner left team — choose a replacement connection',
+                  }
+                : {}),
               updatedAt: new Date(),
             })
             .where(eq(integrations.id, row.id));
+          if (ownedByRemovedMember) {
+            await integrationsLib.adminRecordConnectionAttention(
+              tx as unknown as Db,
+              active.teamId,
+              {
+                providerConnectionId: row.providerConnectionId,
+                integrationId: row.id,
+                category: 'needs_new_owner',
+                summary: 'Connection owner left team — choose a replacement connection',
+              },
+            );
+          }
         }
         // Revoke Telegram routing for this user — two anchors, both needed:
         //

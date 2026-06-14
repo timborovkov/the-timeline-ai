@@ -14,6 +14,7 @@ import { IntegrationsCatalog } from '@/components/integrations/catalog';
 import { ConnectedIntegrations } from '@/components/integrations/connected';
 import { McpCatalog } from '@/components/integrations/mcp-catalog';
 import { AddCustomMcpServerLauncher, McpServersUi } from '@/components/integrations/mcp-servers';
+import { TeamSourcesUi } from '@/components/integrations/provider-connections';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -50,11 +51,13 @@ export default async function IntegrationsPage({
 
   const params = await searchParams;
   const scope = withTeam(db, active.teamId, session.user.id);
-  const [role, connected, mcpServers, members] = await Promise.all([
+  const [role, connected, mcpServers, members, resourceShares, attention] = await Promise.all([
     scope.requireMembership(),
     scope.integrations.listIntegrations(),
     scope.mcp.listTeamServers(),
     scope.timeline.listMembers(),
+    scope.integrations.listTeamResourceShares().catch(() => []),
+    scope.integrations.listConnectionAttention(),
   ]);
   const isAdmin = role === 'owner' || role === 'admin';
   const memberIds = members.map((m) => m.userId);
@@ -73,7 +76,15 @@ export default async function IntegrationsPage({
 
   const totalConnected = connected.length + mcpServers.length;
   const totalCatalog = nativeCatalog.length + mcpCatalogAvailable.length;
-  const hasAnything = totalConnected > 0 || totalCatalog > 0;
+  const totalSharedSources = resourceShares.length;
+  const hasAnything = totalConnected > 0 || totalCatalog > 0 || totalSharedSources > 0;
+  const selectionLists = await Promise.all(
+    connected.map(async (integration) => scope.integrations.listSelections(integration.id)),
+  );
+  const activeShareIds = selectionLists
+    .flat()
+    .map((selection) => selection.resourceShareId)
+    .filter((id): id is string => Boolean(id));
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
@@ -95,6 +106,7 @@ export default async function IntegrationsPage({
           on the right. */}
       <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
         <ActionChip href="/app/team/mcp-share" label="Expose as MCP →" />
+        <ActionChip href="/app/me/connections" label="Personal connections →" />
         <ActionChip href="/app/me/mcp-servers" label="Personal MCP →" />
         <ActionChip href="/app/team/integrations/audit" label="Audit log →" />
         {isAdmin ? <ActionChip href="/app/team/jobs" label="Job recovery →" /> : null}
@@ -113,9 +125,38 @@ export default async function IntegrationsPage({
         </div>
       ) : null}
 
-      {totalConnected > 0 ? (
+      {attention.length > 0 ? (
+        <div className="rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {String(attention.length)} integration item{attention.length === 1 ? '' : 's'} need
+          attention. Open the affected provider below to reconnect, replace, or narrow sources.
+        </div>
+      ) : null}
+
+      {totalConnected > 0 || totalSharedSources > 0 ? (
         <section className="space-y-3">
           <SectionHeader>Connected</SectionHeader>
+          <TeamSourcesUi
+            rows={resourceShares.map((row) => ({
+              share: {
+                id: row.share.id,
+                providerConnectionId: row.share.providerConnectionId,
+                resourceKind: row.share.resourceKind,
+                externalId: row.share.externalId,
+                externalLabel: row.share.externalLabel,
+                revokedAt: row.share.revokedAt ? row.share.revokedAt.toISOString() : null,
+              },
+              connection: {
+                id: row.connection.id,
+                provider: row.connection.provider,
+                displayName: row.connection.displayName,
+                ownerUserId: row.connection.ownerUserId,
+                lastError: row.connection.lastError,
+                lastConnectedAt: row.connection.lastConnectedAt.toISOString(),
+              },
+            }))}
+            activeShareIds={activeShareIds}
+            isAdmin={isAdmin}
+          />
           {connected.length > 0 ? (
             <ConnectedIntegrations
               connected={connected.map((c) => ({

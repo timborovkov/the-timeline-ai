@@ -134,7 +134,7 @@ export const HELP_PAGES: HelpPage[] = [
     sections: [
       {
         title: 'Connected sources',
-        body: 'Integrations import external activity into the same event pipeline as manual capture. Each provider keeps sync state and an audit trail for reconnects and replay.',
+        body: 'Integrations import external activity into the same event pipeline as manual capture. Members own provider connections; admins activate the shared sources that feed team memory.',
         items: [
           'Google Drive can sync selected folders and files.',
           'Linear and GitHub bring project activity into team memory.',
@@ -146,7 +146,8 @@ export const HELP_PAGES: HelpPage[] = [
         title: 'Security model',
         body: 'OAuth tokens and bearer secrets are encrypted at rest. Imported snippets are treated as external content before the agent sees them.',
         items: [
-          'Admins control team-level integrations.',
+          'Admins control team-level source activation.',
+          'Connection owners control what provider resources are shared.',
           'Personal MCP connections are visible only to their owner.',
           'Outbound Timeline MCP keys see only team-visible events.',
         ],

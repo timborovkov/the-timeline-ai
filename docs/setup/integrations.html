@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Native integrations &amp; custom MCPs</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-05-25</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-14</span></div>
       <p class="tldr">
         Connect native GitHub, Linear, and Google Drive sync from
         <code>/app/team/integrations</code>, or plug arbitrary custom MCP servers in at
@@ -92,8 +92,9 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
       <h2 id="github">GitHub</h2>
       <p>
         GitHub is a native Timeline integration. It is optional for non-engineering teams, but when
-        connected it receives the same first-party treatment as Linear and Google Drive: OAuth,
-        resource selection, audit rows, encrypted tokens, worker sync, and cited timeline events.
+        connected it receives the same first-party treatment as Linear and Google Drive:
+        person-owned OAuth, team source selection, audit rows, encrypted tokens, worker sync, and
+        cited timeline events.
       </p>
       <ol>
         <li>
@@ -110,11 +111,34 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
 GITHUB_APP_CLIENT_SECRET=...</code></pre>
         </li>
         <li>
-          After connecting from <code>/app/team/integrations</code>, choose the repos to track.
-          Selected repos are synced by the integration worker poller; no repo/org webhook setup is
-          required.
+          Any team member can connect GitHub from <code>/app/me/connections</code> or the native
+          catalog. The member then chooses which repos or organizations are shared with the current
+          Timeline team.
+        </li>
+        <li>
+          A team admin activates shared sources from <code>/app/team/integrations</code>. A GitHub
+          organization scope means all repos in that org the connection owner can access, including
+          future repos; choose individual repos instead for a fixed list.
+        </li>
+        <li>
+          Selected GitHub sources are synced by the integration worker poller; no repo/org webhook
+          setup is required.
         </li>
       </ol>
+
+      <h2 id="native-ownership">Native provider ownership</h2>
+      <p>
+        Native provider credentials are <em>provider connections</em>: they belong to the team
+        member who completes OAuth, not to the Timeline team. The team owns only the active source
+        scope it has chosen from the resources that owner shared. Non-owners cannot browse private
+        provider resources that have not been shared with the team.
+      </p>
+      <p>
+        If a connection owner leaves the team, deletes a connection, or GitHub/Drive/Linear requires
+        reconnecting, Timeline creates connection attention. The team integrations page shows the
+        affected source and recovery action; the worker pauses only the affected sync path and keeps
+        previously captured raw events.
+      </p>
 
       <h2 id="mcp">Custom MCP servers (inbound)</h2>
       <p>
@@ -195,10 +219,11 @@ GITHUB_APP_CLIENT_SECRET=...</code></pre>
       <h2 id="sync">How sync runs</h2>
       <p>
         A BullMQ repeatable enqueues an <code>integration-sync</code> tick every 5 minutes. The
-        worker fans out to every enabled integration and runs <code>incrementalSync()</code> on each
-        provider, using the per-resource cursor in <code>integration_sync_state</code>. Providers
-        with inbound webhooks, such as Google Drive, can enqueue an extra one-shot incremental;
-        GitHub selected repos are covered by the poller only.
+        worker fans out to every enabled team scope and runs <code>incrementalSync()</code> on each
+        provider through the owning provider connection, using the per-resource cursor in
+        <code>integration_sync_state</code>. Providers with inbound webhooks, such as Google Drive,
+        can enqueue an extra one-shot incremental; GitHub selected repos and organization scopes are
+        covered by the poller only.
       </p>
       <p>Manual full backfill from the CLI:</p>
       <pre><code>pnpm --filter @timeline/worker integration-resync -- --team=&lt;uuid&gt; --from-zero</code></pre>

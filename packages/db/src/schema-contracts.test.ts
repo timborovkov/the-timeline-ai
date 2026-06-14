@@ -149,6 +149,72 @@ describe('database schema contracts', () => {
     }
   });
 
+  it('migrates native integrations into provider connections and shared resources', async () => {
+    const migrationPg = new PGlite();
+    try {
+      await applyMigrations(migrationPg, { throughFile: '0038_calendar_subscriptions.sql' });
+      await seedBase(migrationPg);
+      await migrationPg.exec(`
+        INSERT INTO integrations (
+          id,
+          team_id,
+          connected_by_user_id,
+          provider,
+          display_name,
+          external_account_id,
+          auth_secret_ciphertext,
+          auth_secret_iv,
+          auth_secret_tag
+        )
+        VALUES (
+          '11111111-1111-4111-8111-111111111115',
+          '${TEAM_ID}',
+          '${OWNER_ID}',
+          'github',
+          'GitHub — owner',
+          '42',
+          decode('00', 'hex'),
+          decode('01', 'hex'),
+          decode('02', 'hex')
+        );
+        INSERT INTO integration_selections (
+          integration_id,
+          selection_kind,
+          external_id,
+          external_label
+        )
+        VALUES (
+          '11111111-1111-4111-8111-111111111115',
+          'github.repo',
+          'acme/app',
+          'acme/app'
+        );
+      `);
+
+      await applyMigrationFile(migrationPg, '0039_provider_connections.sql');
+
+      const rows = await migrationPg.query<{
+        connection_count: number;
+        share_count: number;
+        provider_connection_id: string | null;
+        resource_share_id: string | null;
+      }>(`
+        SELECT
+          (SELECT count(*)::int FROM provider_connections) AS connection_count,
+          (SELECT count(*)::int FROM team_provider_resource_shares) AS share_count,
+          (SELECT provider_connection_id::text FROM integrations WHERE id = '11111111-1111-4111-8111-111111111115') AS provider_connection_id,
+          (SELECT resource_share_id::text FROM integration_selections WHERE integration_id = '11111111-1111-4111-8111-111111111115') AS resource_share_id
+      `);
+      const row = rows.rows[0];
+      expect(row?.connection_count).toBe(1);
+      expect(row?.share_count).toBe(1);
+      expect(row?.provider_connection_id).toBeTruthy();
+      expect(row?.resource_share_id).toBeTruthy();
+    } finally {
+      await migrationPg.close();
+    }
+  });
+
   it('enforces member, invite, visibility-default, and enum invariants', async () => {
     await expect(
       pg.exec(`INSERT INTO team_members (team_id, user_id, role)
