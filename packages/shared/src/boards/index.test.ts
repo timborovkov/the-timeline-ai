@@ -829,4 +829,42 @@ describe('board scope', () => {
       }),
     ]);
   });
+
+  it('counts active pinned board items by due window', async () => {
+    const owner = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await owner.boards.createBoard({
+      name: 'Active due counts',
+      templateKind: 'task_board',
+      lanes: [{ name: 'Todo', kind: 'active' }],
+    });
+    const overdueTask = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Overdue active task',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const dueSoonTask = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Due soon active task',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.boards.addBoardItem(board.id, {
+      entityId: overdueTask.id,
+      dueAt: new Date('2020-01-01T00:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.boards.addBoardItem(board.id, {
+      entityId: dueSoonTask.id,
+      dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await owner.boards.pinBoard(board.id);
+
+    await expect(owner.boards.listPinnedBoards()).resolves.toEqual([
+      expect.objectContaining({
+        itemCount: 2,
+        dueSoonCount: 1,
+        overdueCount: 1,
+      }),
+    ]);
+  });
 });

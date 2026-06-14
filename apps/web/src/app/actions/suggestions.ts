@@ -18,6 +18,27 @@ function revalidateSuggestionSurfaces() {
   revalidatePath('/app/inbox');
 }
 
+function isExpectedSuggestionApplyFailure(err: unknown): boolean {
+  if (err instanceof z.ZodError) return true;
+  if (!err || typeof err !== 'object') return false;
+  if ((err as { name?: unknown }).name === 'ZodError') return true;
+  const code = (err as { code?: unknown }).code;
+  if (code === '23505') return true;
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause && isExpectedSuggestionApplyFailure(cause)) return true;
+  return (
+    err instanceof Error && /duplicate key value violates unique constraint/i.test(err.message)
+  );
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err &&
+    typeof err === 'object' &&
+    typeof (err as { message?: unknown }).message === 'string'
+    ? (err as { message: string }).message
+    : fallback;
+}
+
 export async function acceptSuggestionItemAction(input: unknown): Promise<ActionState> {
   return runSentryServerAction('accept_suggestion_item', async () => {
     const parsed = z.object({ itemId: uuidSchema }).safeParse(input);
@@ -30,9 +51,11 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Action
       revalidateSuggestionSurfaces();
       return { ok: true };
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'accept_suggestion_item' });
+      if (!isExpectedSuggestionApplyFailure(err)) {
+        reportCaughtError(err, { surface: 'server_action', operation: 'accept_suggestion_item' });
+      }
       revalidateSuggestionSurfaces();
-      return { error: err instanceof Error ? err.message : 'Failed to accept suggestion' };
+      return { error: errorMessage(err, 'Failed to accept suggestion') };
     }
   });
 }
