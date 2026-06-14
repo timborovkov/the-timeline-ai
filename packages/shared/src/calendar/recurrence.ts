@@ -58,7 +58,7 @@ export function expandRRuleBetween(args: {
 }
 
 export function recurrenceWindowFrom(startAt: Date, now = new Date()): { from: Date; to: Date } {
-  const from = startAt < now ? startAt : now;
+  const from = startAt > now ? startAt : now;
   const to = new Date(from);
   to.setUTCMonth(to.getUTCMonth() + RECURRENCE_WINDOW_MONTHS);
   return { from, to };
@@ -78,4 +78,36 @@ export function rruleUntil(rrule: string, untilBefore: Date): string {
     return `${prefix}:${parts.join(';')}`;
   });
   return next.join('\n');
+}
+
+export function rruleForSplit(args: {
+  rrule: string;
+  startAt: Date;
+  timezone: string;
+  splitAt: Date;
+}): string {
+  const normalized = normalizeRRuleText(args.rrule);
+  const countMatch = /^RRULE:.*(?::|;)COUNT=(\d+)(?:;|$)/im.exec(normalized);
+  if (!countMatch?.[1]) return normalized;
+
+  const originalCount = Number.parseInt(countMatch[1], 10);
+  if (!Number.isFinite(originalCount) || originalCount <= 0) return normalized;
+
+  const parsed = rrulestr(buildRRuleSource({ ...args, rrule: normalized }), {
+    forceset: true,
+    compatible: true,
+    tzid: args.timezone,
+  });
+  const occurrencesBeforeSplit = parsed
+    .between(args.startAt, args.splitAt, true)
+    .filter((date) => date < args.splitAt).length;
+  const remainingCount = Math.max(1, originalCount - occurrencesBeforeSplit);
+
+  return normalized
+    .split(/\r?\n/)
+    .map((line) => {
+      if (!/^RRULE:/i.test(line)) return line;
+      return line.replace(/(^RRULE:.*(?::|;))COUNT=\d+((?:;.*)?)$/i, `$1COUNT=${remainingCount}$2`);
+    })
+    .join('\n');
 }

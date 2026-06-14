@@ -2400,8 +2400,8 @@ describe('suggestion scope', () => {
           dedupeKey: 'calendar-recurring-create:item',
           proposedPayload: {
             title: 'Daily call',
-            startAt: '2026-06-01T16:00:00.000Z',
-            endAt: '2026-06-01T16:30:00.000Z',
+            startAt: '2026-07-01T16:00:00.000Z',
+            endAt: '2026-07-01T16:30:00.000Z',
             timezone: 'UTC',
             visibility: 'team',
             rrule: 'FREQ=DAILY;COUNT=3',
@@ -2421,9 +2421,9 @@ describe('suggestion scope', () => {
        ORDER BY start_at`,
     );
     expect(result.rows.map((row) => new Date(row.start_at).toISOString())).toEqual([
-      '2026-06-01T16:00:00.000Z',
-      '2026-06-02T16:00:00.000Z',
-      '2026-06-03T16:00:00.000Z',
+      '2026-07-01T16:00:00.000Z',
+      '2026-07-02T16:00:00.000Z',
+      '2026-07-03T16:00:00.000Z',
     ]);
     expect(result.rows[0]?.rrule).toBe('RRULE:FREQ=DAILY;COUNT=3');
   });
@@ -2506,8 +2506,13 @@ describe('suggestion scope', () => {
       true,
     );
 
-    const result = await pg.query<{ title: string; show_as: string; deleted_at: Date | null }>(
-      `SELECT title, show_as, deleted_at
+    const result = await pg.query<{
+      id: string;
+      title: string;
+      show_as: string;
+      deleted_at: Date | null;
+    }>(
+      `SELECT id, title, show_as, deleted_at
        FROM calendar_events
        WHERE team_id = '${TEAM_ID}' AND metadata ->> 'proposalGroupId' = 'apple-meeting'
        ORDER BY start_at`,
@@ -2519,6 +2524,15 @@ describe('suggestion scope', () => {
       deleted_at: null,
     });
     expect(result.rows[1]?.deleted_at).toBeInstanceOf(Date);
+    const cancelledId = result.rows[1]?.id ?? '';
+    const rawRows = await pg.query<{ deleted: string | null }>(
+      `SELECT source_metadata ->> 'deleted' AS deleted
+       FROM raw_events
+       WHERE team_id = '${TEAM_ID}'
+         AND source_metadata ->> 'calendar_event_id' = '${cancelledId}'`,
+    );
+    expect(rawRows.rows).toHaveLength(2);
+    expect(rawRows.rows.every((row) => row.deleted === 'true')).toBe(true);
   });
 
   it('normalizes all-day calendar updates when allDay is omitted from the patch', async () => {

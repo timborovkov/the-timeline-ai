@@ -110,16 +110,16 @@ describe('calendar scope', () => {
 
     const parent = await scope.calendar.createCalendarEvent({
       title: 'Daily call',
-      startAt: new Date('2026-06-01T16:00:00Z'),
-      endAt: new Date('2026-06-01T16:30:00Z'),
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
       timezone: 'UTC',
       visibility: 'team',
       rrule: 'FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR',
     });
 
     const rows = await scope.calendar.listCalendarEvents({
-      from: new Date('2026-06-01T00:00:00Z'),
-      to: new Date('2026-06-09T00:00:00Z'),
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-09T00:00:00Z'),
       limit: 20,
     });
     const activeStarts = rows
@@ -128,13 +128,13 @@ describe('calendar scope', () => {
 
     expect(parent.rrule).toBe('RRULE:FREQ=WEEKLY;BYDAY=SU,MO,TU,WE,TH,FR');
     expect(activeStarts).toEqual([
-      '2026-06-01T16:00:00.000Z',
-      '2026-06-02T16:00:00.000Z',
-      '2026-06-03T16:00:00.000Z',
-      '2026-06-04T16:00:00.000Z',
-      '2026-06-05T16:00:00.000Z',
-      '2026-06-07T16:00:00.000Z',
-      '2026-06-08T16:00:00.000Z',
+      '2026-07-01T16:00:00.000Z',
+      '2026-07-02T16:00:00.000Z',
+      '2026-07-03T16:00:00.000Z',
+      '2026-07-05T16:00:00.000Z',
+      '2026-07-06T16:00:00.000Z',
+      '2026-07-07T16:00:00.000Z',
+      '2026-07-08T16:00:00.000Z',
     ]);
   });
 
@@ -142,119 +142,156 @@ describe('calendar scope', () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const parent = await scope.calendar.createCalendarEvent({
       title: 'Daily call',
-      startAt: new Date('2026-06-01T16:00:00Z'),
-      endAt: new Date('2026-06-01T16:30:00Z'),
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
       timezone: 'UTC',
       visibility: 'team',
       rrule: 'FREQ=DAILY;COUNT=5',
     });
     const rows = await scope.calendar.listCalendarEvents({
-      from: new Date('2026-06-01T00:00:00Z'),
-      to: new Date('2026-06-06T00:00:00Z'),
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
       limit: 20,
     });
     const occurrence = rows.find(
-      (row) => row.originalStartAt?.toISOString() === '2026-06-02T16:00:00.000Z',
+      (row) => row.originalStartAt?.toISOString() === '2026-07-02T16:00:00.000Z',
     );
     expect(occurrence).toBeDefined();
 
     await scope.calendar.updateCalendarEvent(occurrence?.id ?? '', {
-      startAt: new Date('2026-06-02T15:00:00Z'),
-      endAt: new Date('2026-06-02T15:30:00Z'),
+      startAt: new Date('2026-07-02T15:00:00Z'),
+      endAt: new Date('2026-07-02T15:30:00Z'),
       recurrenceEditMode: 'single',
     });
 
     await scope.calendar.materializeRecurringEvent(parent.id, {
-      from: new Date('2026-06-01T00:00:00Z'),
-      to: new Date('2026-06-06T00:00:00Z'),
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
     });
     const updatedRows = await scope.calendar.listCalendarEvents({
-      from: new Date('2026-06-01T00:00:00Z'),
-      to: new Date('2026-06-06T00:00:00Z'),
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
       limit: 20,
     });
     const starts = updatedRows.map((row) => row.startAt.toISOString()).sort();
     const moved = updatedRows.find((row) => row.id === occurrence?.id);
     expect(moved).toMatchObject({ isException: true });
-    expect(starts).toContain('2026-06-02T15:00:00.000Z');
-    expect(starts).not.toContain('2026-06-02T16:00:00.000Z');
-    expect(starts).toContain('2026-06-03T16:00:00.000Z');
+    expect(starts).toContain('2026-07-02T15:00:00.000Z');
+    expect(starts).not.toContain('2026-07-02T16:00:00.000Z');
+    expect(starts).toContain('2026-07-03T16:00:00.000Z');
   });
 
   it('keeps a cancelled recurring occurrence cancelled after rematerialization', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const parent = await scope.calendar.createCalendarEvent({
       title: 'Daily call',
-      startAt: new Date('2026-06-01T16:00:00Z'),
-      endAt: new Date('2026-06-01T16:30:00Z'),
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
       timezone: 'UTC',
       visibility: 'team',
       rrule: 'FREQ=DAILY;COUNT=5',
     });
     const rows = await scope.calendar.listCalendarEvents({
-      from: new Date('2026-06-01T00:00:00Z'),
-      to: new Date('2026-06-06T00:00:00Z'),
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
       limit: 20,
     });
     const occurrence = rows.find(
-      (row) => row.originalStartAt?.toISOString() === '2026-06-03T16:00:00.000Z',
+      (row) => row.originalStartAt?.toISOString() === '2026-07-03T16:00:00.000Z',
     );
     expect(occurrence).toBeDefined();
 
     await expect(scope.calendar.deleteCalendarEvent(occurrence?.id ?? '')).resolves.toBe(true);
     await scope.calendar.materializeRecurringEvent(parent.id, {
-      from: new Date('2026-06-01T00:00:00Z'),
-      to: new Date('2026-06-06T00:00:00Z'),
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
     });
     const active = await scope.calendar.listCalendarEvents({
-      from: new Date('2026-06-01T00:00:00Z'),
-      to: new Date('2026-06-06T00:00:00Z'),
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
       limit: 20,
     });
 
     expect(active.map((row) => row.startAt.toISOString())).not.toContain(
-      '2026-06-03T16:00:00.000Z',
+      '2026-07-03T16:00:00.000Z',
     );
+  });
+
+  it('recreates active children after a whole-series update rematerializes the parent', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parent = await scope.calendar.createCalendarEvent({
+      title: 'Daily call',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=DAILY;COUNT=5',
+    });
+
+    await scope.calendar.updateCalendarEvent(parent.id, {
+      title: 'Daily planning',
+      recurrenceEditMode: 'series',
+    });
+
+    const active = await scope.calendar.listCalendarEvents({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-06T00:00:00Z'),
+      limit: 20,
+    });
+    const planningStarts = active
+      .filter((row) => row.title === 'Daily planning')
+      .map((row) => row.startAt.toISOString())
+      .sort();
+
+    expect(planningStarts).toEqual([
+      '2026-07-01T16:00:00.000Z',
+      '2026-07-02T16:00:00.000Z',
+      '2026-07-03T16:00:00.000Z',
+      '2026-07-04T16:00:00.000Z',
+      '2026-07-05T16:00:00.000Z',
+    ]);
   });
 
   it('splits this-and-future recurring edits into a new parent series', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const parent = await scope.calendar.createCalendarEvent({
       title: 'Daily call',
-      startAt: new Date('2026-06-01T16:00:00Z'),
-      endAt: new Date('2026-06-01T16:30:00Z'),
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
       timezone: 'UTC',
       visibility: 'team',
       rrule: 'FREQ=DAILY;COUNT=6',
     });
     const rows = await scope.calendar.listCalendarEvents({
-      from: new Date('2026-06-01T00:00:00Z'),
-      to: new Date('2026-06-08T00:00:00Z'),
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-08T00:00:00Z'),
       limit: 20,
     });
     const occurrence = rows.find(
-      (row) => row.originalStartAt?.toISOString() === '2026-06-04T16:00:00.000Z',
+      (row) => row.originalStartAt?.toISOString() === '2026-07-04T16:00:00.000Z',
     );
     expect(occurrence).toBeDefined();
 
     const split = await scope.calendar.updateCalendarEvent(occurrence?.id ?? '', {
-      startAt: new Date('2026-06-04T15:00:00Z'),
-      endAt: new Date('2026-06-04T15:30:00Z'),
+      startAt: new Date('2026-07-04T15:00:00Z'),
+      endAt: new Date('2026-07-04T15:30:00Z'),
       recurrenceEditMode: 'this_and_future',
     });
     expect(split?.recurringParentId).toBeNull();
     expect(split?.id).not.toBe(parent.id);
 
     const active = await scope.calendar.listCalendarEvents({
-      from: new Date('2026-06-01T00:00:00Z'),
-      to: new Date('2026-06-08T00:00:00Z'),
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-10T00:00:00Z'),
       limit: 20,
     });
     const starts = active.map((row) => row.startAt.toISOString()).sort();
-    expect(starts).toContain('2026-06-03T16:00:00.000Z');
-    expect(starts).toContain('2026-06-04T15:00:00.000Z');
-    expect(starts).toContain('2026-06-05T15:00:00.000Z');
-    expect(starts).not.toContain('2026-06-04T16:00:00.000Z');
+    expect(starts).toContain('2026-07-03T16:00:00.000Z');
+    expect(starts).toContain('2026-07-04T15:00:00.000Z');
+    expect(starts).toContain('2026-07-05T15:00:00.000Z');
+    expect(starts).toContain('2026-07-06T15:00:00.000Z');
+    expect(starts).not.toContain('2026-07-04T16:00:00.000Z');
+    expect(starts).not.toContain('2026-07-07T15:00:00.000Z');
   });
 
   it('deleteCalendarEvent tombstones both linked timeline rows', async () => {

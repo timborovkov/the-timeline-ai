@@ -11,6 +11,7 @@ import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 import {
   expandRRuleBetween,
   recurrenceWindowFrom,
+  rruleForSplit,
   rruleUntil,
   validateRRule,
 } from '#src/calendar/recurrence.js';
@@ -367,7 +368,11 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     const durationMs = parent.endAt.getTime() - parent.startAt.getTime();
     const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
     const [existing] = await tx
-      .select({ id: calendarEvents.id })
+      .select({
+        id: calendarEvents.id,
+        deletedAt: calendarEvents.deletedAt,
+        isException: calendarEvents.isException,
+      })
       .from(calendarEvents)
       .where(
         and(
@@ -377,7 +382,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         ),
       )
       .limit(1);
-    if (existing) return existing.id;
+    if (existing?.isException || (existing && !existing.deletedAt)) return existing.id;
 
     const [row] = await tx
       .insert(calendarEvents)
@@ -490,7 +495,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     tx: DbOrTx,
     chosen: CalendarEventRow,
     patch: UpdateCalendarEventInput,
-  ): Promise<void> {
+  ): Promise<string[]> {
     const metadata = eventMetadata(chosen);
     const groupId =
       typeof metadata.proposalGroupId === 'string'
@@ -502,10 +507,14 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       patch.metadata && typeof patch.metadata.proposalStatus === 'string'
         ? patch.metadata.proposalStatus
         : null;
-    if (!groupId || status !== 'confirmed') return;
-    await tx
-      .update(calendarEvents)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
+    if (!groupId || status !== 'confirmed') return [];
+    const siblings = await tx
+      .select({
+        id: calendarEvents.id,
+        scheduledRawEventId: calendarEvents.scheduledRawEventId,
+        startAtRawEventId: calendarEvents.startAtRawEventId,
+      })
+      .from(calendarEvents)
       .where(
         and(
           eq(calendarEvents.teamId, teamId),
@@ -514,6 +523,27 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           isNull(calendarEvents.deletedAt),
         ),
       );
+    if (siblings.length === 0) return [];
+    const siblingIds = siblings.map((sibling) => sibling.id);
+    await tx
+      .update(calendarEvents)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(inArray(calendarEvents.id, siblingIds));
+    const linkedRawEventIds = siblings.flatMap((sibling) =>
+      [sibling.scheduledRawEventId, sibling.startAtRawEventId].filter(
+        (rid): rid is string => rid !== null && rid.length > 0,
+      ),
+    );
+    if (linkedRawEventIds.length > 0) {
+      const tombstone = JSON.stringify({ deleted: true });
+      await tx
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${tombstone}::jsonb`,
+        })
+        .where(inArray(rawEvents.id, linkedRawEventIds));
+    }
+    return siblingIds;
   }
 
   return {
@@ -727,7 +757,12 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           const newTimezone = patch.timezone ?? current.timezone;
           const newRrule = patch.rrule?.trim()
             ? validateRRule({ rrule: patch.rrule, startAt: newStart, timezone: newTimezone })
-            : parentRow.rrule;
+            : rruleForSplit({
+                rrule: parentRow.rrule,
+                startAt: parentRow.startAt,
+                timezone: parentRow.timezone,
+                splitAt,
+              });
           const [newParent] = await tx
             .insert(calendarEvents)
             .values({
@@ -993,7 +1028,11 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           });
         }
 
-        await confirmProposalGroup(tx, updated as CalendarEventRow, patch);
+        const cancelledProposalEventIds = await confirmProposalGroup(
+          tx,
+          updated as CalendarEventRow,
+          patch,
+        );
 
         let qdrantAction: CalendarQdrantAction = null;
         // If the event is still team-visible, re-embed with updated content.
@@ -1007,13 +1046,20 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           event: redactIfNeeded(updated as CalendarEventRow),
           changedFields: [...changedFields],
           qdrantAction,
+          cancelledProposalEventIds,
           rematerialize:
             recurrenceMode === 'series' &&
             !row.recurringParentId &&
-            (changedFields.has('startAt') ||
+            (changedFields.has('title') ||
+              changedFields.has('description') ||
+              changedFields.has('startAt') ||
               changedFields.has('endAt') ||
               changedFields.has('timezone') ||
               changedFields.has('allDay') ||
+              changedFields.has('location') ||
+              changedFields.has('visibility') ||
+              changedFields.has('visibilityUserIds') ||
+              changedFields.has('showAs') ||
               changedFields.has('rrule')),
         };
       });
@@ -1034,6 +1080,13 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           const parent = rows[0] as CalendarEventRow | undefined;
           if (parent) await rematerializeParent(tx, parent);
         });
+      }
+      const cancelledProposalEventIds =
+        'cancelledProposalEventIds' in result ? (result.cancelledProposalEventIds ?? []) : [];
+      if (cancelledProposalEventIds.length > 0) {
+        await Promise.all(
+          cancelledProposalEventIds.map((eventId) => deleteCalendarEventPoints(teamId, eventId)),
+        );
       }
 
       return { ...result.event, changedFields: result.changedFields };
