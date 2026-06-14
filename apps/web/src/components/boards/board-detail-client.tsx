@@ -25,7 +25,10 @@ export interface BoardMemberOption {
 }
 
 export type BoardItemOptimisticPatch = Partial<
-  Pick<boards.BoardItemRow, 'responsibleUserId' | 'dueAt' | 'priority' | 'nextStep' | 'notes'>
+  Pick<
+    boards.BoardItemRow,
+    'laneId' | 'responsibleUserId' | 'dueAt' | 'priority' | 'nextStep' | 'notes'
+  >
 >;
 
 interface BoardItemPatchOverlay {
@@ -198,14 +201,16 @@ export function BoardDetailClient({
         srLabel={`Board · ${boardName}`}
         segments={[{ value: 'BOARD' }, { value: boardName, signal: true }]}
         leading={boardHeaderLeading}
-        className={view === 'kanban' ? 'shrink-0 px-4 md:px-8' : 'mb-4 shrink-0'}
+        className={
+          view === 'kanban' ? 'mx-auto w-full max-w-4xl shrink-0 px-4 md:px-0' : 'mb-4 shrink-0'
+        }
         trailing={boardHeaderTrailing}
       />
 
       <div
         className={
           view === 'kanban'
-            ? 'flex shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-4 md:px-8'
+            ? 'mx-auto flex w-full max-w-4xl shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-4 md:px-0'
             : 'mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3'
         }
       >
@@ -225,7 +230,13 @@ export function BoardDetailClient({
         </nav>
       </div>
 
-      <div className={view === 'kanban' ? 'shrink-0 px-4 pb-4 md:px-8' : 'mb-4 shrink-0'}>
+      <div
+        className={
+          view === 'kanban'
+            ? 'mx-auto w-full max-w-4xl shrink-0 px-4 pb-4 md:px-0'
+            : 'mb-4 shrink-0'
+        }
+      >
         <BoardAddItemForm
           boardId={boardId}
           defaultLaneId={defaultLaneId}
@@ -254,7 +265,16 @@ export function BoardDetailClient({
               members={members}
             />
           )}
-          {view === 'table' && <CuratedBoardTable boardId={boardId} view={view} items={items} />}
+          {view === 'table' && (
+            <CuratedBoardTable
+              boardId={boardId}
+              view={view}
+              lanes={lanes}
+              items={items}
+              members={members}
+              onUpdateItem={updateItem}
+            />
+          )}
           {view === 'list' && <CuratedBoardList boardId={boardId} view={view} items={items} />}
         </div>
         {selectedItem ? (

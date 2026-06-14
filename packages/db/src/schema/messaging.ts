@@ -21,6 +21,7 @@ export const messageIntent = pgEnum('message_intent', [
   'welcome',
   'email_verification',
   'daily_digest',
+  'connection_attention',
 ]);
 
 export const messageChannel = pgEnum('message_channel', ['email', 'in_app_digest']);

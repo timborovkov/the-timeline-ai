@@ -1,5 +1,7 @@
 import type { TimelineEvent } from '@/lib/use-paginated-queries';
 
+import { displayText } from '@/lib/display-dates';
+
 export type ImpactKind =
   | 'task'
   | 'board'
@@ -286,24 +288,27 @@ function actorLabelForGroup(
 
 function contextLabel(event: TimelineEvent): string {
   const meta = metaObject(event.sourceMetadata);
+  const label = (value: string | null | undefined, fallback: string) =>
+    value ? displayText(value) : fallback;
   if (event.source === 'slack') {
-    return (
-      stringMeta(meta, 'slack_channel_name') ?? stringMeta(meta, 'slack_channel_id') ?? 'Slack'
+    return label(
+      stringMeta(meta, 'slack_channel_name') ?? stringMeta(meta, 'slack_channel_id'),
+      'Slack',
     );
   }
   if (event.source === 'telegram') {
-    return stringMeta(meta, 'tg_chat_title') ?? stringMeta(meta, 'tg_chat_type') ?? 'Telegram';
+    return label(stringMeta(meta, 'tg_chat_title') ?? stringMeta(meta, 'tg_chat_type'), 'Telegram');
   }
   if (event.source === 'email') {
-    return stringMeta(meta, 'subject') ?? 'Email thread';
+    return label(stringMeta(meta, 'subject'), 'Email thread');
   }
-  if (event.source === 'meeting') return stringMeta(meta, 'title') ?? 'Meeting transcript';
-  if (event.source === 'calendar') return stringMeta(meta, 'title') ?? 'Calendar event';
+  if (event.source === 'meeting') return label(stringMeta(meta, 'title'), 'Meeting transcript');
+  if (event.source === 'calendar') return label(stringMeta(meta, 'title'), 'Calendar event');
   if (event.source === 'document') {
-    return stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name') ?? 'Document';
+    return label(stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name'), 'Document');
   }
   if (event.source === 'integration') {
-    const provider = stringMeta(meta, 'provider') ?? 'Integration';
+    const provider = label(stringMeta(meta, 'provider'), 'Integration');
     const type = stringMeta(meta, 'event_type');
     return type ? `${provider} · ${type}` : provider;
   }
@@ -314,14 +319,14 @@ function summaryForEvent(event: TimelineEvent): string {
   const meta = metaObject(event.sourceMetadata);
   if (event.source === 'meeting') {
     const summary = stringMeta(meta, 'summary');
-    if (summary) return summary;
+    if (summary) return displayText(summary);
   }
   if (event.source === 'email') {
     const subject = stringMeta(meta, 'subject');
-    if (subject && event.contentText) return `${subject}: ${event.contentText}`;
+    if (subject && event.contentText) return displayText(`${subject}: ${event.contentText}`);
   }
   const content = event.contentText?.trim();
-  if (content) return content;
+  if (content) return displayText(content);
   if (event.contentAudioUrl) return 'Voice memo captured; transcript pending or unavailable.';
   return 'Source event captured.';
 }
@@ -360,7 +365,7 @@ function impactItemsForEvent(
     const calendarId = stringMeta(meta, 'calendar_event_id');
     items.push({
       kind: 'calendar',
-      label: stringMeta(meta, 'title') ?? 'Calendar event',
+      label: displayText(stringMeta(meta, 'title') ?? 'Calendar event'),
       href: calendarId ? '/app/calendar' : undefined,
       sourceEventId: event.id,
     });

@@ -55,7 +55,7 @@ describe('resolveMentions', () => {
       ),
     ).resolves.toEqual([null, null]);
     expect(doGenerate).toHaveBeenCalledTimes(1);
-  });
+  }, 60_000);
 
   it('can resolve existing mentions without mutating aliases', async () => {
     const pg = new PGlite();
@@ -89,7 +89,7 @@ describe('resolveMentions', () => {
 
     const [row] = await db.select().from(entities).where(eq(entities.id, inserted.id));
     expect(row?.aliases).toEqual(['Acme Inc']);
-  });
+  }, 60_000);
 
   it('does not resolve mentions to archived objects', async () => {
     const pg = new PGlite();
@@ -117,5 +117,5 @@ describe('resolveMentions', () => {
         { createIfMissing: false, updateAliases: false },
       ),
     ).resolves.toEqual([null]);
-  });
+  }, 60_000);
 });

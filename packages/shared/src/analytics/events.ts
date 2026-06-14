@@ -28,7 +28,8 @@ export interface ProductEventPayloads {
   integration_connected: {
     teamId: string;
     userId: string;
-    integrationId: string;
+    integrationId?: string;
+    providerConnectionId?: string;
     provider: 'google_drive' | 'linear' | 'github' | 'slack' | 'telegram' | 'mcp';
   };
   document_uploaded: {

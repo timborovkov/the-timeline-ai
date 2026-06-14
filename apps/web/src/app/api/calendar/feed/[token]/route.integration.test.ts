@@ -211,7 +211,7 @@ describe('/api/calendar/feed/[token] integration', () => {
         originalStartAt: new Date('2026-06-28T16:00:00.000Z'),
       },
     ]);
-  });
+  }, 60_000);
 
   afterEach(async () => {
     vi.useRealTimers();

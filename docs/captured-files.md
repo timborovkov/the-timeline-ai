@@ -41,28 +41,30 @@ evidence; documents are curated workspace knowledge.
   filenames and must not overwrite `documents.name` unless a user explicitly
   renames or promotes with that title.
 - Visual files need both faithful text extraction when available and semantic
-  visual description when useful. Processing depth follows intent: curated
-  documents can justify full indexing, while unpromoted conversational captures
-  start with cheaper preview processing unless promoted, targeted, or explicitly
-  inspected. Persisted visual descriptions should be neutral observations about
-  what is visible; business interpretation belongs in answers or suggestions.
+  visual description when useful. Current processing fully extracts normal
+  image/PDF captures and defers only oversized captured files; future processing
+  can tune depth by intent so lightweight previews are enough until promotion,
+  targeted inspection, or explicit user intent warrants deeper analysis.
+  Persisted visual descriptions should be neutral observations about what is
+  visible; business interpretation belongs in answers or suggestions.
 - Budget deferral is normal product state, not processing failure. Deferred
   files keep lightweight metadata or preview context so they remain findable.
-- Voice memos are timeline evidence. Native voice-message surfaces and
-  intentional manual audio uploads are transcribed by default; ambiguous shared
-  audio can defer deeper processing.
+- Voice memos are timeline evidence. Native voice-message surfaces from
+  Telegram and Slack are transcribed by default. Manual document uploads do not
+  currently transcribe audio through document extraction; ambiguous shared audio
+  can defer deeper processing.
 - Timeline-oriented agent questions include source-evidence representations by
   default. Curated documents are reference knowledge and are searched when the
   question calls for document context.
 - Extraction enriches source evidence. It does not create separate timeline
   activity unless a person takes an explicit workspace action such as promotion,
   deletion, or visibility change.
-- Timeline lists show compact signals for transcripts, OCR, and visual
-  descriptions. Full extracted representations belong in event detail,
-  citations, and agent tools.
-- Users with normal edit rights can add representation corrections. Corrections
-  are layered over model output, audited, and preferred for search/agent use;
-  they do not mutate the source file or require the workspace approval queue.
+- Timeline lists show compact attachment and preview signals today. Richer
+  transcript/OCR/visual-description indicators remain follow-up UI work; full
+  extracted representations belong in event detail, citations, and agent tools.
+- Representation corrections are planned as layered, audited user edits over
+  model output. They should not mutate the source file or require the workspace
+  approval queue.
 - Agents should have a targeted file-inspection tool for asking narrow
   questions about a known captured file or document version. Precomputed
   representations support recall; targeted inspection supports precision.

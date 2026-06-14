@@ -56,6 +56,32 @@ describe('timeline moment grouping', () => {
     expect(moments[0]?.rawEvents.map((e) => e.id).sort()).toEqual(['a', 'b']);
   });
 
+  it('formats ISO instants embedded in calendar titles and summaries', () => {
+    const moments = buildTimelineMoments(
+      [
+        event({
+          id: 'calendar-event',
+          source: 'calendar',
+          contentText: 'Meeting with Miika | 2026-07-01T00:00:00.000Z to 2026-07-02T00:00:00.000Z',
+          sourceMetadata: {
+            calendar_event_id: 'cal-1',
+            title: 'Meeting with Miika | 2026-07-01T00:00:00.000Z to 2026-07-02T00:00:00.000Z',
+          },
+        }),
+      ],
+      authorMap,
+      new Date('2026-05-28T12:00:00.000Z'),
+    );
+
+    const moment = moments[0];
+    expect(moment?.summary).toContain('Meeting with Miika');
+    expect(moment?.contextLabel).toContain('Meeting with Miika');
+    expect(moment?.impactItems[0]?.label).toContain('Meeting with Miika');
+    expect(
+      [moment?.summary, moment?.contextLabel, moment?.impactItems[0]?.label].join(' '),
+    ).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
+  });
+
   it('links meeting moments to the meeting transcript detail', () => {
     const moments = buildTimelineMoments(
       [

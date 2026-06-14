@@ -18,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { displayText } from '@/lib/display-dates';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
 interface SuggestionItem {
@@ -240,9 +241,11 @@ export function ObjectCleanupSuggestions({
                   <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
                     {item.targetKind === 'object_merge' ? 'merge' : 'archive'} · {bundle.confidence}
                   </div>
-                  <div className="mt-1 font-medium text-fg">{item.title}</div>
+                  <div className="mt-1 font-medium text-fg">{displayText(item.title)}</div>
                   <p className="mt-1 text-sm text-fg-muted">
-                    {item.description ?? bundle.summary ?? 'Review this cleanup suggestion.'}
+                    {displayText(
+                      item.description ?? bundle.summary ?? 'Review this cleanup suggestion.',
+                    )}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-start gap-2">

@@ -10,7 +10,6 @@ import { z } from 'zod';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { safeMarkOnboardingStep } from '@/lib/onboarding';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { appUrl } from '@/lib/site-url';
 
@@ -83,7 +82,7 @@ export async function GET(
   }
   const scope = withTeam(db, verified.teamId, session.user.id);
   try {
-    await scope.requireMembership('admin');
+    await scope.requireMembership();
   } catch {
     return new Response('forbidden', { status: 403 });
   }
@@ -92,38 +91,26 @@ export async function GET(
   const redirectUri = appUrl(`/api/integrations/${provider}/callback`).toString();
   try {
     const result = await p.handleOAuthCallback({ code, redirectUri });
-    const visibilityDefault = await scope.timeline.resolveVisibilityDefault('integration');
-    const created = await scope.integrations.createIntegration({
-      provider: provider,
+    const created = await scope.integrations.upsertProviderConnection({
+      provider,
       displayName: result.displayName,
       externalAccountId: result.externalAccountId,
       scopes: result.scopes,
       tokens: result.tokens,
-      visibilityDefault: visibilityDefault.visibility,
-      visibilityDefaultUserIds: visibilityDefault.visibilityUserIds,
     });
     await scope.integrations.recordAudit(
       'connect',
       { provider, externalAccountId: result.externalAccountId, displayName: result.displayName },
-      created.id,
+      null,
     );
-    const completedFirstIntegration = await safeMarkOnboardingStep(scope, 'first_integration');
     trackProductEventBestEffort(session.user.id, 'integration_connected', {
       teamId: verified.teamId,
       userId: session.user.id,
-      integrationId: created.id,
+      providerConnectionId: created.id,
       provider,
     });
-    if (completedFirstIntegration) {
-      trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
-        teamId: verified.teamId,
-        userId: session.user.id,
-        step: 'first_integration',
-        source: 'automatic',
-      });
-    }
     return NextResponse.redirect(
-      appUrl(`/app/team/integrations?connected=${provider}&integrationId=${created.id}`),
+      appUrl(`/app/me/connections?connected=${provider}&providerConnectionId=${created.id}`),
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'oauth_callback_failed';

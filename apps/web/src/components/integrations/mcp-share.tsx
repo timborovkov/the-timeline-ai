@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useReducer } from 'react';
 
+import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -58,6 +59,7 @@ function mcpShareReducer(state: McpShareState, action: McpShareAction): McpShare
 
 export function McpShareUi({ keys }: { keys: KeyRow[] }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [{ showCreate, name, busy, mintedKey, mcpUrl }, dispatch] = useReducer(mcpShareReducer, {
     showCreate: false,
     name: '',
@@ -84,7 +86,7 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
         body: JSON.stringify({ name }),
       });
       if (!res.ok) {
-        alert(`Create failed: ${await res.text()}`);
+        await dialog.alert({ title: 'Create failed', description: await res.text() });
         return;
       }
       const data = (await res.json()) as { name: string; plaintext: string };
@@ -96,9 +98,13 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
   }
 
   async function revoke(id: string, label: string) {
-    if (!confirm(`Revoke "${label}"? Any agent using this key will lose access immediately.`)) {
-      return;
-    }
+    const confirmed = await dialog.confirm({
+      title: 'Revoke key?',
+      description: `"${label}" will stop working for any agent using it.`,
+      confirmLabel: 'Revoke',
+      destructive: true,
+    });
+    if (!confirmed) return;
     await fetch(`/api/team/mcp-keys/${id}`, { method: 'DELETE' });
     router.refresh();
   }
@@ -235,6 +241,7 @@ export function McpShareUi({ keys }: { keys: KeyRow[] }) {
           ))}
         </ul>
       )}
+      {dialog.node}
     </div>
   );
 }

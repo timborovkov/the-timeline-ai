@@ -8,6 +8,7 @@ import type * as objects from '@timeline/shared/objects';
 import type { Dispatch } from 'react';
 
 import { addBoardItemAction, quickCreateBoardItemAction } from '@/app/actions/boards';
+import { displayText } from '@/lib/display-dates';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { OBJECT_TYPES } from '@/lib/object-types';
 import { cn, errorMessage } from '@/lib/utils';
@@ -225,7 +226,7 @@ function ExistingObjectPicker({
             }}
             className="inline-flex items-center gap-2 rounded-sm border border-border bg-surface px-2 py-1 text-fg transition-colors hover:bg-surface-2"
           >
-            <span>{selectedCandidate.canonicalName}</span>
+            <span>{displayText(selectedCandidate.canonicalName)}</span>
             <X className="size-3.5 text-fg-dim" aria-hidden="true" />
           </button>
         </div>
@@ -291,10 +292,14 @@ function CandidateList({
                   )}
                 >
                   <span className="min-w-0">
-                    <span className="block truncate font-medium text-fg">{row.canonicalName}</span>
+                    <span className="block truncate font-medium text-fg">
+                      {displayText(row.canonicalName)}
+                    </span>
                     <span className="block truncate font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
                       {row.type}
-                      {row.aliases.length > 0 ? ` · ${row.aliases.slice(0, 2).join(', ')}` : ''}
+                      {row.aliases.length > 0
+                        ? ` · ${row.aliases.slice(0, 2).map(displayText).join(', ')}`
+                        : ''}
                     </span>
                   </span>
                   {selected ? (

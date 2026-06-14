@@ -16,6 +16,7 @@ import {
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { HistoryBackLink } from '@/components/history-back-link';
+import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -97,6 +98,7 @@ export function DocumentDetail({
   currentVersionChunks,
 }: Props) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
   const [optimisticRename, setOptimisticRename] = useState<{
     id: string;
@@ -104,9 +106,6 @@ export function DocumentDetail({
     updatedAt: string;
   } | null>(null);
   const [downloading, setDownloading] = useState<readonly string[]>([]);
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [renameValue, setRenameValue] = useState(document.name);
-  const [deleteOpen, setDeleteOpen] = useState(false);
   const currentDocument =
     optimisticRename?.id === document.id ? { ...document, ...optimisticRename } : document;
   const currentVersion =
@@ -121,26 +120,24 @@ export function DocumentDetail({
   const usingFriendlyName =
     presentation.isGeneratedName && visibleDocumentName !== currentDocument.name;
 
-  function openRename(): void {
-    setRenameValue(currentDocument.name);
-    setRenameOpen(true);
-  }
-
-  function submitRename(): void {
-    const name = renameValue.trim();
-    if (!name || name === currentDocument.name) {
-      setRenameOpen(false);
-      return;
-    }
+  async function onRename(): Promise<void> {
+    const name = await dialog.input({
+      title: 'Rename document',
+      description: 'Choose a new display name for this document.',
+      inputLabel: 'Name',
+      defaultValue: currentDocument.name,
+      confirmLabel: 'Rename',
+    });
+    const trimmedName = name?.trim();
+    if (!trimmedName || trimmedName === currentDocument.name) return;
     const previousRename = optimisticRename;
     setOptimisticRename({
       id: currentDocument.id,
-      name,
+      name: trimmedName,
       updatedAt: new Date().toISOString(),
     });
-    setRenameOpen(false);
     startTransition(async () => {
-      const res = await renameDocumentAction({ id: currentDocument.id, name });
+      const res = await renameDocumentAction({ id: currentDocument.id, name: trimmedName });
       if (!res.ok) {
         setOptimisticRename(previousRename);
         toast.error(res.error ?? 'Rename failed');
@@ -150,8 +147,14 @@ export function DocumentDetail({
     });
   }
 
-  function confirmDelete(): void {
-    setDeleteOpen(false);
+  async function onDelete(): Promise<void> {
+    const confirmed = await dialog.confirm({
+      title: 'Delete document?',
+      description: 'Versions stay in storage; the drive entry is hidden.',
+      confirmLabel: 'Delete document',
+      destructive: true,
+    });
+    if (!confirmed) return;
     startTransition(async () => {
       const res = await deleteDocumentAction(currentDocument.id);
       if (!res.ok) toast.error(res.error ?? 'Delete failed');
@@ -214,15 +217,13 @@ export function DocumentDetail({
             {currentDocument.visibility !== 'team' && (
               <Badge variant="outline">{currentDocument.visibility}</Badge>
             )}
-            <Button size="sm" variant="outline" onClick={openRename} disabled={pending}>
+            <Button size="sm" variant="outline" onClick={() => void onRename()} disabled={pending}>
               Rename
             </Button>
             <Button
               size="sm"
               variant="destructive"
-              onClick={() => {
-                setDeleteOpen(true);
-              }}
+              onClick={() => void onDelete()}
               disabled={pending}
             >
               <Trash2 className="mr-1 size-3.5" />
@@ -306,111 +307,7 @@ export function DocumentDetail({
           </ul>
         </CardContent>
       </Card>
-      {renameOpen ? (
-        <ModalFrame
-          title="Rename document"
-          onClose={() => {
-            setRenameOpen(false);
-          }}
-        >
-          <form
-            className="space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              submitRename();
-            }}
-          >
-            <label className="block space-y-1">
-              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-                Name
-              </span>
-              <input
-                value={renameValue}
-                onChange={(event) => {
-                  setRenameValue(event.target.value);
-                }}
-                autoFocus
-                className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm text-foreground"
-              />
-            </label>
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setRenameOpen(false);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={!renameValue.trim() || pending}>
-                Save
-              </Button>
-            </div>
-          </form>
-        </ModalFrame>
-      ) : null}
-      {deleteOpen ? (
-        <ModalFrame
-          title="Delete document"
-          onClose={() => {
-            setDeleteOpen(false);
-          }}
-        >
-          <div className="space-y-4">
-            <p className="text-sm leading-6 text-muted-foreground">
-              Versions stay in storage, but this drive entry will be hidden.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setDeleteOpen(false);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={confirmDelete}
-                disabled={pending}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        </ModalFrame>
-      ) : null}
-    </div>
-  );
-}
-
-function ModalFrame({
-  title,
-  children,
-  onClose,
-}: {
-  title: string;
-  children: ReactNode;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-sm border border-border bg-card p-4">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <h2 className="text-base font-semibold text-foreground">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground"
-          >
-            Close
-          </button>
-        </div>
-        {children}
-      </div>
+      {dialog.node}
     </div>
   );
 }

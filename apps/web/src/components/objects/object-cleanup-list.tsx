@@ -9,6 +9,8 @@ import type * as objects from '@timeline/shared/objects';
 
 import { bulkArchiveObjectsAction } from '@/app/actions/objects';
 import { ObjectTextFilter } from '@/components/boards/object-text-filter';
+import { useAppDialog } from '@/components/ui/app-dialog';
+import { displayText } from '@/lib/display-dates';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 
@@ -65,6 +67,7 @@ function cleanupListReducer(state: CleanupListState, action: CleanupListAction):
 
 export function ObjectCleanupList({ rows, typeLabels }: Props) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [{ selecting, selected, archivedIds, error, filterQuery }, dispatchCleanupList] =
     useReducer(cleanupListReducer, {
       selecting: false,
@@ -115,11 +118,17 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
     dispatchCleanupList({ type: 'clear-selection' });
   }
 
-  function archiveSelected() {
+  async function archiveSelected() {
     if (selectedCount === 0 || isPending) return;
-    if (!confirm(`Archive ${selectedCount} selected object${selectedCount === 1 ? '' : 's'}?`)) {
-      return;
-    }
+    const confirmed = await dialog.confirm({
+      title: 'Archive selected objects?',
+      description: `${String(selectedCount)} selected object${
+        selectedCount === 1 ? '' : 's'
+      } will be archived.`,
+      confirmLabel: 'Archive',
+      destructive: true,
+    });
+    if (!confirmed) return;
     const idsToArchive = selectedIds;
     dispatchCleanupList({ type: 'archive-optimistic', ids: idsToArchive });
     startTransition(async () => {
@@ -169,7 +178,7 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
               </Link>
               <button
                 type="button"
-                onClick={archiveSelected}
+                onClick={() => void archiveSelected()}
                 disabled={selectedCount === 0 || isPending}
                 className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-2.5 font-mono text-[11px] uppercase tracking-[0.1em] text-fg transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:text-fg-dim disabled:opacity-50"
               >
@@ -204,6 +213,7 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
           {error}
         </p>
       ) : null}
+      {dialog.node}
       {selecting && selectedCount > MAX_OBJECT_MERGE_SELECTION ? (
         <p className="border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
           Select {MAX_OBJECT_MERGE_SELECTION} or fewer objects to merge.
@@ -244,7 +254,7 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
                               onChange={() => {
                                 toggle(object.id);
                               }}
-                              aria-label={`Select ${object.canonicalName}`}
+                              aria-label={`Select ${displayText(object.canonicalName)}`}
                               className="mr-2.5 size-4 accent-[var(--signal)]"
                             />
                           ) : null}
@@ -252,7 +262,7 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
                             href={`/app/objects/${object.id}`}
                             className="min-w-0 flex-1 truncate font-medium text-fg"
                           >
-                            {object.canonicalName}
+                            {displayText(object.canonicalName)}
                           </Link>
                           <span className="ml-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                             <span>{object.status}</span>

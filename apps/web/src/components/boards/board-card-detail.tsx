@@ -23,6 +23,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { boardViewHref } from '@/lib/board-links';
+import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -53,6 +54,8 @@ export function BoardCardDetail({
   const [noteDraft, setNoteDraft] = useState(item?.notes ?? '');
   const [pending, startTransition] = useTransition();
   if (!item) return null;
+  const timelineHref = `/app/timeline?q=${encodeURIComponent(item.object.canonicalName)}`;
+  const sourceEvents = history.filter((change) => change.sourceEventId);
 
   function savePatch(patch: BoardItemOptimisticPatch, onSuccess?: () => void): void {
     if (!item || !onUpdateItem) return;
@@ -77,7 +80,9 @@ export function BoardCardDetail({
       <div className="border-b border-border p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold text-fg">{item.object.canonicalName}</h2>
+            <h2 className="truncate text-lg font-semibold text-fg">
+              {displayText(item.object.canonicalName)}
+            </h2>
             <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
               {item.object.type} · board item
             </p>
@@ -90,7 +95,9 @@ export function BoardCardDetail({
           </Link>
         </div>
         {item.nextStep ? (
-          <p className="mt-3 border-l border-signal pl-3 text-sm text-fg-muted">{item.nextStep}</p>
+          <p className="mt-3 border-l border-signal pl-3 text-sm text-fg-muted">
+            {displayText(item.nextStep)}
+          </p>
         ) : null}
       </div>
 
@@ -185,7 +192,7 @@ export function BoardCardDetail({
               item.notes ? 'text-fg-muted' : 'text-fg-dim',
             )}
           >
-            {item.notes ?? 'No notes yet.'}
+            {item.notes ? displayText(item.notes) : 'No notes yet.'}
           </p>
         )}
       </section>
@@ -197,6 +204,12 @@ export function BoardCardDetail({
           className="rounded-sm border border-border px-2 py-1 text-xs font-medium hover:bg-surface"
         >
           Ask about object
+        </Link>
+        <Link
+          href={timelineHref}
+          className="rounded-sm border border-border px-2 py-1 text-xs font-medium hover:bg-bg"
+        >
+          Timeline events
         </Link>
         <RemoveBoardItemButton
           boardId={boardId}
@@ -211,6 +224,28 @@ export function BoardCardDetail({
 
       <section className="p-4">
         <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+          Evidence
+        </h3>
+        {sourceEvents.length === 0 ? (
+          <p className="text-sm text-fg-muted">No source evidence linked to board changes yet.</p>
+        ) : (
+          <ul className="space-y-1">
+            {sourceEvents.slice(0, 5).map((change) => (
+              <li key={change.id}>
+                <Link
+                  href={`/app/timeline?event=${change.sourceEventId}#ev-${change.sourceEventId}`}
+                  className="text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
+                >
+                  {change.field} source · {change.changedAt.toLocaleDateString('en-CA')}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="mt-5">
+        <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
           History
         </h3>
         {history.length === 0 ? (
@@ -222,8 +257,10 @@ export function BoardCardDetail({
                 <span className="font-mono uppercase tracking-[0.1em] text-fg-dim">
                   {change.field} · {change.status}
                 </span>
-                <span className="block">{change.changedAt.toLocaleString()}</span>
-                {change.note ? <span className="block text-fg">{change.note}</span> : null}
+                <span className="block">{formatDisplayDateTime(change.changedAt)}</span>
+                {change.note ? (
+                  <span className="block text-fg">{displayText(change.note)}</span>
+                ) : null}
               </li>
             ))}
           </ol>
@@ -246,7 +283,7 @@ function ObjectPreviewDialog({ item }: { item: boards.BoardItemRow }) {
       </DialogTrigger>
       <DialogContent className="border-border bg-bg sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{item.object.canonicalName}</DialogTitle>
+          <DialogTitle>{displayText(item.object.canonicalName)}</DialogTitle>
           <DialogDescription className="font-mono text-[11px] uppercase tracking-[0.12em]">
             {item.object.type} · object preview
           </DialogDescription>
@@ -265,7 +302,9 @@ function ObjectPreviewDialog({ item }: { item: boards.BoardItemRow }) {
             <h3 className="mb-1 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
               Aliases
             </h3>
-            <p className="text-sm text-fg-muted">{item.object.aliases.join(', ')}</p>
+            <p className="text-sm text-fg-muted">
+              {item.object.aliases.map(displayText).join(', ')}
+            </p>
           </section>
         ) : null}
         <div className="flex justify-end">

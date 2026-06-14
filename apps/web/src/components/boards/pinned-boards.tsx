@@ -30,7 +30,19 @@ export function PinnedBoards({ boards: rows }: { boards: boards.BoardRow[] }) {
               <Pin className="size-3.5 text-signal" aria-hidden="true" />
             </span>
             <span className="flex flex-wrap gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-              <span>{board.itemCount} items</span>
+              <span>{board.templateKind.replace('_', ' ')}</span>
+              <span>· {board.itemCount} items</span>
+              {board.laneCounts.slice(0, 3).map((lane) => (
+                <span key={lane.laneId ?? 'unset'}>
+                  · {lane.laneName}: {lane.count}
+                </span>
+              ))}
+              {board.overdueCount > 0 ? (
+                <span className="text-danger">· {board.overdueCount} overdue</span>
+              ) : null}
+              {board.dueSoonCount > 0 ? (
+                <span className="text-signal">· {board.dueSoonCount} due soon</span>
+              ) : null}
               <span>· {board.updatedAt.toLocaleDateString('en-CA')}</span>
             </span>
           </Link>
