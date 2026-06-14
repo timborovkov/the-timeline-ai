@@ -348,6 +348,7 @@ describe('queue wrappers', () => {
     const queues = await importQueues();
 
     await queues.scheduleOverdueScan();
+    await queues.scheduleCalendarRecurrenceMaterialization();
     await queues.scheduleJanitorSweep();
     await queues.scheduleMcpHealthPing();
 
@@ -356,15 +357,20 @@ describe('queue wrappers', () => {
       opts: { repeat: { pattern: '0 * * * *' }, jobId: 'overdue-scan-hourly' },
     });
     expect(fakes.queues[1]?.addCalls[0]).toMatchObject({
+      name: 'materialize',
+      opts: { repeat: { pattern: '0 * * * *' }, jobId: 'calendar-recurrence-hourly' },
+    });
+    expect(fakes.queues[2]?.addCalls[0]).toMatchObject({
       name: 'sweep',
       opts: { repeat: { pattern: '*/5 * * * *' }, jobId: 'janitor-tick' },
     });
-    expect(fakes.queues[2]?.addCalls[0]).toMatchObject({
+    expect(fakes.queues[3]?.addCalls[0]).toMatchObject({
       name: 'mcp-health-tick',
       opts: { repeat: { pattern: '*/5 * * * *' }, jobId: 'mcp-health-tick-5min' },
     });
 
     await queues.closeOverdueScanQueue();
+    await queues.closeCalendarRecurrenceQueue();
     await queues.closeJanitorQueue();
     await queues.closeMcpHealthQueue();
     expect(fakes.queues.every((queue) => queue.close.mock.calls.length === 1)).toBe(true);

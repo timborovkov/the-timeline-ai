@@ -134,6 +134,25 @@ describe('calendar create/update/delete behavior', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/calendar');
   });
 
+  it('forwards recurring tentative create fields to the calendar scope', async () => {
+    const result = await createCalendarEventAction({
+      title: 'Daily call',
+      startAt: '2026-06-03T16:00:00.000Z',
+      endAt: '2026-06-03T16:30:00.000Z',
+      showAs: 'tentative',
+      rrule: 'FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR,SU',
+    });
+
+    expect(result).toEqual({ ok: true, id: EVENT_ID });
+    expect(fakes.fakeCalendar.createCalendarEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Daily call',
+        showAs: 'tentative',
+        rrule: 'FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR,SU',
+      }),
+    );
+  });
+
   it('updates only provided fields and revalidates index plus detail', async () => {
     const result = await updateCalendarEventAction({
       id: EVENT_ID,
@@ -158,6 +177,34 @@ describe('calendar create/update/delete behavior', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/calendar');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/calendar/${EVENT_ID}`);
     expectApprovalsRevalidated();
+  });
+
+  it('forwards recurrence update fields and edit mode to the calendar scope', async () => {
+    fakes.fakeCalendar.updateCalendarEvent.mockResolvedValueOnce({
+      id: EVENT_ID,
+      changedFields: ['showAs', 'rrule'],
+    });
+
+    const result = await updateCalendarEventAction({
+      id: EVENT_ID,
+      showAs: 'free',
+      rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      recurrenceEditMode: 'this_and_future',
+    });
+
+    expect(result).toEqual({ ok: true, id: EVENT_ID });
+    expect(fakes.fakeCalendar.updateCalendarEvent).toHaveBeenCalledWith(EVENT_ID, {
+      showAs: 'free',
+      rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      recurrenceEditMode: 'this_and_future',
+    });
+    expectCanonicalReconciliation({
+      targetKind: 'calendar_event',
+      targetId: EVENT_ID,
+      operation: 'update',
+      patch: { showAs: true, rrule: true },
+      reason: 'A teammate updated this calendar event directly.',
+    });
   });
 
   it('does not supersede approvals for a no-op update', async () => {
@@ -216,6 +263,22 @@ describe('calendar create/update/delete behavior', () => {
       reason: 'A teammate cancelled this calendar event directly.',
     });
     expectApprovalsRevalidated();
+  });
+
+  it('forwards recurrence edit mode when deleting an event directly', async () => {
+    await expect(
+      deleteCalendarEventAction(EVENT_ID, { recurrenceEditMode: 'series' }),
+    ).resolves.toEqual({ ok: true, id: EVENT_ID });
+
+    expect(fakes.fakeCalendar.deleteCalendarEvent).toHaveBeenCalledWith(EVENT_ID, {
+      recurrenceEditMode: 'series',
+    });
+    expectCanonicalReconciliation({
+      targetKind: 'calendar_event',
+      targetId: EVENT_ID,
+      operation: 'archive_or_cancel',
+      reason: 'A teammate cancelled this calendar event directly.',
+    });
   });
 
   it('returns success when post-delete reconciliation fails after the event was deleted', async () => {

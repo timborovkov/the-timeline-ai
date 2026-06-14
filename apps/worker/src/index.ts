@@ -4,6 +4,7 @@ import { childLogger, queue } from '@timeline/shared';
 import { shutdownPostHogNodeClients } from '@timeline/shared/analytics/posthog-node';
 
 import { captureWorkerException, flushWorkerSentry, initWorkerSentry } from '#src/monitoring.js';
+import { startCalendarRecurrenceWorker } from '#src/workers/calendarRecurrence.js';
 import { startDocumentExtractWorker } from '#src/workers/documentExtract.js';
 import { startEmbedWorker } from '#src/workers/embed.js';
 import { startExtractWorker } from '#src/workers/extract.js';
@@ -34,6 +35,7 @@ async function main(): Promise<void> {
   const suggestionWorker = startSuggestionWorker({ db });
   const embedWorker = startEmbedWorker({ db });
   const overdueWorker = startOverdueWorker({ db });
+  const calendarRecurrenceWorker = startCalendarRecurrenceWorker({ db });
   const documentExtractWorker = startDocumentExtractWorker({ db });
   const meetingFinalizeWorker = startMeetingFinalizeWorker({ db });
   const janitorWorker = startJanitorWorker({ db });
@@ -43,6 +45,7 @@ async function main(): Promise<void> {
   // Register the hourly repeatables. BullMQ keys by jobId so a
   // duplicate call on the next deploy is a no-op.
   await queue.scheduleOverdueScan();
+  await queue.scheduleCalendarRecurrenceMaterialization();
   await queue.scheduleJanitorSweep();
   // Phase 11: 5-minute integration sync tick fans out incremental syncs
   // to every enabled integration. Same idempotency story — BullMQ dedups
@@ -51,7 +54,7 @@ async function main(): Promise<void> {
   await queue.scheduleMcpHealthPing();
   await queue.scheduleObjectCleanupSuggestions();
   log.info(
-    'transcribe + extract + suggestions + embed + overdue + document-extract + meeting-finalize + janitor + integration-sync + mcp-health + team-export workers started',
+    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + janitor + integration-sync + mcp-health + team-export workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -63,6 +66,7 @@ async function main(): Promise<void> {
         suggestionWorker.close(),
         embedWorker.close(),
         overdueWorker.close(),
+        calendarRecurrenceWorker.close(),
         documentExtractWorker.close(),
         meetingFinalizeWorker.close(),
         janitorWorker.close(),
@@ -75,6 +79,7 @@ async function main(): Promise<void> {
       await queue.closeSuggestionQueue();
       await queue.closeEmbedQueue();
       await queue.closeOverdueScanQueue();
+      await queue.closeCalendarRecurrenceQueue();
       await queue.closeDocumentExtractQueue();
       await queue.closeMeetingFinalizeQueue();
       await queue.closeJanitorQueue();
