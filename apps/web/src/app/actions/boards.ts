@@ -14,6 +14,7 @@ const boardTemplateSchema = z.enum(['pipeline', 'task_board', 'catalog', 'custom
 const laneKindSchema = z.enum(['active', 'done', 'terminal', 'lost', 'blocked']);
 
 const laneSchema = z.object({
+  id: uuidSchema.optional(),
   name: z.string().trim().min(1).max(120),
   kind: laneKindSchema.nullable().optional(),
 });
@@ -29,6 +30,13 @@ const createBoardSchema = z.object({
 const renameBoardSchema = z.object({
   id: uuidSchema,
   name: z.string().trim().min(1).max(120),
+});
+
+const updateBoardSettingsSchema = z.object({
+  id: uuidSchema,
+  name: z.string().trim().min(1).max(120),
+  purpose: z.string().trim().max(1000),
+  lanes: z.array(laneSchema).min(1).max(16),
 });
 
 const boardItemPatchSchema = z.object({
@@ -155,6 +163,23 @@ export async function renameBoardAction(input: unknown): Promise<ActionState> {
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'rename_board') };
+    }
+  });
+}
+
+export async function updateBoardSettingsAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('update_board_settings', async () => {
+    const parsed = updateBoardSettingsSchema.safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const ok = await r.scope.boards.updateBoardSettings(parsed.data);
+      if (!ok) return { error: 'Board not found' };
+      revalidateBoardSurfaces(parsed.data.id);
+      return { ok: true };
+    } catch (err) {
+      return { error: friendlyError(err, 'update_board_settings') };
     }
   });
 }

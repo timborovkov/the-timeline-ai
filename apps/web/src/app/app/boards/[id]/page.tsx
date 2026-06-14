@@ -68,7 +68,6 @@ export default async function BoardDetailPage({
         key={`${board.id}:${board.updatedAt.toISOString()}`}
         boardId={board.id}
         boardName={board.name}
-        templateKind={board.templateKind}
         purpose={board.purpose}
         pinned={board.pinned}
         view={view}

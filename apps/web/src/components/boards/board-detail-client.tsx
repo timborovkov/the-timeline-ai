@@ -20,7 +20,6 @@ import { boardViewHref } from '@/lib/board-links';
 interface Props {
   boardId: string;
   boardName: string;
-  templateKind: boards.BoardTemplateKind;
   purpose: string | null;
   pinned: boolean;
   view: BoardLayout;
@@ -96,8 +95,16 @@ export function BoardDetailClient({
     [],
   );
   const boardHeaderTrailing = useMemo(
-    () => <BoardActionsMenu id={boardId} name={boardName} pinned={pinned} />,
-    [boardId, boardName, pinned],
+    () => (
+      <BoardActionsMenu
+        id={boardId}
+        name={boardName}
+        purpose={purpose ?? ''}
+        pinned={pinned}
+        lanes={lanes}
+      />
+    ),
+    [boardId, boardName, lanes, pinned, purpose],
   );
 
   return (

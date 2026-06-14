@@ -310,15 +310,15 @@ visible change.
 
 ### Kanban / board
 
-- Boards are curated work surfaces with explicit board items, not raw saved
-  filters over every matching object. Filters and templates help users find
-  eligible objects; membership is intentional.
+- Boards are curated work surfaces with explicit board items and user-defined
+  stages, not raw saved filters over every matching object. Filters, templates,
+  and presets help users start; membership and workflow shape stay intentional.
 - Board shortcuts on Home use compact snapshots, not embedded full boards: board
   name, item count, lane counts, and last update. Opening the snapshot enters
   the full board.
-- Board creation starts from clear templates with icons, example use cases,
-  recommended object kinds, and editable default lanes/fields before advanced
-  filtering appears.
+- Board creation starts from clear presets with icons, example use cases, and
+  editable stages. Presets are starting points, not board types; stages can be
+  renamed, reordered, added, or removed during creation and from board settings.
 - Cards `bg-bg border border-border rounded-sm p-3`. Inner padding 12px.
 - Card meta strip at the bottom: mono uppercase 11px with task ID,
   responsible person, due indicator, priority, and next step where present.

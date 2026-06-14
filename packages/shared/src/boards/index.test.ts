@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { boardItemChanges, boardItems, boards, type Db } from '@timeline/db';
+import { boardItemChanges, boardItems, boardLanes, boards, type Db } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -281,6 +281,63 @@ describe('board scope', () => {
 
     const rows = await db.select().from(boards).where(eq(boards.teamId, TEAM_A));
     expect(rows).toHaveLength(0);
+  });
+
+  it('updates board settings and moves items out of removed lanes', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'Rigid pipeline',
+      templateKind: 'pipeline',
+      lanes: [
+        { name: 'Backlog', kind: 'active' },
+        { name: 'Doing', kind: 'active' },
+        { name: 'Done', kind: 'done' },
+      ],
+    });
+    const task = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Make stages editable',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const removedLaneId = board.lanes[1]?.id;
+    if (!removedLaneId) throw new Error('Missing lane');
+    const item = await scope.boards.addBoardItem(board.id, {
+      entityId: task.id,
+      laneId: removedLaneId,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const doneLaneId = board.lanes[2]?.id;
+    const backlogLaneId = board.lanes[0]?.id;
+    if (!doneLaneId || !backlogLaneId) throw new Error('Missing lanes');
+
+    await expect(
+      scope.boards.updateBoardSettings({
+        id: board.id,
+        name: 'Flexible board',
+        purpose: 'Tune stages as work changes',
+        lanes: [
+          { id: doneLaneId, name: 'Done', kind: 'done' },
+          { id: backlogLaneId, name: 'Ideas', kind: 'active' },
+          { name: 'Review', kind: 'active' },
+        ],
+      }),
+    ).resolves.toBe(true);
+
+    const updated = await scope.boards.getBoard(board.id, { itemLimit: 'all' });
+    expect(updated?.name).toBe('Flexible board');
+    expect(updated?.purpose).toBe('Tune stages as work changes');
+    expect(updated?.lanes.filter((lane) => !lane.archivedAt).map((lane) => lane.name)).toEqual([
+      'Done',
+      'Ideas',
+      'Review',
+    ]);
+    expect(updated?.items.find((row) => row.id === item.id)?.laneId).toBeNull();
+
+    const [archivedLane] = await db
+      .select()
+      .from(boardLanes)
+      .where(eq(boardLanes.id, removedLaneId));
+    expect(archivedLane?.archivedAt).toBeTruthy();
   });
 
   it('keeps stale suggested item updates pending when the item is no longer active', async () => {

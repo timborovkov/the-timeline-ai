@@ -5,57 +5,86 @@ import { useRouter } from 'next/navigation';
 import { useReducer, useTransition } from 'react';
 
 import { createBoardAction } from '@/app/actions/boards';
+import { BoardStageEditor, type EditableBoardStage } from '@/components/boards/board-stage-editor';
 import { cn } from '@/lib/utils';
 
-const TEMPLATES = [
+const PRESETS = [
   {
-    kind: 'pipeline',
-    label: 'Pipeline',
-    icon: KanbanSquare,
-    example: 'Sales, partnerships, delivery',
-    description: 'Track companies, deals, or projects through staged progress.',
-    placeholder: 'Team pipeline',
+    kind: 'custom',
+    label: 'Simple board',
+    icon: Boxes,
+    example: 'Anything your team wants to run',
+    description: 'Start from a generic workflow and tune every stage.',
+    placeholder: 'Team board',
+    stages: [
+      { name: 'Backlog', kind: 'active' },
+      { name: 'In progress', kind: 'active' },
+      { name: 'Review', kind: 'active' },
+      { name: 'Done', kind: 'done' },
+    ],
   },
   {
     kind: 'task_board',
-    label: 'Task board',
+    label: 'Task preset',
     icon: ClipboardList,
     example: 'Development, marketing, management',
-    description: 'Track tasks and follow-ups through an operational workflow.',
+    description: 'Start with task-oriented stages, then edit them.',
     placeholder: 'Development tasks',
+    stages: [
+      { name: 'Backlog', kind: 'active' },
+      { name: 'Ready', kind: 'active' },
+      { name: 'Doing', kind: 'active' },
+      { name: 'Review', kind: 'active' },
+      { name: 'Done', kind: 'done' },
+    ],
+  },
+  {
+    kind: 'pipeline',
+    label: 'Pipeline preset',
+    icon: KanbanSquare,
+    example: 'Sales, partnerships, delivery',
+    description: 'Start with staged progress, then edit the stages.',
+    placeholder: 'Team pipeline',
+    stages: [
+      { name: 'New', kind: 'active' },
+      { name: 'Qualified', kind: 'active' },
+      { name: 'Scoping', kind: 'active' },
+      { name: 'Proposal', kind: 'active' },
+      { name: 'Committed', kind: 'done' },
+    ],
   },
   {
     kind: 'catalog',
-    label: 'Catalog',
+    label: 'Catalog preset',
     icon: PackageOpen,
     example: 'Products, services, vendors',
-    description: 'Track a curated inventory of reference objects.',
+    description: 'Start with inventory stages, then edit them.',
     placeholder: 'Product catalog',
-  },
-  {
-    kind: 'custom',
-    label: 'Custom',
-    icon: Boxes,
-    example: 'Anything your team wants to run',
-    description: 'Start with simple lanes and tune the board as you go.',
-    placeholder: 'Management review',
+    stages: [
+      { name: 'Idea', kind: 'active' },
+      { name: 'Evaluating', kind: 'active' },
+      { name: 'Active', kind: 'active' },
+      { name: 'Deprecated', kind: 'terminal' },
+    ],
   },
 ] as const;
 
-type TemplateKind = (typeof TEMPLATES)[number]['kind'];
+type TemplateKind = (typeof PRESETS)[number]['kind'];
 
 interface BoardFormState {
   error: string | null;
   name: string;
   templateKind: TemplateKind;
   purpose: string;
+  stages: EditableBoardStage[];
 }
 
 type BoardFormAction =
   | { type: 'error'; error: string | null }
   | { type: 'name'; name: string }
-  | { type: 'templateKind'; templateKind: TemplateKind; name: string }
-  | { type: 'purpose'; purpose: string };
+  | { type: 'preset'; templateKind: TemplateKind; name: string; stages: EditableBoardStage[] }
+  | { type: 'purpose'; purpose: string }
+  | { type: 'stages'; stages: EditableBoardStage[] };
 
 function reducer(state: BoardFormState, action: BoardFormAction): BoardFormState {
   switch (action.type) {
@@ -63,35 +92,45 @@ function reducer(state: BoardFormState, action: BoardFormAction): BoardFormState
       return { ...state, error: action.error };
     case 'name':
       return { ...state, name: action.name };
-    case 'templateKind':
+    case 'preset':
       return {
         ...state,
         templateKind: action.templateKind,
         name: state.name.trim() ? state.name : action.name,
+        stages: action.stages,
       };
     case 'purpose':
       return { ...state, purpose: action.purpose };
+    case 'stages':
+      return { ...state, stages: action.stages };
   }
 }
 
 export function BoardCreateForm() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [{ error, name, templateKind, purpose }, dispatch] = useReducer(reducer, {
+  const [{ error, name, templateKind, purpose, stages }, dispatch] = useReducer(reducer, {
     error: null,
-    name: 'Team pipeline',
-    templateKind: 'pipeline',
+    name: 'Team board',
+    templateKind: 'custom',
     purpose: '',
+    stages: [...PRESETS[0].stages],
   });
 
   function submit(): void {
     if (!name.trim()) return;
+    const lanes = stages.map((stage) => ({ ...stage, name: stage.name.trim() }));
+    if (lanes.some((stage) => !stage.name)) {
+      dispatch({ type: 'error', error: 'Stage names are required' });
+      return;
+    }
     dispatch({ type: 'error', error: null });
     startTransition(async () => {
       const result = await createBoardAction({
         name: name.trim(),
         templateKind,
         purpose: purpose.trim() || undefined,
+        lanes,
       });
       if ('error' in result && result.error) {
         dispatch({ type: 'error', error: result.error });
@@ -107,18 +146,19 @@ export function BoardCreateForm() {
         New board
       </h2>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
-        {TEMPLATES.map((template) => {
-          const Icon = template.icon;
-          const active = template.kind === templateKind;
+        {PRESETS.map((preset) => {
+          const Icon = preset.icon;
+          const active = preset.kind === templateKind;
           return (
             <button
-              key={template.kind}
+              key={preset.kind}
               type="button"
               onClick={() => {
                 dispatch({
-                  type: 'templateKind',
-                  templateKind: template.kind,
-                  name: template.placeholder,
+                  type: 'preset',
+                  templateKind: preset.kind,
+                  name: preset.placeholder,
+                  stages: [...preset.stages],
                 });
               }}
               className={cn(
@@ -127,10 +167,10 @@ export function BoardCreateForm() {
               )}
             >
               <Icon className="mb-3 size-4 text-fg" aria-hidden="true" />
-              <span className="block text-sm font-medium text-fg">{template.label}</span>
-              <span className="mt-1 block text-xs text-fg-muted">{template.description}</span>
+              <span className="block text-sm font-medium text-fg">{preset.label}</span>
+              <span className="mt-1 block text-xs text-fg-muted">{preset.description}</span>
               <span className="mt-3 block font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
-                {template.example}
+                {preset.example}
               </span>
             </button>
           );
@@ -163,6 +203,14 @@ export function BoardCreateForm() {
           />
         </label>
       </div>
+      <BoardStageEditor
+        stages={stages}
+        onChange={(nextStages) => {
+          dispatch({ type: 'stages', stages: nextStages });
+        }}
+        disabled={pending}
+        className="mt-4"
+      />
       {error && (
         <p
           role="alert"

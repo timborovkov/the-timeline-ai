@@ -118,7 +118,6 @@ function renderClient(items: boards.BoardItemRow[]) {
     <BoardDetailClient
       boardId="board-1"
       boardName="Pilot board"
-      templateKind="pipeline"
       purpose="Track pilots"
       pinned={false}
       view="list"

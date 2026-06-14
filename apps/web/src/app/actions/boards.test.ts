@@ -8,6 +8,7 @@ import {
   quickCreateBoardItemAction,
   renameBoardAction,
   removeBoardItemAction,
+  updateBoardSettingsAction,
   updateBoardItemAction,
 } from '@/app/actions/boards';
 
@@ -21,6 +22,7 @@ const fakes = vi.hoisted(() => ({
     addBoardItem: vi.fn(),
     createObjectAndAddBoardItem: vi.fn(),
     renameBoard: vi.fn(),
+    updateBoardSettings: vi.fn(),
     updateBoardItem: vi.fn(),
     removeBoardItem: vi.fn(),
     pinBoard: vi.fn(),
@@ -64,6 +66,7 @@ beforeEach(() => {
     object: { id: ENTITY_ID },
   });
   fakes.fakeBoards.renameBoard.mockResolvedValue(true);
+  fakes.fakeBoards.updateBoardSettings.mockResolvedValue(true);
   fakes.fakeBoards.updateBoardItem.mockResolvedValue({
     id: ITEM_ID,
     boardId: BOARD_ID,
@@ -99,6 +102,31 @@ describe('createBoardAction', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/boards/${BOARD_ID}`);
   });
+
+  it('creates a board with user-defined stages', async () => {
+    const result = await createBoardAction({
+      name: 'Flexible work',
+      templateKind: 'custom',
+      lanes: [
+        { name: 'Backlog', kind: 'active' },
+        { name: 'Review', kind: 'active' },
+        { name: 'Done', kind: 'done' },
+      ],
+    });
+
+    expect(result).toEqual({ ok: true, id: BOARD_ID });
+    expect(fakes.fakeBoards.createBoard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Flexible work',
+        templateKind: 'custom',
+        lanes: [
+          { name: 'Backlog', kind: 'active' },
+          { name: 'Review', kind: 'active' },
+          { name: 'Done', kind: 'done' },
+        ],
+      }),
+    );
+  });
 });
 
 describe('deleteBoardAction', () => {
@@ -127,6 +155,46 @@ describe('renameBoardAction', () => {
     await expect(renameBoardAction({ id: BOARD_ID, name: '   ' })).resolves.toEqual({
       error: 'Too small: expected string to have >=1 characters',
     });
+
+    expect(fakes.fakeResolveScope).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateBoardSettingsAction', () => {
+  it('updates board settings and stages through the board scope', async () => {
+    await expect(
+      updateBoardSettingsAction({
+        id: BOARD_ID,
+        name: 'Flexible board',
+        purpose: 'Team-defined workflow',
+        lanes: [
+          { id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Review', kind: 'active' },
+          { name: 'Done', kind: 'done' },
+        ],
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeBoards.updateBoardSettings).toHaveBeenCalledWith({
+      id: BOARD_ID,
+      name: 'Flexible board',
+      purpose: 'Team-defined workflow',
+      lanes: [
+        { id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Review', kind: 'active' },
+        { name: 'Done', kind: 'done' },
+      ],
+    });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/boards/${BOARD_ID}`);
+  });
+
+  it('rejects settings without stages before resolving scope', async () => {
+    await expect(
+      updateBoardSettingsAction({
+        id: BOARD_ID,
+        name: 'Flexible board',
+        purpose: '',
+        lanes: [],
+      }),
+    ).resolves.toEqual({ error: 'Too small: expected array to have >=1 items' });
 
     expect(fakes.fakeResolveScope).not.toHaveBeenCalled();
   });
