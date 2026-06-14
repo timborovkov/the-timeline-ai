@@ -148,8 +148,8 @@ function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
       >
         {label}
       </button>
-      <span className="pointer-events-none absolute right-0 top-full z-20 hidden w-64 pt-2 group-hover:block group-focus-within:block">
-        <span className="pointer-events-auto block rounded-sm border border-border bg-background p-2 shadow-lg">
+      <span className="absolute right-0 top-full z-20 hidden w-64 pt-2 group-hover:block group-focus-within:block">
+        <span className="block rounded-sm border border-border bg-background p-2 shadow-lg">
           <span className="block px-2 pb-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
             Objects sharing this fact
           </span>
