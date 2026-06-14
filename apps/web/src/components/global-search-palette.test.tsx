@@ -103,6 +103,53 @@ describe('GlobalSearchPalette', () => {
     expect(fakes.push).toHaveBeenCalledWith('/app/boards');
   });
 
+  it('navigates keyboard selection in the same order results are rendered', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ok: true,
+          query: 'board',
+          mode: 'preview',
+          warnings: [],
+          results: [
+            {
+              id: 'board:1',
+              kind: 'board',
+              title: 'Project board',
+              snippet: 'A ranked work result returned first by the API.',
+              href: '/app/boards/1',
+              score: 4,
+              scoreParts: { lexical: 1 },
+              metadata: {},
+            },
+            {
+              id: 'boards',
+              kind: 'quick_link',
+              title: 'Boards',
+              snippet: 'The top visible result after grouping.',
+              href: '/app/boards',
+              score: 2,
+              scoreParts: { navigation: 1 },
+              metadata: { group: 'Go to' },
+            },
+          ],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<GlobalSearchPalette />);
+
+    await user.click(screen.getByRole('searchbox', { name: 'Search or jump' }));
+    await user.keyboard('board');
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Project board/ })).toBeTruthy();
+    });
+    await user.keyboard('{ArrowDown}{Enter}');
+
+    expect(fakes.push).toHaveBeenCalledWith('/app/boards');
+  });
+
   it('opens the all-results row when that row is selected', async () => {
     vi.stubGlobal(
       'fetch',

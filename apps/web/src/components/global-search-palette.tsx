@@ -159,11 +159,12 @@ export function GlobalSearchPalette({ hint, className }: Props) {
     }
     return groups;
   }, [view.results]);
+  const selectableResults = useMemo(() => grouped.flatMap(([, items]) => items), [grouped]);
 
   const searchHref = query.trim()
     ? `/app/search?q=${encodeURIComponent(query.trim())}`
     : '/app/search';
-  const selectableCount = view.results.length + (query.trim() ? 1 : 0);
+  const selectableCount = selectableResults.length + (query.trim() ? 1 : 0);
 
   function submitSearch(): void {
     setOpen(false);
@@ -225,8 +226,8 @@ export function GlobalSearchPalette({ hint, className }: Props) {
             if (event.key !== 'Enter') return;
             event.preventDefault();
             const selected =
-              view.activeIndex >= 0 && view.activeIndex < view.results.length
-                ? view.results[view.activeIndex]
+              view.activeIndex >= 0 && view.activeIndex < selectableResults.length
+                ? selectableResults[view.activeIndex]
                 : null;
             if (selected) {
               setOpen(false);
@@ -263,7 +264,7 @@ export function GlobalSearchPalette({ hint, className }: Props) {
                     {group}
                   </p>
                   {items.map((result) => {
-                    const index = view.results.indexOf(result);
+                    const index = selectableResults.indexOf(result);
                     const IconComponent = resultIcon(result.kind);
                     return (
                       <button
@@ -304,10 +305,12 @@ export function GlobalSearchPalette({ hint, className }: Props) {
                   type="button"
                   className={cn(
                     'mt-1 flex w-full items-center gap-3 border-t border-border px-3 py-2 text-left transition-colors',
-                    view.activeIndex === view.results.length ? 'bg-surface-2' : 'hover:bg-surface',
+                    view.activeIndex === selectableResults.length
+                      ? 'bg-surface-2'
+                      : 'hover:bg-surface',
                   )}
                   onMouseEnter={() => {
-                    dispatchView({ type: 'active', value: view.results.length });
+                    dispatchView({ type: 'active', value: selectableResults.length });
                   }}
                   onClick={submitSearch}
                 >
