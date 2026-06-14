@@ -20,17 +20,19 @@ evidence; documents are curated workspace knowledge.
   unpromoted captured files. Captured files can appear in a dedicated triage
   view, source-event detail, search results, and agent citations.
 - Folders belong to promoted documents. Unpromoted captured files are organized
-  by source evidence and triage filters such as source, date, sender, file type,
-  processing status, and promotion state.
+  by source evidence and the current Captured inbox filters: source, date, file
+  type, and processing status. Sender filters, bulk triage, and promotion-state
+  filters remain follow-ups.
 - Promotion is identity-preserving: the original captured file becomes visible
   and manageable as a document without copying its blob or losing its source
   evidence link. The original capture can become version 1; later uploads can
   extend the document's version history. Source capture time remains
   provenance; document-drive activity uses promotion, version, and document
   update times.
-- Unpromoted captured files follow source deletion. Promoted documents can
-  remain active after the source event is tombstoned, while preserving
-  tombstoned provenance.
+- Unpromoted captured files only surface provenance for source events that are
+  still visible and active. Promoted documents can remain active after source
+  evidence is tombstoned, while preserving the stored source metadata as
+  provenance.
 - Extracted representations are typed. Source text, transcript text, visual
   description, and metadata preview are distinct queryable representations, so
   generated descriptions are not quoted as literal source text.

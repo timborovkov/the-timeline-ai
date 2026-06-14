@@ -36,15 +36,16 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
   const document = await scope.documents.getDocument(id);
   if (!document) notFound();
 
-  const [versions, folderPath, folderPage] = await Promise.all([
+  const [versions, folderPath, provenancePage] = await Promise.all([
     scope.documents.listDocumentVersions(document.id),
     scope.documents.folderPath(document.folderId),
     scope.documents.listDocumentsWithProvenancePage({
-      folderId: document.folderId,
-      limit: 100,
+      documentId: document.id,
+      fileKind: document.fileKind,
+      limit: 1,
     }),
   ]);
-  const listEntry = folderPage.items.find((item) => item.id === document.id);
+  const listEntry = provenancePage.items[0] ?? null;
   const currentVersion =
     versions.find((version) => version.id === document.currentVersionId) ?? versions[0] ?? null;
   const currentVersionChunks = currentVersion

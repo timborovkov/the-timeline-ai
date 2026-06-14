@@ -73,6 +73,7 @@ export default async function CapturedFilesPage() {
             name: file.name,
             metadata: file.metadata,
             visibility: file.visibility,
+            visibilityUserIds: file.visibilityUserIds,
             updatedAt: file.updatedAt.toISOString(),
             ownerUserId: file.ownerUserId,
             ownerLabel: owner?.name ?? owner?.email ?? null,
@@ -97,6 +98,7 @@ export default async function CapturedFilesPage() {
             presentation: file.presentation,
           };
         })}
+        nextCursor={page.nextCursor}
       />
     </div>
   );

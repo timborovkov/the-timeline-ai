@@ -28,8 +28,9 @@ source material instead of hiding behind black-box summaries.
   meetings, calendar rows, and connected tools.
 - Lightweight CRM, project, task, and decision tracking derived from everyday
   communication.
-- Team document search with versioned uploads, chunked embeddings, and inline
-  document citations.
+- Team document search with versioned uploads, chunked embeddings, inline
+  document citations, PDF/image/audio previews, and a captured-file inbox for
+  promoting Telegram/Slack evidence into curated knowledge.
 - Silent, consent-gated meeting transcript capture for Google Meet, Microsoft
   Teams, and Zoom.
 - Read-only team calendar subscription feeds for viewing Timeline events in a

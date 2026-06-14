@@ -6,20 +6,16 @@ contracts, not private implementation structure.
 
 ## Test Status Overview
 
-Last checked in this branch: full `pnpm validate` plus targeted Saved Meetings,
-Recall status, Slack quick-join, Telegram quick-join, scheduler, and finalizer
-suites pass after adding recurring meeting capture coverage, Saved Meeting
-visibility enforcement, scheduler idempotency, strict meeting URL host matching,
-generated calendar cleanup, quick-join failure/capacity/reuse, and partial-cancel
-finalize queue regressions, including duplicate-bot suppression when manual
-joins race a scheduled occurrence. Current suite shape:
+Last checked in this branch: full `pnpm validate`, `pnpm doctor`, `pnpm test:ci`,
+and targeted Documents shared/web suites pass after the Documents UX V2 work and
+captured-inbox promotion/pagination fixes. Current suite shape:
 
 - DB Vitest: 1 file / 7 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 68 files / 659 passed tests plus 1 skipped, including PGlite
+- Shared Vitest: 76 files / 659+ passed tests plus 1 skipped, including PGlite
   calendar, timeline, MCP, integration, meeting, document, object, assistant,
   Slack, recovery, connection, and onboarding coverage.
-- Web Vitest: 92 files / 466 tests, including route/action/component coverage
+- Web Vitest: 109 files / 466+ tests, including route/action/component coverage
   for core recovery, onboarding, object sections, board add-item interactions,
   and other high-value UI states.
 - Worker Vitest: includes extract, transcribe, document-extract,
@@ -46,7 +42,7 @@ Legend:
 | Team switching and membership | Partial: app shell, team switcher, invite/resend/revoke, invite acceptance, role change, member removal, cross-team isolation | Covered indirectly through active-team gates on many routes | Strong for teams/invites/member role/remove | Strong PGlite team isolation and membership scope | Missing | Missing team admin component tests | Deeper team settings component states and edge-case invite UI |
 | Timeline capture and visibility | Partial: create team event, private/team/specific-user/cross-team visibility | Strong for timeline list/search contracts and audio signing | Strong for capture and visibility actions | Strong PGlite team scope, visibility defaults, tombstones, embedding-source visibility | Strong extract/transcribe/embed contracts for text/audio handoff and privacy skips | Partial: capture composer static states plus timeline controls/page helpers and feed pagination dedupe | E2E timeline edit/delete/filtering and richer feed/list component states |
 | Objects, notes, and boards | Partial: object create/update/detail/archive, notes, board create/list/detail/filtering | Partial: object sections route covered | Strong for objects and boards actions | Strong PGlite object CRUD, notes, chat sessions, suggestions, board views, isolation | Suggestions worker covered | Partial: object detail static sections/approvals | E2E relationships and richer object/board component interaction states |
-| Documents and folders | Partial: folder create, upload/list/detail, rename/delete, team/private visibility | Strong list/search route contracts | Strong document actions | Strong PGlite document scope, object keys, folder ancestry, restore/delete semantics | Strong document-extract worker | Partial: document drive static empty/list states | Semantic search E2E, extracted chunk citations, worker-backed search, richer document UI states |
+| Documents and folders | Partial: folder create, upload/list/detail, rename/delete, team/private visibility | Strong list/search route contracts | Strong document actions | Strong PGlite document scope, object keys, folder ancestry, restore/delete semantics, single-document provenance lookup | Strong document-extract worker | Partial: document drive static empty/list states plus captured inbox rows, promotion defaults, and cursor loading | Semantic search E2E, extracted chunk citations, worker-backed search, richer document UI states |
 | Chat and agent UI | Partial: browser timeline question, tool activity, Event citation, session reload, degraded answer, visibility fences, and accepted task/calendar/object state | Strong chat route streaming/session/tool contract, including deterministic E2E seam coverage for durable workspace state | Missing chat action tests | Partial: deterministic agent tool evals, `askAgent` wrapper tests, MCP safety evals, structural tools, and LLM wrappers | Fast deterministic evals for timeline citation, task/calendar state, visibility fences, and tool failure honesty | Partial: chat pane static empty/message/pinned states | Remaining: live-model evals, broader chat UI states, and provider-backed retrieval |
 | Calendar | Partial: browser all-day create/edit/delete plus team/private visibility | Missing calendar API routes, if any are added later | Strong calendar action tests | Strong PGlite calendar scope, queue degradation, and time helpers | Embed worker calendar plan covered | Missing calendar UI states | E2E specific-user/timed calendar behavior and richer calendar UI states |
 | Integrations: Drive, GitHub, Linear | Missing UI/E2E connect/manage flows | Partial: Drive and Linear webhooks covered; OAuth/manage routes missing | Missing integration actions if/when added | Strong provider parsing and event writer coverage | Integration sync worker missing | Missing integrations UI | OAuth start/callback/manage routes, integration sync worker, UI connect/disconnect states |

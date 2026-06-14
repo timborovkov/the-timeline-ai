@@ -2,7 +2,7 @@
 
 import { FileText, Image as ImageIcon, Link2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { toast } from 'sonner';
 
 import type { ReactNode } from 'react';
@@ -18,6 +18,7 @@ interface CapturedFileItem {
   name: string;
   metadata: Record<string, unknown>;
   visibility: 'team' | 'private' | 'specific_users';
+  visibilityUserIds: string[] | null;
   updatedAt: string;
   sourceRawEventId: string | null;
   currentVersion: {
@@ -51,6 +52,7 @@ interface FolderOption {
 
 interface Props {
   files: CapturedFileItem[];
+  nextCursor?: string | null;
   folders: FolderOption[];
   members: { id: string; label: string }[];
 }
@@ -59,26 +61,40 @@ type Visibility = 'team' | 'private' | 'specific_users';
 
 const ALL = 'all';
 
-export function CapturedFilesList({ files, folders, members }: Props) {
+interface CapturedFilesPageResponse {
+  items: CapturedFileItem[];
+  nextCursor: string | null;
+}
+
+export function CapturedFilesList({ files, nextCursor = null, folders, members }: Props) {
+  const [loadedFiles, setLoadedFiles] = useState(files);
+  const [cursor, setCursor] = useState(nextCursor);
+  const [loadingMore, startLoadMore] = useTransition();
   const [sourceFilter, setSourceFilter] = useState(ALL);
   const [typeFilter, setTypeFilter] = useState(ALL);
   const [statusFilter, setStatusFilter] = useState(ALL);
   const [dateFilter, setDateFilter] = useState(ALL);
   const [promoting, setPromoting] = useState<CapturedFileItem | null>(null);
+  useEffect(() => {
+    setLoadedFiles(files);
+    setCursor(nextCursor);
+  }, [files, nextCursor]);
   const sources = useMemo(
-    () => [...new Set(files.map((file) => file.provenance.source))].sort(),
-    [files],
+    () => [...new Set(loadedFiles.map((file) => file.provenance.source))].sort(),
+    [loadedFiles],
   );
   const statuses = useMemo(
     () =>
       [
         ...new Set(
-          files.map((file) => file.currentVersion?.processingStatus ?? 'pending').filter(Boolean),
+          loadedFiles
+            .map((file) => file.currentVersion?.processingStatus ?? 'pending')
+            .filter(Boolean),
         ),
       ].sort(),
-    [files],
+    [loadedFiles],
   );
-  const visibleFiles = files.filter((file) => {
+  const visibleFiles = loadedFiles.filter((file) => {
     const kind = fileKind(file.currentVersion?.contentType ?? null);
     const status = file.currentVersion?.processingStatus ?? 'pending';
     if (sourceFilter !== ALL && file.provenance.source !== sourceFilter) return false;
@@ -88,7 +104,25 @@ export function CapturedFilesList({ files, folders, members }: Props) {
     return true;
   });
 
-  if (files.length === 0) {
+  function loadMore(): void {
+    if (!cursor) return;
+    startLoadMore(async () => {
+      const params = new URLSearchParams({ cursor });
+      const response = await fetch(`/api/documents/captured?${params.toString()}`);
+      if (!response.ok) {
+        toast.error('Failed to load captured files');
+        return;
+      }
+      const page = (await response.json()) as CapturedFilesPageResponse;
+      setLoadedFiles((current) => {
+        const seen = new Set(current.map((file) => file.id));
+        return [...current, ...page.items.filter((file) => !seen.has(file.id))];
+      });
+      setCursor(page.nextCursor);
+    });
+  }
+
+  if (loadedFiles.length === 0) {
     return (
       <div className="rounded-sm border border-dashed border-border bg-card/30 p-8 text-center">
         <p className="font-mono text-xs uppercase tracking-[0.12em] text-fg-dim">
@@ -147,8 +181,15 @@ export function CapturedFilesList({ files, folders, members }: Props) {
       </ul>
       {visibleFiles.length === 0 ? (
         <div className="rounded-sm border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-          No captured files match these filters.
+          {cursor
+            ? 'No loaded captured files match these filters. Load older captures to keep searching.'
+            : 'No captured files match these filters.'}
         </div>
+      ) : null}
+      {cursor ? (
+        <Button type="button" variant="outline" size="sm" onClick={loadMore} disabled={loadingMore}>
+          {loadingMore ? 'Loading...' : 'Load older captured files'}
+        </Button>
       ) : null}
       {promoting ? (
         <PromoteDialog
@@ -289,7 +330,9 @@ function PromoteDialog({
   const [name, setName] = useState(file.presentation.displayTitle);
   const [folderId, setFolderId] = useState('');
   const [visibility, setVisibility] = useState<Visibility>(file.visibility);
-  const [visibilityUserIds, setVisibilityUserIds] = useState<string[]>([]);
+  const [visibilityUserIds, setVisibilityUserIds] = useState<string[]>(
+    file.visibilityUserIds ?? [],
+  );
 
   function submit(): void {
     startTransition(async () => {

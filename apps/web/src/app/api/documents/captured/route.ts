@@ -28,6 +28,7 @@ export async function GET(req: Request): Promise<Response> {
         name: file.name,
         metadata: file.metadata,
         visibility: file.visibility,
+        visibilityUserIds: file.visibilityUserIds,
         updatedAt: file.updatedAt.toISOString(),
         ownerUserId: file.ownerUserId,
         sourceRawEventId: file.sourceRawEventId,

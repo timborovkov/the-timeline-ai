@@ -640,6 +640,40 @@ describe('document scope — visibility filter', () => {
     expect(visibleDocument?.provenance.metadata).not.toHaveProperty('parent_raw_event_id');
   });
 
+  it('listDocumentsWithProvenancePage can target one document outside the first page', async () => {
+    const A = withTeam(db, TEAM_ID, USER_A).documents;
+    const target = await A.createDocument({
+      name: 'older-target.pdf',
+      folderId: null,
+      filename: 'older-target.pdf',
+      contentType: 'application/pdf',
+      visibility: 'team',
+    });
+    await pg.query(`UPDATE documents SET updated_at = '2026-01-01T00:00:00Z' WHERE id = $1`, [
+      target.document.id,
+    ]);
+    for (let i = 0; i < 105; i++) {
+      await A.createDocument({
+        name: `newer-${String(i)}.pdf`,
+        folderId: null,
+        filename: `newer-${String(i)}.pdf`,
+        contentType: 'application/pdf',
+        visibility: 'team',
+      });
+    }
+
+    const firstPage = await A.listDocumentsWithProvenancePage({ folderId: null, limit: 100 });
+    expect(firstPage.items.find((document) => document.id === target.document.id)).toBeUndefined();
+
+    const targeted = await A.listDocumentsWithProvenancePage({
+      documentId: target.document.id,
+      fileKind: 'document',
+      limit: 1,
+    });
+    expect(targeted.items).toHaveLength(1);
+    expect(targeted.items[0]?.id).toBe(target.document.id);
+  });
+
   it('specific_users visibility honors the visibility_user_ids array', async () => {
     const A = withTeam(db, TEAM_ID, USER_A).documents;
     const created = await A.createDocument({

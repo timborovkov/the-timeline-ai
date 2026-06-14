@@ -129,6 +129,7 @@ export interface DocumentListEntry extends DocumentRow {
 }
 
 export interface DocumentListArgs {
+  documentId?: string;
   folderId?: string | null;
   includeDeleted?: boolean;
   fileKind?: FileKind;
@@ -467,7 +468,9 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     const conditions: SQL[] = [eq(documents.teamId, teamId), eq(documents.fileKind, fileKind)];
     if (documentVisibility) conditions.push(documentVisibility);
     if (!args.includeDeleted) conditions.push(isNull(documents.deletedAt));
-    if (fileKind === 'document') {
+    if (args.documentId) {
+      conditions.push(eq(documents.id, args.documentId));
+    } else if (fileKind === 'document') {
       if (args.folderId === null || args.folderId === undefined) {
         conditions.push(isNull(documents.folderId));
       } else {
@@ -958,8 +961,10 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
     async listDocumentsWithProvenancePage(
       args: {
+        documentId?: string;
         folderId?: string | null;
         includeDeleted?: boolean;
+        fileKind?: FileKind;
         limit?: number;
         cursor?: string | null;
       } = {},
