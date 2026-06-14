@@ -234,6 +234,7 @@ export function BoardDetailClient({
         </div>
         {selectedItem ? (
           <BoardCardDetail
+            key={selectedItem.id}
             boardId={boardId}
             view={view}
             item={selectedItem}

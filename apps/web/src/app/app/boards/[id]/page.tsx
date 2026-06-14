@@ -84,7 +84,6 @@ export default async function BoardDetailPage({
       }
     >
       <BoardDetailClient
-        key={`${board.id}:${board.updatedAt.toISOString()}`}
         boardId={board.id}
         boardName={board.name}
         purpose={board.purpose}
