@@ -27,6 +27,7 @@ const pgliteTests = [
   'src/team-exports/index.test.ts',
   'src/team-scope.search.test.ts',
   'src/team-scope.test.ts',
+  'src/team-scope.search.test.ts',
   'src/telegram/dispatcher.test.ts',
 ];
 

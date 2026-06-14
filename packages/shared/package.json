@@ -57,6 +57,12 @@
       "import": "./dist/logger.js",
       "types": "./dist/logger.d.ts"
     },
+    "./messaging": {
+      "types": "./src/messaging/index.ts",
+      "development": "./src/messaging/index.ts",
+      "import": "./dist/messaging/index.js",
+      "default": "./dist/messaging/index.js"
+    },
     "./env": {
       "import": "./dist/env.js",
       "types": "./dist/env.d.ts"
@@ -167,6 +173,12 @@
       "import": "./dist/onboarding/index.js",
       "default": "./dist/onboarding/index.js"
     },
+    "./search": {
+      "types": "./src/search/index.ts",
+      "development": "./src/search/index.ts",
+      "import": "./dist/search/index.js",
+      "default": "./dist/search/index.js"
+    },
     "./passwords": {
       "development": "./src/passwords.ts",
       "import": "./dist/passwords.js",
@@ -222,7 +234,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-email-templates.mjs",
     "dev": "tsc -p tsconfig.json --watch",
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit",

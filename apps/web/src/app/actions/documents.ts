@@ -42,6 +42,10 @@ interface Result {
   error?: string;
 }
 
+interface CreateFolderResult extends Result {
+  id?: string;
+}
+
 interface PreviewDocument {
   id: string;
   currentVersionId: string | null;
@@ -75,16 +79,35 @@ const createFolderSchema = z.object({
   visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
 });
 
+function bestEffortRevalidateDocuments(): void {
+  try {
+    revalidatePath('/app/documents');
+  } catch (err) {
+    log.error({ err }, 'document revalidation failed');
+    reportCaughtError(err, { surface: 'server_action', operation: 'revalidate_documents' });
+  }
+}
+
+function bestEffortRevalidateDocumentPath(path: string, operation: string): void {
+  try {
+    revalidatePath(path);
+  } catch (err) {
+    log.error({ err, path }, 'document path revalidation failed');
+    reportCaughtError(err, { surface: 'server_action', operation });
+  }
+}
+
 export async function createFolderAction(
   input: z.input<typeof createFolderSchema>,
-): Promise<Result> {
+): Promise<CreateFolderResult> {
   return runSentryServerAction('create_folder', async () => {
     const got = await withScopeOrError();
     if ('error' in got) return { ok: false, error: got.error };
     const parsed = createFolderSchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid' };
+    let folder: { id: string };
     try {
-      await got.scope.documents.createFolder({
+      folder = await got.scope.documents.createFolder({
         name: parsed.data.name,
         parentFolderId: parsed.data.parentFolderId ?? null,
         visibility: parsed.data.visibility,
@@ -95,8 +118,8 @@ export async function createFolderAction(
       reportCaughtError(err, { surface: 'server_action', operation: 'create_folder' });
       return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
     }
-    revalidatePath('/app/documents');
-    return { ok: true };
+    bestEffortRevalidateDocuments();
+    return { ok: true, id: folder.id };
   });
 }
 
@@ -116,7 +139,7 @@ export async function deleteFolderAction(id: string): Promise<Result> {
       reportCaughtError(err, { surface: 'server_action', operation: 'delete_folder' });
       return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
     }
-    revalidatePath('/app/documents');
+    bestEffortRevalidateDocuments();
     return { ok: true };
   });
 }
@@ -298,9 +321,12 @@ export async function finalizeDocumentVersionAction(
           source: 'automatic',
         });
       }
-      revalidatePath('/app/documents');
-      revalidatePath(`/app/documents/${finalized.document.id}`);
-      revalidatePath('/app/timeline');
+      bestEffortRevalidateDocuments();
+      bestEffortRevalidateDocumentPath(
+        `/app/documents/${finalized.document.id}`,
+        'revalidate_document_detail',
+      );
+      bestEffortRevalidateDocumentPath('/app/timeline', 'revalidate_document_timeline');
       return {
         ok: true,
         documentId: finalized.document.id,
@@ -341,8 +367,11 @@ export async function renameDocumentAction(
       reportCaughtError(err, { surface: 'server_action', operation: 'rename_document' });
       return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
     }
-    revalidatePath('/app/documents');
-    revalidatePath(`/app/documents/${parsed.data.id}`);
+    bestEffortRevalidateDocuments();
+    bestEffortRevalidateDocumentPath(
+      `/app/documents/${parsed.data.id}`,
+      'revalidate_document_detail',
+    );
     return { ok: true };
   });
 }
@@ -362,7 +391,7 @@ export async function deleteDocumentAction(id: string): Promise<Result> {
       reportCaughtError(err, { surface: 'server_action', operation: 'delete_document' });
       return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
     }
-    revalidatePath('/app/documents');
+    bestEffortRevalidateDocuments();
     return { ok: true };
   });
 }
@@ -391,10 +420,13 @@ export async function promoteCapturedFileAction(
         });
       }
       const document = promoted.document;
-      revalidatePath('/app/documents');
-      revalidatePath('/app/documents/captured');
-      revalidatePath(`/app/documents/${document.id}`);
-      revalidatePath('/app/timeline');
+      bestEffortRevalidateDocuments();
+      bestEffortRevalidateDocumentPath('/app/documents/captured', 'revalidate_captured_documents');
+      bestEffortRevalidateDocumentPath(
+        `/app/documents/${document.id}`,
+        'revalidate_document_detail',
+      );
+      bestEffortRevalidateDocumentPath('/app/timeline', 'revalidate_document_timeline');
       return { ok: true, documentId: document.id };
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'promote_captured_file' });

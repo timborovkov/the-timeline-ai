@@ -1,20 +1,19 @@
 // @vitest-environment happy-dom
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects';
 
 const fakes = vi.hoisted(() => ({
   addBoardItemAction: vi.fn(),
   quickCreateBoardItemAction: vi.fn(),
-  refresh: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
 vi.mock('@/app/actions/boards', () => ({
   addBoardItemAction: fakes.addBoardItemAction,
   quickCreateBoardItemAction: fakes.quickCreateBoardItemAction,
@@ -39,18 +38,19 @@ function objectRow(input: {
     ownerUserId: null,
     assigneeUserId: null,
     dueAt: null,
+    agentSuggested: false,
     metadata: {},
     archivedAt: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-  } as objects.ObjectRow;
+  };
 }
 
 describe('BoardAddItemForm', () => {
   beforeEach(() => {
+    cleanup();
     fakes.addBoardItemAction.mockReset();
     fakes.quickCreateBoardItemAction.mockReset();
-    fakes.refresh.mockReset();
   });
 
   it('renders add item as a collapsed panel toggle by default', () => {
@@ -81,7 +81,35 @@ describe('BoardAddItemForm', () => {
   });
 
   it('unfolds existing-object search, selects an object, and adds it to the board', async () => {
-    fakes.addBoardItemAction.mockResolvedValue({ ok: true, id: 'item-1' });
+    const addedObject = objectRow({
+      id: 'object-1',
+      canonicalName: 'MyAuditor',
+      type: 'company',
+      aliases: ['AuditAI'],
+    });
+    fakes.addBoardItemAction.mockResolvedValue({
+      ok: true,
+      id: 'item-1',
+      item: {
+        id: 'item-1',
+        boardId: 'board-1',
+        entityId: 'object-1',
+        laneId: 'lane-1',
+        position: 0,
+        responsibleUserId: null,
+        dueAt: null,
+        priority: null,
+        nextStep: null,
+        notes: null,
+        customFields: {},
+        archivedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        object: addedObject,
+      },
+    });
+    const optimistic = vi.fn<(item: boards.BoardItemRow) => void>();
+    const committed = vi.fn<(item: boards.BoardItemRow, optimisticId: string) => void>();
     const user = userEvent.setup();
 
     render(
@@ -90,14 +118,11 @@ describe('BoardAddItemForm', () => {
         defaultLaneId="lane-1"
         recommendedTypes={['company']}
         candidates={[
-          objectRow({
-            id: 'object-1',
-            canonicalName: 'MyAuditor',
-            type: 'company',
-            aliases: ['AuditAI'],
-          }),
+          addedObject,
           objectRow({ id: 'object-2', canonicalName: 'Subcontracting', type: 'topic' }),
         ]}
+        onOptimisticItem={optimistic}
+        onItemAdded={committed}
       />,
     );
 
@@ -128,8 +153,53 @@ describe('BoardAddItemForm', () => {
       });
     });
     await waitFor(() => {
-      expect(fakes.refresh).toHaveBeenCalled();
+      const optimisticItem = optimistic.mock.calls[0]?.[0];
+      const committedItem = committed.mock.calls[0]?.[0];
+      const optimisticId = committed.mock.calls[0]?.[1];
+      expect(optimisticItem?.boardId).toBe('board-1');
+      expect(optimisticItem?.entityId).toBe('object-1');
+      expect(optimisticItem?.laneId).toBe('lane-1');
+      expect(optimisticItem?.object.canonicalName).toBe('MyAuditor');
+      expect(committedItem?.id).toBe('item-1');
+      expect(committedItem?.entityId).toBe('object-1');
+      expect(optimisticId).toMatch(/^optimistic-/);
     });
     expect(fakes.quickCreateBoardItemAction).not.toHaveBeenCalled();
+  });
+
+  it('rolls back the optimistic item when the add action rejects', async () => {
+    fakes.addBoardItemAction.mockRejectedValue(new Error('Network lost'));
+    const optimistic = vi.fn<(item: boards.BoardItemRow) => void>();
+    const rollback = vi.fn<(item: boards.BoardItemRow) => void>();
+    const user = userEvent.setup();
+
+    render(
+      <BoardAddItemForm
+        boardId="board-1"
+        defaultLaneId="lane-1"
+        recommendedTypes={['company']}
+        candidates={[
+          objectRow({
+            id: 'object-1',
+            canonicalName: 'MyAuditor',
+            type: 'company',
+          }),
+        ]}
+        onOptimisticItem={optimistic}
+        onItemAddFailed={rollback}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Expand add item' }));
+    await user.click(screen.getByRole('button', { name: /MyAuditor/ }));
+    await user.click(screen.getByRole('button', { name: 'Add to board' }));
+
+    await waitFor(() => {
+      const optimisticItem = optimistic.mock.calls[0]?.[0];
+      const rolledBackItem = rollback.mock.calls[0]?.[0];
+      expect(optimisticItem?.id).toMatch(/^optimistic-/);
+      expect(rolledBackItem?.id).toBe(optimisticItem?.id);
+      expect(screen.getByText('Network lost')).toBeTruthy();
+    });
   });
 });

@@ -8,9 +8,7 @@ export function PinnedBoards({ boards: rows }: { boards: boards.BoardRow[] }) {
   return (
     <section className="space-y-3" aria-label="Pinned boards">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          Pinned boards
-        </h2>
+        <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">Boards</h2>
         <Link
           href="/app/boards"
           className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:text-fg"
@@ -32,8 +30,7 @@ export function PinnedBoards({ boards: rows }: { boards: boards.BoardRow[] }) {
               <Pin className="size-3.5 text-signal" aria-hidden="true" />
             </span>
             <span className="flex flex-wrap gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-              <span>{board.templateKind.replace('_', ' ')}</span>
-              <span>· {board.itemCount} items</span>
+              <span>{board.itemCount} items</span>
               <span>· {board.updatedAt.toLocaleDateString('en-CA')}</span>
             </span>
           </Link>

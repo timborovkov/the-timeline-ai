@@ -184,13 +184,14 @@ Departs from the v1 centered `max-w-3xl` prose column. New shell:
   citation source, summarized raw event evidence, related objects, and audit
   trail. Long ids truncate visually with full values available on hover. Large
   raw-event groups are capped with an overflow count. Hidden by default;
-  opens when the user clicks an object reference or the inspector toggle. Raw
-  event evidence links use a quick-view dialog first, with a direct link to the
-  full timeline row inside. This inspect-before-navigation pattern is the
-  structural expression of "every claim is cited."
-- **Command bar** persistent across the top of the main column. Cmd+K
-  focuses. The product's center of gravity is search/jump/ask, not the
-  sidebar.
+  opens when the user clicks a citation chip, an object reference, or the
+  inspector toggle. Raw event evidence links use a quick-view dialog first, with
+  a direct link to the full timeline row inside. This inspect-before-navigation
+  pattern is the structural expression of "every claim is cited."
+- **Global search palette** persistent across the top of the main column.
+  Cmd+K focuses. The palette is navigational: it previews grouped results for
+  pages, work records, timeline events, documents, and calendar items, while
+  Enter without a selected result opens the full search page.
 
 ### Density
 
@@ -269,10 +270,11 @@ Linear-tight on operational surfaces. Comfortable on mobile and on forms.
 The timeline is the canonical operational surface and the redesign's most
 visible change.
 
-- **Dedicated surface.** `/app` is the Home Dashboard for capture, pinned board
-  shortcuts, onboarding, ingest access, pending approvals, and compact recent
-  activity. `/app/timeline` is only the full archive browser: timeline
-  browsing, filtering, pagination, inspection, and source evidence.
+- **Dedicated surface.** `/app` is the Home Dashboard for capture, concise board
+  shortcuts, onboarding, ingest access, quick actions, the latest daily digest,
+  pending approvals, and compact recent activity. `/app/timeline` is only the
+  full archive browser: timeline browsing, filtering, pagination, inspection,
+  and source evidence. Free-form search lives in `/app/search`.
 - **Timeline moments, not raw rows by default.** The browser is date-first:
   sticky date sections contain source clusters, and each cluster contains one
   or more raw events behind the user-facing moment.
@@ -308,23 +310,26 @@ visible change.
 
 ### Kanban / board
 
-- Boards are curated work surfaces with explicit board items, not raw saved
-  filters over every matching object. Filters and templates help users find
-  eligible objects; membership is intentional.
-- Pinned boards on Home use compact snapshots, not embedded full boards: board
+- Boards are curated work surfaces with explicit board items and user-defined
+  stages, not raw saved filters over every matching object. Filters, templates,
+  and presets help users start; membership and workflow shape stay intentional.
+- Board shortcuts on Home use compact snapshots, not embedded full boards: board
   name, item count, lane counts, and last update. Opening the snapshot enters
   the full board.
-- Board creation starts from clear templates with icons, example use cases,
-  recommended object kinds, and editable default lanes/fields before advanced
-  filtering appears.
+- Board creation starts from clear presets with icons, example use cases, and
+  editable stages. Presets are starting points, not board types; stages can be
+  renamed, reordered, added, or removed during creation and from board settings.
+- Board descriptions are user-authored. Preset copy must not appear on the
+  board once it has been created unless the user explicitly wrote it.
 - Cards `bg-bg border border-border rounded-sm p-3`. Inner padding 12px.
-- Card meta strip at the bottom: mono uppercase 11px with task ID,
-  responsible person, due indicator, priority, and next step where present.
+- Card meta strip at the bottom: mono uppercase 10-11px with responsible
+  person, due indicator, and priority. Missing values render explicitly
+  (`Unassigned`, `No due`, `No priority`) so cleanup work is scannable.
   Due-this-week = `text-signal`; overdue = `text-danger`.
 - Card clicks open a board-context detail panel first. The panel shows object
-  memory, board-local properties, board notes, item history, evidence, and a
-  direct link to the full object page.
-- Drag uses `@dnd-kit/core` with optimistic `updateObjectAction` calls.
+  memory, editable board-local properties, board notes, item history, an object
+  preview modal, and direct links to the full object page and object chat.
+- Drag uses `@dnd-kit/core` with optimistic `updateBoardItemAction` calls.
 - Board moves should feel complete immediately. Show a quiet board-level
   saving state while moves are in flight, then a brief saved confirmation once
   server state catches up. Avoid per-move success toasts on kanban surfaces;
@@ -543,19 +548,30 @@ key/value pairs.
 ### Optimistic updates
 
 - Lightweight, reversible product edits should update the local surface
-  immediately, then reconcile with server state: kanban moves, object
-  status/stage/priority/due edits, text capture, calendar create/edit,
-  document upload placeholders, onboarding checklist actions, and inbox
-  read-state changes.
-- Compound, destructive, security-sensitive, or external-provider actions
-  wait for server confirmation: invites, meeting bot scheduling/cancel,
-  archive/delete, relationship changes, exports, and OAuth/integration setup.
+  immediately, then reconcile with server state: kanban moves, board item adds,
+  board item responsible/due/priority/notes edits, object status/stage/priority/due
+  edits, object notes, relationship changes, object-change approvals, object
+  archive state after explicit user confirmation, document renames, document
+  folder create/delete, text capture, calendar create/edit, document upload
+  placeholders, onboarding checklist actions, and inbox read-state changes.
   Approval accept/reject may optimistically remove only the affected review row
   when the action is reversible in the UI; restore the row and show a local
   error if the server rejects the change.
+- Security-sensitive or external-provider actions wait for server
+  confirmation: invites, meeting bot scheduling/cancel, exports, OAuth/
+  integration setup, and irreversible destructive operations.
 - Success feedback should be quiet and local (`Saving...` then `Saved`).
   Use prominent alerts only for failures, and rollback the smallest affected
   thing so the user can tell what changed.
+
+### Embedded approvals
+
+- On pages where approvals are not the primary job, approval sections collapse
+  by default behind a `<details>` summary with a live pending count. Calendar,
+  object detail, and object cleanup suggestions should expose the review path
+  without pushing the main page content below a stack of approval rows.
+- The dedicated Approvals page remains expanded and optimized for scanning,
+  filtering, bulk action, and row-level review.
 
 ### Motion
 

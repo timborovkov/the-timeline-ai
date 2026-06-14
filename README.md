@@ -22,6 +22,8 @@ source material instead of hiding behind black-box summaries.
 ## What You Can Build With It
 
 - A searchable team activity archive with source-level citations.
+- Global search across app pages, timeline events, documents, objects, tasks,
+  boards, calendar events, and integration setup surfaces.
 - A chat interface that can answer questions across events, documents,
   meetings, calendar rows, and connected tools.
 - Lightweight CRM, project, task, and decision tracking derived from everyday

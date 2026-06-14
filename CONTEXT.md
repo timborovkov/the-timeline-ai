@@ -251,26 +251,25 @@ Dashboard. Pinned boards give a team member fast access to active shared work
 surfaces without turning Home into the full board editor.
 _Avoid_: Embedded board, CRM module
 
-**Board Template**:
+**Board Preset**:
 A board creation starting point that explains a board's intended use through a
-plain-language purpose, example use cases, eligible object kinds, and suggested
-lanes or views. A board template teaches the user what kind of work surface
-they are creating before exposing advanced filters. Template object kinds guide
-the default add and search experience; they do not exclude other workspace
-objects unless the board is intentionally configured as strict.
-_Avoid_: Raw configuration preset, schema template
+plain-language purpose, example use cases, eligible object kinds, and starting
+stages. A board preset helps a new board become useful immediately, but it is
+not a board type and does not define a fixed workflow.
+_Avoid_: Board type, schema template
 
-**Template Defaults**:
-The editable starting lanes, board item properties, example labels, and
-recommended object kinds supplied by a board template. Template defaults help a
-new board become useful immediately but do not define a fixed schema.
+**Preset Defaults**:
+The editable starting stages, board item properties, example labels, and
+recommended object kinds supplied by a board preset. Preset defaults are
+starting values; teammates can rename, reorder, add, or remove stages during
+creation and from board settings.
 _Avoid_: Mandatory workflow
 
 **Pipeline Board**:
-A board template for tracking objects through relationship, sales, partnership,
-or delivery stages. A lightweight pipeline can track companies directly; a
-separate deal or project object is used when one company has multiple active
-commercial or delivery threads.
+A board started from pipeline-style defaults for tracking objects through
+relationship, sales, partnership, or delivery stages. A lightweight pipeline
+can track companies directly; a separate deal or project object is used when
+one company has multiple active commercial or delivery threads.
 _Avoid_: CRM when the board is not specifically customer relationship work
 
 **Correction Proposal**:
@@ -610,8 +609,8 @@ _Avoid_: Setup wizard, activation gate
 
 **Home Dashboard**:
 The signed-in landing surface for a team member. It gathers capture, onboarding,
-ingest access, pending approvals, and a compact recent activity view without
-trying to be the canonical event browser.
+ingest access, quick actions, pending approvals, the latest daily digest, and a
+compact recent activity view without trying to be the canonical event browser.
 _Avoid_: Timeline when referring to the landing page
 
 **Workspace Time Context**:

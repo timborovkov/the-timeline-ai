@@ -222,6 +222,8 @@ export interface SearchDocumentChunksInput {
   documentId?: string;
   folderIds?: string[];
   fileKinds?: FileKind[];
+  from?: Date;
+  to?: Date;
   limit?: number;
   offset?: number;
   maxOffset?: number;
@@ -241,6 +243,7 @@ export interface DocumentChunkSearchHit {
   documentName: string;
   folderId: string | null;
   sourceRawEventId: string | null;
+  createdAt: Date;
   score: number;
 }
 
@@ -665,6 +668,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         documentName: documents.name,
         folderId: documents.folderId,
         sourceRawEventId: documents.sourceRawEventId,
+        createdAt: documentVersions.createdAt,
       })
       .from(documentChunks)
       .innerJoin(documents, eq(documents.id, documentChunks.documentId))
@@ -688,6 +692,8 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           input.fileKinds && input.fileKinds.length > 0
             ? inArray(documents.fileKind, input.fileKinds)
             : eq(documents.fileKind, 'document'),
+          input.from ? gte(documentVersions.createdAt, input.from) : undefined,
+          input.to ? lt(documentVersions.createdAt, input.to) : undefined,
         ),
       );
     const byId = new Map(rows.map((r) => [r.chunkId, r]));
@@ -713,6 +719,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         documentName: row.documentName,
         folderId: row.folderId,
         sourceRawEventId: row.sourceRawEventId,
+        createdAt: row.createdAt,
         score: hit.score,
       });
     }

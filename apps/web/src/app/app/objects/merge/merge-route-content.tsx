@@ -23,6 +23,8 @@ interface Props {
   searchParams: MergeSearchParams;
 }
 
+const objectsBackLink = <HistoryBackLink fallbackHref="/app/objects" label="Back" />;
+
 function renderPageShell(children: ReactNode, selectedCount?: number) {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -33,9 +35,8 @@ function renderPageShell(children: ReactNode, selectedCount?: number) {
             ? [{ value: 'MERGE' }, { label: 'selected', value: selectedCount }]
             : [{ value: 'MERGE' }]
         }
-      >
-        <HistoryBackLink fallbackHref="/app/objects" label="Back" />
-      </IndexStrip>
+        leading={objectsBackLink}
+      />
       {children}
     </div>
   );

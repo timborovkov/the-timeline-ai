@@ -14,6 +14,7 @@ const boardTemplateSchema = z.enum(['pipeline', 'task_board', 'catalog', 'custom
 const laneKindSchema = z.enum(['active', 'done', 'terminal', 'lost', 'blocked']);
 
 const laneSchema = z.object({
+  id: uuidSchema.optional(),
   name: z.string().trim().min(1).max(120),
   kind: laneKindSchema.nullable().optional(),
 });
@@ -24,6 +25,18 @@ const createBoardSchema = z.object({
   templateKind: boardTemplateSchema,
   recommendedObjectTypes: z.array(objectTypeSchema).max(8).optional(),
   lanes: z.array(laneSchema).max(16).optional(),
+});
+
+const renameBoardSchema = z.object({
+  id: uuidSchema,
+  name: z.string().trim().min(1).max(120),
+});
+
+const updateBoardSettingsSchema = z.object({
+  id: uuidSchema,
+  name: z.string().trim().min(1).max(120),
+  purpose: z.string().trim().max(1000),
+  lanes: z.array(laneSchema).min(1).max(16),
 });
 
 const boardItemPatchSchema = z.object({
@@ -51,10 +64,20 @@ const quickCreateSchema = z.object({
 });
 
 function revalidateBoardSurfaces(boardId?: string, entityId?: string): void {
-  revalidatePath('/app');
-  revalidatePath('/app/boards');
-  if (boardId) revalidatePath(`/app/boards/${boardId}`);
-  if (entityId) revalidatePath(`/app/objects/${entityId}`);
+  const paths = ['/app', '/app/boards'];
+  if (boardId) paths.push(`/app/boards/${boardId}`);
+  if (entityId) paths.push(`/app/objects/${entityId}`);
+
+  for (const path of paths) {
+    try {
+      revalidatePath(path);
+    } catch (err) {
+      reportCaughtError(err, {
+        surface: 'server_action',
+        operation: 'revalidate_board_surfaces',
+      });
+    }
+  }
 }
 
 function friendlyError(err: unknown, fallback: string): string {
@@ -74,19 +97,6 @@ function recommendedTypesFor(templateKind: boardDomain.BoardTemplateKind): objec
   return [];
 }
 
-function purposeFor(templateKind: boardDomain.BoardTemplateKind): string {
-  if (templateKind === 'pipeline') {
-    return 'Track companies, deals, or projects through staged progress.';
-  }
-  if (templateKind === 'task_board') {
-    return 'Track tasks and follow-ups through an operational workflow.';
-  }
-  if (templateKind === 'catalog') {
-    return 'Track products, services, vendors, documents, or reference objects in one curated inventory.';
-  }
-  return 'Track a curated set of workspace objects for a team-defined workflow.';
-}
-
 export async function createBoardAction(input: unknown): Promise<ActionState> {
   return runSentryServerAction('create_board', async () => {
     const parsed = createBoardSchema.safeParse(input);
@@ -97,7 +107,7 @@ export async function createBoardAction(input: unknown): Promise<ActionState> {
       const templateKind = parsed.data.templateKind;
       const board = await r.scope.boards.createBoard({
         name: parsed.data.name,
-        purpose: parsed.data.purpose ?? purposeFor(templateKind),
+        purpose: parsed.data.purpose ?? '',
         templateKind,
         recommendedObjectTypes:
           parsed.data.recommendedObjectTypes ?? recommendedTypesFor(templateKind),
@@ -127,7 +137,43 @@ export async function deleteBoardAction(input: unknown): Promise<ActionState> {
   });
 }
 
-export async function addBoardItemAction(input: unknown): Promise<ActionState> {
+export async function renameBoardAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('rename_board', async () => {
+    const parsed = renameBoardSchema.safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const ok = await r.scope.boards.renameBoard(parsed.data);
+      if (!ok) return { error: 'Board not found' };
+      revalidateBoardSurfaces(parsed.data.id);
+      return { ok: true };
+    } catch (err) {
+      return { error: friendlyError(err, 'rename_board') };
+    }
+  });
+}
+
+export async function updateBoardSettingsAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('update_board_settings', async () => {
+    const parsed = updateBoardSettingsSchema.safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const ok = await r.scope.boards.updateBoardSettings(parsed.data);
+      if (!ok) return { error: 'Board not found' };
+      revalidateBoardSurfaces(parsed.data.id);
+      return { ok: true };
+    } catch (err) {
+      return { error: friendlyError(err, 'update_board_settings') };
+    }
+  });
+}
+
+export async function addBoardItemAction(
+  input: unknown,
+): Promise<ActionState & { item?: boardDomain.BoardItemRow }> {
   return runSentryServerAction('add_board_item', async () => {
     const parsed = addExistingSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -140,14 +186,16 @@ export async function addBoardItemAction(input: unknown): Promise<ActionState> {
         actor: { kind: 'user', userId: r.userId },
       });
       revalidateBoardSurfaces(parsed.data.boardId, item.entityId);
-      return { ok: true, id: item.id };
+      return { ok: true, id: item.id, item };
     } catch (err) {
       return { error: friendlyError(err, 'add_board_item') };
     }
   });
 }
 
-export async function quickCreateBoardItemAction(input: unknown): Promise<ActionState> {
+export async function quickCreateBoardItemAction(
+  input: unknown,
+): Promise<ActionState & { item?: boardDomain.BoardItemRow }> {
   return runSentryServerAction('quick_create_board_item', async () => {
     const parsed = quickCreateSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -166,7 +214,7 @@ export async function quickCreateBoardItemAction(input: unknown): Promise<Action
         },
       );
       revalidateBoardSurfaces(parsed.data.boardId, item.entityId);
-      return { ok: true, id: item.id };
+      return { ok: true, id: item.id, item };
     } catch (err) {
       return { error: friendlyError(err, 'quick_create_board_item') };
     }

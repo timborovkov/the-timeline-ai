@@ -281,6 +281,13 @@
       "when": 1795652700000,
       "tag": "0039_saved_meetings",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795652760000,
+      "tag": "0040_messaging",
+      "breakpoints": true
     }
   ]
 }

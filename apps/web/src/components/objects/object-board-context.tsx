@@ -17,8 +17,7 @@ export function ObjectBoardContext({ rows }: { rows: boards.ObjectBoardContextRo
               {row.boardName}
             </Link>
             <div className="mt-2 flex flex-wrap gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-              <span>{row.templateKind.replace('_', ' ')}</span>
-              {row.laneName ? <span>· {row.laneName}</span> : null}
+              {row.laneName ? <span>{row.laneName}</span> : <span>No stage</span>}
               {row.responsibleUserId ? <span>· assigned</span> : null}
               {row.dueAt ? <span>· due {row.dueAt.toLocaleDateString('en-CA')}</span> : null}
               {row.priority ? <span>· p{row.priority}</span> : null}

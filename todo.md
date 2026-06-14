@@ -46,8 +46,9 @@ implementation detail.
       objects and the relationship together when each object independently
       qualifies as durable information, using bundle-local refs and ordered
       acceptance so `Accept all` creates endpoints before applying the link.
-- [x] Surface accepted and pending relationships on both object detail pages
-      with cited evidence explaining why the objects are connected.
+- [x] Surface accepted and pending relationships on both object detail pages,
+      with relationship activity and evidence available nearby while cited
+      per-edge explanations remain part of the later graph/mind-map slice.
 - [x] Replace manual UUID relationship linking with object search/select in the
       object detail UI.
 - [x] Collapse the generic `linked` relationship kind into `related`, migrate
@@ -100,8 +101,10 @@ implementation detail.
 - [ ] Implement reminder cascade: team default
       `team_calendar_settings.default_reminder_minutes`, overridden by
       per-event `calendar_events.reminder_minutes`.
-- [ ] Add daily event digest per user. Delivery should reuse platform-level
-      preferences and support inbox notification, email, and/or Telegram.
+- [x] Add daily event digest per user. Delivery uses the shared messaging
+      module, stores a dashboard-readable digest payload, sends email only for
+      the digest, supports per-user opt-out in Team settings, and keeps
+      individual in-app notifications inbox-only.
 - [ ] Extend overdue/missed alerts to calendar events past `start_at` with no
       attendance or completion signal.
 
