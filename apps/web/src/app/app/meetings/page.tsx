@@ -39,14 +39,16 @@ export default async function MeetingsPage({
   const params = (await searchParams) ?? {};
   const tab = params.tab === 'saved' ? 'saved' : 'captures';
 
-  const [list, savedMeetings, usedMinutes, settings, defaultRow, members] = await Promise.all([
-    scope.meetings.listMeetings({ limit: 50 }),
-    scope.meetings.listSavedMeetings(),
-    scope.meetings.getCurrentMonthMinutes(),
-    scope.meetings.getMeetingSettings(),
-    scope.timeline.resolveVisibilityDefault('meeting'),
-    scope.timeline.listMembers(),
-  ]);
+  const [list, savedMeetings, usedMinutes, settings, calendarSettings, defaultRow, members] =
+    await Promise.all([
+      scope.meetings.listMeetings({ limit: 50 }),
+      scope.meetings.listSavedMeetings(),
+      scope.meetings.getCurrentMonthMinutes(),
+      scope.meetings.getMeetingSettings(),
+      scope.calendar.getCalendarSettings(),
+      scope.timeline.resolveVisibilityDefault('meeting'),
+      scope.timeline.listMembers(),
+    ]);
   const memberIds = members.map((m) => m.userId);
   const memberUsers =
     memberIds.length > 0
@@ -101,6 +103,7 @@ export default async function MeetingsPage({
         <SavedMeetingForm
           defaultVisibility={defaultRow.visibility}
           defaultVisibilityUserIds={defaultRow.visibilityUserIds}
+          defaultTimezone={calendarSettings.defaultTimezone}
           members={memberOptions}
         />
       )}
@@ -133,7 +136,11 @@ export default async function MeetingsPage({
                   {saved.description ? (
                     <p className="text-sm text-muted-foreground">{saved.description}</p>
                   ) : null}
-                  <EditSavedMeetingForm saved={saved} members={memberOptions} />
+                  <EditSavedMeetingForm
+                    saved={saved}
+                    defaultTimezone={calendarSettings.defaultTimezone}
+                    members={memberOptions}
+                  />
                 </li>
               ))}
             </ul>
