@@ -16,6 +16,8 @@ interface IndexSegment {
 interface IndexStripProps {
   /** The first segment renders as the page H1; subsequent segments are metadata. */
   segments: IndexSegment[];
+  /** Optional leading navigation or context element — left-aligned before the title. */
+  leading?: ReactNode;
   /** Optional trailing element (filter button, etc.) — right-aligned. */
   trailing?: ReactNode;
   children?: ReactNode;
@@ -40,6 +42,7 @@ function segmentKey(seg: IndexSegment): string {
  */
 export function IndexStrip({
   segments,
+  leading,
   trailing,
   children,
   srLabel,
@@ -61,6 +64,7 @@ export function IndexStrip({
         className,
       )}
     >
+      {leading ? <span className="shrink-0 text-fg-dim">{leading}</span> : null}
       <h1 id={titleId} className="m-0 text-xs font-normal uppercase tracking-[0.12em] text-fg">
         <span aria-hidden="true">{title.value}</span>
         <span className="sr-only">{srLabel}</span>

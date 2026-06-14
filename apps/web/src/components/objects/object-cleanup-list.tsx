@@ -3,7 +3,7 @@
 import { Archive, GitMerge, SquareCheckBig, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useReducer, useTransition } from 'react';
 
 import type * as objects from '@timeline/shared/objects';
 
@@ -17,16 +17,70 @@ interface Props {
   typeLabels: Record<string, string>;
 }
 
+interface CleanupListState {
+  selecting: boolean;
+  selected: Set<string>;
+  archivedIds: Set<string>;
+  error: string | null;
+  filterQuery: string;
+}
+
+type CleanupListAction =
+  | { type: 'begin-selecting' }
+  | { type: 'toggle'; id: string }
+  | { type: 'clear-selection' }
+  | { type: 'set-filter'; query: string }
+  | { type: 'archive-optimistic'; ids: string[] }
+  | { type: 'archive-rollback'; ids: string[]; error: string };
+
+function cleanupListReducer(state: CleanupListState, action: CleanupListAction): CleanupListState {
+  switch (action.type) {
+    case 'begin-selecting':
+      return { ...state, selecting: true };
+    case 'toggle': {
+      const selected = new Set(state.selected);
+      if (selected.has(action.id)) selected.delete(action.id);
+      else selected.add(action.id);
+      return { ...state, selected };
+    }
+    case 'clear-selection':
+      return { ...state, selecting: false, selected: new Set(), error: null };
+    case 'set-filter':
+      return { ...state, filterQuery: action.query, selected: new Set() };
+    case 'archive-optimistic':
+      return {
+        ...state,
+        selecting: false,
+        selected: new Set(),
+        archivedIds: new Set([...state.archivedIds, ...action.ids]),
+        error: null,
+      };
+    case 'archive-rollback': {
+      const archivedIds = new Set(state.archivedIds);
+      for (const id of action.ids) archivedIds.delete(id);
+      return { ...state, archivedIds, error: action.error };
+    }
+  }
+}
+
 export function ObjectCleanupList({ rows, typeLabels }: Props) {
   const router = useRouter();
-  const [selecting, setSelecting] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [error, setError] = useState<string | null>(null);
-  const [filterQuery, setFilterQuery] = useState('');
+  const [{ selecting, selected, archivedIds, error, filterQuery }, dispatchCleanupList] =
+    useReducer(cleanupListReducer, {
+      selecting: false,
+      selected: new Set<string>(),
+      archivedIds: new Set<string>(),
+      error: null,
+      filterQuery: '',
+    });
   const [isPending, startTransition] = useTransition();
+  const activeRows = useMemo(
+    () => rows.filter((row) => !archivedIds.has(row.id)),
+    [archivedIds, rows],
+  );
   const visibleRows = useMemo(
-    () => filterObjectsByText(rows, filterQuery, { typeLabels }),
-    [rows, filterQuery, typeLabels],
+    () => filterObjectsByText(activeRows, filterQuery, { typeLabels }),
+    [activeRows, filterQuery, typeLabels],
   );
   const visibleIds = useMemo(() => new Set(visibleRows.map((row) => row.id)), [visibleRows]);
 
@@ -54,18 +108,11 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
     [grouped, typeLabels],
   );
   function toggle(id: string) {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    dispatchCleanupList({ type: 'toggle', id });
   }
 
   function clearSelection() {
-    setSelected(new Set());
-    setSelecting(false);
-    setError(null);
+    dispatchCleanupList({ type: 'clear-selection' });
   }
 
   function archiveSelected() {
@@ -73,14 +120,18 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
     if (!confirm(`Archive ${selectedCount} selected object${selectedCount === 1 ? '' : 's'}?`)) {
       return;
     }
-    setError(null);
+    const idsToArchive = selectedIds;
+    dispatchCleanupList({ type: 'archive-optimistic', ids: idsToArchive });
     startTransition(async () => {
-      const result = await bulkArchiveObjectsAction({ ids: selectedIds });
+      const result = await bulkArchiveObjectsAction({ ids: idsToArchive });
       if (result.error) {
-        setError(result.error);
+        dispatchCleanupList({
+          type: 'archive-rollback',
+          ids: idsToArchive,
+          error: result.error,
+        });
         return;
       }
-      clearSelection();
       router.refresh();
     });
   }
@@ -91,11 +142,10 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
         <ObjectTextFilter
           query={filterQuery}
           onQueryChange={(query) => {
-            setFilterQuery(query);
-            setSelected(new Set());
+            dispatchCleanupList({ type: 'set-filter', query });
           }}
           resultCount={visibleRows.length}
-          totalCount={rows.length}
+          totalCount={activeRows.length}
         />
         <div className="flex items-center gap-1.5">
           {selecting ? (
@@ -139,7 +189,7 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
             <button
               type="button"
               onClick={() => {
-                setSelecting(true);
+                dispatchCleanupList({ type: 'begin-selecting' });
               }}
               className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-2.5 font-mono text-[11px] uppercase tracking-[0.1em] text-fg transition-colors hover:bg-surface-2"
             >

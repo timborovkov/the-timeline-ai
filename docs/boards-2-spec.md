@@ -37,11 +37,11 @@ and history.
 A board is a team-shared work surface with:
 
 - name
-- purpose/instructions
-- template kind
+- description/instructions
+- preset provenance for defaults
 - allowed or recommended object kinds
 - one or more views
-- lanes
+- user-defined lanes/stages
 - explicit board items
 - shared settings
 
@@ -98,9 +98,9 @@ as impact context.
 Ship one coherent Boards 2.0 slice:
 
 - explicit board membership
-- board-owned lanes
+- board-owned, user-editable lanes/stages
 - board-local item properties
-- Pipeline and Task Board templates
+- preset-based creation for common starting workflows
 - manual add/search existing objects with quick object creation fallback
 - board card detail panel
 - object page board-membership summaries
@@ -121,20 +121,26 @@ Defer:
 - advanced automation rules
 - bulk import
 
-## Templates
+## Presets And Stages
 
-Board creation starts with template choice, using icons, concrete examples, and
-plain-language descriptions before advanced settings.
+Board creation starts with preset choice, using icons, concrete examples, and
+plain-language descriptions. A preset only seeds name, recommended object kinds,
+and editable stages; it is not a rigid board type. Preset descriptive copy is
+not stored as the board description unless the user writes it.
+
+The default preset starts with Backlog, In progress, Review, and Done. Users can
+rename, reorder, add, or remove stages during creation. The same stage editor is
+available later from board settings.
 
 ### Pipeline
 
-Use for sales, partnerships, account tracking, delivery stages, and other
+Use as a starting point for sales, partnerships, account tracking, delivery stages, and other
 relationship-style workflows.
 
 Defaults:
 
 - recommended object kinds: company, deal, project
-- lanes: New, Qualified, Scoping, Proposal, Committed, Active, Won, Lost
+- starting stages: New, Qualified, Scoping, Proposal, Committed
 - properties: responsible, due date, priority, next step, notes
 
 Creation asks what the team is tracking:
@@ -146,40 +152,38 @@ Creation asks what the team is tracking:
 
 ### Task Board
 
-Use for development, marketing, management, and follow-up work.
+Use as a starting point for development, marketing, management, and follow-up work.
 
 Defaults:
 
 - recommended object kinds: task, follow_up
-- lanes: Backlog, Ready, Doing, Review, Done, Blocked
+- starting stages: Backlog, Ready, Doing, Review, Done
 - properties: responsible, due date, priority, next step, notes
 
 ### Catalog
 
-Use for products, services, vendors, documents, reference objects, or internal
+Use as a starting point for products, services, vendors, documents, reference objects, or internal
 inventories.
 
 Defaults:
 
 - recommended object kinds: project, document, vendor, other
-- lanes: Idea, Evaluating, Active, Deprecated
+- starting stages: Idea, Evaluating, Active, Deprecated
 - properties: responsible, priority, notes
 
-Catalog can ship after Pipeline and Task Board if needed.
+### Simple
 
-### Custom
-
-Use when none of the guided templates fit. Custom boards still use explicit
-membership, lanes, and board item properties.
+Use when none of the guided presets fit. Simple boards still use explicit
+membership, editable stages, and board item properties.
 
 ## User Flows
 
 ### Create Board
 
 1. User opens Boards.
-2. User chooses a template from visual options with examples.
-3. User enters name and optionally edits purpose/instructions.
-4. User reviews suggested lanes and item properties.
+2. User chooses a preset from visual options with examples.
+3. User enters name and optionally edits description/instructions.
+4. User edits the starting stages if needed.
 5. User creates the board.
 6. App opens the empty board with a focused add flow.
 
@@ -187,7 +191,7 @@ Success criteria:
 
 - The user can create a pipeline without seeing raw fields like
   `filter.type` or `group_by`.
-- The board purpose is understandable to both teammates and the agent.
+- The board description is understandable to both teammates and the agent.
 
 ### Add Board Item
 
@@ -211,12 +215,13 @@ Kanban:
 - show saving/saved board-level state
 - rollback only failed moves
 - preserve each move in board history
+- edit board name, description, and stages from board settings
 
 Table:
 
-- scan and edit responsible person, due date, priority, next step, lane, and
-  object summary
-- keep edits optimistic and field-scoped
+- scan responsible person, due date, priority, next step, lane, and object
+  summary
+- keep field editing deferred to the table/list polish slice
 
 List:
 
@@ -229,12 +234,12 @@ Card click opens board-context detail before navigating away.
 The panel shows:
 
 - object summary
-- board item properties
+- editable board item properties: responsible person, due date, and priority
 - board-local notes
 - next step
-- evidence and related timeline moments
 - board item history
-- links to full object page, chat about object, and all timeline events
+- object preview modal, with links to the full object page, object chat, and all
+  timeline events
 
 ### Pin Board
 
@@ -243,7 +248,7 @@ Users can pin or unpin shared boards for their own Home Dashboard.
 Home shows compact pinned board snapshots:
 
 - board name
-- template/purpose label
+- description label when present
 - item count
 - lane counts
 - overdue/due-soon count when available
@@ -257,7 +262,7 @@ v1.
 Object pages show active board memberships compactly:
 
 - board name
-- board purpose/template
+- board description when present
 - lane
 - responsible person
 - due date
@@ -267,9 +272,10 @@ This lets users move from canonical memory to active workflows.
 
 ## Agent Behavior
 
-### Board Purpose
+### Board Description
 
-Each board has user-visible purpose/instructions. The agent uses them to decide:
+Each board has a user-visible description/instructions field. The agent uses it
+to decide:
 
 - whether an object belongs on the board
 - what lane to suggest
@@ -495,6 +501,8 @@ New or rewritten:
 - `BoardTable`
 - `BoardList`
 - `BoardAddItemDialog`
+- `BoardActionsMenu`
+- `BoardStageEditor`
 - `BoardCardDetail`
 - `BoardItemHistory`
 - `ObjectBoardContext`
@@ -504,18 +512,21 @@ Board components should not imply that a board is just an object filter.
 ### Visual Direction
 
 - Quiet, dense, Linear-like surfaces.
-- Icons for templates and board actions.
-- Clear examples in the template picker.
+- Icons for presets and board actions.
+- Board rename, pin/unpin, and delete live in a compact board actions menu
+  instead of exposed destructive buttons.
+- Board settings include name, purpose, and the stage editor.
+- Clear examples in the preset picker.
 - No hero or marketing treatment inside the app.
 - Cards stay compact and stable in size.
-- Optimistic updates for moves and field edits.
+- Optimistic updates for moves and add-item flows.
 - Errors attach to the affected card, row, or field.
 - Pinned board snapshots are compact modules, not full boards.
 
 ## Migration
 
 The migration creates the curated board tables directly. Users create curated
-boards from templates and add explicit board items; this avoids carrying forward
+boards from presets and add explicit board items; this avoids carrying forward
 noisy boards that showed every object matching a broad type.
 
 ## Testing
@@ -533,7 +544,9 @@ noisy boards that showed every object matching a broad type.
 
 ### Server Actions and Routes
 
-- create board validates template and lanes
+- create board validates preset and user-defined lanes
+- update board settings validates and persists renamed/reordered/added/removed
+  lanes
 - add existing object to board
 - quick-create object and add to board
 - move board item with optimistic-safe server response
@@ -545,12 +558,13 @@ noisy boards that showed every object matching a broad type.
 
 ### UI
 
-- template picker examples are visible and understandable
-- Pipeline creation does not expose raw filter/group fields first
+- preset picker examples are visible and understandable
+- Board creation does not expose raw filter/group fields first
+- stage add/remove/reorder controls preserve at least one stage
 - company-type board does not show all companies by default
 - board card opens detail panel
 - failed move rolls back only affected card
-- table edits preserve layout and show field-level saving/error states
+- table and list views preserve layout while field editing remains deferred
 
 ### Agent and Suggestions
 
@@ -570,7 +584,7 @@ noisy boards that showed every object matching a broad type.
 
 ### Phase 2: Manual Boards
 
-- Add template-based creation for Pipeline and Task Board.
+- Add preset-based creation with editable stages.
 - Add manual add/search and quick create.
 - Add Kanban and card detail using board-local state.
 - Add board history.
@@ -598,7 +612,7 @@ noisy boards that showed every object matching a broad type.
 
 - Should board item notes be a single mutable field in v1, or append-only notes
   with their own history rows?
-- Should moving to terminal lanes such as Won/Lost require a reason?
+- Should moving to terminal stages such as Won/Lost require a reason?
 - Should "responsible" be singular in v1, or should boards support multiple
   responsible people later?
 - Should board item due dates generate notifications or reuse existing task

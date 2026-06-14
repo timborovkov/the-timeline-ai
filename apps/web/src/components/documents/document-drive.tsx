@@ -22,8 +22,8 @@ import {
   type RefObject,
   type SetStateAction,
   useMemo,
+  useReducer,
   useRef,
-  useState,
   useTransition,
 } from 'react';
 import { toast } from 'sonner';
@@ -47,6 +47,7 @@ interface FolderItem {
   name: string;
   visibility: string;
   updatedAt: string;
+  optimistic?: boolean;
 }
 
 interface DocumentItem {
@@ -100,6 +101,78 @@ interface UploadState {
   error?: string;
 }
 
+interface DriveUiState {
+  uploads: readonly UploadState[];
+  visibility: Props['defaultVisibility'];
+  visibilityUserIds: string[];
+  optimisticFolders: readonly FolderItem[];
+  deletedFolderIds: ReadonlySet<string>;
+}
+
+type DriveUiAction =
+  | { type: 'add-upload'; upload: UploadState }
+  | { type: 'update-upload'; id: string; patch: Partial<UploadState> }
+  | { type: 'clear-upload'; id: string }
+  | { type: 'set-visibility'; visibility: Props['defaultVisibility'] }
+  | { type: 'set-visibility-user-ids'; value: SetStateAction<string[]> }
+  | { type: 'add-optimistic-folder'; folder: FolderItem }
+  | { type: 'confirm-folder'; tempId: string; id: string }
+  | { type: 'remove-optimistic-folder'; id: string }
+  | { type: 'hide-folder'; id: string }
+  | { type: 'restore-folder'; id: string };
+
+function driveUiReducer(state: DriveUiState, action: DriveUiAction): DriveUiState {
+  switch (action.type) {
+    case 'add-upload':
+      return { ...state, uploads: [...state.uploads, action.upload] };
+    case 'update-upload':
+      return {
+        ...state,
+        uploads: state.uploads.map((upload) =>
+          upload.id === action.id ? { ...upload, ...action.patch } : upload,
+        ),
+      };
+    case 'clear-upload':
+      return { ...state, uploads: state.uploads.filter((upload) => upload.id !== action.id) };
+    case 'set-visibility':
+      return { ...state, visibility: action.visibility };
+    case 'set-visibility-user-ids':
+      return {
+        ...state,
+        visibilityUserIds:
+          typeof action.value === 'function' ? action.value(state.visibilityUserIds) : action.value,
+      };
+    case 'add-optimistic-folder':
+      return {
+        ...state,
+        optimisticFolders: [action.folder, ...state.optimisticFolders],
+      };
+    case 'confirm-folder':
+      return {
+        ...state,
+        optimisticFolders: state.optimisticFolders.map((folder) =>
+          folder.id === action.tempId ? { ...folder, id: action.id, optimistic: false } : folder,
+        ),
+      };
+    case 'remove-optimistic-folder':
+      return {
+        ...state,
+        optimisticFolders: state.optimisticFolders.filter((folder) => folder.id !== action.id),
+      };
+    case 'hide-folder':
+      return {
+        ...state,
+        deletedFolderIds: new Set([...state.deletedFolderIds, action.id]),
+        optimisticFolders: state.optimisticFolders.filter((folder) => folder.id !== action.id),
+      };
+    case 'restore-folder': {
+      const deletedFolderIds = new Set(state.deletedFolderIds);
+      deletedFolderIds.delete(action.id);
+      return { ...state, deletedFolderIds };
+    }
+  }
+}
+
 function uploadStateId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
@@ -127,19 +200,34 @@ export function DocumentDrive({
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
-  const [uploads, setUploads] = useState<readonly UploadState[]>([]);
-  const [visibility, setVisibility] = useState<'team' | 'private' | 'specific_users'>(
-    defaultVisibility,
-  );
-  const [visibilityUserIds, setVisibilityUserIds] = useState<string[]>(
-    defaultVisibilityUserIds ?? [],
-  );
+  const [
+    { uploads, visibility, visibilityUserIds, optimisticFolders, deletedFolderIds },
+    dispatchDriveUi,
+  ] = useReducer(driveUiReducer, {
+    uploads: [],
+    visibility: defaultVisibility,
+    visibilityUserIds: defaultVisibilityUserIds ?? [],
+    optimisticFolders: [],
+    deletedFolderIds: new Set<string>(),
+  });
   const initialDocumentPage = useMemo(
     () => ({ items: documents, nextCursor: documentsNextCursor }),
     [documents, documentsNextCursor],
   );
   const documentQuery = useDocumentListQuery(currentFolderId, initialDocumentPage);
   const visibleDocuments = documentQuery.data.pages.flatMap((page) => page.items);
+  const visibleFolders = useMemo(() => {
+    const serverFolderIds = new Set(folders.map((folder) => folder.id));
+    const activeOptimisticFolders = optimisticFolders.filter(
+      (folder) => !serverFolderIds.has(folder.id),
+    );
+    const merged = [...activeOptimisticFolders, ...folders];
+    const byId = new Map<string, FolderItem>();
+    for (const folder of merged) {
+      if (!deletedFolderIds.has(folder.id) && !byId.has(folder.id)) byId.set(folder.id, folder);
+    }
+    return Array.from(byId.values());
+  }, [deletedFolderIds, folders, optimisticFolders]);
   const activeUploads = uploads.filter((upload) => upload.phase !== 'failed');
   const activeUpload = activeUploads[0];
   const uploadButtonLabel =
@@ -150,13 +238,11 @@ export function DocumentDrive({
         : `Uploading ${String(activeUploads.length)} files...`;
 
   function updateUpload(id: string, patch: Partial<UploadState>): void {
-    setUploads((prev) =>
-      prev.map((upload) => (upload.id === id ? { ...upload, ...patch } : upload)),
-    );
+    dispatchDriveUi({ type: 'update-upload', id, patch });
   }
 
   function clearUpload(id: string): void {
-    setUploads((prev) => prev.filter((upload) => upload.id !== id));
+    dispatchDriveUi({ type: 'clear-upload', id });
   }
 
   function failUpload(id: string, message: string): void {
@@ -199,7 +285,10 @@ export function DocumentDrive({
 
   async function handleUploadFile(file: File): Promise<void> {
     const uploadId = uploadStateId();
-    setUploads((prev) => [...prev, { id: uploadId, name: file.name, phase: 'preparing' }]);
+    dispatchDriveUi({
+      type: 'add-upload',
+      upload: { id: uploadId, name: file.name, phase: 'preparing' },
+    });
     let optimisticDocumentId: string | null = null;
     try {
       const req = await requestDocumentUploadAction({
@@ -289,24 +378,45 @@ export function DocumentDrive({
   function onNewFolder(): void {
     const name = window.prompt('Folder name');
     if (!name?.trim()) return;
+    const trimmedName = name.trim();
+    const tempId = `optimistic-folder-${uploadStateId()}`;
+    const optimisticFolder: FolderItem = {
+      id: tempId,
+      name: trimmedName,
+      visibility,
+      updatedAt: new Date().toISOString(),
+      optimistic: true,
+    };
+    dispatchDriveUi({ type: 'add-optimistic-folder', folder: optimisticFolder });
     startTransition(async () => {
       const res = await createFolderAction({
-        name: name.trim(),
+        name: trimmedName,
         parentFolderId: currentFolderId,
         visibility,
         visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
       });
-      if (!res.ok) toast.error(res.error ?? 'Failed to create folder');
-      else router.refresh();
+      if (!res.ok) {
+        dispatchDriveUi({ type: 'remove-optimistic-folder', id: tempId });
+        toast.error(res.error ?? 'Failed to create folder');
+      } else {
+        const createdId = typeof res.id === 'string' ? res.id : null;
+        if (createdId) {
+          dispatchDriveUi({ type: 'confirm-folder', tempId, id: createdId });
+        }
+        router.refresh();
+      }
     });
   }
 
   function onDeleteFolder(id: string): void {
     if (!window.confirm('Delete folder? Documents inside stay where they are.')) return;
+    dispatchDriveUi({ type: 'hide-folder', id });
     startTransition(async () => {
       const res = await deleteFolderAction(id);
-      if (!res.ok) toast.error(res.error ?? 'Delete failed');
-      else router.refresh();
+      if (!res.ok) {
+        dispatchDriveUi({ type: 'restore-folder', id });
+        toast.error(res.error ?? 'Delete failed');
+      } else router.refresh();
     });
   }
 
@@ -332,11 +442,15 @@ export function DocumentDrive({
         visibility={visibility}
         visibilityUserIds={visibilityUserIds}
         members={members}
-        onVisibilityChange={setVisibility}
-        onVisibilityUserIdsChange={setVisibilityUserIds}
+        onVisibilityChange={(nextVisibility) => {
+          dispatchDriveUi({ type: 'set-visibility', visibility: nextVisibility });
+        }}
+        onVisibilityUserIdsChange={(value) => {
+          dispatchDriveUi({ type: 'set-visibility-user-ids', value });
+        }}
       />
       <DocumentDropZone
-        folders={folders}
+        folders={visibleFolders}
         documents={visibleDocuments}
         query={documentQuery}
         fileInputRef={fileInputRef}
@@ -568,18 +682,26 @@ function FolderList({
             key={f.id}
             className="group flex items-center justify-between rounded-sm border border-border bg-card p-3 hover:border-fg/20"
           >
-            <Link
-              href={`/app/documents?folder=${f.id}`}
-              className="flex items-center gap-2 text-sm font-medium"
-            >
-              <FolderIcon className="size-4 text-muted-foreground" />
-              <span>{f.name}</span>
-            </Link>
+            {f.optimistic ? (
+              <div className="flex items-center gap-2 text-sm font-medium opacity-70">
+                <FolderIcon className="size-4 text-muted-foreground" />
+                <span>{f.name}</span>
+              </div>
+            ) : (
+              <Link
+                href={`/app/documents?folder=${f.id}`}
+                className="flex items-center gap-2 text-sm font-medium"
+              >
+                <FolderIcon className="size-4 text-muted-foreground" />
+                <span>{f.name}</span>
+              </Link>
+            )}
             <button
               type="button"
               onClick={() => {
                 onDeleteFolder(f.id);
               }}
+              disabled={f.optimistic}
               className="text-xs text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-foreground"
             >
               Delete

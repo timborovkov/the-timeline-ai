@@ -1,20 +1,14 @@
+import { users } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
-import Link from 'next/link';
+import { inArray } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
+import type { BoardLayout } from '@/lib/board-links';
 import type { Metadata } from 'next';
 
-import { BoardAddItemForm } from '@/components/boards/board-add-item-form';
-import { BoardCardDetail } from '@/components/boards/board-card-detail';
-import { BoardPinButton } from '@/components/boards/board-pin-button';
-import { CuratedBoardList, CuratedBoardTable } from '@/components/boards/curated-board-views';
-import { CuratedKanbanBoard } from '@/components/boards/curated-kanban-board';
-import { DeleteBoardButton } from '@/components/boards/delete-board-button';
-import { HistoryBackLink } from '@/components/history-back-link';
-import { IndexStrip } from '@/components/index-strip';
+import { BoardDetailClient } from '@/components/boards/board-detail-client';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
-import { boardViewHref, type BoardLayout } from '@/lib/board-links';
 import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
@@ -49,16 +43,35 @@ export default async function BoardDetailPage({
   if (!board) notFound();
   const view = viewParam(query.view);
   const selectedItemId = itemParam(query.item);
-  const selectedItem = selectedItemId
-    ? (board.items.find((item) => item.id === selectedItemId) ?? null)
+  const selectedServerItemId = board.items.some((item) => item.id === selectedItemId)
+    ? selectedItemId
     : null;
-  const [candidates, history] = await Promise.all([
+  const [candidates, history, members] = await Promise.all([
     scope.objects.listObjects({
       archived: false,
       limit: 200,
     }),
-    selectedItem ? scope.boards.listBoardItemHistory(selectedItem.id) : Promise.resolve([]),
+    selectedServerItemId
+      ? scope.boards.listBoardItemHistory(selectedServerItemId)
+      : Promise.resolve([]),
+    scope.timeline.listMembers(),
   ]);
+  const memberIds = members.map((member) => member.userId);
+  const memberRows =
+    memberIds.length > 0
+      ? await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, memberIds))
+      : [];
+  const memberMap = new Map(memberRows.map((member) => [member.id, member] as const));
+  const memberOptions = members.map((member) => {
+    const user = memberMap.get(member.userId);
+    return {
+      id: member.userId,
+      label: user?.name ?? user?.email ?? member.userId,
+    };
+  });
   const firstLaneId = board.lanes.find((lane) => !lane.archivedAt)?.id ?? null;
   const isKanban = view === 'kanban';
 
@@ -70,81 +83,21 @@ export default async function BoardDetailPage({
           : undefined
       }
     >
-      <IndexStrip
-        srLabel={`${board.name} · ${board.templateKind} · ${board.itemCount} board items`}
-        segments={[
-          { value: 'BOARD' },
-          { label: 'kind', value: board.templateKind.replace('_', ' ') },
-          { label: 'name', value: board.name, signal: true },
-          { label: 'items', value: board.itemCount },
-        ]}
-        className={isKanban ? 'shrink-0 px-4 md:px-8' : 'mb-4 shrink-0'}
-      >
-        <span className="inline-flex items-center gap-2">
-          <HistoryBackLink fallbackHref="/app/boards" label="Back" />
-          <BoardPinButton id={board.id} pinned={board.pinned} />
-          <DeleteBoardButton id={board.id} />
-        </span>
-      </IndexStrip>
-
-      <div
-        className={
-          isKanban
-            ? 'flex shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-4 md:px-8'
-            : 'mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3'
-        }
-      >
-        <p className="max-w-3xl text-sm text-fg-muted">
-          {board.purpose || 'A curated board over workspace objects.'}
-        </p>
-        <nav className="inline-flex overflow-hidden rounded-sm border border-border">
-          {(['kanban', 'table', 'list'] as const).map((v) => (
-            <Link
-              key={v}
-              href={boardViewHref(board.id, v, selectedItemId)}
-              className={`px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] ${
-                view === v ? 'bg-signal text-signal-fg' : 'bg-bg text-fg-muted hover:text-fg'
-              }`}
-            >
-              {v}
-            </Link>
-          ))}
-        </nav>
-      </div>
-
-      <div className={isKanban ? 'shrink-0 px-4 pb-4 md:px-8' : 'mb-4 shrink-0'}>
-        <BoardAddItemForm
-          boardId={board.id}
-          defaultLaneId={firstLaneId}
-          candidates={candidates.filter(
-            (row) => !board.items.some((item) => item.entityId === row.id),
-          )}
-          recommendedTypes={board.recommendedObjectTypes}
-        />
-      </div>
-
-      <div
-        className={
-          selectedItem
-            ? 'grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.35fr)]'
-            : 'min-h-0 flex-1'
-        }
-      >
-        <div className={isKanban ? 'h-full min-h-0 min-w-0' : 'min-h-0'}>
-          {view === 'kanban' && (
-            <CuratedKanbanBoard boardId={board.id} lanes={board.lanes} items={board.items} />
-          )}
-          {view === 'table' && (
-            <CuratedBoardTable boardId={board.id} view={view} items={board.items} />
-          )}
-          {view === 'list' && (
-            <CuratedBoardList boardId={board.id} view={view} items={board.items} />
-          )}
-        </div>
-        {selectedItem ? (
-          <BoardCardDetail boardId={board.id} view={view} item={selectedItem} history={history} />
-        ) : null}
-      </div>
+      <BoardDetailClient
+        boardId={board.id}
+        boardName={board.name}
+        purpose={board.purpose}
+        pinned={board.pinned}
+        view={view}
+        lanes={board.lanes}
+        initialItems={board.items}
+        initialCandidates={candidates}
+        recommendedTypes={board.recommendedObjectTypes}
+        defaultLaneId={firstLaneId}
+        selectedItemId={selectedItemId}
+        history={history}
+        members={memberOptions}
+      />
     </div>
   );
 }

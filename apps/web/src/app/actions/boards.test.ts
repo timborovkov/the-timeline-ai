@@ -5,17 +5,24 @@ import {
   createBoardAction,
   deleteBoardAction,
   pinBoardAction,
+  quickCreateBoardItemAction,
+  renameBoardAction,
   removeBoardItemAction,
+  updateBoardSettingsAction,
   updateBoardItemAction,
 } from '@/app/actions/boards';
 
 const fakes = vi.hoisted(() => ({
   fakeResolveScope: vi.fn(),
   fakeRevalidatePath: vi.fn(),
+  fakeReportCaughtError: vi.fn(),
   fakeBoards: {
     createBoard: vi.fn(),
     archiveBoard: vi.fn(),
     addBoardItem: vi.fn(),
+    createObjectAndAddBoardItem: vi.fn(),
+    renameBoard: vi.fn(),
+    updateBoardSettings: vi.fn(),
     updateBoardItem: vi.fn(),
     removeBoardItem: vi.fn(),
     pinBoard: vi.fn(),
@@ -30,6 +37,7 @@ vi.mock('@/lib/action-scope', async () => {
   };
 });
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
+vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
 
 const BOARD_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ITEM_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -49,7 +57,16 @@ beforeEach(() => {
     id: ITEM_ID,
     boardId: BOARD_ID,
     entityId: ENTITY_ID,
+    object: { id: ENTITY_ID },
   });
+  fakes.fakeBoards.createObjectAndAddBoardItem.mockResolvedValue({
+    id: ITEM_ID,
+    boardId: BOARD_ID,
+    entityId: ENTITY_ID,
+    object: { id: ENTITY_ID },
+  });
+  fakes.fakeBoards.renameBoard.mockResolvedValue(true);
+  fakes.fakeBoards.updateBoardSettings.mockResolvedValue(true);
   fakes.fakeBoards.updateBoardItem.mockResolvedValue({
     id: ITEM_ID,
     boardId: BOARD_ID,
@@ -78,12 +95,38 @@ describe('createBoardAction', () => {
     expect(fakes.fakeBoards.createBoard).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Pilot pipeline',
+        purpose: '',
         templateKind: 'pipeline',
         recommendedObjectTypes: ['company', 'deal', 'project'],
       }),
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/boards/${BOARD_ID}`);
+  });
+
+  it('creates a board with user-defined stages', async () => {
+    const result = await createBoardAction({
+      name: 'Flexible work',
+      templateKind: 'custom',
+      lanes: [
+        { name: 'Backlog', kind: 'active' },
+        { name: 'Review', kind: 'active' },
+        { name: 'Done', kind: 'done' },
+      ],
+    });
+
+    expect(result).toEqual({ ok: true, id: BOARD_ID });
+    expect(fakes.fakeBoards.createBoard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Flexible work',
+        templateKind: 'custom',
+        lanes: [
+          { name: 'Backlog', kind: 'active' },
+          { name: 'Review', kind: 'active' },
+          { name: 'Done', kind: 'done' },
+        ],
+      }),
+    );
   });
 });
 
@@ -96,18 +139,122 @@ describe('deleteBoardAction', () => {
   });
 });
 
+describe('renameBoardAction', () => {
+  it('renames a board and refreshes board surfaces', async () => {
+    await expect(renameBoardAction({ id: BOARD_ID, name: 'Renamed board' })).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(fakes.fakeBoards.renameBoard).toHaveBeenCalledWith({
+      id: BOARD_ID,
+      name: 'Renamed board',
+    });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/boards/${BOARD_ID}`);
+  });
+
+  it('rejects empty board names before resolving scope', async () => {
+    await expect(renameBoardAction({ id: BOARD_ID, name: '   ' })).resolves.toEqual({
+      error: 'Too small: expected string to have >=1 characters',
+    });
+
+    expect(fakes.fakeResolveScope).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateBoardSettingsAction', () => {
+  it('updates board settings and stages through the board scope', async () => {
+    await expect(
+      updateBoardSettingsAction({
+        id: BOARD_ID,
+        name: 'Flexible board',
+        purpose: 'Team-defined workflow',
+        lanes: [
+          { id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Review', kind: 'active' },
+          { name: 'Done', kind: 'done' },
+        ],
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeBoards.updateBoardSettings).toHaveBeenCalledWith({
+      id: BOARD_ID,
+      name: 'Flexible board',
+      purpose: 'Team-defined workflow',
+      lanes: [
+        { id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Review', kind: 'active' },
+        { name: 'Done', kind: 'done' },
+      ],
+    });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/boards/${BOARD_ID}`);
+  });
+
+  it('rejects settings without stages before resolving scope', async () => {
+    await expect(
+      updateBoardSettingsAction({
+        id: BOARD_ID,
+        name: 'Flexible board',
+        purpose: '',
+        lanes: [],
+      }),
+    ).resolves.toEqual({ error: 'Too small: expected array to have >=1 items' });
+
+    expect(fakes.fakeResolveScope).not.toHaveBeenCalled();
+  });
+});
+
 describe('addBoardItemAction', () => {
   it('adds an existing object to the board with a user actor', async () => {
-    await expect(addBoardItemAction({ boardId: BOARD_ID, entityId: ENTITY_ID })).resolves.toEqual({
-      ok: true,
-      id: ITEM_ID,
-    });
+    const result = await addBoardItemAction({ boardId: BOARD_ID, entityId: ENTITY_ID });
+
+    expect(result.ok).toBe(true);
+    expect(result.id).toBe(ITEM_ID);
+    expect(result.item?.id).toBe(ITEM_ID);
+    expect(result.item?.entityId).toBe(ENTITY_ID);
 
     expect(fakes.fakeBoards.addBoardItem).toHaveBeenCalledWith(BOARD_ID, {
       entityId: ENTITY_ID,
       laneId: null,
       actor: { kind: 'user', userId: USER_ID },
     });
+  });
+
+  it('keeps optimistic adds successful when board revalidation fails after persistence', async () => {
+    const err = new Error('cache unavailable');
+    fakes.fakeRevalidatePath.mockImplementationOnce(() => {
+      throw err;
+    });
+
+    const result = await addBoardItemAction({ boardId: BOARD_ID, entityId: ENTITY_ID });
+
+    expect(result.ok).toBe(true);
+    expect(result.item?.id).toBe(ITEM_ID);
+    expect(fakes.fakeBoards.addBoardItem).toHaveBeenCalled();
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
+      surface: 'server_action',
+      operation: 'revalidate_board_surfaces',
+    });
+  });
+});
+
+describe('quickCreateBoardItemAction', () => {
+  it('keeps optimistic quick creates successful when board revalidation fails after persistence', async () => {
+    const err = new Error('cache unavailable');
+    fakes.fakeRevalidatePath.mockImplementationOnce(() => {
+      throw err;
+    });
+
+    const result = await quickCreateBoardItemAction({
+      boardId: BOARD_ID,
+      type: 'company',
+      canonicalName: 'Acme',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.item?.id).toBe(ITEM_ID);
+    expect(fakes.fakeBoards.createObjectAndAddBoardItem).toHaveBeenCalledWith(
+      BOARD_ID,
+      { type: 'company', canonicalName: 'Acme' },
+      { laneId: null, actor: { kind: 'user', userId: USER_ID } },
+    );
   });
 });
 

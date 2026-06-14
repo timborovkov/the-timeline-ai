@@ -30,8 +30,7 @@ export function PinnedBoards({ boards: rows }: { boards: boards.BoardRow[] }) {
               <Pin className="size-3.5 text-signal" aria-hidden="true" />
             </span>
             <span className="flex flex-wrap gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
-              <span>{board.templateKind.replace('_', ' ')}</span>
-              <span>· {board.itemCount} items</span>
+              <span>{board.itemCount} items</span>
               <span>· {board.updatedAt.toLocaleDateString('en-CA')}</span>
             </span>
           </Link>

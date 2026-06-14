@@ -12,11 +12,13 @@ export function RemoveBoardItemButton({
   itemId,
   objectName,
   view,
+  onRemoved,
 }: {
   boardId: string;
   itemId: string;
   objectName: string;
   view: BoardLayout;
+  onRemoved?: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -38,6 +40,7 @@ export function RemoveBoardItemButton({
               setError(result.error);
               return;
             }
+            onRemoved?.();
             router.push(boardViewHref(boardId, view, null));
             router.refresh();
           });
