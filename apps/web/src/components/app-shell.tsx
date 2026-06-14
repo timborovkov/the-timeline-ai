@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 
 import { CommandBar } from '@/components/command-bar';
 import { DesktopSidebar } from '@/components/desktop-sidebar';
+import { InboxBell, type InboxBellNotification } from '@/components/inbox/inbox-bell';
 import { InspectorProvider } from '@/components/inspector-context';
 import { InspectorPane } from '@/components/inspector-pane';
 import { InspectorToggle } from '@/components/inspector-pane';
@@ -23,10 +24,15 @@ interface Props {
   recipientInvites: RecipientInvite[];
   user: { name?: string | null; email?: string | null };
   badges?: NavBadgeMap;
+  inbox?: {
+    unreadCount: number;
+    notifications: InboxBellNotification[];
+  };
   children: ReactNode;
 }
 
 const EMPTY_BADGES: NavBadgeMap = {};
+const EMPTY_INBOX = { unreadCount: 0, notifications: [] };
 
 /**
  * Operational Archive v2 shell. Three columns:
@@ -41,6 +47,7 @@ export function AppShell({
   recipientInvites,
   user,
   badges = EMPTY_BADGES,
+  inbox = EMPTY_INBOX,
   children,
 }: Props) {
   return (
@@ -83,6 +90,7 @@ export function AppShell({
               >
                 <Search aria-hidden="true" className="size-4" />
               </Link>
+              <InboxBell unreadCount={inbox.unreadCount} notifications={inbox.notifications} />
               <InspectorToggle />
               <ThemeToggle />
               <UserMenu user={user} />

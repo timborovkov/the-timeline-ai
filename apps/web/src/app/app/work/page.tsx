@@ -4,7 +4,6 @@ import {
   CalendarDays,
   CheckSquare,
   CircleCheckBig,
-  Inbox,
   KanbanSquare,
   type LucideIcon,
 } from 'lucide-react';
@@ -22,7 +21,7 @@ import { getWorkStatusSummary, type WorkStatusSummary } from '@/lib/hub-status';
 
 export const metadata: Metadata = {
   title: 'Work',
-  description: 'Objects, tasks, boards, calendar, inbox, and review queues.',
+  description: 'Objects, tasks, boards, calendar, and review queues.',
 };
 
 const WORK_LINKS: readonly {
@@ -83,19 +82,6 @@ const WORK_LINKS: readonly {
         label: 'next 14d',
         value: summary.upcomingCalendarEvents,
         tone: summary.upcomingCalendarEvents ? 'signal' : 'neutral',
-      },
-    ],
-  },
-  {
-    href: '/app/inbox',
-    label: 'Inbox',
-    description: 'Object activity and notifications that need a quick scan.',
-    icon: Inbox,
-    metrics: (summary) => [
-      {
-        label: 'unread',
-        value: summary.unreadNotifications,
-        tone: summary.unreadNotifications ? 'danger' : 'neutral',
       },
     ],
   },

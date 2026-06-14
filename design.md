@@ -171,11 +171,12 @@ Departs from the v1 centered `max-w-3xl` prose column. New shell:
   labels and the current team are visible by default. Folded mode uses the
   icon-only rail with tooltips. Active route shows a 2px signal-color bar at
   its left edge plus `bg-surface-2 text-signal`. Work groups Objects, Tasks,
-  Boards, Calendar, Inbox, and Approvals. Sources groups Email, Slack,
-  Telegram, Documents, Meetings, Integrations, and MCP servers. Work and
-  Sources may show compact numeric attention badges; zero state stays hidden.
-  Their hub pages use the same hairline grid as the sidebar IA and expose
-  status chips for counts, health, and next actions.
+  Boards, Calendar, and Approvals; Inbox lives as a notification bell in the
+  shell header with a compact unread badge and a dropdown preview. Sources
+  groups Email, Slack, Telegram, Documents, Meetings, Integrations, and MCP
+  servers. Work and Sources may show compact numeric attention badges; zero
+  state stays hidden. Their hub pages use the same hairline grid as the
+  sidebar IA and expose status chips for counts, health, and next actions.
 - **Main column** fills available width. **No `max-w-3xl` artificial
   column** except long-form prose surfaces (single document view, single
   note view) — those wrap in a `<ProseContainer>` that sets `max-w-prose`.
@@ -349,7 +350,8 @@ Other recurring icons: `Send` (submit, Telegram connection), `Cable` (integratio
 `Lock`/`Users` (visibility toggle), `Inbox` (empty timeline),
 `ChevronsUpDown` (team switcher), `Mail`/`Check`/`X` (invite actions),
 `Plus` (create team), `User`/`LogOut` (user menu),
-`Sun`/`Moon`/`Monitor` (theme toggle), `PanelRight` (inspector toggle).
+`Sun`/`Moon`/`Monitor` (theme toggle), `Bell` (inbox preview),
+`PanelRight` (inspector toggle).
 
 ## Motion
 
