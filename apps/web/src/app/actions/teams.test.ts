@@ -24,7 +24,7 @@ const fakes = vi.hoisted(() => ({
   fakeRequireMembership: vi.fn(),
   fakeTransaction: vi.fn(),
   fakeDbUpdate: vi.fn(),
-  fakeSendInvite: vi.fn(),
+  fakeSendMessage: vi.fn(),
   fakeAssertNotLastOwner: vi.fn(),
   fakeAdminRecordConnectionAttention: vi.fn(),
   fakeRevalidatePath: vi.fn(),
@@ -57,7 +57,7 @@ vi.mock('next/navigation', () => ({ redirect: fakes.fakeRedirect }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({ requireMembership: fakes.fakeRequireMembership }),
 }));
-vi.mock('@timeline/shared/email', () => ({ sendTeamInviteEmail: fakes.fakeSendInvite }));
+vi.mock('@timeline/shared/messaging', () => ({ sendMessage: fakes.fakeSendMessage }));
 vi.mock('@timeline/shared/team-roles', () => ({
   assertNotLastOwner: fakes.fakeAssertNotLastOwner,
 }));
@@ -180,7 +180,7 @@ beforeEach(() => {
     active: { teamId: TEAM_ID, teamName: 'Timeline E2E' },
   });
   fakes.fakeRequireMembership.mockResolvedValue('owner');
-  fakes.fakeSendInvite.mockResolvedValue({ ok: true });
+  fakes.fakeSendMessage.mockResolvedValue({ ok: true });
   fakes.fakeAssertNotLastOwner.mockResolvedValue(undefined);
   fakes.fakeAdminRecordConnectionAttention.mockResolvedValue(undefined);
   fakes.fakeTransaction.mockImplementation((fn: (tx: unknown) => unknown) =>
@@ -394,6 +394,8 @@ describe('inviteMemberAction', () => {
   it('returns invite URL and delivery status, then revalidates the team page', async () => {
     fakes.fakeTransaction.mockResolvedValue({
       id: 'invite-id',
+      teamId: TEAM_ID,
+      inviterUserId: USER_ID,
       email: 'new@example.test',
       role: 'member',
       token: 'invite-token',
@@ -408,11 +410,17 @@ describe('inviteMemberAction', () => {
       inviteUrl: 'https://timeline.test/accept-invite/invite-token',
       sendStatus: 'sent',
     });
-    expect(fakes.fakeSendInvite).toHaveBeenCalledWith(
+    expect(fakes.fakeSendMessage).toHaveBeenCalledWith(
+      'team_invite',
       expect.objectContaining({
         to: 'new@example.test',
         role: 'member',
         inviteUrl: 'https://timeline.test/accept-invite/invite-token',
+      }),
+      expect.objectContaining({
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        dedupeKey: 'team_invite:invite-id:invite-token',
       }),
     );
     expect(fakes.fakeDbUpdate).toHaveBeenCalledOnce();
@@ -422,6 +430,8 @@ describe('inviteMemberAction', () => {
   it('returns failed delivery details while keeping the invite URL durable', async () => {
     fakes.fakeTransaction.mockResolvedValue({
       id: 'invite-id',
+      teamId: TEAM_ID,
+      inviterUserId: USER_ID,
       email: 'new@example.test',
       role: 'member',
       token: 'invite-token',
@@ -429,7 +439,7 @@ describe('inviteMemberAction', () => {
       teamName: 'Timeline E2E',
       inviterName: 'Tim',
     });
-    fakes.fakeSendInvite.mockResolvedValue({ ok: false, error: 'postmark down' });
+    fakes.fakeSendMessage.mockResolvedValue({ ok: false, error: 'postmark down' });
 
     await expect(
       inviteMemberAction({}, form({ email: 'new@example.test', role: 'member' })),
@@ -438,6 +448,28 @@ describe('inviteMemberAction', () => {
       sendStatus: 'failed',
       sendError: 'postmark down',
     });
+  });
+
+  it('does not mark an invite sent when messaging dedupe skips provider delivery', async () => {
+    fakes.fakeTransaction.mockResolvedValue({
+      id: 'invite-id',
+      teamId: TEAM_ID,
+      inviterUserId: USER_ID,
+      email: 'new@example.test',
+      role: 'member',
+      token: 'invite-token',
+      expiresAt: new Date('2026-06-09T00:00:00.000Z'),
+      teamName: 'Timeline E2E',
+      inviterName: 'Tim',
+    });
+    fakes.fakeSendMessage.mockResolvedValue({ ok: true, skipped: true });
+
+    await expect(
+      inviteMemberAction({}, form({ email: 'new@example.test', role: 'member' })),
+    ).resolves.toEqual({
+      inviteUrl: 'https://timeline.test/accept-invite/invite-token',
+    });
+    expect(fakes.fakeDbUpdate).not.toHaveBeenCalled();
   });
 });
 
@@ -468,10 +500,15 @@ describe('resendInviteAction', () => {
     expect(updates).toEqual([
       expect.objectContaining({ token: 'invite-token', sendStatus: 'pending' }),
     ]);
-    expect(fakes.fakeSendInvite).toHaveBeenCalledWith(
+    expect(fakes.fakeSendMessage).toHaveBeenCalledWith(
+      'team_invite',
       expect.objectContaining({
         to: 'new@example.test',
         inviteUrl: 'https://timeline.test/accept-invite/invite-token',
+      }),
+      expect.objectContaining({
+        teamId: TEAM_ID,
+        userId: USER_ID,
       }),
     );
     expect(fakes.fakeDbUpdate).toHaveBeenCalledOnce();
@@ -485,7 +522,7 @@ describe('resendInviteAction', () => {
 
     await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toBeUndefined();
 
-    expect(fakes.fakeSendInvite).not.toHaveBeenCalled();
+    expect(fakes.fakeSendMessage).not.toHaveBeenCalled();
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
   });
 });

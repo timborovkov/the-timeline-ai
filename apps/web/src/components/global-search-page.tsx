@@ -301,7 +301,9 @@ export function GlobalSearchPage({
     };
   }, [kinds, state.from, state.query, state.source, state.to]);
 
-  function replaceSearchPath(next: Partial<PageState>): void {
+  function replaceSearchUrl(
+    next: Partial<Pick<PageState, 'query' | 'activeFilter' | 'source' | 'from' | 'to'>>,
+  ): void {
     router.replace(
       searchPath({
         query: next.query ?? state.query,
@@ -317,7 +319,7 @@ export function GlobalSearchPage({
     event.preventDefault();
     const trimmed = state.draft.trim();
     dispatch({ type: 'query', value: trimmed });
-    replaceSearchPath({ query: trimmed });
+    replaceSearchUrl({ query: trimmed });
   }
 
   return (
@@ -357,7 +359,7 @@ export function GlobalSearchPage({
               type="button"
               onClick={() => {
                 dispatch({ type: 'filter', value: filter.label });
-                replaceSearchPath({ activeFilter: filter.label });
+                replaceSearchUrl({ activeFilter: filter.label });
               }}
               className={cn(
                 'inline-flex min-h-8 items-center rounded-sm border px-2.5 font-mono text-[11px] uppercase tracking-[0.12em] transition-colors',
@@ -376,7 +378,7 @@ export function GlobalSearchPage({
             onChange={(event) => {
               const value = event.target.value;
               dispatch({ type: 'source', value });
-              replaceSearchPath({ source: value });
+              replaceSearchUrl({ source: value });
             }}
             className="h-9 rounded-sm border border-border bg-bg px-2 text-sm focus:border-border-strong focus:outline-none"
           >
@@ -394,7 +396,7 @@ export function GlobalSearchPage({
             onChange={(event) => {
               const value = event.target.value;
               dispatch({ type: 'from', value });
-              replaceSearchPath({ from: value });
+              replaceSearchUrl({ from: value });
             }}
             className="h-9 rounded-sm border border-border bg-bg px-2 text-sm font-mono focus:border-border-strong focus:outline-none"
           />
@@ -405,7 +407,7 @@ export function GlobalSearchPage({
             onChange={(event) => {
               const value = event.target.value;
               dispatch({ type: 'to', value });
-              replaceSearchPath({ to: value });
+              replaceSearchUrl({ to: value });
             }}
             className="h-9 rounded-sm border border-border bg-bg px-2 text-sm font-mono focus:border-border-strong focus:outline-none"
           />

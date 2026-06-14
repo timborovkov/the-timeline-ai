@@ -1,5 +1,7 @@
 -- Person-owned provider connections and team-scoped source activation.
 
+ALTER TYPE "public"."message_intent" ADD VALUE IF NOT EXISTS 'connection_attention';--> statement-breakpoint
+
 CREATE TYPE "public"."connection_attention_category" AS ENUM(
   'needs_reconnect',
   'needs_new_owner',

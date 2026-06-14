@@ -21,7 +21,7 @@ import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { IntegrationRow, ProviderConnectionRow } from '#src/integrations/types.js';
 
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
-import { sendConnectionAttentionEmail } from '#src/email/outbound.js';
+import { sendMessage } from '#src/messaging/delivery.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
 // Phase 11 — Team-scoped integration helpers. Every read/write goes
@@ -1464,18 +1464,34 @@ async function emailConnectionAttentionActors(
     .where(eq(teams.id, teamId))
     .limit(1);
   const recipients = await db
-    .select({ email: users.email })
+    .select({ id: users.id, email: users.email })
     .from(users)
     .where(inArray(users.id, recipientIds));
   const actionUrl = `${process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc'}/app/team/integrations`;
   const results = await Promise.all(
     recipients.map((recipient) =>
-      sendConnectionAttentionEmail({
-        to: recipient.email,
-        teamName: teamRow?.name ?? 'Timeline',
-        summary: input.summary,
-        actionUrl,
-      }),
+      sendMessage(
+        'connection_attention',
+        {
+          to: recipient.email,
+          teamName: teamRow?.name ?? 'Timeline',
+          summary: input.summary,
+          actionUrl,
+        },
+        {
+          db,
+          teamId,
+          userId: recipient.id,
+          dedupeKey: `connection_attention:${attentionId}:${recipient.id}`,
+          metadata: {
+            attentionId,
+            category: input.category,
+            providerConnectionId: input.providerConnectionId ?? '',
+            integrationId: input.integrationId ?? '',
+            resourceShareId: input.resourceShareId ?? '',
+          },
+        },
+      ),
     ),
   );
   if (results.some((result) => result.ok)) {

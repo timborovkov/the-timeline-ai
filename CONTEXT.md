@@ -103,9 +103,10 @@ _Avoid_: Team connection, shared account
 **Integration Scope**:
 The team-approved set of external resources Timeline may sync through a
 provider connection, such as selected GitHub repositories, a GitHub
-organization, Linear teams, or Drive folders. Team admins may manage the
-active scope within the resources the provider-connection owner has made
-available to the team. A provider-native group such as a GitHub organization is
+organization, Linear teams, the user's Drive root, or shared drives. Team
+admins may manage the active scope within the resources the
+provider-connection owner has made available to the team. A provider-native
+group such as a GitHub organization is
 a living scope that includes future resources in that group when the provider
 connection can access them. When access to a scoped resource is revoked, new
 sync stops while previously captured raw events remain part of the timeline.
@@ -667,8 +668,8 @@ _Avoid_: Setup wizard, activation gate
 
 **Home Dashboard**:
 The signed-in landing surface for a team member. It gathers capture, onboarding,
-ingest access, pending approvals, and a compact recent activity view without
-trying to be the canonical event browser.
+ingest access, quick actions, pending approvals, the latest daily digest, and a
+compact recent activity view without trying to be the canonical event browser.
 _Avoid_: Timeline when referring to the landing page
 
 **Workspace Time Context**:

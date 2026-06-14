@@ -17,15 +17,15 @@ when manual joins race a scheduled occurrence. Current suite shape:
 
 - DB Vitest: 1 file / 8 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 72 files / 734 passed tests plus 1 skipped, including PGlite
+- Shared Vitest: 75 files / 750 passed tests plus 1 skipped, including PGlite
   calendar, timeline, MCP, integration/provider-connection, meeting, document,
   object, assistant, Slack, recovery, connection-attention, and onboarding
   coverage.
-- Web Vitest: 110 files / 542 tests, including route/action/component coverage
+- Web Vitest: 112 files / 546 tests, including route/action/component coverage
   for core recovery, onboarding, object sections, board add-item interactions,
   provider-connection routes/UI, app dialog flows, and other high-value UI
   states.
-- Worker Vitest: 14 files / 173 tests, including extract, transcribe,
+- Worker Vitest: 15 files / 178 tests, including extract, transcribe,
   document-extract, meeting-finalize, meeting-scheduler, integration-sync
   attention behavior, overdue-scan, embedding, cleanup, and janitor behavior.
 - Playwright: 13 local core E2E journeys plus 1 production-ish smoke journey.
@@ -218,10 +218,12 @@ Covered route tests include:
 - Jobs dashboard route admin gate, summary serialization, retry dispatch for
   document/transcribe/extract/embed, invalid input, not-found, and non-audio
   retry behavior.
+- Integration OAuth start/callback, provider-connection resource sharing,
+  activation, delete, and legacy selection guard behavior.
 
 Important uncovered route files:
 
-- Integration OAuth start/callback/manage routes.
+- Integration manual sync and disconnect routes.
 - Slack commands/install/user-link routes.
 
 ### Shared Packages
@@ -589,9 +591,8 @@ idempotency.
     retry behavior.
 
 - Remaining:
-  - Integrations OAuth/start/callback/manage: state validation, provider
-    failures, encrypted token storage, selection changes, sync enqueue, and
-    disconnect behavior.
+  - Integrations manual sync/disconnect route behavior and richer provider
+    failure surfaces beyond the current OAuth/share/activate route contracts.
   - Slack commands/install/user-link: signature/state validation, response URL
     behavior, token encryption, and replay/invalid payload handling.
   - Onboarding/job recovery/object-section browser E2E flows.

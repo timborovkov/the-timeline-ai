@@ -192,7 +192,8 @@ describe('database schema contracts', () => {
       `);
 
       await applyMigrationFile(migrationPg, '0039_saved_meetings.sql');
-      await applyMigrationFile(migrationPg, '0040_provider_connections.sql');
+      await applyMigrationFile(migrationPg, '0040_messaging.sql');
+      await applyMigrationFile(migrationPg, '0041_provider_connections.sql');
 
       const rows = await migrationPg.query<{
         connection_count: number;

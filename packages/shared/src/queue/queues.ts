@@ -49,6 +49,9 @@ export const QUEUE_NAMES = {
   // Autonomous commitment extraction. Runs after raw-event fact extraction
   // and writes proposal-only agent_suggestions rows for the approvals queue.
   suggestions: 'suggestions',
+  // Daily personalized team digest. Tick fans out per active recipient;
+  // recipient jobs generate one durable digest and send it through messaging.
+  dailyDigest: 'daily-digest',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -853,5 +856,61 @@ export async function enqueueTeamExportJob(data: TeamExportJobData): Promise<voi
 export async function closeTeamExportQueue(): Promise<void> {
   await closeQueue(_teamExportQueue, () => {
     _teamExportQueue = undefined;
+  });
+}
+
+export type DailyDigestJobData =
+  | { kind: 'tick' }
+  | {
+      kind: 'recipient';
+      teamId: string;
+      userId: string;
+      email: string;
+      windowStart: string;
+      windowEnd: string;
+    }
+  | { kind: 'send'; digestId: string; email: string };
+
+let _dailyDigestQueue: TimelineQueue<DailyDigestJobData> | undefined;
+
+export function getDailyDigestQueue(): TimelineQueue<DailyDigestJobData> {
+  if (_dailyDigestQueue) return _dailyDigestQueue;
+  _dailyDigestQueue = createTimelineQueue<DailyDigestJobData>(QUEUE_NAMES.dailyDigest, {
+    attempts: 2,
+    backoff: { type: 'exponential', delay: 60_000 },
+    removeOnComplete: { age: 24 * 3600, count: 1000 },
+    removeOnFail: { age: 7 * 24 * 3600 },
+  });
+  return _dailyDigestQueue;
+}
+
+export async function scheduleDailyDigest(): Promise<void> {
+  await getDailyDigestQueue().add(
+    'tick',
+    { kind: 'tick' },
+    {
+      repeat: { pattern: '0 12 * * *' },
+      jobId: 'daily-digest-1200-utc',
+    },
+  );
+}
+
+export async function enqueueDailyDigestRecipientJob(
+  data: Extract<DailyDigestJobData, { kind: 'recipient' }>,
+): Promise<void> {
+  await getDailyDigestQueue().add('recipient', data, {
+    jobId: `daily-digest:${data.teamId}:${data.userId}:${data.windowEnd}`,
+  });
+}
+
+export async function enqueueDailyDigestSendJob(
+  data: Extract<DailyDigestJobData, { kind: 'send' }>,
+): Promise<void> {
+  await getDailyDigestQueue().add('send', data, { jobId: `daily-digest-send:${data.digestId}` });
+}
+
+export async function closeDailyDigestQueue(): Promise<void> {
+  await closeQueue(_dailyDigestQueue, () => {
+    _dailyDigestQueue = undefined;
   });
 }
