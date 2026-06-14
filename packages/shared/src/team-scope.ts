@@ -1700,7 +1700,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
       /**
        * Bulk-load events by id with team + visibility enforced at the SQL
-       * layer. Used by /api/search to hydrate result rows in a single
+       * layer. Used by global search to hydrate result rows in a single
        * round-trip rather than N getEvent() calls. Returns only rows visible
        * to (teamId, userId); ids that fail the filter are silently dropped —
        * callers must reconcile by id, not by index.
@@ -2275,8 +2275,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
        * dedups by event_id, then hydrates from Postgres via `getEventsByIds`
        * — the second-line-of-defense visibility filter at the SQL layer.
        *
-       * This collapses what used to live inline in `/api/search` so the agent's
-       * `search_timeline` tool and the search endpoint share one implementation.
+       * This collapses what used to live inline in the legacy search endpoint so
+       * the agent's `search_timeline` tool and app search share one implementation.
        * The dedup invariant matters: a fact-level point and its parent event
        * point can both match; we merge entity_ids across them so the UI doesn't
        * silently drop entity badges.

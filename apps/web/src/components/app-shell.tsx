@@ -6,8 +6,8 @@ import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
 import type { ReactNode } from 'react';
 
-import { CommandBar } from '@/components/command-bar';
 import { DesktopSidebar } from '@/components/desktop-sidebar';
+import { GlobalSearchPalette } from '@/components/global-search-palette';
 import { InboxBell, type InboxBellNotification } from '@/components/inbox/inbox-bell';
 import { InspectorProvider } from '@/components/inspector-context';
 import { InspectorPane } from '@/components/inspector-pane';
@@ -37,7 +37,7 @@ const EMPTY_INBOX = { unreadCount: 0, notifications: [] };
 /**
  * Operational Archive v2 shell. Three columns:
  *   • foldable desktop sidebar (mobile: hamburger sheet)
- *   • main column with persistent ⌘K command bar
+ *   • main column with persistent ⌘K global search palette
  *   • collapsible 384px right inspector pane (hidden by default, opens
  *     when a citation chip / object reference is activated)
  */
@@ -78,13 +78,13 @@ export function AppShell({
                 The Timeline
               </span>
             </div>
-            <CommandBar
+            <GlobalSearchPalette
               hint={active.teamName ? `team · ${active.teamName}` : undefined}
               className="hidden md:flex"
             />
             <div className="ml-auto flex items-center gap-1">
               <Link
-                href="/app/timeline"
+                href="/app/search"
                 aria-label="Open search"
                 className="grid size-9 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg md:hidden"
               >

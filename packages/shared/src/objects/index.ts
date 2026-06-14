@@ -27,7 +27,20 @@ import {
   rawEvents,
   relationshipKind,
 } from '@timeline/db';
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import {
+  type SQL,
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm';
 
 import type { TeamScopeCore } from '#src/team-scope.js';
 
@@ -179,6 +192,10 @@ export interface ObjectListFilter {
   offset?: number;
 }
 
+export interface ObjectSearchFilter extends Omit<ObjectListFilter, 'offset'> {
+  query: string;
+}
+
 export interface ObjectRow {
   id: string;
   type: ObjectType;
@@ -247,6 +264,32 @@ function toArray<T>(v: T | T[] | undefined): T[] | undefined {
   return Array.isArray(v) ? v : [v];
 }
 
+function objectSearchTokens(query: string): string[] {
+  return query
+    .toLowerCase()
+    .replace(/['"]/g, '')
+    .split(/[^a-z0-9]+/i)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function likePattern(token: string): string {
+  return `%${token.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
+}
+
+function objectTextSearchCondition(token: string): SQL {
+  const pattern = likePattern(token);
+  return sql`(
+    lower(${entities.canonicalName}) LIKE ${pattern} ESCAPE '\\'
+    OR lower(${entities.type}::text) LIKE ${pattern} ESCAPE '\\'
+    OR lower(${entities.status}) LIKE ${pattern} ESCAPE '\\'
+    OR lower(coalesce(${entities.stage}, '')) LIKE ${pattern} ESCAPE '\\'
+    OR lower(${entities.aliases}::text) LIKE ${pattern} ESCAPE '\\'
+    OR lower(${entities.metadata}::text) LIKE ${pattern} ESCAPE '\\'
+  )`;
+}
+
 export async function listObjects(
   db: Db,
   scope: TeamScopeCore,
@@ -289,6 +332,58 @@ export async function listObjects(
     .orderBy(desc(entities.updatedAt))
     .limit(limit)
     .offset(offset);
+  return rows.map(toObjectRow);
+}
+
+export async function searchObjects(
+  db: Db,
+  scope: TeamScopeCore,
+  filter: ObjectSearchFilter,
+): Promise<ObjectRow[]> {
+  await scope.requireMembership();
+  const conds = [eq(entities.teamId, scope.teamId), isNull(entities.mergedIntoId)];
+
+  const types = toArray(filter.type);
+  if (types && types.length > 0) conds.push(inArray(entities.type, types));
+
+  const statuses = toArray(filter.status);
+  if (statuses && statuses.length > 0) conds.push(inArray(entities.status, statuses));
+
+  const stages = toArray(filter.stage);
+  if (stages && stages.length > 0) conds.push(inArray(entities.stage, stages));
+
+  if (filter.ownerUserId === null) conds.push(isNull(entities.ownerUserId));
+  else if (filter.ownerUserId) conds.push(eq(entities.ownerUserId, filter.ownerUserId));
+
+  if (filter.assigneeUserId === null) conds.push(isNull(entities.assigneeUserId));
+  else if (filter.assigneeUserId) conds.push(eq(entities.assigneeUserId, filter.assigneeUserId));
+
+  if (filter.dueBefore) conds.push(lt(entities.dueAt, filter.dueBefore));
+  if (filter.dueAfter) conds.push(gte(entities.dueAt, filter.dueAfter));
+
+  if (filter.archived === true) conds.push(isNotNull(entities.archivedAt));
+  else if (filter.archived !== undefined) conds.push(isNull(entities.archivedAt));
+
+  const query = filter.query.trim();
+  const tokens = objectSearchTokens(query);
+  for (const token of tokens) conds.push(objectTextSearchCondition(token));
+
+  const limit = Math.min(Math.max(filter.limit ?? 100, 1), 500);
+  const exact = query.toLowerCase();
+  const prefix = `${exact.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
+  const rows = await db
+    .select()
+    .from(entities)
+    .where(and(...conds))
+    .orderBy(
+      sql`CASE
+        WHEN lower(${entities.canonicalName}) = ${exact} THEN 0
+        WHEN lower(${entities.canonicalName}) LIKE ${prefix} ESCAPE '\\' THEN 1
+        ELSE 2
+      END`,
+      desc(entities.updatedAt),
+    )
+    .limit(limit);
   return rows.map(toObjectRow);
 }
 
@@ -3507,6 +3602,7 @@ export async function rejectObjectChange(
 export function createObjectScope(db: Db, scope: TeamScopeCore) {
   return {
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
+    searchObjects: (filter: ObjectSearchFilter) => searchObjects(db, scope, filter),
     getObject: (idOrName: string) => getObject(db, scope, idOrName),
     getMergedObjectTarget: (entityId: string) => getMergedObjectTarget(db, scope, entityId),
     getObjectMergePreview: (entityIds: string[], survivorId?: string) =>

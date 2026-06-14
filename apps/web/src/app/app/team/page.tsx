@@ -415,7 +415,7 @@ function InviteCards({
   if (!isAdmin) return null;
   return (
     <>
-      <Card>
+      <Card id="invite" className="scroll-mt-24">
         <CardHeader>
           <CardTitle>Invite a teammate</CardTitle>
         </CardHeader>

@@ -11,7 +11,7 @@ export const RATE_LIMITS = {
   supportForm: { capacity: 3, refillPerSec: 3 / 60 },
   /** User-triggered email verification resend: 3/hour per user and email. */
   emailVerification: { capacity: 3, refillPerSec: 3 / 3600 },
-  /** /api/search: 30/min per userId. */
+  /** /api/search/global: 30/min per userId. */
   search: { capacity: 30, refillPerSec: 30 / 60 },
   /** /api/chat: 20/min per userId. Chat is expensive (OpenRouter spend). */
   aiChat: { capacity: 20, refillPerSec: 20 / 60 },

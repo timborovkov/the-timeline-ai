@@ -38,7 +38,7 @@ import { reportCaughtError } from '@/lib/sentry-report';
  * subsequent turns to the same row.
  *
  * Returns 503 when OPENROUTER_API_KEY is unset so the UI can render
- * "chat unavailable" rather than throw — matches /api/search.
+ * "chat unavailable" rather than throw.
  */
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -445,7 +445,7 @@ export async function POST(req: Request): Promise<Response> {
   // search_timeline. Without Qdrant, the agent would call search_timeline,
   // hit a thrown getQdrantClient(), get back { error: 'tool_failed' }, then
   // retry until the step cap. Better to fail fast with a UI-readable error
-  // — matches /api/search's gate exactly.
+  // before spending model tokens.
   if (!env.OPENROUTER_API_KEY || !env.QDRANT_URL) {
     return Response.json({ ok: false, error: 'chat_unconfigured' }, { status: 503 });
   }

@@ -263,7 +263,7 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
 </code></pre>
         </li>
         <li>
-          Use the search bar on <code>/app/timeline</code> and query
+          Use global search on <code>/app/search</code> and query
           <code>licensing discussion with Apple</code>. The events above rank in the top results
           even though one does not contain the word "licensing".
         </li>
@@ -276,9 +276,9 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
         </li>
       </ol>
       <p>
-        Without <code>OPENROUTER_API_KEY</code> or <code>QDRANT_URL</code>,
-        <code>/api/search</code> returns 503 and the search bar shows "Search is not configured for
-        this environment". Notes still capture; embeddings are deferred until config + reembed.
+        Without <code>OPENROUTER_API_KEY</code> or <code>QDRANT_URL</code>, semantic timeline search
+        returns an unavailable warning in global search. Notes still capture; embeddings are
+        deferred until config + reembed.
       </p>
 
       <h2 id="phase-6">Phase 6 verification (agent chat)</h2>
