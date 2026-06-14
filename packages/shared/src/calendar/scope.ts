@@ -129,6 +129,8 @@ export interface ListCalendarEventPageInput extends ListCalendarEventsInput {
   offset?: number;
   order?: 'asc' | 'desc';
   search?: string;
+  startFrom?: Date;
+  startTo?: Date;
 }
 
 export interface CalendarEventPage {
@@ -803,6 +805,12 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       }
       if (opts.to) {
         conditions.push(lt(calendarEvents.startAt, opts.to));
+      }
+      if (opts.startFrom) {
+        conditions.push(gte(calendarEvents.startAt, opts.startFrom));
+      }
+      if (opts.startTo) {
+        conditions.push(lt(calendarEvents.startAt, opts.startTo));
       }
       const search = opts.search?.trim();
       if (search) {

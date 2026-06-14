@@ -125,9 +125,14 @@ export default async function CalendarPage({ searchParams }: PageProps) {
 
   const eventListRange =
     eventScope === 'future'
-      ? { from: eventListToday, to: eventListTo, order: 'asc' as const }
+      ? { from: eventListToday, to: eventListTo, startFrom: eventListToday, order: 'asc' as const }
       : eventScope === 'past'
-        ? { from: eventListFrom, to: eventListToday, order: 'desc' as const }
+        ? {
+            from: eventListFrom,
+            to: eventListToday,
+            startTo: eventListToday,
+            order: 'desc' as const,
+          }
         : { from: eventListFrom, to: eventListTo, order: 'asc' as const };
 
   const eventListInput = {

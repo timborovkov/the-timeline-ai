@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -249,6 +249,38 @@ describe('CalendarView recurrence and tentative UI', () => {
       },
       { timeout: 1000 },
     );
+  });
+
+  it('keeps search text typed while committed query props catch up', () => {
+    vi.useFakeTimers();
+    try {
+      const props = {
+        events: [],
+        eventListEvents: [event('event-1', 'Roadmap review')],
+        eventListTotal: 1,
+        eventListPage: 0,
+        eventListQuery: '',
+        eventListScope: 'future' as const,
+        timezone: 'UTC',
+      };
+      const { rerender } = render(createElement(CalendarView, props));
+      const input = screen.getByPlaceholderText('Search events');
+
+      fireEvent.change(input, { target: { value: 'bud' } });
+      act(() => {
+        vi.advanceTimersByTime(350);
+      });
+      expect(fakes.push).toHaveBeenLastCalledWith(
+        '/app/calendar?view=month&date=2026-06-03&eventQ=bud',
+      );
+
+      fireEvent.change(input, { target: { value: 'budget' } });
+      rerender(createElement(CalendarView, { ...props, eventListQuery: 'bud' }));
+
+      expect(screen.getByPlaceholderText('Search events')).toHaveProperty('value', 'budget');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not append optimistic creates to the server-paginated event list', async () => {

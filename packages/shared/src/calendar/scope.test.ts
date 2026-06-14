@@ -227,6 +227,47 @@ describe('calendar scope', () => {
     });
   });
 
+  it('can filter paged calendar events by start boundary for non-overlapping buckets', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    await scope.calendar.createCalendarEvent({
+      title: 'Overnight incident',
+      startAt: new Date('2026-07-01T22:00:00Z'),
+      endAt: new Date('2026-07-02T02:00:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+    });
+    await scope.calendar.createCalendarEvent({
+      title: 'Today standup',
+      startAt: new Date('2026-07-02T09:00:00Z'),
+      endAt: new Date('2026-07-02T09:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+    });
+
+    const today = new Date('2026-07-02T00:00:00Z');
+    const future = await scope.calendar.listCalendarEventPage({
+      from: today,
+      to: new Date('2026-07-03T00:00:00Z'),
+      startFrom: today,
+    });
+    expect(future.events.map((event) => event.title)).toEqual(['Today standup']);
+
+    const past = await scope.calendar.listCalendarEventPage({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: today,
+      startTo: today,
+      order: 'desc',
+    });
+    expect(past.events.map((event) => event.title)).toEqual(['Overnight incident']);
+
+    const all = await scope.calendar.listCalendarEventPage({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-03T00:00:00Z'),
+    });
+    expect(all.events.map((event) => event.title)).toEqual(['Overnight incident', 'Today standup']);
+  });
+
   it('uses the parent creator for raw timeline rows materialized by the worker scope', async () => {
     const ownerScope = withTeam(db as never, TEAM_ID, USER_B_ID);
     const workerScope = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {

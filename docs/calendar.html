@@ -127,8 +127,10 @@
         description, location, or redacted busy blocks through the team-scoped calendar query. These
         scopes cover the rolling list window of two years before and after today, so
         <code>eventScope=all</code> means all events in that window rather than the full historical
-        archive. The list state is shareable through <code>eventScope=past|all</code>,
-        <code>eventQ</code>, and <code>eventPage</code> URL parameters.
+        archive. Past and future buckets are separated by event start time, while the all-event
+        scope includes any event intersecting the rolling window. The list state is shareable
+        through <code>eventScope=past|all</code>, <code>eventQ</code>, and
+        <code>eventPage</code> URL parameters.
       </p>
       <p>
         Manual edits use the same recurrence modes as accepted suggestions:

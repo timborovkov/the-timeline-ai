@@ -750,10 +750,18 @@ function CalendarEventList({
   onPageChange: (page: number) => void;
   onEdit: (event: CalendarEvent) => void;
 }) {
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const committedSearchRef = useRef(query);
   const pageCount = Math.max(1, Math.ceil(total / EVENT_LIST_PAGE_SIZE));
   const effectivePage = Math.min(page, pageCount - 1);
   const pageStart = effectivePage * EVENT_LIST_PAGE_SIZE;
+
+  useEffect(() => {
+    if (query === committedSearchRef.current) return;
+    committedSearchRef.current = query;
+    if (searchInputRef.current) searchInputRef.current.value = query;
+  }, [query]);
 
   useEffect(() => {
     return () => {
@@ -776,12 +784,13 @@ function CalendarEventList({
         <div className="flex min-w-64 items-center gap-2 rounded-md border border-input bg-background px-3">
           <Search className="size-4 text-fg-dim" />
           <Input
-            key={query}
+            ref={searchInputRef}
             defaultValue={query}
             onChange={(event) => {
               const nextQuery = event.target.value;
               if (searchTimer.current) clearTimeout(searchTimer.current);
               searchTimer.current = setTimeout(() => {
+                committedSearchRef.current = nextQuery.trim();
                 onQueryChange(nextQuery);
               }, 350);
             }}
