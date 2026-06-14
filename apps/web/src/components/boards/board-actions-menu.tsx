@@ -203,7 +203,7 @@ function BoardSettingsDialog({
           </label>
           <label className="block">
             <span className="mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-              Purpose
+              Description
             </span>
             <textarea
               value={draft.purpose}
@@ -212,7 +212,7 @@ function BoardSettingsDialog({
                 dispatchDraft({ type: 'purpose', purpose: event.target.value });
               }}
               rows={3}
-              placeholder="Instructions for teammates and Timeline"
+              placeholder="What this board is for"
               className="w-full resize-none rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none disabled:opacity-60"
             />
           </label>

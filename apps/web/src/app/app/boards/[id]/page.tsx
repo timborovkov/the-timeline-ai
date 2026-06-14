@@ -1,4 +1,6 @@
+import { users } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
+import { inArray } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
 import type { BoardLayout } from '@/lib/board-links';
@@ -44,7 +46,7 @@ export default async function BoardDetailPage({
   const selectedBoardItemId = board.items.some((item) => item.id === selectedItemId)
     ? selectedItemId
     : null;
-  const [candidates, history] = await Promise.all([
+  const [candidates, history, members] = await Promise.all([
     scope.objects.listObjects({
       archived: false,
       limit: 200,
@@ -52,7 +54,24 @@ export default async function BoardDetailPage({
     selectedBoardItemId
       ? scope.boards.listBoardItemHistory(selectedBoardItemId)
       : Promise.resolve([]),
+    scope.timeline.listMembers(),
   ]);
+  const memberIds = members.map((member) => member.userId);
+  const memberRows =
+    memberIds.length > 0
+      ? await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, memberIds))
+      : [];
+  const memberMap = new Map(memberRows.map((member) => [member.id, member] as const));
+  const memberOptions = members.map((member) => {
+    const user = memberMap.get(member.userId);
+    return {
+      id: member.userId,
+      label: user?.name ?? user?.email ?? member.userId,
+    };
+  });
   const firstLaneId = board.lanes.find((lane) => !lane.archivedAt)?.id ?? null;
   const isKanban = view === 'kanban';
 
@@ -78,6 +97,7 @@ export default async function BoardDetailPage({
         defaultLaneId={firstLaneId}
         selectedItemId={selectedBoardItemId}
         history={history}
+        members={memberOptions}
       />
     </div>
   );

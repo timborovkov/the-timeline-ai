@@ -37,7 +37,7 @@ and history.
 A board is a team-shared work surface with:
 
 - name
-- purpose/instructions
+- description/instructions
 - preset provenance for defaults
 - allowed or recommended object kinds
 - one or more views
@@ -125,7 +125,8 @@ Defer:
 
 Board creation starts with preset choice, using icons, concrete examples, and
 plain-language descriptions. A preset only seeds name, recommended object kinds,
-purpose, and editable stages; it is not a rigid board type.
+and editable stages; it is not a rigid board type. Preset descriptive copy is
+not stored as the board description unless the user writes it.
 
 The default preset starts with Backlog, In progress, Review, and Done. Users can
 rename, reorder, add, or remove stages during creation. The same stage editor is
@@ -181,7 +182,7 @@ membership, editable stages, and board item properties.
 
 1. User opens Boards.
 2. User chooses a preset from visual options with examples.
-3. User enters name and optionally edits purpose/instructions.
+3. User enters name and optionally edits description/instructions.
 4. User edits the starting stages if needed.
 5. User creates the board.
 6. App opens the empty board with a focused add flow.
@@ -190,7 +191,7 @@ Success criteria:
 
 - The user can create a pipeline without seeing raw fields like
   `filter.type` or `group_by`.
-- The board purpose is understandable to both teammates and the agent.
+- The board description is understandable to both teammates and the agent.
 
 ### Add Board Item
 
@@ -214,7 +215,7 @@ Kanban:
 - show saving/saved board-level state
 - rollback only failed moves
 - preserve each move in board history
-- edit board name, purpose, and stages from board settings
+- edit board name, description, and stages from board settings
 
 Table:
 
@@ -233,11 +234,12 @@ Card click opens board-context detail before navigating away.
 The panel shows:
 
 - object summary
-- board item properties
+- editable board item properties: responsible person, due date, and priority
 - board-local notes
 - next step
 - board item history
-- links to full object page, chat about object, and all timeline events
+- object preview modal, with links to the full object page, object chat, and all
+  timeline events
 
 ### Pin Board
 
@@ -246,7 +248,7 @@ Users can pin or unpin shared boards for their own Home Dashboard.
 Home shows compact pinned board snapshots:
 
 - board name
-- template/purpose label
+- description label when present
 - item count
 - lane counts
 - overdue/due-soon count when available
@@ -260,7 +262,7 @@ v1.
 Object pages show active board memberships compactly:
 
 - board name
-- board purpose/template
+- board description when present
 - lane
 - responsible person
 - due date
@@ -270,9 +272,10 @@ This lets users move from canonical memory to active workflows.
 
 ## Agent Behavior
 
-### Board Purpose
+### Board Description
 
-Each board has user-visible purpose/instructions. The agent uses them to decide:
+Each board has a user-visible description/instructions field. The agent uses it
+to decide:
 
 - whether an object belongs on the board
 - what lane to suggest

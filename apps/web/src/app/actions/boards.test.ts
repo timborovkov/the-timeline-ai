@@ -95,6 +95,7 @@ describe('createBoardAction', () => {
     expect(fakes.fakeBoards.createBoard).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Pilot pipeline',
+        purpose: '',
         templateKind: 'pipeline',
         recommendedObjectTypes: ['company', 'deal', 'project'],
       }),

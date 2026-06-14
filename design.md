@@ -319,13 +319,16 @@ visible change.
 - Board creation starts from clear presets with icons, example use cases, and
   editable stages. Presets are starting points, not board types; stages can be
   renamed, reordered, added, or removed during creation and from board settings.
+- Board descriptions are user-authored. Preset copy must not appear on the
+  board once it has been created unless the user explicitly wrote it.
 - Cards `bg-bg border border-border rounded-sm p-3`. Inner padding 12px.
-- Card meta strip at the bottom: mono uppercase 11px with task ID,
-  responsible person, due indicator, priority, and next step where present.
+- Card meta strip at the bottom: mono uppercase 10-11px with responsible
+  person, due indicator, and priority. Missing values render explicitly
+  (`Unassigned`, `No due`, `No priority`) so cleanup work is scannable.
   Due-this-week = `text-signal`; overdue = `text-danger`.
 - Card clicks open a board-context detail panel first. The panel shows object
-  memory, board-local properties, board notes, item history, and direct links
-  to the full object page and object chat.
+  memory, editable board-local properties, board notes, item history, an object
+  preview modal, and direct links to the full object page and object chat.
 - Drag uses `@dnd-kit/core` with optimistic `updateBoardItemAction` calls.
 - Board moves should feel complete immediately. Show a quiet board-level
   saving state while moves are in flight, then a brief saved confirmation once
@@ -545,12 +548,12 @@ key/value pairs.
 ### Optimistic updates
 
 - Lightweight, reversible product edits should update the local surface
-  immediately, then reconcile with server state: kanban moves and board item
-  adds, object status/stage/priority/due edits, object notes, relationship
-  changes, object-change approvals, object archive state after explicit user
-  confirmation, document renames, document folder create/delete, text capture,
-  calendar create/edit, document upload placeholders, onboarding checklist
-  actions, and inbox read-state changes.
+  immediately, then reconcile with server state: kanban moves, board item adds,
+  board item responsible/due/priority/notes edits, object status/stage/priority/due
+  edits, object notes, relationship changes, object-change approvals, object
+  archive state after explicit user confirmation, document renames, document
+  folder create/delete, text capture, calendar create/edit, document upload
+  placeholders, onboarding checklist actions, and inbox read-state changes.
 - Security-sensitive or external-provider actions wait for server
   confirmation: invites, meeting bot scheduling/cancel, exports, OAuth/
   integration setup, and irreversible destructive operations.

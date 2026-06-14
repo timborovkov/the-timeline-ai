@@ -23,6 +23,7 @@ import {
   useTransition,
 } from 'react';
 
+import type { BoardMemberOption } from '@/components/boards/board-detail-client';
 import type * as boards from '@timeline/shared/boards';
 
 import { updateBoardItemAction } from '@/app/actions/boards';
@@ -36,9 +37,11 @@ interface Props {
   boardId: string;
   lanes: boards.BoardLaneRow[];
   items: boards.BoardItemRow[];
+  selectedItemId: string | null;
+  members: BoardMemberOption[];
 }
 
-export function CuratedKanbanBoard({ boardId, lanes, items }: Props) {
+export function CuratedKanbanBoard({ boardId, lanes, items, selectedItemId, members }: Props) {
   const dndContextId = useId();
   const router = useRouter();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
@@ -159,6 +162,8 @@ export function CuratedKanbanBoard({ boardId, lanes, items }: Props) {
               items={byLane.get(lane.id) ?? []}
               savingIds={savingIds}
               errors={errors}
+              selectedItemId={selectedItemId}
+              members={members}
             />
           ))}
           {(byLane.get(null)?.length ?? 0) > 0 ? (
@@ -175,6 +180,8 @@ export function CuratedKanbanBoard({ boardId, lanes, items }: Props) {
               items={byLane.get(null) ?? []}
               savingIds={savingIds}
               errors={errors}
+              selectedItemId={selectedItemId}
+              members={members}
             />
           ) : null}
         </div>
@@ -194,12 +201,16 @@ function KanbanColumn({
   items,
   savingIds,
   errors,
+  selectedItemId,
+  members,
 }: {
   boardId: string;
   lane: boards.BoardLaneRow;
   items: boards.BoardItemRow[];
   savingIds: ReadonlySet<string>;
   errors: Record<string, string>;
+  selectedItemId: string | null;
+  members: BoardMemberOption[];
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: lane.id });
   return (
@@ -226,6 +237,8 @@ function KanbanColumn({
             item={item}
             saving={savingIds.has(item.id)}
             error={errors[item.id]}
+            selected={item.id === selectedItemId}
+            members={members}
           />
         ))}
       </ul>
@@ -238,11 +251,15 @@ function KanbanCard({
   item,
   saving,
   error,
+  selected,
+  members,
 }: {
   boardId: string;
   item: boards.BoardItemRow;
   saving: boolean;
   error?: string;
+  selected: boolean;
+  members: BoardMemberOption[];
 }) {
   const optimistic = item.id.startsWith('optimistic-');
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -260,6 +277,7 @@ function KanbanCard({
       {...listeners}
       className={cn(
         'cursor-grab rounded-sm border border-border bg-bg px-3 py-2 text-sm transition-colors hover:border-border-strong',
+        selected && 'border-signal bg-signal-soft shadow-[inset_3px_0_0_var(--color-signal)]',
         isDragging && 'opacity-50',
         saving && 'cursor-progress opacity-80',
         optimistic && 'cursor-wait opacity-80',
@@ -276,11 +294,19 @@ function KanbanCard({
           {item.object.canonicalName}
         </Link>
       )}
-      <div className="mt-1.5 flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
         <span>{item.object.type}</span>
-        {item.responsibleUserId ? <span>· owner</span> : null}
-        {item.dueAt ? <span>· due {new Date(item.dueAt).toLocaleDateString('en-CA')}</span> : null}
-        {item.priority ? <span>· p{item.priority}</span> : null}
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border font-mono text-[10px] uppercase tracking-[0.08em]">
+        <CardMeta
+          value={ownerLabel(item.responsibleUserId, members)}
+          missing={!item.responsibleUserId}
+        />
+        <CardMeta value={item.dueAt ? dateLabel(item.dueAt) : 'No due'} missing={!item.dueAt} />
+        <CardMeta
+          value={item.priority ? `P${item.priority}` : 'No priority'}
+          missing={!item.priority}
+        />
       </div>
       {item.nextStep ? (
         <p className="mt-2 line-clamp-2 text-xs text-fg-muted">{item.nextStep}</p>
@@ -290,4 +316,21 @@ function KanbanCard({
       ) : null}
     </li>
   );
+}
+
+function CardMeta({ value, missing }: { value: string; missing: boolean }) {
+  return (
+    <span className={cn('truncate bg-bg px-1.5 py-1 text-fg', missing && 'text-fg-dim')}>
+      {value}
+    </span>
+  );
+}
+
+function ownerLabel(userId: string | null, members: BoardMemberOption[]): string {
+  if (!userId) return 'Unassigned';
+  return members.find((member) => member.id === userId)?.label ?? 'Assigned';
+}
+
+function dateLabel(value: Date): string {
+  return new Date(value).toLocaleDateString('en-CA');
 }

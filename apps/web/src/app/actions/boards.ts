@@ -97,19 +97,6 @@ function recommendedTypesFor(templateKind: boardDomain.BoardTemplateKind): objec
   return [];
 }
 
-function purposeFor(templateKind: boardDomain.BoardTemplateKind): string {
-  if (templateKind === 'pipeline') {
-    return 'Track companies, deals, or projects through staged progress.';
-  }
-  if (templateKind === 'task_board') {
-    return 'Track tasks and follow-ups through an operational workflow.';
-  }
-  if (templateKind === 'catalog') {
-    return 'Track products, services, vendors, documents, or reference objects in one curated inventory.';
-  }
-  return 'Track a curated set of workspace objects for a team-defined workflow.';
-}
-
 export async function createBoardAction(input: unknown): Promise<ActionState> {
   return runSentryServerAction('create_board', async () => {
     const parsed = createBoardSchema.safeParse(input);
@@ -120,7 +107,7 @@ export async function createBoardAction(input: unknown): Promise<ActionState> {
       const templateKind = parsed.data.templateKind;
       const board = await r.scope.boards.createBoard({
         name: parsed.data.name,
-        purpose: parsed.data.purpose ?? purposeFor(templateKind),
+        purpose: parsed.data.purpose ?? '',
         templateKind,
         recommendedObjectTypes:
           parsed.data.recommendedObjectTypes ?? recommendedTypesFor(templateKind),

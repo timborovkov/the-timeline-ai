@@ -191,14 +191,14 @@ export function BoardCreateForm() {
         </label>
         <label className="block">
           <span className="mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-            Purpose
+            Description
           </span>
           <input
             value={purpose}
             onChange={(e) => {
               dispatch({ type: 'purpose', purpose: e.target.value });
             }}
-            placeholder="Optional instructions for teammates and Timeline"
+            placeholder="What this board is for"
             className="w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm focus:border-border-strong focus:outline-none"
           />
         </label>

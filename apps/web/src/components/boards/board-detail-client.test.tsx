@@ -9,6 +9,9 @@ import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock('@/app/actions/boards', () => ({
+  updateBoardItemAction: vi.fn(() => Promise.resolve({ ok: true })),
+}));
 vi.mock('@/components/boards/board-add-item-form', () => ({
   BoardAddItemForm: (props: {
     onOptimisticItem?: (item: boards.BoardItemRow) => void;
@@ -128,6 +131,7 @@ function renderClient(items: boards.BoardItemRow[]) {
       defaultLaneId="lane-1"
       selectedItemId={null}
       history={[]}
+      members={[]}
     />
   );
 }
