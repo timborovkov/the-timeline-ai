@@ -369,13 +369,16 @@ describe('ApprovalsClient', () => {
     expect(html).not.toContain('existing object ↔ existing object');
   });
 
-  it('reports optimistic visible pending count changes to parent summaries', async () => {
+  it('updates folded pending count after optimistic row removal', async () => {
     const user = userEvent.setup();
-    const onVisiblePendingItemCountChange = vi.fn();
 
-    const { getByRole } = render(
+    const { getByRole, getByText } = render(
       createElement(ApprovalsClient, {
-        onVisiblePendingItemCountChange,
+        folded: {
+          title: 'Calendar approvals',
+          summary: (count) => `${count} waiting`,
+          className: 'border-y border-border py-4',
+        },
         suggestions: [
           {
             id: 'bundle-1',
@@ -405,21 +408,18 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    await waitFor(() => {
-      expect(onVisiblePendingItemCountChange).toHaveBeenLastCalledWith(1);
-    });
+    expect(getByText('1 waiting')).toBeTruthy();
 
     await user.click(getByRole('button', { name: /^Accept$/ }));
 
     await waitFor(() => {
-      expect(onVisiblePendingItemCountChange).toHaveBeenLastCalledWith(0);
+      expect(getByText('0 waiting')).toBeTruthy();
     });
     expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId: 'item-1' });
   });
 
   it('restores optimistic hidden rows when refreshed suggestions still contain them', async () => {
     const user = userEvent.setup();
-    const onVisiblePendingItemCountChange = vi.fn();
     const suggestion = {
       id: 'bundle-1',
       source: 'background',
@@ -445,27 +445,33 @@ describe('ApprovalsClient', () => {
       ],
     };
 
-    const { getByRole, rerender } = render(
+    const folded = {
+      title: 'Calendar approvals',
+      summary: (count: number) => `${count} waiting`,
+      className: 'border-y border-border py-4',
+    };
+
+    const { getByRole, getByText, rerender } = render(
       createElement(ApprovalsClient, {
-        onVisiblePendingItemCountChange,
+        folded,
         suggestions: [suggestion],
       }),
     );
 
     await user.click(getByRole('button', { name: /^Accept$/ }));
     await waitFor(() => {
-      expect(onVisiblePendingItemCountChange).toHaveBeenLastCalledWith(0);
+      expect(getByText('0 waiting')).toBeTruthy();
     });
 
     rerender(
       createElement(ApprovalsClient, {
-        onVisiblePendingItemCountChange,
+        folded,
         suggestions: [{ ...suggestion, items: [...suggestion.items] }],
       }),
     );
 
     await waitFor(() => {
-      expect(onVisiblePendingItemCountChange).toHaveBeenLastCalledWith(1);
+      expect(getByText('1 waiting')).toBeTruthy();
     });
     expect(getByRole('button', { name: /^Accept$/ })).toBeTruthy();
   });

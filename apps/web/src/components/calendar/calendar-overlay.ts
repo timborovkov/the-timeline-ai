@@ -102,9 +102,11 @@ export function applyCalendarPageOverlay(
   overlay: CalendarOverlayState,
 ): CalendarEvent[] {
   const removed = new Set(overlay.removedIds);
-  return events
-    .filter((event) => !removed.has(event.id))
-    .map((event) => overlay.upserts[event.id] ?? event);
+  const visibleEvents: CalendarEvent[] = [];
+  for (const event of events) {
+    if (!removed.has(event.id)) visibleEvents.push(overlay.upserts[event.id] ?? event);
+  }
+  return visibleEvents;
 }
 
 export function calendarEventsSignature(events: CalendarEvent[]): string {

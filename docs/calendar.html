@@ -124,7 +124,9 @@
       <p>
         The page leads with the calendar grid, then shows a paged event list. The list starts on
         upcoming events from today, supports past and all-event scopes, and searches event title,
-        description, location, or redacted busy blocks through the team-scoped calendar query.
+        description, location, or redacted busy blocks through the team-scoped calendar query. The
+        list state is shareable through <code>eventScope=past|all</code>, <code>eventQ</code>, and
+        <code>eventPage</code> URL parameters.
       </p>
       <p>
         Manual edits use the same recurrence modes as accepted suggestions:
@@ -137,7 +139,9 @@
         <li>
           Shared calendar behavior lives in
           <code>packages/shared/src/calendar/scope.ts</code> and
-          <code>packages/shared/src/calendar/recurrence.ts</code>.
+          <code>packages/shared/src/calendar/recurrence.ts</code>. The scoped calendar port exposes
+          <code>listCalendarEventPage</code> for the paged/searchable event list in addition to the
+          grid-oriented <code>listCalendarEvents</code> range query.
         </li>
         <li>
           Calendar suggestion acceptance lives in
@@ -150,7 +154,8 @@
         </li>
         <li>
           Manual calendar controls live in
-          <code>apps/web/src/components/calendar/calendar-view.tsx</code>.
+          <code>apps/web/src/components/calendar/calendar-view.tsx</code>. Folded calendar approvals
+          reuse <code>apps/web/src/components/approvals/approvals-client.tsx</code>.
         </li>
         <li>
           Read-only subscription URLs are managed by

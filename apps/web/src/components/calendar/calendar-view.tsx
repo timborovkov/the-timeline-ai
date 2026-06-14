@@ -26,7 +26,6 @@ import {
   useMemo,
   useReducer,
   useRef,
-  useState,
   useTransition,
 } from 'react';
 
@@ -306,7 +305,12 @@ export function CalendarView(props: CalendarViewProps) {
   );
 }
 
-function CalendarViewContent({
+function CalendarViewContent(props: CalendarViewProps) {
+  const model = useCalendarViewModel(props);
+  return <CalendarViewLayout model={model} />;
+}
+
+function useCalendarViewModel({
   events,
   eventListEvents = events,
   eventListTotal = eventListEvents.length,
@@ -343,7 +347,6 @@ function CalendarViewContent({
     initCalendarUiState,
   );
   const [pending, startTransition] = useTransition();
-  const [eventSearch, setEventSearch] = useState(eventListQuery);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialogContextRef = useRef(0);
   const serverEventsSnapshotRef = useRef<{
@@ -421,20 +424,6 @@ function CalendarViewContent({
     },
     [eventListPage, eventListQuery, eventListScope, router, searchParams],
   );
-
-  useEffect(() => {
-    setEventSearch(eventListQuery);
-  }, [eventListQuery]);
-
-  useEffect(() => {
-    if (eventSearch === eventListQuery) return;
-    const timer = setTimeout(() => {
-      updateEventListParams({ query: eventSearch, page: 0 });
-    }, 350);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [eventSearch, eventListQuery, updateEventListParams]);
 
   function push(nextMode: CalendarViewMode, nextDate: Temporal.PlainDate) {
     const next = new URLSearchParams(searchParams.toString());
@@ -610,67 +599,102 @@ function CalendarViewContent({
 
   const gridCols = safeMode === 'day' ? 'grid-cols-1' : 'grid-cols-[3rem_repeat(7,minmax(0,1fr))]';
 
+  return {
+    anchor,
+    currentToday,
+    displayEventListEvents,
+    draft,
+    editing,
+    error,
+    eventListPage,
+    eventListQuery,
+    eventListScope,
+    eventListTotal,
+    eventsByDay,
+    gridCols,
+    members,
+    move,
+    open,
+    openCreate,
+    openEdit,
+    pending,
+    push,
+    remove,
+    safeMode,
+    save,
+    saveState,
+    surfaceError,
+    timezone,
+    updateEventListParams,
+    visibleDays,
+    dispatchCalendarUi,
+  };
+}
+
+function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarViewModel> }) {
   return (
     <div className="space-y-4">
       <CalendarToolbar
-        mode={safeMode}
-        anchor={anchor}
-        timezone={timezone}
-        title={titleFor(safeMode, anchor)}
-        today={currentToday}
-        onPush={push}
-        onMove={move}
+        mode={model.safeMode}
+        anchor={model.anchor}
+        timezone={model.timezone}
+        title={titleFor(model.safeMode, model.anchor)}
+        today={model.currentToday}
+        onPush={model.push}
+        onMove={model.move}
         onCreate={() => {
-          openCreate();
+          model.openCreate();
         }}
       />
-      <CalendarSaveStatus saveState={saveState} surfaceError={surfaceError} />
+      <CalendarSaveStatus saveState={model.saveState} surfaceError={model.surfaceError} />
       <CalendarBody
-        mode={safeMode}
-        gridCols={gridCols}
-        anchor={anchor}
-        visibleDays={visibleDays}
-        eventsByDay={eventsByDay}
-        timezone={timezone}
-        today={currentToday}
-        onCreate={openCreate}
-        onEdit={openEdit}
+        mode={model.safeMode}
+        gridCols={model.gridCols}
+        anchor={model.anchor}
+        visibleDays={model.visibleDays}
+        eventsByDay={model.eventsByDay}
+        timezone={model.timezone}
+        today={model.currentToday}
+        onCreate={model.openCreate}
+        onEdit={model.openEdit}
       />
       <CalendarEventList
-        events={displayEventListEvents}
-        total={eventListTotal}
-        timezone={timezone}
-        query={eventSearch}
-        scope={eventListScope}
-        page={eventListPage}
-        onQueryChange={setEventSearch}
+        events={model.displayEventListEvents}
+        total={model.eventListTotal}
+        timezone={model.timezone}
+        query={model.eventListQuery}
+        scope={model.eventListScope}
+        page={model.eventListPage}
+        onQueryChange={(query) => {
+          model.updateEventListParams({ query, page: 0 });
+        }}
         onScopeChange={(scope) => {
-          updateEventListParams({ scope, page: 0 });
+          model.updateEventListParams({ scope, page: 0 });
         }}
         onPageChange={(page) => {
-          updateEventListParams({ page });
+          model.updateEventListParams({ page });
         }}
-        onEdit={openEdit}
+        onEdit={model.openEdit}
       />
       <CalendarEventDialog
-        open={open}
-        editing={editing}
-        draft={draft}
-        error={error}
-        pending={pending}
-        timezone={timezone}
-        members={members}
+        open={model.open}
+        editing={model.editing}
+        draft={model.draft}
+        error={model.error}
+        pending={model.pending}
+        timezone={model.timezone}
+        members={model.members}
         onOpenChange={(nextOpen) => {
-          dispatchCalendarUi({ open: nextOpen });
+          model.dispatchCalendarUi({ open: nextOpen });
         }}
         onDraftChange={(action) => {
-          dispatchCalendarUi((current) => ({
+          model.dispatchCalendarUi((current) => ({
             ...current,
             draft: typeof action === 'function' ? action(current.draft) : action,
           }));
         }}
-        onSave={save}
-        onRemove={remove}
+        onSave={model.save}
+        onRemove={model.remove}
       />
     </div>
   );
@@ -699,9 +723,16 @@ function CalendarEventList({
   onPageChange: (page: number) => void;
   onEdit: (event: CalendarEvent) => void;
 }) {
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pageCount = Math.max(1, Math.ceil(total / EVENT_LIST_PAGE_SIZE));
   const effectivePage = Math.min(page, pageCount - 1);
   const pageStart = effectivePage * EVENT_LIST_PAGE_SIZE;
+
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, []);
 
   return (
     <section className="border-t border-border pt-4">
@@ -718,9 +749,14 @@ function CalendarEventList({
         <div className="flex min-w-64 items-center gap-2 rounded-md border border-input bg-background px-3">
           <Search className="size-4 text-fg-dim" />
           <Input
-            value={query}
+            key={query}
+            defaultValue={query}
             onChange={(event) => {
-              onQueryChange(event.target.value);
+              const nextQuery = event.target.value;
+              if (searchTimer.current) clearTimeout(searchTimer.current);
+              searchTimer.current = setTimeout(() => {
+                onQueryChange(nextQuery);
+              }, 350);
             }}
             placeholder="Search events"
             className="h-9 border-0 px-0 ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0"

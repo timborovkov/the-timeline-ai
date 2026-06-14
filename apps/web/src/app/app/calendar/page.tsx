@@ -7,7 +7,7 @@ import { redirect } from 'next/navigation';
 import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
 import type { Metadata } from 'next';
 
-import { CalendarApprovalsSection } from '@/components/calendar/calendar-approvals-section';
+import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CalendarSubscriptionPanel } from '@/components/calendar/calendar-subscription-panel';
 import { CalendarView } from '@/components/calendar/calendar-view';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -186,11 +186,6 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     );
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
-  const calendarSuggestionItemCount = calendarSuggestions.reduce(
-    (sum, suggestion) => sum + suggestion.items.length,
-    0,
-  );
-
   return (
     <div className="mx-auto max-w-[92rem] space-y-6">
       <header className="space-y-1">
@@ -230,9 +225,14 @@ export default async function CalendarPage({ searchParams }: PageProps) {
       />
 
       {calendarSuggestions.length > 0 ? (
-        <CalendarApprovalsSection
+        <ApprovalsClient
           suggestions={calendarSuggestions}
-          initialItemCount={calendarSuggestionItemCount}
+          allowBulkAccept={false}
+          folded={{
+            title: 'Calendar approvals',
+            summary: (count) => `${count} pending calendar proposal${count === 1 ? '' : 's'}`,
+            className: 'border-y border-border py-4',
+          }}
         />
       ) : null}
     </div>

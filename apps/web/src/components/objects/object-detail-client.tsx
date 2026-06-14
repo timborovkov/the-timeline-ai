@@ -37,7 +37,6 @@ import {
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
-import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { cn, errorMessage } from '@/lib/utils';
 
 const RELATIONSHIP_KINDS = [
@@ -134,9 +133,6 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
 function useObjectDetailView({ detail, userId, suggestions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const pendingApprovalItemCount = countPendingApprovalItems(suggestions);
-  const [visibleApprovalItemCount, setVisibleApprovalItemCount] =
-    useState(pendingApprovalItemCount);
   const [
     {
       overrides,
@@ -422,26 +418,20 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <main className="min-w-0 space-y-6">
           {suggestions.length > 0 ? (
-            <details className="border border-signal/40 bg-signal-soft/20">
-              <summary className="cursor-pointer list-none px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-sm font-semibold tracking-tight">Pending approvals</h2>
-                    <p className="mt-1 text-xs text-fg-muted">{visibleApprovalItemCount} waiting</p>
-                  </div>
-                  <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
-                    Open
-                  </span>
-                </div>
-              </summary>
-              <div className="border-t border-border p-4">
-                <ApprovalsClient
-                  suggestions={suggestions}
-                  allowBulkAccept={false}
-                  onVisiblePendingItemCountChange={setVisibleApprovalItemCount}
-                />
-              </div>
-            </details>
+            <ApprovalsClient
+              suggestions={suggestions}
+              allowBulkAccept={false}
+              folded={{
+                title: 'Pending approvals',
+                summary: (count) => `${count} waiting`,
+                className: 'border border-signal/40 bg-signal-soft/20',
+                summaryClassName: 'cursor-pointer list-none px-4 py-3',
+                bodyClassName: 'border-t border-border p-4',
+                titleClassName: 'text-sm font-semibold tracking-tight',
+                countClassName: 'mt-1 text-xs text-fg-muted',
+                openLabelClassName: 'font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim',
+              }}
+            />
           ) : null}
 
           <ObjectPanel title="Evidence" eyebrow="events">
@@ -523,17 +513,6 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
         </aside>
       </div>
     </div>
-  );
-}
-
-function countPendingApprovalItems(suggestions: LocalSuggestion[]): number {
-  return suggestions.reduce(
-    (count, bundle) =>
-      count +
-      bundle.items.filter(
-        (item) => isActionableSuggestionStatus(item.status) && item.targetKind !== 'object_merge',
-      ).length,
-    0,
   );
 }
 
