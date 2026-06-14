@@ -206,6 +206,7 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
   const { data: linkResultsData } = useQuery({
     queryKey: queryKeys.objectSearch(trimmedLinkQuery, detail.id),
     enabled: trimmedLinkQuery.length > 0,
+    placeholderData: (previousData) => previousData,
     queryFn: async () => {
       const params = new URLSearchParams({ q: trimmedLinkQuery, exclude: detail.id });
       return readJson<{ results?: ObjectSearchResult[] }>(
