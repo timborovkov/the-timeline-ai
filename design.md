@@ -269,9 +269,9 @@ Linear-tight on operational surfaces. Comfortable on mobile and on forms.
 The timeline is the canonical operational surface and the redesign's most
 visible change.
 
-- **Dedicated surface.** `/app` is the Home Dashboard for capture, pinned board
-  shortcuts, onboarding, ingest access, pending approvals, and compact recent
-  activity. `/app/timeline` is only the full archive browser: timeline
+- **Dedicated surface.** `/app` is the Home Dashboard for capture, concise board
+  shortcuts, onboarding, ingest access, quick actions, the latest daily digest,
+  pending approvals, and compact recent activity. `/app/timeline` is only the full archive browser: timeline
   browsing, filtering, pagination, inspection, and source evidence.
 - **Timeline moments, not raw rows by default.** The browser is date-first:
   sticky date sections contain source clusters, and each cluster contains one
@@ -311,7 +311,7 @@ visible change.
 - Boards are curated work surfaces with explicit board items, not raw saved
   filters over every matching object. Filters and templates help users find
   eligible objects; membership is intentional.
-- Pinned boards on Home use compact snapshots, not embedded full boards: board
+- Board shortcuts on Home use compact snapshots, not embedded full boards: board
   name, item count, lane counts, and last update. Opening the snapshot enters
   the full board.
 - Board creation starts from clear templates with icons, example use cases,

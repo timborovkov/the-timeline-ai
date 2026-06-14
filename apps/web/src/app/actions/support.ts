@@ -2,6 +2,7 @@
 
 import { supportRequests } from '@timeline/db';
 import { getEnv } from '@timeline/shared/env';
+import { sendMessage } from '@timeline/shared/messaging';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
@@ -12,7 +13,6 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { clientIpFromHeaders } from '@/lib/request-ip';
 import { runSentryServerAction } from '@/lib/sentry-action';
-import { reportCaughtError } from '@/lib/sentry-report';
 import { turnstileHostnameFromHeaders, verifyTurnstileToken } from '@/lib/turnstile';
 
 export interface SupportFormState {
@@ -111,8 +111,7 @@ export async function submitSupportRequestAction(
     const requestId = row[0]?.id;
     if (!requestId) return { error: 'Could not save support request. Please try again.' };
 
-    const fromEmail = env.TRANSACTIONAL_EMAIL_FROM ?? env.INVITE_EMAIL_FROM;
-    if (!env.SUPPORT_EMAIL || !env.POSTMARK_SERVER_TOKEN || !fromEmail) {
+    if (!env.SUPPORT_EMAIL) {
       await db
         .update(supportRequests)
         .set({ emailError: 'Support delivery is not configured.' })
@@ -123,20 +122,27 @@ export async function submitSupportRequestAction(
       };
     }
 
-    const sent = await sendPostmarkSupportEmail({
-      token: env.POSTMARK_SERVER_TOKEN,
-      fromEmail,
-      supportEmail: env.SUPPORT_EMAIL,
-      requestId,
-      requestType: parsed.data.requestType,
-      name: parsed.data.name,
-      email: parsed.data.email,
-      message: parsed.data.message,
-      currentPage,
-      userId,
-      teamId: active?.teamId ?? null,
-      teamName: active?.teamName ?? null,
-    });
+    const sent = await sendMessage(
+      'support_request',
+      {
+        supportEmail: env.SUPPORT_EMAIL,
+        requestId,
+        requestType: parsed.data.requestType,
+        name: parsed.data.name,
+        email: parsed.data.email,
+        message: parsed.data.message,
+        currentPage,
+        userId,
+        teamId: active?.teamId ?? null,
+        teamName: active?.teamName ?? null,
+      },
+      {
+        db,
+        teamId: active?.teamId ?? null,
+        userId,
+        dedupeKey: `support_request:${requestId}`,
+      },
+    );
 
     if (!sent.ok) {
       await db
@@ -156,61 +162,4 @@ export async function submitSupportRequestAction(
 
     return { ok: true };
   });
-}
-
-async function sendPostmarkSupportEmail(input: {
-  token: string;
-  fromEmail: string;
-  supportEmail: string;
-  requestId: string;
-  requestType: (typeof requestTypes)[number];
-  name: string;
-  email: string;
-  message: string;
-  currentPage: string | null;
-  userId: string | null;
-  teamId: string | null;
-  teamName: string | null;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  const textBody = [
-    `Support request ${input.requestId}`,
-    `Type: ${input.requestType}`,
-    `Name: ${input.name}`,
-    `Email: ${input.email}`,
-    `Current page: ${input.currentPage ?? 'n/a'}`,
-    `User ID: ${input.userId ?? 'anonymous'}`,
-    `Team ID: ${input.teamId ?? 'n/a'}`,
-    `Team: ${input.teamName ?? 'n/a'}`,
-    '',
-    input.message,
-  ].join('\n');
-
-  const res = await fetch('https://api.postmarkapp.com/email', {
-    method: 'POST',
-    signal: AbortSignal.timeout(10_000),
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Postmark-Server-Token': input.token,
-    },
-    body: JSON.stringify({
-      From: input.fromEmail,
-      To: input.supportEmail,
-      ReplyTo: input.email,
-      Subject: `[Timeline support] ${input.requestType} from ${input.name}`,
-      TextBody: textBody,
-      MessageStream: 'outbound',
-      Metadata: {
-        support_request_id: input.requestId,
-        request_type: input.requestType,
-      },
-    }),
-  });
-
-  if (res.ok) return { ok: true };
-  const body = await res.text().catch((err: unknown) => {
-    reportCaughtError(err, { surface: 'server_action', operation: 'support_postmark_error_body' });
-    return '';
-  });
-  return { ok: false, error: `Postmark ${res.status}: ${body.slice(0, 500)}` };
 }

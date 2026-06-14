@@ -57,6 +57,12 @@
       "import": "./dist/logger.js",
       "types": "./dist/logger.d.ts"
     },
+    "./messaging": {
+      "types": "./src/messaging/index.ts",
+      "development": "./src/messaging/index.ts",
+      "import": "./dist/messaging/index.js",
+      "default": "./dist/messaging/index.js"
+    },
     "./env": {
       "import": "./dist/env.js",
       "types": "./dist/env.d.ts"

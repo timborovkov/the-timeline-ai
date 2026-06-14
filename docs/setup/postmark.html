@@ -30,8 +30,9 @@
 SUPPORT_EMAIL=contact@thetimeline.cc
 </code></pre>
       <p>
-        <code>POSTMARK_SERVER_TOKEN</code> is used for outbound transactional email: team invites
-        and support/contact mail from <code>/help/support</code>. Set
+        <code>POSTMARK_SERVER_TOKEN</code> is used by the shared messaging module for outbound
+        transactional email: team invites, support/contact mail from <code>/help/support</code>,
+        welcome email, email verification templates, and daily digest delivery. Set
         <code>TRANSACTIONAL_EMAIL_FROM</code> to the verified Postmark sender used in the
         <code>From</code> header, and set <code>SUPPORT_EMAIL</code> to the mailbox destination for
         support requests. Requests use the visitor's email as <code>Reply-To</code>. The inbound
@@ -46,11 +47,25 @@ SUPPORT_EMAIL=contact@thetimeline.cc
       <pre><code>TRANSACTIONAL_EMAIL_FROM="The Timeline &lt;noreply@thetimeline.cc&gt;"
 </code></pre>
       <p>
-        Team settings sends invite emails after the invite row is committed. If Postmark is
-        unavailable or these outbound env vars are missing, the invite is still created, the UI
-        shows the send failure, and admins can copy the fallback invite URL or resend later.
-        Signed-in recipients with a verified account email also see unexpired invites in the team
-        switcher modal, where they can accept or decline without finding the email.
+        Product email is sent through <code>@timeline/shared/messaging</code>, which records durable
+        delivery rows before handing email to Postmark. Team settings sends invite emails after the
+        invite row is committed. If Postmark is unavailable or these outbound env vars are missing,
+        the invite is still created, the UI shows the send failure, and admins can copy the fallback
+        invite URL or resend later. Signed-in recipients with a matching account email also see
+        unexpired invites in the team switcher modal, where they can accept or decline without
+        finding the email; email verification is not required to join.
+      </p>
+      <p>
+        Daily digests are personalized per active team member, generated against the last noon UTC
+        window, stored in <code>daily_digests</code>, and sent once per generated digest unless the
+        recipient has disabled the digest in Team settings → Messaging. In-app notifications remain
+        inbox-only; digest email may summarize pending approvals and inbox state, but individual
+        notification rows are not fanned out as standalone emails.
+      </p>
+      <p>
+        New signups receive a non-blocking verification email through the same messaging module.
+        Unverified users can resend from the account menu; verification updates
+        <code>users.emailVerified</code> but does not block app access.
       </p>
       <p>
         Add the DNS records Postmark shows for <code>thetimeline.cc</code>: DKIM TXT, Return-Path
