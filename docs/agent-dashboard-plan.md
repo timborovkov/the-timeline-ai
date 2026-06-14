@@ -150,6 +150,13 @@ is looking at, then tools verify before answering or acting.
 
 ## 3. Navigation And Product Guide Tools
 
+Status: initial read-only foundation implemented. Shared route/help metadata now
+lives in `@timeline/shared/app-guide`, dashboard route previews consume the same
+registry, and the agent has `search_app_guide` plus `get_app_route` tools that
+return `[route:<id>]` citations, hrefs, required role, intents, and compact
+guide text. Remaining work is richer/how-to guide coverage and future UI cards
+for tool results beyond the route preview dialog.
+
 ### Goal
 
 Let the agent answer "how do I use The Timeline?" and "where do I do X?" without

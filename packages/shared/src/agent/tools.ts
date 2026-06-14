@@ -2,6 +2,7 @@ import { getDb } from '@timeline/db';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
+import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
 import { getMcpManager } from '#src/mcp/client.js';
@@ -184,6 +185,15 @@ const getDocumentInput = z.object({
 
 const getDocumentChunkInput = z.object({
   id: z.string().regex(UUID_RE),
+});
+
+const getAppRouteInput = z.object({
+  routeId: z.string().trim().min(1).max(100),
+});
+
+const searchAppGuideInput = z.object({
+  query: z.string().trim().min(1).max(300),
+  limit: z.number().int().min(1).max(10).optional(),
 });
 
 const listDocumentChangesInput = z.object({
@@ -954,6 +964,58 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             suggestion,
             message: 'Object-memory proposal queued for approval.',
           };
+        }),
+    }),
+
+    get_app_route: tool({
+      description:
+        'Read-only lookup for a known dashboard/help route id. Use when you already have a route id and need title, href, required role, guide text, and [route:<id>] citation. Does not read workspace data.',
+      inputSchema: getAppRouteInput,
+      execute: (raw) =>
+        runSafe('get_app_route', () => {
+          const { routeId } = getAppRouteInput.parse(raw);
+          const route = getAppGuideRoute(routeId);
+          if (!route) return Promise.resolve({ found: false });
+          return Promise.resolve({
+            found: true,
+            route_id: route.id,
+            citation: artifactRefCitation({ kind: 'route', id: route.id }),
+            title: route.title,
+            description: route.description,
+            href: route.href,
+            group: route.group,
+            minimum_role: route.minRole,
+            intents: route.intents,
+            guide: route.guide,
+            related_route_ids: route.relatedRouteIds ?? [],
+          });
+        }),
+    }),
+
+    search_app_guide: tool({
+      description:
+        'Read-only search over Timeline dashboard routes and product guide snippets. Use for navigation/help questions like "where do I invite teammates?", "how do boards work?", or "where are integrations?". Returns route ids, hrefs, required role, guide snippets, and [route:<id>] citations. Does not search timeline data.',
+      inputSchema: searchAppGuideInput,
+      execute: (raw) =>
+        runSafe('search_app_guide', () => {
+          const input = searchAppGuideInput.parse(raw);
+          const results = searchAppGuide(input.query, input.limit ?? 5);
+          return Promise.resolve({
+            count: results.length,
+            results: results.map((route) => ({
+              route_id: route.id,
+              citation: route.citation,
+              title: route.title,
+              description: route.description,
+              href: route.href,
+              group: route.group,
+              minimum_role: route.minRole,
+              intents: route.intents,
+              guide: route.guide,
+              related_route_ids: route.relatedRouteIds ?? [],
+              score: route.score,
+            })),
+          });
         }),
     }),
 

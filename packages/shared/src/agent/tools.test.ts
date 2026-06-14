@@ -76,6 +76,11 @@ function makeFakeScope(): FakeScope {
 const TEAM_B_EVENT_ID = '11111111-2222-3333-4444-555555555555';
 const TEAM_B_ENTITY_ID = '99999999-8888-7777-6666-555555555555';
 
+interface GuideToolResult {
+  count: number;
+  results: unknown[];
+}
+
 describe('buildAgentTools — team isolation', () => {
   it('tool input schemas do not accept teamId or userId', () => {
     const scope = makeFakeScope();
@@ -89,11 +94,57 @@ describe('buildAgentTools — team isolation', () => {
     const ent = tools.get_entity?.inputSchema as unknown as { shape: Record<string, unknown> };
     const list = tools.list_events?.inputSchema as unknown as { shape: Record<string, unknown> };
     const evt = tools.get_event?.inputSchema as unknown as { shape: Record<string, unknown> };
+    const guide = tools.search_app_guide?.inputSchema as unknown as {
+      shape: Record<string, unknown>;
+    };
+    const route = tools.get_app_route?.inputSchema as unknown as { shape: Record<string, unknown> };
     expect(Object.keys(search.shape)).not.toContain('teamId');
     expect(Object.keys(search.shape)).not.toContain('userId');
     expect(Object.keys(ent.shape)).not.toContain('teamId');
     expect(Object.keys(list.shape)).not.toContain('teamId');
     expect(Object.keys(evt.shape)).not.toContain('teamId');
+    expect(Object.keys(guide.shape)).not.toContain('teamId');
+    expect(Object.keys(route.shape)).not.toContain('teamId');
+  });
+
+  it('search_app_guide returns route citations for navigation questions without scope calls', async () => {
+    const scope = makeFakeScope();
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.search_app_guide?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec({ query: 'Where can I invite teammates?', limit: 2 }, {});
+    const guideResult = result as GuideToolResult;
+
+    expect(typeof guideResult.count).toBe('number');
+    expect(guideResult.results[0]).toMatchObject({
+      route_id: 'team/invites',
+      citation: '[route:team/invites]',
+      href: '/app/team',
+      minimum_role: 'admin',
+    });
+    expect(scope.timeline.searchEvents).not.toHaveBeenCalled();
+    expect(scope.documents.searchDocumentChunks).not.toHaveBeenCalled();
+  });
+
+  it('get_app_route returns exact route guide metadata', async () => {
+    const scope = makeFakeScope();
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.get_app_route?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    await expect(exec({ routeId: 'help/boards' }, {})).resolves.toMatchObject({
+      found: true,
+      route_id: 'help/boards',
+      citation: '[route:help/boards]',
+      href: '/help/boards',
+      group: 'help',
+    });
+    await expect(exec({ routeId: 'unknown/route' }, {})).resolves.toEqual({ found: false });
   });
 
   it('get_event with a cross-team event_id returns { found: false } (scope returns null)', async () => {

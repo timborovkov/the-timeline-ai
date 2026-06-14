@@ -35,6 +35,12 @@
       "import": "./dist/analytics/posthog-node.js",
       "default": "./dist/analytics/posthog-node.js"
     },
+    "./app-guide": {
+      "types": "./src/app-guide.ts",
+      "development": "./src/app-guide.ts",
+      "import": "./dist/app-guide.js",
+      "default": "./dist/app-guide.js"
+    },
     "./calendar": {
       "types": "./src/calendar/index.ts",
       "development": "./src/calendar/index.ts",

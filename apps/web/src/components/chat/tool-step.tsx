@@ -51,6 +51,20 @@ function summarize(name: string, input: unknown, output: unknown): string {
       ? 'Listed workspace state'
       : `Listed workspace state — ${String(count)} result${count === 1 ? '' : 's'}`;
   }
+  if (name === 'search_app_guide') {
+    const q = typeof inp.query === 'string' ? inp.query : '';
+    const out = output as { count?: number } | undefined;
+    const count = out?.count;
+    return count === undefined
+      ? `Searched app guide for "${q}"`
+      : `Searched app guide for "${q}" — ${String(count)} result${count === 1 ? '' : 's'}`;
+  }
+  if (name === 'get_app_route') {
+    const id = typeof inp.routeId === 'string' ? inp.routeId : '';
+    const out = output as { title?: string; found?: boolean } | undefined;
+    if (out?.found === false) return `Looked up route "${id}" — not found`;
+    return out?.title ? `Looked up route ${out.title}` : `Looked up route "${id}"`;
+  }
   if (name === 'get_event') {
     const id = typeof inp.id === 'string' ? inp.id.slice(0, 8) : '';
     return `Fetched event ${id}…`;
