@@ -768,8 +768,11 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         const row = existing[0];
         if (!row) return null;
         const current = row as CalendarEventRow;
-        const recurrenceMode: RecurrenceEditMode =
+        const requestedRecurrenceMode: RecurrenceEditMode =
           patch.recurrenceEditMode ?? (current.recurringParentId ? 'single' : 'series');
+        const recurrenceMode: RecurrenceEditMode = !current.recurringParentId
+          ? 'series'
+          : requestedRecurrenceMode;
 
         if (recurrenceMode === 'this_and_future' && current.recurringParentId) {
           const [parent] = await tx
@@ -1198,17 +1201,123 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
         const row = existing[0];
         if (!row) return false;
         const current = row as CalendarEventRow;
-        const recurrenceMode =
+        const requestedRecurrenceMode =
           opts.recurrenceEditMode ?? (current.recurringParentId ? 'single' : 'series');
+        const recurrenceMode: RecurrenceEditMode = !current.recurringParentId
+          ? 'series'
+          : requestedRecurrenceMode;
+
+        if (current.recurringParentId && recurrenceMode !== 'single') {
+          const parentId = current.recurringParentId;
+          const splitAt = current.originalStartAt ?? current.startAt;
+          const [parent] = await tx
+            .select()
+            .from(calendarEvents)
+            .where(
+              and(
+                eq(calendarEvents.id, parentId),
+                eq(calendarEvents.teamId, teamId),
+                isNull(calendarEvents.deletedAt),
+                calendarWriteVisibility,
+              ),
+            )
+            .limit(1);
+          const parentRow = parent as CalendarEventRow | undefined;
+          if (!parentRow) throw new Error('Recurring parent not found');
+          const deletedIds: string[] = [];
+          if (recurrenceMode === 'this_and_future') {
+            await tx
+              .update(calendarEvents)
+              .set({
+                rrule: parentRow.rrule ? rruleUntil(parentRow.rrule, splitAt) : parentRow.rrule,
+                updatedAt: new Date(),
+              })
+              .where(eq(calendarEvents.id, parentId));
+            const futureChildren = await tx
+              .select({ id: calendarEvents.id })
+              .from(calendarEvents)
+              .where(
+                and(
+                  eq(calendarEvents.teamId, teamId),
+                  eq(calendarEvents.recurringParentId, parentId),
+                  gte(calendarEvents.originalStartAt, splitAt),
+                  isNull(calendarEvents.deletedAt),
+                ),
+              );
+            deletedIds.push(...futureChildren.map((child) => child.id));
+            await tombstoneLinkedRawEventsForCalendarEventIds(tx, { teamId, eventIds: deletedIds });
+            await tx
+              .update(calendarEvents)
+              .set({ deletedAt: new Date(), updatedAt: new Date(), isException: true })
+              .where(
+                and(
+                  eq(calendarEvents.teamId, teamId),
+                  eq(calendarEvents.recurringParentId, parentId),
+                  gte(calendarEvents.originalStartAt, splitAt),
+                  isNull(calendarEvents.deletedAt),
+                ),
+              );
+          } else {
+            await tx
+              .update(calendarEvents)
+              .set({ deletedAt: new Date(), updatedAt: new Date() })
+              .where(eq(calendarEvents.id, parentId));
+            const childRows = await tx
+              .select({ id: calendarEvents.id })
+              .from(calendarEvents)
+              .where(
+                and(
+                  eq(calendarEvents.teamId, teamId),
+                  eq(calendarEvents.recurringParentId, parentId),
+                  isNull(calendarEvents.deletedAt),
+                ),
+              );
+            deletedIds.push(...childRows.map((child) => child.id));
+            await tombstoneLinkedRawEventsForCalendarEventIds(tx, { teamId, eventIds: deletedIds });
+            await tx
+              .update(calendarEvents)
+              .set({ deletedAt: new Date(), updatedAt: new Date(), isException: true })
+              .where(
+                and(
+                  eq(calendarEvents.teamId, teamId),
+                  eq(calendarEvents.recurringParentId, parentId),
+                  isNull(calendarEvents.deletedAt),
+                ),
+              );
+            await tombstoneCalendarRawEventIds(
+              tx,
+              [parentRow.startAtRawEventId, parentRow.scheduledRawEventId].filter(
+                (rid): rid is string => rid !== null && rid.length > 0,
+              ),
+            );
+          }
+          await tx.insert(rawEvents).values({
+            teamId,
+            authorUserId: userId,
+            source: 'calendar',
+            contentText: `Cancelled: ${parentRow.title}`,
+            occurredAt: new Date(),
+            visibility: parentRow.visibility,
+            visibilityUserIds: parentRow.visibilityUserIds,
+            visibilityOwnerUserId: parentRow.createdByUserId,
+            sourceMetadata: {
+              calendar_event_id: parentId,
+              action: 'cancelled',
+              recurrence_edit_mode: recurrenceMode,
+              ...(recurrenceMode === 'this_and_future'
+                ? { original_start_at: splitAt.toISOString() }
+                : {}),
+            },
+          });
+          return { deleted: true, deletedEventIds: [parentId, ...deletedIds] };
+        }
 
         await tx
           .update(calendarEvents)
           .set({
             deletedAt: new Date(),
             updatedAt: new Date(),
-            ...(current.recurringParentId && recurrenceMode === 'single'
-              ? { isException: true }
-              : {}),
+            ...(current.recurringParentId ? { isException: true } : {}),
           })
           .where(eq(calendarEvents.id, id));
 
@@ -1234,7 +1343,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           });
           await tx
             .update(calendarEvents)
-            .set({ deletedAt: new Date(), updatedAt: new Date() })
+            .set({ deletedAt: new Date(), updatedAt: new Date(), isException: true })
             .where(
               and(
                 eq(calendarEvents.teamId, teamId),
@@ -1266,11 +1375,11 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
           },
         });
 
-        return { deleted: true, deletedChildIds };
+        return { deleted: true, deletedEventIds: [id, ...deletedChildIds] };
       });
 
       if (deleted) {
-        await deleteCalendarEventPointsForIds(teamId, [id, ...deleted.deletedChildIds]);
+        await deleteCalendarEventPointsForIds(teamId, deleted.deletedEventIds);
       }
 
       return Boolean(deleted);
