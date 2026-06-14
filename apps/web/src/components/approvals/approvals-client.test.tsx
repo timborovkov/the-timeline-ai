@@ -1,21 +1,39 @@
+// @vitest-environment happy-dom
+
+import { cleanup, render, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const fakes = vi.hoisted(() => ({ refresh: vi.fn() }));
-
-vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
-vi.mock('@/app/actions/suggestions', () => ({
+const fakes = vi.hoisted(() => ({
+  refresh: vi.fn(),
   acceptAllSuggestionAction: vi.fn(),
   acceptSuggestionItemAction: vi.fn(),
   acceptVisibleSuggestionsAction: vi.fn(),
   rejectSuggestionItemAction: vi.fn(),
 }));
 
+vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
+vi.mock('@/app/actions/suggestions', () => ({
+  acceptAllSuggestionAction: fakes.acceptAllSuggestionAction,
+  acceptSuggestionItemAction: fakes.acceptSuggestionItemAction,
+  acceptVisibleSuggestionsAction: fakes.acceptVisibleSuggestionsAction,
+  rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
+}));
+
 const { ApprovalsClient } = await import('./approvals-client.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.acceptAllSuggestionAction.mockResolvedValue({ ok: true });
+  fakes.acceptSuggestionItemAction.mockResolvedValue({ ok: true });
+  fakes.acceptVisibleSuggestionsAction.mockResolvedValue({ ok: true });
+  fakes.rejectSuggestionItemAction.mockResolvedValue({ ok: true });
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe('ApprovalsClient', () => {
@@ -349,5 +367,53 @@ describe('ApprovalsClient', () => {
 
     expect(html).toContain('Relate John Doe and Acme Corporation · related');
     expect(html).not.toContain('existing object ↔ existing object');
+  });
+
+  it('reports optimistic visible pending count changes to parent summaries', async () => {
+    const user = userEvent.setup();
+    const onVisiblePendingItemCountChange = vi.fn();
+
+    const { getByRole } = render(
+      createElement(ApprovalsClient, {
+        onVisiblePendingItemCountChange,
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Schedule follow-up',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Customer follow-up',
+                description: null,
+                proposedPayload: { title: 'Customer follow-up' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    await waitFor(() => {
+      expect(onVisiblePendingItemCountChange).toHaveBeenLastCalledWith(1);
+    });
+
+    await user.click(getByRole('button', { name: /^Accept$/ }));
+
+    await waitFor(() => {
+      expect(onVisiblePendingItemCountChange).toHaveBeenLastCalledWith(0);
+    });
+    expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId: 'item-1' });
   });
 });

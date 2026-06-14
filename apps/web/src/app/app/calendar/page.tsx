@@ -7,7 +7,7 @@ import { redirect } from 'next/navigation';
 import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
 import type { Metadata } from 'next';
 
-import { ApprovalsClient } from '@/components/approvals/approvals-client';
+import { CalendarApprovalsSection } from '@/components/calendar/calendar-approvals-section';
 import { CalendarSubscriptionPanel } from '@/components/calendar/calendar-subscription-panel';
 import { CalendarView } from '@/components/calendar/calendar-view';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -128,12 +128,16 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         ? { from: eventListFrom, to: eventListToday, order: 'desc' as const }
         : { from: eventListFrom, to: eventListTo, order: 'asc' as const };
 
-  const [events, eventList, defaultRow, members, subscriptionRows] = await Promise.all([
+  const eventListInput = {
+    ...eventListRange,
+    search: eventQuery,
+    limit: EVENT_LIST_PAGE_SIZE,
+  };
+
+  const [events, initialEventList, defaultRow, members, subscriptionRows] = await Promise.all([
     scope.calendar.listCalendarEvents({ from, to }),
     scope.calendar.listCalendarEventPage({
-      ...eventListRange,
-      search: eventQuery,
-      limit: EVENT_LIST_PAGE_SIZE,
+      ...eventListInput,
       offset: (eventPage - 1) * EVENT_LIST_PAGE_SIZE,
     }),
     scope.timeline.resolveVisibilityDefault('calendar'),
@@ -154,6 +158,16 @@ export default async function CalendarPage({ searchParams }: PageProps) {
       )
       .limit(1),
   ]);
+  let eventList = initialEventList;
+  let effectiveEventPage = eventPage;
+  const eventPageCount = Math.max(1, Math.ceil(eventList.total / EVENT_LIST_PAGE_SIZE));
+  if (eventPage > eventPageCount) {
+    effectiveEventPage = eventPageCount;
+    eventList = await scope.calendar.listCalendarEventPage({
+      ...eventListInput,
+      offset: (effectiveEventPage - 1) * EVENT_LIST_PAGE_SIZE,
+    });
+  }
   const memberIds = members.map((m) => m.userId);
   const memberUsers =
     memberIds.length > 0
@@ -190,7 +204,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         events={serialized}
         eventListEvents={serializedEventList}
         eventListTotal={eventList.total}
-        eventListPage={eventPage - 1}
+        eventListPage={effectiveEventPage - 1}
         eventListQuery={eventQuery}
         eventListScope={eventScope}
         timezone={settings.defaultTimezone}
@@ -216,27 +230,10 @@ export default async function CalendarPage({ searchParams }: PageProps) {
       />
 
       {calendarSuggestions.length > 0 ? (
-        <details className="border-y border-border py-4">
-          <summary className="cursor-pointer list-none">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
-                  Calendar approvals
-                </h2>
-                <p className="mt-1 text-sm text-fg-muted">
-                  {calendarSuggestionItemCount} pending calendar proposal
-                  {calendarSuggestionItemCount === 1 ? '' : 's'}
-                </p>
-              </div>
-              <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                Open
-              </span>
-            </div>
-          </summary>
-          <div className="mt-4">
-            <ApprovalsClient suggestions={calendarSuggestions} allowBulkAccept={false} />
-          </div>
-        </details>
+        <CalendarApprovalsSection
+          suggestions={calendarSuggestions}
+          initialItemCount={calendarSuggestionItemCount}
+        />
       ) : null}
     </div>
   );

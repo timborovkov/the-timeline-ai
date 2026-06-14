@@ -3,7 +3,7 @@
 import { Check, CheckCheck, ExternalLink, GitMerge, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 
 import {
   acceptAllSuggestionAction,
@@ -30,7 +30,7 @@ interface SuggestionItem {
   supersededReason?: string | null;
 }
 
-interface SuggestionBundle {
+export interface SuggestionBundle {
   id: string;
   source: string;
   status: string;
@@ -51,6 +51,7 @@ interface SuggestionBundle {
 interface Props {
   suggestions: SuggestionBundle[];
   allowBulkAccept?: boolean;
+  onVisiblePendingItemCountChange?: (count: number) => void;
 }
 
 function formatPayload(payload: Record<string, unknown>): string {
@@ -144,7 +145,11 @@ function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBund
   return `${from} ↔ ${to} · ${kind}`;
 }
 
-export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) {
+export function ApprovalsClient({
+  suggestions,
+  allowBulkAccept = true,
+  onVisiblePendingItemCountChange,
+}: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -171,6 +176,18 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
     (sum, suggestion) => sum + suggestion.itemIds.length,
     0,
   );
+  const visiblePendingItemCount = visibleSuggestions.reduce(
+    (sum, bundle) =>
+      sum +
+      bundle.items.filter(
+        (item) => isActionableSuggestionStatus(item.status) && item.targetKind !== 'object_merge',
+      ).length,
+    0,
+  );
+
+  useEffect(() => {
+    onVisiblePendingItemCountChange?.(visiblePendingItemCount);
+  }, [onVisiblePendingItemCountChange, visiblePendingItemCount]);
 
   function markBusy(itemIds: string[]) {
     if (itemIds.length === 0) return;

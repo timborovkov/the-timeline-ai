@@ -135,6 +135,8 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const pendingApprovalItemCount = countPendingApprovalItems(suggestions);
+  const [visibleApprovalItemCount, setVisibleApprovalItemCount] =
+    useState(pendingApprovalItemCount);
   const [
     {
       overrides,
@@ -425,7 +427,7 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h2 className="text-sm font-semibold tracking-tight">Pending approvals</h2>
-                    <p className="mt-1 text-xs text-fg-muted">{pendingApprovalItemCount} waiting</p>
+                    <p className="mt-1 text-xs text-fg-muted">{visibleApprovalItemCount} waiting</p>
                   </div>
                   <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim">
                     Open
@@ -433,7 +435,11 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
                 </div>
               </summary>
               <div className="border-t border-border p-4">
-                <ApprovalsClient suggestions={suggestions} allowBulkAccept={false} />
+                <ApprovalsClient
+                  suggestions={suggestions}
+                  allowBulkAccept={false}
+                  onVisiblePendingItemCountChange={setVisibleApprovalItemCount}
+                />
               </div>
             </details>
           ) : null}
