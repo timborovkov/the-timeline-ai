@@ -1,4 +1,5 @@
 'use client';
+import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import {
   type ComponentProps,
@@ -29,6 +30,8 @@ import {
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
+import { readJson } from '@/lib/paginated-api';
+import { queryKeys } from '@/lib/query-keys';
 import { errorMessage } from '@/lib/utils';
 
 const RELATIONSHIP_KINDS = [
@@ -95,6 +98,16 @@ function isDraftField(field: EditableField): field is DraftField {
   return field === 'stage' || field === 'dueAt';
 }
 
+function isObjectSearchResult(value: unknown): value is ObjectSearchResult {
+  if (!value || typeof value !== 'object') return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.id === 'string' &&
+    typeof row.canonicalName === 'string' &&
+    typeof row.type === 'string'
+  );
+}
+
 function initObjectDetailUiState(detail: ObjectDetail): ObjectDetailUiState {
   return {
     overrides: {},
@@ -147,7 +160,6 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
     dispatchObjectUi,
   ] = useReducer(objectDetailUiReducer, detail, initObjectDetailUiState);
   const [linkQuery, setLinkQuery] = useState('');
-  const [linkResults, setLinkResults] = useState<ObjectSearchResult[]>([]);
   const [selectedLink, setSelectedLink] = useState<ObjectSearchResult | null>(null);
   const localDetail = useMemo(
     () => applyObjectDetailOverrides(detail, overrides),
@@ -190,31 +202,26 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
     }));
   }
 
+  const trimmedLinkQuery = linkQuery.trim();
+  const { data: linkResultsData } = useQuery({
+    queryKey: queryKeys.objectSearch(trimmedLinkQuery, detail.id),
+    enabled: trimmedLinkQuery.length > 0,
+    queryFn: async () => {
+      const params = new URLSearchParams({ q: trimmedLinkQuery, exclude: detail.id });
+      return readJson<{ results?: ObjectSearchResult[] }>(
+        await fetch(`/api/objects/search?${params.toString()}`),
+      );
+    },
+  });
+  const visibleLinkResults = trimmedLinkQuery
+    ? (linkResultsData?.results?.filter(isObjectSearchResult) ?? [])
+    : [];
+
   useEffect(() => {
     return () => {
       if (savedTimer.current) clearTimeout(savedTimer.current);
     };
   }, []);
-
-  useEffect(() => {
-    const query = linkQuery.trim();
-    if (!query) return;
-    const controller = new AbortController();
-    const params = new URLSearchParams({ q: query, exclude: detail.id });
-    void fetch(`/api/objects/search?${params.toString()}`, { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('search failed'))))
-      .then((data: { results?: ObjectSearchResult[] }) => {
-        setLinkResults(Array.isArray(data.results) ? data.results : []);
-      })
-      .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === 'AbortError') return;
-        setLinkResults([]);
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [detail.id, linkQuery]);
-  const visibleLinkResults = linkQuery.trim() ? linkResults : [];
 
   function patch(field: EditableField, value: EditableValue): void {
     const currentValue = localDetailRef.current[field];
@@ -366,7 +373,6 @@ function useObjectDetailView({ detail, userId, suggestions }: Props) {
         dispatchObjectUi({ error: result.error });
       } else {
         setLinkQuery('');
-        setLinkResults([]);
         setSelectedLink(null);
         router.refresh();
       }

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const fakes = vi.hoisted(() => ({ refresh: vi.fn() }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
+vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: { results: [] } }) }));
 vi.mock('@/app/actions/objects', () => ({
   acceptObjectChangeAction: vi.fn(),
   addRelationshipAction: vi.fn(),

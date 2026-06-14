@@ -69,10 +69,14 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     );
   }
   if (section === 'facts') {
+    const sharedObjects = factSharedObjects(row.sharedObjects);
     return (
-      <div>
-        <p>{text(row.statement)}</p>
-        <p className="mt-1 text-[11px] text-muted-foreground">confidence {text(row.confidence)}</p>
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-start gap-2">
+          <p className="min-w-0 flex-1">{text(row.statement)}</p>
+          {sharedObjects.length > 0 ? <SharedFactObjects objects={sharedObjects} /> : null}
+        </div>
+        <p className="text-[11px] text-muted-foreground">confidence {text(row.confidence)}</p>
       </div>
     );
   }
@@ -105,4 +109,66 @@ function text(value: unknown, fallback = ''): string {
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return fallback;
+}
+
+interface SharedFactObject {
+  id: string;
+  canonicalName: string;
+  type: string;
+  role: string;
+}
+
+function factSharedObjects(value: unknown): SharedFactObject[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const row = item as Record<string, unknown>;
+    const id = text(row.id);
+    const canonicalName = text(row.canonicalName);
+    if (!id || !canonicalName) return [];
+    return [
+      {
+        id,
+        canonicalName,
+        type: text(row.type, 'object'),
+        role: text(row.role, 'topic'),
+      },
+    ];
+  });
+}
+
+function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
+  const label = `Fact (${objects.length})`;
+  return (
+    <span className="group relative inline-flex shrink-0">
+      <button
+        type="button"
+        aria-label={`${objects.length} other object${objects.length === 1 ? '' : 's'} share this fact`}
+        className="rounded-sm border border-signal/30 bg-signal-soft px-2 py-0.5 font-mono text-[11px] uppercase tracking-[0.12em] text-signal outline-none transition hover:border-signal/60 hover:bg-signal/20 focus-visible:border-signal focus-visible:ring-2 focus-visible:ring-signal/30"
+      >
+        {label}
+      </button>
+      <span className="pointer-events-none absolute right-0 top-full z-20 hidden w-64 pt-2 group-hover:block group-focus-within:block">
+        <span className="pointer-events-auto block rounded-sm border border-border bg-background p-2 shadow-lg">
+          <span className="block px-2 pb-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+            Objects sharing this fact
+          </span>
+          <span className="block max-h-56 overflow-y-auto">
+            {objects.map((object) => (
+              <a
+                key={`${object.id}:${object.role}`}
+                href={`/app/objects/${object.id}`}
+                className="block rounded-sm px-2 py-1.5 hover:bg-surface focus-visible:bg-surface focus-visible:outline-none"
+              >
+                <span className="block truncate font-medium">{object.canonicalName}</span>
+                <span className="block font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
+                  {object.type} · {object.role}
+                </span>
+              </a>
+            ))}
+          </span>
+        </span>
+      </span>
+    </span>
+  );
 }
