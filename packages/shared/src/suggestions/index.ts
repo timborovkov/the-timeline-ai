@@ -1680,6 +1680,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const markerMatch = rows[0]?.id;
       if (markerMatch) return markerMatch;
       if (item.targetKind === 'object') return null;
+      if (item.status === 'failed') return null;
 
       const parsed = objectCreatePayload.safeParse(normalizeLifecyclePayload(item));
       if (!parsed.success) return null;
@@ -1891,7 +1892,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     };
 
     const existingIdentity =
-      item.targetKind === 'task'
+      item.targetKind === 'task' && item.status === 'pending'
         ? or(
             sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
             sql`lower(${entities.canonicalName}) = ${canonicalName.toLowerCase()}`,
