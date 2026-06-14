@@ -23,9 +23,10 @@ After **any** code, configuration, or documentation change:
 3. Run tests appropriate to the change.
    - For code changes, run the nearest targeted test command for the behavior
      touched.
-   - For code changes, also run `pnpm test:ci` as the minimum regression suite.
-     It runs the deterministic agent/retrieval evals plus compiled-package
-     import smoke checks that catch Node runtime loader regressions.
+   - Run `pnpm test:dist-imports` when a change touches shared package exports,
+     compiled output, or Node runtime loader boundaries.
+   - Run `pnpm test:eval` when a change touches agent tools, retrieval,
+     visibility filters, MCP tool handling, or answer synthesis.
    - Run broader suites such as `pnpm test`, `pnpm e2e`, or a package-filtered
      Vitest/e2e command when the blast radius is shared, cross-package,
      user-facing, or hard to localize.

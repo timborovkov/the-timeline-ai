@@ -1190,6 +1190,8 @@ export function createBoardScope({
       const boardIds = rows.map((row) => row.board.id);
       const now = new Date();
       const soon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const nowIso = now.toISOString();
+      const soonIso = soon.toISOString();
       const [countRows, laneRows, dueRows] = await Promise.all([
         db
           .select({ boardId: boardItems.boardId, count: sql<number>`count(*)::int` })
@@ -1226,8 +1228,8 @@ export function createBoardScope({
         db
           .select({
             boardId: boardItems.boardId,
-            overdueCount: sql<number>`count(*) filter (where ${boardItems.dueAt} < ${now})::int`,
-            dueSoonCount: sql<number>`count(*) filter (where ${boardItems.dueAt} >= ${now} and ${boardItems.dueAt} <= ${soon})::int`,
+            overdueCount: sql<number>`count(*) filter (where ${boardItems.dueAt} < ${nowIso}::timestamptz)::int`,
+            dueSoonCount: sql<number>`count(*) filter (where ${boardItems.dueAt} >= ${nowIso}::timestamptz and ${boardItems.dueAt} <= ${soonIso}::timestamptz)::int`,
           })
           .from(boardItems)
           .innerJoin(entities, eq(boardItems.entityId, entities.id))

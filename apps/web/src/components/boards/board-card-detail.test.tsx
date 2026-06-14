@@ -183,6 +183,9 @@ describe('BoardCardDetail', () => {
     await waitFor(() => {
       expect(onUpdateItem).toHaveBeenCalledWith('item-1', { priority: 2 });
     });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Next step').hasAttribute('disabled')).toBe(false);
+    });
     await user.type(screen.getByLabelText('Next step'), 'Call the buyer');
     await user.tab();
 
