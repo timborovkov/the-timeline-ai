@@ -2,7 +2,11 @@ import { randomBytes } from 'node:crypto';
 
 import { PGlite } from '@electric-sql/pglite';
 import {
+  meetingCaptureConfirmations,
+  meetings,
   rawEvents,
+  savedMeetingAliases,
+  savedMeetings,
   slackConversationBindings,
   slackUsers,
   slackUserTeams,
@@ -15,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { encryptJson, resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
 import { resetEnvForTests } from '#src/env.js';
+import { resetMeetingBotProviderForTests } from '#src/meeting-bots/index.js';
 import {
   bindSlackConversation,
   handleSlackEnvelope,
@@ -109,6 +114,9 @@ function installFetchMock(): ReturnType<typeof vi.fn> {
         }),
       );
     }
+    if (href.includes('recall.test')) {
+      return Promise.resolve(Response.json({ id: 'bot-slack-1' }));
+    }
     return Promise.resolve(Response.json({ ok: true }));
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -144,6 +152,31 @@ async function seedBoundSlackUser(
   });
 }
 
+async function seedSavedMeeting(db: ReturnType<typeof drizzle>, alias = 'daily'): Promise<string> {
+  const [saved] = await db
+    .insert(savedMeetings)
+    .values({
+      teamId: TEAM_A,
+      createdByUserId: USER_A,
+      title: 'Internal daily meeting',
+      platform: 'meet',
+      meetingUrl: 'https://meet.google.com/slack-saved-test',
+      permissionConfirmedAt: new Date(),
+      permissionConfirmedByUserId: USER_A,
+      durationMinutes: 30,
+      autoJoinEnabled: false,
+    })
+    .returning();
+  if (!saved) throw new Error('expected saved meeting');
+  await db.insert(savedMeetingAliases).values({
+    savedMeetingId: saved.id,
+    teamId: TEAM_A,
+    alias,
+    normalizedAlias: alias,
+  });
+  return saved.id;
+}
+
 function fetchBodyContaining(fetchMock: ReturnType<typeof vi.fn>, needle: string): string | null {
   for (const [, init] of fetchMock.mock.calls as [unknown, RequestInit | undefined][]) {
     const body = init?.body;
@@ -154,6 +187,16 @@ function fetchBodyContaining(fetchMock: ReturnType<typeof vi.fn>, needle: string
   return null;
 }
 
+function responseBodies(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown>[] {
+  return (fetchMock.mock.calls as [unknown, RequestInit | undefined][])
+    .filter(([url]) => url === 'https://hooks.slack.test/response')
+    .map(([, init]) => {
+      const body = init?.body;
+      if (typeof body !== 'string') return {};
+      return JSON.parse(body) as Record<string, unknown>;
+    });
+}
+
 describe('Slack dispatcher routing', () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
@@ -162,7 +205,12 @@ describe('Slack dispatcher routing', () => {
     process.env.AUTH_SECRET = 'a'.repeat(32);
     process.env.DATABASE_URL = 'postgres://user:pass@localhost:5432/test';
     process.env.SECRETS_ENCRYPTION_KEY = randomBytes(32).toString('base64');
+    process.env.AUTH_URL = 'https://timeline.test';
+    process.env.RECALL_API_KEY = 'recall-test-key';
+    process.env.RECALL_BASE_URL = 'https://recall.test/api/v1';
+    process.env.RECALL_STATUS_WEBHOOK_SECRET = `whsec_${Buffer.from('slack-status').toString('base64')}`;
     resetEnvForTests();
+    resetMeetingBotProviderForTests();
     resetSecretsKeyCacheForTests();
     askAgentMock.mockReset();
     askAgentMock.mockResolvedValue({ ok: true, answer: 'answer' });
@@ -175,6 +223,7 @@ describe('Slack dispatcher routing', () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
+    resetMeetingBotProviderForTests();
     await pg.close();
   });
 
@@ -894,6 +943,89 @@ describe('Slack dispatcher routing', () => {
     expect(typeof body === 'string' ? body : '').toContain(
       'Timeline could not answer that right now.',
     );
+  });
+
+  it('joins a Saved Meeting alias immediately from /timeline join', async () => {
+    const fetchMock = installFetchMock();
+    await seedBoundSlackUser(db);
+    const savedMeetingId = await seedSavedMeeting(db);
+
+    await handleSlackSlashCommand(
+      { db: db as never },
+      {
+        command: '/timeline',
+        text: 'join daily',
+        user_id: 'U_SLACK',
+        team_id: 'T_SLACK',
+        channel_id: 'C_DOCS',
+        response_url: 'https://hooks.slack.test/response',
+      },
+    );
+
+    expect(responseBodies(fetchMock)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          response_type: 'in_channel',
+          text: "Joining as Team A's thetimeline.cc bot.",
+        }),
+      ]),
+    );
+    const row = (
+      await db.select().from(meetings).where(eq(meetings.savedMeetingId, savedMeetingId))
+    )[0];
+    expect(row).toMatchObject({
+      status: 'joining',
+      providerBotId: 'bot-slack-1',
+      title: 'Internal daily meeting',
+      meetingUrl: 'https://meet.google.com/slack-saved-test',
+    });
+    const recallCall = (fetchMock.mock.calls as [unknown, RequestInit | undefined][]).find(
+      ([url]) => String(url).includes('recall.test/api/v1/bot'),
+    );
+    const recallBody =
+      typeof recallCall?.[1]?.body === 'string'
+        ? (JSON.parse(recallCall[1].body) as Record<string, unknown>)
+        : {};
+    expect(recallBody).toMatchObject({
+      bot_name: "Team A's thetimeline.cc bot",
+      meeting_url: 'https://meet.google.com/slack-saved-test',
+    });
+  });
+
+  it('creates a button confirmation for raw URL /timeline joins instead of starting a bot', async () => {
+    const fetchMock = installFetchMock();
+    await seedBoundSlackUser(db);
+
+    await handleSlackSlashCommand(
+      { db: db as never },
+      {
+        command: '/timeline',
+        text: 'join https://meet.google.com/raw-url-slack Design review',
+        user_id: 'U_SLACK',
+        team_id: 'T_SLACK',
+        channel_id: 'C_DOCS',
+        response_url: 'https://hooks.slack.test/response',
+      },
+    );
+
+    const confirmations = await db.select().from(meetingCaptureConfirmations);
+    expect(confirmations).toHaveLength(1);
+    expect(confirmations[0]).toMatchObject({
+      status: 'pending',
+      meetingUrl: 'https://meet.google.com/raw-url-slack',
+      title: 'Design review',
+      source: 'slack',
+    });
+    expect(responseBodies(fetchMock)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          response_type: 'ephemeral',
+          text: 'Confirm participants know this call will be transcribed.',
+        }),
+      ]),
+    );
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('recall.test'))).toBe(false);
+    expect(await db.select().from(meetings)).toHaveLength(0);
   });
 
   it('attributes bound channel messages to the sender linked in that Timeline team', async () => {

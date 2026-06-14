@@ -6,6 +6,7 @@ import {
   meetingTranscriptChunks,
   meetingUsage,
   rawEvents,
+  savedMeetings,
 } from '@timeline/db';
 import { TimelineAiError } from '@timeline/shared/llm';
 import { eq } from 'drizzle-orm';
@@ -45,9 +46,22 @@ async function seed(pg: PGlite): Promise<void> {
 async function seedMeeting(
   db: Db,
   opts: {
-    status?: 'pending' | 'joining' | 'active' | 'processing' | 'completed' | 'failed';
+    status?:
+      | 'pending'
+      | 'joining'
+      | 'active'
+      | 'processing'
+      | 'completed'
+      | 'completed_partial'
+      | 'skipped'
+      | 'no_show'
+      | 'cancelled'
+      | 'failed';
     startedAt?: Date | null;
     endedAt?: Date | null;
+    title?: string | null;
+    linkedCalendarEventId?: string | null;
+    savedMeetingId?: string | null;
     metadata?: Record<string, unknown>;
   } = {},
 ): Promise<void> {
@@ -56,10 +70,12 @@ async function seedMeeting(
     teamId: TEAM_ID,
     createdByUserId: USER_ID,
     provider: 'recall',
+    savedMeetingId: opts.savedMeetingId ?? null,
     platform: 'meet',
     meetingUrl: 'https://meet.google.com/test',
-    title: 'Weekly planning',
+    title: 'title' in opts ? opts.title : 'Weekly planning',
     status: opts.status ?? 'processing',
+    linkedCalendarEventId: opts.linkedCalendarEventId ?? null,
     defaultVisibility: 'team',
     participants: [{ name: 'Alice' }, { name: 'Bob', email: 'bob@example.com' }],
     startedAt: 'startedAt' in opts ? opts.startedAt : new Date('2026-05-25T10:00:00Z'),
@@ -84,9 +100,10 @@ async function seedChunk(db: Db, i: number, text: string, speaker: string | null
 function makeChatStub(
   summary = 'Three-sentence summary.',
   actionItems: { text: string; owner?: string | null }[] = [],
+  title?: string,
 ) {
   return vi.fn().mockResolvedValue({
-    object: { summary, action_items: actionItems },
+    object: { summary, action_items: actionItems, ...(title ? { title } : {}) },
     model: 'test-model@1.0',
   });
 }
@@ -381,7 +398,7 @@ describe('processMeetingFinalizeJob', () => {
       { chatStructured: chat as never },
     );
 
-    expect(result.skipped).toBe('failed');
+    expect(result.skipped).toBe('terminal');
     expect(chat).not.toHaveBeenCalled();
     const row = (await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID)))[0];
     expect(row?.status).toBe('failed');
@@ -390,6 +407,32 @@ describe('processMeetingFinalizeJob', () => {
     );
     const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
     expect(events).toHaveLength(0);
+  });
+
+  it('does not finalize newer terminal meeting states', async () => {
+    for (const status of ['cancelled', 'skipped', 'no_show'] as const) {
+      await pg.exec(
+        'DELETE FROM raw_events; DELETE FROM meeting_transcript_chunks; DELETE FROM meetings;',
+      );
+      await seedMeeting(db as never, { status, metadata: { terminal_status: status } });
+      await seedChunk(db as never, 0, 'This terminal row should not finalize.', 'Alice');
+      const chat = makeChatStub('SHOULD NOT BE WRITTEN');
+
+      const result = await processMeetingFinalizeJob(
+        { db: db as never },
+        { meetingId: MEETING_ID, teamId: TEAM_ID },
+        { chatStructured: chat as never },
+      );
+
+      expect(result.skipped).toBe('terminal');
+      expect(chat).not.toHaveBeenCalled();
+      const row = (
+        await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID))
+      )[0];
+      expect(row?.status).toBe(status);
+      const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+      expect(events).toHaveLength(0);
+    }
   });
 
   it('finalizes transcript-only when structured summary generation fails', async () => {
@@ -512,6 +555,102 @@ describe('processMeetingFinalizeJob', () => {
       .from(calendarEvents)
       .where(eq(calendarEvents.teamId, TEAM_ID));
     expect(calendarRows).toHaveLength(1);
+  });
+
+  it('generates titles for untitled partial captures and enriches linked calendar without overwriting its title', async () => {
+    const [saved] = await db
+      .insert(savedMeetings)
+      .values({
+        teamId: TEAM_ID,
+        createdByUserId: USER_ID,
+        title: 'Daily',
+        platform: 'meet',
+        meetingUrl: 'https://meet.google.com/test',
+        permissionConfirmedAt: new Date(),
+        permissionConfirmedByUserId: USER_ID,
+        consecutiveFailureCount: 2,
+        autoJoinPausedAt: new Date('2026-05-24T10:00:00Z'),
+        autoJoinPausedReason: 'failure',
+      })
+      .returning();
+    if (!saved) throw new Error('expected saved meeting');
+
+    const [calendar] = await db
+      .insert(calendarEvents)
+      .values({
+        teamId: TEAM_ID,
+        createdByUserId: USER_ID,
+        title: 'User-authored daily title',
+        description: 'Original description',
+        startAt: new Date('2026-05-25T10:00:00Z'),
+        endAt: new Date('2026-05-25T10:30:00Z'),
+        timezone: 'UTC',
+        location: 'https://meet.google.com/test',
+        visibility: 'team',
+        metadata: { source: 'saved_meeting', capture_status: 'scheduled' },
+      })
+      .returning();
+    if (!calendar) throw new Error('expected calendar event');
+
+    await seedMeeting(db as never, {
+      title: 'Quick meeting',
+      savedMeetingId: saved.id,
+      linkedCalendarEventId: calendar.id,
+      endedAt: new Date('2026-05-25T10:17:00Z'),
+      metadata: { partial_capture: true },
+    });
+    await seedChunk(db as never, 0, 'We agreed to publish the MVP announcement.', 'Tim');
+
+    const chat = makeChatStub(
+      'The team aligned on the MVP announcement.',
+      [{ text: 'Publish the MVP announcement', owner: 'Tim' }],
+      'MVP announcement planning',
+    );
+
+    const result = await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+
+    expect(result.minutes).toBe(17);
+    const meeting = (
+      await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID))
+    )[0];
+    expect(meeting?.status).toBe('completed_partial');
+    expect(meeting?.title).toBe('MVP announcement planning');
+    expect(meeting?.metadata).toMatchObject({
+      partial_capture: true,
+      generated_title: 'MVP announcement planning',
+      summary: 'The team aligned on the MVP announcement.',
+    });
+
+    const event = (await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting')))[0];
+    expect(event?.sourceMetadata).toMatchObject({
+      title: 'MVP announcement planning',
+      partial_capture: true,
+      summary: 'The team aligned on the MVP announcement.',
+    });
+
+    const linked = (
+      await db.select().from(calendarEvents).where(eq(calendarEvents.id, calendar.id))
+    )[0];
+    expect(linked?.title).toBe('User-authored daily title');
+    expect(linked?.endAt.toISOString()).toBe('2026-05-25T10:17:00.000Z');
+    expect(linked?.description).toContain('Summary: The team aligned on the MVP announcement.');
+    expect(linked?.metadata).toMatchObject({
+      source: 'saved_meeting',
+      capture_status: 'completed_partial',
+      completed_meeting_id: MEETING_ID,
+      actual_end_at: '2026-05-25T10:17:00.000Z',
+    });
+
+    const savedAfter = (
+      await db.select().from(savedMeetings).where(eq(savedMeetings.id, saved.id))
+    )[0];
+    expect(savedAfter?.consecutiveFailureCount).toBe(0);
+    expect(savedAfter?.autoJoinPausedAt).toBeNull();
+    expect(savedAfter?.autoJoinPausedReason).toBeNull();
   });
 
   it('team mismatch throws UnrecoverableError', async () => {

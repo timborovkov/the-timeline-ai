@@ -39,6 +39,7 @@ describe('createRecallProvider', () => {
       teamId: 't-1',
       meetingUrl: 'https://meet.google.com/abc-defg-hij',
       platform: 'meet',
+      botName: "Acme's thetimeline.cc bot",
       transcriptWebhookUrl: 'https://example.com/webhook',
     });
     expect(result.botId).toBe('bot-123');
@@ -51,6 +52,13 @@ describe('createRecallProvider', () => {
     expect(headers.Authorization).toBe('Token test-token');
     const body = JSON.parse(call.init.body as string) as Record<string, unknown>;
     expect(body.meeting_url).toBe('https://meet.google.com/abc-defg-hij');
+    expect(body.bot_name).toBe("Acme's thetimeline.cc bot");
+    expect(body.automatic_leave).toMatchObject({
+      waiting_room_timeout: 550,
+      noone_joined_timeout: 550,
+      everyone_left_timeout: { timeout: 2, activate_after: 0 },
+      recording_permission_denied_timeout: 30,
+    });
     const meta = body.metadata as Record<string, string>;
     expect(meta.meeting_id).toBe('m-1');
     expect(meta.team_id).toBe('t-1');

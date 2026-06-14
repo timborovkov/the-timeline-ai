@@ -21,6 +21,8 @@ import { childLogger } from '#src/logger.js';
 // surface a server-action error to the user.
 
 const log = childLogger('shared:meeting-bots:recall');
+const MEET_NO_SHOW_TIMEOUT_SECONDS = 550;
+const DEFAULT_NO_SHOW_TIMEOUT_SECONDS = 15 * 60;
 
 interface RecallProviderOptions {
   /** Override the configured API key. Tests pass a stub. */
@@ -137,6 +139,18 @@ export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingB
       const body = {
         meeting_url: input.meetingUrl,
         bot_name: input.botName ?? botName,
+        automatic_leave: {
+          waiting_room_timeout:
+            input.platform === 'meet'
+              ? MEET_NO_SHOW_TIMEOUT_SECONDS
+              : DEFAULT_NO_SHOW_TIMEOUT_SECONDS,
+          noone_joined_timeout:
+            input.platform === 'meet'
+              ? MEET_NO_SHOW_TIMEOUT_SECONDS
+              : DEFAULT_NO_SHOW_TIMEOUT_SECONDS,
+          everyone_left_timeout: { timeout: 2, activate_after: 0 },
+          recording_permission_denied_timeout: 30,
+        },
         metadata: {
           meeting_id: input.meetingId,
           team_id: input.teamId,

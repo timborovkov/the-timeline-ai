@@ -1,9 +1,18 @@
 import { PGlite } from '@electric-sql/pglite';
+import {
+  meetingCaptureConfirmations,
+  meetings,
+  savedMeetingAliases,
+  savedMeetings,
+} from '@timeline/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TelegramApi } from '#src/telegram/api.js';
 
+import { resetEnvForTests } from '#src/env.js';
+import { resetMeetingBotProviderForTests } from '#src/meeting-bots/index.js';
 import { handleUpdate, parseCommand } from '#src/telegram/dispatcher.js';
 import { verifyWebhookSecret } from '#src/telegram/secret.js';
 import { tgUpdateSchema } from '#src/telegram/types.js';
@@ -46,6 +55,51 @@ function recordingTg(messages: string[]): TelegramApi {
       return Promise.resolve();
     },
   };
+}
+
+function recordingTgPayloads(payloads: Parameters<TelegramApi['sendMessage']>[0][]): TelegramApi {
+  return {
+    ...fakeTg,
+    sendMessage: (input) => {
+      payloads.push(input);
+      return Promise.resolve();
+    },
+  };
+}
+
+function installRecallFetchMock(): ReturnType<typeof vi.fn> {
+  const fetchMock = vi.fn((url: string | URL | Request) => {
+    const href = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
+    if (href.includes('recall.test')) return Promise.resolve(Response.json({ id: 'bot-tg-1' }));
+    return Promise.resolve(Response.json({ ok: true }));
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
+async function seedSavedMeeting(db: ReturnType<typeof drizzle>, alias = 'daily'): Promise<string> {
+  const [saved] = await db
+    .insert(savedMeetings)
+    .values({
+      teamId: TEAM_ID,
+      createdByUserId: USER_A,
+      title: 'Internal daily meeting',
+      platform: 'meet',
+      meetingUrl: 'https://meet.google.com/telegram-saved-test',
+      permissionConfirmedAt: new Date(),
+      permissionConfirmedByUserId: USER_A,
+      durationMinutes: 30,
+      autoJoinEnabled: false,
+    })
+    .returning();
+  if (!saved) throw new Error('expected saved meeting');
+  await db.insert(savedMeetingAliases).values({
+    savedMeetingId: saved.id,
+    teamId: TEAM_ID,
+    alias,
+    normalizedAlias: alias,
+  });
+  return saved.id;
 }
 
 async function activeTelegramRows(pg: PGlite) {
@@ -254,6 +308,15 @@ describe('handleUpdate telegram edit visibility', () => {
   let db: ReturnType<typeof drizzle>;
 
   beforeEach(async () => {
+    process.env.AUTH_SECRET = 'a'.repeat(32);
+    process.env.DATABASE_URL = 'postgres://user:pass@localhost:5432/test';
+    process.env.AUTH_URL = 'https://timeline.test';
+    process.env.RECALL_API_KEY = 'recall-test-key';
+    process.env.RECALL_BASE_URL = 'https://recall.test/api/v1';
+    process.env.RECALL_STATUS_WEBHOOK_SECRET = `whsec_${Buffer.from('telegram-status').toString('base64')}`;
+    resetEnvForTests();
+    resetMeetingBotProviderForTests();
+    installRecallFetchMock();
     pg = new PGlite();
     await applyDbMigrations(pg);
     await seedLinkedTelegramUser(pg);
@@ -261,6 +324,8 @@ describe('handleUpdate telegram edit visibility', () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllGlobals();
+    resetMeetingBotProviderForTests();
     await pg.close();
   });
 
@@ -382,6 +447,136 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(enqueueExtract).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
     expect(enqueueEmbed).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
     expect(enqueueSuggestion).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
+  });
+
+  it('joins a Saved Meeting alias immediately from /join', async () => {
+    const payloads: Parameters<TelegramApi['sendMessage']>[0][] = [];
+    const tg = recordingTgPayloads(payloads);
+    const savedMeetingId = await seedSavedMeeting(db);
+
+    await handleUpdate(
+      { db: db as never, tg },
+      {
+        update_id: 216,
+        message: {
+          message_id: 36,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: '/join daily',
+        },
+      },
+    );
+
+    expect(payloads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: "Joining as Team A's thetimeline.cc bot." }),
+      ]),
+    );
+    const row = (
+      await db.select().from(meetings).where(eq(meetings.savedMeetingId, savedMeetingId))
+    )[0];
+    expect(row).toMatchObject({
+      status: 'joining',
+      providerBotId: 'bot-tg-1',
+      title: 'Internal daily meeting',
+      meetingUrl: 'https://meet.google.com/telegram-saved-test',
+    });
+  });
+
+  it('uses inline buttons and direct-reply fallback for raw URL /join confirmations', async () => {
+    const payloads: Parameters<TelegramApi['sendMessage']>[0][] = [];
+    const tg = recordingTgPayloads(payloads);
+
+    await handleUpdate(
+      { db: db as never, tg },
+      {
+        update_id: 217,
+        message: {
+          message_id: 37,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: '/join https://meet.google.com/raw-url-tg Design review',
+        },
+      },
+    );
+
+    const pending = await db.select().from(meetingCaptureConfirmations);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({
+      status: 'pending',
+      meetingUrl: 'https://meet.google.com/raw-url-tg',
+      title: 'Design review',
+      source: 'telegram',
+    });
+    expect(payloads[0]).toMatchObject({
+      text: 'Timeline will join after you confirm participants know this call will be transcribed.',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            expect.objectContaining({ text: 'Confirm and join' }),
+            expect.objectContaining({ text: 'Cancel' }),
+          ],
+        ],
+      },
+    });
+    expect(await db.select().from(meetings)).toHaveLength(0);
+
+    await handleUpdate(
+      { db: db as never, tg },
+      {
+        update_id: 218,
+        message: {
+          message_id: 38,
+          date: 1700000001,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: 'yeah sure',
+        },
+      },
+    );
+
+    expect(payloads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: "Joining as Team A's thetimeline.cc bot." }),
+      ]),
+    );
+    const confirmed = await db.select().from(meetingCaptureConfirmations);
+    expect(confirmed[0]).toMatchObject({ status: 'confirmed' });
+    const rows = await db.select().from(meetings);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      status: 'joining',
+      providerBotId: 'bot-tg-1',
+      title: 'Design review',
+      meetingUrl: 'https://meet.google.com/raw-url-tg',
+    });
+  });
+
+  it('does not treat passive Telegram text as a join request', async () => {
+    const payloads: Parameters<TelegramApi['sendMessage']>[0][] = [];
+
+    await handleUpdate(
+      { db: db as never, tg: recordingTgPayloads(payloads) },
+      {
+        update_id: 219,
+        message: {
+          message_id: 39,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: 'everyone join daily meeting in the conference room now',
+        },
+      },
+    );
+
+    expect(payloads).toHaveLength(0);
+    expect(await db.select().from(meetings)).toHaveLength(0);
+    expect(await db.select().from(meetingCaptureConfirmations)).toHaveLength(0);
+    expect(await activeTelegramRows(pg)).toMatchObject([
+      { content_text: 'everyone join daily meeting in the conference room now' },
+    ]);
   });
 
   it('does not enqueue text workers for file-only document messages', async () => {
