@@ -122,4 +122,15 @@ describe('daily digest worker', () => {
       digestUrl: 'https://timeline-preview.vercel.app/app',
     });
   });
+
+  it('throws on digest send failure so BullMQ retries the job', async () => {
+    fakes.sendDailyDigest.mockResolvedValue({ ok: false, error: 'Postmark timeout' });
+
+    await expect(
+      processDailyDigestJob(
+        { db: {} as never },
+        { kind: 'send', digestId: 'digest-1', email: 'a@example.test' },
+      ),
+    ).rejects.toThrow('Postmark timeout');
+  });
 });

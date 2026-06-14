@@ -72,6 +72,22 @@ function fakeDailyDigestDbWithPendingDelivery() {
     db: {
       select: vi.fn(() => {
         selectCount += 1;
+        if (selectCount === 2) {
+          const chain = {
+            innerJoin: vi.fn(() => chain),
+            leftJoin: vi.fn(() => chain),
+            where: vi.fn(() => ({
+              limit: vi.fn().mockResolvedValue([
+                {
+                  email: 'current@example.test',
+                  removedAt: null,
+                  dailyDigestEnabled: true,
+                },
+              ]),
+            })),
+          };
+          return { from: vi.fn(() => chain) };
+        }
         return {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
@@ -403,5 +419,73 @@ describe('Postmark messaging adapter', () => {
       expect.objectContaining({ status: 'generated', deliveryId: 'delivery-1' }),
     );
     expect(updates).not.toContainEqual(expect.objectContaining({ status: 'sent' }));
+  });
+
+  it('skips digest delivery when the recipient is no longer an active member', async () => {
+    const updates: unknown[] = [];
+    let selectCount = 0;
+    const db = {
+      select: vi.fn(() => {
+        selectCount += 1;
+        if (selectCount === 1) {
+          return {
+            from: vi.fn(() => ({
+              where: vi.fn(() => ({
+                limit: vi.fn().mockResolvedValue([
+                  {
+                    id: 'digest-1',
+                    teamId: 'team-1',
+                    userId: 'user-1',
+                    payload: {
+                      teamName: 'Timeline',
+                      userName: null,
+                      windowStart: '2026-06-13T12:00:00.000Z',
+                      windowEnd: '2026-06-14T12:00:00.000Z',
+                      summary: 'Summary',
+                      pendingApprovals: 0,
+                      eventCount: 0,
+                      sourceDistribution: {},
+                      objectChangesByType: {},
+                      newTeamMembers: [],
+                      tasks: [],
+                      upcomingCalendar: [],
+                      links: [],
+                    },
+                  },
+                ]),
+              })),
+            })),
+          };
+        }
+        const chain = {
+          innerJoin: vi.fn(() => chain),
+          leftJoin: vi.fn(() => chain),
+          where: vi.fn(() => ({ limit: vi.fn().mockResolvedValue([]) })),
+        };
+        return { from: vi.fn(() => chain) };
+      }),
+      update: vi.fn(() => ({
+        set: vi.fn((values: unknown) => {
+          updates.push(values);
+          return { where: vi.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+
+    await expect(
+      sendDailyDigest({
+        db: db as never,
+        digestId: 'digest-1',
+        to: 'old@example.test',
+        digestUrl: 'https://timeline.test/app',
+      }),
+    ).resolves.toMatchObject({ ok: true, skipped: true, skippedStatus: 'skipped' });
+
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        status: 'skipped',
+        error: 'Recipient is no longer a team member.',
+      }),
+    );
   });
 });

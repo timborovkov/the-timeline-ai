@@ -1,5 +1,12 @@
-import { type Db, dailyDigests, messageDeliveries } from '@timeline/db';
-import { and, eq, lt } from 'drizzle-orm';
+import {
+  type Db,
+  dailyDigests,
+  messageDeliveries,
+  messagePreferences,
+  teamMembers,
+  users,
+} from '@timeline/db';
+import { and, eq, isNull, lt } from 'drizzle-orm';
 
 import type {
   MessageChannel,
@@ -292,10 +299,44 @@ export async function sendDailyDigest(input: {
     .limit(1);
   const digest = rows[0];
   if (!digest) return { ok: false, error: 'Digest not found' };
+  const recipientRows = await input.db
+    .select({
+      email: users.email,
+      removedAt: teamMembers.removedAt,
+      dailyDigestEnabled: messagePreferences.dailyDigestEnabled,
+    })
+    .from(teamMembers)
+    .innerJoin(users, eq(users.id, teamMembers.userId))
+    .leftJoin(
+      messagePreferences,
+      and(
+        eq(messagePreferences.teamId, teamMembers.teamId),
+        eq(messagePreferences.userId, teamMembers.userId),
+      ),
+    )
+    .where(
+      and(
+        eq(teamMembers.teamId, digest.teamId),
+        eq(teamMembers.userId, digest.userId),
+        isNull(teamMembers.removedAt),
+      ),
+    )
+    .limit(1);
+  const recipient = recipientRows[0];
+  if (!recipient || recipient.dailyDigestEnabled === false) {
+    await input.db
+      .update(dailyDigests)
+      .set({
+        status: 'skipped',
+        error: recipient ? 'Daily digest is disabled.' : 'Recipient is no longer a team member.',
+      })
+      .where(eq(dailyDigests.id, input.digestId));
+    return { ok: true, skipped: true, skippedStatus: 'skipped' };
+  }
   const payload = digest.payload as Parameters<typeof sendMessage<'daily_digest'>>[1]['payload'];
   const result = await sendMessage(
     'daily_digest',
-    { to: input.to, digestUrl: input.digestUrl, payload },
+    { to: recipient.email, digestUrl: input.digestUrl, payload },
     {
       db: input.db,
       teamId: digest.teamId,

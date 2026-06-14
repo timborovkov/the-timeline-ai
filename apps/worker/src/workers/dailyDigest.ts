@@ -62,6 +62,9 @@ export async function processDailyDigestJob(
     to: job.email,
     digestUrl: `${siteUrl()}/app`,
   });
+  if (!result.ok && !result.skipped) {
+    throw new Error(result.error ?? 'Daily digest send failed');
+  }
   return {
     digestId: job.digestId,
     sent: result.ok,
