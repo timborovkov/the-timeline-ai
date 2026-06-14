@@ -138,7 +138,7 @@ describe('board scope', () => {
       templateKind: 'task_board',
       lanes: [
         { name: 'Todo', kind: 'active' },
-        { name: 'Doing', kind: 'active' },
+        { name: 'Blocked', kind: 'blocked' },
       ],
     });
     const task = await scope.objects.createObject({
@@ -170,6 +170,9 @@ describe('board scope', () => {
       .from(boardItemChanges)
       .where(eq(boardItemChanges.boardItemId, item.id));
     expect(changes.map((change) => change.field).sort()).toEqual(['__add__', 'laneId', 'priority']);
+    await expect(scope.boards.getBoard(board.id, { itemLimit: 'all' })).resolves.toMatchObject({
+      items: [expect.objectContaining({ id: item.id, laneId: board.lanes[1]?.id })],
+    });
   });
 
   it('notifies the responsible user and mirrors board item due dates to the team calendar', async () => {

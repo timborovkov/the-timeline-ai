@@ -251,26 +251,20 @@ Goal: make the board item side panel the primary place where work happens.
 
 Add or improve:
 
-- editable owner
-- collaborators/watchers
+- editable responsible person
+- lane and blocked-state editing
 - due date
 - priority
-- description/next step
-- comments
-- checklist/subtasks
-- custom fields
-- linked docs/events/objects
-- recent activity
-- object preview modal
+- next step
+- notes
+- readable recent activity
 - link to full object page
 
 Card scan layer:
 
-- owner or unassigned state
+- responsible or unassigned state
 - due date or missing due state
 - priority or missing priority state
-- comment count
-- checklist progress
 - blocked/attention marker
 
 UX cleanup:
@@ -578,8 +572,8 @@ Mobile:
 ## Recommended Build Order
 
 1. Work hub IA and daily workflow layout.
-2. Board item command center with comments, checklist, owner, collaborators, due
-   date, priority, and activity.
+2. Board item command center with responsible person, lane/blocked state, due
+   date, priority, next step, notes, and activity.
 3. Card and row scan layer improvements.
 4. Comments, mentions, watchers, and notifications.
 5. Owner/collaborator model plus Work queue views.

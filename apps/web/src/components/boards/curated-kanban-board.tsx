@@ -235,6 +235,7 @@ function KanbanColumn({
             key={item.id}
             boardId={boardId}
             item={item}
+            lane={lane}
             saving={savingIds.has(item.id)}
             error={errors[item.id]}
             selected={item.id === selectedItemId}
@@ -249,6 +250,7 @@ function KanbanColumn({
 function KanbanCard({
   boardId,
   item,
+  lane,
   saving,
   error,
   selected,
@@ -256,6 +258,7 @@ function KanbanCard({
 }: {
   boardId: string;
   item: boards.BoardItemRow;
+  lane: boards.BoardLaneRow;
   saving: boolean;
   error?: string;
   selected: boolean;
@@ -269,6 +272,8 @@ function KanbanCard({
   const style = transform
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
     : undefined;
+  const blocked = lane.kind === 'blocked';
+  const due = dueState(item.dueAt);
   return (
     <li
       ref={setNodeRef}
@@ -278,6 +283,7 @@ function KanbanCard({
       className={cn(
         'cursor-grab rounded-sm border border-border bg-bg px-3 py-2 text-sm transition-colors hover:border-border-strong',
         selected && 'border-signal bg-signal-soft shadow-[inset_3px_0_0_var(--color-signal)]',
+        blocked && 'border-danger/50',
         isDragging && 'opacity-50',
         saving && 'cursor-progress opacity-80',
         optimistic && 'cursor-wait opacity-80',
@@ -296,13 +302,14 @@ function KanbanCard({
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
         <span>{item.object.type}</span>
+        {blocked ? <span className="text-danger">Blocked</span> : null}
       </div>
       <div className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border font-mono text-[10px] uppercase tracking-[0.08em]">
         <CardMeta
           value={ownerLabel(item.responsibleUserId, members)}
           missing={!item.responsibleUserId}
         />
-        <CardMeta value={item.dueAt ? dateLabel(item.dueAt) : 'No due'} missing={!item.dueAt} />
+        <CardMeta value={due.label} missing={!item.dueAt} danger={due.tone === 'danger'} />
         <CardMeta
           value={item.priority ? `P${item.priority}` : 'No priority'}
           missing={!item.priority}
@@ -318,9 +325,23 @@ function KanbanCard({
   );
 }
 
-function CardMeta({ value, missing }: { value: string; missing: boolean }) {
+function CardMeta({
+  value,
+  missing,
+  danger = false,
+}: {
+  value: string;
+  missing: boolean;
+  danger?: boolean;
+}) {
   return (
-    <span className={cn('truncate bg-bg px-1.5 py-1 text-fg', missing && 'text-fg-dim')}>
+    <span
+      className={cn(
+        'truncate bg-bg px-1.5 py-1 text-fg',
+        missing && 'text-fg-dim',
+        danger && 'text-danger',
+      )}
+    >
       {value}
     </span>
   );
@@ -333,4 +354,11 @@ function ownerLabel(userId: string | null, members: BoardMemberOption[]): string
 
 function dateLabel(value: Date): string {
   return new Date(value).toLocaleDateString('en-CA');
+}
+
+function dueState(value: Date | null): { label: string; tone: 'danger' | 'neutral' } {
+  if (!value) return { label: 'No due', tone: 'neutral' };
+  const due = new Date(value);
+  if (due.getTime() < Date.now()) return { label: `Overdue ${dateLabel(due)}`, tone: 'danger' };
+  return { label: `Due ${dateLabel(due)}`, tone: 'neutral' };
 }

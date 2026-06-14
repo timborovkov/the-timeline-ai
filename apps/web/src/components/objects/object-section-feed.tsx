@@ -34,16 +34,18 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
           ))}
         </ul>
       )}
-      <button
-        type="button"
-        disabled={!query.hasNextPage || query.isFetchingNextPage}
-        onClick={() => {
-          void query.fetchNextPage();
-        }}
-        className="mt-3 rounded-sm border border-border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:bg-surface disabled:opacity-40"
-      >
-        {query.isFetchingNextPage ? 'Loading...' : query.hasNextPage ? 'Load more' : 'End'}
-      </button>
+      {query.hasNextPage || query.isFetchingNextPage ? (
+        <button
+          type="button"
+          disabled={!query.hasNextPage || query.isFetchingNextPage}
+          onClick={() => {
+            void query.fetchNextPage();
+          }}
+          className="mt-3 rounded-sm border border-border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:bg-surface disabled:opacity-40"
+        >
+          {query.isFetchingNextPage ? 'Loading...' : 'Load more'}
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -114,15 +116,16 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     );
   }
   return (
-    <div>
-      <div className="flex items-center justify-between">
-        <span className="font-medium">{text(row.field)}</span>
-        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+    <div className="min-w-0">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <span className="min-w-0 break-words font-medium">{changeFieldLabel(text(row.field))}</span>
+        <span className="shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
           {text(row.actorKind)} · {text(row.status)}
         </span>
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {JSON.stringify(row.previousValue ?? null)} {'->'} {JSON.stringify(row.newValue ?? null)}
+      <p className="mt-1 break-words text-xs text-muted-foreground">
+        {formatChangeValue(text(row.field), row.previousValue)} →{' '}
+        {formatChangeValue(text(row.field), row.newValue)}
       </p>
     </div>
   );
@@ -132,6 +135,57 @@ function text(value: unknown, fallback = ''): string {
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return fallback;
+}
+
+function changeFieldLabel(field: string): string {
+  const labels: Record<string, string> = {
+    __merge__: 'Merge',
+    __merged_from__: 'Merged from',
+    canonicalName: 'Name',
+    aliases: 'Aliases',
+    dueAt: 'Due date',
+    ownerUserId: 'Owner',
+    assigneeUserId: 'Assignee',
+  };
+  return labels[field] ?? field.replace(/([a-z])([A-Z])/g, '$1 $2');
+}
+
+function formatChangeValue(field: string, value: unknown): string {
+  if (value === null || value === undefined || value === '') return 'empty';
+  if (field === 'dueAt') {
+    const date = value instanceof Date ? value : typeof value === 'string' ? new Date(value) : null;
+    if (date && !Number.isNaN(date.getTime())) return date.toLocaleString();
+  }
+  if (Array.isArray(value)) {
+    return (
+      value
+        .flatMap((item) => {
+          const formatted = formatChangeValue('', item);
+          return formatted ? [formatted] : [];
+        })
+        .join(', ') || 'empty'
+    );
+  }
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (typeof value === 'object') {
+    const row = value as Record<string, unknown>;
+    const canonicalName = text(row.canonicalName);
+    const type = text(row.type);
+    if (canonicalName && type) return `${canonicalName} (${type})`;
+    if (canonicalName) return canonicalName;
+    const aliases = Array.isArray(row.aliases)
+      ? row.aliases.flatMap((alias) => (typeof alias === 'string' ? [alias] : []))
+      : [];
+    const mergedCount = Array.isArray(row.merged_entity_ids) ? row.merged_entity_ids.length : 0;
+    const parts = [
+      aliases.length > 0 ? `aliases: ${aliases.join(', ')}` : '',
+      mergedCount > 0 ? `${mergedCount} merged object${mergedCount === 1 ? '' : 's'}` : '',
+    ].filter(Boolean);
+    return parts.join(' · ') || 'updated details';
+  }
+  return 'updated';
 }
 
 interface SharedFactObject {

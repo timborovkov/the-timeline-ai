@@ -276,6 +276,7 @@ export function BoardDetailClient({
             view={view}
             item={selectedItem}
             history={history}
+            lanes={lanes}
             members={members}
             onUpdateItem={updateItem}
             onItemRemoved={removeLocalItem}

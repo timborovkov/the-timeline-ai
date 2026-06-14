@@ -30,6 +30,7 @@ interface Props {
   view: BoardLayout;
   item: boards.BoardItemRow | null;
   history: boards.BoardItemChangeRow[];
+  lanes?: boards.BoardLaneRow[];
   members?: BoardMemberOption[];
   onUpdateItem?: (
     itemId: string,
@@ -38,6 +39,7 @@ interface Props {
   onItemRemoved?: (itemId: string, entityId: string) => void;
 }
 
+const EMPTY_LANES: boards.BoardLaneRow[] = [];
 const EMPTY_MEMBERS: BoardMemberOption[] = [];
 
 export function BoardCardDetail({
@@ -45,16 +47,20 @@ export function BoardCardDetail({
   view,
   item,
   history,
+  lanes = EMPTY_LANES,
   members = EMPTY_MEMBERS,
   onUpdateItem,
   onItemRemoved,
 }: Props) {
   const [editingNotes, setEditingNotes] = useState(false);
   const [noteDraft, setNoteDraft] = useState(item?.notes ?? '');
+  const [nextStepDraft, setNextStepDraft] = useState(item?.nextStep ?? '');
   const [pending, startTransition] = useTransition();
   if (!item) return null;
   const timelineHref = `/app/timeline?q=${encodeURIComponent(item.object.canonicalName)}`;
   const sourceEvents = history.filter((change) => change.sourceEventId);
+  const lane = lanes.find((candidate) => candidate.id === item.laneId) ?? null;
+  const blocked = lane?.kind === 'blocked';
 
   function savePatch(patch: BoardItemOptimisticPatch, onSuccess?: () => void): void {
     if (!item || !onUpdateItem) return;
@@ -74,6 +80,13 @@ export function BoardCardDetail({
     });
   }
 
+  function saveNextStep(): void {
+    const trimmed = nextStepDraft.trim();
+    if ((item?.nextStep ?? '') !== trimmed) {
+      savePatch({ nextStep: trimmed || null });
+    }
+  }
+
   return (
     <aside className="rounded-sm border border-border bg-bg" aria-label="Board card detail">
       <div className="border-b border-border p-4">
@@ -91,12 +104,30 @@ export function BoardCardDetail({
             Close
           </Link>
         </div>
-        {item.nextStep ? (
-          <p className="mt-3 border-l border-signal pl-3 text-sm text-fg-muted">{item.nextStep}</p>
+        {blocked ? (
+          <p className="mt-3 inline-flex rounded-sm border border-danger/40 px-2 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-danger">
+            Blocked · {lane.name}
+          </p>
         ) : null}
       </div>
 
-      <div className="grid gap-px border-b border-border bg-border sm:grid-cols-3">
+      <div className="grid gap-px border-b border-border bg-border sm:grid-cols-2">
+        <FieldSelect
+          label="Lane"
+          value={item.laneId ?? ''}
+          disabled={pending || !onUpdateItem}
+          onChange={(value) => {
+            savePatch({ laneId: value || null });
+          }}
+        >
+          <option value="">Unset</option>
+          {lanes.map((boardLane) => (
+            <option key={boardLane.id} value={boardLane.id}>
+              {boardLane.name}
+              {boardLane.kind === 'blocked' ? ' (blocked)' : ''}
+            </option>
+          ))}
+        </FieldSelect>
         <FieldSelect
           label="Responsible"
           value={item.responsibleUserId ?? ''}
@@ -138,7 +169,27 @@ export function BoardCardDetail({
         </FieldSelect>
       </div>
 
+      <section className="border-b border-border p-4">
+        <label>
+          <span className="mb-2 block font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
+            Next step
+          </span>
+          <input
+            aria-label="Next step"
+            value={nextStepDraft}
+            disabled={pending || !onUpdateItem}
+            onChange={(event) => {
+              setNextStepDraft(event.currentTarget.value);
+            }}
+            onBlur={saveNextStep}
+            className="h-9 w-full rounded-sm border border-border bg-bg px-3 text-sm text-fg focus:border-border-strong focus:outline-none disabled:opacity-50"
+            placeholder="Add the next concrete action"
+          />
+        </label>
+      </section>
+
       <dl className="grid grid-cols-2 gap-px border-b border-border bg-border text-sm">
+        <Detail label="Board lane" value={lane?.name ?? 'Unset'} danger={blocked} />
         <Detail label="Object status" value={item.object.status} />
         <Detail label="Object due" value={item.object.dueAt ? dateLabel(item.object.dueAt) : '-'} />
         <Detail
@@ -239,21 +290,39 @@ export function BoardCardDetail({
         )}
       </section>
 
-      <section className="mt-5">
+      <section className="border-t border-border p-4">
         <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-          History
+          Activity
         </h3>
         {history.length === 0 ? (
           <p className="text-sm text-fg-muted">No board history yet.</p>
         ) : (
           <ol className="space-y-2">
             {history.map((change) => (
-              <li key={change.id} className="border-l border-border pl-3 text-xs text-fg-muted">
-                <span className="font-mono uppercase tracking-[0.1em] text-fg-dim">
-                  {change.field} · {change.status}
-                </span>
-                <span className="block">{change.changedAt.toLocaleString()}</span>
-                {change.note ? <span className="block text-fg">{change.note}</span> : null}
+              <li key={change.id} className="rounded-sm border border-border p-3 text-xs">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="font-medium text-fg">{fieldLabel(change.field)}</span>
+                  <span className="shrink-0 font-mono uppercase tracking-[0.1em] text-fg-dim">
+                    {change.actorKind} · {change.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-fg-muted">
+                  {formatChangeValue(change.field, change.previousValue, lanes, members)}
+                  <span className="px-1 text-fg-dim">→</span>
+                  {formatChangeValue(change.field, change.newValue, lanes, members)}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-fg-dim">
+                  <span>{change.changedAt.toLocaleString()}</span>
+                  {change.sourceEventId ? (
+                    <Link
+                      href={`/app/timeline?event=${change.sourceEventId}#ev-${change.sourceEventId}`}
+                      className="underline-offset-2 hover:text-fg hover:underline"
+                    >
+                      Source event
+                    </Link>
+                  ) : null}
+                </div>
+                {change.note ? <p className="mt-2 text-fg">{change.note}</p> : null}
               </li>
             ))}
           </ol>
@@ -378,11 +447,19 @@ function FieldInput({
   );
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function Detail({
+  label,
+  value,
+  danger = false,
+}: {
+  label: string;
+  value: string;
+  danger?: boolean;
+}) {
   return (
     <div className="bg-bg p-2">
       <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">{label}</dt>
-      <dd className="mt-1 truncate text-sm text-fg">{value}</dd>
+      <dd className={cn('mt-1 truncate text-sm text-fg', danger && 'text-danger')}>{value}</dd>
     </div>
   );
 }
@@ -393,4 +470,52 @@ function dateInputValue(value: Date): string {
 
 function dateLabel(value: Date): string {
   return new Date(value).toLocaleDateString('en-CA');
+}
+
+function fieldLabel(field: boards.BoardItemField): string {
+  switch (field) {
+    case '__add__':
+      return 'Added to board';
+    case '__remove__':
+      return 'Removed from board';
+    case 'laneId':
+      return 'Lane';
+    case 'position':
+      return 'Position';
+    case 'responsibleUserId':
+      return 'Responsible';
+    case 'dueAt':
+      return 'Due date';
+    case 'priority':
+      return 'Priority';
+    case 'nextStep':
+      return 'Next step';
+    case 'notes':
+      return 'Notes';
+    case 'customFields':
+      return 'Custom fields';
+  }
+}
+
+function formatChangeValue(
+  field: boards.BoardItemField,
+  value: unknown,
+  lanes: boards.BoardLaneRow[],
+  members: BoardMemberOption[],
+): string {
+  if (value === null || value === undefined || value === '') return 'empty';
+  if (field === 'laneId' && typeof value === 'string') {
+    return lanes.find((lane) => lane.id === value)?.name ?? 'Unknown lane';
+  }
+  if (field === 'responsibleUserId' && typeof value === 'string') {
+    return members.find((member) => member.id === value)?.label ?? 'Assigned';
+  }
+  if (field === 'dueAt' && typeof value === 'string') {
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? dateLabel(date) : value;
+  }
+  if (field === 'priority' && typeof value === 'number') return `P${value}`;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value);
 }

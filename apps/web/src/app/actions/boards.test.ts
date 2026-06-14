@@ -270,6 +270,7 @@ describe('updateBoardItemAction', () => {
       expect.objectContaining({ priority: 2 }),
       { kind: 'user', userId: USER_ID },
     );
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/work');
   });
 });
 
