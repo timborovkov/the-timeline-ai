@@ -1,0 +1,203 @@
+import { renderToStaticMarkup } from 'react-dom/server';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const USER_ID = 'user-1';
+const TEAM_ID = 'team-1';
+
+const fakes = vi.hoisted(() => ({
+  auth: vi.fn(),
+  resolveActiveTeam: vi.fn(),
+  countPendingSuggestions: vi.fn(),
+  listWorkQueueItems: vi.fn(),
+  listObjects: vi.fn(),
+  listPinnedBoards: vi.fn(),
+  listBoards: vi.fn(),
+  listEventsPage: vi.fn(),
+  redirect: vi.fn((path: string) => {
+    throw new Error(`redirect:${path}`);
+  }),
+}));
+
+vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
+vi.mock('@timeline/shared/team-scope', () => ({
+  withTeam: () => ({
+    suggestions: { countPendingSuggestions: fakes.countPendingSuggestions },
+    boards: {
+      listWorkQueueItems: fakes.listWorkQueueItems,
+      listPinnedBoards: fakes.listPinnedBoards,
+      listBoards: fakes.listBoards,
+    },
+    objects: { listObjects: fakes.listObjects },
+    timeline: { listEventsPage: fakes.listEventsPage },
+  }),
+}));
+vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
+vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
+vi.mock('@/lib/db', () => ({ db: {} }));
+
+const { default: WorkPage } = await import('./page.js');
+
+function objectRow(overrides: Record<string, unknown>) {
+  return {
+    id: 'object-1',
+    type: 'task',
+    canonicalName: 'Follow up with Revigo',
+    status: 'todo',
+    stage: null,
+    priority: null,
+    ownerUserId: null,
+    assigneeUserId: null,
+    dueAt: null,
+    agentSuggested: false,
+    archivedAt: null,
+    aliases: [],
+    metadata: {},
+    createdAt: new Date('2026-06-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-06-10T00:00:00.000Z'),
+    ...overrides,
+  };
+}
+
+function boardQueueRow(overrides: Record<string, unknown>) {
+  return {
+    id: 'board-item-1',
+    boardId: 'board-1',
+    boardName: 'Pilot pipeline',
+    laneId: 'lane-1',
+    laneName: 'Scoping',
+    laneKind: 'active',
+    entityId: 'object-1',
+    responsibleUserId: null,
+    dueAt: null,
+    priority: null,
+    nextStep: null,
+    updatedAt: new Date('2026-06-11T00:00:00.000Z'),
+    object: objectRow({ type: 'deal', canonicalName: 'Revigo pilot' }),
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  fakes.auth.mockResolvedValue({ user: { id: USER_ID } });
+  fakes.resolveActiveTeam.mockResolvedValue({
+    active: { teamId: TEAM_ID, teamName: 'AuditAI' },
+  });
+  fakes.countPendingSuggestions.mockResolvedValue(0);
+  fakes.listWorkQueueItems.mockResolvedValue([]);
+  fakes.listObjects.mockResolvedValue([]);
+  fakes.listPinnedBoards.mockResolvedValue([]);
+  fakes.listBoards.mockResolvedValue([]);
+  fakes.listEventsPage.mockResolvedValue({ items: [], nextCursor: null });
+});
+
+describe('WorkPage', () => {
+  it('renders pending approvals as one queue item', async () => {
+    fakes.countPendingSuggestions.mockResolvedValue(3);
+
+    const html = renderToStaticMarkup(await WorkPage());
+
+    expect(html).toContain('Work Queue');
+    expect(html).toContain('3 pending approvals');
+    expect(html).toContain('Pending approval');
+    expect(html).toContain('/app/approvals');
+  });
+
+  it('renders responsible board items and unowned team due board items', async () => {
+    fakes.listWorkQueueItems.mockResolvedValue([
+      boardQueueRow({
+        id: 'responsible-item',
+        responsibleUserId: USER_ID,
+        object: objectRow({ type: 'deal', canonicalName: 'Responsible deal' }),
+      }),
+      boardQueueRow({
+        id: 'team-due-item',
+        dueAt: new Date('2026-06-16T00:00:00.000Z'),
+        object: objectRow({ type: 'project', canonicalName: 'Team due project' }),
+      }),
+    ]);
+
+    const html = renderToStaticMarkup(await WorkPage());
+
+    expect(html).toContain('Responsible deal');
+    expect(html).toContain('Responsible to you');
+    expect(html).toContain('Team due project');
+    expect(html).toContain('Team due');
+    expect(html).toContain('/app/boards/board-1?item=team-due-item');
+  });
+
+  it('renders owned, assigned, and due object rows while excluding completed work', async () => {
+    fakes.listObjects.mockResolvedValue([
+      objectRow({
+        id: 'owned-task',
+        canonicalName: 'Owned task',
+        ownerUserId: USER_ID,
+      }),
+      objectRow({
+        id: 'assigned-follow-up',
+        type: 'follow_up',
+        canonicalName: 'Assigned follow-up',
+        assigneeUserId: USER_ID,
+      }),
+      objectRow({
+        id: 'team-due-deal',
+        type: 'deal',
+        canonicalName: 'Unassigned due deal',
+        dueAt: new Date('2026-06-13T00:00:00.000Z'),
+      }),
+      objectRow({
+        id: 'done-task',
+        canonicalName: 'Completed task',
+        status: 'done',
+        ownerUserId: USER_ID,
+      }),
+    ]);
+
+    const html = renderToStaticMarkup(await WorkPage());
+
+    expect(html).toContain('Owned task');
+    expect(html).toContain('Owned by you');
+    expect(html).toContain('Assigned follow-up');
+    expect(html).toContain('Assigned to you');
+    expect(html).toContain('Unassigned due deal');
+    expect(html).toContain('Team due');
+    expect(html).not.toContain('Completed task');
+  });
+
+  it('renders empty state when no queue items exist', async () => {
+    const html = renderToStaticMarkup(await WorkPage());
+
+    expect(html).toContain('Work queue clear');
+    expect(html).toContain('Open boards');
+    expect(html).toContain('Work surfaces');
+  });
+
+  it('renders compact boards and recent changes modules', async () => {
+    fakes.listPinnedBoards.mockResolvedValue([
+      {
+        id: 'board-1',
+        name: 'Pilot pipeline',
+        itemCount: 7,
+        pinned: true,
+        updatedAt: new Date('2026-06-14T00:00:00.000Z'),
+      },
+    ]);
+    fakes.listEventsPage.mockResolvedValue({
+      items: [
+        {
+          id: 'event-1',
+          source: 'slack',
+          contentText: 'Moved Revigo into scoping.',
+          occurredAt: new Date('2026-06-14T12:00:00.000Z'),
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const html = renderToStaticMarkup(await WorkPage());
+
+    expect(html).toContain('Pilot pipeline');
+    expect(html).toContain('Pinned');
+    expect(html).toContain('Moved Revigo into scoping.');
+  });
+});

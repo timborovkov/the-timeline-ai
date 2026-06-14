@@ -126,8 +126,7 @@ A view is how the team sees the same work:
 - table
 - list
 - calendar
-- "my work"
-- "stale"
+- work queue
 - "due soon"
 - "unassigned"
 - saved filtered views
@@ -165,7 +164,6 @@ Cards and rows should show the core scan layer:
 - priority or "No priority"
 - comment count
 - checklist progress
-- stale or recently updated indicator
 - blocked/attention state
 
 Missing values should be visible when they are operationally important. A board
@@ -199,9 +197,15 @@ The agent should make those views smarter:
 - explain why an item is in a stage
 - summarize recent evidence
 - suggest next steps
-- identify stale or blocked work
+- identify blocked or abandoned-looking work from timeline evidence
 - create tasks from meetings
 - connect related decisions, docs, and people
+
+Background suggestion workers should produce the same kinds of approval-backed
+updates the UI can apply manually. For board items, worker context must include
+the current lane, responsible person, due date, priority, next step, and recent
+board item history so proposals can safely target `laneId`, `responsibleUserId`,
+`dueAt`, `priority`, `nextStep`, notes, or board membership without guessing.
 
 ### One Work Graph, Many Operational Views
 
@@ -219,9 +223,11 @@ Work hub should become the daily landing page for operational work.
 
 Add sections:
 
-- My work: assigned to me, due soon, waiting on me
+- Work queue: one scannable list of work that matters now, including items
+  responsible to me and team-level items with due dates but no owner
 - Team boards: recently active and pinned boards
-- Attention: overdue, unassigned, stale, blocked
+- Attention signals: overdue, due soon, unassigned, blocked, pending approval,
+  or otherwise needing review
 - Recent changes: comments, stage changes, mentions, AI-found updates
 - Pinned: boards, projects, deals, vendors, decisions, or tasks I care about
 
@@ -265,7 +271,6 @@ Card scan layer:
 - priority or missing priority state
 - comment count
 - checklist progress
-- stale/recently updated marker
 - blocked/attention marker
 
 UX cleanup:
@@ -304,7 +309,7 @@ Notification triggers:
 - due date changed
 - stage changed on watched item
 - comment added on watched item
-- stale item assigned to me
+- abandoned-looking item suggested for review by an agent
 
 Success criteria:
 
@@ -404,9 +409,23 @@ Agent capabilities:
 - "Summarize all activity for this deal"
 - "Suggest next step"
 - "Create follow-up from this meeting"
-- "Detect stale work"
+- "Find work that appears abandoned based on recent timeline evidence"
 - "Find items with no owner or due date"
 - "Show blockers across this board"
+
+Suggestion worker improvements:
+
+- Include `responsibleUserId` and a readable responsible-person label in the
+  existing board item context sent to the suggestion worker.
+- Include enough lane metadata for the worker to propose board item stage moves
+  without relying on lane names alone.
+- Include recent board item changes alongside recent timeline evidence when
+  asking whether an item needs a due date, responsible person, next step, lane
+  change, or priority update.
+- Keep abandoned-looking work as a proposal pattern backed by concrete timeline
+  evidence, not as a special Work hub heuristic.
+- Require citations/source event IDs for due-date, stage, owner/responsible,
+  and abandoned-work proposals.
 
 AI UI patterns:
 
@@ -563,11 +582,13 @@ Mobile:
    date, priority, and activity.
 3. Card and row scan layer improvements.
 4. Comments, mentions, watchers, and notifications.
-5. Owner/collaborator model plus My Work views.
+5. Owner/collaborator model plus Work queue views.
 6. Custom fields and saved views.
 7. Timeline evidence and AI summary inside item detail.
-8. Calendar/reminder integration.
-9. Templates and imports.
+8. Suggestion worker context improvements for responsible person, due date,
+   lane, priority, next step, and abandoned-looking work proposals.
+9. Calendar/reminder integration.
+10. Templates and imports.
 
 ## First Milestone Definition
 
@@ -584,7 +605,9 @@ Recommended wedge: a team pipeline or task board where users can:
 - add a checklist
 - see recent activity and evidence
 - scan missing fields on cards
-- view "my work" from the Work hub
+- view the Work queue from the Work hub
+- receive approval-backed suggestions for board item stage, responsible person,
+  due date, priority, next step, and abandoned-looking work updates
 - ask the agent what changed and why
 
 If this loop feels excellent, the broader platform can expand from it.
