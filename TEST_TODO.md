@@ -6,9 +6,9 @@ contracts, not private implementation structure.
 
 ## Test Status Overview
 
-Last checked in this branch: full `pnpm validate`, `pnpm test:ci`, root
-`pnpm test`, and React Doctor `100 / 100` pass after syncing scoped provider
-connections with upstream board and global-search polish. The suite includes
+Last checked in this branch: full `pnpm validate`, `pnpm test:eval`,
+`pnpm test:dist-imports`, root `pnpm test`, and React Doctor `100 / 100` pass
+after syncing scoped provider connections with upstream board and global-search polish. The suite includes
 provider-connection hardening, recurring meeting capture, Saved Meeting
 visibility enforcement, scheduler idempotency, strict meeting URL host matching,
 generated calendar cleanup, quick-join failure/capacity/reuse, partial-cancel
@@ -92,9 +92,11 @@ Legend:
 - `pnpm --filter @timeline/db test` runs DB/PGlite schema contract tests.
 - `pnpm test:eval` runs the fast deterministic shared agent/retrieval eval
   slice.
+- `pnpm test:dist-imports` builds `@timeline/db` and `@timeline/shared`, then
+  imports selected compiled runtime modules with Node.
 - `pnpm validate` runs format, typecheck, lint, and knip. Tests run through
-  `pnpm test`, `pnpm test:ci`, package-filtered Vitest commands, or E2E
-  commands depending on the change.
+  `pnpm test`, `pnpm test:eval`, `pnpm test:dist-imports`,
+  package-filtered Vitest commands, or E2E commands depending on the change.
 - `pnpm e2e` runs local Playwright E2E through `scripts/run-e2e-strict.ts`.
 - `pnpm e2e:prod-smoke` runs the production-ish Playwright smoke suite.
 
@@ -690,10 +692,10 @@ Once the suite is mature, split commands by layer:
 - `pnpm e2e`: local core Playwright E2E.
 - `pnpm e2e:prod-smoke`: production-ish smoke.
 - `pnpm test:eval`: fast deterministic agent evals.
+- `pnpm test:dist-imports`: compiled-package import smoke.
 - `pnpm validate`: format, typecheck, lint, and knip.
-- `pnpm test:ci`: focused CI regression lane for deterministic shared
-  agent/retrieval evals.
-- CI PR gate: validate plus core E2E when stable.
+- CI PR gate: validate plus compiled-package import smoke, with core E2E when
+  stable.
 - CI scheduled/manual gate: provider-backed E2E, production-ish smoke, and
   slower evals.
 
