@@ -1348,19 +1348,24 @@ describe('withTeam namespaced port', () => {
     const ownerRepoShare = ownerShares.find(
       (row) => row.share.resourceKind === 'github.repo',
     )?.share;
-    expect(orgShare).toBeDefined();
-    expect(ownerRepoShare).toBeDefined();
+    if (!orgShare || !ownerRepoShare) throw new Error('Expected owner shares to be created');
+    const memberVisibleShares = await memberScope.integrations.listTeamResourceShares();
+    expect(
+      memberVisibleShares.some(
+        (row) => row.share.id === orgShare.id && row.connection.id === ownerConnection.id,
+      ),
+    ).toBe(true);
 
     await expect(
       memberScope.integrations.activateSharedResources({
         providerConnectionId: ownerConnection.id,
-        resourceShareIds: [orgShare?.id ?? '', ownerRepoShare?.id ?? ''],
+        resourceShareIds: [orgShare.id, ownerRepoShare.id],
       }),
     ).rejects.toThrow('admin');
 
     const ownerIntegration = await adminScope.integrations.activateSharedResources({
       providerConnectionId: ownerConnection.id,
-      resourceShareIds: [orgShare?.id ?? '', ownerRepoShare?.id ?? ''],
+      resourceShareIds: [orgShare.id, ownerRepoShare.id],
     });
     await expect(adminDecryptIntegrationTokens(db as never, ownerIntegration)).resolves.toEqual({
       access_token: 'owner-token',
@@ -1379,7 +1384,7 @@ describe('withTeam namespaced port', () => {
     const memberRepoShare = (await memberScope.integrations.listOwnedTeamResourceShares()).find(
       (row) => row.share.providerConnectionId === memberConnection.id,
     )?.share;
-    expect(memberRepoShare).toBeDefined();
+    if (!memberRepoShare) throw new Error('Expected member share to be created');
 
     await adminScope.integrations.recordConnectionAttention({
       providerConnectionId: ownerConnection.id,
@@ -1394,7 +1399,7 @@ describe('withTeam namespaced port', () => {
     await expect(
       adminScope.integrations.activateSharedResources({
         providerConnectionId: ownerConnection.id,
-        resourceShareIds: [ownerRepoShare?.id ?? ''],
+        resourceShareIds: [ownerRepoShare.id],
       }),
     ).rejects.toThrow('Provider connection owner is no longer a team member');
     const [ownerLeftAttention] = await db
@@ -1410,7 +1415,7 @@ describe('withTeam namespaced port', () => {
 
     const memberIntegration = await adminScope.integrations.activateSharedResources({
       providerConnectionId: memberConnection.id,
-      resourceShareIds: [memberRepoShare?.id ?? ''],
+      resourceShareIds: [memberRepoShare.id],
     });
 
     const repoSelections = (await db.select().from(integrationSelections)).filter(
@@ -1419,7 +1424,7 @@ describe('withTeam namespaced port', () => {
     expect(repoSelections).toHaveLength(1);
     expect(repoSelections[0]).toMatchObject({
       integrationId: memberIntegration.id,
-      resourceShareId: memberRepoShare?.id,
+      resourceShareId: memberRepoShare.id,
     });
     const [resolvedOwnerAttention] = await db
       .select()
@@ -1439,14 +1444,14 @@ describe('withTeam namespaced port', () => {
     const [revokedOrgShare] = await db
       .select()
       .from(teamProviderResourceShares)
-      .where(eq(teamProviderResourceShares.id, orgShare?.id ?? ''));
+      .where(eq(teamProviderResourceShares.id, orgShare.id));
     expect(revokedOrgShare?.revokedAt).toBeInstanceOf(Date);
     const attentionRows = await db.select().from(connectionAttention);
     expect(attentionRows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           providerConnectionId: ownerConnection.id,
-          resourceShareId: orgShare?.id,
+          resourceShareId: orgShare.id,
           category: 'access_changed',
           resolvedAt: null,
         }),
@@ -1460,7 +1465,7 @@ describe('withTeam namespaced port', () => {
     const [resolvedOrgAttention] = await db
       .select()
       .from(connectionAttention)
-      .where(eq(connectionAttention.resourceShareId, orgShare?.id ?? ''));
+      .where(eq(connectionAttention.resourceShareId, orgShare.id));
     expect(resolvedOrgAttention?.category).toBe('access_changed');
     expect(resolvedOrgAttention?.resolvedAt).toBeInstanceOf(Date);
   });
@@ -1555,6 +1560,41 @@ describe('withTeam namespaced port', () => {
 
     attentionRows = await db.select().from(connectionAttention);
     expect(attentionRows[0]?.resolvedAt).toBeInstanceOf(Date);
+  });
+
+  it('resolves reconnect attention for the provider connection across every shared team', async () => {
+    const teamAScope = withTeam(db as never, TEAM_A, USER_A);
+    const teamBScope = withTeam(db as never, TEAM_B, USER_A);
+    const connection = await teamAScope.integrations.upsertProviderConnection({
+      provider: 'github',
+      displayName: 'GitHub — owner',
+      externalAccountId: 'owner-gh-cross-team',
+      scopes: ['repo'],
+      tokens: { access_token: 'old-token' },
+    });
+
+    await teamAScope.integrations.recordConnectionAttention({
+      providerConnectionId: connection.id,
+      category: 'needs_reconnect',
+      summary: 'Team A token expired',
+    });
+    await teamBScope.integrations.recordConnectionAttention({
+      providerConnectionId: connection.id,
+      category: 'needs_reconnect',
+      summary: 'Team B token expired',
+    });
+
+    await teamAScope.integrations.upsertProviderConnection({
+      provider: 'github',
+      displayName: 'GitHub — owner',
+      externalAccountId: 'owner-gh-cross-team',
+      scopes: ['repo'],
+      tokens: { access_token: 'new-token' },
+    });
+
+    const attentionRows = await db.select().from(connectionAttention);
+    expect(attentionRows).toHaveLength(2);
+    expect(attentionRows.every((row) => row.resolvedAt instanceof Date)).toBe(true);
   });
 
   it('throttles connection-attention email per target and category', async () => {

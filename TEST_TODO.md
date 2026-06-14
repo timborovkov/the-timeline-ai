@@ -17,7 +17,7 @@ when manual joins race a scheduled occurrence. Current suite shape:
 
 - DB Vitest: 1 file / 8 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.
-- Shared Vitest: 71 files / 725 passed tests plus 1 skipped, including PGlite
+- Shared Vitest: 71 files / 726 passed tests plus 1 skipped, including PGlite
   calendar, timeline, MCP, integration/provider-connection, meeting, document,
   object, assistant, Slack, recovery, connection-attention, and onboarding
   coverage.

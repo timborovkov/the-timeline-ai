@@ -193,10 +193,7 @@ export function createIntegrationScope(deps: {
       .returning();
     const row = rows[0];
     if (!row) throw new Error('Failed to create provider connection');
-    await adminResolveConnectionAttention(db, teamId, {
-      providerConnectionId: row.id,
-      categories: ['needs_reconnect', 'sync_error'],
-    });
+    await adminResolveProviderConnectionAttention(db, row.id, ['needs_reconnect', 'sync_error']);
     return row;
   }
 
@@ -428,7 +425,7 @@ export function createIntegrationScope(deps: {
   // ---------------- provider resource sharing ----------------
 
   async function listTeamResourceShares() {
-    await ensureMember('admin');
+    await ensureMember();
     return db
       .select({
         share: teamProviderResourceShares,
@@ -1272,6 +1269,23 @@ export async function adminResolveConnectionAttention(
     .where(and(...conditions));
 }
 
+export async function adminResolveProviderConnectionAttention(
+  db: Db,
+  providerConnectionId: string,
+  categories: ConnectionAttentionInput['category'][],
+): Promise<void> {
+  await db
+    .update(connectionAttention)
+    .set({ resolvedAt: new Date(), lastSeenAt: new Date() })
+    .where(
+      and(
+        eq(connectionAttention.providerConnectionId, providerConnectionId),
+        isNull(connectionAttention.resolvedAt),
+        inArray(connectionAttention.category, categories),
+      ),
+    );
+}
+
 export async function adminResetTransientSyncFailures(
   db: Db,
   integrationId: string,
@@ -1486,7 +1500,3 @@ export async function adminListSelections(
     label: r.externalLabel,
   }));
 }
-
-// Avoid unused-import warning — sql is reserved for future advisory locks on
-// integration ids when a worker concurrency knob lands.
-void sql;
