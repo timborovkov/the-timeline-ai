@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { meetings } from '@timeline/db';
+import { meetingCaptureConfirmations, meetings, teamMeetingSettings } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +10,7 @@ import {
   confirmRawUrlQuickJoin,
   createRawUrlQuickJoinConfirmation,
 } from '#src/meetings/quick-capture.js';
+import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const joinMeetingMock = vi.hoisted(() => vi.fn());
@@ -95,5 +96,120 @@ describe('quick meeting capture', () => {
     expect(joinMeetingMock).toHaveBeenCalledTimes(1);
     const rows = await db.select().from(meetings).where(eq(meetings.teamId, TEAM_ID));
     expect(rows).toHaveLength(1);
+  });
+
+  it('leaves raw-url confirmations pending when capacity blocks the join', async () => {
+    await db.insert(teamMeetingSettings).values({
+      teamId: TEAM_ID,
+      meetingMinutesCap: 0,
+      meetingMinutesAdminOverride: false,
+      requireHostConsent: true,
+    });
+    const prompt = await createRawUrlQuickJoinConfirmation({
+      db: db as never,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      source: 'slack',
+      meetingUrl: 'https://meet.google.com/cap-blk-now',
+    });
+    const confirmationId = prompt.confirmationId;
+    if (!confirmationId) throw new Error('expected confirmation id');
+
+    const result = await confirmRawUrlQuickJoin({
+      db: db as never,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      confirmationId,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'Meeting notetakers are disabled for this team.',
+    });
+    expect(joinMeetingMock).not.toHaveBeenCalled();
+    const [confirmation] = await db
+      .select()
+      .from(meetingCaptureConfirmations)
+      .where(eq(meetingCaptureConfirmations.id, confirmationId));
+    expect(confirmation?.status).toBe('pending');
+    expect(confirmation?.meetingId).toBeNull();
+  });
+
+  it('marks the capture failed and links the confirmation when the provider join fails', async () => {
+    joinMeetingMock.mockRejectedValue(new Error('provider unavailable'));
+    const prompt = await createRawUrlQuickJoinConfirmation({
+      db: db as never,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      source: 'telegram',
+      meetingUrl: 'https://meet.google.com/fail-now-url',
+    });
+    const confirmationId = prompt.confirmationId;
+    if (!confirmationId) throw new Error('expected confirmation id');
+
+    const result = await confirmRawUrlQuickJoin({
+      db: db as never,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      confirmationId,
+    });
+
+    expect(result).toMatchObject({ ok: false, error: 'Failed to invite notetaker' });
+    const [meeting] = await db.select().from(meetings).where(eq(meetings.teamId, TEAM_ID));
+    expect(meeting?.status).toBe('failed');
+    expect(meeting?.metadata).toMatchObject({
+      join_error: 'provider unavailable',
+      source: 'quick_join',
+    });
+    const [confirmation] = await db
+      .select()
+      .from(meetingCaptureConfirmations)
+      .where(eq(meetingCaptureConfirmations.id, confirmationId));
+    expect(confirmation?.status).toBe('confirmed');
+    expect(confirmation?.meetingId).toBe(meeting?.id);
+  });
+
+  it('reuses a due saved scheduled occurrence when confirming the same raw URL', async () => {
+    joinMeetingMock.mockResolvedValue({ botId: 'bot-1', raw: { id: 'bot-1' } });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID).meetings;
+    const saved = await scope.createSavedMeeting({
+      title: 'Raw URL daily',
+      meetingUrl: 'https://meet.google.com/raw-url-due',
+      permissionConfirmed: true,
+      defaultVisibility: 'team',
+    });
+    const scheduled = await scope.createMeeting({
+      platform: saved.platform,
+      meetingUrl: saved.meetingUrl,
+      title: saved.title,
+      savedMeetingId: saved.id,
+      status: 'scheduled',
+      scheduledStartAt: new Date(),
+      defaultVisibility: 'team',
+      metadata: { source: 'test_scheduled_occurrence' },
+    });
+    const prompt = await createRawUrlQuickJoinConfirmation({
+      db: db as never,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      source: 'telegram',
+      meetingUrl: saved.meetingUrl,
+    });
+    const confirmationId = prompt.confirmationId;
+    if (!confirmationId) throw new Error('expected confirmation id');
+
+    const result = await confirmRawUrlQuickJoin({
+      db: db as never,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      confirmationId,
+    });
+
+    expect(result).toMatchObject({ ok: true, meetingId: scheduled.id });
+    expect(joinMeetingMock).toHaveBeenCalledTimes(1);
+    const rows = await db.select().from(meetings).where(eq(meetings.teamId, TEAM_ID));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(scheduled.id);
+    expect(rows[0]?.status).toBe('joining');
   });
 });

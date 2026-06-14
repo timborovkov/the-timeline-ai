@@ -1152,6 +1152,25 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
       return (rows[0] as MeetingRow | undefined) ?? null;
     },
 
+    async findSavedMeetingForUrl(meetingUrl: string): Promise<SavedMeetingRow | null> {
+      await ensureMember();
+      const rows = await db
+        .select({ id: savedMeetings.id })
+        .from(savedMeetings)
+        .where(
+          and(
+            eq(savedMeetings.teamId, teamId),
+            eq(savedMeetings.meetingUrl, meetingUrl),
+            isNull(savedMeetings.archivedAt),
+            savedMeetingVisibility,
+          ),
+        )
+        .orderBy(asc(savedMeetings.createdAt))
+        .limit(1);
+      const id = rows[0]?.id;
+      return id ? getSavedMeetingInternal(id, { enforceVisibility: true }) : null;
+    },
+
     async findActiveMeetingForUrl(meetingUrl: string): Promise<MeetingRow | null> {
       await ensureMember();
       const rows = await db

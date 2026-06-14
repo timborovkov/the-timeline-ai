@@ -10,7 +10,8 @@ Last checked in this branch: full `pnpm validate` plus targeted Saved Meetings,
 Recall status, Slack quick-join, Telegram quick-join, scheduler, and finalizer
 suites pass after adding recurring meeting capture coverage, Saved Meeting
 visibility enforcement, scheduler idempotency, strict meeting URL host matching,
-and generated calendar cleanup regressions. Current suite shape:
+generated calendar cleanup, quick-join failure/capacity/reuse, and partial-cancel
+finalize queue regressions. Current suite shape:
 
 - DB Vitest: 1 file / 7 tests, package-level PGlite schema contract suite now
   runs under root `pnpm test`.

@@ -418,6 +418,20 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
     }
     const chunks = await scope.meetings.listChunks(meetingId);
     if (chunks.length > 0) {
+      let queue: Awaited<ReturnType<typeof requireRedisQueue>>;
+      try {
+        queue = await requireRedisQueue();
+      } catch (err) {
+        log.warn({ err, meetingId }, 'partial_cancel_finalize_queue_unavailable');
+        reportCaughtError(err, {
+          surface: 'server_action',
+          operation: 'partial_cancel_finalize_queue_unavailable',
+        });
+        return {
+          ok: false,
+          error: 'Cannot cancel this meeting while finalize queue is unavailable.',
+        };
+      }
       await scope.meetings.updateMeetingStatus(meetingId, 'processing', {
         endedAt: new Date(),
         metadata: {
@@ -427,7 +441,6 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
         },
       });
       try {
-        const queue = await requireRedisQueue();
         await queue.enqueueMeetingFinalizeJob({ meetingId, teamId: meeting.teamId });
       } catch (err) {
         log.warn({ err, meetingId }, 'partial_cancel_finalize_enqueue_failed');

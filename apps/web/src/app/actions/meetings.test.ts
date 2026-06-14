@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as RateLimitModule from '@timeline/shared/rate-limit';
 
-import { scheduleMeetingBotAction } from '@/app/actions/meetings';
+import { cancelMeetingBotAction, scheduleMeetingBotAction } from '@/app/actions/meetings';
 
 const fakes = vi.hoisted(() => ({
   fakeAuth: vi.fn(),
@@ -10,16 +10,20 @@ const fakes = vi.hoisted(() => ({
   fakeMeetings: {
     getMeetingSettings: vi.fn(),
     getCurrentMonthMinutes: vi.fn(),
+    getMeeting: vi.fn(),
+    listChunks: vi.fn(),
     createMeeting: vi.fn(),
     updateMeetingStatus: vi.fn(),
   },
   fakeCheckRateLimit: vi.fn(),
   fakeJoinMeeting: vi.fn(),
+  fakeRequireRedisQueue: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.fakeRequireRedisQueue }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
 vi.mock('@timeline/shared/team-scope', () => ({
@@ -62,8 +66,11 @@ beforeEach(() => {
     meetingMinutesAdminOverride: false,
   });
   fakes.fakeMeetings.createMeeting.mockResolvedValue({ id: MEETING_ID });
+  fakes.fakeMeetings.getMeeting.mockResolvedValue(null);
+  fakes.fakeMeetings.listChunks.mockResolvedValue([]);
   fakes.fakeMeetings.updateMeetingStatus.mockResolvedValue(undefined);
   fakes.fakeJoinMeeting.mockResolvedValue({ botId: 'bot-1', raw: { id: 'bot-1' } });
+  fakes.fakeRequireRedisQueue.mockResolvedValue({ enqueueMeetingFinalizeJob: vi.fn() });
 });
 
 describe('scheduleMeetingBotAction', () => {
@@ -83,5 +90,27 @@ describe('scheduleMeetingBotAction', () => {
         visibilityUserIds: [MEMBER_ID],
       }),
     );
+  });
+});
+
+describe('cancelMeetingBotAction', () => {
+  it('does not move partial captures to processing when the finalize queue is unavailable', async () => {
+    fakes.fakeMeetings.getMeeting.mockResolvedValue({
+      id: MEETING_ID,
+      teamId: TEAM_ID,
+      status: 'active',
+      provider: 'recall',
+      providerBotId: null,
+    });
+    fakes.fakeMeetings.listChunks.mockResolvedValue([{ id: 'chunk-1' }]);
+    fakes.fakeRequireRedisQueue.mockRejectedValue(new Error('redis unavailable'));
+
+    const result = await cancelMeetingBotAction(MEETING_ID);
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'Cannot cancel this meeting while finalize queue is unavailable.',
+    });
+    expect(fakes.fakeMeetings.updateMeetingStatus).not.toHaveBeenCalled();
   });
 });

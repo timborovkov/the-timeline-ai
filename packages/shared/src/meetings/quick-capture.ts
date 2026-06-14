@@ -44,19 +44,30 @@ async function startBot(input: {
   const team = await input.scope.timeline.team();
   const botName = meetingBots.meetingBotDisplayName(team?.name);
   const provider = meetingBots.getMeetingBotProvider(input.meeting.provider);
-  const join = await provider.joinMeeting({
-    meetingId: input.meeting.id,
-    teamId: input.teamId,
-    meetingUrl: input.meeting.meetingUrl,
-    platform: input.meeting.platform,
-    botName,
-    transcriptWebhookUrl: meetingBots.resolveTranscriptWebhookUrl(),
-  });
-  await input.scope.meetings.updateMeetingStatus(input.meeting.id, 'joining', {
-    providerBotId: join.botId,
-    metadata: { provider_join_result: join.raw ?? {}, source: 'quick_join' },
-  });
-  return { ok: true, meetingId: input.meeting.id, botName };
+  try {
+    const join = await provider.joinMeeting({
+      meetingId: input.meeting.id,
+      teamId: input.teamId,
+      meetingUrl: input.meeting.meetingUrl,
+      platform: input.meeting.platform,
+      botName,
+      transcriptWebhookUrl: meetingBots.resolveTranscriptWebhookUrl(),
+    });
+    await input.scope.meetings.updateMeetingStatus(input.meeting.id, 'joining', {
+      providerBotId: join.botId,
+      metadata: { provider_join_result: join.raw ?? {}, source: 'quick_join' },
+    });
+    return { ok: true, meetingId: input.meeting.id, botName };
+  } catch (err) {
+    await input.scope.meetings.updateMeetingStatus(input.meeting.id, 'failed', {
+      metadata: {
+        join_failed_at: new Date().toISOString(),
+        join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
+        source: 'quick_join',
+      },
+    });
+    return { ok: false, meetingId: input.meeting.id, error: 'Failed to invite notetaker' };
+  }
 }
 
 export async function joinSavedMeetingByCommand(input: {
@@ -147,21 +158,23 @@ export async function confirmRawUrlQuickJoin(input: {
     return { ok: false, error: 'Meeting notetakers are not configured.' };
   }
   const scope = withTeam(input.db, input.teamId, input.userId);
-  const confirmation = await scope.meetings.claimPendingMeetingCaptureConfirmation(
-    input.confirmationId,
-  );
-  if (!confirmation) {
-    const existing = await scope.meetings.getMeetingCaptureConfirmation(input.confirmationId);
-    if (!existing) return { ok: false, error: 'Confirmation not found.' };
-    if (existing.status === 'pending' && existing.expiresAt < new Date()) {
-      await scope.meetings.markMeetingCaptureConfirmation(existing.id, 'expired');
-      return { ok: false, error: 'Confirmation expired.' };
-    }
+  const existing = await scope.meetings.getMeetingCaptureConfirmation(input.confirmationId);
+  if (!existing) return { ok: false, error: 'Confirmation not found.' };
+  if (existing.status !== 'pending') {
     return { ok: false, error: 'Confirmation is no longer pending.' };
+  }
+  if (existing.expiresAt < new Date()) {
+    await scope.meetings.markMeetingCaptureConfirmation(existing.id, 'expired');
+    return { ok: false, error: 'Confirmation expired.' };
   }
 
   const capacityError = await ensureCapacity(scope);
   if (capacityError) return { ok: false, error: capacityError };
+  const confirmation = await scope.meetings.claimPendingMeetingCaptureConfirmation(
+    input.confirmationId,
+  );
+  if (!confirmation) return { ok: false, error: 'Confirmation is no longer pending.' };
+
   const active = await scope.meetings.findActiveMeetingForUrl(confirmation.meetingUrl);
   if (active && (active.status === 'joining' || active.status === 'active')) {
     await scope.meetings.markMeetingCaptureConfirmation(confirmation.id, 'confirmed', active.id);
@@ -173,20 +186,30 @@ export async function confirmRawUrlQuickJoin(input: {
     };
   }
 
-  const meeting = await scope.meetings.createMeeting({
-    platform: confirmation.platform,
-    meetingUrl: confirmation.meetingUrl,
-    title: confirmation.title,
-    defaultVisibility: confirmation.defaultVisibility,
-    visibilityUserIds: confirmation.visibilityUserIds,
-    metadata: {
-      source: `${confirmation.source}_raw_url_confirmed`,
-      confirmation_id: confirmation.id,
-    },
-  });
+  const saved = await scope.meetings.findSavedMeetingForUrl(confirmation.meetingUrl);
+  const scheduled = saved
+    ? await scope.meetings.findNearbyScheduledOccurrence(
+        saved.id,
+        new Date(),
+        joinOffsetMs(saved.scheduleConfig),
+      )
+    : null;
+  const meeting =
+    scheduled ??
+    (await scope.meetings.createMeeting({
+      platform: confirmation.platform,
+      meetingUrl: confirmation.meetingUrl,
+      title: confirmation.title,
+      savedMeetingId: saved?.id ?? null,
+      defaultVisibility: saved?.defaultVisibility ?? confirmation.defaultVisibility,
+      visibilityUserIds: saved?.visibilityUserIds ?? confirmation.visibilityUserIds,
+      metadata: {
+        source: `${confirmation.source}_raw_url_confirmed`,
+        confirmation_id: confirmation.id,
+        ...(saved ? { saved_meeting_id: saved.id } : {}),
+      },
+    }));
+  await scope.meetings.markMeetingCaptureConfirmation(confirmation.id, 'confirmed', meeting.id);
   const joined = await startBot({ scope, teamId: input.teamId, meeting });
-  if (joined.ok) {
-    await scope.meetings.markMeetingCaptureConfirmation(confirmation.id, 'confirmed', meeting.id);
-  }
   return joined;
 }
