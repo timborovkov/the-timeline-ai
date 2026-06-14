@@ -16,63 +16,65 @@ vi.mock('@/components/boards/board-add-item-form', () => ({
   BoardAddItemForm: (props: {
     onOptimisticItem?: (item: boards.BoardItemRow) => void;
     onItemAdded?: (item: boards.BoardItemRow, optimisticId: string) => void;
-  }) => (
-    <button
-      type="button"
-      onClick={() => {
-        props.onOptimisticItem?.({
-          id: 'optimistic-item-2',
-          boardId: 'board-1',
-          entityId: 'object-2',
-          laneId: 'lane-1',
-          position: 0,
-          responsibleUserId: null,
-          dueAt: null,
-          priority: null,
-          nextStep: null,
-          notes: null,
-          customFields: {},
-          archivedAt: null,
-          createdAt: new Date('2026-01-01T00:00:00.000Z'),
-          updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-          object: {
-            id: 'object-2',
-            canonicalName: 'Beta',
-            type: 'company',
-            aliases: [],
-            status: 'open',
-            stage: null,
-            priority: null,
-            ownerUserId: null,
-            assigneeUserId: null,
-            dueAt: null,
-            agentSuggested: false,
-            metadata: {},
-            archivedAt: null,
-            createdAt: new Date('2026-01-01T00:00:00.000Z'),
-            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-          },
-        });
-      }}
-    >
-      Fake optimistic add
-    </button>
-  ),
+  }) => {
+    const optimisticItem = testBoardItem({
+      id: 'optimistic-item-2',
+      entityId: 'object-2',
+      canonicalName: 'Beta',
+    });
+    const persistedItem = testBoardItem({
+      id: 'item-2',
+      entityId: 'object-2',
+      canonicalName: 'Beta',
+    });
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => {
+            props.onOptimisticItem?.(optimisticItem);
+          }}
+        >
+          Fake optimistic add
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            props.onOptimisticItem?.(optimisticItem);
+            props.onItemAdded?.(persistedItem, optimisticItem.id);
+          }}
+        >
+          Fake committed add
+        </button>
+      </>
+    );
+  },
 }));
 vi.mock('@/components/boards/board-card-detail', () => ({
   BoardCardDetail: (props: {
     item: boards.BoardItemRow | null;
     onUpdateItem?: (itemId: string, patch: { priority: number }) => Promise<unknown>;
+    onItemRemoved?: (itemId: string, entityId: string) => void;
   }) =>
     props.item ? (
-      <button
-        type="button"
-        onClick={() => {
-          void props.onUpdateItem?.(props.item?.id ?? '', { priority: 1 });
-        }}
-      >
-        Set P1
-      </button>
+      <>
+        <button
+          type="button"
+          onClick={() => {
+            void props.onUpdateItem?.(props.item?.id ?? '', { priority: 1 });
+          }}
+        >
+          Set P1
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (props.item) props.onItemRemoved?.(props.item.id, props.item.entityId);
+          }}
+        >
+          Remove local item
+        </button>
+      </>
     ) : null,
 }));
 vi.mock('@/components/boards/board-actions-menu', () => ({
@@ -87,7 +89,7 @@ vi.mock('@/components/boards/curated-kanban-board', () => ({
 const { BoardDetailClient } = await import('./board-detail-client.js');
 const { CuratedBoardList, CuratedBoardTable } = await import('./curated-board-views.js');
 
-function objectRow(input: { id: string; canonicalName: string }): objects.ObjectRow {
+function testObjectRow(input: { id: string; canonicalName: string }): objects.ObjectRow {
   return {
     id: input.id,
     canonicalName: input.canonicalName,
@@ -107,7 +109,7 @@ function objectRow(input: { id: string; canonicalName: string }): objects.Object
   };
 }
 
-function boardItem(input: {
+function testBoardItem(input: {
   id: string;
   entityId: string;
   canonicalName: string;
@@ -130,8 +132,18 @@ function boardItem(input: {
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: (input.updatedAt ??
       new Date('2026-01-01T00:00:00.000Z')) as boards.BoardItemRow['updatedAt'],
-    object: objectRow({ id: input.entityId, canonicalName: input.canonicalName }),
+    object: testObjectRow({ id: input.entityId, canonicalName: input.canonicalName }),
   };
+}
+
+function boardItem(input: {
+  id: string;
+  entityId: string;
+  canonicalName: string;
+  priority?: number | null;
+  updatedAt?: Date | string;
+}): boards.BoardItemRow {
+  return testBoardItem(input);
 }
 
 function renderClient(
@@ -218,6 +230,36 @@ describe('BoardDetailClient', () => {
     await waitFor(() => {
       expect(screen.getByText('Beta')).toBeTruthy();
       expect(screen.getByLabelText('Board · Pilot board').textContent).not.toContain('items');
+    });
+  });
+
+  it('does not resurrect a locally committed add after it is removed', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      renderClient([], {
+        selectedItemId: 'item-2',
+        view: 'table',
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Fake committed add' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Beta')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Remove local item' })).toBeTruthy();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Remove local item' }));
+
+    rerender(
+      renderClient([], {
+        selectedItemId: null,
+        view: 'table',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('Beta')).toBeNull();
     });
   });
 

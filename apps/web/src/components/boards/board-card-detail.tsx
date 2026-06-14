@@ -35,6 +35,7 @@ interface Props {
     itemId: string,
     patch: BoardItemOptimisticPatch,
   ) => Promise<{ ok?: boolean; error?: string; id?: string }>;
+  onItemRemoved?: (itemId: string, entityId: string) => void;
 }
 
 const EMPTY_MEMBERS: BoardMemberOption[] = [];
@@ -46,6 +47,7 @@ export function BoardCardDetail({
   history,
   members = EMPTY_MEMBERS,
   onUpdateItem,
+  onItemRemoved,
 }: Props) {
   const [editingNotes, setEditingNotes] = useState(false);
   const [noteDraft, setNoteDraft] = useState(item?.notes ?? '');
@@ -201,6 +203,9 @@ export function BoardCardDetail({
           itemId={item.id}
           objectName={item.object.canonicalName}
           view={view}
+          onRemoved={() => {
+            onItemRemoved?.(item.id, item.entityId);
+          }}
         />
       </div>
 

@@ -119,6 +119,12 @@ export function BoardDetailClient({
     setLocalItems((current) => current.filter((row) => row.id !== item.id));
   }
 
+  function removeLocalItem(itemId: string, entityId: string): void {
+    setLocalItems((current) =>
+      current.filter((row) => row.id !== itemId && row.entityId !== entityId),
+    );
+  }
+
   const updateItem = useCallback(
     async (itemId: string, patch: BoardItemOptimisticPatch) => {
       const previousItem = items.find((item) => item.id === itemId);
@@ -260,6 +266,7 @@ export function BoardDetailClient({
             history={history}
             members={members}
             onUpdateItem={updateItem}
+            onItemRemoved={removeLocalItem}
           />
         ) : null}
       </div>
