@@ -58,6 +58,22 @@ export interface ConnectionAttentionInput {
   summary: string;
 }
 
+export interface ResolveConnectionAttentionInput {
+  providerConnectionId?: string | null | undefined;
+  integrationId?: string | null | undefined;
+  resourceShareId?: string | null | undefined;
+  categories?: ConnectionAttentionInput['category'][];
+}
+
+const transientSyncResourceType = 'integration.run';
+const transientSyncAttentionThreshold = 3;
+const connectionAttentionCategoryValues: ConnectionAttentionInput['category'][] = [
+  'needs_reconnect',
+  'needs_new_owner',
+  'access_changed',
+  'sync_error',
+];
+
 export function createIntegrationScope(deps: {
   db: Db;
   teamId: string;
@@ -177,6 +193,10 @@ export function createIntegrationScope(deps: {
       .returning();
     const row = rows[0];
     if (!row) throw new Error('Failed to create provider connection');
+    await adminResolveConnectionAttention(db, teamId, {
+      providerConnectionId: row.id,
+      categories: ['needs_reconnect', 'sync_error'],
+    });
     return row;
   }
 
@@ -514,8 +534,17 @@ export function createIntegrationScope(deps: {
         metadata: { provider: connection.provider, resource_count: resources.length },
       });
     });
-    await Promise.all(
-      revokedForAttention.map((share) =>
+    const currentShares = await db
+      .select()
+      .from(teamProviderResourceShares)
+      .where(
+        and(
+          eq(teamProviderResourceShares.teamId, teamId),
+          eq(teamProviderResourceShares.providerConnectionId, providerConnectionId),
+        ),
+      );
+    await Promise.all([
+      ...revokedForAttention.map((share) =>
         recordConnectionAttention({
           providerConnectionId,
           resourceShareId: share.id,
@@ -523,7 +552,18 @@ export function createIntegrationScope(deps: {
           summary: `${share.externalLabel ?? share.externalId} was revoked by ${connection.displayName}.`,
         }),
       ),
-    );
+      ...currentShares
+        .filter((share) =>
+          resources.some((r) => r.kind === share.resourceKind && r.externalId === share.externalId),
+        )
+        .map((share) =>
+          adminResolveConnectionAttention(db, teamId, {
+            providerConnectionId,
+            resourceShareId: share.id,
+            categories: ['access_changed'],
+          }),
+        ),
+    ]);
   }
 
   async function revokeProviderResourceShare(resourceShareId: string): Promise<void> {
@@ -608,7 +648,31 @@ export function createIntegrationScope(deps: {
       throw new Error('One or more selected sources are unavailable');
     }
 
-    return db.transaction(async (tx) => {
+    const replacedIntegrationIds = new Set<string>();
+    if (shares.length > 0) {
+      const sourcePathConditions = shares.map((share) =>
+        and(
+          eq(integrationSelections.selectionKind, share.resourceKind),
+          eq(integrationSelections.externalId, share.externalId),
+        ),
+      );
+      const existingSourceOwners = await db
+        .select({ integrationId: integrationSelections.integrationId })
+        .from(integrationSelections)
+        .innerJoin(integrationsTable, eq(integrationSelections.integrationId, integrationsTable.id))
+        .where(
+          and(
+            eq(integrationsTable.teamId, teamId),
+            sourcePathConditions.length === 1
+              ? sourcePathConditions[0]
+              : or(...sourcePathConditions),
+          ),
+        );
+      for (const owner of existingSourceOwners) {
+        replacedIntegrationIds.add(owner.integrationId);
+      }
+    }
+    const integration = await db.transaction(async (tx) => {
       const integrationRows = await tx
         .insert(integrationsTable)
         .values({
@@ -651,6 +715,21 @@ export function createIntegrationScope(deps: {
         .where(eq(integrationsTable.teamId, teamId));
       const teamIntegrationIds = teamIntegrationRows.map((row) => row.id);
       for (const share of shares) {
+        const duplicateRows = await tx
+          .select({ integrationId: integrationSelections.integrationId })
+          .from(integrationSelections)
+          .where(
+            and(
+              inArray(integrationSelections.integrationId, teamIntegrationIds),
+              eq(integrationSelections.selectionKind, share.resourceKind),
+              eq(integrationSelections.externalId, share.externalId),
+            ),
+          );
+        for (const duplicate of duplicateRows) {
+          if (duplicate.integrationId !== integration.id) {
+            replacedIntegrationIds.add(duplicate.integrationId);
+          }
+        }
         await tx
           .delete(integrationSelections)
           .where(
@@ -683,6 +762,19 @@ export function createIntegrationScope(deps: {
       });
       return integration;
     });
+    await adminResolveConnectionAttention(db, teamId, {
+      integrationId: integration.id,
+      categories: ['needs_new_owner'],
+    });
+    await Promise.all(
+      [...replacedIntegrationIds].map((integrationId) =>
+        adminResolveConnectionAttention(db, teamId, {
+          integrationId,
+          categories: ['needs_new_owner'],
+        }),
+      ),
+    );
+    return integration;
   }
 
   async function listConnectionAttention() {
@@ -696,6 +788,10 @@ export function createIntegrationScope(deps: {
 
   async function recordConnectionAttention(input: ConnectionAttentionInput): Promise<void> {
     await adminRecordConnectionAttention(db, teamId, input);
+  }
+
+  async function resolveConnectionAttention(input: ResolveConnectionAttentionInput): Promise<void> {
+    await adminResolveConnectionAttention(db, teamId, input);
   }
 
   // ---------------- selections (folders / projects / repos) ----------------
@@ -908,6 +1004,7 @@ export function createIntegrationScope(deps: {
     activateSharedResources,
     listConnectionAttention,
     recordConnectionAttention,
+    resolveConnectionAttention,
     listSelections,
     setSelections,
     loadCursor,
@@ -1123,24 +1220,106 @@ export async function adminRecordError(
     .where(eq(integrationsTable.id, integrationId));
 }
 
+function attentionTargetConditions(
+  input: ResolveConnectionAttentionInput,
+  options: { exact?: boolean } = {},
+) {
+  const conditions = [];
+  if (input.providerConnectionId !== undefined || options.exact) {
+    conditions.push(
+      input.providerConnectionId
+        ? eq(connectionAttention.providerConnectionId, input.providerConnectionId)
+        : isNull(connectionAttention.providerConnectionId),
+    );
+  }
+  if (input.integrationId !== undefined || options.exact) {
+    conditions.push(
+      input.integrationId
+        ? eq(connectionAttention.integrationId, input.integrationId)
+        : isNull(connectionAttention.integrationId),
+    );
+  }
+  if (input.resourceShareId !== undefined || options.exact) {
+    conditions.push(
+      input.resourceShareId
+        ? eq(connectionAttention.resourceShareId, input.resourceShareId)
+        : isNull(connectionAttention.resourceShareId),
+    );
+  }
+  return conditions;
+}
+
+export async function adminResolveConnectionAttention(
+  db: Db,
+  teamId: string,
+  input: ResolveConnectionAttentionInput,
+): Promise<void> {
+  const conditions = [
+    eq(connectionAttention.teamId, teamId),
+    isNull(connectionAttention.resolvedAt),
+    ...attentionTargetConditions(input),
+  ];
+  if (input.categories && input.categories.length > 0) {
+    conditions.push(inArray(connectionAttention.category, input.categories));
+  }
+  await db
+    .update(connectionAttention)
+    .set({ resolvedAt: new Date(), lastSeenAt: new Date() })
+    .where(and(...conditions));
+}
+
+export async function adminResetTransientSyncFailures(
+  db: Db,
+  integrationId: string,
+): Promise<void> {
+  await adminSaveCursor(
+    db,
+    integrationId,
+    transientSyncResourceType,
+    { transient_failure_count: 0 },
+    { lastStatus: 'ok', lastError: null },
+  );
+}
+
+export async function adminRecordTransientSyncFailure(
+  db: Db,
+  integrationId: string,
+  error: string,
+): Promise<{ count: number; shouldCreateAttention: boolean }> {
+  const cursor = (await adminLoadCursor(db, integrationId, transientSyncResourceType)) as {
+    transient_failure_count?: unknown;
+  };
+  const prior =
+    typeof cursor.transient_failure_count === 'number' ? cursor.transient_failure_count : 0;
+  const count = prior + 1;
+  await adminSaveCursor(
+    db,
+    integrationId,
+    transientSyncResourceType,
+    { transient_failure_count: count },
+    { lastStatus: 'failed', lastError: error },
+  );
+  return {
+    count,
+    shouldCreateAttention: count >= transientSyncAttentionThreshold,
+  };
+}
+
 export async function adminRecordConnectionAttention(
   db: Db,
   teamId: string,
   input: ConnectionAttentionInput,
 ): Promise<void> {
+  const target: ResolveConnectionAttentionInput = {
+    providerConnectionId: input.providerConnectionId,
+    integrationId: input.integrationId,
+    resourceShareId: input.resourceShareId,
+  };
   const conditions = [
     eq(connectionAttention.teamId, teamId),
     eq(connectionAttention.category, input.category),
     isNull(connectionAttention.resolvedAt),
-    input.providerConnectionId
-      ? eq(connectionAttention.providerConnectionId, input.providerConnectionId)
-      : isNull(connectionAttention.providerConnectionId),
-    input.integrationId
-      ? eq(connectionAttention.integrationId, input.integrationId)
-      : isNull(connectionAttention.integrationId),
-    input.resourceShareId
-      ? eq(connectionAttention.resourceShareId, input.resourceShareId)
-      : isNull(connectionAttention.resourceShareId),
+    ...attentionTargetConditions(target, { exact: true }),
   ];
   const existing = await db
     .select({ id: connectionAttention.id, lastEmailedAt: connectionAttention.lastEmailedAt })
@@ -1154,6 +1333,13 @@ export async function adminRecordConnectionAttention(
       .set({ summary: input.summary, lastSeenAt: new Date() })
       .where(eq(connectionAttention.id, existingRow.id));
   } else {
+    await adminResolveConnectionAttention(db, teamId, {
+      ...target,
+      categories: connectionAttentionCategoryValues.filter(
+        (category) => category !== input.category,
+      ),
+    });
+    const shouldEmail = await shouldEmailConnectionAttention(db, teamId, input);
     const inserted = await db
       .insert(connectionAttention)
       .values({
@@ -1166,7 +1352,7 @@ export async function adminRecordConnectionAttention(
       })
       .returning({ id: connectionAttention.id });
     const attentionId = inserted[0]?.id ?? null;
-    await notifyConnectionAttentionActors(db, teamId, input, attentionId);
+    await notifyConnectionAttentionActors(db, teamId, input, attentionId, shouldEmail);
   }
 }
 
@@ -1175,6 +1361,7 @@ async function notifyConnectionAttentionActors(
   teamId: string,
   input: ConnectionAttentionInput,
   attentionId: string | null,
+  shouldEmail: boolean,
 ): Promise<void> {
   const recipients = new Set<string>();
   if (
@@ -1212,7 +1399,37 @@ async function notifyConnectionAttentionActors(
       },
     })),
   );
-  await emailConnectionAttentionActors(db, teamId, input, [...recipients], attentionId);
+  if (shouldEmail) {
+    await emailConnectionAttentionActors(db, teamId, input, [...recipients], attentionId);
+  }
+}
+
+async function shouldEmailConnectionAttention(
+  db: Db,
+  teamId: string,
+  input: ConnectionAttentionInput,
+): Promise<boolean> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select({ lastEmailedAt: connectionAttention.lastEmailedAt })
+    .from(connectionAttention)
+    .where(
+      and(
+        eq(connectionAttention.teamId, teamId),
+        eq(connectionAttention.category, input.category),
+        ...attentionTargetConditions(
+          {
+            providerConnectionId: input.providerConnectionId,
+            integrationId: input.integrationId,
+            resourceShareId: input.resourceShareId,
+          },
+          { exact: true },
+        ),
+      ),
+    )
+    .orderBy(desc(connectionAttention.lastSeenAt))
+    .limit(10);
+  return !rows.some((row) => row.lastEmailedAt && row.lastEmailedAt > since);
 }
 
 async function emailConnectionAttentionActors(

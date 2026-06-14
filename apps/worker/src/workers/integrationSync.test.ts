@@ -25,6 +25,9 @@ const fakes = vi.hoisted(() => {
     adminListSelections: vi.fn(),
     adminRecordAudit: vi.fn(),
     adminMarkSynced: vi.fn(),
+    adminResetTransientSyncFailures: vi.fn(),
+    adminResolveConnectionAttention: vi.fn(),
+    adminRecordTransientSyncFailure: vi.fn(),
     getProvider: vi.fn(),
     incrementalSync: vi.fn(),
   };
@@ -50,6 +53,9 @@ vi.mock('@timeline/shared', async (importOriginal) => {
       adminListSelections: fakes.adminListSelections,
       adminRecordAudit: fakes.adminRecordAudit,
       adminMarkSynced: fakes.adminMarkSynced,
+      adminResetTransientSyncFailures: fakes.adminResetTransientSyncFailures,
+      adminResolveConnectionAttention: fakes.adminResolveConnectionAttention,
+      adminRecordTransientSyncFailure: fakes.adminRecordTransientSyncFailure,
       getProvider: fakes.getProvider,
     },
   };
@@ -84,6 +90,12 @@ beforeEach(() => {
   fakes.adminRecordError.mockResolvedValue(undefined);
   fakes.adminRecordConnectionAttention.mockResolvedValue(undefined);
   fakes.adminMarkSynced.mockResolvedValue(undefined);
+  fakes.adminResetTransientSyncFailures.mockResolvedValue(undefined);
+  fakes.adminResolveConnectionAttention.mockResolvedValue(undefined);
+  fakes.adminRecordTransientSyncFailure.mockResolvedValue({
+    count: 1,
+    shouldCreateAttention: false,
+  });
   fakes.incrementalSync.mockResolvedValue(undefined);
   fakes.getProvider.mockReturnValue({ incrementalSync: fakes.incrementalSync });
 });
@@ -142,8 +154,31 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
-  it('classifies non-auth provider failures as sync_error attention', async () => {
+  it('does not create sync_error attention for the first two transient provider failures', async () => {
     fakes.incrementalSync.mockRejectedValueOnce(new Error('GitHub temporarily overloaded'));
+    fakes.adminRecordTransientSyncFailure.mockResolvedValueOnce({
+      count: 2,
+      shouldCreateAttention: false,
+    });
+
+    await expect(runOneIntegration({} as never, INTEGRATION_ID, 'incremental')).rejects.toThrow(
+      'temporarily overloaded',
+    );
+
+    expect(fakes.adminRecordTransientSyncFailure).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      'GitHub temporarily overloaded',
+    );
+    expect(fakes.adminRecordConnectionAttention).not.toHaveBeenCalled();
+  });
+
+  it('creates sync_error attention on the third consecutive transient provider failure', async () => {
+    fakes.incrementalSync.mockRejectedValueOnce(new Error('GitHub temporarily overloaded'));
+    fakes.adminRecordTransientSyncFailure.mockResolvedValueOnce({
+      count: 3,
+      shouldCreateAttention: true,
+    });
 
     await expect(runOneIntegration({} as never, INTEGRATION_ID, 'incremental')).rejects.toThrow(
       'temporarily overloaded',
@@ -158,5 +193,19 @@ describe('runOneIntegration attention classification', () => {
         category: 'sync_error',
       }),
     );
+  });
+
+  it('resets transient failure state and resolves reconnect/sync attention after a successful sync', async () => {
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.adminResetTransientSyncFailures).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+    );
+    expect(fakes.adminResolveConnectionAttention).toHaveBeenCalledWith(expect.anything(), TEAM_ID, {
+      providerConnectionId: CONNECTION_ID,
+      integrationId: INTEGRATION_ID,
+      categories: ['needs_reconnect', 'sync_error'],
+    });
   });
 });

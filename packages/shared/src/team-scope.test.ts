@@ -7,6 +7,8 @@ import {
   documentVersions,
   integrations,
   integrationSelections,
+  integrationSyncState,
+  notifications,
   objectIdentityFacets,
   objectNotes,
   providerConnections,
@@ -22,7 +24,11 @@ import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 
 import { resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
 import { resetEnvForTests } from '#src/env.js';
-import { adminDecryptIntegrationTokens } from '#src/integrations/scope.js';
+import {
+  adminDecryptIntegrationTokens,
+  adminRecordTransientSyncFailure,
+  adminResetTransientSyncFailures,
+} from '#src/integrations/scope.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -1372,6 +1378,13 @@ describe('withTeam namespaced port', () => {
     )?.share;
     expect(memberRepoShare).toBeDefined();
 
+    await adminScope.integrations.recordConnectionAttention({
+      providerConnectionId: ownerConnection.id,
+      integrationId: ownerIntegration.id,
+      category: 'needs_new_owner',
+      summary: 'Connection owner left team — choose a replacement connection',
+    });
+
     const memberIntegration = await adminScope.integrations.activateSharedResources({
       providerConnectionId: memberConnection.id,
       resourceShareIds: [memberRepoShare?.id ?? ''],
@@ -1385,6 +1398,12 @@ describe('withTeam namespaced port', () => {
       integrationId: memberIntegration.id,
       resourceShareId: memberRepoShare?.id,
     });
+    const [resolvedOwnerAttention] = await db
+      .select()
+      .from(connectionAttention)
+      .where(eq(connectionAttention.integrationId, ownerIntegration.id));
+    expect(resolvedOwnerAttention?.category).toBe('needs_new_owner');
+    expect(resolvedOwnerAttention?.resolvedAt).toBeInstanceOf(Date);
 
     await ownerScope.integrations.shareProviderResources(ownerConnection.id, [
       { kind: 'github.repo', externalId: 'acme/app', label: 'acme/app' },
@@ -1410,6 +1429,162 @@ describe('withTeam namespaced port', () => {
         }),
       ]),
     );
+
+    await ownerScope.integrations.shareProviderResources(ownerConnection.id, [
+      { kind: 'github.org', externalId: 'acme', label: 'acme (all accessible repos)' },
+      { kind: 'github.repo', externalId: 'acme/app', label: 'acme/app' },
+    ]);
+    const [resolvedOrgAttention] = await db
+      .select()
+      .from(connectionAttention)
+      .where(eq(connectionAttention.resourceShareId, orgShare?.id ?? ''));
+    expect(resolvedOrgAttention?.category).toBe('access_changed');
+    expect(resolvedOrgAttention?.resolvedAt).toBeInstanceOf(Date);
+  });
+
+  it('updates active attention without duplicate notifications and resolves reconnect attention on refresh', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'github',
+      displayName: 'GitHub — owner',
+      externalAccountId: 'owner-gh-attention',
+      scopes: ['repo'],
+      tokens: { access_token: 'old-token' },
+    });
+
+    await ownerScope.integrations.recordConnectionAttention({
+      providerConnectionId: connection.id,
+      category: 'needs_reconnect',
+      summary: 'Token expired',
+    });
+    await ownerScope.integrations.recordConnectionAttention({
+      providerConnectionId: connection.id,
+      category: 'needs_reconnect',
+      summary: 'Token still expired',
+    });
+
+    let attentionRows = await db.select().from(connectionAttention);
+    expect(attentionRows).toHaveLength(1);
+    expect(attentionRows[0]).toMatchObject({
+      summary: 'Token still expired',
+      resolvedAt: null,
+    });
+    expect(await db.select().from(notifications)).toHaveLength(1);
+
+    await ownerScope.integrations.upsertProviderConnection({
+      provider: 'github',
+      displayName: 'GitHub — owner',
+      externalAccountId: 'owner-gh-attention',
+      scopes: ['repo'],
+      tokens: { access_token: 'new-token' },
+    });
+
+    attentionRows = await db.select().from(connectionAttention);
+    expect(attentionRows[0]?.resolvedAt).toBeInstanceOf(Date);
+  });
+
+  it('throttles connection-attention email per target and category', async () => {
+    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <timeline@example.test>';
+    process.env.AUTH_URL = 'https://timeline.example.test';
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+      const connection = await ownerScope.integrations.upsertProviderConnection({
+        provider: 'github',
+        displayName: 'GitHub — owner',
+        externalAccountId: 'owner-gh-email',
+        scopes: ['repo'],
+        tokens: { access_token: 'token' },
+      });
+
+      await ownerScope.integrations.recordConnectionAttention({
+        providerConnectionId: connection.id,
+        category: 'needs_reconnect',
+        summary: 'Reconnect GitHub',
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      await ownerScope.integrations.recordConnectionAttention({
+        providerConnectionId: connection.id,
+        category: 'sync_error',
+        summary: 'GitHub sync failed repeatedly',
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+
+      await ownerScope.integrations.resolveConnectionAttention({
+        providerConnectionId: connection.id,
+        categories: ['sync_error'],
+      });
+      await ownerScope.integrations.recordConnectionAttention({
+        providerConnectionId: connection.id,
+        category: 'sync_error',
+        summary: 'GitHub sync failed repeatedly again',
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+
+      await db
+        .update(connectionAttention)
+        .set({ lastEmailedAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
+        .where(eq(connectionAttention.category, 'sync_error'));
+      await ownerScope.integrations.resolveConnectionAttention({
+        providerConnectionId: connection.id,
+        categories: ['sync_error'],
+      });
+      await ownerScope.integrations.recordConnectionAttention({
+        providerConnectionId: connection.id,
+        category: 'sync_error',
+        summary: 'GitHub sync failed after a day',
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(5);
+    } finally {
+      vi.unstubAllGlobals();
+      delete process.env.POSTMARK_SERVER_TOKEN;
+      delete process.env.TRANSACTIONAL_EMAIL_FROM;
+      delete process.env.AUTH_URL;
+    }
+  });
+
+  it('tracks transient sync failures in integration sync state without a schema migration', async () => {
+    const scope = withTeam(db as never, TEAM_A, USER_A);
+    const integration = await scope.integrations.createIntegration({
+      provider: 'github',
+      displayName: 'GitHub',
+      externalAccountId: 'transient-state',
+    });
+
+    await expect(
+      adminRecordTransientSyncFailure(db as never, integration.id, 'temporarily overloaded'),
+    ).resolves.toEqual({ count: 1, shouldCreateAttention: false });
+    await expect(
+      adminRecordTransientSyncFailure(db as never, integration.id, 'temporarily overloaded'),
+    ).resolves.toEqual({ count: 2, shouldCreateAttention: false });
+    await expect(
+      adminRecordTransientSyncFailure(db as never, integration.id, 'temporarily overloaded'),
+    ).resolves.toEqual({ count: 3, shouldCreateAttention: true });
+
+    const [row] = await db
+      .select()
+      .from(integrationSyncState)
+      .where(eq(integrationSyncState.resourceType, 'integration.run'));
+    expect(row).toMatchObject({
+      cursor: { transient_failure_count: 3 },
+      lastStatus: 'failed',
+      lastError: 'temporarily overloaded',
+    });
+
+    await adminResetTransientSyncFailures(db as never, integration.id);
+    const [resetRow] = await db
+      .select()
+      .from(integrationSyncState)
+      .where(eq(integrationSyncState.resourceType, 'integration.run'));
+    expect(resetRow).toMatchObject({
+      cursor: { transient_failure_count: 0 },
+      lastStatus: 'ok',
+      lastError: null,
+    });
   });
 
   it('preserves per-integration visibility defaults when reconnecting', async () => {

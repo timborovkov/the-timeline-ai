@@ -249,6 +249,12 @@ export async function runOneIntegration(
         await provider.incrementalSync({ integration, tokens, selections, ctx });
       }
       await integrationsLib.adminMarkSynced(db, integrationId);
+      await integrationsLib.adminResetTransientSyncFailures(db, integrationId);
+      await integrationsLib.adminResolveConnectionAttention(db, integration.teamId, {
+        providerConnectionId: integration.providerConnectionId,
+        integrationId,
+        categories: ['needs_reconnect', 'sync_error'],
+      });
       await integrationsLib.adminRecordAudit(
         db,
         integration.teamId,
@@ -260,16 +266,30 @@ export async function runOneIntegration(
       const msg = err instanceof Error ? err.message : String(err);
       log.warn({ err, integrationId }, 'integration sync failed');
       await integrationsLib.adminRecordError(db, integrationId, msg);
-      const attentionCategory =
-        /reconnect|required|expired|401|403|404|unauthorized|forbidden/i.test(msg)
-          ? 'needs_reconnect'
-          : 'sync_error';
-      await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
-        providerConnectionId: integration.providerConnectionId,
-        integrationId,
-        category: attentionCategory,
-        summary: msg.slice(0, 500),
-      });
+      const authOrAccessFailure =
+        /reconnect|required|expired|401|403|404|unauthorized|forbidden/i.test(msg);
+      if (authOrAccessFailure) {
+        await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
+          providerConnectionId: integration.providerConnectionId,
+          integrationId,
+          category: 'needs_reconnect',
+          summary: msg.slice(0, 500),
+        });
+      } else {
+        const transient = await integrationsLib.adminRecordTransientSyncFailure(
+          db,
+          integrationId,
+          msg.slice(0, 500),
+        );
+        if (transient.shouldCreateAttention) {
+          await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
+            providerConnectionId: integration.providerConnectionId,
+            integrationId,
+            category: 'sync_error',
+            summary: msg.slice(0, 500),
+          });
+        }
+      }
       await integrationsLib.adminRecordAudit(
         db,
         integration.teamId,

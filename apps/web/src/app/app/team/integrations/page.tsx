@@ -60,13 +60,14 @@ export default async function IntegrationsPage({
     scope.integrations.listConnectionAttention(),
   ]);
   const isAdmin = role === 'owner' || role === 'admin';
-  const memberIds = members.map((m) => m.userId);
+  const ownerIds = resourceShares.map((row) => row.connection.ownerUserId);
+  const userIds = [...new Set([...members.map((m) => m.userId), ...ownerIds])];
   const memberUsers =
-    memberIds.length > 0
+    userIds.length > 0
       ? await db
           .select({ id: users.id, name: users.name, email: users.email })
           .from(users)
-          .where(inArray(users.id, memberIds))
+          .where(inArray(users.id, userIds))
       : [];
   const memberUserMap = new Map(memberUsers.map((u) => [u.id, u] as const));
   const nativeCatalog = integrationsLib.listAvailableProviders();
@@ -128,7 +129,8 @@ export default async function IntegrationsPage({
       {attention.length > 0 ? (
         <div className="rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {String(attention.length)} integration item{attention.length === 1 ? '' : 's'} need
-          attention. Open the affected provider below to reconnect, replace, or narrow sources.
+          attention. Use the affected provider below to reconnect credentials, replace the
+          connection, or narrow shared sources.
         </div>
       ) : null}
 
@@ -150,6 +152,10 @@ export default async function IntegrationsPage({
                 provider: row.connection.provider,
                 displayName: row.connection.displayName,
                 ownerUserId: row.connection.ownerUserId,
+                ownerLabel:
+                  memberUserMap.get(row.connection.ownerUserId)?.name ??
+                  memberUserMap.get(row.connection.ownerUserId)?.email ??
+                  row.connection.ownerUserId,
                 lastError: row.connection.lastError,
                 lastConnectedAt: row.connection.lastConnectedAt.toISOString(),
               },

@@ -321,7 +321,11 @@ function ResourceGroup({
 
 interface TeamShareRow {
   share: ResourceShare;
-  connection: ProviderConnection & { ownerUserId: string };
+  connection: ProviderConnection & { ownerLabel: string; ownerUserId: string };
+}
+
+function sourceKey(share: Pick<ResourceShare, 'resourceKind' | 'externalId'>) {
+  return `${share.resourceKind}\x00${share.externalId}`;
 }
 
 export function TeamSourcesUi({
@@ -335,6 +339,15 @@ export function TeamSourcesUi({
 }) {
   const router = useRouter();
   const activeShareIdSet = useMemo(() => new Set(activeShareIds), [activeShareIds]);
+  const activeSourceOwners = useMemo(() => {
+    const owners = new Map<string, string>();
+    for (const row of rows) {
+      if (activeShareIdSet.has(row.share.id)) {
+        owners.set(sourceKey(row.share), row.connection.id);
+      }
+    }
+    return owners;
+  }, [activeShareIdSet, rows]);
   const [selectedByConnection, setSelectedByConnection] = useState<Record<string, Set<string>>>(
     () => {
       const initial: Record<string, Set<string>> = {};
@@ -391,6 +404,17 @@ export function TeamSourcesUi({
         const connection = groupRows[0]?.connection;
         if (!connection) return null;
         const selected = selectedByConnection[connectionId] ?? new Set<string>();
+        const selectedRows = groupRows.filter((row) => selected.has(row.share.id));
+        const hasActiveSources = groupRows.some((row) => activeShareIdSet.has(row.share.id));
+        const replacesAnotherConnection = selectedRows.some((row) => {
+          const activeConnectionId = activeSourceOwners.get(sourceKey(row.share));
+          return activeConnectionId !== undefined && activeConnectionId !== connectionId;
+        });
+        const actionLabel = replacesAnotherConnection
+          ? 'Replace connection'
+          : hasActiveSources
+            ? 'Save sources'
+            : 'Activate sources';
         return (
           <section key={connectionId} className="rounded-md border border-border bg-surface">
             <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
@@ -398,6 +422,7 @@ export function TeamSourcesUi({
                 {connection.provider}
               </span>
               <span className="text-sm font-medium">{connection.displayName}</span>
+              <span className="text-xs text-fg-muted">Owner: {connection.ownerLabel}</span>
               <span className="ml-auto text-xs text-fg-muted">
                 {selected.size === 0
                   ? 'Available, no sources syncing'
@@ -409,7 +434,7 @@ export function TeamSourcesUi({
                   disabled={busy !== null}
                   onClick={() => void activate(connectionId)}
                 >
-                  {busy === connectionId ? 'Saving' : 'Activate'}
+                  {busy === connectionId ? 'Saving' : actionLabel}
                 </Button>
               ) : null}
             </div>

@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState } from 'react';
 
+import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -150,6 +151,7 @@ export function McpCatalog({ entries }: { entries: CatalogEntryProps[] }) {
 
 function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [{ open, bearer, headerName, headerValue, busy }, setCardState] = useReducer(
     patchCardState,
     INITIAL_CARD_STATE,
@@ -164,7 +166,7 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
         body: JSON.stringify({ catalogId: entry.id, ...body }),
       });
       if (!res.ok) {
-        alert(`Connect failed: ${await res.text()}`);
+        await dialog.alert({ title: 'Connect failed', description: await res.text() });
         return;
       }
       const data = (await res.json()) as { id: string; needsOauth?: boolean };
@@ -175,7 +177,7 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
           body: JSON.stringify({ mcpServerId: data.id }),
         });
         if (!oauth.ok) {
-          alert(`OAuth start failed: ${await oauth.text()}`);
+          await dialog.alert({ title: 'OAuth start failed', description: await oauth.text() });
           router.refresh();
           return;
         }
@@ -184,7 +186,10 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
           window.location.href = oauthData.url;
           return;
         }
-        alert(`OAuth start failed: ${oauthData.error ?? 'unknown'}`);
+        await dialog.alert({
+          title: 'OAuth start failed',
+          description: oauthData.error ?? 'unknown',
+        });
       }
       router.refresh();
     } finally {
@@ -203,13 +208,16 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
   async function submitToken() {
     if (entry.authType === 'bearer') {
       if (!bearer) {
-        alert('Token required');
+        await dialog.alert({ title: 'Token required', description: 'Enter a bearer token.' });
         return;
       }
       await connect({ bearerToken: bearer });
     } else if (entry.authType === 'header') {
       if (!headerName || !headerValue) {
-        alert('Header name + value required');
+        await dialog.alert({
+          title: 'Header required',
+          description: 'Enter both a header name and value.',
+        });
         return;
       }
       await connect({ header: { name: headerName, value: headerValue } });
@@ -319,6 +327,7 @@ function CatalogCard({ entry }: { entry: CatalogEntryProps }) {
           </span>
         </div>
       </CardContent>
+      {dialog.node}
     </Card>
   );
 }
