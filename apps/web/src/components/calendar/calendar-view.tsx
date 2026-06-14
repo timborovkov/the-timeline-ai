@@ -118,6 +118,24 @@ type CalendarUiAction = Partial<CalendarUiState> | ((state: CalendarUiState) => 
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const EVENT_LIST_PAGE_SIZE = 12;
+type EventListScope = 'future' | 'past' | 'all';
+interface EventListParams {
+  query: string;
+  scope: EventListScope;
+  page: number;
+}
+
+function eventListParamsFromSearch(searchParams: {
+  get(name: string): string | null;
+}): EventListParams {
+  const scope = searchParams.get('eventScope');
+  const parsedPage = Number.parseInt(searchParams.get('eventPage') ?? '1', 10);
+  return {
+    query: searchParams.get('eventQ')?.trim() ?? '',
+    scope: scope === 'past' || scope === 'all' ? scope : 'future',
+    page: Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage - 1 : 0,
+  };
+}
 
 function initCalendarUiState({
   anchor,
@@ -349,10 +367,17 @@ function useCalendarViewModel({
   const [pending, startTransition] = useTransition();
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialogContextRef = useRef(0);
+  const eventListParamsRef = useRef<EventListParams | null>(null);
   const serverEventsSnapshotRef = useRef<{
     signature: string;
     ids: string[];
   } | null>(null);
+  const eventListUrlParams = useMemo(() => eventListParamsFromSearch(searchParams), [searchParams]);
+  eventListParamsRef.current ??= eventListUrlParams;
+
+  useEffect(() => {
+    eventListParamsRef.current = eventListUrlParams;
+  }, [eventListUrlParams]);
 
   useEffect(() => {
     return () => {
@@ -409,9 +434,11 @@ function useCalendarViewModel({
       page?: number;
     }) => {
       const next = new URLSearchParams(searchParams.toString());
-      const nextQuery = query ?? eventListQuery;
-      const nextScope = scope ?? eventListScope;
-      const nextPage = page ?? eventListPage;
+      const current = eventListParamsRef.current ?? eventListUrlParams;
+      const nextQuery = query ?? current.query;
+      const nextScope = scope ?? current.scope;
+      const nextPage = page ?? current.page;
+      eventListParamsRef.current = { query: nextQuery.trim(), scope: nextScope, page: nextPage };
 
       if (nextQuery.trim()) next.set('eventQ', nextQuery.trim());
       else next.delete('eventQ');
@@ -422,7 +449,7 @@ function useCalendarViewModel({
 
       router.push(`/app/calendar?${next.toString()}`);
     },
-    [eventListPage, eventListQuery, eventListScope, router, searchParams],
+    [eventListUrlParams, router, searchParams],
   );
 
   function push(nextMode: CalendarViewMode, nextDate: Temporal.PlainDate) {

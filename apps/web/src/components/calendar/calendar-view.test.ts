@@ -237,14 +237,14 @@ describe('CalendarView recurrence and tentative UI', () => {
 
     await user.click(screen.getByRole('button', { name: 'Next events' }));
     expect(fakes.push).toHaveBeenLastCalledWith(
-      '/app/calendar?view=month&date=2026-06-03&eventPage=2',
+      '/app/calendar?view=month&date=2026-06-03&eventScope=past&eventPage=2',
     );
 
     await user.type(screen.getByPlaceholderText('Search events'), 'budget');
     await waitFor(
       () => {
         expect(fakes.push).toHaveBeenLastCalledWith(
-          '/app/calendar?view=month&date=2026-06-03&eventQ=budget',
+          '/app/calendar?view=month&date=2026-06-03&eventQ=budget&eventScope=past',
         );
       },
       { timeout: 1000 },
