@@ -4,7 +4,7 @@ import {
   hashCalendarSubscriptionToken,
   isCalendarSubscriptionToken,
 } from '@timeline/shared/calendar';
-import { and, asc, eq, gte, isNull, lt } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 import ical, {
   ICalCalendarMethod,
   ICalEventBusyStatus,
@@ -41,6 +41,15 @@ function eventUrl(origin: string, startAt: Date): string {
   ).toString();
 }
 
+function calendarFeedVisibility(userId: string) {
+  return sql`(
+    ${calendarEvents.visibility} = 'team'
+    OR ${calendarEvents.visibility} = 'private'
+    OR ${calendarEvents.createdByUserId} = ${userId}::uuid
+    OR (${calendarEvents.visibility} = 'specific_users' AND ${userId}::uuid = ANY(${calendarEvents.visibilityUserIds}))
+  )`;
+}
+
 // react-doctor-disable-next-line react-doctor/nextjs-no-side-effect-in-get-handler -- Calendar apps poll feeds with GET and no cookies; the token is the credential, and this only records post-response last-used metadata.
 export async function GET(req: Request, context: RouteContext): Promise<Response> {
   const { token: rawToken } = await context.params;
@@ -52,6 +61,7 @@ export async function GET(req: Request, context: RouteContext): Promise<Response
     .select({
       subscriptionId: teamCalendarSubscriptions.id,
       teamId: teamCalendarSubscriptions.teamId,
+      userId: teamCalendarSubscriptions.userId,
       tokenHash: teamCalendarSubscriptions.tokenHash,
       teamName: teams.name,
     })
@@ -88,7 +98,7 @@ export async function GET(req: Request, context: RouteContext): Promise<Response
     .where(
       and(
         eq(calendarEvents.teamId, subscription.teamId),
-        eq(calendarEvents.visibility, 'team'),
+        calendarFeedVisibility(subscription.userId),
         isNull(calendarEvents.deletedAt),
         gte(calendarEvents.endAt, from),
         lt(calendarEvents.startAt, to),
@@ -109,19 +119,22 @@ export async function GET(req: Request, context: RouteContext): Promise<Response
   });
 
   for (const event of events) {
+    const redacted =
+      event.visibility === 'private' && event.createdByUserId !== subscription.userId;
     calendar.createEvent({
       id: event.id,
       start: event.startAt,
       end: event.endAt,
       timezone: event.timezone,
       allDay: event.allDay,
-      summary: event.title,
-      description: event.description,
-      location: event.location,
+      summary: redacted ? 'Busy' : event.title,
+      description: redacted ? null : event.description,
+      location: redacted ? null : event.location,
       url: eventUrl(origin, event.startAt),
       status: ICalEventStatus.CONFIRMED,
-      class: ICalEventClass.PUBLIC,
-      busystatus: event.showAs === 'free' ? ICalEventBusyStatus.FREE : ICalEventBusyStatus.BUSY,
+      class: event.visibility === 'team' ? ICalEventClass.PUBLIC : ICalEventClass.PRIVATE,
+      busystatus:
+        !redacted && event.showAs === 'free' ? ICalEventBusyStatus.FREE : ICalEventBusyStatus.BUSY,
       created: event.createdAt,
       lastModified: event.updatedAt,
     });

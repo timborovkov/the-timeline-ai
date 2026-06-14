@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Calendar apps fetch this route without cookies, so the token must authorize
-// only team-visible, non-deleted events inside the published feed window.
+// only the subscribing member's visible calendar surface inside the feed window.
 const fakes = vi.hoisted<{
   subscriptionRows: unknown[];
   eventRows: unknown[];
@@ -29,6 +29,8 @@ vi.mock('@timeline/db', () => ({
     table: 'calendar_events',
     teamId: 'calendar_team_id',
     visibility: 'calendar_visibility',
+    createdByUserId: 'calendar_created_by_user_id',
+    visibilityUserIds: 'calendar_visibility_user_ids',
     deletedAt: 'calendar_deleted_at',
     endAt: 'calendar_end_at',
     startAt: 'calendar_start_at',
@@ -57,6 +59,11 @@ vi.mock('drizzle-orm', () => ({
   gte: (...args: unknown[]) => ({ op: 'gte', args }),
   isNull: (arg: unknown) => ({ op: 'isNull', arg }),
   lt: (...args: unknown[]) => ({ op: 'lt', args }),
+  sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({
+    op: 'sql',
+    strings: Array.from(strings),
+    values,
+  }),
 }));
 vi.mock('next/server', () => ({
   after: (callback: () => unknown) => {
@@ -113,6 +120,8 @@ const { GET } = await import('./route.js');
 
 const TOKEN = 'tlcal_test_token';
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
+const USER_ID = '22222222-2222-4222-8222-222222222222';
+const OTHER_USER_ID = '33333333-3333-4333-8333-333333333333';
 
 function tokenHash(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -133,6 +142,7 @@ beforeEach(() => {
     {
       subscriptionId: 'subscription-1',
       teamId: TEAM_ID,
+      userId: USER_ID,
       tokenHash: tokenHash(TOKEN),
       teamName: 'Launch Team',
     },
@@ -148,6 +158,8 @@ beforeEach(() => {
       allDay: false,
       location: 'Zoom',
       showAs: 'busy',
+      visibility: 'team',
+      createdByUserId: USER_ID,
       createdAt: new Date('2026-06-01T00:00:00.000Z'),
       updatedAt: new Date('2026-06-02T00:00:00.000Z'),
     },
@@ -161,8 +173,55 @@ beforeEach(() => {
       allDay: true,
       location: null,
       showAs: 'free',
+      visibility: 'team',
+      createdByUserId: USER_ID,
       createdAt: new Date('2026-06-03T00:00:00.000Z'),
       updatedAt: new Date('2026-06-04T00:00:00.000Z'),
+    },
+    {
+      id: 'event-own-private',
+      title: 'Therapy',
+      description: 'Personal appointment',
+      startAt: new Date('2026-06-21T10:00:00.000Z'),
+      endAt: new Date('2026-06-21T11:00:00.000Z'),
+      timezone: 'UTC',
+      allDay: false,
+      location: 'Clinic',
+      showAs: 'busy',
+      visibility: 'private',
+      createdByUserId: USER_ID,
+      createdAt: new Date('2026-06-05T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-06T00:00:00.000Z'),
+    },
+    {
+      id: 'event-other-private',
+      title: 'Fundraising term sheet',
+      description: 'Sensitive negotiation',
+      startAt: new Date('2026-06-22T10:00:00.000Z'),
+      endAt: new Date('2026-06-22T11:00:00.000Z'),
+      timezone: 'UTC',
+      allDay: false,
+      location: 'Board room',
+      showAs: 'free',
+      visibility: 'private',
+      createdByUserId: OTHER_USER_ID,
+      createdAt: new Date('2026-06-07T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-08T00:00:00.000Z'),
+    },
+    {
+      id: 'event-specific-user',
+      title: 'Subscriber-only planning',
+      description: 'Visible to this subscriber',
+      startAt: new Date('2026-06-23T10:00:00.000Z'),
+      endAt: new Date('2026-06-23T11:00:00.000Z'),
+      timezone: 'UTC',
+      allDay: false,
+      location: 'HQ',
+      showAs: 'busy',
+      visibility: 'specific_users',
+      createdByUserId: OTHER_USER_ID,
+      createdAt: new Date('2026-06-09T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-10T00:00:00.000Z'),
     },
   ];
   fakes.subscriptionJoins = [];
@@ -206,10 +265,22 @@ describe('/api/calendar/feed/[token]', () => {
     expect(body).toContain('UID:event-all-day');
     expect(body).toContain('SUMMARY:Launch day');
     expect(body).toContain('DTSTART;VALUE=DATE:20260625');
+    expect(body).toContain('UID:event-own-private');
+    expect(body).toContain('SUMMARY:Therapy');
+    expect(body).toContain('DESCRIPTION:Personal appointment');
+    expect(body).toContain('LOCATION:Clinic');
+    expect(body).toContain('UID:event-other-private');
+    expect(body).toContain('SUMMARY:Busy');
+    expect(body).not.toContain('Fundraising term sheet');
+    expect(body).not.toContain('Sensitive negotiation');
+    expect(body).not.toContain('Board room');
+    expect(body).toContain('UID:event-specific-user');
+    expect(body).toContain('SUMMARY:Subscriber-only planning');
+    expect(body).toContain('DESCRIPTION:Visible to this subscriber');
     expect(fakes.afterCallbacks).toHaveLength(1);
   });
 
-  it('queries only team-visible non-deleted events in the rolling window', async () => {
+  it('queries member-visible non-deleted events in the rolling window', async () => {
     await GET(request(), context());
 
     expect(fakes.subscriptionJoins[1]).toEqual({
@@ -232,7 +303,28 @@ describe('/api/calendar/feed/[token]', () => {
       op: 'and',
       args: [
         { op: 'eq', args: ['calendar_team_id', TEAM_ID] },
-        { op: 'eq', args: ['calendar_visibility', 'team'] },
+        {
+          op: 'sql',
+          strings: [
+            '(\n    ',
+            " = 'team'\n    OR ",
+            " = 'private'\n    OR ",
+            ' = ',
+            '::uuid\n    OR (',
+            " = 'specific_users' AND ",
+            '::uuid = ANY(',
+            '))\n  )',
+          ],
+          values: [
+            'calendar_visibility',
+            'calendar_visibility',
+            'calendar_created_by_user_id',
+            USER_ID,
+            'calendar_visibility',
+            USER_ID,
+            'calendar_visibility_user_ids',
+          ],
+        },
         { op: 'isNull', arg: 'calendar_deleted_at' },
         { op: 'gte', args: ['calendar_end_at', new Date('2025-06-14T12:00:00.000Z')] },
         { op: 'lt', args: ['calendar_start_at', new Date('2028-06-14T12:00:00.000Z')] },
@@ -269,7 +361,9 @@ describe('/api/calendar/feed/[token]', () => {
   it('rejects tokens whose stored hash does not match the requested token', async () => {
     fakes.subscriptionRows = [
       {
+        subscriptionId: 'subscription-1',
         teamId: TEAM_ID,
+        userId: USER_ID,
         tokenHash: tokenHash('tlcal_other_token'),
         teamName: 'Launch Team',
       },
