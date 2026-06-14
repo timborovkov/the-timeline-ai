@@ -11,13 +11,14 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useReducer } from 'react';
+import { useEffect, useMemo, useReducer, useRef } from 'react';
 
 import type { GlobalSearchKind, GlobalSearchResult } from '@timeline/shared/search';
 import type { ComponentType, SVGProps, SyntheticEvent } from 'react';
 
 import { fetchGlobalSearch } from '@/lib/global-search';
 import { cn } from '@/lib/utils';
+import { searchErrorMessage } from '@/lib/ux-errors';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 interface SearchViewState {
@@ -47,20 +48,21 @@ type PageAction =
       source: string;
       from: string;
       to: string;
+      activeFilter: string;
     }
   | { type: 'search_start' }
   | { type: 'search_success'; results: GlobalSearchResult[]; warnings: string[] }
   | { type: 'search_error'; error: string };
 
-const FILTERS: { label: string; kinds: GlobalSearchKind[] | null }[] = [
-  { label: 'All', kinds: null },
-  { label: 'Timeline', kinds: ['timeline_event'] },
-  { label: 'Documents', kinds: ['document_chunk'] },
-  { label: 'Objects', kinds: ['object'] },
-  { label: 'Tasks', kinds: ['task'] },
-  { label: 'Calendar', kinds: ['calendar_event'] },
-  { label: 'Boards', kinds: ['board'] },
-  { label: 'Pages', kinds: ['quick_link', 'external_link'] },
+const FILTERS: { label: string; param: string; kinds: GlobalSearchKind[] | null }[] = [
+  { label: 'All', param: 'all', kinds: null },
+  { label: 'Timeline', param: 'timeline', kinds: ['timeline_event'] },
+  { label: 'Documents', param: 'documents', kinds: ['document_chunk'] },
+  { label: 'Objects', param: 'objects', kinds: ['object'] },
+  { label: 'Tasks', param: 'tasks', kinds: ['task'] },
+  { label: 'Calendar', param: 'calendar', kinds: ['calendar_event'] },
+  { label: 'Boards', param: 'boards', kinds: ['board'] },
+  { label: 'Pages', param: 'pages', kinds: ['quick_link', 'external_link'] },
 ];
 
 const SOURCES = [
@@ -90,7 +92,8 @@ function pageReducer(state: PageState, action: PageAction): PageState {
       state.draft === action.query &&
       state.source === action.source &&
       state.from === action.from &&
-      state.to === action.to
+      state.to === action.to &&
+      state.activeFilter === action.activeFilter
     ) {
       return state;
     }
@@ -101,6 +104,7 @@ function pageReducer(state: PageState, action: PageAction): PageState {
       source: action.source,
       from: action.from,
       to: action.to,
+      activeFilter: action.activeFilter,
     };
   }
   if (action.type === 'search_start') return { ...state, loading: true, error: null };
@@ -146,6 +150,28 @@ function resultDate(result: GlobalSearchResult): string | null {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return RESULT_DATE_FORMAT.format(date);
+}
+
+function filterFromParam(param: string): string {
+  return FILTERS.find((filter) => filter.param === param)?.label ?? 'All';
+}
+
+function searchPath(input: {
+  query: string;
+  activeFilter: string;
+  source: string;
+  from: string;
+  to: string;
+}): string {
+  const params = new URLSearchParams();
+  const query = input.query.trim();
+  const filter = FILTERS.find((item) => item.label === input.activeFilter);
+  if (query) params.set('q', query);
+  if (filter && filter.param !== 'all') params.set('type', filter.param);
+  if (input.source) params.set('source', input.source);
+  if (input.from) params.set('from', input.from);
+  if (input.to) params.set('to', input.to);
+  return params.toString() ? `/app/search?${params.toString()}` : '/app/search';
 }
 
 function SearchResultRow({ result }: { result: GlobalSearchResult }) {
@@ -199,6 +225,7 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
 
 interface GlobalSearchPageProps {
   initialQuery: string;
+  initialType?: string;
   initialSource?: string;
   initialFrom?: string;
   initialTo?: string;
@@ -206,15 +233,18 @@ interface GlobalSearchPageProps {
 
 export function GlobalSearchPage({
   initialQuery,
+  initialType = '',
   initialSource = '',
   initialFrom = '',
   initialTo = '',
 }: GlobalSearchPageProps) {
   const router = useRouter();
+  const didSyncUrl = useRef(false);
+  const initialFilter = filterFromParam(initialType);
   const [state, dispatch] = useReducer(pageReducer, {
     draft: initialQuery,
     query: initialQuery,
-    activeFilter: 'All',
+    activeFilter: initialFilter,
     source: initialSource,
     from: initialFrom,
     to: initialTo,
@@ -231,8 +261,9 @@ export function GlobalSearchPage({
       source: initialSource,
       from: initialFrom,
       to: initialTo,
+      activeFilter: filterFromParam(initialType),
     });
-  }, [initialFrom, initialQuery, initialSource, initialTo]);
+  }, [initialFrom, initialQuery, initialSource, initialTo, initialType]);
 
   const kinds = useMemo(
     () => FILTERS.find((filter) => filter.label === state.activeFilter)?.kinds ?? null,
@@ -263,7 +294,7 @@ export function GlobalSearchPage({
         if (controller.signal.aborted) return;
         dispatch({
           type: 'search_error',
-          error: err instanceof Error ? err.message : 'Search failed',
+          error: searchErrorMessage(err instanceof Error ? err.message : undefined),
         });
       });
     return () => {
@@ -271,16 +302,26 @@ export function GlobalSearchPage({
     };
   }, [kinds, state.from, state.query, state.source, state.to]);
 
+  useEffect(() => {
+    if (!didSyncUrl.current) {
+      didSyncUrl.current = true;
+      return;
+    }
+    router.replace(
+      searchPath({
+        query: state.query,
+        activeFilter: state.activeFilter,
+        source: state.source,
+        from: state.from,
+        to: state.to,
+      }),
+    );
+  }, [router, state.activeFilter, state.from, state.query, state.source, state.to]);
+
   function submit(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault();
     const trimmed = state.draft.trim();
     dispatch({ type: 'query', value: trimmed });
-    const params = new URLSearchParams();
-    if (trimmed) params.set('q', trimmed);
-    if (state.source) params.set('source', state.source);
-    if (state.from) params.set('from', state.from);
-    if (state.to) params.set('to', state.to);
-    router.replace(params.toString() ? `/app/search?${params.toString()}` : '/app/search');
   }
 
   return (

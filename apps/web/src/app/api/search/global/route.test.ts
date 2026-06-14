@@ -15,6 +15,7 @@ const fakes = vi.hoisted(() => ({
   fakeSearchEvents: vi.fn(),
   fakeSearchDocumentChunksPage: vi.fn(),
   fakeSearchObjectNotes: vi.fn(),
+  fakeSearchObjects: vi.fn(),
   fakeListObjects: vi.fn(),
   fakeListBoards: vi.fn(),
   fakeListCalendarEvents: vi.fn(),
@@ -34,7 +35,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
       searchObjectNotes: fakes.fakeSearchObjectNotes,
     },
     documents: { searchDocumentChunksPage: fakes.fakeSearchDocumentChunksPage },
-    objects: { listObjects: fakes.fakeListObjects },
+    objects: { listObjects: fakes.fakeListObjects, searchObjects: fakes.fakeSearchObjects },
     boards: { listBoards: fakes.fakeListBoards },
     calendar: { listCalendarEvents: fakes.fakeListCalendarEvents },
   }),
@@ -114,7 +115,7 @@ beforeEach(() => {
     nextOffset: null,
   });
   fakes.fakeSearchObjectNotes.mockResolvedValue([]);
-  fakes.fakeListObjects.mockResolvedValue([
+  fakes.fakeSearchObjects.mockResolvedValue([
     {
       id: 'object-1',
       type: 'person',
@@ -261,9 +262,21 @@ describe('POST /api/search/global', () => {
 
     expect(response.status).toBe(200);
     expect(data.results.every((item) => item.kind === 'document_chunk')).toBe(true);
-    expect(fakes.fakeListObjects).not.toHaveBeenCalled();
+    expect(fakes.fakeSearchObjects).not.toHaveBeenCalled();
     expect(fakes.fakeListBoards).not.toHaveBeenCalled();
     expect(fakes.fakeSearchObjectNotes).not.toHaveBeenCalled();
+  });
+
+  it('uses scoped lexical object search instead of a recent object window', async () => {
+    const response = await POST(request({ query: 'Otto', mode: 'full' }));
+
+    expect(response.status).toBe(200);
+    expect(fakes.fakeSearchObjects).toHaveBeenCalledWith({
+      query: 'Otto',
+      archived: false,
+      limit: 300,
+    });
+    expect(fakes.fakeListObjects).not.toHaveBeenCalled();
   });
 
   it('forwards timeline source and date filters to semantic timeline, document, and calendar search', async () => {
@@ -300,7 +313,7 @@ describe('POST /api/search/global', () => {
   });
 
   it('returns partial results and warnings when a lexical source fails', async () => {
-    fakes.fakeListObjects.mockRejectedValue(new Error('postgres unavailable'));
+    fakes.fakeSearchObjects.mockRejectedValue(new Error('postgres unavailable'));
 
     const response = await POST(request({ query: 'github', mode: 'full' }));
     const data = (await response.json()) as {
@@ -345,7 +358,7 @@ describe('POST /api/search/global', () => {
   });
 
   it('classifies follow-up object-note hits as task results', async () => {
-    fakes.fakeListObjects.mockResolvedValue([]);
+    fakes.fakeSearchObjects.mockResolvedValue([]);
     fakes.fakeSearchObjectNotes.mockResolvedValue([
       {
         noteId: 'note-follow-up',

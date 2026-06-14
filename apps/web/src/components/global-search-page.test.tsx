@@ -81,7 +81,26 @@ describe('GlobalSearchPage', () => {
     await user.type(screen.getByRole('searchbox', { name: 'Search everything' }), 'github docs');
     await user.click(screen.getByRole('button', { name: 'Search' }));
 
-    expect(fakes.replace).toHaveBeenCalledWith('/app/search?q=github+docs');
+    await waitFor(() => {
+      expect(fakes.replace).toHaveBeenCalledWith('/app/search?q=github+docs');
+    });
+  });
+
+  it('keeps applied filters in the shareable search URL', async () => {
+    const user = userEvent.setup();
+
+    render(<GlobalSearchPage initialQuery="launch" />);
+
+    await user.click(screen.getByRole('button', { name: 'Documents' }));
+    await user.selectOptions(screen.getByRole('combobox'), 'slack');
+    await user.type(screen.getByLabelText('From'), '2026-06-01');
+    await user.type(screen.getByLabelText('To'), '2026-06-30');
+
+    await waitFor(() => {
+      expect(fakes.replace).toHaveBeenCalledWith(
+        '/app/search?q=launch&type=documents&source=slack&from=2026-06-01&to=2026-06-30',
+      );
+    });
   });
 
   it('sends source and date filters to global search', async () => {
@@ -117,6 +136,7 @@ describe('GlobalSearchPage', () => {
     render(
       <GlobalSearchPage
         initialQuery="launch"
+        initialType="documents"
         initialSource="slack"
         initialFrom="2026-06-01"
         initialTo="2026-06-30"
@@ -140,6 +160,7 @@ describe('GlobalSearchPage', () => {
     expect(formControlValue(screen.getByRole('combobox'))).toBe('slack');
     expect(formControlValue(screen.getByLabelText('From'))).toBe('2026-06-01');
     expect(formControlValue(screen.getByLabelText('To'))).toBe('2026-06-30');
+    expect(screen.getByRole('button', { name: 'Documents' }).className).toContain('text-signal');
   });
 
   it('syncs the search query when URL props change', async () => {
@@ -214,13 +235,11 @@ describe('GlobalSearchPage', () => {
       'fetch',
       vi
         .fn()
-        .mockResolvedValue(
-          jsonResponse({ ok: false, error: 'Search request failed' }, { status: 500 }),
-        ),
+        .mockResolvedValue(jsonResponse({ ok: false, error: 'rate_limited' }, { status: 429 })),
     );
 
     render(<GlobalSearchPage initialQuery="launch" />);
 
-    expect(await screen.findByText('Search request failed')).toBeTruthy();
+    expect(await screen.findByText(/Search is cooling down/)).toBeTruthy();
   });
 });

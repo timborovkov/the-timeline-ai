@@ -36,6 +36,7 @@ export default async function SearchPage({
   return (
     <GlobalSearchPage
       initialQuery={cleanParam(params.q)}
+      initialType={cleanParam(params.type)}
       initialSource={SEARCH_SOURCES.has(source) ? source : ''}
       initialFrom={cleanParam(params.from)}
       initialTo={cleanParam(params.to)}

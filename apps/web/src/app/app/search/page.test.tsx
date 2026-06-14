@@ -8,6 +8,7 @@ const fakes = vi.hoisted(() => ({
 vi.mock('@/components/global-search-page', () => ({
   GlobalSearchPage: (props: {
     initialQuery: string;
+    initialType?: string;
     initialSource?: string;
     initialFrom?: string;
     initialTo?: string;
@@ -25,6 +26,7 @@ describe('SearchPage', () => {
       await SearchPage({
         searchParams: Promise.resolve({
           q: ['github docs', 'ignored'],
+          type: ['documents', 'tasks'],
           source: ['slack', 'telegram'],
           from: ['2026-06-01', '2026-05-01'],
           to: ['2026-06-30', '2026-07-31'],
@@ -35,6 +37,7 @@ describe('SearchPage', () => {
     expect(html).toContain('github docs');
     expect(fakes.props).toHaveBeenCalledWith({
       initialQuery: 'github docs',
+      initialType: 'documents',
       initialSource: 'slack',
       initialFrom: '2026-06-01',
       initialTo: '2026-06-30',

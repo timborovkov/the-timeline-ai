@@ -18,9 +18,9 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: fakes.push }) }));
 
 const { GlobalSearchPalette } = await import('./global-search-palette.js');
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
-    status: 200,
+    status: init.status ?? 200,
     headers: { 'content-type': 'application/json' },
   });
 }
@@ -225,5 +225,21 @@ describe('GlobalSearchPalette', () => {
     await user.click(screen.getByRole('button', { name: /Public help docs/ }));
 
     expect(open).toHaveBeenCalledWith('/help', '_blank', 'noopener,noreferrer');
+  });
+
+  it('renders friendly API errors instead of raw error codes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(jsonResponse({ ok: false, error: 'rate_limited' }, { status: 429 })),
+    );
+    const user = userEvent.setup();
+    render(<GlobalSearchPalette />);
+
+    await user.click(screen.getByRole('searchbox', { name: 'Search or jump' }));
+    await user.keyboard('github');
+
+    expect(await screen.findByText(/Search is cooling down/)).toBeTruthy();
   });
 });

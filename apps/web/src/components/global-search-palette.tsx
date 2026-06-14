@@ -17,6 +17,7 @@ import type { ComponentType, SVGProps } from 'react';
 
 import { fetchGlobalSearch } from '@/lib/global-search';
 import { cn } from '@/lib/utils';
+import { searchErrorMessage } from '@/lib/ux-errors';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 interface PaletteViewState {
@@ -138,7 +139,7 @@ export function GlobalSearchPalette({ hint, className }: Props) {
           if (controller.signal.aborted) return;
           dispatchView({
             type: 'search_error',
-            error: err instanceof Error ? err.message : 'Search failed',
+            error: searchErrorMessage(err instanceof Error ? err.message : undefined),
           });
         });
     }, 250);

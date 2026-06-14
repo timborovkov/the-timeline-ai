@@ -448,6 +448,31 @@ describe('object scope — archive visibility', () => {
     expect(second.changedFields).toEqual([]);
     expect(second.archivedAt?.getTime()).toBe(first.archivedAt?.getTime());
   });
+
+  it('searches exact object names outside the recent list window', async () => {
+    await pg.query(
+      `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, updated_at)
+       VALUES ($1, 'company', 'Ancient Customer Contract', 'open', '[]'::jsonb, '{}'::jsonb, '2020-01-01T00:00:00.000Z')`,
+      [TEAM_A],
+    );
+    await pg.query(
+      `INSERT INTO entities (team_id, type, canonical_name, status, aliases, metadata, updated_at)
+       SELECT $1, 'company', 'Recent filler ' || gs::text, 'open', '[]'::jsonb, '{}'::jsonb, '2026-01-01T00:00:00.000Z'::timestamptz + (gs || ' seconds')::interval
+       FROM generate_series(1, 500) AS gs`,
+      [TEAM_A],
+    );
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+
+    const recent = await ownerScope.listObjects({ archived: false, limit: 500 });
+    expect(recent.map((row) => row.canonicalName)).not.toContain('Ancient Customer Contract');
+
+    const found = await ownerScope.searchObjects({
+      query: 'Ancient Customer Contract',
+      archived: false,
+      limit: 10,
+    });
+    expect(found.map((row) => row.canonicalName)).toEqual(['Ancient Customer Contract']);
+  });
 });
 
 describe('object scope — relationships', () => {

@@ -417,7 +417,11 @@ export async function POST(req: Request): Promise<Response> {
   const [objectRows, boardRows, calendarRows, timelineRows, documentRows] = await Promise.all([
     wantsObjectsOrTasks
       ? guardedSearch(warnings, 'object', 'Object search is temporarily unavailable.', [], () =>
-          scope.objects.listObjects({ archived: false, limit: 500 }),
+          scope.objects.searchObjects({
+            query,
+            archived: false,
+            limit: sourceLimit(input, 30) * 10,
+          }),
         )
       : Promise.resolve([]),
     wants(kinds, 'board')
