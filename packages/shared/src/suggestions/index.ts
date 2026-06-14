@@ -284,7 +284,34 @@ const calendarCreatePayload = z.object({
   proposalRole: z.enum(['slot', 'selected_slot']).optional(),
 });
 
-const calendarUpdatePayload = calendarCreatePayload.partial();
+const calendarUpdatePayload = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  description: z.string().trim().max(2000).nullable().optional(),
+  startAt: z.iso.datetime().optional(),
+  endAt: z.iso.datetime().optional(),
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  timezone: z.string().max(100).optional(),
+  allDay: z.boolean().optional(),
+  location: z.string().trim().max(500).nullable().optional(),
+  showAs: z.enum(['busy', 'free', 'tentative']).optional(),
+  rrule: z.string().trim().max(2000).nullable().optional(),
+  recurrenceEditMode: z.enum(['single', 'series', 'this_and_future']).optional(),
+  visibility: z.enum(['team', 'private', 'specific_users']).optional(),
+  visibilityUserIds: z.array(uuid).nullable().optional(),
+  reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+  linkedEntityIds: z.array(uuid).max(20).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  proposalGroupId: z.string().trim().max(120).optional(),
+  proposalStatus: z.enum(['tentative', 'confirmed']).optional(),
+  proposalRole: z.enum(['slot', 'selected_slot']).optional(),
+});
 
 function normalizeCalendarPayload(
   item: typeof agentSuggestionItems.$inferSelect,
