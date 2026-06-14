@@ -8,6 +8,7 @@ import { BoardCreateForm } from '@/components/boards/board-create-form';
 import { BoardPinButton } from '@/components/boards/board-pin-button';
 import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
+import { WORK_BACK_LINK } from '@/components/work-back-link';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -31,6 +32,7 @@ export default async function BoardsIndexPage() {
       <IndexStrip
         srLabel={`Boards · ${boards.length} boards`}
         segments={[{ value: 'BOARDS' }, { label: 'total', value: boards.length }]}
+        leading={WORK_BACK_LINK}
       />
 
       <section aria-label="Create board" className="rounded-sm border border-border bg-surface p-4">

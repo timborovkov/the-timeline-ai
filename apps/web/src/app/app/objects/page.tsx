@@ -9,6 +9,7 @@ import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
 import { ObjectCleanupList } from '@/components/objects/object-cleanup-list';
 import { ObjectCleanupSuggestions } from '@/components/objects/object-cleanup-suggestions';
+import { WORK_BACK_LINK } from '@/components/work-back-link';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -124,6 +125,7 @@ export default async function ObjectsIndexPage({
             ? ([{ label: 'type', value: TYPE_LABEL[type] ?? type, signal: true }] as const)
             : ([] as const)),
         ]}
+        leading={WORK_BACK_LINK}
       >
         <Link
           href="/app/objects/new"
