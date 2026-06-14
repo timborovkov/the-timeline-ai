@@ -74,3 +74,37 @@ export async function acceptAllSuggestionAction(input: unknown): Promise<ActionS
     }
   });
 }
+
+export async function acceptVisibleSuggestionsAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('accept_visible_suggestions', async () => {
+    const parsed = z
+      .object({
+        suggestions: z
+          .array(
+            z.object({
+              suggestionId: uuidSchema,
+              itemIds: z.array(uuidSchema).min(1),
+            }),
+          )
+          .min(1)
+          .max(200),
+      })
+      .safeParse(input);
+    if (!parsed.success) return { error: 'Invalid suggestion items' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      let failed = 0;
+      for (const suggestion of parsed.data.suggestions) {
+        const result = await r.scope.suggestions.acceptSelected(suggestion);
+        failed += result.failed;
+      }
+      revalidateSuggestionSurfaces();
+      return failed > 0 ? { error: `${failed} item(s) failed to apply` } : { ok: true };
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'accept_visible_suggestions' });
+      revalidateSuggestionSurfaces();
+      return { error: err instanceof Error ? err.message : 'Failed to accept suggestions' };
+    }
+  });
+}

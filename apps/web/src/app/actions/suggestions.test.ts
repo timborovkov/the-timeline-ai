@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   acceptAllSuggestionAction,
   acceptSuggestionItemAction,
+  acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction,
 } from '@/app/actions/suggestions';
 
@@ -19,6 +20,7 @@ const fakes = vi.hoisted(() => ({
     acceptSuggestionItem: vi.fn(),
     rejectSuggestionItem: vi.fn(),
     acceptAll: vi.fn(),
+    acceptSelected: vi.fn(),
   },
 }));
 
@@ -53,6 +55,7 @@ beforeEach(() => {
   fakes.fakeSuggestions.acceptSuggestionItem.mockResolvedValue(true);
   fakes.fakeSuggestions.rejectSuggestionItem.mockResolvedValue(true);
   fakes.fakeSuggestions.acceptAll.mockResolvedValue({ accepted: 2, failed: 0 });
+  fakes.fakeSuggestions.acceptSelected.mockResolvedValue({ accepted: 2, failed: 0 });
 });
 
 function expectSuggestionSurfacesRevalidated() {
@@ -71,6 +74,13 @@ describe('suggestion action validation and scope', () => {
     });
     await expect(acceptAllSuggestionAction({ suggestionId: 'bad' })).resolves.toEqual({
       error: 'Invalid suggestion id',
+    });
+    await expect(
+      acceptVisibleSuggestionsAction({
+        suggestions: [{ suggestionId: SUGGESTION_ID, itemIds: ['bad'] }],
+      }),
+    ).resolves.toEqual({
+      error: 'Invalid suggestion items',
     });
 
     expect(fakes.fakeResolveScope).not.toHaveBeenCalled();
@@ -157,6 +167,50 @@ describe('accept-all suggestion action', () => {
 
     await expect(acceptAllSuggestionAction({ suggestionId: SUGGESTION_ID })).resolves.toEqual({
       error: 'bundle failed',
+    });
+    expectSuggestionSurfacesRevalidated();
+  });
+});
+
+describe('accept-visible suggestions action', () => {
+  it('accepts visible suggestion groups and revalidates every approval-dependent surface', async () => {
+    const secondItemId = '44444444-4444-4444-8444-444444444444';
+
+    await expect(
+      acceptVisibleSuggestionsAction({
+        suggestions: [{ suggestionId: SUGGESTION_ID, itemIds: [ITEM_ID, secondItemId] }],
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeSuggestions.acceptSelected).toHaveBeenCalledWith({
+      suggestionId: SUGGESTION_ID,
+      itemIds: [ITEM_ID, secondItemId],
+    });
+    expect(fakes.fakeSuggestions.acceptSuggestionItem).not.toHaveBeenCalled();
+    expect(fakes.fakeSuggestions.acceptAll).not.toHaveBeenCalled();
+    expectSuggestionSurfacesRevalidated();
+  });
+
+  it('surfaces total partial failure count after revalidation', async () => {
+    fakes.fakeSuggestions.acceptSelected
+      .mockResolvedValueOnce({ accepted: 1, failed: 1 })
+      .mockResolvedValueOnce({ accepted: 0, failed: 1 });
+
+    await expect(
+      acceptVisibleSuggestionsAction({
+        suggestions: [
+          {
+            suggestionId: SUGGESTION_ID,
+            itemIds: [ITEM_ID, '44444444-4444-4444-8444-444444444444'],
+          },
+          {
+            suggestionId: '55555555-5555-4555-8555-555555555555',
+            itemIds: ['66666666-6666-4666-8666-666666666666'],
+          },
+        ],
+      }),
+    ).resolves.toEqual({
+      error: '2 item(s) failed to apply',
     });
     expectSuggestionSurfacesRevalidated();
   });
