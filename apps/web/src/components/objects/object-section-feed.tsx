@@ -3,6 +3,7 @@
 import { ExternalLink } from 'lucide-react';
 
 import { EvidenceLink } from '@/components/evidence-link';
+import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { useObjectSectionQuery } from '@/lib/use-paginated-queries';
 
 interface Props {
@@ -108,7 +109,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
           ) : null}
         </div>
         <p className="text-[11px] text-muted-foreground">
-          {new Date(occurredAt).toLocaleString()} · {source}
+          {formatDisplayDateTime(occurredAt)} · {source}
         </p>
       </div>
     );
@@ -122,14 +123,15 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
         </span>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        {JSON.stringify(row.previousValue ?? null)} {'->'} {JSON.stringify(row.newValue ?? null)}
+        {displayText(JSON.stringify(row.previousValue ?? null))} {'->'}{' '}
+        {displayText(JSON.stringify(row.newValue ?? null))}
       </p>
     </div>
   );
 }
 
 function text(value: unknown, fallback = ''): string {
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') return displayText(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return fallback;
 }
@@ -183,9 +185,11 @@ function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
                 href={`/app/objects/${object.id}`}
                 className="block rounded-sm px-2 py-1.5 hover:bg-surface focus-visible:bg-surface focus-visible:outline-none"
               >
-                <span className="block truncate font-medium">{object.canonicalName}</span>
+                <span className="block truncate font-medium">
+                  {displayText(object.canonicalName)}
+                </span>
                 <span className="block font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
-                  {object.type} · {object.role}
+                  {displayText(object.type)} · {displayText(object.role)}
                 </span>
               </a>
             ))}

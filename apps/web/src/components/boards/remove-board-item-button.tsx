@@ -7,6 +7,7 @@ import { useState, useTransition } from 'react';
 import { removeBoardItemAction } from '@/app/actions/boards';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
+import { displayText } from '@/lib/display-dates';
 
 export function RemoveBoardItemButton({
   boardId,
@@ -29,7 +30,7 @@ export function RemoveBoardItemButton({
   async function removeItem(): Promise<void> {
     const confirmed = await dialog.confirm({
       title: 'Remove from board?',
-      description: `${objectName} will leave this board. The object itself will stay.`,
+      description: `${displayText(objectName)} will leave this board. The object itself will stay.`,
       confirmLabel: 'Remove',
       destructive: true,
     });

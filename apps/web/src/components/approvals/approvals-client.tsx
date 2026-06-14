@@ -14,6 +14,7 @@ import {
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
 import { Button } from '@/components/ui/button';
+import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
 interface SuggestionItem {
@@ -93,10 +94,10 @@ function itemStatusLabel(status: string): string {
 }
 
 function formatPayloadValue(value: unknown): string {
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') return displayText(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (value instanceof Date) return value.toISOString();
-  return JSON.stringify(value);
+  if (value instanceof Date) return formatDisplayDateTime(value);
+  return displayText(JSON.stringify(value));
 }
 
 function objectMergeHref(item: SuggestionItem): string {
@@ -120,10 +121,10 @@ function localRefLabel(bundle: SuggestionBundle, ref: string): string {
       typeof candidate.proposedPayload.localRef === 'string' &&
       candidate.proposedPayload.localRef.trim().toLowerCase() === normalizedRef,
   );
-  if (!item) return ref;
+  if (!item) return displayText(ref);
   return typeof item.proposedPayload.canonicalName === 'string'
-    ? item.proposedPayload.canonicalName
-    : item.title;
+    ? displayText(item.proposedPayload.canonicalName)
+    : displayText(item.title);
 }
 
 function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBundle): string | null {
@@ -139,9 +140,9 @@ function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBund
   const kind =
     typeof item.proposedPayload.kind === 'string' ? item.proposedPayload.kind : 'related';
   if (from === 'existing object' && to === 'existing object') {
-    return `${item.title} · ${kind}`;
+    return displayText(`${item.title} · ${kind}`);
   }
-  return `${from} ↔ ${to} · ${kind}`;
+  return displayText(`${from} ↔ ${to} · ${kind}`);
 }
 
 export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) {
@@ -216,17 +217,18 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
             <div className="flex flex-wrap items-start gap-3">
               <div className="min-w-0 flex-1">
                 <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                  {bundle.source} · {bundle.confidence} ·{' '}
-                  {new Date(bundle.createdAt).toLocaleString()}
+                  {bundle.source} · {bundle.confidence} · {formatDisplayDateTime(bundle.createdAt)}
                 </div>
                 <h2 className="mt-1 text-lg font-semibold tracking-tight text-fg">
-                  {bundle.title}
+                  {displayText(bundle.title)}
                 </h2>
                 {bundle.summary ? (
-                  <p className="mt-1 text-sm text-fg-muted">{bundle.summary}</p>
+                  <p className="mt-1 text-sm text-fg-muted">{displayText(bundle.summary)}</p>
                 ) : null}
                 {bundle.reason ? (
-                  <p className="mt-1 max-w-3xl text-xs leading-5 text-fg-dim">{bundle.reason}</p>
+                  <p className="mt-1 max-w-3xl text-xs leading-5 text-fg-dim">
+                    {displayText(bundle.reason)}
+                  </p>
                 ) : null}
               </div>
               {allowBulkAccept && bulkAcceptItems.length > 1 ? (
@@ -251,10 +253,10 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
                     <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
                       Proposal · {itemStatusLabel(item.status)}
                     </div>
-                    <div className="mt-1 font-medium text-fg">{item.title}</div>
+                    <div className="mt-1 font-medium text-fg">{displayText(item.title)}</div>
                     <div className="mt-1 text-xs text-fg-muted">{itemActionLabel(item)}</div>
                     {item.description ? (
-                      <p className="mt-1 text-sm text-fg-muted">{item.description}</p>
+                      <p className="mt-1 text-sm text-fg-muted">{displayText(item.description)}</p>
                     ) : null}
                     {(relationshipPayloadSummary(item, bundle) ??
                     formatPayload(item.proposedPayload)) ? (

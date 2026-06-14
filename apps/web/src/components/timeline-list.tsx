@@ -25,6 +25,7 @@ import { EmptyAction } from '@/components/empty-action';
 import { EventVisibilityForm } from '@/components/event-visibility-form';
 import { useInspector } from '@/components/inspector-context';
 import { Button } from '@/components/ui/button';
+import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import {
   buildTimelineMoments,
   actorLabelsByTelegramUserId,
@@ -87,15 +88,12 @@ function eventDate(input: Date | string): Date {
 }
 
 function formatTimestamp(input: string): string {
-  return eventDate(input).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+  return formatDisplayDateTime(eventDate(input));
 }
 
 function formatMetadataValue(value: unknown): string {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') return displayText(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   try {
     return JSON.stringify(value);
@@ -172,9 +170,9 @@ function sourceTruthSummary(moment: TimelineMoment): { title: string; body: stri
 function rawEventBody(event: TimelineEvent): string {
   const meta = metaObject(event.sourceMetadata);
   const content = event.contentText?.trim();
-  if (content) return content;
+  if (content) return displayText(content);
   const caption = stringMeta(meta, 'tg_caption');
-  if (caption) return caption;
+  if (caption) return displayText(caption);
   if (event.contentAudioUrl)
     return transcribeFailed(event.sourceMetadata)
       ? 'Voice memo captured; transcription failed.'
@@ -190,7 +188,7 @@ function addDetail(
 ) {
   if (!value || seen.has(label)) return;
   seen.add(label);
-  entries.push([label, value]);
+  entries.push([label, displayText(value)]);
 }
 
 function inspectorSourceDetailEntries(moment: TimelineMoment): [string, string][] {
@@ -280,13 +278,16 @@ function rawEventActorLabel(
 function rawEventContextLabel(event: TimelineEvent): string | null {
   const meta = metaObject(event.sourceMetadata);
   if (event.source === 'telegram') {
-    return stringMeta(meta, 'tg_chat_title') ?? stringMeta(meta, 'tg_chat_type');
+    const label = stringMeta(meta, 'tg_chat_title') ?? stringMeta(meta, 'tg_chat_type');
+    return label ? displayText(label) : null;
   }
   if (event.source === 'slack') {
-    return stringMeta(meta, 'slack_channel_name') ?? stringMeta(meta, 'slack_channel_id');
+    const label = stringMeta(meta, 'slack_channel_name') ?? stringMeta(meta, 'slack_channel_id');
+    return label ? displayText(label) : null;
   }
   if (event.source === 'document') {
-    return stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name');
+    const label = stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name');
+    return label ? displayText(label) : null;
   }
   return null;
 }
@@ -305,7 +306,9 @@ function rawEventDocumentLink(event: TimelineEvent): {
   const action = stringMeta(meta, 'action');
   return {
     href: `/app/documents/${documentId}`,
-    label: stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name') ?? 'Attachment',
+    label: displayText(
+      stringMeta(meta, 'document_name') ?? stringMeta(meta, 'name') ?? 'Attachment',
+    ),
     documentId,
     versionId: stringMeta(meta, 'document_version_id') ?? stringMeta(meta, 'documentVersionId'),
     versionNumber: positiveIntegerMeta(meta, 'document_version'),
@@ -505,7 +508,7 @@ function RawEventExpansion({
               ) : null}
               {event.contentText?.trim() ? (
                 <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-fg-muted">
-                  {event.contentText}
+                  {displayText(event.contentText)}
                 </p>
               ) : event.contentAudioUrl ? (
                 <p className="mt-2 text-sm italic text-fg-dim">
@@ -559,7 +562,7 @@ function ImpactStrip({ items }: { items: ImpactItem[] }) {
       {items.map((item, index) => {
         const count = item.count && item.count > 1 ? ` ×${item.count}` : '';
         const status = item.status ? ` · ${item.status}` : '';
-        const label = `${IMPACT_LABEL[item.kind]} · ${item.label}${count}${status}`;
+        const label = displayText(`${IMPACT_LABEL[item.kind]} · ${item.label}${count}${status}`);
         const className =
           'inline-flex min-h-6 max-w-full min-w-0 items-center rounded-sm border border-border bg-surface px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted';
         return item.href ? (
