@@ -286,7 +286,6 @@ export function ObjectCleanupList({ rows, typeLabels }: Props) {
           })}
         </div>
       )}
-      {dialog.node}
     </div>
   );
 }

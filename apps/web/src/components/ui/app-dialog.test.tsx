@@ -1,11 +1,15 @@
 // @vitest-environment happy-dom
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { useAppDialog } from './app-dialog.js';
+
+afterEach(() => {
+  cleanup();
+});
 
 function DialogHarness() {
   const dialog = useAppDialog();
@@ -85,5 +89,20 @@ describe('useAppDialog', () => {
     await user.type(input, 'New name');
     await user.click(screen.getByRole('button', { name: 'Rename' }));
     await waitFor(() => expect(screen.getByText('New name')).toBeTruthy());
+  });
+
+  it('submits the live input value when Enter is pressed before state catches up', async () => {
+    const user = userEvent.setup();
+    render(<DialogHarness />);
+
+    await user.click(screen.getByRole('button', { name: 'Input' }));
+    const input = screen.getByLabelText<HTMLInputElement>('Name');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+      input,
+      'Fresh name',
+    );
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(screen.getByText('Fresh name')).toBeTruthy());
   });
 });

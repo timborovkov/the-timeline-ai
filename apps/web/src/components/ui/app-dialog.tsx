@@ -102,7 +102,7 @@ export function useAppDialog() {
                 setInputValue(event.currentTarget.value);
               }}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') close(true, inputValue);
+                if (event.key === 'Enter') close(true, event.currentTarget.value);
               }}
             />
           </div>
