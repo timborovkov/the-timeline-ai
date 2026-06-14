@@ -32,7 +32,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   fakes.auth.mockResolvedValue({ user: { id: USER_ID } });
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID, role: 'member' } });
-  fakes.deleteOwnedProviderConnection.mockResolvedValue(undefined);
+  fakes.deleteOwnedProviderConnection.mockResolvedValue(true);
 });
 
 describe('DELETE /api/connections/[id]', () => {
@@ -58,5 +58,16 @@ describe('DELETE /api/connections/[id]', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
     expect(fakes.deleteOwnedProviderConnection).toHaveBeenCalledWith(CONNECTION_ID);
+  });
+
+  it('returns not found when the connection is missing or not owned', async () => {
+    fakes.deleteOwnedProviderConnection.mockResolvedValueOnce(false);
+
+    const response = await DELETE(new Request('https://timeline.test'), {
+      params: Promise.resolve({ id: CONNECTION_ID }),
+    });
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: 'not_found' });
   });
 });

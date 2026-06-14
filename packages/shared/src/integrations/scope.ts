@@ -197,10 +197,10 @@ export function createIntegrationScope(deps: {
     return row;
   }
 
-  async function deleteOwnedProviderConnection(id: string): Promise<void> {
+  async function deleteOwnedProviderConnection(id: string): Promise<boolean> {
     await ensureMember();
     const connection = await getOwnedProviderConnection(id);
-    if (!connection) return;
+    if (!connection) return false;
     const affected = await db
       .select({ teamId: integrationsTable.teamId, integrationId: integrationsTable.id })
       .from(integrationsTable)
@@ -225,6 +225,7 @@ export function createIntegrationScope(deps: {
         }),
       ),
     );
+    return true;
   }
 
   async function createIntegration(input: CreateIntegrationInput): Promise<IntegrationRow> {

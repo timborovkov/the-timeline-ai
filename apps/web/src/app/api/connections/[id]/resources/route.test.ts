@@ -46,7 +46,11 @@ const connection = {
   displayName: 'tim/github',
   externalAccountId: '42',
   scopes: ['repo'],
+  authSecretCiphertext: 'encrypted-token',
+  authSecretIv: 'secret-iv',
+  authSecretTag: 'secret-tag',
   lastError: null,
+  lastConnectedAt: new Date('2026-06-01T00:00:00.000Z'),
   createdAt: new Date('2026-06-01T00:00:00.000Z'),
   updatedAt: new Date('2026-06-01T00:00:00.000Z'),
 };
@@ -115,7 +119,22 @@ describe('/api/connections/[id]/resources', () => {
     const response = await GET(new Request('https://timeline.test'), params());
 
     expect(response.status).toBe(200);
-    const payload = (await response.json()) as { resources: unknown[]; shares: unknown[] };
+    const payload = (await response.json()) as {
+      connection: Record<string, unknown>;
+      resources: unknown[];
+      shares: unknown[];
+    };
+    expect(payload.connection).toMatchObject({
+      id: CONNECTION_ID,
+      ownerUserId: USER_ID,
+      provider: 'github',
+      displayName: 'tim/github',
+      externalAccountId: '42',
+      scopes: ['repo'],
+    });
+    expect(payload.connection).not.toHaveProperty('authSecretCiphertext');
+    expect(payload.connection).not.toHaveProperty('authSecretIv');
+    expect(payload.connection).not.toHaveProperty('authSecretTag');
     expect(payload.resources).toEqual([
       { kind: 'github.org', externalId: 'openai', label: 'OpenAI' },
       { kind: 'github.repo', externalId: 'openai/codex', label: 'openai/codex' },

@@ -26,6 +26,32 @@ async function resolveScope(userId: string) {
   return { active, scope: withTeam(db, active.teamId, userId) };
 }
 
+function serializeConnection(connection: {
+  id: string;
+  ownerUserId: string;
+  provider: string;
+  displayName: string;
+  externalAccountId: string | null;
+  scopes: string[] | null;
+  lastError: string | null;
+  lastConnectedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  return {
+    id: connection.id,
+    ownerUserId: connection.ownerUserId,
+    provider: connection.provider,
+    displayName: connection.displayName,
+    externalAccountId: connection.externalAccountId,
+    scopes: connection.scopes,
+    lastError: connection.lastError,
+    lastConnectedAt: connection.lastConnectedAt,
+    createdAt: connection.createdAt,
+    updatedAt: connection.updatedAt,
+  };
+}
+
 export async function GET(
   _req: Request,
   ctx: { params: Promise<{ id: string }> },
@@ -71,7 +97,11 @@ export async function GET(
   for (const row of shares) {
     if (row.connection.id === connection.id) connectionShares.push(row.share);
   }
-  return NextResponse.json({ connection, resources, shares: connectionShares });
+  return NextResponse.json({
+    connection: serializeConnection(connection),
+    resources,
+    shares: connectionShares,
+  });
 }
 
 export async function PUT(
