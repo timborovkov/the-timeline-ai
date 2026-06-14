@@ -137,6 +137,21 @@ describe('processMeetingSchedulerTick', () => {
     expect(row?.providerBotId).toBe('bot-1');
   });
 
+  it('still starts captures when the repeatable scheduler tick is more than a minute late', async () => {
+    const { meeting } = await insertSavedAndScheduled(db, {
+      scheduledStartAt: new Date(Date.now() - 90_000),
+    });
+
+    const result = await processMeetingSchedulerTick({ db: db as never });
+
+    expect(result.joined).toBe(1);
+    expect(joinMeetingMock).toHaveBeenCalledWith(
+      expect.objectContaining({ meetingId: meeting.id }),
+    );
+    const row = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
+    expect(row?.status).toBe('joining');
+  });
+
   it('does not create a duplicate bot when the same meeting URL is already active', async () => {
     const { meeting } = await insertSavedAndScheduled(db);
     await db.insert(meetings).values({

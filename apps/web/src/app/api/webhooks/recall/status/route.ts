@@ -218,6 +218,7 @@ export async function POST(req: Request): Promise<Response> {
   const isNoShowEvent = isNoShowCode(code);
   const shouldEnqueueFinalize =
     !isFailureEvent &&
+    !isNoShowEvent &&
     (parsed.event === 'bot.call_ended' ||
       parsed.event === 'bot.done' ||
       parsed.event === 'transcript.done' ||

@@ -1024,10 +1024,16 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
       return materializeSavedMeetingOccurrencesInternal(savedMeetingId);
     },
 
-    async findNearbyScheduledOccurrence(savedMeetingId: string, now = new Date()) {
+    async findNearbyScheduledOccurrence(
+      savedMeetingId: string,
+      now = new Date(),
+      futureWindowMs = SAVED_MEETING_NEARBY_BEFORE_MS,
+    ) {
       await ensureMember();
       const from = new Date(now.getTime() - SAVED_MEETING_NO_SHOW_MS);
-      const to = new Date(now.getTime() + SAVED_MEETING_NEARBY_BEFORE_MS);
+      const to = new Date(
+        now.getTime() + Math.max(0, Math.min(SAVED_MEETING_NEARBY_BEFORE_MS, futureWindowMs)),
+      );
       const rows = await db
         .select()
         .from(meetings)
@@ -1146,6 +1152,30 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
           ),
         )
         .limit(1);
+      return (rows[0] as MeetingCaptureConfirmationRow | undefined) ?? null;
+    },
+
+    async claimPendingMeetingCaptureConfirmation(
+      id: string,
+    ): Promise<MeetingCaptureConfirmationRow | null> {
+      await ensureMember();
+      const now = new Date();
+      const rows = await db
+        .update(meetingCaptureConfirmations)
+        .set({
+          status: 'confirmed',
+          confirmedAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(meetingCaptureConfirmations.id, id),
+            eq(meetingCaptureConfirmations.teamId, teamId),
+            eq(meetingCaptureConfirmations.status, 'pending'),
+            gte(meetingCaptureConfirmations.expiresAt, now),
+          ),
+        )
+        .returning();
       return (rows[0] as MeetingCaptureConfirmationRow | undefined) ?? null;
     },
 

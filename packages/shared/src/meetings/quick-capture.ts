@@ -13,6 +13,16 @@ export interface QuickJoinResult {
   confirmationId?: string;
 }
 
+const DEFAULT_JOIN_OFFSET_MS = 2 * 60 * 1000;
+
+function joinOffsetMs(scheduleConfig: unknown): number {
+  if (!scheduleConfig || typeof scheduleConfig !== 'object') return DEFAULT_JOIN_OFFSET_MS;
+  const raw = scheduleConfig as Record<string, unknown>;
+  return typeof raw.joinOffsetMinutes === 'number' && Number.isFinite(raw.joinOffsetMinutes)
+    ? Math.max(0, Math.min(30, Math.trunc(raw.joinOffsetMinutes))) * 60 * 1000
+    : DEFAULT_JOIN_OFFSET_MS;
+}
+
 async function ensureCapacity(scope: ReturnType<typeof withTeam>): Promise<string | null> {
   const settings = await scope.meetings.getMeetingSettings();
   const cap = settings.meetingMinutesCap;
@@ -79,7 +89,11 @@ export async function joinSavedMeetingByCommand(input: {
     };
   }
 
-  const scheduled = await scope.meetings.findNearbyScheduledOccurrence(resolved.savedMeeting.id);
+  const scheduled = await scope.meetings.findNearbyScheduledOccurrence(
+    resolved.savedMeeting.id,
+    new Date(),
+    joinOffsetMs(resolved.savedMeeting.scheduleConfig),
+  );
   const meeting =
     scheduled ??
     (await scope.meetings.createMeeting({
@@ -133,13 +147,17 @@ export async function confirmRawUrlQuickJoin(input: {
     return { ok: false, error: 'Meeting notetakers are not configured.' };
   }
   const scope = withTeam(input.db, input.teamId, input.userId);
-  const confirmation = await scope.meetings.getMeetingCaptureConfirmation(input.confirmationId);
-  if (!confirmation) return { ok: false, error: 'Confirmation not found.' };
-  if (confirmation.status !== 'pending')
+  const confirmation = await scope.meetings.claimPendingMeetingCaptureConfirmation(
+    input.confirmationId,
+  );
+  if (!confirmation) {
+    const existing = await scope.meetings.getMeetingCaptureConfirmation(input.confirmationId);
+    if (!existing) return { ok: false, error: 'Confirmation not found.' };
+    if (existing.status === 'pending' && existing.expiresAt < new Date()) {
+      await scope.meetings.markMeetingCaptureConfirmation(existing.id, 'expired');
+      return { ok: false, error: 'Confirmation expired.' };
+    }
     return { ok: false, error: 'Confirmation is no longer pending.' };
-  if (confirmation.expiresAt < new Date()) {
-    await scope.meetings.markMeetingCaptureConfirmation(confirmation.id, 'expired');
-    return { ok: false, error: 'Confirmation expired.' };
   }
 
   const capacityError = await ensureCapacity(scope);

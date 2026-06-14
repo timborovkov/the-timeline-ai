@@ -9,6 +9,7 @@ const log = childLogger('worker:meeting-scheduler');
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const MAX_JOIN_OFFSET_MS = 30 * 60 * 1000;
 const DEFAULT_JOIN_OFFSET_MS = 2 * 60 * 1000;
+const SCHEDULED_JOIN_LOOKBACK_MS = 550 * 1000;
 const FAILURE_PAUSE_THRESHOLD = 3;
 
 interface MeetingSchedulerDeps {
@@ -98,7 +99,7 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
         eq(savedMeetings.autoJoinEnabled, true),
         isNull(savedMeetings.autoJoinPausedAt),
         isNull(savedMeetings.archivedAt),
-        gte(meetings.scheduledStartAt, new Date(now.getTime() - 60_000)),
+        gte(meetings.scheduledStartAt, new Date(now.getTime() - SCHEDULED_JOIN_LOOKBACK_MS)),
         lte(meetings.scheduledStartAt, startWindowEnd),
       ),
     )

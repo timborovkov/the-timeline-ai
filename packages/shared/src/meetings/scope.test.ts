@@ -477,6 +477,12 @@ describe('meetings scope', () => {
     if (!scheduledStartAt) throw new Error('expected scheduled start');
     const nearby = await scope.findNearbyScheduledOccurrence(saved.id, scheduledStartAt);
     expect(nearby?.id).toBe(scheduled[0]?.id);
+    const tooEarlyForManualJoin = await scope.findNearbyScheduledOccurrence(
+      saved.id,
+      new Date(scheduledStartAt.getTime() - 10 * 60_000),
+      2 * 60_000,
+    );
+    expect(tooEarlyForManualJoin).toBeNull();
     await expect(scope.skipScheduledMeeting(scheduled[0]?.id ?? '')).resolves.toBe(true);
     const skipped = (
       await db
@@ -531,12 +537,15 @@ describe('meetings scope', () => {
     });
     expect(confirmation.status).toBe('pending');
     expect(confirmation.platform).toBe('meet');
+    const claimed = await scope.claimPendingMeetingCaptureConfirmation(confirmation.id);
+    expect(claimed?.id).toBe(confirmation.id);
+    await expect(scope.claimPendingMeetingCaptureConfirmation(confirmation.id)).resolves.toBeNull();
 
     const pending = await scope.findPendingMeetingCaptureConfirmation({
       source: 'telegram',
       sourceContext: { telegram_chat_id: 42, telegram_user_id: 7 },
     });
-    expect(pending?.id).toBe(confirmation.id);
+    expect(pending).toBeNull();
 
     await scope.markMeetingCaptureConfirmation(confirmation.id, 'cancelled');
     const cancelled = (

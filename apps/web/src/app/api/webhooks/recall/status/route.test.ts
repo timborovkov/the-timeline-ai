@@ -402,6 +402,37 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
     expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
   });
 
+  it('does not enqueue finalize for call-ended no-show payloads', async () => {
+    fakes.fakeLookup.mockResolvedValueOnce({
+      id: 'meeting-1',
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      status: 'joining',
+      platform: 'meet',
+      provider: 'recall',
+      savedMeetingId: 'saved-1',
+    });
+
+    const r = await POST(
+      signedRequest(recallStatusBody('bot.call_ended', 'timeout_exceeded_waiting_room')),
+    );
+
+    expect(r.status).toBe(200);
+    expect(fakes.fakeUpdateStatus).toHaveBeenCalledWith(
+      'meeting-1',
+      'no_show',
+      expect.objectContaining({
+        endedAt: expect.any(Date) as Date,
+        metadata: expect.objectContaining({
+          capture_status: 'no_show',
+          no_show_code: 'timeout_exceeded_waiting_room',
+        }) as unknown,
+      }),
+    );
+    expect(fakes.fakeRecordJoinFailure).toHaveBeenCalledWith('saved-1', 'no_show');
+    expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
+  });
+
   it('records Saved Meeting provider failures separately from no-shows', async () => {
     fakes.fakeLookup.mockResolvedValueOnce({
       id: 'meeting-1',
