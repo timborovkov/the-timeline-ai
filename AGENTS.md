@@ -79,6 +79,24 @@ tool. When in doubt, invoke the skill.
   you touched (`pnpm test:ci`, `pnpm test`, a package-filtered Vitest command,
   `pnpm test:eval`, or an e2e command). Fix failures at the root cause; do not
   skip.
+- **Completion gates are repo-wide, not change-scoped.** After any code,
+  configuration, or documentation change, do not hand back until the repo is in
+  a green state:
+  - `pnpm validate` passes, which means Prettier formatting, TypeScript
+    compilation/typecheck, ESLint, and Knip all pass.
+  - Tests pass: run the nearest targeted test command for the changed behavior,
+    run `pnpm test:ci` as the minimum regression suite for code changes, and run
+    broader suites such as `pnpm test` or e2e commands when the blast radius is
+    shared, cross-package, or user-facing.
+  - React Doctor is run with `pnpm doctor` and must report 100 before handoff.
+    This is especially important for React, Next.js, UI, app routing,
+    component, hook, server-action, or frontend-adjacent changes, but it is not
+    limited to those changes.
+  - If any gate fails, fix the failure even when it appears unrelated to the
+    change you just made. Treat unrelated compile, lint, formatting, React
+    Doctor, or test failures as repo health bugs in the current task, not as
+    reasons to skip validation. Escalate only after you have made a serious
+    root-cause attempt and can clearly explain what blocks completion.
 - **Meeting bots are silent + consent-gated.** Phase 10 ships transcript
   capture only — no voice/agent mode. `team_meeting_settings
   .require_host_consent` (default true) blocks scheduling unless the
