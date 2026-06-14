@@ -267,6 +267,13 @@
       "when": 1795652580000,
       "tag": "0037_email_sender_whitelist",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795652640000,
+      "tag": "0038_calendar_subscriptions",
+      "breakpoints": true
     }
   ]
 }

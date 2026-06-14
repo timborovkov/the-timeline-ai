@@ -5,6 +5,7 @@ import {
   integrations,
   slackConversationBindings,
   slackUserTeams,
+  teamCalendarSubscriptions,
   teamInvites,
   teamMembers,
   teamVisibilityDefaults,
@@ -634,6 +635,14 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
           .update(teamMembers)
           .set({ removedAt: new Date(), removedByUserId: session.user.id })
           .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
+        await tx
+          .delete(teamCalendarSubscriptions)
+          .where(
+            and(
+              eq(teamCalendarSubscriptions.teamId, active.teamId),
+              eq(teamCalendarSubscriptions.userId, memberUserId),
+            ),
+          );
         await tx
           .update(teamVisibilityDefaults)
           .set({

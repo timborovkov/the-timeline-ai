@@ -12,7 +12,16 @@ import {
 } from '@dnd-kit/core';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useOptimistic, useRef, useState, useTransition } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 
 import type * as boards from '@timeline/shared/boards';
 
@@ -43,19 +52,29 @@ export function CuratedKanbanBoard({ boardId, lanes, items }: Props) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saveState, setSaveState] = useState<CuratedKanbanSaveState>('idle');
   const savingRef = useRef<Set<string> | null>(null);
+  savingRef.current ??= new Set<string>();
   const batchHadFailureRef = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const laneIdSet = new Set(lanes.map((lane) => lane.id));
-  savingRef.current ??= new Set();
-  const savingSet = savingRef.current;
 
-  useEffect(() => {
-    const timerRef = timer;
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
+  const clearSaveTimer = useCallback(() => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
   }, []);
 
+  useEffect(() => {
+    return clearSaveTimer;
+  }, [clearSaveTimer]);
+
+  function resetSaveTimer() {
+    clearSaveTimer();
+    timer.current = setTimeout(() => {
+      setSaveState('idle');
+    }, 1600);
+  }
+
+  const laneIdSet = useMemo(() => new Set(lanes.map((lane) => lane.id)), [lanes]);
   const byLane = new Map<string | null, boards.BoardItemRow[]>();
   for (const lane of lanes) byLane.set(lane.id, []);
   byLane.set(null, []);
@@ -66,24 +85,27 @@ export function CuratedKanbanBoard({ boardId, lanes, items }: Props) {
     byLane.set(laneId, list);
   }
 
+  function savingSet(): Set<string> {
+    savingRef.current ??= new Set<string>();
+    return savingRef.current;
+  }
+
   function markSaving(id: string, saving: boolean, failed = false) {
+    const currentSaving = savingSet();
     if (saving) {
       if (timer.current) clearTimeout(timer.current);
-      if (savingSet.size === 0) batchHadFailureRef.current = false;
-      savingSet.add(id);
+      if (currentSaving.size === 0) batchHadFailureRef.current = false;
+      currentSaving.add(id);
     } else {
       if (failed) batchHadFailureRef.current = true;
-      savingSet.delete(id);
+      currentSaving.delete(id);
     }
-    setSavingIds(new Set(savingSet));
-    const nextSaveState = curatedKanbanSaveState(savingSet.size, batchHadFailureRef.current);
+    setSavingIds(new Set(currentSaving));
+    const nextSaveState = curatedKanbanSaveState(currentSaving.size, batchHadFailureRef.current);
     setSaveState(nextSaveState);
-    if (!saving && savingSet.size === 0) {
-      if (timer.current) clearTimeout(timer.current);
+    if (!saving && currentSaving.size === 0) {
       if (!batchHadFailureRef.current) {
-        timer.current = setTimeout(() => {
-          setSaveState('idle');
-        }, 1600);
+        resetSaveTimer();
       }
     }
   }
@@ -93,7 +115,7 @@ export function CuratedKanbanBoard({ boardId, lanes, items }: Props) {
     const overId = event.over?.id ? String(event.over.id) : null;
     if (!overId) return;
     const laneId = overId === 'unset' ? null : overId;
-    if (savingSet.has(id)) return;
+    if (savingSet().has(id)) return;
     const item = optimisticItems.find((candidate) => candidate.id === id);
     if (!item || item.laneId === laneId) return;
     startTransition(async () => {
