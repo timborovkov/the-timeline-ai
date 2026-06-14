@@ -333,18 +333,15 @@ describe('POST /api/search/global', () => {
     const response = await POST(request({ query: 'Otto GitHub', mode: 'full' }));
     const data = (await response.json()) as {
       ok: true;
-      results: { kind: string; title: string; scoreParts: { semantic?: number } }[];
+      results: { kind: string; title: string; score: number; scoreParts: { semantic?: number } }[];
     };
 
     expect(response.status).toBe(200);
-    expect(
-      data.results.some(
-        (item) =>
-          item.kind === 'object' &&
-          item.title === 'Otto Silventola' &&
-          item.scoreParts.semantic === 0.95,
-      ),
-    ).toBe(true);
+    const object = data.results.find(
+      (item) => item.kind === 'object' && item.title === 'Otto Silventola',
+    );
+    expect(object?.scoreParts.semantic).toBe(0.95);
+    expect(object?.score).toBeGreaterThan(1);
   });
 
   it('classifies follow-up object-note hits as task results', async () => {

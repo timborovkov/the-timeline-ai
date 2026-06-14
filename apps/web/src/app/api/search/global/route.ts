@@ -133,10 +133,11 @@ async function searchObjectNotes(
       const href = `/app/objects/${note.objectId}`;
       const current = byId.get(href);
       if (current) {
+        const { score: _staleScore, ...currentWithoutScore } = current;
         byId.set(
           href,
           finalizeGlobalSearchResult({
-            ...current,
+            ...currentWithoutScore,
             scoreParts: {
               ...current.scoreParts,
               semantic: Math.max(current.scoreParts.semantic ?? 0, note.score),
