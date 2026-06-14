@@ -226,12 +226,7 @@ function applyObjectDetailLocalState(
 
 export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
   return (
-    <ObjectDetailView
-      key={`${detail.id}-${String(detail.updatedAt)}`}
-      detail={detail}
-      userId={userId}
-      suggestions={suggestions}
-    />
+    <ObjectDetailView key={detail.id} detail={detail} userId={userId} suggestions={suggestions} />
   );
 }
 

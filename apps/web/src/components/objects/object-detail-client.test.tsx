@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -71,6 +72,7 @@ const detail = {
 } as Parameters<typeof ObjectDetailClient>[0]['detail'];
 
 beforeEach(() => {
+  cleanup();
   vi.clearAllMocks();
 });
 
@@ -207,6 +209,22 @@ describe('ObjectDetailClient', () => {
       expect(screen.getByText('Archived')).toBeTruthy();
       expect(screen.getByText('Recent changes')).toBeTruthy();
     });
+  });
+
+  it('preserves local form state when refreshed server props change updatedAt', async () => {
+    const user = userEvent.setup();
+    const refreshedDetail = {
+      ...detail,
+      updatedAt: new Date('2026-06-01T10:01:00.000Z'),
+    };
+    const { rerender } = render(objectDetailElement({ detail, userId: 'user-1', suggestions: [] }));
+
+    const noteInput = screen.getByLabelText('New note');
+    await user.type(noteInput, 'Draft survives refresh');
+
+    rerender(objectDetailElement({ detail: refreshedDetail, userId: 'user-1', suggestions: [] }));
+
+    expect(screen.getByDisplayValue('Draft survives refresh')).toBeTruthy();
   });
 
   it('filters placeholder object search results against the current query', () => {
