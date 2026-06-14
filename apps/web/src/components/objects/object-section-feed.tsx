@@ -6,14 +6,15 @@ interface Props {
   objectId: string;
   section: 'events' | 'facts' | 'changes' | 'tasks' | 'relationships';
   title: string;
+  showTitle?: boolean;
 }
 
-export function ObjectSectionFeed({ objectId, section, title }: Props) {
+export function ObjectSectionFeed({ objectId, section, title, showTitle = true }: Props) {
   const query = useObjectSectionQuery(objectId, section);
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
   return (
     <section>
-      <h2 className="mb-3 text-sm font-medium tracking-tight">{title}</h2>
+      {showTitle ? <h2 className="mb-3 text-sm font-medium tracking-tight">{title}</h2> : null}
       {items.length === 0 && query.isPending ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : items.length === 0 ? (

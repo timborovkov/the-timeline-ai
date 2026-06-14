@@ -12,7 +12,7 @@ import {
 } from '@dnd-kit/core';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
+import { useEffect, useId, useOptimistic, useRef, useState, useTransition } from 'react';
 
 import type * as boards from '@timeline/shared/boards';
 
@@ -43,24 +43,24 @@ export function CuratedKanbanBoard({ boardId, lanes, items }: Props) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saveState, setSaveState] = useState<CuratedKanbanSaveState>('idle');
   const savingRef = useRef<Set<string> | null>(null);
-  savingRef.current ??= new Set<string>();
-  const savingSet = savingRef.current;
   const batchHadFailureRef = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const laneIdSet = new Set(lanes.map((lane) => lane.id));
+  savingRef.current ??= new Set();
+  const savingSet = savingRef.current;
 
-  // react-doctor-disable-next-line react-doctor/exhaustive-deps
   useEffect(() => {
+    const timerRef = timer;
     return () => {
-      if (timer.current) clearTimeout(timer.current);
+      if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
 
-  const laneIds = useMemo(() => new Set(lanes.map((lane) => lane.id)), [lanes]);
   const byLane = new Map<string | null, boards.BoardItemRow[]>();
   for (const lane of lanes) byLane.set(lane.id, []);
   byLane.set(null, []);
   for (const item of optimisticItems) {
-    const laneId = item.laneId && laneIds.has(item.laneId) ? item.laneId : null;
+    const laneId = item.laneId && laneIdSet.has(item.laneId) ? item.laneId : null;
     const list = byLane.get(laneId) ?? [];
     list.push(item);
     byLane.set(laneId, list);

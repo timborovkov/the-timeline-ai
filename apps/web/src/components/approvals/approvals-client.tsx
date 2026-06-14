@@ -152,12 +152,12 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true }: Props) 
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const bulkAcceptSuggestions = suggestions.flatMap((bundle) => {
-    const itemIds: string[] = [];
-    for (const item of bundle.items) {
+    const itemIds = bundle.items.reduce<string[]>((ids, item) => {
       if (isActionableSuggestionStatus(item.status) && item.targetKind !== 'object_merge') {
-        itemIds.push(item.id);
+        ids.push(item.id);
       }
-    }
+      return ids;
+    }, []);
     return itemIds.length > 0 ? [{ suggestionId: bundle.id, itemIds }] : [];
   });
   const bulkAcceptItemCount = bulkAcceptSuggestions.reduce(
