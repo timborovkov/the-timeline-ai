@@ -19,6 +19,24 @@ const digestSummarySchema = z.object({
   summary: z.string().min(1).max(3000),
 });
 
+function disabledDigestPayload(input: GenerateDailyDigestInput): DailyDigestPayload {
+  return {
+    teamName: '',
+    userName: null,
+    windowStart: iso(input.windowStart),
+    windowEnd: iso(input.windowEnd),
+    summary: 'Daily digest is disabled.',
+    pendingApprovals: 0,
+    eventCount: 0,
+    sourceDistribution: {},
+    objectChangesByType: {},
+    newTeamMembers: [],
+    tasks: [],
+    upcomingCalendar: [],
+    links: [],
+  };
+}
+
 export interface GenerateDailyDigestInput {
   db: Db;
   teamId: string;
@@ -187,6 +205,7 @@ export async function generateDailyDigest(
 ): Promise<GenerateDailyDigestResult> {
   const preference = await getDigestPreference(input);
   if (!preference.enabled) {
+    const payload = disabledDigestPayload(input);
     const [row] = await input.db
       .insert(dailyDigests)
       .values({
@@ -196,27 +215,32 @@ export async function generateDailyDigest(
         windowEnd: input.windowEnd,
         summary: 'Daily digest is disabled.',
         status: 'skipped',
-        payload: {},
+        payload,
       })
       .onConflictDoNothing()
       .returning({ id: dailyDigests.id });
+    if (row?.id) {
+      return {
+        digestId: row.id,
+        payload,
+        skipped: true,
+      };
+    }
+    const existing = await input.db
+      .select({ id: dailyDigests.id, payload: dailyDigests.payload })
+      .from(dailyDigests)
+      .where(
+        and(
+          eq(dailyDigests.teamId, input.teamId),
+          eq(dailyDigests.userId, input.userId),
+          eq(dailyDigests.windowStart, input.windowStart),
+          eq(dailyDigests.windowEnd, input.windowEnd),
+        ),
+      )
+      .limit(1);
     return {
-      digestId: row?.id ?? '',
-      payload: {
-        teamName: '',
-        userName: null,
-        windowStart: iso(input.windowStart),
-        windowEnd: iso(input.windowEnd),
-        summary: 'Daily digest is disabled.',
-        pendingApprovals: 0,
-        eventCount: 0,
-        sourceDistribution: {},
-        objectChangesByType: {},
-        newTeamMembers: [],
-        tasks: [],
-        upcomingCalendar: [],
-        links: [],
-      },
+      digestId: existing[0]?.id ?? '',
+      payload: (existing[0]?.payload as DailyDigestPayload | undefined) ?? payload,
       skipped: true,
     };
   }
@@ -404,7 +428,7 @@ export async function generateDailyDigest(
   if (inserted?.id) return { digestId: inserted.id, payload, skipped: false };
 
   const existing = await input.db
-    .select({ id: dailyDigests.id, payload: dailyDigests.payload })
+    .select({ id: dailyDigests.id, payload: dailyDigests.payload, status: dailyDigests.status })
     .from(dailyDigests)
     .where(
       and(
@@ -415,6 +439,18 @@ export async function generateDailyDigest(
       ),
     )
     .limit(1);
+  if (existing[0]?.status === 'skipped') {
+    await input.db
+      .update(dailyDigests)
+      .set({
+        summary,
+        payload,
+        status: 'generated',
+        error: null,
+      })
+      .where(eq(dailyDigests.id, existing[0].id));
+    return { digestId: existing[0].id, payload, skipped: false };
+  }
   return {
     digestId: existing[0]?.id ?? '',
     payload: (existing[0]?.payload as DailyDigestPayload | undefined) ?? payload,
