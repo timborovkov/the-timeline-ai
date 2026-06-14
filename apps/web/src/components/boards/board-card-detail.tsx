@@ -23,6 +23,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { boardViewHref } from '@/lib/board-links';
+import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -92,7 +93,9 @@ export function BoardCardDetail({
       <div className="border-b border-border p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold text-fg">{item.object.canonicalName}</h2>
+            <h2 className="truncate text-lg font-semibold text-fg">
+              {displayText(item.object.canonicalName)}
+            </h2>
             <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
               {item.object.type} · board item
             </p>
@@ -106,7 +109,12 @@ export function BoardCardDetail({
         </div>
         {blocked ? (
           <p className="mt-3 inline-flex rounded-sm border border-danger/40 px-2 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-danger">
-            Blocked · {lane.name}
+            Blocked · {displayText(lane.name)}
+          </p>
+        ) : null}
+        {item.nextStep ? (
+          <p className="mt-3 border-l border-signal pl-3 text-sm text-fg-muted">
+            {displayText(item.nextStep)}
           </p>
         ) : null}
       </div>
@@ -238,7 +246,7 @@ export function BoardCardDetail({
               item.notes ? 'text-fg-muted' : 'text-fg-dim',
             )}
           >
-            {item.notes ?? 'No notes yet.'}
+            {item.notes ? displayText(item.notes) : 'No notes yet.'}
           </p>
         )}
       </section>
@@ -312,7 +320,7 @@ export function BoardCardDetail({
                   {formatChangeValue(change.field, change.newValue, lanes, members)}
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-fg-dim">
-                  <span>{change.changedAt.toLocaleString()}</span>
+                  <span>{formatDisplayDateTime(change.changedAt)}</span>
                   {change.sourceEventId ? (
                     <Link
                       href={`/app/timeline?event=${change.sourceEventId}#ev-${change.sourceEventId}`}
@@ -322,7 +330,7 @@ export function BoardCardDetail({
                     </Link>
                   ) : null}
                 </div>
-                {change.note ? <p className="mt-2 text-fg">{change.note}</p> : null}
+                {change.note ? <p className="mt-2 text-fg">{displayText(change.note)}</p> : null}
               </li>
             ))}
           </ol>
@@ -345,7 +353,7 @@ function ObjectPreviewDialog({ item }: { item: boards.BoardItemRow }) {
       </DialogTrigger>
       <DialogContent className="border-border bg-bg sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{item.object.canonicalName}</DialogTitle>
+          <DialogTitle>{displayText(item.object.canonicalName)}</DialogTitle>
           <DialogDescription className="font-mono text-[11px] uppercase tracking-[0.12em]">
             {item.object.type} · object preview
           </DialogDescription>
@@ -364,7 +372,9 @@ function ObjectPreviewDialog({ item }: { item: boards.BoardItemRow }) {
             <h3 className="mb-1 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
               Aliases
             </h3>
-            <p className="text-sm text-fg-muted">{item.object.aliases.join(', ')}</p>
+            <p className="text-sm text-fg-muted">
+              {item.object.aliases.map(displayText).join(', ')}
+            </p>
           </section>
         ) : null}
         <div className="flex justify-end">
@@ -505,17 +515,17 @@ function formatChangeValue(
 ): string {
   if (value === null || value === undefined || value === '') return 'empty';
   if (field === 'laneId' && typeof value === 'string') {
-    return lanes.find((lane) => lane.id === value)?.name ?? 'Unknown lane';
+    return displayText(lanes.find((lane) => lane.id === value)?.name ?? 'Unknown lane');
   }
   if (field === 'responsibleUserId' && typeof value === 'string') {
-    return members.find((member) => member.id === value)?.label ?? 'Assigned';
+    return displayText(members.find((member) => member.id === value)?.label ?? 'Assigned');
   }
   if (field === 'dueAt' && typeof value === 'string') {
     const date = new Date(value);
-    return Number.isFinite(date.getTime()) ? dateLabel(date) : value;
+    return Number.isFinite(date.getTime()) ? dateLabel(date) : displayText(value);
   }
   if (field === 'priority' && typeof value === 'number') return `P${value}`;
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') return displayText(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  return JSON.stringify(value);
+  return displayText(JSON.stringify(value));
 }

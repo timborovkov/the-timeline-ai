@@ -13,6 +13,27 @@ The core product question is:
 
 This plan defines the direction for turning Work into that place.
 
+## Current Implementation Status
+
+The current branch completes the first two slices of this plan:
+
+- **Phase 0: Work hub IA and Work Queue.** `/app/work` is now centered on a
+  single Work Queue, with team boards, compact recent changes, attention counts,
+  and secondary navigation into Objects, Tasks, Boards, Calendar, and Approvals.
+  `/app` remains the broader home/capture dashboard, with Quick actions reduced
+  so Work absorbs the operational object/task/board entry points.
+- **Phase 1: Board Item Command Center.** The board item side panel now supports
+  responsible person, lane and blocked-state changes, due date, priority, next
+  step, notes, and readable recent activity using the existing board item schema.
+  The board scan layer shows responsible/unassigned state, due state, priority,
+  next step, and blocked state.
+- **Adjacent object-page cleanup.** Object detail pages now expose editable name
+  and aliases, hide internal pagination terminators, and render recent changes
+  as readable summaries instead of raw JSON.
+
+The next product gap is no longer "where do I see my work?" It is "how does a
+team discuss, follow, and get notified about work where the work already lives?"
+
 ## Thesis
 
 We are not building a Trello or Asana clone. Those products still teach useful
@@ -36,8 +57,9 @@ capture work -> assign it -> discuss it -> move it -> remember why -> know what 
 
 ## Problem
 
-The current Work area exposes too much system truth and too little user
-workflow.
+Historically, the Work area exposed too much system truth and too little user
+workflow. Phase 0 and Phase 1 reduce that, but the remaining gaps are still
+important.
 
 Examples:
 
@@ -217,6 +239,8 @@ objects.
 
 ### Phase 0: Information Architecture Cleanup
 
+Status: implemented in the current branch.
+
 Goal: make Work feel like a real home base.
 
 Work hub should become the daily landing page for operational work.
@@ -246,6 +270,10 @@ Success criteria:
 - The Work hub feels like a daily starting point, not an index page.
 
 ### Phase 1: Board Item Command Center
+
+Status: implemented in the current branch for the core fields only. Comments,
+checklists, collaborators/watchers, custom fields, and new schema are still
+future phases.
 
 Goal: make the board item side panel the primary place where work happens.
 
@@ -571,18 +599,25 @@ Mobile:
 
 ## Recommended Build Order
 
+Done in the current branch:
+
 1. Work hub IA and daily workflow layout.
-2. Board item command center with responsible person, lane/blocked state, due
+2. Work Queue model, board-scope queue helper, and due/responsible queue
+   normalization.
+3. Board item command center with responsible person, lane/blocked state, due
    date, priority, next step, notes, and activity.
-3. Card and row scan layer improvements.
-4. Comments, mentions, watchers, and notifications.
-5. Owner/collaborator model plus Work queue views.
-6. Custom fields and saved views.
-7. Timeline evidence and AI summary inside item detail.
-8. Suggestion worker context improvements for responsible person, due date,
+4. Card and row scan layer improvements.
+
+Next:
+
+1. Comments, mentions, watchers, and notifications.
+2. Owner/collaborator model plus Work Queue views.
+3. Custom fields and saved views.
+4. Timeline evidence and AI summary inside item detail.
+5. Suggestion worker context improvements for responsible person, due date,
    lane, priority, next step, and abandoned-looking work proposals.
-9. Calendar/reminder integration.
-10. Templates and imports.
+6. Calendar/reminder integration.
+7. Templates and imports.
 
 ## First Milestone Definition
 
@@ -603,5 +638,10 @@ Recommended wedge: a team pipeline or task board where users can:
 - receive approval-backed suggestions for board item stage, responsible person,
   due date, priority, next step, and abandoned-looking work updates
 - ask the agent what changed and why
+
+The current branch covers the Work Queue, board scan layer, and core board item
+editing parts of this milestone. The main missing pieces are comments/mentions,
+checklists, collaborators/watchers, stronger Timeline evidence inside item
+detail, and suggestion-worker improvements.
 
 If this loop feels excellent, the broader platform can expand from it.

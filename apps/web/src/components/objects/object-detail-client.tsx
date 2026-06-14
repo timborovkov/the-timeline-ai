@@ -34,6 +34,7 @@ import {
   visibleObjectSearchResultsForQuery,
 } from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
+import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
@@ -935,11 +936,11 @@ function ObjectDetailHeader({
             <span>id {detail.id.slice(0, 8)}</span>
           </div>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-fg">
-            {detail.canonicalName}
+            {displayText(detail.canonicalName)}
           </h1>
           {detail.aliases.length > 0 && (
             <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-              aka {detail.aliases.join(' · ')}
+              aka {detail.aliases.map(displayText).join(' · ')}
             </p>
           )}
         </div>
@@ -1215,10 +1216,10 @@ function ObjectNoteItem({
           </div>
         </div>
       ) : (
-        <div className="whitespace-pre-wrap">{note.body}</div>
+        <div className="whitespace-pre-wrap">{displayText(note.body)}</div>
       )}
       <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{new Date(note.createdAt).toLocaleString()}</span>
+        <span>{formatDisplayDateTime(note.createdAt)}</span>
         {isOwner && !isEditing ? (
           <div className="flex gap-3">
             <button
@@ -1261,7 +1262,7 @@ function ObjectOpenTasksSection({ tasks }: { tasks: ObjectDetail['openTasks'] })
               className="flex items-center justify-between rounded-sm border border-border bg-surface px-4 py-2 text-sm"
             >
               <a href={`/app/objects/${task.id}`} className="font-medium hover:underline">
-                {task.canonicalName}
+                {displayText(task.canonicalName)}
               </a>
               <span className="text-xs text-muted-foreground">
                 {task.status}
@@ -1349,7 +1350,7 @@ function ObjectRelationshipsSection({
       </div>
       {selectedLink ? (
         <p className="mb-3 text-xs text-muted-foreground">
-          Selected {selectedLink.canonicalName} · {selectedLink.type}
+          Selected {displayText(selectedLink.canonicalName)} · {selectedLink.type}
         </p>
       ) : linkResults.length > 0 ? (
         <ul className="mb-3 grid gap-1">
@@ -1363,7 +1364,7 @@ function ObjectRelationshipsSection({
                   onSelectLink(result);
                 }}
               >
-                <span className="font-medium">{result.canonicalName}</span>{' '}
+                <span className="font-medium">{displayText(result.canonicalName)}</span>{' '}
                 <span className="text-xs text-muted-foreground">{result.type}</span>
               </button>
             </li>
@@ -1383,7 +1384,7 @@ function ObjectRelationshipsSection({
                 href={`/app/objects/${relationship.otherId}`}
                 className="min-w-0 truncate font-medium hover:underline"
               >
-                {relationship.otherName}
+                {displayText(relationship.otherName)}
               </a>
               <div className="flex items-center justify-between gap-3">
                 <span className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -1474,7 +1475,7 @@ function ObjectRecentChangeItem({
         {formatValue(change.previousValue)} → {formatValue(change.newValue)}
       </div>
       <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{new Date(change.changedAt).toLocaleString()}</span>
+        <span>{formatDisplayDateTime(change.changedAt)}</span>
         {isSuggested ? (
           <div className="flex gap-2">
             <button
@@ -1566,9 +1567,9 @@ function toLocalInput(d: Date): string {
 
 function formatValue(v: unknown): string {
   if (v === null || v === undefined) return '∅';
-  if (typeof v === 'string') return v;
+  if (typeof v === 'string') return displayText(v);
   if (Array.isArray(v)) return v.map((item) => formatValue(item)).join(', ');
-  if (v instanceof Date) return v.toISOString();
+  if (v instanceof Date) return formatDisplayDateTime(v);
   if (typeof v === 'object') return summarizeObjectValue(v as Record<string, unknown>);
   if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);
   return 'updated';
@@ -1613,10 +1614,10 @@ function normalizeAliases(value: unknown): string[] {
 function summarizeObjectValue(value: Record<string, unknown>): string {
   const name = typeof value.canonicalName === 'string' ? value.canonicalName : null;
   const type = typeof value.type === 'string' ? value.type : null;
-  if (name && type) return `${name} (${type})`;
-  if (name) return name;
+  if (name && type) return `${displayText(name)} (${displayText(type)})`;
+  if (name) return displayText(name);
   const aliases = normalizeAliases(value.aliases);
-  if (aliases.length > 0) return `aliases: ${aliases.join(', ')}`;
+  if (aliases.length > 0) return `aliases: ${aliases.map(displayText).join(', ')}`;
   const mergedIds = Array.isArray(value.merged_entity_ids) ? value.merged_entity_ids.length : 0;
   if (mergedIds > 0) return `${mergedIds} merged object${mergedIds === 1 ? '' : 's'}`;
   return 'updated details';

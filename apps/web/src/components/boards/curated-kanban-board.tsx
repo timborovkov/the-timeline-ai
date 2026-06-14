@@ -31,6 +31,7 @@ import {
   curatedKanbanSaveState,
   type CuratedKanbanSaveState,
 } from '@/components/boards/curated-kanban-state';
+import { displayText } from '@/lib/display-dates';
 import { cn, errorMessage } from '@/lib/utils';
 
 interface Props {
@@ -291,13 +292,15 @@ function KanbanCard({
       )}
     >
       {optimistic ? (
-        <span className="block min-w-0 truncate font-medium">{item.object.canonicalName}</span>
+        <span className="block min-w-0 truncate font-medium">
+          {displayText(item.object.canonicalName)}
+        </span>
       ) : (
         <Link
           href={`/app/boards/${boardId}?item=${item.id}`}
           className="block min-w-0 truncate font-medium hover:underline"
         >
-          {item.object.canonicalName}
+          {displayText(item.object.canonicalName)}
         </Link>
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
@@ -316,7 +319,7 @@ function KanbanCard({
         />
       </div>
       {item.nextStep ? (
-        <p className="mt-2 line-clamp-2 text-xs text-fg-muted">{item.nextStep}</p>
+        <p className="mt-2 line-clamp-2 text-xs text-fg-muted">{displayText(item.nextStep)}</p>
       ) : null}
       {error ? (
         <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-danger">{error}</p>

@@ -9,6 +9,7 @@ import type * as objects from '@timeline/shared/objects';
 
 import { mergeObjectsAction } from '@/app/actions/objects';
 import { Button } from '@/components/ui/button';
+import { displayText } from '@/lib/display-dates';
 
 interface Props {
   objects: objects.ObjectRow[];
@@ -127,7 +128,9 @@ export function ObjectMergeForm({
                   className="size-4 accent-[var(--signal)]"
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-fg">{object.canonicalName}</span>
+                  <span className="block truncate font-medium text-fg">
+                    {displayText(object.canonicalName)}
+                  </span>
                   <span className="block font-mono text-[11px] uppercase tracking-[0.1em] text-fg-dim">
                     {object.type} · {object.status}
                   </span>
@@ -146,7 +149,7 @@ export function ObjectMergeForm({
                   <ul className="mt-2 space-y-2 text-fg-muted">
                     {factSamples.map((fact) => (
                       <li key={fact.id} className="border-l border-border pl-3">
-                        <p>{fact.statement}</p>
+                        <p>{displayText(fact.statement)}</p>
                         <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim">
                           Confidence {Math.round(fact.confidence * 100)}%
                         </div>
@@ -184,7 +187,7 @@ export function ObjectMergeForm({
         <div className="text-sm text-fg-muted">
           {aliases.length > 0 ? (
             <>
-              <span className="text-fg">Aliases added:</span> {aliases.join(', ')}
+              <span className="text-fg">Aliases added:</span> {aliases.map(displayText).join(', ')}
             </>
           ) : (
             'No new aliases will be added.'
