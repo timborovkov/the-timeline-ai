@@ -50,6 +50,51 @@ type TargetKind =
   | 'board_membership'
   | 'board_item_update';
 
+const EXPECTED_SUGGESTION_APPLY_FAILURE_CODE = 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE';
+const ENTITY_CANONICAL_NAME_UNIQUE_CONSTRAINT = 'entities_team_type_canonical_name_unq';
+
+class ExpectedSuggestionApplyFailure extends Error {
+  readonly code = EXPECTED_SUGGESTION_APPLY_FAILURE_CODE;
+
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'ExpectedSuggestionApplyFailure';
+  }
+}
+
+function errorCode(err: unknown): unknown {
+  return err && typeof err === 'object' ? (err as { code?: unknown }).code : undefined;
+}
+
+function errorConstraint(err: unknown): unknown {
+  return err && typeof err === 'object' ? (err as { constraint?: unknown }).constraint : undefined;
+}
+
+function errorCause(err: unknown): unknown {
+  return err && typeof err === 'object' ? (err as { cause?: unknown }).cause : undefined;
+}
+
+function errorMessageIncludes(err: unknown, value: string): boolean {
+  return err instanceof Error && err.message.includes(value);
+}
+
+function isEntityCanonicalNameDuplicate(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  if (
+    errorCode(err) === '23505' &&
+    (errorConstraint(err) === ENTITY_CANONICAL_NAME_UNIQUE_CONSTRAINT ||
+      errorMessageIncludes(err, ENTITY_CANONICAL_NAME_UNIQUE_CONSTRAINT))
+  ) {
+    return true;
+  }
+  const cause = errorCause(err);
+  return cause ? isEntityCanonicalNameDuplicate(cause) : false;
+}
+
+function isExpectedApplyFailure(err: unknown): boolean {
+  return err instanceof z.ZodError || isEntityCanonicalNameDuplicate(err);
+}
+
 export interface SuggestionScopeDeps {
   db: Db;
   teamId: string;
@@ -2333,11 +2378,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     try {
       resultId = await applyItem(row.item);
     } catch (err) {
+      const failureReason = err instanceof Error ? err.message : 'Failed to apply suggestion';
       await db
         .update(agentSuggestionItems)
         .set({
           status: 'failed',
-          failureReason: err instanceof Error ? err.message : 'Failed to apply suggestion',
+          failureReason,
           resolvedAt: null,
           resolvedByUserId: null,
           updatedAt: new Date(),
@@ -2358,6 +2404,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         suggestionId: row.suggestion.id,
         op: 'accept_failure',
       });
+      if (isExpectedApplyFailure(err)) {
+        throw new ExpectedSuggestionApplyFailure(failureReason, { cause: err });
+      }
       throw err;
     }
     await db

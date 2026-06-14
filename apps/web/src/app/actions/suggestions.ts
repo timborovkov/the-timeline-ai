@@ -7,6 +7,8 @@ import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 
+const EXPECTED_SUGGESTION_APPLY_FAILURE_CODE = 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE';
+
 function revalidateSuggestionSurfaces() {
   revalidatePath('/app');
   revalidatePath('/app/approvals');
@@ -16,6 +18,24 @@ function revalidateSuggestionSurfaces() {
   revalidatePath('/app/calendar');
   revalidatePath('/app/tasks');
   revalidatePath('/app/inbox');
+}
+
+function isExpectedSuggestionApplyFailure(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const code = (err as { code?: unknown }).code;
+  if (code === EXPECTED_SUGGESTION_APPLY_FAILURE_CODE) return true;
+  if ((err as { name?: unknown }).name === 'ExpectedSuggestionApplyFailure') return true;
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause && isExpectedSuggestionApplyFailure(cause)) return true;
+  return false;
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err &&
+    typeof err === 'object' &&
+    typeof (err as { message?: unknown }).message === 'string'
+    ? (err as { message: string }).message
+    : fallback;
 }
 
 export async function acceptSuggestionItemAction(input: unknown): Promise<ActionState> {
@@ -30,9 +50,11 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Action
       revalidateSuggestionSurfaces();
       return { ok: true };
     } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'accept_suggestion_item' });
+      if (!isExpectedSuggestionApplyFailure(err)) {
+        reportCaughtError(err, { surface: 'server_action', operation: 'accept_suggestion_item' });
+      }
       revalidateSuggestionSurfaces();
-      return { error: err instanceof Error ? err.message : 'Failed to accept suggestion' };
+      return { error: errorMessage(err, 'Failed to accept suggestion') };
     }
   });
 }
