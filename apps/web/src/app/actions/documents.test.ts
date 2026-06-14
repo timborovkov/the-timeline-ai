@@ -64,6 +64,7 @@ const fakes = vi.hoisted(() => ({
   fakeHeadObject: vi.fn(),
   fakeCheckRateLimit: vi.fn(),
   fakeSafeMarkOnboardingStep: vi.fn(),
+  fakeRevalidatePath: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -77,7 +78,7 @@ vi.mock('@/lib/queue', () => ({
 vi.mock('@/lib/onboarding', () => ({
   safeMarkOnboardingStep: fakes.fakeSafeMarkOnboardingStep,
 }));
-vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
 
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({ documents: fakes.fakeScope, audit: { record: fakes.fakeAuditRecord } }),
@@ -110,6 +111,7 @@ const {
   fakeHeadObject,
   fakeCheckRateLimit,
   fakeSafeMarkOnboardingStep,
+  fakeRevalidatePath,
 } = fakes;
 
 const DOC_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -216,6 +218,24 @@ describe('documents actions — schema validation gates the scope', () => {
       parentFolderId: null,
       visibility: 'specific_users',
       visibilityUserIds: [USER_ID],
+    });
+  });
+
+  it('createFolderAction still succeeds when post-create revalidation fails', async () => {
+    fakeScope.createFolder.mockResolvedValue({ id: 'folder' });
+    fakeRevalidatePath.mockImplementationOnce(() => {
+      throw new Error('cache unavailable');
+    });
+
+    await expect(createFolderAction({ name: 'Customers' })).resolves.toEqual({
+      ok: true,
+      id: 'folder',
+    });
+    expect(fakeScope.createFolder).toHaveBeenCalledWith({
+      name: 'Customers',
+      parentFolderId: null,
+      visibility: 'team',
+      visibilityUserIds: null,
     });
   });
 });

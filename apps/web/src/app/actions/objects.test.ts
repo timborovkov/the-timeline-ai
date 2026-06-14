@@ -520,6 +520,22 @@ describe('object relationship, note, notification, and suggestion actions', () =
     });
   });
 
+  it('keeps created notes successful when post-create revalidation fails', async () => {
+    fakes.fakeRevalidatePath.mockImplementationOnce(() => {
+      throw new Error('cache unavailable');
+    });
+
+    await expect(createNoteAction({ entityId: OBJECT_ID, body: 'Note' })).resolves.toEqual({
+      ok: true,
+      id: NOTE_ID,
+    });
+    expect(fakes.fakeObjects.createNote).toHaveBeenCalledWith({
+      entityId: OBJECT_ID,
+      body: 'Note',
+      authorUserId: USER_ID,
+    });
+  });
+
   it('surfaces not-found note updates as action errors', async () => {
     fakes.fakeObjects.updateNote.mockResolvedValue(false);
 

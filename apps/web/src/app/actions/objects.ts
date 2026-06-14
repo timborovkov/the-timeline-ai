@@ -431,22 +431,31 @@ const noteCreateSchema = z.object({
   body: z.string().trim().min(1).max(5000),
 });
 
+function bestEffortRevalidateObjectDetail(entityId: string, operation: string): void {
+  try {
+    revalidatePath(`/app/objects/${entityId}`);
+  } catch (err) {
+    reportCaughtError(err, { surface: 'server_action', operation });
+  }
+}
+
 export async function createNoteAction(input: unknown): Promise<ActionState> {
   return runSentryServerAction('create_note', async () => {
     const parsed = noteCreateSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
+    let note: { id: string };
     try {
-      const note = await r.scope.objects.createNote({
+      note = await r.scope.objects.createNote({
         ...parsed.data,
         authorUserId: r.userId,
       });
-      revalidatePath(`/app/objects/${parsed.data.entityId}`);
-      return { ok: true, id: note.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to add note') };
     }
+    bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_note');
+    return { ok: true, id: note.id };
   });
 }
 
