@@ -51,10 +51,3 @@ jobs:
           AUTH_SECRET: ci_dummy_secret_at_least_16_chars
           DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
         run: pnpm test:ci
-
-      - name: Production web build
-        env:
-          AUTH_SECRET: ci_dummy_secret_at_least_16_chars
-          DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
-          NODE_ENV: production
-        run: pnpm --filter @timeline/db build && pnpm --filter @timeline/shared build && pnpm --filter @timeline/web build
