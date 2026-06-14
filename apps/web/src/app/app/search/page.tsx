@@ -19,14 +19,17 @@ const SEARCH_SOURCES = new Set([
   'system',
 ]);
 
-function cleanParam(value: string | undefined): string {
-  return value?.trim() ?? '';
+type SearchParamValue = string | string[] | undefined;
+
+function cleanParam(value: SearchParamValue): string {
+  const scalar = Array.isArray(value) ? value[0] : value;
+  return scalar?.trim() ?? '';
 }
 
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; source?: string; from?: string; to?: string }>;
+  searchParams: Promise<Record<string, SearchParamValue>>;
 }) {
   const params = await searchParams;
   const source = cleanParam(params.source);

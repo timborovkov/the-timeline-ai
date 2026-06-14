@@ -127,7 +127,8 @@ async function searchObjectNotes(
     const notes = await scope.timeline.searchObjectNotes({ query: input.query, limit: 10 });
     const byId = new Map(existing.map((result) => [result.href, result]));
     for (const note of notes) {
-      const kind: GlobalSearchKind = note.objectType === 'task' ? 'task' : 'object';
+      const kind: GlobalSearchKind =
+        note.objectType === 'task' || note.objectType === 'follow_up' ? 'task' : 'object';
       if (!wants(kinds, kind)) continue;
       const href = `/app/objects/${note.objectId}`;
       const current = byId.get(href);
@@ -221,6 +222,8 @@ async function searchDocuments(
       query: input.query,
       limit: sourceLimit(input, 10),
       maxOffset: 80,
+      from: input.from ? new Date(input.from) : undefined,
+      to: input.to ? new Date(input.to) : undefined,
     });
     return page.items.map((hit) =>
       finalizeGlobalSearchResult({
@@ -229,6 +232,7 @@ async function searchDocuments(
         title: hit.documentName,
         snippet: hit.summary ?? hit.text.slice(0, 240),
         href: `/app/documents/${hit.documentId}?version=${String(hit.version)}#chunk-${hit.documentChunkId}`,
+        updatedAt: hit.createdAt.toISOString(),
         scoreParts: {
           semantic: hit.score,
           intent: scoreIntent(input.query, 'document_chunk', [

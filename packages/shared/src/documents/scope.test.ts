@@ -3,6 +3,9 @@ import { type Db } from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import type { EmbedResult } from '#src/llm/embed.js';
+import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
+
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -237,6 +240,86 @@ describe('document scope — visibility filter', () => {
         [TEAM_ID, folder.id, USER_A, sourceEvent.rows[0]?.id],
       ),
     ).rejects.toThrow(/documents_captured_folder_null_chk/);
+  });
+
+  it('filters semantic chunk search by document version date', async () => {
+    const oldDoc = await pg.query<{ id: string }>(
+      `INSERT INTO documents (team_id, file_kind, folder_id, name, owner_user_id, visibility, metadata)
+       VALUES ($1, 'document', null, 'Old launch notes', $2, 'team', '{}'::jsonb)
+       RETURNING id`,
+      [TEAM_ID, USER_A],
+    );
+    const newDoc = await pg.query<{ id: string }>(
+      `INSERT INTO documents (team_id, file_kind, folder_id, name, owner_user_id, visibility, metadata)
+       VALUES ($1, 'document', null, 'June launch notes', $2, 'team', '{}'::jsonb)
+       RETURNING id`,
+      [TEAM_ID, USER_A],
+    );
+    const oldVersion = await pg.query<{ id: string }>(
+      `INSERT INTO document_versions (
+         team_id, document_id, version, object_key, byte_size, content_type, uploaded_by_user_id, processing_status, created_at
+       )
+       VALUES ($1, $2, 1, 'team/docs/old.txt', 128, 'text/plain', $3, 'chunked', '2026-05-01T00:00:00.000Z')
+       RETURNING id`,
+      [TEAM_ID, oldDoc.rows[0]?.id, USER_A],
+    );
+    const newVersion = await pg.query<{ id: string }>(
+      `INSERT INTO document_versions (
+         team_id, document_id, version, object_key, byte_size, content_type, uploaded_by_user_id, processing_status, created_at
+       )
+       VALUES ($1, $2, 1, 'team/docs/june.txt', 128, 'text/plain', $3, 'chunked', '2026-06-12T00:00:00.000Z')
+       RETURNING id`,
+      [TEAM_ID, newDoc.rows[0]?.id, USER_A],
+    );
+    const oldChunk = await pg.query<{ id: string }>(
+      `INSERT INTO document_chunks (team_id, document_id, document_version_id, chunk_index, representation_kind, text, token_count)
+       VALUES ($1, $2, $3, 0, 'source_text', 'Old launch plan', 3)
+       RETURNING id`,
+      [TEAM_ID, oldDoc.rows[0]?.id, oldVersion.rows[0]?.id],
+    );
+    const newChunk = await pg.query<{ id: string }>(
+      `INSERT INTO document_chunks (team_id, document_id, document_version_id, chunk_index, representation_kind, text, token_count)
+       VALUES ($1, $2, $3, 0, 'source_text', 'June launch plan', 3)
+       RETURNING id`,
+      [TEAM_ID, newDoc.rows[0]?.id, newVersion.rows[0]?.id],
+    );
+    await pg.query(`UPDATE documents SET current_version_id = $1 WHERE id = $2`, [
+      oldVersion.rows[0]?.id,
+      oldDoc.rows[0]?.id,
+    ]);
+    await pg.query(`UPDATE documents SET current_version_id = $1 WHERE id = $2`, [
+      newVersion.rows[0]?.id,
+      newDoc.rows[0]?.id,
+    ]);
+
+    const hits = [oldChunk.rows[0]?.id, newChunk.rows[0]?.id].map(
+      (chunkId, index): SearchHit =>
+        ({
+          id: `point-${index}`,
+          score: 0.9 - index / 10,
+          payload: {
+            team_id: TEAM_ID,
+            source_kind: 'doc_chunk',
+            document_chunk_id: chunkId,
+          },
+        }) as SearchHit,
+    );
+    const scope = withTeam(db, TEAM_ID, USER_A, {
+      embed: ({ text }): Promise<EmbedResult> =>
+        Promise.resolve({ vector: [text.length], model: 'test-embedding-model' }),
+      qdrantSearch: (_teamId: string, _userId: string, _vector: number[], _opts: SearchOpts) =>
+        Promise.resolve(hits),
+    }).documents;
+
+    const page = await scope.searchDocumentChunksPage({
+      query: 'launch plan',
+      from: new Date('2026-06-01T00:00:00.000Z'),
+      to: new Date('2026-07-01T00:00:00.000Z'),
+      limit: 10,
+    });
+
+    expect(page.items.map((item) => item.documentName)).toEqual(['June launch notes']);
+    expect(page.items[0]?.createdAt).toEqual(new Date('2026-06-12T00:00:00.000Z'));
   });
 
   it('promotes an existing captured file without losing source provenance', async () => {

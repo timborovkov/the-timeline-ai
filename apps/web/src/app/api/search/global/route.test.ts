@@ -107,6 +107,7 @@ beforeEach(() => {
         documentName: 'Launch docs',
         folderId: null,
         sourceRawEventId: null,
+        createdAt: new Date('2026-06-05T00:00:00.000Z'),
         score: 0.8,
       },
     ],
@@ -265,7 +266,7 @@ describe('POST /api/search/global', () => {
     expect(fakes.fakeSearchObjectNotes).not.toHaveBeenCalled();
   });
 
-  it('forwards timeline source and date filters to semantic timeline and calendar search', async () => {
+  it('forwards timeline source and date filters to semantic timeline, document, and calendar search', async () => {
     const response = await POST(
       request({
         query: 'launch',
@@ -286,6 +287,13 @@ describe('POST /api/search/global', () => {
     });
     expect(fakes.fakeListCalendarEvents).toHaveBeenCalledWith({
       limit: 240,
+      from: new Date('2026-06-01T00:00:00.000Z'),
+      to: new Date('2026-06-30T23:59:59.000Z'),
+    });
+    expect(fakes.fakeSearchDocumentChunksPage).toHaveBeenCalledWith({
+      query: 'launch',
+      limit: 10,
+      maxOffset: 80,
       from: new Date('2026-06-01T00:00:00.000Z'),
       to: new Date('2026-06-30T23:59:59.000Z'),
     });
@@ -337,6 +345,32 @@ describe('POST /api/search/global', () => {
           item.scoreParts.semantic === 0.95,
       ),
     ).toBe(true);
+  });
+
+  it('classifies follow-up object-note hits as task results', async () => {
+    fakes.fakeListObjects.mockResolvedValue([]);
+    fakes.fakeSearchObjectNotes.mockResolvedValue([
+      {
+        noteId: 'note-follow-up',
+        objectId: 'follow-up-1',
+        objectName: 'Send launch recap',
+        objectType: 'follow_up',
+        body: 'Follow up with the launch recap after the GitHub rollout.',
+        score: 0.91,
+        updatedAt: '2026-06-12T00:00:00.000Z',
+      },
+    ]);
+
+    const response = await POST(request({ query: 'launch recap', mode: 'full', kinds: ['task'] }));
+    const data = (await response.json()) as {
+      ok: true;
+      results: { kind: string; title: string; metadata?: { type?: string } }[];
+    };
+
+    expect(response.status).toBe(200);
+    const followUp = data.results.find((item) => item.title === 'Send launch recap');
+    expect(followUp?.kind).toBe('task');
+    expect(followUp?.metadata?.type).toBe('follow_up');
   });
 
   it('does not match or leak redacted calendar title, description, or location text', async () => {
