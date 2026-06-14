@@ -19,6 +19,7 @@ const pgliteTests = [
   'src/integrations/event-writer.test.ts',
   'src/job-recovery/index.test.ts',
   'src/mcp-server/handler.test.ts',
+  'src/meetings/quick-capture.test.ts',
   'src/meetings/scope.test.ts',
   'src/onboarding/index.test.ts',
   'src/objects/index.test.ts',

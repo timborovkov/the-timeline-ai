@@ -16,6 +16,7 @@ const integrationTests = [
   'src/workers/extract.test.ts',
   'src/workers/janitor.test.ts',
   'src/workers/meetingFinalize.test.ts',
+  'src/workers/meetingScheduler.test.ts',
   'src/workers/overdue.test.ts',
 ];
 
@@ -38,6 +39,7 @@ export default defineConfig({
           environment: 'node',
           fileParallelism: false,
           testTimeout: 15_000,
+          hookTimeout: 60_000,
           env,
         },
       },

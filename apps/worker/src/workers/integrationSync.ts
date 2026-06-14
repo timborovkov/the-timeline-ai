@@ -28,7 +28,14 @@ interface IntegrationSyncDeps {
   db: Db;
 }
 
-async function runOneIntegration(
+function isAuthOrAccessFailure(message: string): boolean {
+  return (
+    /\b(?:401|403|404)\b/.test(message) ||
+    /\b(?:reconnect|expired|unauthorized|forbidden)\b/i.test(message)
+  );
+}
+
+export async function runOneIntegration(
   db: Db,
   integrationId: string,
   kind: 'backfill' | 'incremental',
@@ -74,9 +81,34 @@ async function runOneIntegration(
       // additive.
       return;
     }
-    const tokens = integrationsLib.adminDecryptTokens(integration);
+    if (integration.connectedByUserId) {
+      const ownerStillMember = await integrationsLib.adminVerifyTeamMember(
+        db,
+        integration.teamId,
+        integration.connectedByUserId,
+      );
+      if (!ownerStillMember) {
+        const msg = 'Connection owner left team — choose a replacement connection';
+        await integrationsLib.adminRecordError(db, integrationId, msg);
+        await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
+          providerConnectionId: integration.providerConnectionId,
+          integrationId,
+          category: 'needs_new_owner',
+          summary: msg,
+        });
+        return;
+      }
+    }
+    const tokens = await integrationsLib.adminDecryptIntegrationTokens(db, integration);
     if (!tokens) {
-      await integrationsLib.adminRecordError(db, integrationId, 'No tokens — reconnect required');
+      const msg = 'No tokens — reconnect required';
+      await integrationsLib.adminRecordError(db, integrationId, msg);
+      await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
+        providerConnectionId: integration.providerConnectionId,
+        integrationId,
+        category: 'needs_reconnect',
+        summary: msg,
+      });
       return;
     }
     const provider = integrationsLib.getProvider(integration.provider);
@@ -224,6 +256,12 @@ async function runOneIntegration(
         await provider.incrementalSync({ integration, tokens, selections, ctx });
       }
       await integrationsLib.adminMarkSynced(db, integrationId);
+      await integrationsLib.adminResetTransientSyncFailures(db, integrationId);
+      await integrationsLib.adminResolveConnectionAttention(db, integration.teamId, {
+        providerConnectionId: integration.providerConnectionId,
+        integrationId,
+        categories: ['needs_reconnect', 'sync_error'],
+      });
       await integrationsLib.adminRecordAudit(
         db,
         integration.teamId,
@@ -235,6 +273,28 @@ async function runOneIntegration(
       const msg = err instanceof Error ? err.message : String(err);
       log.warn({ err, integrationId }, 'integration sync failed');
       await integrationsLib.adminRecordError(db, integrationId, msg);
+      if (isAuthOrAccessFailure(msg)) {
+        await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
+          providerConnectionId: integration.providerConnectionId,
+          integrationId,
+          category: 'needs_reconnect',
+          summary: msg.slice(0, 500),
+        });
+      } else {
+        const transient = await integrationsLib.adminRecordTransientSyncFailure(
+          db,
+          integrationId,
+          msg.slice(0, 500),
+        );
+        if (transient.shouldCreateAttention) {
+          await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
+            providerConnectionId: integration.providerConnectionId,
+            integrationId,
+            category: 'sync_error',
+            summary: msg.slice(0, 500),
+          });
+        }
+      }
       await integrationsLib.adminRecordAudit(
         db,
         integration.teamId,

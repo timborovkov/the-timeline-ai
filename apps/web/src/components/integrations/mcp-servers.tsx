@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useReducer, useState } from 'react';
 
+import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -49,30 +50,42 @@ function patchAddServerState(
   return { ...state, ...patch };
 }
 
-async function startOAuth(server: McpServerRow): Promise<void> {
+type AppDialogApi = ReturnType<typeof useAppDialog>;
+
+async function startOAuth(server: McpServerRow, dialog: AppDialogApi): Promise<void> {
   const res = await fetch('/api/mcp/oauth/start', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ mcpServerId: server.id }),
   });
   if (!res.ok) {
-    alert(`OAuth start failed: ${await res.text()}`);
+    await dialog.alert({ title: 'OAuth start failed', description: await res.text() });
     return;
   }
   const data = (await res.json()) as { url?: string; error?: string };
   if (data.url) window.location.href = data.url;
-  else alert(`OAuth start failed: ${data.error ?? 'unknown'}`);
+  else await dialog.alert({ title: 'OAuth start failed', description: data.error ?? 'unknown' });
 }
 
-async function testCall(server: McpServerRow, toolName: string): Promise<void> {
+async function testCall(
+  server: McpServerRow,
+  toolName: string,
+  dialog: AppDialogApi,
+): Promise<void> {
   const namespaced = `mcp__${server.id.replace(/-/g, '')}__${toolName}`;
-  const argsRaw = prompt(`Args (JSON) for ${toolName}:`, '{}');
+  const argsRaw = await dialog.input({
+    title: 'Test tool call',
+    description: `Args (JSON) for ${toolName}`,
+    inputLabel: 'Arguments',
+    defaultValue: '{}',
+    confirmLabel: 'Run test',
+  });
   if (argsRaw === null) return;
   let args: Record<string, unknown> = {};
   try {
     args = JSON.parse(argsRaw) as Record<string, unknown>;
   } catch {
-    alert('Invalid JSON');
+    await dialog.alert({ title: 'Invalid JSON', description: 'Enter a valid JSON object.' });
     return;
   }
   const res = await fetch(`/api/team/mcp-servers/${server.id}/tools`, {
@@ -81,7 +94,7 @@ async function testCall(server: McpServerRow, toolName: string): Promise<void> {
     body: JSON.stringify({ tool: namespaced, args }),
   });
   const text = await res.text();
-  alert(text);
+  await dialog.alert({ title: 'Tool response', description: text });
 }
 
 /**
@@ -101,6 +114,7 @@ function AddCustomMcpServerForm({
   onCancel?: () => void;
 }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [{ name, url, authType, token, headerName, headerValue, busy }, setFormState] = useReducer(
     patchAddServerState,
     INITIAL_ADD_SERVER_STATE,
@@ -120,7 +134,7 @@ function AddCustomMcpServerForm({
       });
       if (!res.ok) {
         const text = await res.text();
-        alert(`Add failed: ${text}`);
+        await dialog.alert({ title: 'Add failed', description: text });
         return;
       }
       // If the server was created as OAuth, immediately bounce into the
@@ -138,7 +152,7 @@ function AddCustomMcpServerForm({
           body: JSON.stringify({ mcpServerId: data.id }),
         });
         if (!oauth.ok) {
-          alert(`OAuth start failed: ${await oauth.text()}`);
+          await dialog.alert({ title: 'OAuth start failed', description: await oauth.text() });
           router.refresh();
           if (onDone) onDone();
           return;
@@ -148,7 +162,10 @@ function AddCustomMcpServerForm({
           window.location.href = oauthData.url;
           return;
         }
-        alert(`OAuth start failed: ${oauthData.error ?? 'unknown'}`);
+        await dialog.alert({
+          title: 'OAuth start failed',
+          description: oauthData.error ?? 'unknown',
+        });
       }
       router.refresh();
       if (onDone) onDone();
@@ -245,6 +262,7 @@ function AddCustomMcpServerForm({
             </Button>
           ) : null}
         </div>
+        {dialog.node}
       </CardContent>
     </Card>
   );
@@ -294,6 +312,7 @@ export function McpServersUi({
   hideAddButton?: boolean;
 }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [showAdd, setShowAdd] = useState(false);
 
   async function toggleEnabled(server: McpServerRow) {
@@ -306,7 +325,13 @@ export function McpServersUi({
   }
 
   async function remove(server: McpServerRow) {
-    if (!confirm(`Remove ${server.name}?`)) return;
+    const confirmed = await dialog.confirm({
+      title: 'Remove MCP server?',
+      description: `${server.name} will be disconnected from this team.`,
+      confirmLabel: 'Remove',
+      destructive: true,
+    });
+    if (!confirmed) return;
     await fetch(`/api/team/mcp-servers/${server.id}`, { method: 'DELETE' });
     router.refresh();
   }
@@ -360,7 +385,7 @@ export function McpServersUi({
                       size="sm"
                       variant="secondary"
                       onClick={() => {
-                        void startOAuth(s);
+                        void startOAuth(s, dialog);
                       }}
                     >
                       Connect
@@ -408,7 +433,7 @@ export function McpServersUi({
                           size="sm"
                           variant="ghost"
                           onClick={() => {
-                            void testCall(s, t.name);
+                            void testCall(s, t.name, dialog);
                           }}
                         >
                           Test call
@@ -424,6 +449,7 @@ export function McpServersUi({
           ))}
         </ul>
       )}
+      {dialog.node}
     </div>
   );
 }

@@ -14,6 +14,7 @@ import {
   updateBoardSettingsAction,
 } from '@/app/actions/boards';
 import { BoardStageEditor, type EditableBoardStage } from '@/components/boards/board-stage-editor';
+import { useAppDialog } from '@/components/ui/app-dialog';
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,7 @@ export function BoardActionsMenu({
   lanes: boards.BoardLaneRow[];
 }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const activeLanes = useMemo(() => lanes.filter((lane) => !lane.archivedAt), [lanes]);
@@ -59,8 +61,14 @@ export function BoardActionsMenu({
     });
   }
 
-  function deleteBoard(): void {
-    if (!window.confirm('Delete this board? Objects are not affected.')) return;
+  async function deleteBoard(): Promise<void> {
+    const confirmed = await dialog.confirm({
+      title: 'Delete board?',
+      description: 'Objects are not affected.',
+      confirmLabel: 'Delete board',
+      destructive: true,
+    });
+    if (!confirmed) return;
     startTransition(async () => {
       const result = await deleteBoardAction({ id });
       if ('error' in result && result.error) {
@@ -108,7 +116,7 @@ export function BoardActionsMenu({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={() => {
-              deleteBoard();
+              void deleteBoard();
             }}
             disabled={pending}
             className="text-destructive focus:text-destructive"
@@ -127,6 +135,7 @@ export function BoardActionsMenu({
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
       />
+      {dialog.node}
     </>
   );
 }

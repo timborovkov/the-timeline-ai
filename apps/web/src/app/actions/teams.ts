@@ -16,6 +16,7 @@ import {
   telegramUserTeams,
   users,
 } from '@timeline/db';
+import * as integrationsLib from '@timeline/shared/integrations';
 import { sendMessage } from '@timeline/shared/messaging';
 import { buildInboundEmail, randomSlugSuffix, randomToken, slugify } from '@timeline/shared/slug';
 import { assertNotLastOwner } from '@timeline/shared/team-roles';
@@ -682,6 +683,10 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
 
     const scope = withTeam(db, active.teamId, session.user.id);
     const callerRole = await scope.requireMembership('admin');
+    const ownerLeftAttention: {
+      providerConnectionId: string | null;
+      integrationId: string;
+    }[] = [];
 
     try {
       await db.transaction(async (tx) => {
@@ -781,6 +786,7 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
           .select({
             id: integrations.id,
             connectedByUserId: integrations.connectedByUserId,
+            providerConnectionId: integrations.providerConnectionId,
             visibilityDefault: integrations.visibilityDefault,
             visibilityDefaultUserIds: integrations.visibilityDefaultUserIds,
           })
@@ -811,9 +817,21 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
             .set({
               visibilityDefault: nextVisibility,
               visibilityDefaultUserIds: nextUserIds.length > 0 ? nextUserIds : null,
+              ...(ownedByRemovedMember
+                ? {
+                    enabled: false,
+                    lastError: 'Connection owner left team — choose a replacement connection',
+                  }
+                : {}),
               updatedAt: new Date(),
             })
             .where(eq(integrations.id, row.id));
+          if (ownedByRemovedMember) {
+            ownerLeftAttention.push({
+              providerConnectionId: row.providerConnectionId,
+              integrationId: row.id,
+            });
+          }
         }
         // Revoke Telegram routing for this user — two anchors, both needed:
         //
@@ -968,6 +986,21 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
         return;
       }
       throw e;
+    }
+    for (const item of ownerLeftAttention) {
+      try {
+        await integrationsLib.adminRecordConnectionAttention(db, active.teamId, {
+          providerConnectionId: item.providerConnectionId,
+          integrationId: item.integrationId,
+          category: 'needs_new_owner',
+          summary: 'Connection owner left team — choose a replacement connection',
+        });
+      } catch (err) {
+        reportCaughtError(err, {
+          surface: 'server_action',
+          operation: 'remove_member_connection_attention',
+        });
+      }
     }
     revalidatePath('/app/team');
   });

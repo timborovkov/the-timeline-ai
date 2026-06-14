@@ -38,9 +38,8 @@ export async function POST(
   }
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) return NextResponse.json({ error: 'no_team' }, { status: 400 });
-  if (active.role !== 'owner' && active.role !== 'admin') {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-  }
+  // Any current team member can create their own provider connection.
+  // Admin is still required later to activate shared resources for team sync.
   // Build a self-contained state JWT-equivalent (HMAC-SHA256 of payload
   // with AUTH_SECRET). We could route through the MCP oauth-state but
   // this is a different audience — keep them separate.
