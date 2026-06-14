@@ -8,7 +8,7 @@ import {
 
 /**
  * Server-action tests for invite acceptance. These pin the user-visible
- * contracts around auth redirects, verified recipient checks, durable
+ * contracts around auth redirects, recipient email checks, durable
  * membership/invite mutations, fallback solo-team creation, cookie switching,
  * and revalidation without duplicating the team-scope database integration
  * tests.
@@ -216,7 +216,7 @@ describe('acceptInviteAction', () => {
 });
 
 describe('acceptRecipientInviteAction', () => {
-  it('requires auth, valid invite id, and a verified current user', async () => {
+  it('requires auth, valid invite id, and a current user email', async () => {
     fakes.fakeAuth.mockResolvedValue(null);
     await expect(
       acceptRecipientInviteAction(form({ inviteId: INVITE_ID })),
@@ -227,7 +227,7 @@ describe('acceptRecipientInviteAction', () => {
     await expect(acceptRecipientInviteAction(form({ inviteId: 'bad' }))).resolves.toBeUndefined();
     expect(fakes.fakeTransaction).not.toHaveBeenCalled();
 
-    const { tx } = makeTx([[{ email: 'invited@example.test', emailVerified: null }]]);
+    const { tx } = makeTx([[{ email: null }]]);
     fakes.fakeTransaction.mockImplementation((fn: (arg: unknown) => unknown) =>
       Promise.resolve(fn(tx)),
     );
@@ -238,11 +238,7 @@ describe('acceptRecipientInviteAction', () => {
   });
 
   it('accepts a recipient invite and switches the active team', async () => {
-    const { tx, inserts, updates } = makeTx([
-      [{ email: 'invited@example.test', emailVerified: new Date('2026-06-02') }],
-      [invite()],
-      [],
-    ]);
+    const { tx, inserts, updates } = makeTx([[{ email: 'invited@example.test' }], [invite()], []]);
     fakes.fakeTransaction.mockImplementation((fn: (arg: unknown) => unknown) =>
       Promise.resolve(fn(tx)),
     );
@@ -285,7 +281,7 @@ describe('acceptRecipientInviteAction', () => {
 });
 
 describe('declineInviteAction', () => {
-  it('requires auth, a valid invite id, and a verified recipient email', async () => {
+  it('requires auth, a valid invite id, and a recipient email', async () => {
     fakes.fakeAuth.mockResolvedValue(null);
     await expect(declineInviteAction(form({ inviteId: INVITE_ID }))).resolves.toBeUndefined();
     expect(fakes.fakeDbSelect).not.toHaveBeenCalled();
@@ -294,16 +290,14 @@ describe('declineInviteAction', () => {
     await expect(declineInviteAction(form({ inviteId: 'bad' }))).resolves.toBeUndefined();
     expect(fakes.fakeDbSelect).not.toHaveBeenCalled();
 
-    fakes.fakeDbSelect.mockReturnValue(selectChain([{ email: 'invited@example.test' }]));
+    fakes.fakeDbSelect.mockReturnValue(selectChain([{ email: null }]));
     await expect(declineInviteAction(form({ inviteId: INVITE_ID }))).resolves.toBeUndefined();
     expect(fakes.fakeDbUpdate).not.toHaveBeenCalled();
   });
 
-  it('revokes only the open invite for the verified email and revalidates app layout', async () => {
+  it('revokes only the open invite for the signed-in email and revalidates app layout', async () => {
     const updates: unknown[] = [];
-    fakes.fakeDbSelect.mockReturnValue(
-      selectChain([{ email: 'invited@example.test', emailVerified: new Date('2026-06-02') }]),
-    );
+    fakes.fakeDbSelect.mockReturnValue(selectChain([{ email: 'invited@example.test' }]));
     fakes.fakeDbUpdate.mockReturnValue(updateChain(updates));
 
     await expect(declineInviteAction(form({ inviteId: INVITE_ID }))).resolves.toBeUndefined();

@@ -3,6 +3,7 @@
 import {
   auditLog,
   integrations,
+  messagePreferences,
   slackConversationBindings,
   slackUserTeams,
   teamCalendarSubscriptions,
@@ -15,7 +16,7 @@ import {
   telegramUserTeams,
   users,
 } from '@timeline/db';
-import { sendTeamInviteEmail } from '@timeline/shared/email';
+import { sendMessage } from '@timeline/shared/messaging';
 import { buildInboundEmail, randomSlugSuffix, randomToken, slugify } from '@timeline/shared/slug';
 import { assertNotLastOwner } from '@timeline/shared/team-roles';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -151,6 +152,11 @@ export interface InboundEmailWhitelistState {
   ok?: boolean;
 }
 
+export interface DigestPreferenceState {
+  error?: string;
+  ok?: boolean;
+}
+
 function parseSenderWhitelist(raw: FormDataEntryValue | null): string[] | null {
   if (typeof raw !== 'string') return [];
   const items = raw
@@ -239,6 +245,56 @@ export async function updateInboundEmailWhitelistAction(
   });
 }
 
+export async function updateDigestPreferenceAction(
+  _prev: DigestPreferenceState,
+  formData: FormData,
+): Promise<DigestPreferenceState> {
+  return runSentryServerAction('update_digest_preference', async () => {
+    const session = await auth();
+    if (!session?.user) return { error: 'Not signed in' };
+    const { active } = await resolveActiveTeam(session.user.id);
+    if (!active) return { error: 'No active team' };
+
+    try {
+      await withTeam(db, active.teamId, session.user.id).requireMembership();
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'digest_preference_auth' });
+      return { error: 'You are not a member of this team' };
+    }
+
+    const enabled = formData.get('dailyDigestEnabled') === 'on';
+    const existing = await db
+      .select({ id: messagePreferences.id })
+      .from(messagePreferences)
+      .where(
+        and(
+          eq(messagePreferences.teamId, active.teamId),
+          eq(messagePreferences.userId, session.user.id),
+        ),
+      )
+      .limit(1);
+
+    if (existing[0]) {
+      await db
+        .update(messagePreferences)
+        .set({ dailyDigestEnabled: enabled, updatedAt: new Date() })
+        .where(eq(messagePreferences.id, existing[0].id));
+    } else {
+      await db.insert(messagePreferences).values({
+        teamId: active.teamId,
+        userId: session.user.id,
+        dailyDigestEnabled: enabled,
+        dailyDigestHour: 12,
+        timezone: 'UTC',
+      });
+    }
+
+    revalidatePath('/app');
+    revalidatePath('/app/team');
+    return { ok: true };
+  });
+}
+
 const inviteSchema = z.object({
   email: z.email().toLowerCase(),
   role: z.enum(['admin', 'member']).default('member'),
@@ -253,6 +309,8 @@ export interface InviteState {
 
 interface InviteDeliveryInput {
   id: string;
+  teamId: string;
+  inviterUserId: string;
   email: string;
   role: 'admin' | 'member';
   token: string;
@@ -267,20 +325,33 @@ function inviteUrl(token: string): string {
 
 async function deliverInviteEmail(input: InviteDeliveryInput): Promise<InviteState> {
   const url = inviteUrl(input.token);
-  const result = await sendTeamInviteEmail({
-    to: input.email,
-    inviterName: input.inviterName,
-    teamName: input.teamName,
-    role: input.role,
-    inviteUrl: url,
-    expiresAt: input.expiresAt,
-  });
-  if (result.ok) {
+  const result = await sendMessage(
+    'team_invite',
+    {
+      to: input.email,
+      inviterName: input.inviterName,
+      teamName: input.teamName,
+      role: input.role,
+      inviteUrl: url,
+      expiresAt: input.expiresAt,
+    },
+    {
+      db,
+      teamId: input.teamId,
+      userId: input.inviterUserId,
+      dedupeKey: `team_invite:${input.id}:${input.token}`,
+      metadata: { inviteId: input.id, role: input.role },
+    },
+  );
+  if (result.ok && !result.skipped) {
     await db
       .update(teamInvites)
       .set({ sendStatus: 'sent', sendError: null, lastSentAt: new Date() })
       .where(eq(teamInvites.id, input.id));
     return { inviteUrl: url, sendStatus: 'sent' };
+  }
+  if (result.ok && result.skipped) {
+    return { inviteUrl: url };
   }
   const sendError = result.error ?? 'Failed to send invite email';
   await db
@@ -398,6 +469,8 @@ export async function inviteMemberAction(
         });
         return {
           id,
+          teamId: active.teamId,
+          inviterUserId: session.user.id,
           email: parsed.data.email,
           role: parsed.data.role,
           token,
@@ -467,6 +540,8 @@ export async function resendInviteAction(formData: FormData): Promise<void> {
         .where(eq(teamInvites.id, invite.id));
       return {
         id: invite.id,
+        teamId: active.teamId,
+        inviterUserId: session.user.id,
         email: invite.email,
         role: invite.role,
         token,

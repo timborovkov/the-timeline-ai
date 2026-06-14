@@ -5,6 +5,7 @@ import { shutdownPostHogNodeClients } from '@timeline/shared/analytics/posthog-n
 
 import { captureWorkerException, flushWorkerSentry, initWorkerSentry } from '#src/monitoring.js';
 import { startCalendarRecurrenceWorker } from '#src/workers/calendarRecurrence.js';
+import { startDailyDigestWorker } from '#src/workers/dailyDigest.js';
 import { startDocumentExtractWorker } from '#src/workers/documentExtract.js';
 import { startEmbedWorker } from '#src/workers/embed.js';
 import { startExtractWorker } from '#src/workers/extract.js';
@@ -44,6 +45,7 @@ async function main(): Promise<void> {
   const integrationSyncWorker = startIntegrationSyncWorker({ db });
   const mcpHealthWorker = startMcpHealthWorker({ db });
   const teamExportWorker = startTeamExportWorker({ db });
+  const dailyDigestWorker = startDailyDigestWorker({ db });
   // Register the hourly repeatables. BullMQ keys by jobId so a
   // duplicate call on the next deploy is a no-op.
   await queue.scheduleOverdueScan();
@@ -56,8 +58,9 @@ async function main(): Promise<void> {
   await queue.scheduleMcpHealthPing();
   await queue.scheduleObjectCleanupSuggestions();
   await queue.scheduleMeetingSchedulerTick();
+  await queue.scheduleDailyDigest();
   log.info(
-    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + janitor + integration-sync + mcp-health + team-export workers started',
+    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + document-extract + meeting-finalize + meeting-scheduler + janitor + integration-sync + mcp-health + team-export + daily-digest workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
@@ -77,6 +80,7 @@ async function main(): Promise<void> {
         integrationSyncWorker.close(),
         mcpHealthWorker.close(),
         teamExportWorker.close(),
+        dailyDigestWorker.close(),
       ]);
       await queue.closeTranscribeQueue();
       await queue.closeExtractQueue();
@@ -91,6 +95,7 @@ async function main(): Promise<void> {
       await queue.closeIntegrationSyncQueue();
       await queue.closeMcpHealthQueue();
       await queue.closeTeamExportQueue();
+      await queue.closeDailyDigestQueue();
       await queue.closeRedisConnection();
     } catch (err: unknown) {
       log.error({ err }, 'shutdown error');

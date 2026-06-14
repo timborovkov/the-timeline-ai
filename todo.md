@@ -100,8 +100,10 @@ implementation detail.
 - [ ] Implement reminder cascade: team default
       `team_calendar_settings.default_reminder_minutes`, overridden by
       per-event `calendar_events.reminder_minutes`.
-- [ ] Add daily event digest per user. Delivery should reuse platform-level
-      preferences and support inbox notification, email, and/or Telegram.
+- [x] Add daily event digest per user. Delivery uses the shared messaging
+      module, stores a dashboard-readable digest payload, sends email only for
+      the digest, supports per-user opt-out in Team settings, and keeps
+      individual in-app notifications inbox-only.
 - [ ] Extend overdue/missed alerts to calendar events past `start_at` with no
       attendance or completion signal.
 
