@@ -25,8 +25,8 @@ interface BaseProps {
 interface NavigateChipProps extends BaseProps {
   /**
    * Navigation target. Renders a `<Link>` instead of opening the
-   * inspector. Used for chat citations that already have a canonical
-   * destination (e.g. `/app/timeline#ev-…`, `/app/objects/<id>`).
+   * inspector. Used for citations that already have a canonical destination
+   * and do not need a quick-view step, such as object links.
    */
   href: string;
   render?: never;
@@ -46,8 +46,9 @@ type CitationChipProps = NavigateChipProps | InspectorChipProps;
 
 /**
  * The product's primary visual symbol — a monospace `[id]` chip in signal
- * color. Two modes: pass `href` to navigate (chat citations), or pass
- * `render` to open the right inspector pane with rich source content.
+ * color. Two modes: pass `href` to navigate, or pass `render` to open the
+ * right inspector pane with rich source content. Raw event evidence uses
+ * `EvidenceChip` so users get a quick-view dialog before leaving the page.
  *
  * Both modes share the same visual treatment so the chip is recognizable
  * from a thumbnail regardless of behavior.

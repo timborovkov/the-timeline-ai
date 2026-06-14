@@ -571,54 +571,58 @@ function ObjectDetailHeader({
   savingCount: number;
 }) {
   const pendingCount = detail.recentChanges.filter((c) => c.status === 'suggested').length;
+  const alerts = (
+    <>
+      {detail.newSinceLastVisit > 0 && (
+        <output className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
+          {detail.newSinceLastVisit} new change
+          {detail.newSinceLastVisit === 1 ? '' : 's'} since your last visit
+        </output>
+      )}
+      {pendingCount > 0 ? (
+        <output className="rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
+          {pendingCount} suggestion{pendingCount === 1 ? '' : 's'} awaiting review
+        </output>
+      ) : null}
+      {error ? (
+        <div
+          role="alert"
+          className="rounded-sm border border-danger/40 bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-danger"
+        >
+          {error}
+        </div>
+      ) : null}
+      {saveState !== 'idle' ? (
+        <output
+          aria-live="polite"
+          className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
+        >
+          {saveState === 'saving'
+            ? `Saving${savingCount > 1 ? ` ${savingCount} changes` : ''}...`
+            : 'Saved'}
+        </output>
+      ) : null}
+    </>
+  );
   return (
-    <header className="border border-border bg-bg">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-y border-border py-3 font-mono text-xs uppercase tracking-[0.12em] text-fg-muted">
-        <span className="text-fg">{detail.type}</span>
-        <span className="text-fg-dim">·</span>
-        <span className="text-signal">{detail.canonicalName}</span>
-        <span className="ml-auto text-fg-dim">id&nbsp;{detail.id.slice(0, 8)}</span>
-      </div>
-      <div className="grid gap-5 px-4 py-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
+    <header className="border-b border-border pb-5">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div className="min-w-0">
-          <h1 className="truncate text-2xl font-semibold tracking-tight">{detail.canonicalName}</h1>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+            <span className="text-fg-muted">{detail.type}</span>
+            <span aria-hidden="true">·</span>
+            <span>id {detail.id.slice(0, 8)}</span>
+          </div>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-fg">
+            {detail.canonicalName}
+          </h1>
           {detail.aliases.length > 0 && (
-            <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+            <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
               aka {detail.aliases.join(' · ')}
             </p>
           )}
         </div>
-        <div className="space-y-2">
-          {detail.newSinceLastVisit > 0 && (
-            <output className="block rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
-              {detail.newSinceLastVisit} new change
-              {detail.newSinceLastVisit === 1 ? '' : 's'} since your last visit
-            </output>
-          )}
-          {pendingCount > 0 ? (
-            <output className="block rounded-sm border border-signal/40 bg-signal-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-signal">
-              {pendingCount} suggestion{pendingCount === 1 ? '' : 's'} awaiting review
-            </output>
-          ) : null}
-          {error ? (
-            <div
-              role="alert"
-              className="rounded-sm border border-danger/40 bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-danger"
-            >
-              {error}
-            </div>
-          ) : null}
-          {saveState !== 'idle' ? (
-            <output
-              aria-live="polite"
-              className="block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim"
-            >
-              {saveState === 'saving'
-                ? `Saving${savingCount > 1 ? ` ${savingCount} changes` : ''}...`
-                : 'Saved'}
-            </output>
-          ) : null}
-        </div>
+        <div className="flex flex-col items-start gap-2 lg:max-w-sm lg:items-end">{alerts}</div>
       </div>
     </header>
   );

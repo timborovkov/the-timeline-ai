@@ -1,12 +1,12 @@
 'use client';
 
 import { FileText, Image as ImageIcon, Link2, Upload } from 'lucide-react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
 import { toast } from 'sonner';
 
 import { promoteCapturedFileAction } from '@/app/actions/documents';
+import { EvidenceLink } from '@/components/evidence-link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -100,13 +100,16 @@ function CapturedFileRow({ file }: { file: CapturedFileItem }) {
       </div>
       <div className="flex items-center justify-end gap-2">
         {eventId ? (
-          <Link
-            href={`/app/timeline?event=${eventId}#ev-${eventId}`}
+          <EvidenceLink
+            eventId={eventId}
+            previewText={file.provenance.summary}
+            source={file.provenance.source}
+            occurredAt={file.provenance.occurredAt}
             className="inline-flex h-8 items-center gap-1 rounded-sm border border-border px-2 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
           >
             <Link2 className="size-3.5" />
             Event
-          </Link>
+          </EvidenceLink>
         ) : null}
         <Button type="button" size="sm" onClick={promote} disabled={pending}>
           <Upload className="mr-2 size-4" />

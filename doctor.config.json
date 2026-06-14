@@ -80,6 +80,14 @@
       {
         "files": ["src/components/objects/object-detail-client.tsx"],
         "rules": ["react-doctor/no-multi-comp"]
+      },
+      {
+        "files": ["src/app/api/webhooks/recall/transcript/route.ts"],
+        "rules": ["react-doctor/webhook-signature-risk"]
+      },
+      {
+        "files": ["src/app/sign-in/page.tsx"],
+        "rules": ["react-doctor/clickjacking-redirect-risk"]
       }
     ]
   }
