@@ -8,7 +8,7 @@ import {
   notifications,
   users,
 } from '@timeline/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import {
   insertCalendarRawEvents,
@@ -294,6 +294,49 @@ export async function syncObjectDueDateCalendarEvent(
       object.status === 'suggested' ||
       (object.type !== 'task' && object.type !== 'follow_up'),
   });
+}
+
+export async function tombstoneObjectDueDateCalendarEventsForEntities(
+  db: DbOrTx,
+  args: { teamId: string; entityIds: string[] },
+): Promise<void> {
+  if (args.entityIds.length === 0) return;
+  const rows = await db
+    .select({
+      id: calendarEvents.id,
+      scheduledRawEventId: calendarEvents.scheduledRawEventId,
+      startAtRawEventId: calendarEvents.startAtRawEventId,
+    })
+    .from(calendarEvents)
+    .where(
+      and(
+        eq(calendarEvents.teamId, args.teamId),
+        sql`${calendarEvents.metadata} ->> 'kind' = 'due_date'`,
+        sql`${calendarEvents.metadata} ->> 'source' = 'object'`,
+        sql`${calendarEvents.metadata} ->> 'entity_id' IN (${sql.join(
+          args.entityIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})`,
+      ),
+    );
+  if (rows.length === 0) return;
+  await db
+    .update(calendarEvents)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(
+      inArray(
+        calendarEvents.id,
+        rows.map((row) => row.id),
+      ),
+    );
+  await tombstoneCalendarRawEventIds(
+    db,
+    rows.flatMap((row) =>
+      [row.scheduledRawEventId, row.startAtRawEventId].filter(
+        (id): id is string => id !== null && id.length > 0,
+      ),
+    ),
+  );
 }
 
 export async function syncBoardItemDueDateCalendarEvent(

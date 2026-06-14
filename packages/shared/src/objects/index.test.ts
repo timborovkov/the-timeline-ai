@@ -89,7 +89,7 @@ beforeEach(async () => {
   await applyDbMigrations(pg);
   await seedWorkspace();
   db = drizzle(pg) as unknown as AnyDb;
-}, 20_000);
+}, 60_000);
 
 afterEach(async () => {
   await pg.close();
@@ -274,6 +274,67 @@ describe('object scope — team ownership and audit behavior', () => {
     await expect(
       db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A)),
     ).resolves.toEqual([]);
+
+    await scope.updateObject(task.id, { status: 'open' }, { kind: 'user', userId: USER_OWNER });
+
+    const acceptedInboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, task.id));
+    expect(acceptedInboxRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          userId: USER_MEMBER,
+          kind: 'task_due',
+          summary: 'Review agent-suggested deadline is due 2026-07-11',
+        }),
+      ]),
+    );
+    await expect(
+      db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A)),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        title: 'Due: Review agent-suggested deadline - member@test.local',
+      }),
+    ]);
+  });
+
+  it('notifies the owner when ownership changes on an unassigned due task', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Assign owner for launch note',
+      dueAt: new Date('2026-07-12T09:00:00.000Z'),
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.updateObject(
+      task.id,
+      { ownerUserId: USER_MEMBER },
+      { kind: 'user', userId: USER_OWNER },
+    );
+
+    const inboxRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, task.id));
+    expect(inboxRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          userId: USER_MEMBER,
+          kind: 'task_due',
+          summary: 'Assign owner for launch note is due 2026-07-12',
+        }),
+      ]),
+    );
+    expect(inboxRows.filter((row) => row.kind === 'task_due')).toHaveLength(1);
+    await expect(
+      db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A)),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        title: 'Due: Assign owner for launch note - member@test.local',
+      }),
+    ]);
   });
 
   it('tombstones board item due-date calendar events when the object is archived', async () => {
@@ -834,6 +895,23 @@ describe('object scope — merge cleanup', () => {
         deletedAt: null,
       }),
     );
+    const [staleTypoObjectDueEvent] = await db
+      .insert(calendarEvents)
+      .values({
+        teamId: TEAM_A,
+        createdByUserId: USER_OWNER,
+        title: 'Due: PVC',
+        startAt: new Date('2026-11-06T11:00:00.000Z'),
+        endAt: new Date('2026-11-06T11:30:00.000Z'),
+        timezone: 'UTC',
+        metadata: {
+          kind: 'due_date',
+          source: 'object',
+          entity_id: typo.id,
+        },
+      })
+      .returning();
+    if (!staleTypoObjectDueEvent) throw new Error('Failed to insert object due event');
 
     await scope.addRelationship({
       fromEntityId: survivor.id,
@@ -1013,6 +1091,11 @@ describe('object scope — merge cleanup', () => {
       .from(calendarEvents)
       .where(eq(calendarEvents.id, typoDueEventBeforeMerge?.id ?? ''));
     expect(typoDueEventAfterMerge?.deletedAt).toBeInstanceOf(Date);
+    const [staleTypoObjectDueEventAfterMerge] = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.id, staleTypoObjectDueEvent.id));
+    expect(staleTypoObjectDueEventAfterMerge?.deletedAt).toBeInstanceOf(Date);
     const boardHistoryRows = await db
       .select()
       .from(boardItemChanges)

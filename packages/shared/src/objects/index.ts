@@ -36,6 +36,7 @@ import {
   notifyObjectDueDate,
   syncBoardItemDueDateCalendarEvent,
   syncObjectDueDateCalendarEvent,
+  tombstoneObjectDueDateCalendarEventsForEntities,
 } from '#src/calendar/due-dates.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
@@ -65,6 +66,25 @@ function fireAndForgetEmbed(fn: () => Promise<void>, context: Record<string, unk
 
 function uniqueIds(ids: string[]): string[] {
   return Array.from(new Set(ids));
+}
+
+function shouldNotifyObjectDueDateOnUpdate(
+  changes: { field: string }[],
+  current: Pick<typeof entities.$inferSelect, 'status'>,
+  updated: Pick<typeof entities.$inferSelect, 'assigneeUserId' | 'dueAt' | 'status'>,
+): boolean {
+  if (!updated.dueAt) return false;
+  if (changes.some((change) => change.field === 'dueAt' || change.field === 'assigneeUserId')) {
+    return true;
+  }
+  if (changes.some((change) => change.field === 'ownerUserId') && !updated.assigneeUserId) {
+    return true;
+  }
+  return (
+    current.status === 'suggested' &&
+    updated.status !== 'suggested' &&
+    changes.some((change) => change.field === 'status')
+  );
 }
 
 async function syncBoardItemDueDatesForObject(
@@ -1467,7 +1487,7 @@ export async function updateObject(
     );
     if (dueDateRelevantChange) {
       await syncObjectDueDateCalendarEvent(tx, updated);
-      if (changes.some((c) => c.field === 'dueAt' || c.field === 'assigneeUserId')) {
+      if (shouldNotifyObjectDueDateOnUpdate(changes, current, updated)) {
         await notifyObjectDueDate(tx, updated, actor);
       }
     }
@@ -1896,6 +1916,10 @@ export async function mergeObjects(
       .update(entities)
       .set({ mergedIntoId: survivor.id, updatedAt: new Date() })
       .where(and(eq(entities.teamId, scope.teamId), inArray(entities.id, loserIds)));
+    await tombstoneObjectDueDateCalendarEventsForEntities(tx, {
+      teamId: scope.teamId,
+      entityIds: loserIds,
+    });
 
     await tx.insert(objectChanges).values([
       {

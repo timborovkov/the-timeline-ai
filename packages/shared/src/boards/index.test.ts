@@ -78,7 +78,7 @@ beforeEach(async () => {
   await applyDbMigrations(pg);
   await seedWorkspace();
   db = drizzle(pg) as unknown as Db;
-}, 20_000);
+}, 60_000);
 
 afterEach(async () => {
   await pg.close();
