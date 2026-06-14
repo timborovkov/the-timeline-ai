@@ -83,6 +83,10 @@ export async function MergeObjectsRouteContent({ presentation, searchParams }: P
   try {
     preview = await scope.objects.getObjectMergePreview(ids, ids[0]);
   } catch (err) {
+    if (suggestionItemId) {
+      const reconciled = await scope.suggestions.reconcileStaleSuggestionItem(suggestionItemId);
+      if (reconciled) redirect('/app/approvals');
+    }
     return renderShell(
       presentation,
       <EmptyAction

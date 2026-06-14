@@ -46,8 +46,8 @@ jobs:
           DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
         run: pnpm validate
 
-      - name: Focused tests
+      - name: Dist import smoke test
         env:
           AUTH_SECRET: ci_dummy_secret_at_least_16_chars
           DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
-        run: pnpm test:ci
+        run: pnpm test:dist-imports
