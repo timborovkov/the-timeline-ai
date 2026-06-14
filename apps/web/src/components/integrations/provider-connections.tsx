@@ -328,6 +328,15 @@ function sourceKey(share: Pick<ResourceShare, 'resourceKind' | 'externalId'>) {
   return `${share.resourceKind}\x00${share.externalId}`;
 }
 
+function buildSelectedByConnection(rows: TeamShareRow[], activeShareIdSet: Set<string>) {
+  const initial: Record<string, Set<string>> = {};
+  for (const row of rows) {
+    initial[row.connection.id] ??= new Set<string>();
+    if (activeShareIdSet.has(row.share.id)) initial[row.connection.id]?.add(row.share.id);
+  }
+  return initial;
+}
+
 export function TeamSourcesUi({
   rows,
   activeShareIds,
@@ -348,15 +357,14 @@ export function TeamSourcesUi({
     }
     return owners;
   }, [activeShareIdSet, rows]);
-  const [selectedByConnection, setSelectedByConnection] = useState<Record<string, Set<string>>>(
-    () => {
-      const initial: Record<string, Set<string>> = {};
-      for (const row of rows) {
-        initial[row.connection.id] ??= new Set<string>();
-        if (activeShareIdSet.has(row.share.id)) initial[row.connection.id]?.add(row.share.id);
-      }
-      return initial;
-    },
+  const activeSelectedByConnection = useMemo(
+    () => buildSelectedByConnection(rows, activeShareIdSet),
+    [activeShareIdSet, rows],
+  );
+  const [selectedOverrides, setSelectedOverrides] = useState<Record<string, Set<string>>>({});
+  const selectedByConnection = useMemo(
+    () => ({ ...activeSelectedByConnection, ...selectedOverrides }),
+    [activeSelectedByConnection, selectedOverrides],
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -389,6 +397,7 @@ export function TeamSourcesUi({
         }),
       });
       if (!res.ok) throw new Error(await res.text());
+      setSelectedOverrides({});
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Activation failed');
@@ -449,8 +458,8 @@ export function TeamSourcesUi({
                       disabled={!isAdmin || revoked}
                       checked={checked}
                       onChange={() => {
-                        setSelectedByConnection((current) => {
-                          const next = new Set(current[connectionId] ?? []);
+                        setSelectedOverrides((current) => {
+                          const next = new Set(selected);
                           if (next.has(row.share.id)) next.delete(row.share.id);
                           else next.add(row.share.id);
                           return { ...current, [connectionId]: next };

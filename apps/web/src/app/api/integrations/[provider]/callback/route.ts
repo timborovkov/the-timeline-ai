@@ -106,7 +106,7 @@ export async function GET(
     trackProductEventBestEffort(session.user.id, 'integration_connected', {
       teamId: verified.teamId,
       userId: session.user.id,
-      integrationId: created.id,
+      providerConnectionId: created.id,
       provider,
     });
     return NextResponse.redirect(

@@ -21,11 +21,11 @@ when manual joins race a scheduled occurrence. Current suite shape:
   calendar, timeline, MCP, integration/provider-connection, meeting, document,
   object, assistant, Slack, recovery, connection-attention, and onboarding
   coverage.
-- Web Vitest: 107 files / 517 tests, including route/action/component coverage
+- Web Vitest: 107 files / 518 tests, including route/action/component coverage
   for core recovery, onboarding, object sections, board add-item interactions,
   provider-connection routes/UI, app dialog flows, and other high-value UI
   states.
-- Worker Vitest: 14 files / 172 tests, including extract, transcribe,
+- Worker Vitest: 14 files / 173 tests, including extract, transcribe,
   document-extract, meeting-finalize, meeting-scheduler, integration-sync
   attention behavior, overdue-scan, embedding, cleanup, and janitor behavior.
 - Playwright: 13 local core E2E journeys plus 1 production-ish smoke journey.

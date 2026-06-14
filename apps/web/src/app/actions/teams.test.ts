@@ -26,6 +26,7 @@ const fakes = vi.hoisted(() => ({
   fakeDbUpdate: vi.fn(),
   fakeSendInvite: vi.fn(),
   fakeAssertNotLastOwner: vi.fn(),
+  fakeAdminRecordConnectionAttention: vi.fn(),
   fakeRevalidatePath: vi.fn(),
   fakeCookieSet: vi.fn(),
   fakeRedirect: vi.fn((url: string) => {
@@ -43,6 +44,9 @@ vi.mock('@/lib/db', () => ({
     transaction: fakes.fakeTransaction,
     update: fakes.fakeDbUpdate,
   },
+}));
+vi.mock('@timeline/shared/integrations', () => ({
+  adminRecordConnectionAttention: fakes.fakeAdminRecordConnectionAttention,
 }));
 vi.mock('@/lib/site-url', () => ({ getSiteUrl: () => 'https://timeline.test' }));
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
@@ -178,6 +182,7 @@ beforeEach(() => {
   fakes.fakeRequireMembership.mockResolvedValue('owner');
   fakes.fakeSendInvite.mockResolvedValue({ ok: true });
   fakes.fakeAssertNotLastOwner.mockResolvedValue(undefined);
+  fakes.fakeAdminRecordConnectionAttention.mockResolvedValue(undefined);
   fakes.fakeTransaction.mockImplementation((fn: (tx: unknown) => unknown) =>
     Promise.resolve(fn(txForCreateTeam())),
   );
@@ -667,6 +672,7 @@ describe('removeMemberAction', () => {
         {
           id: 'integration-id',
           connectedByUserId: MEMBER_ID,
+          providerConnectionId: 'provider-connection-id',
           visibilityDefault: 'private',
           visibilityDefaultUserIds: [MEMBER_ID],
         },
@@ -706,6 +712,16 @@ describe('removeMemberAction', () => {
           role: 'owner',
         },
       }),
+    );
+    expect(fakes.fakeAdminRecordConnectionAttention).toHaveBeenCalledWith(
+      expect.not.objectContaining({ select: tx.select }),
+      TEAM_ID,
+      {
+        providerConnectionId: 'provider-connection-id',
+        integrationId: 'integration-id',
+        category: 'needs_new_owner',
+        summary: 'Connection owner left team — choose a replacement connection',
+      },
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
   });

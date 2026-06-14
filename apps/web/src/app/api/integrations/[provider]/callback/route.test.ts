@@ -103,6 +103,16 @@ describe('GET /api/integrations/[provider]/callback', () => {
       scopes: ['repo'],
       tokens: { accessToken: 'encrypted' },
     });
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      USER_ID,
+      'integration_connected',
+      {
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        providerConnectionId: CONNECTION_ID,
+        provider: 'github',
+      },
+    );
   });
 
   it('redirects provider errors to the canonical app origin', async () => {

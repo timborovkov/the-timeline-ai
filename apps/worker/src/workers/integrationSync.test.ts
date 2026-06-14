@@ -173,6 +173,25 @@ describe('runOneIntegration attention classification', () => {
     expect(fakes.adminRecordConnectionAttention).not.toHaveBeenCalled();
   });
 
+  it('does not classify unrelated required-field provider errors as reconnect-needed', async () => {
+    fakes.incrementalSync.mockRejectedValueOnce(new Error('GitHub required field missing'));
+    fakes.adminRecordTransientSyncFailure.mockResolvedValueOnce({
+      count: 1,
+      shouldCreateAttention: false,
+    });
+
+    await expect(runOneIntegration({} as never, INTEGRATION_ID, 'incremental')).rejects.toThrow(
+      'required field missing',
+    );
+
+    expect(fakes.adminRecordTransientSyncFailure).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      'GitHub required field missing',
+    );
+    expect(fakes.adminRecordConnectionAttention).not.toHaveBeenCalled();
+  });
+
   it('creates sync_error attention on the third consecutive transient provider failure', async () => {
     fakes.incrementalSync.mockRejectedValueOnce(new Error('GitHub temporarily overloaded'));
     fakes.adminRecordTransientSyncFailure.mockResolvedValueOnce({

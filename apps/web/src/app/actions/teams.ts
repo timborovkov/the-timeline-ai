@@ -1,7 +1,6 @@
 'use server';
 
 import {
-  type Db,
   auditLog,
   integrations,
   slackConversationBindings,
@@ -609,6 +608,10 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
 
     const scope = withTeam(db, active.teamId, session.user.id);
     const callerRole = await scope.requireMembership('admin');
+    const ownerLeftAttention: {
+      providerConnectionId: string | null;
+      integrationId: string;
+    }[] = [];
 
     try {
       await db.transaction(async (tx) => {
@@ -749,16 +752,10 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
             })
             .where(eq(integrations.id, row.id));
           if (ownedByRemovedMember) {
-            await integrationsLib.adminRecordConnectionAttention(
-              tx as unknown as Db,
-              active.teamId,
-              {
-                providerConnectionId: row.providerConnectionId,
-                integrationId: row.id,
-                category: 'needs_new_owner',
-                summary: 'Connection owner left team — choose a replacement connection',
-              },
-            );
+            ownerLeftAttention.push({
+              providerConnectionId: row.providerConnectionId,
+              integrationId: row.id,
+            });
           }
         }
         // Revoke Telegram routing for this user — two anchors, both needed:
@@ -914,6 +911,21 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
         return;
       }
       throw e;
+    }
+    for (const item of ownerLeftAttention) {
+      try {
+        await integrationsLib.adminRecordConnectionAttention(db, active.teamId, {
+          providerConnectionId: item.providerConnectionId,
+          integrationId: item.integrationId,
+          category: 'needs_new_owner',
+          summary: 'Connection owner left team — choose a replacement connection',
+        });
+      } catch (err) {
+        reportCaughtError(err, {
+          surface: 'server_action',
+          operation: 'remove_member_connection_attention',
+        });
+      }
     }
     revalidatePath('/app/team');
   });

@@ -28,6 +28,13 @@ interface IntegrationSyncDeps {
   db: Db;
 }
 
+function isAuthOrAccessFailure(message: string): boolean {
+  return (
+    /\b(?:401|403|404)\b/.test(message) ||
+    /\b(?:reconnect|expired|unauthorized|forbidden)\b/i.test(message)
+  );
+}
+
 export async function runOneIntegration(
   db: Db,
   integrationId: string,
@@ -266,9 +273,7 @@ export async function runOneIntegration(
       const msg = err instanceof Error ? err.message : String(err);
       log.warn({ err, integrationId }, 'integration sync failed');
       await integrationsLib.adminRecordError(db, integrationId, msg);
-      const authOrAccessFailure =
-        /reconnect|required|expired|401|403|404|unauthorized|forbidden/i.test(msg);
-      if (authOrAccessFailure) {
+      if (isAuthOrAccessFailure(msg)) {
         await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
           providerConnectionId: integration.providerConnectionId,
           integrationId,

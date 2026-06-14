@@ -56,7 +56,7 @@ export default async function IntegrationsPage({
     scope.integrations.listIntegrations(),
     scope.mcp.listTeamServers(),
     scope.timeline.listMembers(),
-    scope.integrations.listTeamResourceShares().catch(() => []),
+    scope.integrations.listTeamResourceShares(),
     scope.integrations.listConnectionAttention(),
   ]);
   const isAdmin = role === 'owner' || role === 'admin';
