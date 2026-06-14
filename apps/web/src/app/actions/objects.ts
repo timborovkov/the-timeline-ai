@@ -81,14 +81,29 @@ async function reconcileArchivedObject(
   });
 }
 
+function bestEffortRevalidatePath(
+  path: string,
+  operation: string,
+  type?: Parameters<typeof revalidatePath>[1],
+): void {
+  try {
+    if (type) revalidatePath(path, type);
+    else revalidatePath(path);
+  } catch (err) {
+    reportCaughtError(err, { surface: 'server_action', operation });
+  }
+}
+
 function revalidateObjectMutationSurfaces(ids: string | string[]): void {
-  for (const id of Array.isArray(ids) ? ids : [ids]) revalidatePath(`/app/objects/${id}`);
-  revalidatePath('/app/objects');
+  for (const id of Array.isArray(ids) ? ids : [ids]) {
+    bestEffortRevalidatePath(`/app/objects/${id}`, 'revalidate_object_mutation_surfaces');
+  }
+  bestEffortRevalidatePath('/app/objects', 'revalidate_object_mutation_surfaces');
   // Board pages receive object rows through layout data; refresh the layout so
   // optimistic updates do not snap back to stale cards.
-  revalidatePath('/app/boards', 'layout');
-  revalidatePath('/app/tasks');
-  revalidatePath('/app/approvals');
+  bestEffortRevalidatePath('/app/boards', 'revalidate_object_mutation_surfaces', 'layout');
+  bestEffortRevalidatePath('/app/tasks', 'revalidate_object_mutation_surfaces');
+  bestEffortRevalidatePath('/app/approvals', 'revalidate_object_mutation_surfaces');
 }
 
 function matchesObjectSearch(
@@ -172,9 +187,12 @@ export async function createObjectAction(input: unknown): Promise<ActionState> {
         parentObjectId: parsed.data.parentObjectId ?? null,
         actor: { kind: 'user', userId: r.userId },
       });
-      revalidatePath('/app/objects');
+      bestEffortRevalidatePath('/app/objects', 'revalidate_object_create');
       if (parsed.data.parentObjectId) {
-        revalidatePath(`/app/objects/${parsed.data.parentObjectId}`);
+        bestEffortRevalidatePath(
+          `/app/objects/${parsed.data.parentObjectId}`,
+          'revalidate_object_create',
+        );
       }
       trackProductEventBestEffort(r.userId, 'object_created', {
         teamId: r.teamId,
@@ -330,13 +348,15 @@ export async function mergeObjectsAction(input: unknown): Promise<ActionState> {
           });
         });
       }
-      revalidatePath('/app/objects');
-      revalidatePath('/app/approvals');
-      revalidatePath('/app/inbox');
-      revalidatePath(`/app/objects/${survivorId}`);
-      for (const id of parsed.data.mergedIds) revalidatePath(`/app/objects/${id}`);
-      revalidatePath('/app/boards', 'layout');
-      revalidatePath('/app/tasks');
+      bestEffortRevalidatePath('/app/objects', 'revalidate_object_merge');
+      bestEffortRevalidatePath('/app/approvals', 'revalidate_object_merge');
+      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_merge');
+      bestEffortRevalidatePath(`/app/objects/${survivorId}`, 'revalidate_object_merge');
+      for (const id of parsed.data.mergedIds) {
+        bestEffortRevalidatePath(`/app/objects/${id}`, 'revalidate_object_merge');
+      }
+      bestEffortRevalidatePath('/app/boards', 'revalidate_object_merge', 'layout');
+      bestEffortRevalidatePath('/app/tasks', 'revalidate_object_merge');
       return { ok: true, id: survivorId };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to merge objects') };
@@ -357,9 +377,9 @@ export async function findObjectCleanupSuggestionsAction(): Promise<ActionState>
         },
         { jobIdSuffix: 'manual' },
       );
-      revalidatePath('/app/objects');
-      revalidatePath('/app/approvals');
-      revalidatePath('/app/inbox');
+      bestEffortRevalidatePath('/app/objects', 'revalidate_object_cleanup_scan');
+      bestEffortRevalidatePath('/app/approvals', 'revalidate_object_cleanup_scan');
+      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_cleanup_scan');
       return {
         ok: true,
         message: result.enqueued ? 'Scan queued' : 'Scan already queued',
@@ -388,8 +408,8 @@ export async function addRelationshipAction(input: unknown): Promise<ActionState
         actorUserId: r.userId,
       });
       if (!relationship) return { error: 'Relationship could not be created' };
-      revalidatePath(`/app/objects/${parsed.data.fromEntityId}`);
-      revalidatePath(`/app/objects/${parsed.data.toEntityId}`);
+      bestEffortRevalidateObjectDetail(parsed.data.fromEntityId, 'revalidate_object_relationship');
+      bestEffortRevalidateObjectDetail(parsed.data.toEntityId, 'revalidate_object_relationship');
       return { ok: true, id: relationship.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to link') };
@@ -410,12 +430,15 @@ export async function removeRelationshipAction(input: unknown): Promise<ActionSt
         kind: 'user',
         userId: r.userId,
       });
-      revalidatePath(`/app/objects/${parsed.data.entityId}`);
+      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_relationship');
       // Revalidate the peer's detail page too — addRelationshipAction does
       // the same, otherwise the other side keeps showing the now-deleted
       // link until the user navigates away.
       if (parsed.data.otherEntityId) {
-        revalidatePath(`/app/objects/${parsed.data.otherEntityId}`);
+        bestEffortRevalidateObjectDetail(
+          parsed.data.otherEntityId,
+          'revalidate_object_relationship',
+        );
       }
       return { ok: true };
     } catch (err) {
@@ -432,11 +455,7 @@ const noteCreateSchema = z.object({
 });
 
 function bestEffortRevalidateObjectDetail(entityId: string, operation: string): void {
-  try {
-    revalidatePath(`/app/objects/${entityId}`);
-  } catch (err) {
-    reportCaughtError(err, { surface: 'server_action', operation });
-  }
+  bestEffortRevalidatePath(`/app/objects/${entityId}`, operation);
 }
 
 export async function createNoteAction(input: unknown): Promise<ActionState> {
@@ -477,8 +496,9 @@ export async function updateNoteAction(input: unknown): Promise<ActionState> {
         body: parsed.data.body,
         actorUserId: r.userId,
       });
-      revalidatePath(`/app/objects/${parsed.data.entityId}`);
-      return ok ? { ok: true } : { error: 'Note not found' };
+      if (!ok) return { error: 'Note not found' };
+      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_note');
+      return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to update note') };
     }
@@ -496,8 +516,9 @@ export async function deleteNoteAction(input: unknown): Promise<ActionState> {
         noteId: parsed.data.noteId,
         actorUserId: r.userId,
       });
-      revalidatePath(`/app/objects/${parsed.data.entityId}`);
-      return ok ? { ok: true } : { error: 'Note not found' };
+      if (!ok) return { error: 'Note not found' };
+      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_note');
+      return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to delete note') };
     }
@@ -521,7 +542,7 @@ export async function markNotificationReadAction(id: string): Promise<ActionStat
       // as { error } instead of throwing into the client and stranding
       // the optimistic read state.
       await r.scope.objects.markNotificationRead(parsed.data);
-      revalidatePath('/app/inbox');
+      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_notification');
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to mark notification read') };
@@ -535,7 +556,7 @@ export async function markAllNotificationsReadAction(): Promise<ActionState> {
     if (!r.ok) return { error: r.error };
     try {
       await r.scope.objects.markAllNotificationsRead();
-      revalidatePath('/app/inbox');
+      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_notification');
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to mark notifications read') };
@@ -561,14 +582,15 @@ export async function acceptObjectChangeAction(input: unknown): Promise<ActionSt
         kind: 'user',
         userId: r.userId,
       });
-      revalidatePath(`/app/objects/${parsed.data.entityId}`);
-      revalidatePath('/app/inbox');
+      if (!ok) return { error: 'Suggestion no longer pending' };
+      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_change_accept');
+      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_change_accept');
       // Accepting may change status / stage / priority — same revalidation
       // set as updateObjectAction so kanban / task columns reflect the move.
-      revalidatePath('/app/objects');
-      revalidatePath('/app/boards', 'layout');
-      revalidatePath('/app/tasks');
-      return ok ? { ok: true } : { error: 'Suggestion no longer pending' };
+      bestEffortRevalidatePath('/app/objects', 'revalidate_object_change_accept');
+      bestEffortRevalidatePath('/app/boards', 'revalidate_object_change_accept', 'layout');
+      bestEffortRevalidatePath('/app/tasks', 'revalidate_object_change_accept');
+      return { ok: true };
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'accept_object_change' });
       return { error: err instanceof Error ? err.message : 'Failed to accept' };
@@ -584,9 +606,10 @@ export async function rejectObjectChangeAction(input: unknown): Promise<ActionSt
     if (!r.ok) return { error: r.error };
     try {
       const ok = await r.scope.objects.rejectObjectChange(parsed.data.changeId);
-      revalidatePath(`/app/objects/${parsed.data.entityId}`);
-      revalidatePath('/app/inbox');
-      return ok ? { ok: true } : { error: 'Suggestion no longer pending' };
+      if (!ok) return { error: 'Suggestion no longer pending' };
+      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_change_reject');
+      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_change_reject');
+      return { ok: true };
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'reject_object_change' });
       return { error: err instanceof Error ? err.message : 'Failed to reject' };

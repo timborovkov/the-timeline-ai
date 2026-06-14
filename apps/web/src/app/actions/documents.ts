@@ -88,6 +88,15 @@ function bestEffortRevalidateDocuments(): void {
   }
 }
 
+function bestEffortRevalidateDocumentPath(path: string, operation: string): void {
+  try {
+    revalidatePath(path);
+  } catch (err) {
+    log.error({ err, path }, 'document path revalidation failed');
+    reportCaughtError(err, { surface: 'server_action', operation });
+  }
+}
+
 export async function createFolderAction(
   input: z.input<typeof createFolderSchema>,
 ): Promise<CreateFolderResult> {
@@ -130,7 +139,7 @@ export async function deleteFolderAction(id: string): Promise<Result> {
       reportCaughtError(err, { surface: 'server_action', operation: 'delete_folder' });
       return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
     }
-    revalidatePath('/app/documents');
+    bestEffortRevalidateDocuments();
     return { ok: true };
   });
 }
@@ -312,9 +321,12 @@ export async function finalizeDocumentVersionAction(
           source: 'automatic',
         });
       }
-      revalidatePath('/app/documents');
-      revalidatePath(`/app/documents/${finalized.document.id}`);
-      revalidatePath('/app/timeline');
+      bestEffortRevalidateDocuments();
+      bestEffortRevalidateDocumentPath(
+        `/app/documents/${finalized.document.id}`,
+        'revalidate_document_detail',
+      );
+      bestEffortRevalidateDocumentPath('/app/timeline', 'revalidate_document_timeline');
       return {
         ok: true,
         documentId: finalized.document.id,
@@ -355,8 +367,11 @@ export async function renameDocumentAction(
       reportCaughtError(err, { surface: 'server_action', operation: 'rename_document' });
       return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
     }
-    revalidatePath('/app/documents');
-    revalidatePath(`/app/documents/${parsed.data.id}`);
+    bestEffortRevalidateDocuments();
+    bestEffortRevalidateDocumentPath(
+      `/app/documents/${parsed.data.id}`,
+      'revalidate_document_detail',
+    );
     return { ok: true };
   });
 }
@@ -376,7 +391,7 @@ export async function deleteDocumentAction(id: string): Promise<Result> {
       reportCaughtError(err, { surface: 'server_action', operation: 'delete_document' });
       return { ok: false, error: err instanceof Error ? err.message : 'Failed' };
     }
-    revalidatePath('/app/documents');
+    bestEffortRevalidateDocuments();
     return { ok: true };
   });
 }
@@ -405,10 +420,13 @@ export async function promoteCapturedFileAction(
         });
       }
       const document = promoted.document;
-      revalidatePath('/app/documents');
-      revalidatePath('/app/documents/captured');
-      revalidatePath(`/app/documents/${document.id}`);
-      revalidatePath('/app/timeline');
+      bestEffortRevalidateDocuments();
+      bestEffortRevalidateDocumentPath('/app/documents/captured', 'revalidate_captured_documents');
+      bestEffortRevalidateDocumentPath(
+        `/app/documents/${document.id}`,
+        'revalidate_document_detail',
+      );
+      bestEffortRevalidateDocumentPath('/app/timeline', 'revalidate_document_timeline');
       return { ok: true, documentId: document.id };
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'promote_captured_file' });

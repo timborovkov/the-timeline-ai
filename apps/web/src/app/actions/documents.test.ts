@@ -5,6 +5,7 @@ import type * as RateLimitModule from '@timeline/shared/rate-limit';
 
 import {
   createFolderAction,
+  deleteFolderAction,
   finalizeDocumentVersionAction,
   getDocumentPreviewUrlAction,
   promoteCapturedFileAction,
@@ -237,6 +238,26 @@ describe('documents actions — schema validation gates the scope', () => {
       visibility: 'team',
       visibilityUserIds: null,
     });
+  });
+
+  it('deleteFolderAction still succeeds when post-delete revalidation fails', async () => {
+    fakeRevalidatePath.mockImplementationOnce(() => {
+      throw new Error('cache unavailable');
+    });
+
+    await expect(deleteFolderAction(DOC_ID)).resolves.toEqual({ ok: true });
+    expect(fakeScope.softDeleteFolder).toHaveBeenCalledWith(DOC_ID);
+  });
+
+  it('renameDocumentAction still succeeds when post-rename revalidation fails', async () => {
+    fakeRevalidatePath.mockImplementationOnce(() => {
+      throw new Error('cache unavailable');
+    });
+
+    await expect(renameDocumentAction({ id: DOC_ID, name: 'Renamed' })).resolves.toEqual({
+      ok: true,
+    });
+    expect(fakeScope.renameDocument).toHaveBeenCalledWith({ id: DOC_ID, name: 'Renamed' });
   });
 });
 

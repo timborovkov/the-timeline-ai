@@ -51,10 +51,20 @@ const quickCreateSchema = z.object({
 });
 
 function revalidateBoardSurfaces(boardId?: string, entityId?: string): void {
-  revalidatePath('/app');
-  revalidatePath('/app/boards');
-  if (boardId) revalidatePath(`/app/boards/${boardId}`);
-  if (entityId) revalidatePath(`/app/objects/${entityId}`);
+  const paths = ['/app', '/app/boards'];
+  if (boardId) paths.push(`/app/boards/${boardId}`);
+  if (entityId) paths.push(`/app/objects/${entityId}`);
+
+  for (const path of paths) {
+    try {
+      revalidatePath(path);
+    } catch (err) {
+      reportCaughtError(err, {
+        surface: 'server_action',
+        operation: 'revalidate_board_surfaces',
+      });
+    }
+  }
 }
 
 function friendlyError(err: unknown, fallback: string): string {

@@ -5,6 +5,7 @@ import {
   createBoardAction,
   deleteBoardAction,
   pinBoardAction,
+  quickCreateBoardItemAction,
   removeBoardItemAction,
   updateBoardItemAction,
 } from '@/app/actions/boards';
@@ -12,10 +13,12 @@ import {
 const fakes = vi.hoisted(() => ({
   fakeResolveScope: vi.fn(),
   fakeRevalidatePath: vi.fn(),
+  fakeReportCaughtError: vi.fn(),
   fakeBoards: {
     createBoard: vi.fn(),
     archiveBoard: vi.fn(),
     addBoardItem: vi.fn(),
+    createObjectAndAddBoardItem: vi.fn(),
     updateBoardItem: vi.fn(),
     removeBoardItem: vi.fn(),
     pinBoard: vi.fn(),
@@ -30,6 +33,7 @@ vi.mock('@/lib/action-scope', async () => {
   };
 });
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
+vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
 
 const BOARD_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ITEM_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -46,6 +50,12 @@ beforeEach(() => {
   fakes.fakeBoards.createBoard.mockResolvedValue({ id: BOARD_ID });
   fakes.fakeBoards.archiveBoard.mockResolvedValue(true);
   fakes.fakeBoards.addBoardItem.mockResolvedValue({
+    id: ITEM_ID,
+    boardId: BOARD_ID,
+    entityId: ENTITY_ID,
+    object: { id: ENTITY_ID },
+  });
+  fakes.fakeBoards.createObjectAndAddBoardItem.mockResolvedValue({
     id: ITEM_ID,
     boardId: BOARD_ID,
     entityId: ENTITY_ID,
@@ -111,6 +121,46 @@ describe('addBoardItemAction', () => {
       laneId: null,
       actor: { kind: 'user', userId: USER_ID },
     });
+  });
+
+  it('keeps optimistic adds successful when board revalidation fails after persistence', async () => {
+    const err = new Error('cache unavailable');
+    fakes.fakeRevalidatePath.mockImplementationOnce(() => {
+      throw err;
+    });
+
+    const result = await addBoardItemAction({ boardId: BOARD_ID, entityId: ENTITY_ID });
+
+    expect(result.ok).toBe(true);
+    expect(result.item?.id).toBe(ITEM_ID);
+    expect(fakes.fakeBoards.addBoardItem).toHaveBeenCalled();
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
+      surface: 'server_action',
+      operation: 'revalidate_board_surfaces',
+    });
+  });
+});
+
+describe('quickCreateBoardItemAction', () => {
+  it('keeps optimistic quick creates successful when board revalidation fails after persistence', async () => {
+    const err = new Error('cache unavailable');
+    fakes.fakeRevalidatePath.mockImplementationOnce(() => {
+      throw err;
+    });
+
+    const result = await quickCreateBoardItemAction({
+      boardId: BOARD_ID,
+      type: 'company',
+      canonicalName: 'Acme',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.item?.id).toBe(ITEM_ID);
+    expect(fakes.fakeBoards.createObjectAndAddBoardItem).toHaveBeenCalledWith(
+      BOARD_ID,
+      { type: 'company', canonicalName: 'Acme' },
+      { laneId: null, actor: { kind: 'user', userId: USER_ID } },
+    );
   });
 });
 

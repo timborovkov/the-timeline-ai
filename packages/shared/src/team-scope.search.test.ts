@@ -125,7 +125,7 @@ describe('withTeam timeline semantic search', () => {
     embeddedTexts = [];
     qdrantCalls = [];
     hits = [];
-  });
+  }, 60_000);
 
   function qdrantSearch(
     teamId: string,

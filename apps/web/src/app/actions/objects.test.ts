@@ -489,6 +489,41 @@ describe('object relationship, note, notification, and suggestion actions', () =
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OTHER_OBJECT_ID}`);
   });
 
+  it('keeps optimistic relationship creates successful when revalidation fails after persistence', async () => {
+    const err = new Error('cache unavailable');
+    fakes.fakeRevalidatePath.mockImplementationOnce(() => {
+      throw err;
+    });
+
+    await expect(
+      addRelationshipAction({
+        fromEntityId: OBJECT_ID,
+        toEntityId: OTHER_OBJECT_ID,
+        kind: 'related',
+      }),
+    ).resolves.toEqual({ ok: true, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' });
+    expect(fakes.fakeObjects.addRelationship).toHaveBeenCalled();
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(err, {
+      surface: 'server_action',
+      operation: 'revalidate_object_relationship',
+    });
+  });
+
+  it('keeps optimistic relationship removals successful when revalidation fails after persistence', async () => {
+    fakes.fakeRevalidatePath.mockImplementationOnce(() => {
+      throw new Error('cache unavailable');
+    });
+
+    await expect(
+      removeRelationshipAction({
+        id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        entityId: OBJECT_ID,
+        otherEntityId: OTHER_OBJECT_ID,
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(fakes.fakeObjects.removeRelationship).toHaveBeenCalled();
+  });
+
   it('treats missing relationship rows as link failures', async () => {
     fakes.fakeObjects.addRelationship.mockResolvedValueOnce(null);
 
@@ -536,6 +571,35 @@ describe('object relationship, note, notification, and suggestion actions', () =
     });
   });
 
+  it('keeps optimistic note edits successful when post-mutation revalidation fails', async () => {
+    fakes.fakeRevalidatePath.mockImplementationOnce(() => {
+      throw new Error('cache unavailable');
+    });
+
+    await expect(
+      updateNoteAction({ noteId: NOTE_ID, entityId: OBJECT_ID, body: 'Updated' }),
+    ).resolves.toEqual({ ok: true });
+    expect(fakes.fakeObjects.updateNote).toHaveBeenCalledWith({
+      noteId: NOTE_ID,
+      body: 'Updated',
+      actorUserId: USER_ID,
+    });
+  });
+
+  it('keeps optimistic note deletes successful when post-mutation revalidation fails', async () => {
+    fakes.fakeRevalidatePath.mockImplementationOnce(() => {
+      throw new Error('cache unavailable');
+    });
+
+    await expect(deleteNoteAction({ noteId: NOTE_ID, entityId: OBJECT_ID })).resolves.toEqual({
+      ok: true,
+    });
+    expect(fakes.fakeObjects.deleteNote).toHaveBeenCalledWith({
+      noteId: NOTE_ID,
+      actorUserId: USER_ID,
+    });
+  });
+
   it('surfaces not-found note updates as action errors', async () => {
     fakes.fakeObjects.updateNote.mockResolvedValue(false);
 
@@ -565,5 +629,28 @@ describe('object relationship, note, notification, and suggestion actions', () =
     });
     expect(fakes.fakeObjects.rejectObjectChange).toHaveBeenCalledWith(CHANGE_ID);
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/inbox');
+  });
+
+  it('keeps optimistic suggestion accept/reject successful when revalidation fails after persistence', async () => {
+    fakes.fakeRevalidatePath.mockImplementationOnce(() => {
+      throw new Error('cache unavailable');
+    });
+
+    await expect(
+      acceptObjectChangeAction({ changeId: CHANGE_ID, entityId: OBJECT_ID }),
+    ).resolves.toEqual({ ok: true });
+
+    fakes.fakeRevalidatePath.mockImplementationOnce(() => {
+      throw new Error('cache unavailable');
+    });
+
+    await expect(
+      rejectObjectChangeAction({ changeId: CHANGE_ID, entityId: OBJECT_ID }),
+    ).resolves.toEqual({ ok: true });
+    expect(fakes.fakeObjects.acceptObjectChange).toHaveBeenCalledWith(CHANGE_ID, {
+      kind: 'user',
+      userId: USER_ID,
+    });
+    expect(fakes.fakeObjects.rejectObjectChange).toHaveBeenCalledWith(CHANGE_ID);
   });
 });
