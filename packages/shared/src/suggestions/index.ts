@@ -1149,6 +1149,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return staleObjectTargetReason(row.entityId);
   }
 
+  async function staleObjectMergeTargetReason(objectIds: string[]): Promise<string | null> {
+    const resolvedObjectIds = await resolveCurrentObjectIds(objectIds);
+    if (resolvedObjectIds.length < 2) {
+      return 'Objects in this merge suggestion were already merged or removed.';
+    }
+    for (const objectId of resolvedObjectIds) {
+      const reason = await staleObjectTargetReason(objectId);
+      if (reason) return reason;
+    }
+    return null;
+  }
+
   async function staleActionableItemReason(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<string | null> {
@@ -1188,10 +1200,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (item.targetKind === 'object_merge') {
       const parsed = objectMergePayload.safeParse(payload);
       if (!parsed.success) return null;
-      const objectIds = await resolveCurrentObjectIds(parsed.data.objectIds);
-      return objectIds.length < 2
-        ? 'Objects in this merge suggestion were already merged or removed.'
-        : null;
+      return staleObjectMergeTargetReason(parsed.data.objectIds);
     }
     return null;
   }
@@ -2207,6 +2216,19 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         null,
         'Objects in this merge suggestion were already merged.',
       );
+      if (superseded) {
+        await reconcileStaleActionableItemsBestEffort({
+          suggestionItemId: input.itemId,
+          suggestionId: row.suggestion.id,
+          op: 'accept_object_merge_stale',
+        });
+      }
+      return null;
+    }
+    for (const objectId of expectedObjectIds) {
+      const staleReason = await staleObjectTargetReason(objectId);
+      if (!staleReason) continue;
+      const superseded = await supersedeItem(row.item.id, null, staleReason);
       if (superseded) {
         await reconcileStaleActionableItemsBestEffort({
           suggestionItemId: input.itemId,

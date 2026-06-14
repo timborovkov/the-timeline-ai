@@ -159,6 +159,58 @@ describe('suggestion scope', () => {
     });
   });
 
+  it('supersedes merge suggestions when a participant was archived', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const first = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Active merge participant',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const second = await scope.objects.createObject({
+      type: 'vendor',
+      canonicalName: 'Archived merge participant',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Merge archived participant',
+      dedupeKey: 'merge-archived-participant',
+      items: [
+        {
+          operation: 'merge',
+          targetKind: 'object_merge',
+          targetId: first.id,
+          title: 'Review archived participant merge',
+          dedupeKey: 'merge-archived-participant:item',
+          proposedPayload: {
+            objectIds: [first.id, second.id],
+            survivorId: first.id,
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    await scope.objects.archiveObject(second.id, { kind: 'user', userId: USER_ID });
+
+    await expect(
+      scope.suggestions.acceptObjectMergeSuggestionItem({
+        itemId,
+        survivorId: first.id,
+        mergedIds: [second.id],
+      }),
+    ).resolves.toBeNull();
+
+    const loaded = await scope.suggestions.getSuggestion(bundle.id);
+    expect(loaded).toMatchObject({ status: 'superseded' });
+    expect(loaded?.items[0]).toMatchObject({
+      status: 'superseded',
+      supersededReason: 'The target object was archived.',
+    });
+    const archivedObject = await scope.objects.getObject(second.id);
+    expect(archivedObject?.archivedAt).toBeInstanceOf(Date);
+    await expect(scope.objects.getMergedObjectTarget(second.id)).resolves.toBeNull();
+  });
+
   it('rewrites and dedupes pending merge suggestions after an object merge', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const first = await scope.objects.createObject({
