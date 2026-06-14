@@ -9,7 +9,6 @@ import type { Metadata } from 'next';
 import type { ComponentProps, ReactNode } from 'react';
 
 import { IndexStrip } from '@/components/index-strip';
-import { SearchBar } from '@/components/search-bar';
 import { TimelineFeed } from '@/components/timeline-feed';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -37,7 +36,6 @@ interface Props {
     source?: string;
     impact?: string;
     event?: string;
-    /** Prefilled by the ⌘K command bar. SearchBar reads it and auto-runs. */
     q?: string;
   }>;
 }
@@ -50,7 +48,6 @@ interface TimelineMember {
 }
 type TimelineFeedProps = ComponentProps<typeof TimelineFeed>;
 interface TimelineBaseParams extends Record<string, string | null | undefined> {
-  q: string | null | undefined;
   author: string | null;
   from: string | null;
   to: string | null;
@@ -85,6 +82,14 @@ export default async function TimelinePage({ searchParams }: Props) {
   if (!active) redirect('/sign-in');
 
   const sp = await searchParams;
+  if (sp.q?.trim()) {
+    const next = new URLSearchParams({ q: sp.q.trim() });
+    if (sp.source) next.set('source', sp.source);
+    if (sp.from) next.set('from', sp.from);
+    if (sp.to) next.set('to', sp.to);
+    redirect(`/app/search?${next.toString()}`);
+  }
+
   const scope = withTeam(db, active.teamId, session.user.id);
   const role = await scope.requireMembership();
   const isAdmin = role === 'owner' || role === 'admin';
@@ -160,16 +165,13 @@ export default async function TimelinePage({ searchParams }: Props) {
     }
   }
 
-  const hasSearch = Boolean(sp.q?.trim());
   const hasPanelFilters = Boolean(
     authorFilter ?? fromFilter ?? toFilter ?? sourceFilter ?? impactFilter,
   );
-  const hasFilters = hasPanelFilters || hasSearch;
+  const hasFilters = hasPanelFilters;
   const sourceLabel = TIMELINE_SOURCES.find(([value]) => value === sourceFilter)?.[1];
   const eventCount = events.length;
-  const trimmedQuery = sp.q?.trim();
   const baseParams = {
-    q: trimmedQuery === '' ? null : trimmedQuery,
     author: authorFilter ?? null,
     from: sp.from ?? null,
     to: sp.to ?? null,
@@ -178,7 +180,7 @@ export default async function TimelinePage({ searchParams }: Props) {
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <IndexStrip
-        srLabel={`Timeline · ${active.teamName} · ${eventCount} event${eventCount === 1 ? '' : 's'} loaded${hasSearch ? ` · searching for ${sp.q ?? ''}` : ''}${hasFilters ? ' · filters on' : ''}`}
+        srLabel={`Timeline · ${active.teamName} · ${eventCount} event${eventCount === 1 ? '' : 's'} loaded${hasFilters ? ' · filters on' : ''}`}
         segments={[
           { value: 'TIMELINE' },
           { label: 'team', value: active.teamName },
@@ -189,14 +191,11 @@ export default async function TimelinePage({ searchParams }: Props) {
           ...(impactFilter
             ? ([{ label: 'impact', value: impactFilter, signal: true }] as const)
             : []),
-          ...(hasSearch ? ([{ label: 'search', value: sp.q ?? '', signal: true }] as const) : []),
-          ...(hasFilters && !hasSearch && !sourceLabel
+          ...(hasFilters && !sourceLabel
             ? ([{ label: 'filter', value: 'ON', signal: true }] as const)
             : []),
         ]}
       />
-
-      <SearchBar initialQuery={sp.q ?? ''} />
 
       <TimelineBrowserSection
         sp={sp}
@@ -267,7 +266,6 @@ function TimelineBrowserSection({
   return (
     <section className="space-y-3">
       <TimelineFilterPanel
-        sp={sp}
         members={members}
         userMap={userMap}
         baseParams={baseParams}
@@ -322,7 +320,6 @@ function TimelineBrowserSection({
 }
 
 function TimelineFilterPanel({
-  sp,
   members,
   userMap,
   baseParams,
@@ -334,7 +331,6 @@ function TimelineFilterPanel({
   fromFilter,
   toFilter,
 }: {
-  sp: SearchParams;
   members: TimelineMember[];
   userMap: TimelineUserMap;
   baseParams: TimelineBaseParams;
@@ -359,7 +355,6 @@ function TimelineFilterPanel({
           method="get"
           className="mt-3 flex flex-wrap items-end gap-3 rounded-sm border border-border bg-surface p-3 text-sm"
         >
-          {sp.q ? <input type="hidden" name="q" value={sp.q} /> : null}
           <TimelineSelect name="source" label="Source" value={sourceFilter ?? ''}>
             <option value="">All sources</option>
             {TIMELINE_SOURCES.map(([value, label]) => (
@@ -397,10 +392,13 @@ function TimelineFilterPanel({
           </button>
           {hasPanelFilters ? (
             <Link
-              href={timelineHref(
-                { q: baseParams.q },
-                { author: null, from: null, to: null, source: null, impact: null },
-              )}
+              href={timelineHref(baseParams, {
+                author: null,
+                from: null,
+                to: null,
+                source: null,
+                impact: null,
+              })}
               className="inline-flex h-9 items-center rounded-sm border border-border px-3 text-sm transition-colors hover:bg-surface-2"
             >
               Clear

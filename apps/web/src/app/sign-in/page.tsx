@@ -25,6 +25,7 @@ export default async function SignInPage({ searchParams }: Props) {
   const [{ callbackUrl }, session] = await Promise.all([searchParams, auth()]);
   if (session?.user) {
     const pendingInviteToken = await readPendingInvite();
+    // react-doctor-disable-next-line react-doctor/clickjacking-redirect-risk -- signedInAuthRedirect allowlists same-origin paths through safeSameOriginPath and blocks auth-loop paths.
     redirect(signedInAuthRedirect({ callbackUrl, pendingInviteToken }));
   }
 
