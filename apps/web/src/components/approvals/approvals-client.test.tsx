@@ -418,7 +418,7 @@ describe('ApprovalsClient', () => {
     expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId: 'item-1' });
   });
 
-  it('restores optimistic hidden rows when refreshed suggestions still contain them', async () => {
+  it('keeps optimistic rows hidden across equivalent suggestion refreshes', async () => {
     const user = userEvent.setup();
     const suggestion = {
       id: 'bundle-1',
@@ -467,6 +467,72 @@ describe('ApprovalsClient', () => {
       createElement(ApprovalsClient, {
         folded,
         suggestions: [{ ...suggestion, items: [...suggestion.items] }],
+      }),
+    );
+
+    await waitFor(() => {
+      expect(getByText('0 waiting')).toBeTruthy();
+    });
+    expect(() => getByRole('button', { name: /^Accept$/ })).toThrow();
+  });
+
+  it('restores optimistic hidden rows when refreshed suggestion item data changes', async () => {
+    const user = userEvent.setup();
+    const suggestion = {
+      id: 'bundle-1',
+      source: 'background',
+      status: 'pending',
+      title: 'Schedule follow-up',
+      summary: null,
+      reason: null,
+      confidence: 'high',
+      createdAt: '2026-06-01T10:00:00.000Z',
+      evidence: [],
+      items: [
+        {
+          id: 'item-1',
+          status: 'pending',
+          operation: 'create',
+          targetKind: 'calendar_event',
+          targetId: null,
+          title: 'Customer follow-up',
+          description: null,
+          proposedPayload: { title: 'Customer follow-up' },
+          failureReason: null,
+        },
+      ],
+    };
+
+    const folded = {
+      title: 'Calendar approvals',
+      summary: (count: number) => `${count} waiting`,
+      className: 'border-y border-border py-4',
+    };
+
+    const { getByRole, getByText, rerender } = render(
+      createElement(ApprovalsClient, {
+        folded,
+        suggestions: [suggestion],
+      }),
+    );
+
+    await user.click(getByRole('button', { name: /^Accept$/ }));
+    await waitFor(() => {
+      expect(getByText('0 waiting')).toBeTruthy();
+    });
+
+    const originalItem = suggestion.items[0];
+    if (!originalItem) throw new Error('Missing test suggestion item');
+
+    rerender(
+      createElement(ApprovalsClient, {
+        folded,
+        suggestions: [
+          {
+            ...suggestion,
+            items: [{ ...originalItem, title: 'Updated customer follow-up' }],
+          },
+        ],
       }),
     );
 

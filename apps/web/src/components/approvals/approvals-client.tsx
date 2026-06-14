@@ -68,6 +68,34 @@ interface Props {
   };
 }
 
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function suggestionItemSignature(item: SuggestionItem): string {
+  return stableJson({
+    id: item.id,
+    status: item.status,
+    operation: item.operation,
+    targetKind: item.targetKind,
+    targetId: item.targetId,
+    title: item.title,
+    description: item.description,
+    proposedPayload: item.proposedPayload,
+    failureReason: item.failureReason,
+    supersededByItemId: item.supersededByItemId ?? null,
+    supersededReason: item.supersededReason ?? null,
+  });
+}
+
 function formatPayload(payload: Record<string, unknown>): string {
   return Object.entries(payload)
     .filter(
@@ -163,35 +191,28 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true, folded }:
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [resolvedItemVersions, setResolvedItemVersions] = useState<Map<string, number>>(
+  const [resolvedItemSignatures, setResolvedItemSignatures] = useState<Map<string, string>>(
     () => new Map(),
   );
   const [busyItemIds, setBusyItemIds] = useState<Set<string>>(() => new Set());
   const inFlightItemIdsRef = useRef<Set<string> | null>(null);
-  const suggestionsVersionRef = useRef<{ suggestions: SuggestionBundle[]; version: number } | null>(
-    null,
-  );
   inFlightItemIdsRef.current ??= new Set();
-  if (suggestionsVersionRef.current === null) {
-    suggestionsVersionRef.current = { suggestions, version: 0 };
-  } else if (suggestionsVersionRef.current.suggestions !== suggestions) {
-    suggestionsVersionRef.current = {
-      suggestions,
-      version: suggestionsVersionRef.current.version + 1,
-    };
-  }
-  const suggestionsVersion = suggestionsVersionRef.current.version;
-  const serverItemIds = useMemo(
-    () => new Set(suggestions.flatMap((bundle) => bundle.items.map((item) => item.id))),
+  const serverItemSignatures = useMemo(
+    () =>
+      new Map(
+        suggestions.flatMap((bundle) =>
+          bundle.items.map((item) => [item.id, suggestionItemSignature(item)] as const),
+        ),
+      ),
     [suggestions],
   );
   const effectiveResolvedItemIds = useMemo(() => {
     const next = new Set<string>();
-    for (const [id, version] of resolvedItemVersions) {
-      if (version === suggestionsVersion && serverItemIds.has(id)) next.add(id);
+    for (const [id, signature] of resolvedItemSignatures) {
+      if (serverItemSignatures.get(id) === signature) next.add(id);
     }
     return next;
-  }, [resolvedItemVersions, serverItemIds, suggestionsVersion]);
+  }, [resolvedItemSignatures, serverItemSignatures]);
   const visibleSuggestions = useMemo(
     () =>
       suggestions.flatMap((bundle) => {
@@ -238,16 +259,19 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true, folded }:
 
   function resolveItems(itemIds: string[]) {
     if (itemIds.length === 0) return;
-    setResolvedItemVersions((previous) => {
+    setResolvedItemSignatures((previous) => {
       const next = new Map(previous);
-      for (const id of itemIds) next.set(id, suggestionsVersion);
+      for (const id of itemIds) {
+        const signature = serverItemSignatures.get(id);
+        if (signature) next.set(id, signature);
+      }
       return next;
     });
   }
 
   function restoreItems(itemIds: string[]) {
     if (itemIds.length === 0) return;
-    setResolvedItemVersions((previous) => {
+    setResolvedItemSignatures((previous) => {
       const next = new Map(previous);
       for (const id of itemIds) next.delete(id);
       return next;
