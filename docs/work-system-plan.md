@@ -588,4 +588,3 @@ Recommended wedge: a team pipeline or task board where users can:
 - ask the agent what changed and why
 
 If this loop feels excellent, the broader platform can expand from it.
-

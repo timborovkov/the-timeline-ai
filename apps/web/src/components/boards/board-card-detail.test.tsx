@@ -123,4 +123,34 @@ describe('BoardCardDetail', () => {
     });
     expect(onUpdateItem).not.toHaveBeenCalled();
   });
+
+  it('keeps the note editor open when saving notes fails', async () => {
+    const user = userEvent.setup();
+    const onUpdateItem = vi.fn(() => Promise.resolve({ error: 'Save failed' }));
+    render(
+      <BoardCardDetail
+        boardId="board-1"
+        view="kanban"
+        item={boardItem({
+          id: 'item-1',
+          entityId: 'object-1',
+          canonicalName: 'Alpha',
+          notes: 'Original notes',
+        })}
+        history={[]}
+        onUpdateItem={onUpdateItem}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const textarea = screen.getByLabelText('Board notes');
+    await user.clear(textarea);
+    await user.type(textarea, 'Draft that should survive');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Board notes')).toBeTruthy();
+      expect(screen.getByDisplayValue('Draft that should survive')).toBeTruthy();
+    });
+  });
 });

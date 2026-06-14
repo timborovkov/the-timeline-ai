@@ -217,7 +217,11 @@ export function DocumentDrive({
   const documentQuery = useDocumentListQuery(currentFolderId, initialDocumentPage);
   const visibleDocuments = documentQuery.data.pages.flatMap((page) => page.items);
   const visibleFolders = useMemo(() => {
-    const merged = [...optimisticFolders, ...folders];
+    const serverFolderIds = new Set(folders.map((folder) => folder.id));
+    const activeOptimisticFolders = optimisticFolders.filter(
+      (folder) => !serverFolderIds.has(folder.id),
+    );
+    const merged = [...activeOptimisticFolders, ...folders];
     const byId = new Map<string, FolderItem>();
     for (const folder of merged) {
       if (!deletedFolderIds.has(folder.id) && !byId.has(folder.id)) byId.set(folder.id, folder);

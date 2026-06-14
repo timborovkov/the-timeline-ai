@@ -52,17 +52,22 @@ export function BoardCardDetail({
   const [pending, startTransition] = useTransition();
   if (!item) return null;
 
-  function savePatch(patch: BoardItemOptimisticPatch): void {
+  function savePatch(patch: BoardItemOptimisticPatch, onSuccess?: () => void): void {
     if (!item || !onUpdateItem) return;
     startTransition(async () => {
       const result = await onUpdateItem(item.id, patch);
-      if ('error' in result && result.error) toast.error(result.error);
+      if ('error' in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      onSuccess?.();
     });
   }
 
   function saveNotes(): void {
-    savePatch({ notes: noteDraft.trim() || null });
-    setEditingNotes(false);
+    savePatch({ notes: noteDraft.trim() || null }, () => {
+      setEditingNotes(false);
+    });
   }
 
   return (

@@ -60,10 +60,25 @@ vi.mock('@/components/boards/board-add-item-form', () => ({
   ),
 }));
 vi.mock('@/components/boards/board-card-detail', () => ({
-  BoardCardDetail: () => null,
+  BoardCardDetail: (props: {
+    item: boards.BoardItemRow | null;
+    onUpdateItem?: (itemId: string, patch: { priority: number }) => Promise<unknown>;
+  }) =>
+    props.item ? (
+      <button
+        type="button"
+        onClick={() => {
+          void props.onUpdateItem?.(props.item?.id ?? '', { priority: 1 });
+        }}
+      >
+        Set P1
+      </button>
+    ) : null,
 }));
 vi.mock('@/components/boards/board-actions-menu', () => ({
-  BoardActionsMenu: () => <button type="button">Board actions</button>,
+  BoardActionsMenu: (props: { purpose: string }) => (
+    <output aria-label="board settings purpose">{props.purpose}</output>
+  ),
 }));
 vi.mock('@/components/boards/curated-kanban-board', () => ({
   CuratedKanbanBoard: () => null,
@@ -96,6 +111,8 @@ function boardItem(input: {
   id: string;
   entityId: string;
   canonicalName: string;
+  priority?: number | null;
+  updatedAt?: Date;
 }): boards.BoardItemRow {
   return {
     id: input.id,
@@ -105,31 +122,38 @@ function boardItem(input: {
     position: 0,
     responsibleUserId: null,
     dueAt: null,
-    priority: null,
+    priority: input.priority ?? null,
     nextStep: null,
     notes: null,
     customFields: {},
     archivedAt: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: input.updatedAt ?? new Date('2026-01-01T00:00:00.000Z'),
     object: objectRow({ id: input.entityId, canonicalName: input.canonicalName }),
   };
 }
 
-function renderClient(items: boards.BoardItemRow[]) {
+function renderClient(
+  items: boards.BoardItemRow[],
+  options: {
+    selectedItemId?: string | null;
+    view?: 'kanban' | 'table' | 'list';
+    purpose?: string;
+  } = {},
+) {
   return (
     <BoardDetailClient
       boardId="board-1"
       boardName="Pilot board"
-      purpose="Track pilots"
+      purpose={options.purpose ?? 'Track pilots'}
       pinned={false}
-      view="list"
+      view={options.view ?? 'list'}
       lanes={[]}
       initialItems={items}
       initialCandidates={[]}
       recommendedTypes={['company']}
       defaultLaneId="lane-1"
-      selectedItemId={null}
+      selectedItemId={options.selectedItemId ?? null}
       history={[]}
       members={[]}
     />
@@ -193,6 +217,79 @@ describe('BoardDetailClient', () => {
     await waitFor(() => {
       expect(screen.getByText('Beta')).toBeTruthy();
       expect(screen.getByLabelText('Board · Pilot board').textContent).not.toContain('items');
+    });
+  });
+
+  it('passes hidden legacy descriptions through to board settings', () => {
+    render(
+      renderClient([], {
+        purpose: 'Track companies, deals, or projects through staged progress.',
+      }),
+    );
+
+    expect(screen.getByLabelText('board settings purpose').textContent).toBe(
+      'Track companies, deals, or projects through staged progress.',
+    );
+  });
+
+  it('retires optimistic item patches after refreshed props catch up', async () => {
+    const refreshedAt = new Date(Date.now() + 1000);
+    const { rerender } = render(
+      renderClient(
+        [
+          boardItem({
+            id: 'item-1',
+            entityId: 'object-1',
+            canonicalName: 'Alpha',
+          }),
+        ],
+        { selectedItemId: 'item-1', view: 'table' },
+      ),
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Set P1' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('p1')).toBeTruthy();
+    });
+
+    rerender(
+      renderClient(
+        [
+          boardItem({
+            id: 'item-1',
+            entityId: 'object-1',
+            canonicalName: 'Alpha',
+            priority: 1,
+            updatedAt: refreshedAt,
+          }),
+        ],
+        { selectedItemId: 'item-1', view: 'table' },
+      ),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('p1')).toBeTruthy();
+    });
+
+    rerender(
+      renderClient(
+        [
+          boardItem({
+            id: 'item-1',
+            entityId: 'object-1',
+            canonicalName: 'Alpha',
+            priority: 2,
+            updatedAt: new Date(refreshedAt.getTime() + 1000),
+          }),
+        ],
+        { selectedItemId: 'item-1', view: 'table' },
+      ),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('p1')).toBeNull();
+      expect(screen.getByText('p2')).toBeTruthy();
     });
   });
 

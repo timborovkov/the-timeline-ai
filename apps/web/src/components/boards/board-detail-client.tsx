@@ -28,6 +28,11 @@ export type BoardItemOptimisticPatch = Partial<
   Pick<boards.BoardItemRow, 'responsibleUserId' | 'dueAt' | 'priority' | 'nextStep' | 'notes'>
 >;
 
+interface BoardItemPatchOverlay {
+  patch: BoardItemOptimisticPatch;
+  submittedAt: number;
+}
+
 interface Props {
   boardId: string;
   boardName: string;
@@ -62,18 +67,25 @@ export function BoardDetailClient({
   const router = useRouter();
   const [localItems, setLocalItems] = useState<boards.BoardItemRow[]>([]);
   const [localCandidates, setLocalCandidates] = useState<objects.ObjectRow[]>([]);
-  const [itemPatches, setItemPatches] = useState<Record<string, BoardItemOptimisticPatch>>({});
+  const [itemPatches, setItemPatches] = useState<Record<string, BoardItemPatchOverlay>>({});
+  const serverItemsById = useMemo(
+    () => new Map(initialItems.map((item) => [item.id, item])),
+    [initialItems],
+  );
+  const effectiveItemPatches = useMemo(
+    () => reconcileItemPatches(itemPatches, serverItemsById),
+    [itemPatches, serverItemsById],
+  );
   const items = useMemo(() => {
-    const serverItemIds = new Set(initialItems.map((item) => item.id));
     const serverEntityIds = new Set(initialItems.map((item) => item.entityId));
     const pendingItems = localItems.filter(
-      (item) => !serverItemIds.has(item.id) && !serverEntityIds.has(item.entityId),
+      (item) => !serverItemsById.has(item.id) && !serverEntityIds.has(item.entityId),
     );
     return [...initialItems, ...pendingItems].map((item) => ({
       ...item,
-      ...(itemPatches[item.id] ?? {}),
+      ...(effectiveItemPatches[item.id] ?? {}),
     }));
-  }, [initialItems, itemPatches, localItems]);
+  }, [effectiveItemPatches, initialItems, localItems, serverItemsById]);
   const candidates = useMemo(() => {
     const serverCandidateIds = new Set(initialCandidates.map((candidate) => candidate.id));
     const pendingCandidates = localCandidates.filter(
@@ -110,13 +122,19 @@ export function BoardDetailClient({
   const updateItem = useCallback(
     async (itemId: string, patch: BoardItemOptimisticPatch) => {
       const previousItem = items.find((item) => item.id === itemId);
-      setItemPatches((current) => ({
-        ...current,
-        [itemId]: {
-          ...(current[itemId] ?? {}),
-          ...patch,
-        },
-      }));
+      setItemPatches((current) => {
+        const reconciled = reconcilePatchOverlays(current, serverItemsById);
+        return {
+          ...reconciled,
+          [itemId]: {
+            patch: {
+              ...(reconciled[itemId]?.patch ?? {}),
+              ...patch,
+            },
+            submittedAt: Date.now(),
+          },
+        };
+      });
 
       const dueAt = patch.dueAt === undefined ? undefined : (patch.dueAt?.toISOString() ?? null);
       const result = await updateBoardItemAction({
@@ -126,7 +144,8 @@ export function BoardDetailClient({
       });
       if ('error' in result && result.error) {
         setItemPatches((current) => {
-          let nextForItem = { ...(current[itemId] ?? {}) };
+          const reconciled = reconcilePatchOverlays(current, serverItemsById);
+          let nextForItem = { ...(reconciled[itemId]?.patch ?? {}) };
           for (const key of Object.keys(patch) as (keyof BoardItemOptimisticPatch)[]) {
             if (previousItem) {
               nextForItem = { ...nextForItem, [key]: previousItem[key] };
@@ -135,17 +154,17 @@ export function BoardDetailClient({
             }
           }
           if (Object.keys(nextForItem).length === 0) {
-            const { [itemId]: _removed, ...rest } = current;
+            const { [itemId]: _removed, ...rest } = reconciled;
             return rest;
           }
-          return { ...current, [itemId]: nextForItem };
+          return { ...reconciled, [itemId]: { patch: nextForItem, submittedAt: Date.now() } };
         });
         return result;
       }
       router.refresh();
       return result;
     },
-    [items, router],
+    [items, router, serverItemsById],
   );
 
   const description = visibleBoardDescription(purpose);
@@ -159,12 +178,12 @@ export function BoardDetailClient({
       <BoardActionsMenu
         id={boardId}
         name={boardName}
-        purpose={description ?? ''}
+        purpose={purpose ?? ''}
         pinned={pinned}
         lanes={lanes}
       />
     ),
-    [boardId, boardName, description, lanes, pinned],
+    [boardId, boardName, lanes, pinned, purpose],
   );
 
   return (
@@ -254,4 +273,57 @@ function omitPatchKey(
 ): BoardItemOptimisticPatch {
   const { [key]: _removed, ...rest } = patch;
   return rest;
+}
+
+function reconcileItemPatches(
+  overlays: Record<string, BoardItemPatchOverlay>,
+  serverItemsById: ReadonlyMap<string, boards.BoardItemRow>,
+): Record<string, BoardItemOptimisticPatch> {
+  const reconciled = reconcilePatchOverlays(overlays, serverItemsById);
+  return Object.fromEntries(
+    Object.entries(reconciled).map(([itemId, overlay]) => [itemId, overlay.patch]),
+  );
+}
+
+function reconcilePatchOverlays(
+  overlays: Record<string, BoardItemPatchOverlay>,
+  serverItemsById: ReadonlyMap<string, boards.BoardItemRow>,
+): Record<string, BoardItemPatchOverlay> {
+  let changed = false;
+  const next: Record<string, BoardItemPatchOverlay> = {};
+  for (const [itemId, overlay] of Object.entries(overlays)) {
+    const serverItem = serverItemsById.get(itemId);
+    if (!serverItem) {
+      next[itemId] = overlay;
+      continue;
+    }
+    if (serverItem.updatedAt.getTime() >= overlay.submittedAt) {
+      changed = true;
+      continue;
+    }
+    const patch = overlay.patch;
+    let nextPatch = patch;
+    for (const key of Object.keys(patch) as (keyof BoardItemOptimisticPatch)[]) {
+      if (patchValueMatchesServer(serverItem[key], patch[key])) {
+        nextPatch = omitPatchKey(nextPatch, key);
+        changed = true;
+      }
+    }
+    if (Object.keys(nextPatch).length > 0) next[itemId] = { ...overlay, patch: nextPatch };
+  }
+  return changed ? next : overlays;
+}
+
+function patchValueMatchesServer(
+  serverValue: boards.BoardItemRow[keyof BoardItemOptimisticPatch],
+  patchValue: BoardItemOptimisticPatch[keyof BoardItemOptimisticPatch],
+): boolean {
+  if (serverValue instanceof Date || patchValue instanceof Date) {
+    return dateMillis(serverValue) === dateMillis(patchValue);
+  }
+  return serverValue === patchValue;
+}
+
+function dateMillis(value: unknown): number | null {
+  return value instanceof Date ? value.getTime() : null;
 }
