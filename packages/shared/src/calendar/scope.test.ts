@@ -199,6 +199,37 @@ describe('calendar scope', () => {
     expect(fakes.enqueueCalendarEventEmbedJob).not.toHaveBeenCalled();
   });
 
+  it('materializes recurring parents beyond the first parent page', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const parentRows = Array.from({ length: 501 }, (_, index) => ({
+      id: `00000000-0000-0000-0000-${String(index + 1000).padStart(12, '0')}`,
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      title: `Paged daily call ${index}`,
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team' as const,
+      rrule: 'RRULE:FREQ=DAILY;COUNT=2',
+      metadata: {},
+    }));
+    await db.insert(calendarEvents).values(parentRows);
+    fakes.enqueueCalendarEventEmbedJob.mockClear();
+
+    await expect(
+      scope.calendar.materializeRecurringEvents({
+        from: new Date('2026-07-01T00:00:00Z'),
+        to: new Date('2026-07-03T00:00:00Z'),
+      }),
+    ).resolves.toBe(501);
+
+    const rows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_ID));
+    const children = rows.filter((row) => row.recurringParentId !== null);
+    expect(children).toHaveLength(501);
+    expect(children.some((row) => row.recurringParentId === parentRows[500]?.id)).toBe(true);
+    expect(fakes.enqueueCalendarEventEmbedJob).toHaveBeenCalledTimes(501);
+  });
+
   it('moves one recurring occurrence without changing sibling occurrences', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const parent = await scope.calendar.createCalendarEvent({

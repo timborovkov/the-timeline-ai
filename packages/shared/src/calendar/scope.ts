@@ -6,7 +6,7 @@ import {
   rawEvents,
   teamCalendarSettings,
 } from '@timeline/db';
-import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import {
   expandRRuleBetween,
@@ -31,6 +31,7 @@ type DbOrTx = Db | DbTx;
 type CalendarQdrantAction = 'embed' | 'delete' | null;
 
 const log = childLogger('calendar:scope');
+const RECURRING_PARENT_PAGE_SIZE = 500;
 
 export interface CalendarScopeDeps {
   db: Db;
@@ -1548,28 +1549,39 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
 
     async materializeRecurringEvents(opts: MaterializeRecurringEventsInput = {}): Promise<number> {
       await ensureMember();
-      const conditions = [
-        eq(calendarEvents.teamId, teamId),
-        isNull(calendarEvents.deletedAt),
-        isNull(calendarEvents.recurringParentId),
-        sql`${calendarEvents.rrule} IS NOT NULL`,
-      ];
-      if (opts.parentId) conditions.push(eq(calendarEvents.id, opts.parentId));
-      const parents = await db
-        .select()
-        .from(calendarEvents)
-        .where(and(...conditions))
-        .orderBy(asc(calendarEvents.startAt))
-        .limit(500);
       let count = 0;
       const teamVisibleIds: string[] = [];
-      await db.transaction(async (tx) => {
-        for (const parent of parents) {
-          const ids = await materializeParent(tx, parent as CalendarEventRow, opts);
-          count += ids.length;
-          if (parent.visibility === 'team') teamVisibleIds.push(...ids);
-        }
-      });
+      let lastParentId: string | null = null;
+
+      for (;;) {
+        const conditions = [
+          eq(calendarEvents.teamId, teamId),
+          isNull(calendarEvents.deletedAt),
+          isNull(calendarEvents.recurringParentId),
+          sql`${calendarEvents.rrule} IS NOT NULL`,
+        ];
+        if (opts.parentId) conditions.push(eq(calendarEvents.id, opts.parentId));
+        if (lastParentId) conditions.push(gt(calendarEvents.id, lastParentId));
+        const parents = await db
+          .select()
+          .from(calendarEvents)
+          .where(and(...conditions))
+          .orderBy(asc(calendarEvents.id))
+          .limit(RECURRING_PARENT_PAGE_SIZE);
+
+        await db.transaction(async (tx) => {
+          for (const parent of parents) {
+            const ids = await materializeParent(tx, parent as CalendarEventRow, opts);
+            count += ids.length;
+            if (parent.visibility === 'team') teamVisibleIds.push(...ids);
+          }
+        });
+
+        if (parents.length < RECURRING_PARENT_PAGE_SIZE || opts.parentId) break;
+        lastParentId = parents[parents.length - 1]?.id ?? null;
+        if (!lastParentId) break;
+      }
+
       await enqueueCalendarEventEmbeddings(teamId, teamVisibleIds);
       return count;
     },

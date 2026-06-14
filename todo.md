@@ -63,7 +63,7 @@ implementation detail.
 ### Recurrence
 
 - [x] Add recurring event schema support: parent `rrule`, materialized
-      occurrence rows on a 3-month rolling window, `recurring_parent_id`,
+      occurrence rows on a recent-past/future rolling window, `recurring_parent_id`,
       `original_start_at`, and `is_exception`.
 - [x] Add recurrence expansion worker and re-expansion semantics: "this event"
       marks an exception; "this and all future" deletes and re-expands
