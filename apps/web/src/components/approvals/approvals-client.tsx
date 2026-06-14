@@ -163,21 +163,35 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true, folded }:
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [resolvedItemIds, setResolvedItemIds] = useState<Set<string>>(() => new Set());
+  const [resolvedItemVersions, setResolvedItemVersions] = useState<Map<string, number>>(
+    () => new Map(),
+  );
   const [busyItemIds, setBusyItemIds] = useState<Set<string>>(() => new Set());
   const inFlightItemIdsRef = useRef<Set<string> | null>(null);
+  const suggestionsVersionRef = useRef<{ suggestions: SuggestionBundle[]; version: number } | null>(
+    null,
+  );
   inFlightItemIdsRef.current ??= new Set();
+  if (suggestionsVersionRef.current === null) {
+    suggestionsVersionRef.current = { suggestions, version: 0 };
+  } else if (suggestionsVersionRef.current.suggestions !== suggestions) {
+    suggestionsVersionRef.current = {
+      suggestions,
+      version: suggestionsVersionRef.current.version + 1,
+    };
+  }
+  const suggestionsVersion = suggestionsVersionRef.current.version;
   const serverItemIds = useMemo(
     () => new Set(suggestions.flatMap((bundle) => bundle.items.map((item) => item.id))),
     [suggestions],
   );
   const effectiveResolvedItemIds = useMemo(() => {
-    const next = new Set(resolvedItemIds);
-    for (const id of resolvedItemIds) {
-      if (serverItemIds.has(id) && !inFlightItemIdsRef.current?.has(id)) next.delete(id);
+    const next = new Set<string>();
+    for (const [id, version] of resolvedItemVersions) {
+      if (version === suggestionsVersion && serverItemIds.has(id)) next.add(id);
     }
     return next;
-  }, [resolvedItemIds, serverItemIds]);
+  }, [resolvedItemVersions, serverItemIds, suggestionsVersion]);
   const visibleSuggestions = useMemo(
     () =>
       suggestions.flatMap((bundle) => {
@@ -224,13 +238,17 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true, folded }:
 
   function resolveItems(itemIds: string[]) {
     if (itemIds.length === 0) return;
-    setResolvedItemIds((previous) => new Set([...previous, ...itemIds]));
+    setResolvedItemVersions((previous) => {
+      const next = new Map(previous);
+      for (const id of itemIds) next.set(id, suggestionsVersion);
+      return next;
+    });
   }
 
   function restoreItems(itemIds: string[]) {
     if (itemIds.length === 0) return;
-    setResolvedItemIds((previous) => {
-      const next = new Set(previous);
+    setResolvedItemVersions((previous) => {
+      const next = new Map(previous);
       for (const id of itemIds) next.delete(id);
       return next;
     });
