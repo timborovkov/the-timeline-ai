@@ -116,7 +116,7 @@ describe('ChatPane', () => {
     expect(html).toContain('list-disc');
     expect(html).toContain('<li');
     expect(html).toContain('[ev:aaaaaaaa]');
-    expect(html).toContain(`/app/timeline?event=${eventId}#ev-${eventId}`);
+    expect(html).toContain(`Open reference [ev:aaaaaaaa]`);
     expect(html).not.toContain('**Sales');
     expect(html).not.toContain('- Follow-up');
   });

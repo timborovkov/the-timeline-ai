@@ -50,6 +50,19 @@ const CHAT_TITLE_MAX_LENGTH = 48;
 const chatTitleSchema = z.object({
   title: z.string().min(1).max(CHAT_TITLE_MAX_LENGTH),
 });
+const dashboardContextSchema = z.strictObject({
+  pathname: z.string().trim().min(1).max(240),
+  routeKind: z.string().trim().min(1).max(80),
+  search: z.record(z.string().max(80), z.string().max(240)).optional(),
+  objectId: z.string().regex(UUID_RE).optional(),
+  boardId: z.string().regex(UUID_RE).optional(),
+  boardItemId: z.string().regex(UUID_RE).optional(),
+  calendarDate: z.string().trim().max(40).optional(),
+  calendarView: z.string().trim().max(40).optional(),
+  calendarEventId: z.string().regex(UUID_RE).optional(),
+  documentId: z.string().regex(UUID_RE).optional(),
+  taskId: z.string().regex(UUID_RE).optional(),
+});
 
 const reportChatAgentToolError: agent.AgentToolErrorReporter = (err, context) => {
   reportCaughtError(err, {
@@ -81,6 +94,7 @@ const chatRequestSchema = z.object({
   // ignored otherwise. When sessionId is set, the session's existing
   // pinnedEntityId stays authoritative.
   pinnedEntityId: z.string().regex(UUID_RE).optional(),
+  dashboardContext: dashboardContextSchema.optional(),
 });
 
 function deterministicChatEnabled(): boolean {
@@ -123,6 +137,36 @@ function normalizeChatTitle(title: string, question: string): string {
     .replace(/[?.!,;:]+$/g, '')
     .trim();
   return fallbackChatTitle(compact || question);
+}
+
+function dashboardContextPrompt(
+  context: z.infer<typeof dashboardContextSchema> | undefined,
+): string | null {
+  if (!context) return null;
+  const entries: [string, string | undefined][] = [
+    ['route', context.pathname],
+    ['surface', context.routeKind],
+    ['object_id', context.objectId],
+    ['task_id', context.taskId],
+    ['board_id', context.boardId],
+    ['board_item_id', context.boardItemId],
+    ['calendar_event_id', context.calendarEventId],
+    ['calendar_date', context.calendarDate],
+    ['calendar_view', context.calendarView],
+    ['document_id', context.documentId],
+  ];
+  const lines = entries
+    .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== '')
+    .map(([key, value]) => `- ${key}: ${value}`);
+  if (context.search && Object.keys(context.search).length > 0) {
+    lines.push(`- query_params: ${JSON.stringify(context.search)}`);
+  }
+  if (lines.length === 0) return null;
+  return [
+    'DASHBOARD CONTEXT:',
+    'The user opened chat from the dashboard surface below. Use it to interpret phrases like "this object", "this board", "here", or "current page". Do not treat this context as verified data; use tools before making claims.',
+    ...lines,
+  ].join('\n');
 }
 
 async function generateChatTitle(input: {
@@ -543,13 +587,15 @@ export async function POST(req: Request): Promise<Response> {
     scope.timeline.currentUserIdentityContext(),
   ]);
   const currentDate = new Date();
-  const system = agent.buildSystemPrompt({
+  const baseSystem = agent.buildSystemPrompt({
     teamName,
     userName,
     currentUser,
     currentDate,
     workspaceTime: time.workspaceTimeContext(calendarSettings.defaultTimezone, currentDate),
   });
+  const contextPrompt = dashboardContextPrompt(parsed.data.dashboardContext);
+  const system = contextPrompt ? `${baseSystem}\n\n${contextPrompt}` : baseSystem;
   // Phase 11 — merge any custom MCP tools the team has connected. The
   // MCP manager caches per-team for 5 min so this is cheap on hot paths.
   // Failures here (discovery failed, OAuth expired, server down) MUST

@@ -374,6 +374,33 @@ describe('POST /api/chat', () => {
     );
   });
 
+  it('adds dashboard route context to the model system prompt without trusting it as data', async () => {
+    const response = await POST(
+      request(
+        validBody({
+          dashboardContext: {
+            pathname: '/app/objects/44444444-4444-4444-8444-444444444444',
+            routeKind: 'objects',
+            objectId: '44444444-4444-4444-8444-444444444444',
+            search: { tab: 'notes' },
+          },
+        }),
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakes.fakeStreamChat).toHaveBeenCalled();
+    const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
+      | [{ system?: string }]
+      | undefined;
+    expect(streamCall?.[0].system).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
+    expect(streamCall?.[0].system).toEqual(expect.stringContaining('/app/objects/'));
+    expect(streamCall?.[0].system).toEqual(expect.stringContaining('object_id'));
+    expect(streamCall?.[0].system).toEqual(
+      expect.stringContaining('use tools before making claims'),
+    );
+  });
+
   it('streams deterministic durable workspace state without bypassing route gates', async () => {
     process.env.E2E_DETERMINISTIC_CHAT = '1';
     const durableMessage = {

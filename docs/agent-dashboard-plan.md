@@ -111,6 +111,13 @@ receive and return typed refs instead of opaque page links.
 
 ## 2. Floating Contextual Chat
 
+Status: initial shell implemented. The app shell now has a global floating chat
+launcher hidden on `/app/chat`, reuses the main chat rendering surface, persists
+one private floating-session id per team in local storage, carries the session
+into "Open full chat", and sends route/path/query plus known UUID context to
+`/api/chat`. Richer page loaders for names, selected lanes, visible filters, and
+object summaries still belong in the later context-provider/tooling work.
+
 ### Goal
 
 Make the agent available across the dashboard while keeping the dedicated
