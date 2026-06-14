@@ -24,6 +24,8 @@ After **any** code, configuration, or documentation change:
    - For code changes, run the nearest targeted test command for the behavior
      touched.
    - For code changes, also run `pnpm test:ci` as the minimum regression suite.
+     It runs the deterministic agent/retrieval evals plus compiled-package
+     import smoke checks that catch Node runtime loader regressions.
    - Run broader suites such as `pnpm test`, `pnpm e2e`, or a package-filtered
      Vitest/e2e command when the blast radius is shared, cross-package,
      user-facing, or hard to localize.

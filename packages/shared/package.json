@@ -167,6 +167,12 @@
       "import": "./dist/onboarding/index.js",
       "default": "./dist/onboarding/index.js"
     },
+    "./search": {
+      "types": "./src/search/index.ts",
+      "development": "./src/search/index.ts",
+      "import": "./dist/search/index.js",
+      "default": "./dist/search/index.js"
+    },
     "./passwords": {
       "development": "./src/passwords.ts",
       "import": "./dist/passwords.js",

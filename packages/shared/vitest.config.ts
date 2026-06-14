@@ -10,6 +10,8 @@ const env = {
 };
 
 const pgliteTests = [
+  'src/agent/ask.test.ts',
+  'src/agent/evals.test.ts',
   'src/calendar/scope.test.ts',
   'src/documents/scope.test.ts',
   'src/email/dispatcher.test.ts',
@@ -24,7 +26,9 @@ const pgliteTests = [
   'src/slack/dispatcher.test.ts',
   'src/suggestions/index.test.ts',
   'src/team-exports/index.test.ts',
+  'src/team-scope.search.test.ts',
   'src/team-scope.test.ts',
+  'src/team-scope.search.test.ts',
   'src/telegram/dispatcher.test.ts',
 ];
 

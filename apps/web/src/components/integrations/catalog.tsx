@@ -39,7 +39,7 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
     <>
       <div className="grid auto-rows-fr gap-3 md:grid-cols-2">
         {catalog.map((c) => (
-          <Card key={c.id} className="flex h-full flex-col">
+          <Card key={c.id} id={c.id} className="flex h-full scroll-mt-24 flex-col">
             <CardHeader className="flex flex-row items-center gap-3">
               <Image
                 src={c.logo}

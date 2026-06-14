@@ -802,7 +802,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
 }
 
 // Module-level cache so callers that hit `getQdrantClient()` repeatedly
-// (per-request in /api/search, per-job in the embed worker) reuse a single
+// (per-request search calls, per-job in the embed worker) reuse a single
 // client per collection. Each cached client retains its own `ensurePromise`
 // memo, so the collection-existence check fires once per process lifetime
 // per collection — not once per request/job. A reembed of thousands of

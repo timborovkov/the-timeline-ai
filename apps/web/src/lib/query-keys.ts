@@ -8,6 +8,8 @@ export const queryKeys = {
     ['documents', 'search', query, filters] as const,
   providerConnectionResources: (connectionId: string) =>
     ['provider-connections', connectionId, 'resources'] as const,
+  globalSearch: (query: string, filters: Record<string, unknown>) =>
+    ['global-search', query, filters] as const,
   jobDashboard: () => ['jobs', 'dashboard'] as const,
   finishedJobs: () => ['jobs', 'finished'] as const,
   onboarding: () => ['onboarding', 'checklist'] as const,

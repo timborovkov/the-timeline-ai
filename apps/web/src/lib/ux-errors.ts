@@ -10,6 +10,10 @@ export function searchErrorMessage(error: string | undefined, status?: number): 
       return 'Search is cooling down for this account. Wait a moment, then try again.';
     case 'unauthenticated':
       return 'Sign in again to search this timeline.';
+    case 'invalid_input':
+      return 'Search could not read those filters. Clear them and try again.';
+    case 'no_active_team':
+      return 'Choose a team before searching.';
     default:
       return error ?? `Search failed${status ? ` (${String(status)})` : ''}.`;
   }
