@@ -489,6 +489,18 @@ describe('object relationship, note, notification, and suggestion actions', () =
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OTHER_OBJECT_ID}`);
   });
 
+  it('treats missing relationship rows as link failures', async () => {
+    fakes.fakeObjects.addRelationship.mockResolvedValueOnce(null);
+
+    await expect(
+      addRelationshipAction({
+        fromEntityId: OBJECT_ID,
+        toEntityId: OTHER_OBJECT_ID,
+        kind: 'related',
+      }),
+    ).resolves.toEqual({ error: 'Relationship could not be created' });
+  });
+
   it('creates, updates, and deletes notes through author-aware scope methods', async () => {
     await expect(createNoteAction({ entityId: OBJECT_ID, body: 'Note' })).resolves.toEqual({
       ok: true,

@@ -119,7 +119,6 @@ function boardItem(input: {
 function renderClient(items: boards.BoardItemRow[]) {
   return (
     <BoardDetailClient
-      key={items.map((item) => item.id).join(':')}
       boardId="board-1"
       boardName="Pilot board"
       templateKind="pipeline"
@@ -142,7 +141,7 @@ describe('BoardDetailClient', () => {
     cleanup();
   });
 
-  it('resets board item state when refreshed server props remount the client island', async () => {
+  it('resets board item state when refreshed server props rerender the client island', async () => {
     const { rerender } = render(
       renderClient([
         boardItem({

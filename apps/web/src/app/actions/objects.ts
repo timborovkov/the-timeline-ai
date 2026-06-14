@@ -387,9 +387,10 @@ export async function addRelationshipAction(input: unknown): Promise<ActionState
         ...parsed.data,
         actorUserId: r.userId,
       });
+      if (!relationship) return { error: 'Relationship could not be created' };
       revalidatePath(`/app/objects/${parsed.data.fromEntityId}`);
       revalidatePath(`/app/objects/${parsed.data.toEntityId}`);
-      return { ok: true, id: relationship?.id };
+      return { ok: true, id: relationship.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to link') };
     }

@@ -50,8 +50,23 @@ export function BoardDetailClient({
   history,
 }: Props) {
   const router = useRouter();
-  const [items, setItems] = useState(initialItems);
-  const [candidates, setCandidates] = useState(initialCandidates);
+  const [localItems, setLocalItems] = useState<boards.BoardItemRow[]>([]);
+  const [localCandidates, setLocalCandidates] = useState<objects.ObjectRow[]>([]);
+  const items = useMemo(() => {
+    const serverItemIds = new Set(initialItems.map((item) => item.id));
+    const serverEntityIds = new Set(initialItems.map((item) => item.entityId));
+    const pendingItems = localItems.filter(
+      (item) => !serverItemIds.has(item.id) && !serverEntityIds.has(item.entityId),
+    );
+    return [...initialItems, ...pendingItems];
+  }, [initialItems, localItems]);
+  const candidates = useMemo(() => {
+    const serverCandidateIds = new Set(initialCandidates.map((candidate) => candidate.id));
+    const pendingCandidates = localCandidates.filter(
+      (candidate) => !serverCandidateIds.has(candidate.id),
+    );
+    return [...initialCandidates, ...pendingCandidates];
+  }, [initialCandidates, localCandidates]);
   const selectedItem = selectedItemId
     ? (items.find((item) => item.id === selectedItemId) ?? null)
     : null;
@@ -61,12 +76,12 @@ export function BoardDetailClient({
   }, [candidates, items]);
 
   function addOptimisticItem(item: boards.BoardItemRow): void {
-    setItems((current) => [...current, item]);
+    setLocalItems((current) => [...current, item]);
   }
 
   function commitAddedItem(item: boards.BoardItemRow, optimisticId: string): void {
-    setItems((current) => current.map((row) => (row.id === optimisticId ? item : row)));
-    setCandidates((current) =>
+    setLocalItems((current) => current.map((row) => (row.id === optimisticId ? item : row)));
+    setLocalCandidates((current) =>
       current.some((candidate) => candidate.id === item.object.id)
         ? current
         : [...current, item.object],
@@ -75,7 +90,7 @@ export function BoardDetailClient({
   }
 
   function rollbackAddedItem(item: boards.BoardItemRow): void {
-    setItems((current) => current.filter((row) => row.id !== item.id));
+    setLocalItems((current) => current.filter((row) => row.id !== item.id));
   }
 
   return (
