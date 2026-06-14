@@ -297,7 +297,8 @@ function reconcilePatchOverlays(
       next[itemId] = overlay;
       continue;
     }
-    if (serverItem.updatedAt.getTime() >= overlay.submittedAt) {
+    const serverUpdatedAt = dateMillis(serverItem.updatedAt);
+    if (serverUpdatedAt !== null && serverUpdatedAt >= overlay.submittedAt) {
       changed = true;
       continue;
     }
@@ -318,12 +319,17 @@ function patchValueMatchesServer(
   serverValue: boards.BoardItemRow[keyof BoardItemOptimisticPatch],
   patchValue: BoardItemOptimisticPatch[keyof BoardItemOptimisticPatch],
 ): boolean {
-  if (serverValue instanceof Date || patchValue instanceof Date) {
-    return dateMillis(serverValue) === dateMillis(patchValue);
+  const serverDate = dateMillis(serverValue);
+  const patchDate = dateMillis(patchValue);
+  if (serverDate !== null || patchDate !== null) {
+    return serverDate === patchDate;
   }
   return serverValue === patchValue;
 }
 
 function dateMillis(value: unknown): number | null {
-  return value instanceof Date ? value.getTime() : null;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value !== 'string') return null;
+  const millis = Date.parse(value);
+  return Number.isNaN(millis) ? null : millis;
 }

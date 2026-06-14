@@ -112,7 +112,7 @@ function boardItem(input: {
   entityId: string;
   canonicalName: string;
   priority?: number | null;
-  updatedAt?: Date;
+  updatedAt?: Date | string;
 }): boards.BoardItemRow {
   return {
     id: input.id,
@@ -128,7 +128,8 @@ function boardItem(input: {
     customFields: {},
     archivedAt: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    updatedAt: input.updatedAt ?? new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: (input.updatedAt ??
+      new Date('2026-01-01T00:00:00.000Z')) as boards.BoardItemRow['updatedAt'],
     object: objectRow({ id: input.entityId, canonicalName: input.canonicalName }),
   };
 }
@@ -261,7 +262,7 @@ describe('BoardDetailClient', () => {
             entityId: 'object-1',
             canonicalName: 'Alpha',
             priority: 1,
-            updatedAt: refreshedAt,
+            updatedAt: refreshedAt.toISOString(),
           }),
         ],
         { selectedItemId: 'item-1', view: 'table' },
@@ -280,7 +281,7 @@ describe('BoardDetailClient', () => {
             entityId: 'object-1',
             canonicalName: 'Alpha',
             priority: 2,
-            updatedAt: new Date(refreshedAt.getTime() + 1000),
+            updatedAt: new Date(refreshedAt.getTime() + 1000).toISOString(),
           }),
         ],
         { selectedItemId: 'item-1', view: 'table' },
