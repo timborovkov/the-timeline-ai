@@ -2,6 +2,7 @@ import { getDb } from '@timeline/db';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
+import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
 import { getMcpManager } from '#src/mcp/client.js';
 import * as objects from '#src/objects/index.js';
@@ -351,6 +352,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           // prompt-injection past the Rule 8 framing.
           const fenced = results.map((r) => ({
             ...r,
+            citation: artifactRefCitation({ kind: 'timeline_event', id: r.eventId }),
             snippet:
               fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }) ?? '',
           }));
@@ -373,7 +375,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const results = await scope.timeline.searchObjectNotes(args);
           const fenced = results.map((result) => ({
             note_id: result.noteId,
+            note_citation: artifactRefCitation({ kind: 'object_note', id: result.noteId }),
             object_id: result.objectId,
+            object_citation: artifactRefCitation({ kind: 'object', id: result.objectId }),
             object_name: result.objectName,
             object_type: result.objectType,
             body:
@@ -418,8 +422,10 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           return {
             found: true,
             ...profile,
+            citation: artifactRefCitation({ kind: 'object', id: profile.entity.id }),
             events: profile.events.map((e) => ({
               event_id: e.id,
+              citation: artifactRefCitation({ kind: 'timeline_event', id: e.id }),
               occurred_at: e.occurredAt.toISOString(),
               source: e.source,
               author_user_id: e.authorUserId,
@@ -460,6 +466,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               const senderInfo = senderMap.get(e.id);
               return {
                 event_id: e.id,
+                citation: artifactRefCitation({ kind: 'timeline_event', id: e.id }),
                 occurred_at: e.occurredAt.toISOString(),
                 source: e.source,
                 author_user_id: e.authorUserId,
@@ -488,6 +495,10 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           return {
             found: true,
             id: result.id,
+            citation: artifactRefCitation({
+              kind: result.type === 'task' || result.type === 'follow_up' ? 'task' : 'object',
+              id: result.id,
+            }),
             type: result.type,
             name: result.canonicalName,
             status: result.status,
@@ -498,7 +509,11 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             due_at: result.dueAt?.toISOString() ?? null,
             agent_suggested: result.agentSuggested,
             archived: result.archivedAt !== null,
-            notes: result.notes.slice(0, 10).map((n) => ({ id: n.id, body: n.body })),
+            notes: result.notes.slice(0, 10).map((n) => ({
+              id: n.id,
+              citation: artifactRefCitation({ kind: 'object_note', id: n.id }),
+              body: n.body,
+            })),
             recent_changes: result.recentChanges.slice(0, 20).map((c) => ({
               id: c.id,
               field: c.field,
@@ -508,6 +523,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             })),
             open_tasks: result.openTasks.slice(0, 20).map((t) => ({
               id: t.id,
+              citation: artifactRefCitation({ kind: 'task', id: t.id }),
               name: t.canonicalName,
               status: t.status,
             })),
@@ -953,6 +969,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           return {
             found: true,
             event_id: result.event.id,
+            citation: artifactRefCitation({ kind: 'timeline_event', id: result.event.id }),
             occurred_at: result.event.occurredAt.toISOString(),
             source: result.event.source,
             author_user_id: result.event.authorUserId,
@@ -1000,6 +1017,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             document_id: h.documentId,
             document_version_id: h.documentVersionId,
             document_chunk_id: h.documentChunkId,
+            citation: artifactRefCitation({
+              kind: 'document_chunk',
+              id: h.documentChunkId,
+              documentId: h.documentId,
+              version: h.version,
+              chunkId: h.documentChunkId,
+            }),
             file_kind: h.fileKind,
             representation_kind: h.representationKind,
             version: h.version,
@@ -1302,6 +1326,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             count: events.length,
             events: events.map((e) => ({
               id: e.id,
+              citation: artifactRefCitation({ kind: 'calendar_event', id: e.id }),
               title: e.title,
               start_at: e.startAt.toISOString(),
               end_at: e.endAt.toISOString(),
@@ -1375,6 +1400,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           return {
             found: true,
             id: event.id,
+            citation: artifactRefCitation({ kind: 'calendar_event', id: event.id }),
             title: event.title,
             description: event.redacted
               ? null

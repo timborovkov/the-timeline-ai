@@ -33,6 +33,11 @@ each slice can ship independently.
 
 ## 1. Typed Artifact References And Preview System
 
+Status: implemented as the first foundation slice. The shared citation parser
+now recognizes event, object, object-note, document-chunk, calendar, board,
+board-item, task, and route refs; dashboard chat renders them through a shared
+preview dialog backed by `/api/artifacts/preview`.
+
 Build this before adding more agent links so every future agent answer can use
 the same interaction model.
 
@@ -79,9 +84,9 @@ receive and return typed refs instead of opaque page links.
   - objects/entities: `[ent:<id>]`
   - object notes: `[note:<id>]`
   - documents/chunks: `[doc:<documentId>#v<version>:chunk:<chunkId>]`
-  - calendar events: planned `[cal:<id>]`
-  - boards and board items: planned `[board:<id>]`, `[board-item:<id>]`
-  - dashboard routes: planned `[route:<id>]`
+  - calendar events: `[cal:<id>]`
+  - boards and board items: `[board:<id>]`, `[board-item:<id>]`
+  - dashboard routes: `[route:<id>]`
 - Clicking a reference opens a modal/sheet preview, not immediate navigation.
 - Every preview includes a secondary "Open full page" action when a full page
   exists.

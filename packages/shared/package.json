@@ -235,8 +235,10 @@
       "default": "./dist/s3/client.js"
     },
     "./citation": {
+      "types": "./src/citation.ts",
+      "development": "./src/citation.ts",
       "import": "./dist/citation.js",
-      "types": "./dist/citation.d.ts"
+      "default": "./dist/citation.js"
     },
     "./time": {
       "import": "./dist/time/index.js",

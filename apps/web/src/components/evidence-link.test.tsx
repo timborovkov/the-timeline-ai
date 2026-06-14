@@ -6,19 +6,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { EvidenceLink } from '@/components/evidence-link';
 
-function timelineResponse(eventId: string, contentText: string | null) {
+function artifactResponse(eventId: string, contentText: string | null) {
   return new Response(
     JSON.stringify({
-      items: [
-        {
-          id: eventId,
-          source: 'telegram',
-          contentText,
-          contentAudioUrl: null,
-          occurredAt: '2026-06-14T12:00:00.000Z',
-        },
-      ],
-      audioUrls: {},
+      preview: {
+        ref: { kind: 'timeline_event', id: eventId },
+        title: 'Timeline Event',
+        subtitle: 'telegram · Jun 14, 2026, 12:00 PM',
+        body: contentText,
+        badges: ['telegram'],
+        href: `/app/timeline?event=${eventId}#ev-${eventId}`,
+      },
     }),
     { headers: { 'content-type': 'application/json' } },
   );
@@ -31,12 +29,12 @@ afterEach(() => {
 
 describe('EvidenceLink', () => {
   it('fetches a fresh preview when a reused link receives a new event id', async () => {
-    const fetch = vi.fn((input: RequestInfo | URL) => {
-      const url = typeof input === 'string' || input instanceof URL ? input.toString() : input.url;
-      if (url.includes('event-new')) {
-        return Promise.resolve(timelineResponse('event-new', 'New evidence body'));
+    const fetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = typeof init?.body === 'string' ? init.body : '';
+      if (body.includes('event-new')) {
+        return Promise.resolve(artifactResponse('event-new', 'New evidence body'));
       }
-      return Promise.resolve(timelineResponse('event-old', 'Old evidence body'));
+      return Promise.resolve(artifactResponse('event-old', 'Old evidence body'));
     });
     vi.stubGlobal('fetch', fetch);
     const user = userEvent.setup();
@@ -64,6 +62,12 @@ describe('EvidenceLink', () => {
 
     expect(await screen.findByText('New evidence body')).toBeTruthy();
     expect(screen.queryByText('Old evidence body')).toBeNull();
-    expect(fetch).toHaveBeenCalledWith('/api/timeline?event=event-new', expect.any(Object));
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/artifacts/preview',
+      expect.objectContaining({
+        body: JSON.stringify({ ref: { kind: 'timeline_event', id: 'event-new' } }),
+        method: 'POST',
+      }),
+    );
   });
 });
