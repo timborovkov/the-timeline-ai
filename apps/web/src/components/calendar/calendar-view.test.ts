@@ -115,6 +115,36 @@ describe('calendarOverlayReducer', () => {
       applyCalendarPageOverlay([event('event-1', 'Server list title')], refreshedState),
     ).toEqual([event('event-1', 'Server list title')]);
   });
+
+  it('keeps optimistic state when a paginated list snapshot is not authoritative for deletion', () => {
+    const state = {
+      upserts: { 'event-2': event('event-2', 'Optimistic off-page title') },
+      removedIds: ['event-3'],
+    };
+
+    expect(
+      calendarOverlayReducer(state, {
+        type: 'reconcile-server-events',
+        currentIds: ['event-1'],
+        deletedIds: [],
+      }),
+    ).toEqual(state);
+  });
+
+  it('clears optimistic state when refreshed server rows include the same list event', () => {
+    const state = {
+      upserts: { 'event-2': event('event-2', 'Optimistic list title') },
+      removedIds: ['event-3'],
+    };
+
+    expect(
+      calendarOverlayReducer(state, {
+        type: 'reconcile-server-events',
+        currentIds: ['event-2', 'event-3'],
+        deletedIds: [],
+      }),
+    ).toEqual({ upserts: {}, removedIds: [] });
+  });
 });
 
 describe('CalendarView recurrence and tentative UI', () => {
@@ -231,6 +261,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     expect(screen.getByText('13 upcoming events')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'past' }));
+    expect(await screen.findByText('13 past events')).toBeTruthy();
     expect(fakes.push).toHaveBeenLastCalledWith(
       '/app/calendar?view=month&date=2026-06-03&eventScope=past',
     );

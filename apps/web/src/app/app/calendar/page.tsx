@@ -1,4 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
 import { teamCalendarSubscriptions, users } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -14,6 +13,7 @@ import { IndexStrip } from '@/components/index-strip';
 import { WORK_BACK_LINK } from '@/components/work-back-link';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { calendarEventListWindow } from '@/lib/calendar-event-list-range';
 import { db } from '@/lib/db';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
@@ -77,11 +77,6 @@ function serializeCalendarEvent(e: {
   };
 }
 
-function startOfToday(timezone: string): Date {
-  const date = Temporal.Now.zonedDateTimeISO(timezone).toPlainDate();
-  return new Date(date.toZonedDateTime({ timeZone: timezone }).toInstant().epochMilliseconds);
-}
-
 const EVENT_LIST_PAGE_SIZE = 12;
 const EVENT_LIST_RANGE_DAYS = 730;
 
@@ -128,11 +123,11 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   from.setUTCDate(from.getUTCDate() - rangeDays);
   const to = new Date(anchorDate);
   to.setUTCDate(to.getUTCDate() + rangeDays);
-  const eventListToday = startOfToday(settings.defaultTimezone);
-  const eventListFrom = new Date(eventListToday);
-  eventListFrom.setUTCDate(eventListFrom.getUTCDate() - EVENT_LIST_RANGE_DAYS);
-  const eventListTo = new Date(eventListToday);
-  eventListTo.setUTCDate(eventListTo.getUTCDate() + EVENT_LIST_RANGE_DAYS);
+  const {
+    today: eventListToday,
+    from: eventListFrom,
+    to: eventListTo,
+  } = calendarEventListWindow(settings.defaultTimezone, EVENT_LIST_RANGE_DAYS);
 
   const eventListRange =
     eventScope === 'future'

@@ -26,6 +26,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   useTransition,
 } from 'react';
 
@@ -123,6 +124,10 @@ interface EventListParams {
   query: string;
   scope: EventListScope;
   page: number;
+}
+
+function sameEventListParams(a: EventListParams, b: EventListParams): boolean {
+  return a.query === b.query && a.scope === b.scope && a.page === b.page;
 }
 
 function eventListParamsFromSearch(searchParams: {
@@ -342,6 +347,7 @@ function useCalendarViewModel({
 }: CalendarViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
   const mode = (searchParams.get('view') as CalendarViewMode | null) ?? 'month';
   const safeMode: CalendarViewMode = ['month', 'week', 'day'].includes(mode) ? mode : 'month';
   const anchor = parseDateParam(searchParams.get('date'), timezone);
@@ -373,8 +379,8 @@ function useCalendarViewModel({
     ids: string[];
   } | null>(null);
   const eventListRawUrlParams = useMemo(
-    () => eventListParamsFromSearch(searchParams),
-    [searchParams],
+    () => eventListParamsFromSearch(new URLSearchParams(searchParamsKey)),
+    [searchParamsKey],
   );
   const eventListServerParams = useMemo(
     () => ({
@@ -394,11 +400,16 @@ function useCalendarViewModel({
     }
     return eventListRawUrlParams;
   }, [eventListRawUrlParams, eventListServerParams]);
-  eventListParamsRef.current ??= eventListUrlParams;
-
-  useEffect(() => {
-    eventListParamsRef.current = eventListUrlParams;
-  }, [eventListUrlParams]);
+  const [optimisticEventListParams, setOptimisticEventListParams] = useState<{
+    params: EventListParams;
+    sourceSearchParamsKey: string;
+  } | null>(null);
+  const eventListDisplayParams =
+    optimisticEventListParams?.sourceSearchParamsKey === searchParamsKey &&
+    !sameEventListParams(optimisticEventListParams.params, eventListUrlParams)
+      ? optimisticEventListParams.params
+      : eventListUrlParams;
+  eventListParamsRef.current = eventListDisplayParams;
 
   useEffect(() => {
     return () => {
@@ -407,20 +418,24 @@ function useCalendarViewModel({
   }, []);
 
   useEffect(() => {
-    const serverEvents = [...events, ...eventListEvents];
-    const signature = calendarEventsSignature(serverEvents);
-    const ids = Array.from(new Set(serverEvents.map((event) => event.id)));
+    const signature = calendarEventsSignature([...events, ...eventListEvents]);
+    const gridIds = events.map((event) => event.id);
+    const refreshedIds = Array.from(
+      new Set([...gridIds, ...eventListEvents.map((event) => event.id)]),
+    );
     const previous = serverEventsSnapshotRef.current;
     if (!previous) {
-      serverEventsSnapshotRef.current = { signature, ids };
+      serverEventsSnapshotRef.current = { signature, ids: gridIds };
       return;
     }
     if (previous.signature === signature || pending) return;
-    serverEventsSnapshotRef.current = { signature, ids };
+    const currentGridIds = new Set(gridIds);
+    const deletedIds = previous.ids.filter((id) => !currentGridIds.has(id));
+    serverEventsSnapshotRef.current = { signature, ids: gridIds };
     dispatchEventOverlay({
       type: 'reconcile-server-events',
-      currentIds: ids,
-      previousIds: previous.ids,
+      currentIds: refreshedIds,
+      deletedIds,
     });
   }, [events, eventListEvents, pending]);
 
@@ -459,7 +474,9 @@ function useCalendarViewModel({
       const nextQuery = query ?? current.query;
       const nextScope = scope ?? current.scope;
       const nextPage = page ?? current.page;
-      eventListParamsRef.current = { query: nextQuery.trim(), scope: nextScope, page: nextPage };
+      const nextParams = { query: nextQuery.trim(), scope: nextScope, page: nextPage };
+      eventListParamsRef.current = nextParams;
+      setOptimisticEventListParams({ params: nextParams, sourceSearchParamsKey: searchParamsKey });
 
       if (nextQuery.trim()) next.set('eventQ', nextQuery.trim());
       else next.delete('eventQ');
@@ -470,7 +487,7 @@ function useCalendarViewModel({
 
       router.push(`/app/calendar?${next.toString()}`);
     },
-    [eventListUrlParams, router, searchParams],
+    [eventListUrlParams, router, searchParams, searchParamsKey],
   );
 
   function push(nextMode: CalendarViewMode, nextDate: Temporal.PlainDate) {
@@ -654,9 +671,9 @@ function useCalendarViewModel({
     draft,
     editing,
     error,
-    eventListPage,
-    eventListQuery,
-    eventListScope,
+    eventListPage: eventListDisplayParams.page,
+    eventListQuery: eventListDisplayParams.query,
+    eventListScope: eventListDisplayParams.scope,
     eventListTotal,
     eventsByDay,
     gridCols,

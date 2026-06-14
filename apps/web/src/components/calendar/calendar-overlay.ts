@@ -29,7 +29,12 @@ export type CalendarOverlayAction =
   | { type: 'remove'; id: string }
   | { type: 'restore'; event: CalendarEvent }
   | { type: 'discard'; id: string }
-  | { type: 'reconcile-server-events'; currentIds: string[]; previousIds: string[] };
+  | {
+      type: 'reconcile-server-events';
+      currentIds: string[];
+      previousIds?: string[];
+      deletedIds?: string[];
+    };
 
 export const EMPTY_CALENDAR_OVERLAY: CalendarOverlayState = { upserts: {}, removedIds: [] };
 
@@ -69,13 +74,15 @@ export function calendarOverlayReducer(
   }
   if (action.type === 'reconcile-server-events') {
     const currentIds = new Set(action.currentIds);
-    const deletedIds = new Set(action.previousIds.filter((id) => !currentIds.has(id)));
+    const deletedIds = new Set(
+      action.deletedIds ?? action.previousIds?.filter((id) => !currentIds.has(id)) ?? [],
+    );
     const upserts = Object.fromEntries(
       Object.entries(state.upserts).filter(([id]) => !currentIds.has(id) && !deletedIds.has(id)),
     );
     return {
       upserts,
-      removedIds: state.removedIds.filter((id) => currentIds.has(id)),
+      removedIds: state.removedIds.filter((id) => !currentIds.has(id) && !deletedIds.has(id)),
     };
   }
   const { [action.id]: _discarded, ...rest } = state.upserts;
