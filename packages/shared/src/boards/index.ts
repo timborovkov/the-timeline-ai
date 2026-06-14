@@ -1126,11 +1126,13 @@ export function createBoardScope({
         db
           .select({ boardId: boardItems.boardId, count: sql<number>`count(*)::int` })
           .from(boardItems)
+          .innerJoin(entities, eq(boardItems.entityId, entities.id))
           .where(
             and(
               eq(boardItems.teamId, scope.teamId),
               inArray(boardItems.boardId, boardIds),
               isNull(boardItems.archivedAt),
+              isNull(entities.archivedAt),
             ),
           )
           .groupBy(boardItems.boardId),
@@ -1143,11 +1145,13 @@ export function createBoardScope({
           })
           .from(boardItems)
           .leftJoin(boardLanes, eq(boardItems.laneId, boardLanes.id))
+          .innerJoin(entities, eq(boardItems.entityId, entities.id))
           .where(
             and(
               eq(boardItems.teamId, scope.teamId),
               inArray(boardItems.boardId, boardIds),
               isNull(boardItems.archivedAt),
+              isNull(entities.archivedAt),
             ),
           )
           .groupBy(boardItems.boardId, boardItems.laneId, boardLanes.name),

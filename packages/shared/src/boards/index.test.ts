@@ -822,6 +822,8 @@ describe('board scope', () => {
 
     await expect(owner.boards.listPinnedBoards()).resolves.toEqual([
       expect.objectContaining({
+        itemCount: 0,
+        laneCounts: [],
         dueSoonCount: 0,
         overdueCount: 0,
       }),
