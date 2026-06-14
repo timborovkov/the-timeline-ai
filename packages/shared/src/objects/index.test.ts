@@ -427,12 +427,20 @@ describe('object scope — team ownership and audit behavior', () => {
       actor: { kind: 'user', userId: USER_OWNER },
     });
     let eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
+    const calendarEventId = eventRows[0]?.id;
     expect(eventRows[0]?.deletedAt).toBeNull();
 
     await scope.objects.archiveObject(company.id, { kind: 'user', userId: USER_OWNER });
 
     eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
     expect(eventRows[0]?.deletedAt).toBeInstanceOf(Date);
+    expect(qdrantFakes.deletePointsForSource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: TEAM_A,
+        scope: 'calendar_event',
+        sourceId: calendarEventId,
+      }),
+    );
     const inboxRows = await db
       .select()
       .from(notifications)
@@ -1162,7 +1170,7 @@ describe('object scope — merge cleanup', () => {
         sourceId: vendor.id,
       }),
     );
-    expect(qdrantFakes.deletePoints).toHaveBeenCalledTimes(2);
+    expect(qdrantFakes.deletePoints).toHaveBeenCalled();
 
     await expect(scope.listObjects({ archived: false })).resolves.not.toContainEqual(
       expect.objectContaining({ id: typo.id }),

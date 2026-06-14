@@ -16,6 +16,12 @@ import { defaultBoardLanes } from '#src/boards/index.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
+const qdrantFakes = vi.hoisted(() => ({
+  deletePoints: vi.fn().mockResolvedValue(undefined),
+  deletePointsForSource: vi.fn().mockResolvedValue(undefined),
+  getQdrantClient: vi.fn(),
+}));
+
 vi.mock('#src/queue/queues.js', () => ({
   enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
@@ -24,10 +30,7 @@ vi.mock('#src/queue/queues.js', () => ({
   enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#src/qdrant/client.js', () => ({
-  getQdrantClient: vi.fn(() => ({
-    deletePoints: vi.fn().mockResolvedValue(undefined),
-    deletePointsForSource: vi.fn().mockResolvedValue(undefined),
-  })),
+  getQdrantClient: qdrantFakes.getQdrantClient,
 }));
 
 const TEAM_A = '11111111-1111-1111-1111-111111111111';
@@ -74,6 +77,11 @@ async function boardUpdatedAt(boardId: string): Promise<Date> {
 }
 
 beforeEach(async () => {
+  vi.clearAllMocks();
+  qdrantFakes.getQdrantClient.mockReturnValue({
+    deletePoints: qdrantFakes.deletePoints,
+    deletePointsForSource: qdrantFakes.deletePointsForSource,
+  });
   pg = new PGlite();
   await applyDbMigrations(pg);
   await seedWorkspace();
@@ -352,6 +360,7 @@ describe('board scope', () => {
       actor: { kind: 'user', userId: USER_OWNER },
     });
     let eventRows = await db.select().from(calendarEvents).where(eq(calendarEvents.teamId, TEAM_A));
+    const calendarEventId = eventRows[0]?.id;
     const rawIds = [eventRows[0]?.scheduledRawEventId, eventRows[0]?.startAtRawEventId].filter(
       (id): id is string => id !== null && id !== undefined,
     );
@@ -371,6 +380,13 @@ describe('board scope', () => {
         .filter((row) => rawIds.includes(row.id))
         .every((row) => (row.sourceMetadata as { deleted?: boolean }).deleted === true),
     ).toBe(true);
+    expect(qdrantFakes.deletePointsForSource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: TEAM_A,
+        scope: 'calendar_event',
+        sourceId: calendarEventId,
+      }),
+    );
   });
 
   it('bumps board activity when items are added, updated, and removed', async () => {

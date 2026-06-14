@@ -13,9 +13,12 @@ import type { ActorKind, CreateObjectInput, ObjectRow, ObjectType } from '#src/o
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 import {
+  deleteDueDateCalendarEventEmbeddings,
   enqueueDueDateCalendarEventEmbeddings,
+  mergeDueDateCalendarSyncResults,
   notifyBoardItemDueDate,
   syncBoardItemDueDateCalendarEvent,
+  type DueDateCalendarSyncResult,
 } from '#src/calendar/due-dates.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -58,6 +61,9 @@ export interface BoardRow {
   createdAt: Date;
   updatedAt: Date;
   itemCount: number;
+  laneCounts: { laneId: string | null; laneName: string; count: number }[];
+  dueSoonCount: number;
+  overdueCount: number;
   pinned: boolean;
 }
 
@@ -204,7 +210,9 @@ function toBoardRow(
   row: BoardSelect,
   counts = new Map<string, number>(),
   pins = new Set<string>(),
+  stats = new Map<string, Pick<BoardRow, 'laneCounts' | 'dueSoonCount' | 'overdueCount'>>(),
 ): BoardRow {
+  const boardStats = stats.get(row.id);
   return {
     id: row.id,
     name: row.name,
@@ -219,6 +227,9 @@ function toBoardRow(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     itemCount: counts.get(row.id) ?? 0,
+    laneCounts: boardStats?.laneCounts ?? [],
+    dueSoonCount: boardStats?.dueSoonCount ?? 0,
+    overdueCount: boardStats?.overdueCount ?? 0,
     pinned: pins.has(row.id),
   };
 }
@@ -275,6 +286,16 @@ function toBoardItemChangeRow(row: BoardItemChangeSelect): BoardItemChangeRow {
 
 function stableEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+async function afterDueDateCalendarSync(
+  teamId: string,
+  result: DueDateCalendarSyncResult,
+): Promise<void> {
+  await Promise.all([
+    enqueueDueDateCalendarEventEmbeddings(teamId, result.embedEventIds),
+    deleteDueDateCalendarEventEmbeddings(teamId, result.deleteEventIds),
+  ]);
 }
 
 function normalizeName(name: string, label: string): string {
@@ -651,7 +672,8 @@ export function createBoardScope({
           .where(and(eq(boards.id, boardId), eq(boards.teamId, scope.teamId)))
           .returning();
         const archivedBoard = updatedRows[0];
-        if (!archivedBoard) return { rows: [], dueDateCalendarEventIds: [] };
+        if (!archivedBoard)
+          return { rows: [], dueDateCalendarSync: mergeDueDateCalendarSyncResults([]) };
         const itemRows = await tx
           .select({ item: boardItems, object: entities })
           .from(boardItems)
@@ -663,15 +685,18 @@ export function createBoardScope({
               isNull(boardItems.archivedAt),
             ),
           );
-        const dueDateCalendarEventIds: string[] = [];
+        const dueDateCalendarSyncResults: DueDateCalendarSyncResult[] = [];
         for (const row of itemRows) {
-          dueDateCalendarEventIds.push(
-            ...(await syncBoardItemDueDateCalendarEvent(tx, row.item, row.object, archivedBoard)),
+          dueDateCalendarSyncResults.push(
+            await syncBoardItemDueDateCalendarEvent(tx, row.item, row.object, archivedBoard),
           );
         }
-        return { rows: updatedRows, dueDateCalendarEventIds };
+        return {
+          rows: updatedRows,
+          dueDateCalendarSync: mergeDueDateCalendarSyncResults(dueDateCalendarSyncResults),
+        };
       });
-      await enqueueDueDateCalendarEventEmbeddings(scope.teamId, txResult.dueDateCalendarEventIds);
+      await afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync);
       return txResult.rows.length > 0;
     },
 
@@ -709,16 +734,16 @@ export function createBoardScope({
           newValue: { boardId, entityId: item.entityId, laneId: item.laneId },
         });
         await touchBoard(boardId, tx);
-        const dueDateCalendarEventIds = await syncBoardItemDueDateCalendarEvent(
+        const dueDateCalendarSync = await syncBoardItemDueDateCalendarEvent(
           tx,
           item,
           object,
           board,
         );
         await notifyBoardItemDueDate(tx, item, object, board, input.actor);
-        return { item: toItemRow(item, object), dueDateCalendarEventIds };
+        return { item: toItemRow(item, object), dueDateCalendarSync };
       });
-      await enqueueDueDateCalendarEventEmbeddings(scope.teamId, txResult.dueDateCalendarEventIds);
+      await afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync);
       return txResult.item;
     },
 
@@ -761,7 +786,7 @@ export function createBoardScope({
         return !stableEqual(current[key], value);
       });
       if (changed.length === 0) return current;
-      const dueDateCalendarEventIds = await db.transaction(async (tx) => {
+      const dueDateCalendarSync = await db.transaction(async (tx) => {
         const now = new Date();
         const updatedRows = await tx
           .update(boardItems)
@@ -803,13 +828,13 @@ export function createBoardScope({
           ),
         );
         await touchBoard(current.boardId, tx, now);
-        const ids = await syncBoardItemDueDateCalendarEvent(tx, updated, current.object, board);
+        const result = await syncBoardItemDueDateCalendarEvent(tx, updated, current.object, board);
         if (changed.some(([field]) => field === 'dueAt' || field === 'responsibleUserId')) {
           await notifyBoardItemDueDate(tx, updated, current.object, board, actor);
         }
-        return ids;
+        return result;
       });
-      await enqueueDueDateCalendarEventEmbeddings(scope.teamId, dueDateCalendarEventIds);
+      await afterDueDateCalendarSync(scope.teamId, dueDateCalendarSync);
       return itemWithObject(itemId);
     },
 
@@ -822,7 +847,7 @@ export function createBoardScope({
       if (!current || current.archivedAt) return null;
       const board = await requireBoard(current.boardId);
       const now = new Date();
-      await db.transaction(async (tx) => {
+      const dueDateCalendarSync = await db.transaction(async (tx) => {
         const updated = await tx
           .update(boardItems)
           .set({ archivedAt: now, updatedAt: now })
@@ -845,13 +870,14 @@ export function createBoardScope({
           previousValue: { boardId: current.boardId, laneId: current.laneId },
         });
         await touchBoard(current.boardId, tx, now);
-        await syncBoardItemDueDateCalendarEvent(
+        return syncBoardItemDueDateCalendarEvent(
           tx,
           { ...current, teamId: scope.teamId, archivedAt: now },
           current.object,
           board,
         );
       });
+      await afterDueDateCalendarSync(scope.teamId, dueDateCalendarSync);
       return { ...current, archivedAt: now };
     },
 
@@ -914,19 +940,82 @@ export function createBoardScope({
         .orderBy(asc(boardPins.position), desc(boards.updatedAt));
       if (rows.length === 0) return [];
       const boardIds = rows.map((row) => row.board.id);
-      const countRows = await db
-        .select({ boardId: boardItems.boardId, count: sql<number>`count(*)::int` })
-        .from(boardItems)
-        .where(
-          and(
-            eq(boardItems.teamId, scope.teamId),
-            inArray(boardItems.boardId, boardIds),
-            isNull(boardItems.archivedAt),
-          ),
-        )
-        .groupBy(boardItems.boardId);
+      const now = new Date();
+      const soon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const [countRows, laneRows, dueRows] = await Promise.all([
+        db
+          .select({ boardId: boardItems.boardId, count: sql<number>`count(*)::int` })
+          .from(boardItems)
+          .where(
+            and(
+              eq(boardItems.teamId, scope.teamId),
+              inArray(boardItems.boardId, boardIds),
+              isNull(boardItems.archivedAt),
+            ),
+          )
+          .groupBy(boardItems.boardId),
+        db
+          .select({
+            boardId: boardItems.boardId,
+            laneId: boardItems.laneId,
+            laneName: sql<string>`COALESCE(${boardLanes.name}, 'Unset')`,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(boardItems)
+          .leftJoin(boardLanes, eq(boardItems.laneId, boardLanes.id))
+          .where(
+            and(
+              eq(boardItems.teamId, scope.teamId),
+              inArray(boardItems.boardId, boardIds),
+              isNull(boardItems.archivedAt),
+            ),
+          )
+          .groupBy(boardItems.boardId, boardItems.laneId, boardLanes.name),
+        db
+          .select({
+            boardId: boardItems.boardId,
+            overdueCount: sql<number>`count(*) filter (where ${boardItems.dueAt} < ${now})::int`,
+            dueSoonCount: sql<number>`count(*) filter (where ${boardItems.dueAt} >= ${now} and ${boardItems.dueAt} <= ${soon})::int`,
+          })
+          .from(boardItems)
+          .where(
+            and(
+              eq(boardItems.teamId, scope.teamId),
+              inArray(boardItems.boardId, boardIds),
+              isNull(boardItems.archivedAt),
+            ),
+          )
+          .groupBy(boardItems.boardId),
+      ]);
       const counts = new Map(countRows.map((row) => [row.boardId, row.count]));
-      return rows.map((row) => toBoardRow(row.board, counts, new Set([row.board.id])));
+      const stats = new Map<
+        string,
+        Pick<BoardRow, 'laneCounts' | 'dueSoonCount' | 'overdueCount'>
+      >();
+      for (const row of laneRows) {
+        const current = stats.get(row.boardId) ?? {
+          laneCounts: [],
+          dueSoonCount: 0,
+          overdueCount: 0,
+        };
+        current.laneCounts.push({
+          laneId: row.laneId,
+          laneName: row.laneName,
+          count: row.count,
+        });
+        stats.set(row.boardId, current);
+      }
+      for (const row of dueRows) {
+        const current = stats.get(row.boardId) ?? {
+          laneCounts: [],
+          dueSoonCount: 0,
+          overdueCount: 0,
+        };
+        current.dueSoonCount = row.dueSoonCount;
+        current.overdueCount = row.overdueCount;
+        stats.set(row.boardId, current);
+      }
+      return rows.map((row) => toBoardRow(row.board, counts, new Set([row.board.id]), stats));
     },
 
     async pinBoard(boardId: string): Promise<boolean> {

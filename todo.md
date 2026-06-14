@@ -35,6 +35,13 @@ implementation detail.
 - [ ] Wire workspace reconciliation into future authoritative external sync
       paths when calendar/provider imports directly update artifacts they own.
 
+## Boards
+
+- [ ] Strengthen board-agent behavior after real usage: board-scoped answers
+      should cite evidence, distinguish accepted board state from pending
+      suggestions, and direct commands should apply unambiguous board updates
+      through the same permission and audit paths as manual board edits.
+
 ## Object Relationships
 
 - [x] Implement the scoped plan in

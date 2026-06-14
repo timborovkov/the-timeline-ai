@@ -1,4 +1,6 @@
+import { users } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
+import { inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
@@ -52,13 +54,27 @@ export default async function BoardDetailPage({
   const selectedItem = selectedItemId
     ? (board.items.find((item) => item.id === selectedItemId) ?? null)
     : null;
-  const [candidates, history] = await Promise.all([
+  const [candidates, history, members] = await Promise.all([
     scope.objects.listObjects({
       archived: false,
       limit: 200,
     }),
     selectedItem ? scope.boards.listBoardItemHistory(selectedItem.id) : Promise.resolve([]),
+    scope.timeline.listMembers(),
   ]);
+  const memberUserIds = members.map((member) => member.userId);
+  const memberProfiles =
+    memberUserIds.length > 0
+      ? await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, memberUserIds))
+      : [];
+  const memberLabels = new Map(memberProfiles.map((user) => [user.id, user.name] as const));
+  const memberOptions = members.map((member) => ({
+    id: member.userId,
+    label: memberLabels.get(member.userId) ?? member.userId,
+  }));
   const firstLaneId = board.lanes.find((lane) => !lane.archivedAt)?.id ?? null;
   const isKanban = view === 'kanban';
 
@@ -135,7 +151,13 @@ export default async function BoardDetailPage({
             <CuratedKanbanBoard boardId={board.id} lanes={board.lanes} items={board.items} />
           )}
           {view === 'table' && (
-            <CuratedBoardTable boardId={board.id} view={view} items={board.items} />
+            <CuratedBoardTable
+              boardId={board.id}
+              view={view}
+              lanes={board.lanes}
+              items={board.items}
+              members={memberOptions}
+            />
           )}
           {view === 'list' && (
             <CuratedBoardList boardId={board.id} view={view} items={board.items} />

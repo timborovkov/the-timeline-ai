@@ -22,6 +22,12 @@ describe('PinnedBoards', () => {
             createdAt: new Date('2026-06-14T00:00:00Z'),
             updatedAt: new Date('2026-06-14T00:00:00Z'),
             itemCount: 7,
+            laneCounts: [
+              { laneId: 'lane-1', laneName: 'New', count: 3 },
+              { laneId: 'lane-2', laneName: 'Won', count: 1 },
+            ],
+            dueSoonCount: 2,
+            overdueCount: 1,
             pinned: true,
           },
         ]}
@@ -29,6 +35,9 @@ describe('PinnedBoards', () => {
     );
 
     expect(html).toContain('Boards');
+    expect(html).toContain('New: 3');
+    expect(html).toContain('1 overdue');
+    expect(html).toContain('2 due soon');
     expect(html).not.toContain('Pinned boards</h2>');
   });
 });

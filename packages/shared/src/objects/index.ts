@@ -46,12 +46,15 @@ import {
 import type { TeamScopeCore } from '#src/team-scope.js';
 
 import {
+  deleteDueDateCalendarEventEmbeddings,
   enqueueDueDateCalendarEventEmbeddings,
+  mergeDueDateCalendarSyncResults,
   notifyObjectDueDate,
   notifyBoardItemDueDate,
   syncBoardItemDueDateCalendarEvent,
   syncObjectDueDateCalendarEvent,
   tombstoneObjectDueDateCalendarEventsForEntities,
+  type DueDateCalendarSyncResult,
 } from '#src/calendar/due-dates.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
@@ -114,7 +117,7 @@ async function syncBoardItemDueDatesForObject(
   scope: TeamScopeCore,
   object: Pick<typeof entities.$inferSelect, 'id' | 'canonicalName' | 'type' | 'archivedAt'>,
   opts: { actor?: UpdateActor; notifyActive?: boolean } = {},
-): Promise<string[]> {
+): Promise<DueDateCalendarSyncResult> {
   const rows = await db
     .select({ item: boardItems, board: boards })
     .from(boardItems)
@@ -126,16 +129,24 @@ async function syncBoardItemDueDatesForObject(
         isNull(boardItems.archivedAt),
       ),
     );
-  const embedCalendarEventIds: string[] = [];
+  const results: DueDateCalendarSyncResult[] = [];
   for (const row of rows) {
-    embedCalendarEventIds.push(
-      ...(await syncBoardItemDueDateCalendarEvent(db, row.item, object, row.board)),
-    );
+    results.push(await syncBoardItemDueDateCalendarEvent(db, row.item, object, row.board));
     if (opts.notifyActive && opts.actor) {
       await notifyBoardItemDueDate(db, row.item, object, row.board, opts.actor);
     }
   }
-  return embedCalendarEventIds;
+  return mergeDueDateCalendarSyncResults(results);
+}
+
+async function afterDueDateCalendarSync(
+  teamId: string,
+  result: DueDateCalendarSyncResult,
+): Promise<void> {
+  await Promise.all([
+    enqueueDueDateCalendarEventEmbeddings(teamId, result.embedEventIds),
+    deleteDueDateCalendarEventEmbeddings(teamId, result.deleteEventIds),
+  ]);
 }
 
 async function deleteMergedObjectEmbeddingPoints(teamId: string, entityId: string): Promise<void> {
@@ -1398,10 +1409,10 @@ export async function createObject(
         .onConflictDoNothing();
     }
 
-    const dueDateCalendarEventIds = await syncObjectDueDateCalendarEvent(tx, row);
+    const dueDateCalendarSync = await syncObjectDueDateCalendarEvent(tx, row);
     await notifyObjectDueDate(tx, row, input.actor);
 
-    return { object: toObjectRow(row), dueDateCalendarEventIds };
+    return { object: toObjectRow(row), dueDateCalendarSync };
   });
 
   // Embed AFTER the transaction commits so the worker (which reads from a
@@ -1418,10 +1429,10 @@ export async function createObject(
     entityId: txResult.object.id,
     op: 'createObject',
   });
-  fireAndForgetEmbed(
-    () => enqueueDueDateCalendarEventEmbeddings(scope.teamId, txResult.dueDateCalendarEventIds),
-    { teamId: scope.teamId, op: 'createObjectDueDateCalendar' },
-  );
+  fireAndForgetEmbed(() => afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync), {
+    teamId: scope.teamId,
+    op: 'createObjectDueDateCalendar',
+  });
   return txResult.object;
 }
 
@@ -1515,7 +1526,12 @@ export async function updateObject(
     if (patch.type !== undefined) diff('type', patch.type);
 
     if (changes.length === 0) {
-      return { object: toObjectRow(current), changedFields: [], changeIds: [] as string[] };
+      return {
+        object: toObjectRow(current),
+        changedFields: [],
+        changeIds: [] as string[],
+        dueDateCalendarSync: mergeDueDateCalendarSyncResults([]),
+      };
     }
 
     const updatedRows = await tx
@@ -1601,22 +1617,22 @@ export async function updateObject(
         'archivedAt',
       ].includes(c.field),
     );
-    const dueDateCalendarEventIds: string[] = [];
+    const dueDateCalendarSyncResults: DueDateCalendarSyncResult[] = [];
     if (dueDateRelevantChange) {
-      dueDateCalendarEventIds.push(...(await syncObjectDueDateCalendarEvent(tx, updated)));
+      dueDateCalendarSyncResults.push(await syncObjectDueDateCalendarEvent(tx, updated));
       if (shouldNotifyObjectDueDateOnUpdate(changes, current, updated)) {
         await notifyObjectDueDate(tx, updated, actor);
       }
     }
     if (changes.some((c) => ['canonicalName', 'type', 'archivedAt'].includes(c.field))) {
-      dueDateCalendarEventIds.push(
-        ...(await syncBoardItemDueDatesForObject(tx, scope, updated, {
+      dueDateCalendarSyncResults.push(
+        await syncBoardItemDueDatesForObject(tx, scope, updated, {
           actor,
           notifyActive:
             current.archivedAt !== null &&
             updated.archivedAt === null &&
             changes.some((c) => c.field === 'archivedAt'),
-        })),
+        }),
       );
     }
 
@@ -1624,7 +1640,7 @@ export async function updateObject(
       object: toObjectRow(updated),
       changedFields: changes.map((c) => c.field),
       changeIds: changeRows.map((r) => r.id),
-      dueDateCalendarEventIds,
+      dueDateCalendarSync: mergeDueDateCalendarSyncResults(dueDateCalendarSyncResults),
     };
   });
 
@@ -1658,11 +1674,10 @@ export async function updateObject(
       });
     }
   }
-  fireAndForgetEmbed(
-    () =>
-      enqueueDueDateCalendarEventEmbeddings(scope.teamId, txResult.dueDateCalendarEventIds ?? []),
-    { teamId: scope.teamId, op: 'updateObjectDueDateCalendar' },
-  );
+  fireAndForgetEmbed(() => afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync), {
+    teamId: scope.teamId,
+    op: 'updateObjectDueDateCalendar',
+  });
   return { object: txResult.object, changedFields: txResult.changedFields };
 }
 
@@ -1846,7 +1861,7 @@ export async function mergeObjects(
       );
 
     const now = new Date();
-    const dueDateCalendarEventIds: string[] = [];
+    const dueDateCalendarSyncResults: DueDateCalendarSyncResult[] = [];
     const loserBoardItems = await tx
       .select({ item: boardItems, board: boards })
       .from(boardItems)
@@ -1859,8 +1874,8 @@ export async function mergeObjects(
           .update(boardItems)
           .set({ entityId: updatedItem.entityId, updatedAt: updatedItem.updatedAt })
           .where(and(eq(boardItems.id, item.id), eq(boardItems.teamId, scope.teamId)));
-        dueDateCalendarEventIds.push(
-          ...(await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board)),
+        dueDateCalendarSyncResults.push(
+          await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board),
         );
         continue;
       }
@@ -1887,8 +1902,8 @@ export async function mergeObjects(
             updatedAt: updatedItem.updatedAt,
           })
           .where(and(eq(boardItems.id, item.id), eq(boardItems.teamId, scope.teamId)));
-        dueDateCalendarEventIds.push(
-          ...(await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board)),
+        dueDateCalendarSyncResults.push(
+          await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board),
         );
       } else {
         const updatedItem = { ...item, entityId: survivor.id, updatedAt: now };
@@ -1896,8 +1911,8 @@ export async function mergeObjects(
           .update(boardItems)
           .set({ entityId: updatedItem.entityId, updatedAt: updatedItem.updatedAt })
           .where(and(eq(boardItems.id, item.id), eq(boardItems.teamId, scope.teamId)));
-        dueDateCalendarEventIds.push(
-          ...(await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board)),
+        dueDateCalendarSyncResults.push(
+          await syncBoardItemDueDateCalendarEvent(tx, updatedItem, survivor, board),
         );
       }
     }
@@ -2054,10 +2069,12 @@ export async function mergeObjects(
       .update(entities)
       .set({ mergedIntoId: survivor.id, updatedAt: new Date() })
       .where(and(eq(entities.teamId, scope.teamId), inArray(entities.id, loserIds)));
-    await tombstoneObjectDueDateCalendarEventsForEntities(tx, {
-      teamId: scope.teamId,
-      entityIds: loserIds,
-    });
+    dueDateCalendarSyncResults.push(
+      await tombstoneObjectDueDateCalendarEventsForEntities(tx, {
+        teamId: scope.teamId,
+        entityIds: loserIds,
+      }),
+    );
 
     await tx.insert(objectChanges).values([
       {
@@ -2095,13 +2112,17 @@ export async function mergeObjects(
       .limit(1);
     const updated = updatedRows[0];
     if (!updated) throw new Error('Merge failed');
-    return { survivor: toObjectRow(updated), mergedIds: loserIds, dueDateCalendarEventIds };
+    return {
+      survivor: toObjectRow(updated),
+      mergedIds: loserIds,
+      dueDateCalendarSync: mergeDueDateCalendarSyncResults(dueDateCalendarSyncResults),
+    };
   });
 
-  fireAndForgetEmbed(
-    () => enqueueDueDateCalendarEventEmbeddings(scope.teamId, result.dueDateCalendarEventIds),
-    { teamId: scope.teamId, op: 'mergeObjectsDueDateCalendar' },
-  );
+  fireAndForgetEmbed(() => afterDueDateCalendarSync(scope.teamId, result.dueDateCalendarSync), {
+    teamId: scope.teamId,
+    op: 'mergeObjectsDueDateCalendar',
+  });
   fireAndForgetEmbed(() => embedQueue.enqueueObjectEmbedJob(scope.teamId, result.survivor.id), {
     teamId: scope.teamId,
     objectId: result.survivor.id,

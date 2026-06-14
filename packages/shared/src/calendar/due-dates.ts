@@ -15,7 +15,10 @@ import {
   tombstoneCalendarRawEventIds,
   updateCalendarRawEvents,
 } from '#src/calendar/raw-events.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
+import { getQdrantClient } from '#src/qdrant/client.js';
+import { buildPointId } from '#src/qdrant/point-id.js';
 import { enqueueCalendarEventEmbedJob } from '#src/queue/queues.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -40,6 +43,25 @@ interface DueDateTarget {
 interface DueDateActor {
   kind: 'user' | 'agent' | 'system';
   userId?: string | null;
+}
+
+export interface DueDateCalendarSyncResult {
+  embedEventIds: string[];
+  deleteEventIds: string[];
+}
+
+const EMPTY_SYNC_RESULT: DueDateCalendarSyncResult = {
+  embedEventIds: [],
+  deleteEventIds: [],
+};
+
+export function mergeDueDateCalendarSyncResults(
+  results: DueDateCalendarSyncResult[],
+): DueDateCalendarSyncResult {
+  return {
+    embedEventIds: [...new Set(results.flatMap((result) => result.embedEventIds))],
+    deleteEventIds: [...new Set(results.flatMap((result) => result.deleteEventIds))],
+  };
 }
 
 function eventEnd(dueAt: Date): Date {
@@ -111,7 +133,10 @@ function descriptionFor(target: DueDateTarget, responsible: string | null): stri
     .join('\n');
 }
 
-async function syncDueDateCalendarEvent(db: DbOrTx, target: DueDateTarget): Promise<string[]> {
+async function syncDueDateCalendarEvent(
+  db: DbOrTx,
+  target: DueDateTarget,
+): Promise<DueDateCalendarSyncResult> {
   const [existing] = await db
     .select({
       id: calendarEvents.id,
@@ -135,8 +160,9 @@ async function syncDueDateCalendarEvent(db: DbOrTx, target: DueDateTarget): Prom
           (id): id is string => id !== null && id.length > 0,
         ),
       );
+      return { embedEventIds: [], deleteEventIds: [existing.id] };
     }
-    return [];
+    return EMPTY_SYNC_RESULT;
   }
   const activeTarget = { ...target, dueAt: target.dueAt };
 
@@ -179,9 +205,9 @@ async function syncDueDateCalendarEvent(db: DbOrTx, target: DueDateTarget): Prom
     if (updated) {
       await ensureDueDateRawEvents(db, activeTarget, updated, title, description);
       await ensureDueDateEntityLink(db, target, updated.id);
-      return [updated.id];
+      return { embedEventIds: [updated.id], deleteEventIds: [] };
     }
-    return [];
+    return EMPTY_SYNC_RESULT;
   }
 
   const [created] = await db
@@ -208,9 +234,9 @@ async function syncDueDateCalendarEvent(db: DbOrTx, target: DueDateTarget): Prom
   if (created) {
     await ensureDueDateRawEvents(db, activeTarget, created, title, description);
     await ensureDueDateEntityLink(db, target, created.id);
-    return [created.id];
+    return { embedEventIds: [created.id], deleteEventIds: [] };
   }
-  return [];
+  return EMPTY_SYNC_RESULT;
 }
 
 async function ensureDueDateEntityLink(
@@ -292,6 +318,35 @@ export async function enqueueDueDateCalendarEventEmbeddings(
   );
 }
 
+export async function deleteDueDateCalendarEventEmbeddings(
+  teamId: string,
+  eventIds: string[],
+): Promise<void> {
+  await Promise.all(
+    [...new Set(eventIds)].map(async (eventId) => {
+      try {
+        const client = getQdrantClient();
+        const models = [
+          ...new Set([TIMELINE_MODELS.embedding.id, 'openai/text-embedding-3-small']),
+        ];
+        for (const model of models) {
+          await client.deletePointsForSource({
+            teamId,
+            scope: 'calendar_event',
+            sourceId: eventId,
+            model,
+          });
+        }
+        await client.deletePoints(
+          models.map((model) => buildPointId('calendar_event', eventId, model)),
+        );
+      } catch (err) {
+        log.warn({ err, teamId, eventId }, 'due-date calendar embed delete failed');
+      }
+    }),
+  );
+}
+
 export async function syncObjectDueDateCalendarEvent(
   db: DbOrTx,
   object: Pick<
@@ -307,7 +362,7 @@ export async function syncObjectDueDateCalendarEvent(
     | 'mergedIntoId'
     | 'status'
   >,
-): Promise<string[]> {
+): Promise<DueDateCalendarSyncResult> {
   return syncDueDateCalendarEvent(db, {
     source: 'object',
     teamId: object.teamId,
@@ -329,8 +384,8 @@ export async function syncObjectDueDateCalendarEvent(
 export async function tombstoneObjectDueDateCalendarEventsForEntities(
   db: DbOrTx,
   args: { teamId: string; entityIds: string[] },
-): Promise<void> {
-  if (args.entityIds.length === 0) return;
+): Promise<DueDateCalendarSyncResult> {
+  if (args.entityIds.length === 0) return EMPTY_SYNC_RESULT;
   const rows = await db
     .select({
       id: calendarEvents.id,
@@ -349,7 +404,7 @@ export async function tombstoneObjectDueDateCalendarEventsForEntities(
         )})`,
       ),
     );
-  if (rows.length === 0) return;
+  if (rows.length === 0) return EMPTY_SYNC_RESULT;
   await db
     .update(calendarEvents)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
@@ -367,6 +422,7 @@ export async function tombstoneObjectDueDateCalendarEventsForEntities(
       ),
     ),
   );
+  return { embedEventIds: [], deleteEventIds: rows.map((row) => row.id) };
 }
 
 export async function syncBoardItemDueDateCalendarEvent(
@@ -377,7 +433,7 @@ export async function syncBoardItemDueDateCalendarEvent(
   >,
   object: Pick<typeof entities.$inferSelect, 'canonicalName' | 'type' | 'archivedAt'>,
   board: Pick<typeof boards.$inferSelect, 'name' | 'archivedAt'>,
-): Promise<string[]> {
+): Promise<DueDateCalendarSyncResult> {
   return syncDueDateCalendarEvent(db, {
     source: 'board_item',
     teamId: item.teamId,
