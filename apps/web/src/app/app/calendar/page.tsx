@@ -237,7 +237,10 @@ export default async function CalendarPage({ searchParams }: PageProps) {
           allowBulkAccept={false}
           folded={{
             title: 'Calendar approvals',
-            summary: (count) => `${count} pending calendar proposal${count === 1 ? '' : 's'}`,
+            summary: {
+              singular: 'pending calendar proposal',
+              plural: 'pending calendar proposals',
+            },
             className: 'border-y border-border py-4',
           }}
         />

@@ -695,7 +695,10 @@ function ObjectDetailView(props: Props) {
               allowBulkAccept={false}
               folded={{
                 title: 'Pending approvals',
-                summary: (count) => `${count} waiting`,
+                summary: {
+                  singular: 'waiting',
+                  plural: 'waiting',
+                },
                 className: 'border border-signal/40 bg-signal-soft/20',
                 summaryClassName: 'cursor-pointer list-none px-4 py-3',
                 bodyClassName: 'border-t border-border p-4',

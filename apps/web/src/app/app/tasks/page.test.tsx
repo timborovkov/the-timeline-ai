@@ -27,10 +27,10 @@ vi.mock('@/components/approvals/approvals-client', () => ({
     folded,
   }: {
     suggestions: { title: string }[];
-    folded?: { title: string; summary: (count: number) => string };
+    folded?: { title: string; summary: { singular: string; plural: string } };
   }) => (
     <div data-testid="approvals">
-      {folded ? `${folded.title}: ${folded.summary(1)}. ` : null}
+      {folded ? `${folded.title}: 1 ${folded.summary.singular}. ` : null}
       {suggestions.map((suggestion) => suggestion.title).join(', ')}
     </div>
   ),
