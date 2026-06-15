@@ -1002,7 +1002,7 @@ function ObjectEditableFields({
           }}
           onBlur={(e) => {
             focusedDraftsRef.current.aliases = false;
-            const aliases = parseAliases(e.target.value, detail.canonicalName);
+            const aliases = parseAliases(e.target.value, nameDraft);
             dispatchObjectUi({ aliasesDraft: aliases.join(', ') });
             patch('aliases', aliases);
           }}

@@ -143,7 +143,7 @@ export function objectQueueItem(
   return {
     id: `object:${row.id}`,
     entityId: row.id,
-    href: row.type === 'task' ? '/app/tasks' : `/app/objects/${row.id}`,
+    href: `/app/objects/${row.id}`,
     title: row.canonicalName,
     subtitle: `${row.type.replace('_', ' ')} · ${row.status}`,
     source: 'object',
