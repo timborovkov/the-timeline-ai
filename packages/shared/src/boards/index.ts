@@ -1154,7 +1154,12 @@ export function createBoardScope({
             ),
           ),
         )
-        .orderBy(asc(boardItems.dueAt), desc(boardItems.updatedAt))
+        .orderBy(
+          sql`case when ${boardItems.responsibleUserId} = ${scope.userId} then 0 else 1 end asc`,
+          sql`(${boardItems.dueAt} is not null) desc`,
+          asc(boardItems.dueAt),
+          desc(boardItems.updatedAt),
+        )
         .limit(limit);
       return rows.map((row) => ({
         id: row.item.id,

@@ -1052,4 +1052,55 @@ describe('board scope', () => {
     expect(rows.map((row) => row.id)).not.toContain(archivedItem.id);
     expect(rows.map((row) => row.id)).not.toContain(archivedBoardItem.id);
   });
+
+  it('keeps responsible null-due board items when due rows exceed limit', async () => {
+    const owner = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await owner.boards.createBoard({
+      name: 'Capacity board',
+      templateKind: 'pipeline',
+      lanes: [{ name: 'Backlog', kind: 'active' }],
+    });
+
+    const teamDueTasks = await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        owner.objects.createObject({
+          type: 'task',
+          canonicalName: `Due teammate task ${String(index + 1).padStart(2, '0')}`,
+          actor: { kind: 'user', userId: USER_OWNER },
+        }),
+      ),
+    );
+    const responsibleTask = await owner.objects.createObject({
+      type: 'task',
+      canonicalName: 'Owner-only to-do',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    for (const task of teamDueTasks) {
+      await owner.boards.addBoardItem(board.id, {
+        entityId: task.id,
+        responsibleUserId: USER_MEMBER,
+        dueAt: new Date('2026-06-18T00:00:00.000Z'),
+        actor: { kind: 'user', userId: USER_OWNER },
+      });
+    }
+
+    const responsibleItem = await owner.boards.addBoardItem(board.id, {
+      entityId: responsibleTask.id,
+      responsibleUserId: USER_OWNER,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const rows = await owner.boards.listWorkQueueItems({
+      dueBefore: new Date('2026-06-30T00:00:00.000Z'),
+      limit: 20,
+    });
+
+    expect(rows).toHaveLength(20);
+    expect(rows.map((row) => row.id)).toContain(responsibleItem.id);
+    const responsibleItemRow = rows.find((row) => row.id === responsibleItem.id);
+    expect(responsibleItemRow).toBeDefined();
+    expect(responsibleItemRow?.dueAt).toBeNull();
+    expect(responsibleItemRow?.responsibleUserId).toBe(USER_OWNER);
+  });
 });
