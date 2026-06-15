@@ -129,7 +129,14 @@ export function BoardCardDetail({
 
   return (
     <aside className="rounded-sm border border-border bg-bg" aria-label="Board card detail">
-      <BoardCardHeader boardId={boardId} view={view} item={item} lane={lane} blocked={blocked} />
+      <BoardCardHeader
+        boardId={boardId}
+        view={view}
+        item={item}
+        lane={lane}
+        blocked={blocked}
+        nextStepDraft={currentDraftState.nextStepDraft}
+      />
       <BoardCommandFields
         item={item}
         lanes={lanes}
@@ -176,13 +183,16 @@ function BoardCardHeader({
   item,
   lane,
   blocked,
+  nextStepDraft,
 }: {
   boardId: string;
   view: BoardLayout;
   item: boards.BoardItemRow;
   lane: boards.BoardLaneRow | null;
   blocked: boolean;
+  nextStepDraft: string;
 }) {
+  const visibleNextStep = nextStepDraft.trim();
   return (
     <div className="border-b border-border p-4">
       <div className="flex items-start justify-between gap-3">
@@ -206,9 +216,9 @@ function BoardCardHeader({
           Blocked · {displayText(lane.name)}
         </p>
       ) : null}
-      {item.nextStep ? (
+      {visibleNextStep ? (
         <p className="mt-3 border-l border-signal pl-3 text-sm text-fg-muted">
-          {displayText(item.nextStep)}
+          {displayText(visibleNextStep)}
         </p>
       ) : null}
     </div>
