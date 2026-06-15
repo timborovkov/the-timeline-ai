@@ -12,6 +12,7 @@ import { IndexStrip } from '@/components/index-strip';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { displayText, formatDisplayDate } from '@/lib/display-dates';
 import {
   approvalQueueItem,
   boardQueueItem,
@@ -122,61 +123,75 @@ export default async function WorkPage() {
         ]}
       />
 
-      <section aria-labelledby="work-queue-title" className="space-y-3">
-        <SectionHeader
-          id="work-queue-title"
-          label="Work Queue"
-          meta={`${queue.length}/${QUEUE_LIMIT}`}
-        />
-        {queue.length === 0 ? (
-          <EmptyAction
-            title="Work queue clear"
-            body="Assigned work, due team items, and pending approvals will appear here when they need attention."
-            href="/app/boards"
-            action="Open boards"
-          />
-        ) : (
-          <div className="overflow-hidden border border-border">
-            {queue.map((item) => (
-              <WorkQueueRow key={item.id} item={item} />
-            ))}
-          </div>
-        )}
+      <section aria-labelledby="work-surfaces-title" className="space-y-3">
+        <SectionHeader id="work-surfaces-title" label="Work surfaces" />
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          {NAV_LINKS.map((item) => (
+            <SurfaceLink key={item.href} item={item} />
+          ))}
+        </div>
       </section>
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.48fr)]">
-        <section aria-labelledby="team-boards-title" className="space-y-3">
-          <SectionHeader
-            id="team-boards-title"
-            label="Team boards"
-            meta={`${boardModules.length}`}
-          />
-          {boardModules.length === 0 ? (
-            <EmptyPanel label="No boards yet" body="Create a board to give team work a surface." />
-          ) : (
-            <div className="grid gap-px overflow-hidden border border-border sm:grid-cols-2">
-              {boardModules.map((board) => (
-                <Link
-                  key={board.id}
-                  href={`/app/boards/${board.id}`}
-                  className="block bg-bg p-3 transition-colors hover:bg-surface"
-                >
-                  <span className="flex items-center justify-between gap-3">
-                    <span className="truncate text-sm font-medium text-fg">{board.name}</span>
-                    {board.pinned ? (
-                      <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-signal">
-                        Pinned
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="mt-2 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-                    {board.itemCount} items · updated {dateLabel(board.updatedAt)}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          )}
-        </section>
+        <div className="space-y-6">
+          <section aria-labelledby="work-queue-title" className="space-y-3">
+            <SectionHeader
+              id="work-queue-title"
+              label="Work Queue"
+              meta={`${queue.length}/${QUEUE_LIMIT}`}
+            />
+            {queue.length === 0 ? (
+              <EmptyAction
+                title="Work queue clear"
+                body="Assigned work, due team items, and pending approvals will appear here when they need attention."
+                href="/app/boards"
+                action="Open boards"
+              />
+            ) : (
+              <div className="overflow-hidden border border-border">
+                {queue.map((item) => (
+                  <WorkQueueRow key={item.id} item={item} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section aria-labelledby="team-boards-title" className="space-y-3">
+            <SectionHeader
+              id="team-boards-title"
+              label="Team boards"
+              meta={`${boardModules.length}`}
+            />
+            {boardModules.length === 0 ? (
+              <EmptyPanel
+                label="No boards yet"
+                body="Create a board to give team work a surface."
+              />
+            ) : (
+              <div className="grid gap-px overflow-hidden border border-border sm:grid-cols-2">
+                {boardModules.map((board) => (
+                  <Link
+                    key={board.id}
+                    href={`/app/boards/${board.id}`}
+                    className="block bg-bg p-3 transition-colors hover:bg-surface"
+                  >
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="truncate text-sm font-medium text-fg">{board.name}</span>
+                      {board.pinned ? (
+                        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-signal">
+                          Pinned
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="mt-2 block font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                      {board.itemCount} items · updated {dateLabel(board.updatedAt)}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
 
         <aside className="space-y-5">
           <section aria-labelledby="recent-changes-title" className="space-y-3">
@@ -195,7 +210,7 @@ export default async function WorkPage() {
                 {recentChanges.items.map((event) => (
                   <li key={event.id} className="border-b border-border bg-bg p-3 last:border-b-0">
                     <p className="line-clamp-2 text-sm text-fg-muted">
-                      {event.contentText?.trim() ?? `${event.source} event`}
+                      {displayText(event.contentText?.trim() ?? `${event.source} event`)}
                     </p>
                     <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
                       {event.source} · {dateLabel(event.occurredAt)}
@@ -204,30 +219,6 @@ export default async function WorkPage() {
                 ))}
               </ol>
             )}
-          </section>
-
-          <section aria-labelledby="work-surfaces-title" className="space-y-3">
-            <SectionHeader id="work-surfaces-title" label="Work surfaces" />
-            <div className="overflow-hidden border border-border">
-              {NAV_LINKS.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="flex items-center justify-between gap-3 border-b border-border bg-bg p-3 text-sm transition-colors last:border-b-0 hover:bg-surface"
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="text-fg-dim">{item.icon}</span>
-                    <span className="min-w-0">
-                      <span className="block font-medium text-fg">{item.label}</span>
-                      <span className="block truncate text-xs text-fg-muted">{item.detail}</span>
-                    </span>
-                  </span>
-                  <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-signal">
-                    Open
-                  </span>
-                </Link>
-              ))}
-            </div>
           </section>
         </aside>
       </div>
@@ -282,12 +273,14 @@ function WorkQueueRow({ item }: { item: WorkQueueItem }) {
     >
       <span className="min-w-0">
         <span className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium text-fg">{item.title}</span>
+          <span className="truncate text-sm font-medium text-fg">{displayText(item.title)}</span>
           <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim">
             {item.sourceLabel}
           </span>
         </span>
-        <span className="mt-1 block truncate text-sm text-fg-muted">{item.subtitle}</span>
+        <span className="mt-1 block truncate text-sm text-fg-muted">
+          {displayText(item.subtitle)}
+        </span>
         <span className="mt-2 flex flex-wrap gap-1.5">
           {item.reasons.map((reason) => (
             <ReasonBadge key={reason} reason={reason} />
@@ -303,6 +296,24 @@ function WorkQueueRow({ item }: { item: WorkQueueItem }) {
         ) : null}
         {item.priority ? <MetaPill label={`P${item.priority}`} /> : null}
         {item.objectType ? <MetaPill label={item.objectType.replace('_', ' ')} /> : null}
+      </span>
+    </Link>
+  );
+}
+
+function SurfaceLink({ item }: { item: (typeof NAV_LINKS)[number] }) {
+  return (
+    <Link
+      href={item.href}
+      className="group grid min-h-24 content-between border border-border bg-bg p-3 text-sm transition-colors hover:border-fg-dim hover:bg-surface"
+    >
+      <span className="flex items-start justify-between gap-3">
+        <span className="text-fg-dim transition-colors group-hover:text-signal">{item.icon}</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-signal">Open</span>
+      </span>
+      <span className="min-w-0">
+        <span className="block font-medium text-fg">{item.label}</span>
+        <span className="mt-1 block truncate text-xs text-fg-muted">{item.detail}</span>
       </span>
     </Link>
   );
@@ -371,5 +382,5 @@ function uniqueBoards<T extends { id: string }>(boards: T[]): T[] {
 }
 
 function dateLabel(value: Date): string {
-  return value.toLocaleDateString('en-CA');
+  return formatDisplayDate(value);
 }

@@ -305,4 +305,24 @@ describe('WorkPage', () => {
     expect(html).toContain('Pinned');
     expect(html).toContain('Moved Revigo into scoping.');
   });
+
+  it('formats ISO instants embedded in recent change text', async () => {
+    fakes.listEventsPage.mockResolvedValue({
+      items: [
+        {
+          id: 'event-1',
+          source: 'calendar',
+          contentText: 'Meeting with Miika | 2026-07-01T00:00:00.000Z to 2026-07-02T00:00:00.000Z',
+          occurredAt: new Date('2026-07-01T00:00:00.000Z'),
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const html = renderToStaticMarkup(await WorkPage());
+
+    expect(html).toContain('Meeting with Miika');
+    expect(html).not.toContain('2026-07-01T00:00:00.000Z');
+    expect(html).not.toContain('2026-07-02T00:00:00.000Z');
+  });
 });

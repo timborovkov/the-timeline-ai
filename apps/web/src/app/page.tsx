@@ -66,6 +66,11 @@ export const metadata: Metadata = {
 };
 
 const CONTACT_HREF = '/help/support';
+const JSON_SCRIPT_ESCAPES: Record<string, string> = {
+  '<': '\\u003c',
+  '>': '\\u003e',
+  '&': '\\u0026',
+};
 
 const NATIVE_INGEST = [
   { label: 'Telegram', icon: Send },
@@ -183,12 +188,16 @@ function StructuredData() {
     ],
   };
   return (
-    // react-doctor-disable-next-line react-doctor/no-danger
+    // react-doctor-disable-next-line react-doctor/no-danger, react-doctor/dangerous-html-sink
     <script
       type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(graph) }}
+      dangerouslySetInnerHTML={{ __html: stringifyJsonForHtmlScript(graph) }}
     />
   );
+}
+
+function stringifyJsonForHtmlScript(value: unknown): string {
+  return JSON.stringify(value).replace(/[<>&]/g, (char) => JSON_SCRIPT_ESCAPES[char] ?? char);
 }
 
 const FAQ_ITEMS = [
