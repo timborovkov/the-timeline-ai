@@ -9,6 +9,14 @@ export function formatDisplayDateTime(value: Date | string): string {
   });
 }
 
+export function formatDisplayDate(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString(undefined, {
+    dateStyle: 'medium',
+  });
+}
+
 function formatEmbeddedIsoInstants(text: string): string {
   return text.replace(ISO_INSTANT_PATTERN, (match) => formatDisplayDateTime(match));
 }

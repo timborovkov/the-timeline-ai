@@ -1079,7 +1079,6 @@ describe('board scope', () => {
     for (const task of teamDueTasks) {
       await owner.boards.addBoardItem(board.id, {
         entityId: task.id,
-        responsibleUserId: USER_MEMBER,
         dueAt: new Date('2026-06-18T00:00:00.000Z'),
         actor: { kind: 'user', userId: USER_OWNER },
       });

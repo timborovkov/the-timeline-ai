@@ -64,8 +64,13 @@ export function IndexStrip({
         className,
       )}
     >
-      {leading ? <span className="shrink-0 text-fg-dim">{leading}</span> : null}
-      <h1 id={titleId} className="m-0 text-xs font-normal uppercase tracking-[0.12em] text-fg">
+      {leading ? (
+        <span className="inline-flex shrink-0 items-center text-fg-dim">{leading}</span>
+      ) : null}
+      <h1
+        id={titleId}
+        className="m-0 inline-flex items-center text-xs font-normal uppercase tracking-[0.12em] text-fg"
+      >
         <span aria-hidden="true">{title.value}</span>
         <span className="sr-only">{srLabel}</span>
       </h1>
@@ -82,7 +87,7 @@ export function IndexStrip({
         </span>
       ))}
       {(trailing ?? children) ? (
-        <span className="ml-auto text-fg-dim">{trailing ?? children}</span>
+        <span className="ml-auto inline-flex items-center text-fg-dim">{trailing ?? children}</span>
       ) : null}
     </header>
   );

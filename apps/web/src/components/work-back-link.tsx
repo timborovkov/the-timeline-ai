@@ -8,7 +8,7 @@ function WorkBackLink({ className }: { className?: string }) {
     <Link
       href="/app/work"
       className={cn(
-        'inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.12em]',
+        'inline-flex min-h-8 items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.12em]',
         'text-fg-muted hover:text-fg hover:underline',
         className,
       )}
