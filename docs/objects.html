@@ -414,18 +414,19 @@
             <td><code>/app/objects</code></td>
             <td>
               Index grouped by type. Type-filter chips along the top, "New object" CTA, and select
-              mode for bulk archive or merge cleanup, plus a compact cleanup suggestions panel with
-              manual "Find suggestions" enqueue.
+              mode for bulk archive or merge cleanup, plus a collapsed cleanup suggestions panel
+              with a pending count and manual "Find suggestions" enqueue.
             </td>
           </tr>
           <tr>
             <td><code>/app/objects/merge</code></td>
             <td>
               Merge preview for selected objects. The user chooses the survivor, reviews aliases and
-              selected attachment counts, expands each candidate's visible related facts, then
-              confirms. AI merge suggestions open the same preview in the cleanup panel, where the
-              reviewer can reject the suggestion directly so generic approval buttons cannot
-              auto-merge objects.
+              impact counts for facts, notes, links, and open tasks, expands each candidate's
+              visible related facts, then confirms. AI merge suggestions open inline when their
+              preview is preloaded; otherwise the same review action links to
+              <code>/app/objects/merge</code>. Reviewers can reject the suggestion directly so
+              generic approval buttons cannot auto-merge objects.
             </td>
           </tr>
           <tr>
@@ -435,11 +436,11 @@
           <tr>
             <td><code>/app/objects/[id]</code></td>
             <td>
-              Two-column object workspace. The main column keeps approvals, timeline evidence,
-              extracted facts with shared-object <code>Fact (N)</code> popovers, and notes together;
-              the sticky side rail carries optimistic status/stage/priority/due edits, related
-              objects with kind chips + unlink, open tasks, recent changes, the "since your last
-              visit" banner, and the archive button. Merged-away object URLs redirect to their
+              Two-column object workspace. The main column keeps folded approvals, timeline
+              evidence, extracted facts with shared-object <code>Fact (N)</code> popovers, and notes
+              together; the sticky side rail carries optimistic status/stage/priority/due edits,
+              related objects with kind chips + unlink, open tasks, recent changes, the "since your
+              last visit" banner, and the archive button. Merged-away object URLs redirect to their
               survivor.
             </td>
           </tr>

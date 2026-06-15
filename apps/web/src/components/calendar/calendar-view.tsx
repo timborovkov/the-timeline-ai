@@ -15,10 +15,20 @@ import {
   Clock,
   Pencil,
   Plus,
+  Search,
   Trash2,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useReducer, useRef, useTransition } from 'react';
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 
 import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
 import type { SaveState } from '@/lib/utils';
@@ -31,6 +41,7 @@ import {
 } from '@/app/actions/calendar';
 import {
   EMPTY_CALENDAR_OVERLAY,
+  applyCalendarPageOverlay,
   calendarEventsSignature,
   calendarOverlayReducer,
   mergeCalendarEvents,
@@ -53,6 +64,11 @@ type CalendarViewMode = 'month' | 'week' | 'day';
 
 interface CalendarViewProps {
   events: CalendarEvent[];
+  eventListEvents?: CalendarEvent[];
+  eventListTotal?: number;
+  eventListPage?: number;
+  eventListQuery?: string;
+  eventListScope?: 'future' | 'past' | 'all';
   timezone: string;
   defaultVisibility?: 'team' | 'private' | 'specific_users';
   defaultVisibilityUserIds?: string[] | null;
@@ -102,6 +118,29 @@ interface CalendarUiState {
 type CalendarUiAction = Partial<CalendarUiState> | ((state: CalendarUiState) => CalendarUiState);
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const EVENT_LIST_PAGE_SIZE = 12;
+type EventListScope = 'future' | 'past' | 'all';
+interface EventListParams {
+  query: string;
+  scope: EventListScope;
+  page: number;
+}
+
+function sameEventListParams(a: EventListParams, b: EventListParams): boolean {
+  return a.query === b.query && a.scope === b.scope && a.page === b.page;
+}
+
+function eventListParamsFromSearch(searchParams: {
+  get(name: string): string | null;
+}): EventListParams {
+  const scope = searchParams.get('eventScope');
+  const parsedPage = Number.parseInt(searchParams.get('eventPage') ?? '1', 10);
+  return {
+    query: searchParams.get('eventQ')?.trim() ?? '',
+    scope: scope === 'past' || scope === 'all' ? scope : 'future',
+    page: Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage - 1 : 0,
+  };
+}
 
 function initCalendarUiState({
   anchor,
@@ -190,6 +229,31 @@ function formatTime(event: CalendarEvent, timezone: string): string {
   return start.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatEventDateTime(value: string, timezone: string): string {
+  return Temporal.Instant.from(value).toZonedDateTimeISO(timezone).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatEventRange(event: CalendarEvent, timezone: string): string {
+  if (event.allDay) {
+    const start = Temporal.Instant.from(event.startAt)
+      .toZonedDateTimeISO(assertValidTimezone(event.timezone))
+      .toPlainDate();
+    const end = Temporal.Instant.from(event.endAt)
+      .toZonedDateTimeISO(assertValidTimezone(event.timezone))
+      .toPlainDate()
+      .subtract({ days: 1 });
+    return Temporal.PlainDate.compare(start, end) === 0
+      ? start.toLocaleString('en-US', { month: 'short', day: 'numeric' })
+      : `${start.toLocaleString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleString('en-US', { month: 'short', day: 'numeric' })}`;
+  }
+  return `${formatEventDateTime(event.startAt, timezone)} - ${formatEventDateTime(event.endAt, timezone)}`;
+}
+
 function eventTouchesDate(
   event: CalendarEvent,
   date: Temporal.PlainDate,
@@ -264,8 +328,18 @@ export function CalendarView(props: CalendarViewProps) {
   );
 }
 
-function CalendarViewContent({
+function CalendarViewContent(props: CalendarViewProps) {
+  const model = useCalendarViewModel(props);
+  return <CalendarViewLayout model={model} />;
+}
+
+function useCalendarViewModel({
   events,
+  eventListEvents = events,
+  eventListTotal = eventListEvents.length,
+  eventListPage = 0,
+  eventListQuery = '',
+  eventListScope = 'future',
   timezone,
   defaultVisibility = 'team',
   defaultVisibilityUserIds = null,
@@ -273,6 +347,7 @@ function CalendarViewContent({
 }: CalendarViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
   const mode = (searchParams.get('view') as CalendarViewMode | null) ?? 'month';
   const safeMode: CalendarViewMode = ['month', 'week', 'day'].includes(mode) ? mode : 'month';
   const anchor = parseDateParam(searchParams.get('date'), timezone);
@@ -298,10 +373,43 @@ function CalendarViewContent({
   const [pending, startTransition] = useTransition();
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialogContextRef = useRef(0);
+  const eventListParamsRef = useRef<EventListParams | null>(null);
   const serverEventsSnapshotRef = useRef<{
     signature: string;
     ids: string[];
   } | null>(null);
+  const eventListRawUrlParams = useMemo(
+    () => eventListParamsFromSearch(new URLSearchParams(searchParamsKey)),
+    [searchParamsKey],
+  );
+  const eventListServerParams = useMemo(
+    () => ({
+      query: eventListQuery.trim(),
+      scope: eventListScope,
+      page: eventListPage,
+    }),
+    [eventListPage, eventListQuery, eventListScope],
+  );
+  const eventListUrlParams = useMemo(() => {
+    if (
+      eventListRawUrlParams.query === eventListServerParams.query &&
+      eventListRawUrlParams.scope === eventListServerParams.scope &&
+      eventListRawUrlParams.page !== eventListServerParams.page
+    ) {
+      return eventListServerParams;
+    }
+    return eventListRawUrlParams;
+  }, [eventListRawUrlParams, eventListServerParams]);
+  const [optimisticEventListParams, setOptimisticEventListParams] = useState<{
+    params: EventListParams;
+    sourceSearchParamsKey: string;
+  } | null>(null);
+  const eventListDisplayParams =
+    optimisticEventListParams?.sourceSearchParamsKey === searchParamsKey &&
+    !sameEventListParams(optimisticEventListParams.params, eventListUrlParams)
+      ? optimisticEventListParams.params
+      : eventListUrlParams;
+  eventListParamsRef.current = eventListDisplayParams;
 
   useEffect(() => {
     return () => {
@@ -310,25 +418,38 @@ function CalendarViewContent({
   }, []);
 
   useEffect(() => {
-    const signature = calendarEventsSignature(events);
-    const ids = events.map((event) => event.id);
+    const signature = calendarEventsSignature([...events, ...eventListEvents]);
+    const gridIds = events.map((event) => event.id);
+    const refreshedIds = Array.from(
+      new Set([...gridIds, ...eventListEvents.map((event) => event.id)]),
+    );
     const previous = serverEventsSnapshotRef.current;
     if (!previous) {
-      serverEventsSnapshotRef.current = { signature, ids };
+      serverEventsSnapshotRef.current = { signature, ids: gridIds };
       return;
     }
     if (previous.signature === signature || pending) return;
-    serverEventsSnapshotRef.current = { signature, ids };
+    const currentGridIds = new Set(gridIds);
+    const deletedIds = previous.ids.filter((id) => !currentGridIds.has(id));
+    serverEventsSnapshotRef.current = { signature, ids: gridIds };
     dispatchEventOverlay({
       type: 'reconcile-server-events',
-      currentIds: ids,
-      previousIds: previous.ids,
+      currentIds: refreshedIds,
+      deletedIds,
     });
-  }, [events, pending]);
+  }, [events, eventListEvents, pending]);
+
+  const displayEvents = useMemo(
+    () => mergeCalendarEvents(events, eventOverlay),
+    [events, eventOverlay],
+  );
+  const displayEventListEvents = useMemo(
+    () => applyCalendarPageOverlay(eventListEvents, eventOverlay),
+    [eventListEvents, eventOverlay],
+  );
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
-    const displayEvents = mergeCalendarEvents(events, eventOverlay);
     for (const day of visibleDays) {
       const matches = displayEvents
         .filter((event) => eventTouchesDate(event, day, timezone))
@@ -336,10 +457,44 @@ function CalendarViewContent({
       map.set(day.toString(), matches);
     }
     return map;
-  }, [events, eventOverlay, timezone, visibleDays]);
+  }, [displayEvents, timezone, visibleDays]);
+
+  const updateEventListParams = useCallback(
+    ({
+      query,
+      scope,
+      page,
+    }: {
+      query?: string;
+      scope?: 'future' | 'past' | 'all';
+      page?: number;
+    }) => {
+      const next = new URLSearchParams(searchParams.toString());
+      const current = eventListParamsRef.current ?? eventListUrlParams;
+      const nextQuery = query ?? current.query;
+      const nextScope = scope ?? current.scope;
+      const nextPage = page ?? current.page;
+      const nextParams = { query: nextQuery.trim(), scope: nextScope, page: nextPage };
+      eventListParamsRef.current = nextParams;
+      setOptimisticEventListParams({ params: nextParams, sourceSearchParamsKey: searchParamsKey });
+
+      if (nextQuery.trim()) next.set('eventQ', nextQuery.trim());
+      else next.delete('eventQ');
+      if (nextScope === 'future') next.delete('eventScope');
+      else next.set('eventScope', nextScope);
+      if (nextPage > 0) next.set('eventPage', String(nextPage + 1));
+      else next.delete('eventPage');
+
+      router.push(`/app/calendar?${next.toString()}`);
+    },
+    [eventListUrlParams, router, searchParams, searchParamsKey],
+  );
 
   function push(nextMode: CalendarViewMode, nextDate: Temporal.PlainDate) {
-    router.push(`/app/calendar?view=${nextMode}&date=${nextDate.toString()}`);
+    const next = new URLSearchParams(searchParams.toString());
+    next.set('view', nextMode);
+    next.set('date', nextDate.toString());
+    router.push(`/app/calendar?${next.toString()}`);
   }
 
   function move(direction: -1 | 1) {
@@ -509,53 +664,265 @@ function CalendarViewContent({
 
   const gridCols = safeMode === 'day' ? 'grid-cols-1' : 'grid-cols-[3rem_repeat(7,minmax(0,1fr))]';
 
+  return {
+    anchor,
+    currentToday,
+    displayEventListEvents,
+    draft,
+    editing,
+    error,
+    eventListPage: eventListDisplayParams.page,
+    eventListQuery: eventListDisplayParams.query,
+    eventListScope: eventListDisplayParams.scope,
+    eventListTotal,
+    eventsByDay,
+    gridCols,
+    members,
+    move,
+    open,
+    openCreate,
+    openEdit,
+    pending,
+    push,
+    remove,
+    safeMode,
+    save,
+    saveState,
+    surfaceError,
+    timezone,
+    updateEventListParams,
+    visibleDays,
+    dispatchCalendarUi,
+  };
+}
+
+function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarViewModel> }) {
   return (
     <div className="space-y-4">
       <CalendarToolbar
-        mode={safeMode}
-        anchor={anchor}
-        timezone={timezone}
-        title={titleFor(safeMode, anchor)}
-        today={currentToday}
-        onPush={push}
-        onMove={move}
+        mode={model.safeMode}
+        anchor={model.anchor}
+        timezone={model.timezone}
+        title={titleFor(model.safeMode, model.anchor)}
+        today={model.currentToday}
+        onPush={model.push}
+        onMove={model.move}
         onCreate={() => {
-          openCreate();
+          model.openCreate();
         }}
       />
-      <CalendarSaveStatus saveState={saveState} surfaceError={surfaceError} />
+      <CalendarSaveStatus saveState={model.saveState} surfaceError={model.surfaceError} />
       <CalendarBody
-        mode={safeMode}
-        gridCols={gridCols}
-        anchor={anchor}
-        visibleDays={visibleDays}
-        eventsByDay={eventsByDay}
-        timezone={timezone}
-        today={currentToday}
-        onCreate={openCreate}
-        onEdit={openEdit}
+        mode={model.safeMode}
+        gridCols={model.gridCols}
+        anchor={model.anchor}
+        visibleDays={model.visibleDays}
+        eventsByDay={model.eventsByDay}
+        timezone={model.timezone}
+        today={model.currentToday}
+        onCreate={model.openCreate}
+        onEdit={model.openEdit}
+      />
+      <CalendarEventList
+        events={model.displayEventListEvents}
+        total={model.eventListTotal}
+        timezone={model.timezone}
+        query={model.eventListQuery}
+        scope={model.eventListScope}
+        page={model.eventListPage}
+        onQueryChange={(query) => {
+          model.updateEventListParams({ query, page: 0 });
+        }}
+        onScopeChange={(scope) => {
+          model.updateEventListParams({ scope, page: 0 });
+        }}
+        onPageChange={(page) => {
+          model.updateEventListParams({ page });
+        }}
+        onEdit={model.openEdit}
       />
       <CalendarEventDialog
-        open={open}
-        editing={editing}
-        draft={draft}
-        error={error}
-        pending={pending}
-        timezone={timezone}
-        members={members}
+        open={model.open}
+        editing={model.editing}
+        draft={model.draft}
+        error={model.error}
+        pending={model.pending}
+        timezone={model.timezone}
+        members={model.members}
         onOpenChange={(nextOpen) => {
-          dispatchCalendarUi({ open: nextOpen });
+          model.dispatchCalendarUi({ open: nextOpen });
         }}
         onDraftChange={(action) => {
-          dispatchCalendarUi((current) => ({
+          model.dispatchCalendarUi((current) => ({
             ...current,
             draft: typeof action === 'function' ? action(current.draft) : action,
           }));
         }}
-        onSave={save}
-        onRemove={remove}
+        onSave={model.save}
+        onRemove={model.remove}
       />
     </div>
+  );
+}
+
+function CalendarEventList({
+  events,
+  total,
+  timezone,
+  query,
+  scope,
+  page,
+  onQueryChange,
+  onScopeChange,
+  onPageChange,
+  onEdit,
+}: {
+  events: CalendarEvent[];
+  total: number;
+  timezone: string;
+  query: string;
+  scope: 'future' | 'past' | 'all';
+  page: number;
+  onQueryChange: (query: string) => void;
+  onScopeChange: (scope: 'future' | 'past' | 'all') => void;
+  onPageChange: (page: number) => void;
+  onEdit: (event: CalendarEvent) => void;
+}) {
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const committedSearchRef = useRef(query);
+  const pageCount = Math.max(1, Math.ceil(total / EVENT_LIST_PAGE_SIZE));
+  const effectivePage = Math.min(page, pageCount - 1);
+  const pageStart = effectivePage * EVENT_LIST_PAGE_SIZE;
+
+  useEffect(() => {
+    if (query === committedSearchRef.current) return;
+    committedSearchRef.current = query;
+    if (searchInputRef.current) searchInputRef.current.value = query;
+  }, [query]);
+
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, []);
+
+  return (
+    <section className="border-t border-border pt-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-fg">
+            Calendar events
+          </h2>
+          <p className="mt-1 text-sm text-fg-muted">
+            {total} {scope === 'future' ? 'upcoming' : scope} event
+            {total === 1 ? '' : 's'}
+          </p>
+        </div>
+        <div className="flex min-w-64 items-center gap-2 rounded-md border border-input bg-background px-3">
+          <Search className="size-4 text-fg-dim" />
+          <Input
+            ref={searchInputRef}
+            defaultValue={query}
+            onChange={(event) => {
+              const nextQuery = event.target.value;
+              if (searchTimer.current) clearTimeout(searchTimer.current);
+              searchTimer.current = setTimeout(() => {
+                committedSearchRef.current = nextQuery.trim();
+                onQueryChange(nextQuery);
+              }, 350);
+            }}
+            placeholder="Search events"
+            className="h-9 border-0 px-0 ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          {(['future', 'past', 'all'] as const).map((nextScope) => (
+            <Button
+              key={nextScope}
+              type="button"
+              size="sm"
+              variant={scope === nextScope ? 'default' : 'outline'}
+              onClick={() => {
+                onScopeChange(nextScope);
+              }}
+            >
+              {nextScope === 'future' ? 'Today+' : nextScope}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-3 divide-y divide-border border border-border bg-bg">
+        {events.length > 0 ? (
+          events.map((event) => (
+            <button
+              key={event.id}
+              type="button"
+              className="grid w-full gap-3 p-3 text-left transition-colors hover:bg-muted/30 md:grid-cols-[minmax(10rem,0.45fr)_minmax(0,1fr)_8rem]"
+              onClick={() => {
+                onEdit(event);
+              }}
+            >
+              <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+                {formatEventRange(event, timezone)}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-fg">
+                  {event.redacted ? 'Busy' : event.title}
+                </span>
+                <span className="mt-1 block truncate text-xs text-fg-muted">
+                  {[event.location, event.description].filter(Boolean).join(' · ') ||
+                    (event.allDay ? 'All day' : event.showAs)}
+                </span>
+              </span>
+              <span className="self-center justify-self-start rounded-sm border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-fg-dim md:justify-self-end">
+                {event.visibility}
+              </span>
+            </button>
+          ))
+        ) : (
+          <p className="p-4 text-sm text-fg-muted">No calendar events match these filters.</p>
+        )}
+      </div>
+
+      {total > EVENT_LIST_PAGE_SIZE ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+            {pageStart + 1}-{Math.min(pageStart + events.length, total)} of {total}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              disabled={effectivePage === 0}
+              aria-label="Previous events"
+              onClick={() => {
+                onPageChange(Math.max(0, effectivePage - 1));
+              }}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+              Page {effectivePage + 1} / {pageCount}
+            </p>
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              disabled={effectivePage >= pageCount - 1}
+              aria-label="Next events"
+              onClick={() => {
+                onPageChange(Math.min(pageCount - 1, effectivePage + 1));
+              }}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

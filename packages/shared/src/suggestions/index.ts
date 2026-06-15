@@ -1921,19 +1921,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       agent_suggestion_item_id: item.id,
     };
 
-    const existingConds = [
-      eq(entities.teamId, teamId),
-      eq(entities.type, type),
-      isNull(entities.mergedIntoId),
-      isNull(entities.archivedAt),
-    ];
     const allowCanonicalExistingMatch =
       item.status !== 'failed' &&
       !(
         item.targetKind === 'object' &&
         (await hasDependentObjectNoteSibling(item, canonicalName, type))
       );
-    const existingMatch = !allowCanonicalExistingMatch
+    const existingIdentity = !allowCanonicalExistingMatch
       ? sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`
       : or(
           sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
@@ -1942,7 +1936,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const existingRows = await db
       .select()
       .from(entities)
-      .where(and(...existingConds, existingMatch))
+      .where(
+        and(
+          eq(entities.teamId, teamId),
+          eq(entities.type, type),
+          isNull(entities.mergedIntoId),
+          isNull(entities.archivedAt),
+          existingIdentity,
+        ),
+      )
       .orderBy(desc(sql`(${entities.metadata} ->> 'agent_suggestion_item_id') = ${item.id}`))
       .limit(1);
     const existing = existingRows[0];

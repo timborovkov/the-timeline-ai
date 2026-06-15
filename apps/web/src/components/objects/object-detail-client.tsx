@@ -37,7 +37,6 @@ import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
-import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { cn, errorMessage } from '@/lib/utils';
 
 const RELATIONSHIP_KINDS = [
@@ -246,7 +245,6 @@ export function ObjectDetailClient({ detail, userId, suggestions }: Props) {
 function useObjectDetailController({ detail, userId, suggestions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const pendingApprovalItemCount = countPendingApprovalItems(suggestions);
   const [
     {
       overrides,
@@ -709,7 +707,6 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     noteBody,
     patch,
     pending,
-    pendingApprovalItemCount,
     rejectChange,
     removeRelationship,
     saveNote,
@@ -739,13 +736,20 @@ function ObjectDetailView(props: Props) {
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <main className="min-w-0 space-y-6">
           {view.suggestions.length > 0 ? (
-            <ObjectPanel
-              title="Pending approvals"
-              eyebrow={`${view.pendingApprovalItemCount} waiting`}
-              className="border-signal/40 bg-signal-soft/40"
-            >
-              <ApprovalsClient suggestions={view.suggestions} allowBulkAccept={false} />
-            </ObjectPanel>
+            <ApprovalsClient
+              suggestions={view.suggestions}
+              allowBulkAccept={false}
+              folded={{
+                title: 'Pending approvals',
+                summary: (count) => `${count} waiting`,
+                className: 'border border-signal/40 bg-signal-soft/20',
+                summaryClassName: 'cursor-pointer list-none px-4 py-3',
+                bodyClassName: 'border-t border-border p-4',
+                titleClassName: 'text-sm font-semibold tracking-tight',
+                countClassName: 'mt-1 text-xs text-fg-muted',
+                openLabelClassName: 'font-mono text-[10px] uppercase tracking-[0.14em] text-fg-dim',
+              }}
+            />
           ) : null}
 
           <ObjectPanel title="Evidence" eyebrow="events">
@@ -830,17 +834,6 @@ function ObjectDetailView(props: Props) {
         </aside>
       </div>
     </div>
-  );
-}
-
-function countPendingApprovalItems(suggestions: LocalSuggestion[]): number {
-  return suggestions.reduce(
-    (count, bundle) =>
-      count +
-      bundle.items.filter(
-        (item) => isActionableSuggestionStatus(item.status) && item.targetKind !== 'object_merge',
-      ).length,
-    0,
   );
 }
 
