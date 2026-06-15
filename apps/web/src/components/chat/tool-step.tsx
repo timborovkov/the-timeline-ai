@@ -93,6 +93,28 @@ function summarize(name: string, input: unknown, output: unknown, state: string)
     if (state === 'output-denied') return 'Denied object merge';
     return `Merge ${String(ids)} objects`;
   }
+  if (name === 'execute_calendar_create') {
+    const out = output as { ok?: boolean; message?: string } | undefined;
+    if (out?.message) return out.message;
+    const title = typeof inp.title === 'string' ? inp.title : 'calendar event';
+    if (state === 'approval-requested') return `Approval needed to create ${title}`;
+    if (state === 'output-denied') return `Denied calendar event create`;
+    return `Create ${title}`;
+  }
+  if (name === 'execute_calendar_update') {
+    const out = output as { ok?: boolean; message?: string } | undefined;
+    if (out?.message) return out.message;
+    if (state === 'approval-requested') return 'Approval needed to update calendar event';
+    if (state === 'output-denied') return 'Denied calendar event update';
+    return 'Update calendar event';
+  }
+  if (name === 'execute_calendar_cancel') {
+    const out = output as { ok?: boolean; message?: string } | undefined;
+    if (out?.message) return out.message;
+    if (state === 'approval-requested') return 'Approval needed to cancel calendar event';
+    if (state === 'output-denied') return 'Denied calendar event cancellation';
+    return 'Cancel calendar event';
+  }
   if (name === 'search_boards') {
     const q = typeof inp.query === 'string' ? inp.query : '';
     const out = output as { count?: number } | undefined;
@@ -413,6 +435,8 @@ function ToolApprovalCard({
     : [];
   const survivorId = typeof record.survivorId === 'string' ? record.survivorId : null;
   const entityId = typeof record.entityId === 'string' ? record.entityId : null;
+  const calendarEventId = typeof record.id === 'string' ? record.id : null;
+  const patch = record.patch && typeof record.patch === 'object' ? record.patch : null;
   const field = typeof record.field === 'string' ? record.field : 'field';
   const reason = typeof record.reason === 'string' ? record.reason : null;
   const mergedIds = survivorId ? objectIds.filter((id) => id !== survivorId) : [];
@@ -443,6 +467,55 @@ function ToolApprovalCard({
           {typeof record.parentObjectId === 'string' ? (
             <ApprovalRow label="Parent">
               <ArtifactReferenceChip refValue={{ kind: 'object', id: record.parentObjectId }} />
+            </ApprovalRow>
+          ) : null}
+          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+        </dl>
+      ) : name === 'execute_calendar_create' ? (
+        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+          <ApprovalRow label="Title">{formatApprovalValue(record.title)}</ApprovalRow>
+          <ApprovalRow label="Start">{formatApprovalValue(record.startAt)}</ApprovalRow>
+          <ApprovalRow label="End">{formatApprovalValue(record.endAt)}</ApprovalRow>
+          {record.timezone !== undefined ? (
+            <ApprovalRow label="Timezone">{formatApprovalValue(record.timezone)}</ApprovalRow>
+          ) : null}
+          {record.allDay !== undefined ? (
+            <ApprovalRow label="All day">{formatApprovalValue(record.allDay)}</ApprovalRow>
+          ) : null}
+          {record.location !== undefined ? (
+            <ApprovalRow label="Location">{formatApprovalValue(record.location)}</ApprovalRow>
+          ) : null}
+          {record.rrule !== undefined ? (
+            <ApprovalRow label="Repeat">{formatApprovalValue(record.rrule)}</ApprovalRow>
+          ) : null}
+          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+        </dl>
+      ) : name === 'execute_calendar_update' ? (
+        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+          {calendarEventId ? (
+            <ApprovalRow label="Event">
+              <ArtifactReferenceChip refValue={{ kind: 'calendar_event', id: calendarEventId }} />
+            </ApprovalRow>
+          ) : null}
+          {patch ? (
+            <ApprovalRow label="Change">
+              {Object.entries(patch)
+                .map(([key, value]) => `${key}: ${formatApprovalValue(value)}`)
+                .join(', ')}
+            </ApprovalRow>
+          ) : null}
+          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+        </dl>
+      ) : name === 'execute_calendar_cancel' ? (
+        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+          {calendarEventId ? (
+            <ApprovalRow label="Event">
+              <ArtifactReferenceChip refValue={{ kind: 'calendar_event', id: calendarEventId }} />
+            </ApprovalRow>
+          ) : null}
+          {record.recurrenceEditMode !== undefined ? (
+            <ApprovalRow label="Scope">
+              {formatApprovalValue(record.recurrenceEditMode)}
             </ApprovalRow>
           ) : null}
           {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}

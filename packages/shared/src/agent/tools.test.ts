@@ -40,6 +40,10 @@ interface FakeScope {
   };
   calendar: {
     listCalendarEvents: ReturnType<typeof vi.fn>;
+    getCalendarEvent: ReturnType<typeof vi.fn>;
+    createCalendarEvent: ReturnType<typeof vi.fn>;
+    updateCalendarEvent: ReturnType<typeof vi.fn>;
+    deleteCalendarEvent: ReturnType<typeof vi.fn>;
     getCalendarSettings: ReturnType<typeof vi.fn>;
   };
   suggestions: {
@@ -85,6 +89,10 @@ function makeFakeScope(): FakeScope {
     },
     calendar: {
       listCalendarEvents: vi.fn(),
+      getCalendarEvent: vi.fn(),
+      createCalendarEvent: vi.fn(),
+      updateCalendarEvent: vi.fn(),
+      deleteCalendarEvent: vi.fn(),
       getCalendarSettings: vi.fn().mockResolvedValue({ defaultTimezone: 'UTC' }),
     },
     suggestions: {
@@ -118,6 +126,42 @@ const BOARD_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const BOARD_ITEM_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const LANE_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const DOCUMENT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const CALENDAR_EVENT_ID = '12121212-1212-4212-8212-121212121212';
+
+function calendarEventFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: CALENDAR_EVENT_ID,
+    teamId: '22222222-2222-4222-8222-222222222222',
+    createdByUserId: '77777777-7777-4777-8777-777777777777',
+    title: 'Daily standup',
+    description: 'Discuss blockers',
+    startAt: new Date('2026-06-14T09:00:00.000Z'),
+    endAt: new Date('2026-06-14T09:30:00.000Z'),
+    timezone: 'UTC',
+    allDay: false,
+    location: 'Zoom',
+    showAs: 'busy',
+    visibility: 'team',
+    visibilityUserIds: null,
+    recurringParentId: null,
+    originalStartAt: null,
+    isException: false,
+    rrule: null,
+    reminderMinutes: null,
+    source: 'internal',
+    externalCalendarId: null,
+    externalEventId: null,
+    agentSuggested: false,
+    metadata: {},
+    scheduledRawEventId: null,
+    startAtRawEventId: null,
+    createdAt: new Date('2026-06-01T12:00:00.000Z'),
+    updatedAt: new Date('2026-06-01T12:00:00.000Z'),
+    deletedAt: null,
+    redacted: false,
+    ...overrides,
+  };
+}
 
 interface GuideToolResult {
   count: number;
@@ -554,6 +598,175 @@ describe('buildAgentTools — team isolation', () => {
       error: 'stale_state',
       expected_object_ids: [OBJECT_ID, otherId].sort(),
       current_object_ids: [OBJECT_ID, resolvedId].sort(),
+    });
+  });
+
+  it('execute_calendar_create requires approval and creates a canonical event directly', async () => {
+    const scope = makeFakeScope();
+    const event = calendarEventFixture({ title: 'Pilot planning' });
+    scope.calendar.createCalendarEvent.mockResolvedValue(event);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_calendar_create?.needsApproval).toBe(true);
+    const exec = tools.execute_calendar_create?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        title: 'Pilot planning',
+        startAt: '2026-06-14T10:00:00.000Z',
+        endAt: '2026-06-14T10:30:00.000Z',
+        timezone: 'UTC',
+        location: 'Zoom',
+        reason: 'User asked to schedule it now.',
+      },
+      {},
+    );
+
+    expect(scope.calendar.createCalendarEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Pilot planning',
+        startAt: new Date('2026-06-14T10:00:00.000Z'),
+        endAt: new Date('2026-06-14T10:30:00.000Z'),
+        timezone: 'UTC',
+        allDay: false,
+        location: 'Zoom',
+        showAs: 'busy',
+        visibility: 'team',
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      calendar_event_id: CALENDAR_EVENT_ID,
+      calendar_citation: `[cal:${CALENDAR_EVENT_ID}]`,
+      event: {
+        id: CALENDAR_EVENT_ID,
+        citation: `[cal:${CALENDAR_EVENT_ID}]`,
+        title: 'Pilot planning',
+      },
+    });
+  });
+
+  it('execute_calendar_update rejects stale event state before mutating', async () => {
+    const scope = makeFakeScope();
+    scope.calendar.getCalendarEvent.mockResolvedValue(
+      calendarEventFixture({ title: 'Daily standup' }),
+    );
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const exec = tools.execute_calendar_update?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        id: CALENDAR_EVENT_ID,
+        expectedCurrent: { title: 'Weekly standup' },
+        patch: { title: 'Daily sync' },
+        reason: 'User asked to rename it.',
+      },
+      {},
+    );
+
+    expect(scope.calendar.updateCalendarEvent).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'stale_state',
+      calendar_citation: `[cal:${CALENDAR_EVENT_ID}]`,
+      stale_fields: {
+        title: {
+          expected: 'Weekly standup',
+          current: 'Daily standup',
+        },
+      },
+    });
+  });
+
+  it('execute_calendar_update applies direct updates and reconciles pending suggestions', async () => {
+    const scope = makeFakeScope();
+    scope.calendar.getCalendarEvent.mockResolvedValue(calendarEventFixture());
+    scope.calendar.updateCalendarEvent.mockResolvedValue(
+      calendarEventFixture({ title: 'Daily sync', changedFields: ['title'] }),
+    );
+    scope.suggestions.reconcileCanonicalChange.mockResolvedValue(1);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_calendar_update?.needsApproval).toBe(true);
+    const exec = tools.execute_calendar_update?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        id: CALENDAR_EVENT_ID,
+        expectedCurrent: { title: 'Daily standup' },
+        patch: { title: 'Daily sync' },
+        reason: 'User asked to rename it.',
+      },
+      {},
+    );
+
+    expect(scope.calendar.updateCalendarEvent).toHaveBeenCalledWith(CALENDAR_EVENT_ID, {
+      title: 'Daily sync',
+    });
+    expect(scope.suggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+      targetKind: 'calendar_event',
+      targetId: CALENDAR_EVENT_ID,
+      operation: 'update',
+      patch: { title: true },
+      reason: 'The chat agent updated this calendar event after explicit in-chat approval.',
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      calendar_event_id: CALENDAR_EVENT_ID,
+      calendar_citation: `[cal:${CALENDAR_EVENT_ID}]`,
+      changed_fields: ['title'],
+      reconciled_approvals: 1,
+    });
+  });
+
+  it('execute_calendar_cancel requires approval and reconciles pending cancellations', async () => {
+    const scope = makeFakeScope();
+    scope.calendar.getCalendarEvent.mockResolvedValue(calendarEventFixture());
+    scope.calendar.deleteCalendarEvent.mockResolvedValue(true);
+    scope.suggestions.reconcileCanonicalChange.mockResolvedValue(3);
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    expect(tools.execute_calendar_cancel?.needsApproval).toBe(true);
+    const exec = tools.execute_calendar_cancel?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+
+    const result = await exec(
+      {
+        id: CALENDAR_EVENT_ID,
+        expectedCurrent: {
+          title: 'Daily standup',
+          startAt: '2026-06-14T09:00:00.000Z',
+          endAt: '2026-06-14T09:30:00.000Z',
+        },
+        recurrenceEditMode: 'single',
+        reason: 'User asked to cancel it.',
+      },
+      {},
+    );
+
+    expect(scope.calendar.deleteCalendarEvent).toHaveBeenCalledWith(CALENDAR_EVENT_ID, {
+      recurrenceEditMode: 'single',
+    });
+    expect(scope.suggestions.reconcileCanonicalChange).toHaveBeenCalledWith({
+      targetKind: 'calendar_event',
+      targetId: CALENDAR_EVENT_ID,
+      operation: 'archive_or_cancel',
+      reason: 'The chat agent cancelled this calendar event after explicit in-chat approval.',
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      calendar_event_id: CALENDAR_EVENT_ID,
+      calendar_citation: `[cal:${CALENDAR_EVENT_ID}]`,
+      cancelled: true,
+      reconciled_approvals: 3,
     });
   });
 

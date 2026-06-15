@@ -106,6 +106,77 @@ describe('ToolStep', () => {
     expect(html).toContain('User confirmed this object is obsolete.');
   });
 
+  it('renders calendar-create approval details', () => {
+    const html = renderToStaticMarkup(
+      createElement(ToolStep, {
+        name: 'execute_calendar_create',
+        state: 'approval-requested',
+        input: {
+          title: 'Pilot planning',
+          startAt: '2026-06-14T10:00:00.000Z',
+          endAt: '2026-06-14T10:30:00.000Z',
+          timezone: 'UTC',
+          location: 'Zoom',
+          reason: 'User asked to schedule it now.',
+        },
+        approval: { id: 'approval-calendar-create' },
+        onApprovalResponse: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('approval required');
+    expect(html).toContain('Pilot planning');
+    expect(html).toContain('2026-06-14T10:00:00.000Z');
+    expect(html).toContain('Zoom');
+  });
+
+  it('renders calendar-update approval details with an event chip', () => {
+    const html = renderToStaticMarkup(
+      createElement(ToolStep, {
+        name: 'execute_calendar_update',
+        state: 'approval-requested',
+        input: {
+          id: '12121212-1212-4212-8212-121212121212',
+          expectedCurrent: { title: 'Daily standup' },
+          patch: { title: 'Daily sync' },
+          reason: 'User asked to rename it.',
+        },
+        approval: { id: 'approval-calendar-update' },
+        onApprovalResponse: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('approval required');
+    expect(html).toContain('[cal:12121212]');
+    expect(html).toContain('title: Daily sync');
+  });
+
+  it('renders calendar-cancel approval details with recurrence scope', () => {
+    const html = renderToStaticMarkup(
+      createElement(ToolStep, {
+        name: 'execute_calendar_cancel',
+        state: 'approval-requested',
+        input: {
+          id: '12121212-1212-4212-8212-121212121212',
+          expectedCurrent: {
+            title: 'Daily standup',
+            startAt: '2026-06-14T09:00:00.000Z',
+            endAt: '2026-06-14T09:30:00.000Z',
+          },
+          recurrenceEditMode: 'single',
+          reason: 'User asked to cancel it.',
+        },
+        approval: { id: 'approval-calendar-cancel' },
+        onApprovalResponse: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain('approval required');
+    expect(html).toContain('[cal:12121212]');
+    expect(html).toContain('single');
+    expect(html).toContain('User asked to cancel it.');
+  });
+
   it('renders object preview chips for merge approvals', () => {
     const survivorId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const mergedId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';

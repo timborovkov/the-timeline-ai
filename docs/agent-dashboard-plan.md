@@ -391,19 +391,18 @@ caused this giant context window?"
 
 ## 7. In-Chat HITL And Two-Phase Action Contract
 
-Status: object-action slice implemented for create, update, archive, and merge.
-Dashboard chat now has `execute_object_create`, `execute_object_update`,
-`execute_object_archive`, and `execute_object_merge`, approval-required Vercel
-AI SDK tools that do not create background approval-queue items. Object updates
-require the observed current field value and reject stale state before writing.
-Object archives render the target object as a preview chip, run through
-`scope.objects.archiveObject`, and reconcile duplicate pending archive
-approvals. Object merges re-preview all target objects, render survivor/merged
-objects as preview chips, reject stale/resolved targets, execute through
-`scope.objects.mergeObjects`, and reconcile duplicate pending merge approvals.
-Remaining work is a persisted `preparedActionId` store for multi-step/high-risk
-actions and expanding the same direct HITL pattern to calendar, board, and task
-mutations.
+Status: object and calendar action slices implemented. Dashboard chat now has
+approval-required Vercel AI SDK tools for object create/update/archive/merge
+and calendar create/update/cancel, all without creating background
+approval-queue items. Object updates require the observed current field value
+and reject stale state before writing. Object archives and calendar
+updates/cancellations render preview chips, run through canonical scope methods,
+and reconcile duplicate pending approvals. Object merges re-preview all target
+objects, render survivor/merged objects as preview chips, reject stale/resolved
+targets, execute through `scope.objects.mergeObjects`, and reconcile duplicate
+pending merge approvals. Remaining work is a persisted `preparedActionId` store
+for multi-step/high-risk actions and expanding the same direct HITL pattern to
+board and task mutations.
 
 ### Goal
 

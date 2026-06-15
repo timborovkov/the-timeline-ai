@@ -296,6 +296,75 @@ const executeObjectArchiveInput = z.object({
   reason: z.string().trim().min(1).max(1000),
 });
 
+const calendarVisibilitySchema = z.enum(['team', 'private', 'specific_users']);
+const calendarShowAsSchema = z.enum(['busy', 'free', 'tentative']);
+const recurrenceEditModeSchema = z.enum(['single', 'series', 'this_and_future']);
+
+const executeCalendarCreateInput = z.object({
+  title: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(2000).nullable().optional(),
+  startAt: z.iso.datetime(),
+  endAt: z.iso.datetime(),
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  timezone: z.string().max(100).optional(),
+  allDay: z.boolean().optional(),
+  location: z.string().trim().max(500).nullable().optional(),
+  showAs: calendarShowAsSchema.optional(),
+  rrule: z.string().trim().max(2000).nullable().optional(),
+  visibility: calendarVisibilitySchema.optional(),
+  visibilityUserIds: z.array(z.string().regex(UUID_RE)).max(50).nullable().optional(),
+  reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+  linkedEntityIds: z.array(z.string().regex(UUID_RE)).max(20).optional(),
+  reason: z.string().trim().min(1).max(1000),
+});
+
+const calendarComparableValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.array(z.string()),
+]);
+
+const executeCalendarUpdateInput = z.object({
+  id: z.string().regex(UUID_RE),
+  expectedCurrent: z.record(z.string(), calendarComparableValueSchema),
+  patch: z.object({
+    title: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().max(2000).nullable().optional(),
+    startAt: z.iso.datetime().optional(),
+    endAt: z.iso.datetime().optional(),
+    timezone: z.string().max(100).optional(),
+    allDay: z.boolean().optional(),
+    location: z.string().trim().max(500).nullable().optional(),
+    showAs: calendarShowAsSchema.optional(),
+    rrule: z.string().trim().max(2000).nullable().optional(),
+    recurrenceEditMode: recurrenceEditModeSchema.optional(),
+    visibility: calendarVisibilitySchema.optional(),
+    visibilityUserIds: z.array(z.string().regex(UUID_RE)).max(50).nullable().optional(),
+    reminderMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+  }),
+  reason: z.string().trim().min(1).max(1000),
+});
+
+const executeCalendarCancelInput = z.object({
+  id: z.string().regex(UUID_RE),
+  expectedCurrent: z.object({
+    title: z.string(),
+    startAt: z.iso.datetime(),
+    endAt: z.iso.datetime(),
+  }),
+  recurrenceEditMode: recurrenceEditModeSchema.optional(),
+  reason: z.string().trim().min(1).max(1000),
+});
+
 const searchAppGuideInput = z.object({
   query: z.string().trim().min(1).max(300),
   limit: z.number().int().min(1).max(10).optional(),
@@ -410,6 +479,27 @@ function serializeBoardItemRow(row: boards.BoardItemRow): Record<string, unknown
     next_step: row.nextStep,
     notes: row.notes,
     updated_at: row.updatedAt.toISOString(),
+  };
+}
+
+function serializeCalendarEventRow(event: CalendarEventForComparison): Record<string, unknown> {
+  return {
+    id: event.id,
+    citation: artifactRefCitation({ kind: 'calendar_event', id: event.id }),
+    title: event.title,
+    description: event.redacted ? null : event.description,
+    start_at: event.startAt.toISOString(),
+    end_at: event.endAt.toISOString(),
+    timezone: event.timezone,
+    all_day: event.allDay,
+    location: event.redacted ? null : event.location,
+    show_as: event.showAs,
+    rrule: event.rrule,
+    recurring_parent_id: event.recurringParentId,
+    original_start_at: event.originalStartAt?.toISOString() ?? null,
+    is_exception: event.isException,
+    visibility: event.visibility,
+    redacted: event.redacted,
   };
 }
 
@@ -579,6 +669,118 @@ function compactMergePreview(
 
 function objectKindForCitation(row: Pick<objects.ObjectRow, 'type'>): 'object' | 'task' {
   return row.type === 'task' || row.type === 'follow_up' ? 'task' : 'object';
+}
+
+type CalendarEventForComparison = NonNullable<
+  Awaited<ReturnType<TeamScope['calendar']['getCalendarEvent']>>
+>;
+
+function currentCalendarValue(event: CalendarEventForComparison, field: string): unknown {
+  switch (field) {
+    case 'title':
+      return event.title;
+    case 'description':
+      return event.redacted ? null : event.description;
+    case 'startAt':
+      return event.startAt.toISOString();
+    case 'endAt':
+      return event.endAt.toISOString();
+    case 'timezone':
+      return event.timezone;
+    case 'allDay':
+      return event.allDay;
+    case 'location':
+      return event.redacted ? null : event.location;
+    case 'showAs':
+      return event.showAs;
+    case 'rrule':
+      return event.rrule;
+    case 'visibility':
+      return event.visibility;
+    case 'visibilityUserIds':
+      return event.visibilityUserIds ?? [];
+    case 'reminderMinutes':
+      return event.reminderMinutes;
+    default:
+      return undefined;
+  }
+}
+
+function normalizeCalendarPatchValue(field: string, value: unknown): unknown {
+  if (field === 'startAt' || field === 'endAt') {
+    return typeof value === 'string' ? new Date(value).toISOString() : value;
+  }
+  if (field === 'visibilityUserIds') {
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string').sort()
+      : [];
+  }
+  return value ?? null;
+}
+
+function calendarValuesMatch(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function buildCalendarPatch(
+  patch: z.infer<typeof executeCalendarUpdateInput>['patch'],
+): Parameters<TeamScope['calendar']['updateCalendarEvent']>[1] {
+  const out: Parameters<TeamScope['calendar']['updateCalendarEvent']>[1] = {};
+  if (patch.title !== undefined) out.title = patch.title;
+  if (patch.description !== undefined) out.description = patch.description;
+  if (patch.startAt !== undefined) out.startAt = new Date(patch.startAt);
+  if (patch.endAt !== undefined) out.endAt = new Date(patch.endAt);
+  if (patch.timezone !== undefined) out.timezone = patch.timezone;
+  if (patch.allDay !== undefined) out.allDay = patch.allDay;
+  if (patch.location !== undefined) out.location = patch.location;
+  if (patch.showAs !== undefined) out.showAs = patch.showAs;
+  if (patch.rrule !== undefined) out.rrule = patch.rrule;
+  if (patch.recurrenceEditMode !== undefined) out.recurrenceEditMode = patch.recurrenceEditMode;
+  if (patch.visibility !== undefined) out.visibility = patch.visibility;
+  if (patch.visibilityUserIds !== undefined) out.visibilityUserIds = patch.visibilityUserIds;
+  if (patch.reminderMinutes !== undefined) out.reminderMinutes = patch.reminderMinutes;
+  return out;
+}
+
+async function normalizeCalendarCreateInput(
+  scope: TeamScope,
+  input: z.infer<typeof executeCalendarCreateInput>,
+): Promise<Parameters<TeamScope['calendar']['createCalendarEvent']>[0]> {
+  const settings = await scope.calendar.getCalendarSettings();
+  const timezone = input.timezone ?? settings.defaultTimezone;
+  const allDay = input.allDay ?? false;
+  let startAt = input.startAt;
+  let endAt = input.endAt;
+  if (allDay) {
+    const startDate = input.startDate ?? localDateFromInstant(input.startAt, timezone);
+    let endDate = input.endDate ?? localDateFromInstant(input.endAt, timezone);
+    if (endDate <= startDate) {
+      const d = new Date(`${startDate}T00:00:00.000Z`);
+      d.setUTCDate(d.getUTCDate() + 1);
+      endDate = d.toISOString().slice(0, 10);
+    }
+    const range = localDateSpanToUtcRange(startDate, endDate, timezone);
+    startAt = range.from.toISOString();
+    endAt = range.to.toISOString();
+  }
+  const start = new Date(startAt);
+  const end = new Date(endAt);
+  if (end <= start) throw new Error('End time must be after start time');
+  return {
+    title: input.title,
+    description: input.description ?? null,
+    startAt: start,
+    endAt: end,
+    timezone,
+    allDay,
+    location: input.location ?? null,
+    showAs: input.showAs ?? 'busy',
+    rrule: input.rrule ?? null,
+    visibility: input.visibility ?? 'team',
+    visibilityUserIds: input.visibilityUserIds ?? null,
+    reminderMinutes: input.reminderMinutes ?? null,
+    ...(input.linkedEntityIds !== undefined ? { linkedEntityIds: input.linkedEntityIds } : {}),
+  };
 }
 
 export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}): ToolSet {
@@ -2105,6 +2307,159 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             redacted: event.redacted,
             agent_suggested: event.agentSuggested,
             created_by_user_id: event.createdByUserId,
+          };
+        }),
+    }),
+
+    execute_calendar_create: tool({
+      description:
+        'Approval-required dashboard action. Directly create a canonical calendar event after the user approves in chat. Use only for explicit scheduling commands. Resolves all-day local dates with the workspace timezone and does NOT create a background approval queue item.',
+      inputSchema: executeCalendarCreateInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_calendar_create', async () => {
+          const input = executeCalendarCreateInput.parse(raw);
+          const event = await scope.calendar.createCalendarEvent(
+            await normalizeCalendarCreateInput(scope, input),
+          );
+          return {
+            ok: true,
+            calendar_event_id: event.id,
+            calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: event.id }),
+            event: serializeCalendarEventRow(event),
+            message: `Created calendar event: ${event.title}.`,
+          };
+        }),
+    }),
+
+    execute_calendar_update: tool({
+      description:
+        'Approval-required dashboard action. Directly update an existing calendar event after the user approves in chat. Use only for explicit update/move/reschedule commands. First call get_calendar_event, then pass expectedCurrent values for every field in patch so stale state is rejected. This does NOT create a background approval queue item.',
+      inputSchema: executeCalendarUpdateInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_calendar_update', async () => {
+          const input = executeCalendarUpdateInput.parse(raw);
+          const event = await scope.calendar.getCalendarEvent(input.id);
+          if (!event) return { ok: false, error: 'not_found' };
+          const staleFields: Record<string, { expected: unknown; current: unknown }> = {};
+          for (const field of Object.keys(input.patch)) {
+            if (field === 'recurrenceEditMode') continue;
+            if (!(field in input.expectedCurrent)) {
+              staleFields[field] = {
+                expected: 'missing_expected_current',
+                current: currentCalendarValue(event, field),
+              };
+              continue;
+            }
+            const expected = normalizeCalendarPatchValue(field, input.expectedCurrent[field]);
+            const current = normalizeCalendarPatchValue(field, currentCalendarValue(event, field));
+            if (!calendarValuesMatch(current, expected)) {
+              staleFields[field] = { expected, current };
+            }
+          }
+          if (Object.keys(staleFields).length > 0) {
+            return {
+              ok: false,
+              error: 'stale_state',
+              message:
+                'The calendar event changed since this action was prepared. Re-read the event before retrying.',
+              calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: input.id }),
+              stale_fields: staleFields,
+            };
+          }
+          const updated = await scope.calendar.updateCalendarEvent(
+            input.id,
+            buildCalendarPatch(input.patch),
+          );
+          if (!updated) return { ok: false, error: 'not_found' };
+          const reconciledApprovals =
+            updated.changedFields.length > 0
+              ? await scope.suggestions
+                  .reconcileCanonicalChange({
+                    targetKind: 'calendar_event',
+                    targetId: input.id,
+                    operation: 'update',
+                    patch: Object.fromEntries(updated.changedFields.map((field) => [field, true])),
+                    reason:
+                      'The chat agent updated this calendar event after explicit in-chat approval.',
+                  })
+                  .catch((err: unknown) => {
+                    log.warn(
+                      { err, calendarEventId: input.id },
+                      'calendar update reconcile failed',
+                    );
+                    options.onToolError?.(err, { tool: 'execute_calendar_update:reconcile' });
+                    return 0;
+                  })
+              : 0;
+          return {
+            ok: true,
+            calendar_event_id: updated.id,
+            calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: updated.id }),
+            event: serializeCalendarEventRow(updated),
+            changed_fields: updated.changedFields,
+            reconciled_approvals: reconciledApprovals,
+            message:
+              updated.changedFields.length === 0
+                ? `No change needed for calendar event: ${event.title}.`
+                : `Updated calendar event: ${updated.title}.`,
+          };
+        }),
+    }),
+
+    execute_calendar_cancel: tool({
+      description:
+        'Approval-required dashboard action. Directly cancel/delete an existing calendar event after the user approves in chat. Use only for explicit cancellation commands. First call get_calendar_event, then pass expected title/start/end so stale state is rejected. This does NOT create a background approval queue item.',
+      inputSchema: executeCalendarCancelInput,
+      needsApproval: true,
+      execute: async (raw) =>
+        runSafe('execute_calendar_cancel', async () => {
+          const input = executeCalendarCancelInput.parse(raw);
+          const event = await scope.calendar.getCalendarEvent(input.id);
+          if (!event) return { ok: false, error: 'not_found' };
+          const staleFields: Record<string, { expected: unknown; current: unknown }> = {};
+          for (const [field, expectedRaw] of Object.entries(input.expectedCurrent)) {
+            const expected = normalizeCalendarPatchValue(field, expectedRaw);
+            const current = normalizeCalendarPatchValue(field, currentCalendarValue(event, field));
+            if (!calendarValuesMatch(current, expected)) {
+              staleFields[field] = { expected, current };
+            }
+          }
+          if (Object.keys(staleFields).length > 0) {
+            return {
+              ok: false,
+              error: 'stale_state',
+              message:
+                'The calendar event changed since this cancellation was prepared. Re-read the event before retrying.',
+              calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: input.id }),
+              stale_fields: staleFields,
+            };
+          }
+          const deleted = await scope.calendar.deleteCalendarEvent(input.id, {
+            ...(input.recurrenceEditMode ? { recurrenceEditMode: input.recurrenceEditMode } : {}),
+          });
+          if (!deleted) return { ok: false, error: 'not_found' };
+          const reconciledApprovals = await scope.suggestions
+            .reconcileCanonicalChange({
+              targetKind: 'calendar_event',
+              targetId: input.id,
+              operation: 'archive_or_cancel',
+              reason:
+                'The chat agent cancelled this calendar event after explicit in-chat approval.',
+            })
+            .catch((err: unknown) => {
+              log.warn({ err, calendarEventId: input.id }, 'calendar cancel reconcile failed');
+              options.onToolError?.(err, { tool: 'execute_calendar_cancel:reconcile' });
+              return 0;
+            });
+          return {
+            ok: true,
+            calendar_event_id: input.id,
+            calendar_citation: artifactRefCitation({ kind: 'calendar_event', id: input.id }),
+            cancelled: true,
+            reconciled_approvals: reconciledApprovals,
+            message: `Cancelled calendar event: ${event.title}.`,
           };
         }),
     }),
