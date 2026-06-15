@@ -6,7 +6,9 @@ import {
   getEnv,
   getObjectBuffer,
   getS3Client,
+  isLikelyGeneratedDocumentName,
   llm,
+  normalizeSuggestedTitle,
   queue,
 } from '@timeline/shared';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
@@ -43,11 +45,12 @@ export interface DocumentExtractIO {
    * to `llm.extractTextFromMedia` (OpenRouter vision model). Tests inject
    * a fake so they can exercise the routing without hitting OpenRouter.
    */
-  extractFromMedia: (input: {
-    body: Buffer;
-    mediaType: string;
-    filename: string;
-  }) => Promise<{ text: string; visualDescription?: string; model: string }>;
+  extractFromMedia: (input: { body: Buffer; mediaType: string; filename: string }) => Promise<{
+    text: string;
+    suggestedTitle?: string;
+    visualDescription?: string;
+    model: string;
+  }>;
   /**
    * Native DOCX text extraction via mammoth. Splitting this out from
    * the worker body lets tests assert routing without needing a real
@@ -311,6 +314,7 @@ export async function processDocumentExtractJob(
     objectKeyTail && objectKeyTail.length > 0 ? objectKeyTail : document.name;
   let representations: ExtractedRepresentation[];
   let extractionModel: string = EXTRACT_CODE_VERSION;
+  let suggestedTitle: string | null = null;
   try {
     const routed = await routeContentToText({ contentType, body, name: filenameForRouting }, io);
     if ('failure' in routed) {
@@ -329,6 +333,7 @@ export async function processDocumentExtractJob(
     }
     representations = routed.representations;
     if (routed.model) extractionModel = routed.model;
+    suggestedTitle = normalizeSuggestedTitle(routed.suggestedTitle);
   } catch (err: unknown) {
     // Already stamped above for the routed-failure branch.
     if (err instanceof UnrecoverableError) throw err;
@@ -389,6 +394,19 @@ export async function processDocumentExtractJob(
         })),
       )
       .returning({ id: documentChunks.id });
+    if (suggestedTitle && isLikelyGeneratedDocumentName(document.name)) {
+      await tx
+        .update(documents)
+        .set({
+          metadata: sql`${documents.metadata} || ${JSON.stringify({
+            suggested_title: suggestedTitle,
+            suggested_title_source: 'document_extract',
+            suggested_title_model: extractionModel,
+            suggested_title_generated_at: new Date().toISOString(),
+          })}::jsonb`,
+        })
+        .where(eq(documents.id, document.id));
+    }
     await tx
       .update(documentVersions)
       .set({
@@ -477,7 +495,7 @@ export function startDocumentExtractWorker(
  *         likely uploaded a binary with the wrong Content-Type)
  */
 type RouteResult =
-  | { representations: ExtractedRepresentation[]; model?: string }
+  | { representations: ExtractedRepresentation[]; model?: string; suggestedTitle?: string }
   | { failure: string };
 
 async function routeContentToText(
@@ -568,7 +586,7 @@ async function routeContentToText(
 }
 
 function mediaRepresentations(
-  result: { text: string; visualDescription?: string; model: string },
+  result: { text: string; suggestedTitle?: string; visualDescription?: string; model: string },
   includeVisualDescription: boolean,
 ): RouteResult {
   const representations: ExtractedRepresentation[] = [];
@@ -578,5 +596,9 @@ function mediaRepresentations(
   if (includeVisualDescription && result.visualDescription?.trim()) {
     representations.push({ kind: 'visual_description', text: result.visualDescription });
   }
-  return { representations, model: result.model };
+  return {
+    representations,
+    model: result.model,
+    ...(result.suggestedTitle ? { suggestedTitle: result.suggestedTitle } : {}),
+  };
 }

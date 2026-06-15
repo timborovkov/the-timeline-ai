@@ -478,10 +478,11 @@ export async function getDocumentDownloadUrlAction(input: {
   });
 }
 
-function previewKind(contentType: string | null): 'image' | 'audio' | null {
+function previewKind(contentType: string | null): 'image' | 'audio' | 'pdf' | null {
   const base = contentType?.toLowerCase().split(';')[0]?.trim() ?? '';
   if (base.startsWith('image/')) return 'image';
   if (base.startsWith('audio/')) return 'audio';
+  if (base === 'application/pdf') return 'pdf';
   return null;
 }
 
@@ -514,7 +515,7 @@ export async function getDocumentPreviewUrlAction(input: {
   url?: string;
   filename?: string;
   contentType?: string | null;
-  mediaKind?: 'image' | 'audio';
+  mediaKind?: 'image' | 'audio' | 'pdf';
 }> {
   return runSentryServerAction('get_document_preview_url', async () => {
     const got = await withScopeOrError();

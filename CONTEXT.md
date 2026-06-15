@@ -548,13 +548,14 @@ _Avoid_: Re-indexing, background OCR
 A model-generated description of what a visual captured file or document page
 shows, distinct from faithful source-text extraction. Visual descriptions make
 images, screenshots, scans, and visually meaningful PDFs queryable as context
-without pretending the description is source-authored text. Processing depth is
-intent-sensitive: curated documents can justify full indexing, while
-unpromoted conversational captures should receive a cheaper preview pass until
-promotion, targeted inspection, or explicit user intent warrants deeper
-analysis. Persisted visual descriptions should be neutral observations about
-what is visible; business interpretation belongs in agent answers or workspace
-suggestions, not in the extracted representation itself.
+without pretending the description is source-authored text. Current processing
+fully extracts normal image/PDF captures and defers only oversized captured
+files; future processing can tune depth by intent so unpromoted conversational
+captures receive a cheaper preview pass until promotion, targeted inspection, or
+explicit user intent warrants deeper analysis. Persisted visual descriptions
+should be neutral observations about what is visible; business interpretation
+belongs in agent answers or workspace suggestions, not in the extracted
+representation itself.
 _Avoid_: OCR when describing non-text visual context, summary when provenance matters
 
 **Extracted Representation**:
@@ -584,8 +585,9 @@ Telegram or Slack voice note. Voice memos are timeline evidence: they keep the
 audio file as source-backed evidence and add a transcript representation that
 is searchable, vectorized, and eligible for source-aware workspace
 interpretation. Voice-memo classification follows capture semantics first and
-MIME type second: native voice-message surfaces and intentional manual uploads
-are transcribed by default, while ambiguous shared audio can defer deeper
+MIME type second: native Telegram/Slack voice-message surfaces are transcribed
+by default, while manual document uploads do not currently transcribe audio
+through document extraction and ambiguous shared audio can defer deeper
 processing.
 _Avoid_: Generic audio file, song
 

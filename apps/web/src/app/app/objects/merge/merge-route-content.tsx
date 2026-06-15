@@ -1,5 +1,5 @@
 import { withTeam } from '@timeline/shared/team-scope';
-import { redirect } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 
 import type { ReactNode } from 'react';
 
@@ -85,6 +85,7 @@ export async function MergeObjectsRouteContent({ presentation, searchParams }: P
   try {
     preview = await scope.objects.getObjectMergePreview(ids, ids[0]);
   } catch (err) {
+    unstable_rethrow(err);
     previewError = err;
     if (suggestionItemId) {
       reconciledStaleSuggestion =

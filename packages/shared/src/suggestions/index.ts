@@ -1921,16 +1921,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       agent_suggestion_item_id: item.id,
     };
 
+    const suggestionMarkerPredicate = sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`;
     const allowCanonicalExistingMatch =
       item.status !== 'failed' &&
-      !(
-        item.targetKind === 'object' &&
-        (await hasDependentObjectNoteSibling(item, canonicalName, type))
-      );
-    const existingIdentity = !allowCanonicalExistingMatch
-      ? sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`
+      (item.targetKind === 'task' ||
+        !(
+          item.targetKind === 'object' &&
+          (await hasDependentObjectNoteSibling(item, canonicalName, type))
+        ));
+    const existingIdentityPredicate = !allowCanonicalExistingMatch
+      ? suggestionMarkerPredicate
       : or(
-          sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
+          suggestionMarkerPredicate,
           sql`lower(${entities.canonicalName}) = ${canonicalName.toLowerCase()}`,
         );
     const existingRows = await db
@@ -1942,7 +1944,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           eq(entities.type, type),
           isNull(entities.mergedIntoId),
           isNull(entities.archivedAt),
-          existingIdentity,
+          existingIdentityPredicate,
         ),
       )
       .orderBy(desc(sql`(${entities.metadata} ->> 'agent_suggestion_item_id') = ${item.id}`))

@@ -50,7 +50,7 @@ export function DocumentSearch() {
               className="block rounded-sm border border-border bg-surface px-4 py-3 text-sm hover:border-border-strong"
             >
               <div className="flex items-center justify-between gap-3">
-                <span className="font-medium">{hit.documentName}</span>
+                <span className="font-medium">{hit.documentDisplayTitle}</span>
                 <span className="font-mono text-[11px] text-fg-dim">
                   score {hit.score.toFixed(3)}
                 </span>
@@ -58,16 +58,18 @@ export function DocumentSearch() {
               <p className="mt-1 line-clamp-3 text-fg-muted">{hit.summary ?? hit.text}</p>
             </Link>
           ))}
-          <button
-            type="button"
-            disabled={!search.hasNextPage || search.isFetchingNextPage}
-            onClick={() => {
-              void search.fetchNextPage();
-            }}
-            className="rounded-sm border border-border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:bg-surface disabled:opacity-40"
-          >
-            {search.isFetchingNextPage ? 'Loading…' : search.hasNextPage ? 'Load more' : 'End'}
-          </button>
+          {search.hasNextPage || search.isFetchingNextPage ? (
+            <button
+              type="button"
+              disabled={search.isFetchingNextPage}
+              onClick={() => {
+                void search.fetchNextPage();
+              }}
+              className="rounded-sm border border-border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-muted hover:bg-surface disabled:opacity-40"
+            >
+              {search.isFetchingNextPage ? 'Loading…' : 'Load more'}
+            </button>
+          ) : null}
         </div>
       )}
     </section>

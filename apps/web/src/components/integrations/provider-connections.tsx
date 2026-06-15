@@ -116,10 +116,10 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   const router = useRouter();
   const [state, dispatch] = useReducer(sourcePickerReducer, initialSourcePickerState);
   const {
-    data: resourcesData,
-    error: resourcesError,
-    isLoading: resourcesLoading,
-    refetch: refetchResources,
+    data,
+    error: queryError,
+    isLoading,
+    refetch,
   } = useQuery({
     queryKey: queryKeys.providerConnectionResources(connection.id),
     queryFn: async () => {
@@ -130,8 +130,8 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     },
   });
 
-  const resources = resourcesData?.resources ?? emptyResources;
-  const shares = resourcesData?.shares ?? emptyShares;
+  const resources = data?.resources ?? emptyResources;
+  const shares = data?.shares ?? emptyShares;
   const savedSelected = useMemo(() => {
     const next = new Set<string>();
     for (const share of shares) {
@@ -140,7 +140,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     return next;
   }, [shares]);
   const selected = state.selectedOverride ?? savedSelected;
-  const error = state.error ?? (resourcesError instanceof Error ? resourcesError.message : null);
+  const error = state.error ?? (queryError instanceof Error ? queryError.message : null);
   const query = state.query;
 
   const filtered = useMemo(() => {
@@ -182,7 +182,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
         }),
       });
       if (!res.ok) throw new Error(await res.text());
-      await refetchResources();
+      await refetch();
       dispatch({ type: 'resetSelection' });
       router.refresh();
     } catch (err) {
@@ -263,7 +263,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
           </div>
         ) : null}
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        {resourcesLoading ? <p className="text-sm text-fg-muted">Loading sources…</p> : null}
+        {isLoading ? <p className="text-sm text-fg-muted">Loading sources…</p> : null}
         <ResourceGroup
           title="Organizations"
           resources={grouped.orgs}

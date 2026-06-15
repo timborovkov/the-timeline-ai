@@ -75,6 +75,7 @@ describe('DocumentDrive', () => {
         {
           id: 'doc-1',
           name: 'Proposal.pdf',
+          metadata: {},
           fileKind: 'document',
           visibility: 'private',
           updatedAt: '2026-06-01T10:00:00.000Z',
@@ -95,6 +96,14 @@ describe('DocumentDrive', () => {
             occurredAt: '2026-06-01T09:59:00.000Z',
             summary: 'Uploaded Proposal.pdf',
           },
+          description: 'A customer proposal with pricing and terms.',
+          presentation: {
+            displayTitle: 'Proposal.pdf',
+            storedName: 'Proposal.pdf',
+            suggestedTitle: null,
+            isGeneratedName: false,
+            fallbackTitle: 'PDF attachment',
+          },
         },
       ],
       defaultVisibility: 'specific_users',
@@ -107,9 +116,54 @@ describe('DocumentDrive', () => {
     expect(html).toContain('Acme');
     expect(html).toContain('Documents');
     expect(html).toContain('Proposal.pdf');
+    expect(html).toContain('A customer proposal with pricing and terms.');
     expect(html).toContain('Telegram');
     expect(html).toContain('/app/timeline?event=parent-event-1#ev-parent-event-1');
     expect(html).toContain('New item visibility');
     expect(html).toContain('Ada');
+  });
+
+  it('renders suggested titles for generated captured filenames', () => {
+    const html = renderDrive({
+      documents: [
+        {
+          id: 'doc-generated',
+          name: 'AgACAgQAAyEFAATcv6dYAAP3aimENrbqY6kNAAEqxvEv6YGMrdExAAK5DmsbjOI.jpg',
+          metadata: { suggested_title: 'Whiteboard planning photo' },
+          fileKind: 'document',
+          visibility: 'team',
+          updatedAt: '2026-06-01T10:00:00.000Z',
+          ownerUserId: 'user-1',
+          currentVersion: {
+            id: 'version-generated',
+            version: 1,
+            byteSize: 1536,
+            contentType: 'image/jpeg',
+            processingStatus: 'chunked',
+            sourceEventId: null,
+            createdAt: '2026-06-01T10:00:00.000Z',
+          },
+          provenance: {
+            source: 'telegram',
+            sourceEventId: null,
+            parentEventId: null,
+            occurredAt: null,
+            summary: null,
+          },
+          description: 'A photo of a whiteboard with planning notes.',
+          presentation: {
+            displayTitle: 'Whiteboard planning photo',
+            storedName: 'AgACAgQAAyEFAATcv6dYAAP3aimENrbqY6kNAAEqxvEv6YGMrdExAAK5DmsbjOI.jpg',
+            suggestedTitle: 'Whiteboard planning photo',
+            isGeneratedName: true,
+            fallbackTitle: 'Image attachment',
+          },
+        },
+      ],
+    });
+
+    expect(html).toContain('Whiteboard planning photo');
+    expect(html).toContain('Stored as');
+    expect(html).toContain('planning notes');
   });
 });

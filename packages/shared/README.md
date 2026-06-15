@@ -44,6 +44,9 @@ pnpm --filter @timeline/shared test
 ## Where it fits
 
 - DB layer: [packages/db/README.md](../db/README.md).
+- Documents helpers: `@timeline/shared/documents` exports the document module
+  surface, and `@timeline/shared/documents/presentation` exports display-title
+  and generated-filename presentation helpers used by web and worker code.
 - Provider strategy and pinning: [docs/setup/openrouter.html](../../docs/setup/openrouter.html).
 - Native integration setup and provider connections:
   [docs/setup/integrations.html](../../docs/setup/integrations.html).
