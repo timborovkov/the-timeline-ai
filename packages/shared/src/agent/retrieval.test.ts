@@ -144,4 +144,40 @@ describe('retrieveWorkspaceContext', () => {
       citation: '[route:team/invites]',
     });
   });
+
+  it('fetches calendar context around today for calendar-related questions', async () => {
+    const now = new Date('2026-06-15T12:00:00.000Z');
+    vi.useFakeTimers();
+    const seen = { from: null as Date | null, to: null as Date | null };
+    try {
+      vi.setSystemTime(now);
+      const scope = makeScope();
+      scope.calendar.listCalendarEvents = vi.fn(({ from, to }: { from?: Date; to?: Date }) => {
+        seen.from = from ?? null;
+        seen.to = to ?? null;
+        return Promise.resolve(
+          [] as {
+            id: string;
+            startAt: Date;
+            endAt: Date;
+            redacted: boolean;
+          }[],
+        );
+      });
+
+      const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+        query: 'What are our meetings this week?',
+        limit: 5,
+      });
+
+      expect(scope.calendar.listCalendarEvents).toHaveBeenCalledTimes(1);
+      expect(seen.from).toBeInstanceOf(Date);
+      expect(seen.to).toBeInstanceOf(Date);
+      expect(seen.from?.getTime()).toBeLessThan(now.getTime());
+      expect(seen.to?.getTime()).toBeGreaterThan(now.getTime());
+      expect(result.calendarEvents).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

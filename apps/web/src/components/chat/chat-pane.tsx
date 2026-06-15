@@ -166,6 +166,8 @@ function useChatSessionTransport({
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const sessionIdRef = useRef<string | null>(initialSessionId);
   const searchRef = useRef(search);
+  const dashboardContextRef = useRef<DashboardChatContext | null | undefined>(dashboardContext);
+  const onSessionIdChangeRef = useRef(onSessionIdChange);
   const sessionCreateAttempted = useRef(initialSessionId !== null);
 
   useEffect(() => {
@@ -174,7 +176,15 @@ function useChatSessionTransport({
 
   useEffect(() => {
     searchRef.current = search;
-  });
+  }, [search]);
+
+  useEffect(() => {
+    dashboardContextRef.current = dashboardContext;
+  }, [dashboardContext]);
+
+  useEffect(() => {
+    onSessionIdChangeRef.current = onSessionIdChange;
+  }, [onSessionIdChange]);
 
   const transport = useMemo(
     () =>
@@ -186,7 +196,7 @@ function useChatSessionTransport({
           return {
             sessionId: sessionIdRef.current ?? undefined,
             startNewSession: askForNew,
-            dashboardContext: dashboardContext ?? undefined,
+            dashboardContext: dashboardContextRef.current ?? undefined,
           };
         },
         fetch: async (url, init) => {
@@ -202,7 +212,7 @@ function useChatSessionTransport({
           if (id && id !== sessionIdRef.current) {
             sessionIdRef.current = id;
             setSessionId(id);
-            onSessionIdChange?.(id);
+            onSessionIdChangeRef.current?.(id);
             if (updateUrlOnSessionCreate && typeof window !== 'undefined') {
               const params = new URLSearchParams(searchRef.current.toString());
               params.set('session', id);
@@ -212,7 +222,7 @@ function useChatSessionTransport({
           return res;
         },
       }),
-    [dashboardContext, onSessionIdChange, updateUrlOnSessionCreate],
+    [updateUrlOnSessionCreate],
   );
 
   return { sessionId, transport };

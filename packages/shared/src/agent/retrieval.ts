@@ -37,6 +37,7 @@ export interface WorkspaceContextResult {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MILLIS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export async function retrieveWorkspaceContext(
   scope: TeamScope,
@@ -79,7 +80,11 @@ export async function retrieveWorkspaceContext(
         : [],
       input.includeCalendar || recipe === 'calendar'
         ? scope.calendar
-            .listCalendarEvents({ from: new Date(), limit: Math.min(limit, 10) })
+            .listCalendarEvents({
+              from: new Date(Date.now() - 14 * MILLIS_PER_DAY),
+              to: new Date(Date.now() + 30 * MILLIS_PER_DAY),
+              limit: Math.min(limit, 10),
+            })
             .catch(() => [])
         : [],
     ]);
