@@ -24,14 +24,22 @@ export function EvidenceLink({
   occurredAt,
   title = 'Event evidence',
 }: EvidenceLinkProps) {
-  void previewText;
   const fallbackTitle = [source, occurredAt].filter(Boolean).join(' · ');
+  const initialPreview =
+    previewText || source || occurredAt
+      ? {
+          title,
+          subtitle: fallbackTitle || 'Event evidence',
+          body: previewText,
+        }
+      : undefined;
 
   return (
     <ArtifactReferenceChip
       refValue={{ kind: 'timeline_event', id: eventId }}
       className={cn('text-left', className)}
       title={title || fallbackTitle || 'Event evidence'}
+      initialPreview={initialPreview}
     >
       {children}
     </ArtifactReferenceChip>

@@ -1,10 +1,12 @@
 'use client';
 
+import { type UIMessage } from 'ai';
 import { ExternalLink, MessageSquare, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
+import { loadChatSessionAction } from '@/app/actions/chat';
 import { ChatSurface, type DashboardChatContext } from '@/components/chat/chat-pane';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,10 +39,34 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   const [open, setOpen] = useState(false);
   const storageKey = `timeline:floating-agent-chat:${teamId}:session`;
   const [sessionId, setSessionId] = useState<string | null>(() => readStoredSessionId(storageKey));
+  const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
+  const hydratedSessionIdRef = useRef<string | null>(null);
   const context = useMemo(
     () => buildDashboardChatContext(pathname, searchParams),
     [pathname, searchParams],
   );
+
+  useEffect(() => {
+    if (!sessionId) {
+      hydratedSessionIdRef.current = null;
+      setInitialMessages([]);
+      return;
+    }
+
+    if (hydratedSessionIdRef.current === sessionId) return;
+    const activeSessionId = sessionId;
+    hydratedSessionIdRef.current = activeSessionId;
+
+    void (async () => {
+      const loaded = await loadChatSessionAction({ sessionId: activeSessionId });
+      if (sessionId !== activeSessionId) return;
+      if (loaded.ok) {
+        setInitialMessages(loaded.messages ?? []);
+      } else {
+        setInitialMessages([]);
+      }
+    })();
+  }, [sessionId]);
 
   if (!pathname || pathname.startsWith('/app/chat')) return null;
 
@@ -101,7 +127,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
               compact
               teamName={teamName}
               sessionId={sessionId}
-              initialMessages={[]}
+              initialMessages={initialMessages}
               pinnedEntityId={null}
               pinnedEntityName={null}
               dashboardContext={context}

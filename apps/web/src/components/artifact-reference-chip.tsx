@@ -22,6 +22,7 @@ interface ArtifactReferenceChipProps {
   children?: ReactNode;
   className?: string;
   title?: string;
+  initialPreview?: Partial<ArtifactPreview>;
 }
 
 interface PreviewState {
@@ -29,6 +30,7 @@ interface PreviewState {
   error: string | null;
   preview: ArtifactPreview | null;
   cacheKey: string | null;
+  fetched: boolean;
 }
 
 export function ArtifactReferenceChip({
@@ -36,6 +38,7 @@ export function ArtifactReferenceChip({
   children,
   className,
   title,
+  initialPreview,
 }: ArtifactReferenceChipProps) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<PreviewState>({
@@ -43,17 +46,30 @@ export function ArtifactReferenceChip({
     error: null,
     preview: null,
     cacheKey: null,
+    fetched: false,
   });
   const requestRef = useRef<AbortController | null>(null);
   const cacheKey = useMemo(() => JSON.stringify(refValue), [refValue]);
   const label = artifactRefLabel(refValue);
+  const fallbackPreview = useMemo<ArtifactPreview | null>(
+    () => (initialPreview ? ({ ...initialPreview, ref: refValue } as ArtifactPreview) : null),
+    [initialPreview, refValue],
+  );
+  const isForCurrentRef = state.cacheKey === cacheKey;
+  const preview = isForCurrentRef ? (state.preview ?? fallbackPreview) : fallbackPreview;
 
   const loadPreview = useCallback(() => {
-    if (state.cacheKey === cacheKey && (state.preview || state.loading)) return;
+    if (state.cacheKey === cacheKey && (state.loading || state.fetched)) return;
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
-    setState({ loading: true, error: null, preview: null, cacheKey });
+    setState({
+      loading: true,
+      error: null,
+      preview: preview,
+      cacheKey,
+      fetched: false,
+    });
     fetch('/api/artifacts/preview', {
       body: JSON.stringify({ ref: refValue }),
       headers: { 'content-type': 'application/json' },
@@ -68,26 +84,36 @@ export function ArtifactReferenceChip({
       .then((data) => {
         setState({
           loading: false,
-          error: data.preview ? null : 'This reference is not available.',
+          error: data.preview || fallbackPreview ? null : 'This reference is not available.',
           preview: data.preview ?? null,
           cacheKey,
+          fetched: true,
         });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) {
-          setState({ loading: false, error: null, preview: null, cacheKey: null });
+          setState({
+            loading: false,
+            error: null,
+            preview: null,
+            cacheKey: null,
+            fetched: false,
+          });
           return;
         }
         setState({
           loading: false,
-          error: error instanceof Error ? error.message : 'Could not load this reference.',
-          preview: null,
+          error: fallbackPreview
+            ? null
+            : error instanceof Error
+              ? error.message
+              : 'Could not load this reference.',
+          preview: fallbackPreview ?? null,
           cacheKey,
+          fetched: true,
         });
       });
-  }, [cacheKey, refValue, state.cacheKey, state.loading, state.preview]);
-
-  const preview = state.cacheKey === cacheKey ? state.preview : null;
+  }, [cacheKey, fallbackPreview, state.cacheKey, state.fetched, state.loading, preview, refValue]);
 
   return (
     <>
@@ -113,8 +139,8 @@ export function ArtifactReferenceChip({
         )}
       </button>
       <ArtifactPreviewDialog
-        error={state.cacheKey === cacheKey ? state.error : null}
-        loading={state.cacheKey === cacheKey ? state.loading : false}
+        error={isForCurrentRef ? state.error : null}
+        loading={isForCurrentRef ? state.loading : false}
         open={open}
         preview={preview}
         refLabel={label}

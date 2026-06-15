@@ -347,7 +347,7 @@ async function boardItemPreview(
     ref,
     title: item.object.canonicalName,
     subtitle: `${board.name}${lane ? ` · ${lane.name}` : ''}`,
-    body: compact(item.notes ?? item.nextStep),
+    body: compact(item.notes?.trim() ? item.notes : item.nextStep),
     badges: badges([
       item.object.type,
       item.object.status,
