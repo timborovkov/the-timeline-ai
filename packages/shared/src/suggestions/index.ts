@@ -1679,6 +1679,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .limit(1);
       const markerMatch = rows[0]?.id;
       if (markerMatch) return markerMatch;
+      if (item.targetKind === 'object') return null;
+      if (item.status === 'failed') return null;
 
       const parsed = objectCreatePayload.safeParse(normalizeLifecyclePayload(item));
       if (!parsed.success) return null;
@@ -1686,12 +1688,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         parsed.data.canonicalName !== undefined && parsed.data.canonicalName.length > 0
           ? parsed.data.canonicalName
           : item.title;
-      const type =
-        item.targetKind === 'task' ? 'task' : (objectTypeFromValue(parsed.data.type) ?? 'other');
-      if (
-        item.status === 'failed' ||
-        (await hasObjectNoteCreateDependent(item, canonicalName, type))
-      ) {
+      const type = 'task';
+      if (await hasObjectNoteCreateDependent(item, canonicalName, type)) {
         return null;
       }
       const canonicalRows = await db
@@ -1924,7 +1922,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     };
 
     const canRecoverByCanonicalName =
-      item.status !== 'failed' && !(await hasObjectNoteCreateDependent(item, canonicalName, type));
+      item.targetKind === 'task' &&
+      item.status === 'pending' &&
+      !(await hasObjectNoteCreateDependent(item, canonicalName, type));
     const suggestionMarkerPredicate = sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`;
     const existingIdentityPredicate = canRecoverByCanonicalName
       ? (or(

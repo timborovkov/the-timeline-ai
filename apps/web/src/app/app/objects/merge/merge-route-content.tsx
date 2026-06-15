@@ -79,31 +79,36 @@ export async function MergeObjectsRouteContent({ presentation, searchParams }: P
   }
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  let preview;
+  let preview: Awaited<ReturnType<typeof scope.objects.getObjectMergePreview>> | null = null;
+  let previewError: unknown;
   let reconciledStaleSuggestion = false;
   try {
     preview = await scope.objects.getObjectMergePreview(ids, ids[0]);
   } catch (err) {
     unstable_rethrow(err);
+    previewError = err;
     if (suggestionItemId) {
       reconciledStaleSuggestion =
         await scope.suggestions.reconcileStaleSuggestionItem(suggestionItemId);
     }
-    if (!reconciledStaleSuggestion) {
-      return renderShell(
-        presentation,
-        <EmptyAction
-          title="These objects cannot be merged"
-          body={
-            err instanceof Error ? err.message : 'The selected objects are no longer mergeable.'
-          }
-          href="/app/objects"
-          action="Back to objects"
-        />,
-      );
-    }
   }
-  if (reconciledStaleSuggestion || !preview) redirect('/app/approvals');
+  if (reconciledStaleSuggestion) redirect('/app/approvals');
+  if (previewError) {
+    return renderShell(
+      presentation,
+      <EmptyAction
+        title="These objects cannot be merged"
+        body={
+          previewError instanceof Error
+            ? previewError.message
+            : 'The selected objects are no longer mergeable.'
+        }
+        href="/app/objects"
+        action="Back to objects"
+      />,
+    );
+  }
+  if (!preview) redirect('/app/objects');
   if (preview.objects.length === 0) redirect('/app/objects');
 
   const form =

@@ -571,12 +571,24 @@ key/value pairs.
   archive state after explicit user confirmation, document renames, document
   folder create/delete, text capture, calendar create/edit, document upload
   placeholders, onboarding checklist actions, and inbox read-state changes.
+  Approval accept/reject may optimistically remove only the affected review row
+  when the action is reversible in the UI; restore the row and show a local
+  error if the server rejects the change.
 - Security-sensitive or external-provider actions wait for server
   confirmation: invites, meeting bot scheduling/cancel, exports, OAuth/
   integration setup, and irreversible destructive operations.
 - Success feedback should be quiet and local (`Saving...` then `Saved`).
   Use prominent alerts only for failures, and rollback the smallest affected
   thing so the user can tell what changed.
+
+### Embedded approvals
+
+- On pages where approvals are not the primary job, approval sections collapse
+  by default behind a `<details>` summary with a live pending count. Calendar,
+  object detail, and object cleanup suggestions should expose the review path
+  without pushing the main page content below a stack of approval rows.
+- The dedicated Approvals page remains expanded and optimized for scanning,
+  filtering, bulk action, and row-level review.
 
 ### Motion
 

@@ -160,6 +160,114 @@ describe('calendar scope', () => {
     }
   });
 
+  it('lists paged calendar events with search without exposing redacted private details', async () => {
+    const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const teammateScope = withTeam(db as never, TEAM_ID, USER_B_ID);
+
+    await ownerScope.calendar.createCalendarEvent({
+      title: 'Launch planning',
+      description: 'Discuss project timeline',
+      startAt: new Date('2026-07-01T09:00:00Z'),
+      endAt: new Date('2026-07-01T10:00:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+    });
+    await ownerScope.calendar.createCalendarEvent({
+      title: 'Customer review',
+      startAt: new Date('2026-07-02T09:00:00Z'),
+      endAt: new Date('2026-07-02T10:00:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+    });
+    await teammateScope.calendar.createCalendarEvent({
+      title: 'Sensitive private meeting',
+      description: 'Secret acquisition',
+      startAt: new Date('2026-07-03T09:00:00Z'),
+      endAt: new Date('2026-07-03T10:00:00Z'),
+      timezone: 'UTC',
+      visibility: 'private',
+    });
+
+    const firstPage = await ownerScope.calendar.listCalendarEventPage({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-04T00:00:00Z'),
+      limit: 1,
+      offset: 1,
+    });
+    expect(firstPage.total).toBe(3);
+    expect(firstPage.events).toHaveLength(1);
+    expect(firstPage.events[0]?.title).toBe('Customer review');
+
+    const searched = await ownerScope.calendar.listCalendarEventPage({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-04T00:00:00Z'),
+      search: 'project',
+    });
+    expect(searched.total).toBe(1);
+    expect(searched.events[0]?.title).toBe('Launch planning');
+
+    const hiddenPrivateSearch = await ownerScope.calendar.listCalendarEventPage({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-04T00:00:00Z'),
+      search: 'acquisition',
+    });
+    expect(hiddenPrivateSearch.total).toBe(0);
+
+    const busySearch = await ownerScope.calendar.listCalendarEventPage({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-04T00:00:00Z'),
+      search: 'busy',
+    });
+    expect(busySearch.total).toBe(1);
+    expect(busySearch.events[0]).toMatchObject({
+      title: 'Busy',
+      description: null,
+      location: null,
+      redacted: true,
+    });
+  });
+
+  it('can filter paged calendar events by start boundary for non-overlapping buckets', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+
+    await scope.calendar.createCalendarEvent({
+      title: 'Overnight incident',
+      startAt: new Date('2026-07-01T22:00:00Z'),
+      endAt: new Date('2026-07-02T02:00:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+    });
+    await scope.calendar.createCalendarEvent({
+      title: 'Today standup',
+      startAt: new Date('2026-07-02T09:00:00Z'),
+      endAt: new Date('2026-07-02T09:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+    });
+
+    const today = new Date('2026-07-02T00:00:00Z');
+    const future = await scope.calendar.listCalendarEventPage({
+      from: today,
+      to: new Date('2026-07-03T00:00:00Z'),
+      startFrom: today,
+    });
+    expect(future.events.map((event) => event.title)).toEqual(['Today standup']);
+
+    const past = await scope.calendar.listCalendarEventPage({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: today,
+      startTo: today,
+      order: 'desc',
+    });
+    expect(past.events.map((event) => event.title)).toEqual(['Overnight incident']);
+
+    const all = await scope.calendar.listCalendarEventPage({
+      from: new Date('2026-07-01T00:00:00Z'),
+      to: new Date('2026-07-03T00:00:00Z'),
+    });
+    expect(all.events.map((event) => event.title)).toEqual(['Overnight incident', 'Today standup']);
+  });
+
   it('uses the parent creator for raw timeline rows materialized by the worker scope', async () => {
     const ownerScope = withTeam(db as never, TEAM_ID, USER_B_ID);
     const workerScope = withTeam(db as never, TEAM_ID, '00000000-0000-0000-0000-000000000000', {

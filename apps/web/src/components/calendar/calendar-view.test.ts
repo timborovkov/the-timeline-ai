@@ -1,14 +1,17 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
 
-import { calendarOverlayReducer } from '@/components/calendar/calendar-overlay';
+import {
+  applyCalendarPageOverlay,
+  calendarOverlayReducer,
+} from '@/components/calendar/calendar-overlay';
 
 const fakes = vi.hoisted(() => ({
   createCalendarEventAction: vi.fn(),
@@ -96,6 +99,68 @@ describe('calendarOverlayReducer', () => {
       }),
     ).toEqual({ upserts: {}, removedIds: [] });
   });
+
+  it('reconciles optimistic edits for refreshed list-only events', () => {
+    const state = {
+      upserts: { 'event-1': event('event-1', 'Stale optimistic list title') },
+      removedIds: [],
+    };
+    const refreshedState = calendarOverlayReducer(state, {
+      type: 'reconcile-server-events',
+      previousIds: ['event-1'],
+      currentIds: ['event-1'],
+    });
+
+    expect(
+      applyCalendarPageOverlay([event('event-1', 'Server list title')], refreshedState),
+    ).toEqual([event('event-1', 'Server list title')]);
+  });
+
+  it('keeps an optimistic delete hidden when a stale refresh still includes the id', () => {
+    const state = {
+      upserts: {},
+      removedIds: ['event-1'],
+    };
+    const refreshedState = calendarOverlayReducer(state, {
+      type: 'reconcile-server-events',
+      currentIds: ['event-1'],
+      deletedIds: [],
+    });
+
+    expect(
+      applyCalendarPageOverlay([event('event-1', 'Server stale title')], refreshedState),
+    ).toEqual([]);
+  });
+
+  it('keeps optimistic state when a paginated list snapshot is not authoritative for deletion', () => {
+    const state = {
+      upserts: { 'event-2': event('event-2', 'Optimistic off-page title') },
+      removedIds: ['event-3'],
+    };
+
+    expect(
+      calendarOverlayReducer(state, {
+        type: 'reconcile-server-events',
+        currentIds: ['event-1'],
+        deletedIds: [],
+      }),
+    ).toEqual(state);
+  });
+
+  it('clears optimistic state when refreshed server rows include the same list event', () => {
+    const state = {
+      upserts: { 'event-2': event('event-2', 'Optimistic list title') },
+      removedIds: ['event-3'],
+    };
+
+    expect(
+      calendarOverlayReducer(state, {
+        type: 'reconcile-server-events',
+        currentIds: ['event-2', 'event-3'],
+        deletedIds: [],
+      }),
+    ).toEqual({ upserts: {}, removedIds: ['event-3'] });
+  });
 });
 
 describe('CalendarView recurrence and tentative UI', () => {
@@ -109,6 +174,7 @@ describe('CalendarView recurrence and tentative UI', () => {
             rrule: 'FREQ=WEEKLY;BYDAY=WE',
           },
         ],
+        eventListEvents: [],
         timezone: 'UTC',
       }),
     );
@@ -129,6 +195,7 @@ describe('CalendarView recurrence and tentative UI', () => {
             rrule: 'FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR,SU',
           },
         ],
+        eventListEvents: [],
         timezone: 'UTC',
       }),
     );
@@ -172,6 +239,7 @@ describe('CalendarView recurrence and tentative UI', () => {
             originalStartAt: '2026-06-03T09:00:00Z',
           },
         ],
+        eventListEvents: [],
         timezone: 'UTC',
       }),
     );
@@ -188,5 +256,125 @@ describe('CalendarView recurrence and tentative UI', () => {
       });
     });
     expect(fakes.refresh).toHaveBeenCalled();
+  });
+
+  it('drives the event list filters and pagination through URL params', async () => {
+    const user = userEvent.setup();
+    fakes.searchParams = 'view=month&date=2026-06-03';
+
+    render(
+      createElement(CalendarView, {
+        events: [],
+        eventListEvents: [event('event-1', 'Roadmap review')],
+        eventListTotal: 13,
+        eventListPage: 0,
+        eventListQuery: '',
+        eventListScope: 'future',
+        timezone: 'UTC',
+      }),
+    );
+
+    expect(screen.getByText('13 upcoming events')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'past' }));
+    expect(await screen.findByText('13 past events')).toBeTruthy();
+    expect(fakes.push).toHaveBeenLastCalledWith(
+      '/app/calendar?view=month&date=2026-06-03&eventScope=past',
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Next events' }));
+    expect(fakes.push).toHaveBeenLastCalledWith(
+      '/app/calendar?view=month&date=2026-06-03&eventScope=past&eventPage=2',
+    );
+
+    await user.type(screen.getByPlaceholderText('Search events'), 'budget');
+    await waitFor(
+      () => {
+        expect(fakes.push).toHaveBeenLastCalledWith(
+          '/app/calendar?view=month&date=2026-06-03&eventQ=budget&eventScope=past',
+        );
+      },
+      { timeout: 1000 },
+    );
+  });
+
+  it('keeps search text typed while committed query props catch up', () => {
+    vi.useFakeTimers();
+    try {
+      const props = {
+        events: [],
+        eventListEvents: [event('event-1', 'Roadmap review')],
+        eventListTotal: 1,
+        eventListPage: 0,
+        eventListQuery: '',
+        eventListScope: 'future' as const,
+        timezone: 'UTC',
+      };
+      const { rerender } = render(createElement(CalendarView, props));
+      const input = screen.getByPlaceholderText('Search events');
+
+      fireEvent.change(input, { target: { value: 'bud' } });
+      act(() => {
+        vi.advanceTimersByTime(350);
+      });
+      expect(fakes.push).toHaveBeenLastCalledWith(
+        '/app/calendar?view=month&date=2026-06-03&eventQ=bud',
+      );
+
+      fireEvent.change(input, { target: { value: 'budget' } });
+      rerender(createElement(CalendarView, { ...props, eventListQuery: 'bud' }));
+
+      expect(screen.getByPlaceholderText('Search events')).toHaveProperty('value', 'budget');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses the server-clamped event page when URL params lag behind props', async () => {
+    const user = userEvent.setup();
+    fakes.searchParams = 'view=month&date=2026-06-03&eventPage=999';
+
+    render(
+      createElement(CalendarView, {
+        events: [],
+        eventListEvents: [event('event-1', 'Roadmap review')],
+        eventListTotal: 36,
+        eventListPage: 2,
+        eventListQuery: '',
+        eventListScope: 'future',
+        timezone: 'UTC',
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Previous events' }));
+    expect(fakes.push).toHaveBeenLastCalledWith(
+      '/app/calendar?view=month&date=2026-06-03&eventPage=2',
+    );
+  });
+
+  it('does not append optimistic creates to the server-paginated event list', async () => {
+    const user = userEvent.setup();
+    fakes.createCalendarEventAction.mockResolvedValue({ ok: true, id: 'created-event' });
+
+    render(
+      createElement(CalendarView, {
+        events: [],
+        eventListEvents: [event('event-1', 'Roadmap review')],
+        eventListTotal: 1,
+        eventListPage: 0,
+        eventListQuery: '',
+        eventListScope: 'future',
+        timezone: 'UTC',
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /New/ }));
+    await user.type(screen.getByLabelText('Title'), 'New sales sync');
+    await user.click(screen.getByRole('button', { name: /^Save$/ }));
+
+    expect(await screen.findByRole('button', { name: /New sales sync/ })).toBeTruthy();
+    expect(screen.getByText('1 upcoming event')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Roadmap review/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Jun 3.*New sales sync/s })).toBeNull();
   });
 });
