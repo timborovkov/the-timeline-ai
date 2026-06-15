@@ -36,11 +36,21 @@ export function documentDetailProvenance(
     stringMetadata(document.metadata, 'integration_provider') ??
     (document.fileKind === 'captured' || document.sourceRawEventId ? 'captured' : 'manual');
 
+  if (listEntry) {
+    return {
+      source: listEntry.provenance.source,
+      sourceEventId: listEntry.provenance.sourceEventId,
+      parentEventId: listEntry.provenance.parentEventId,
+      occurredAt: listEntry.provenance.occurredAt?.toISOString() ?? null,
+      summary: listEntry.provenance.summary,
+    };
+  }
+
   return {
-    source: listEntry?.provenance.source ?? fallbackSource,
-    sourceEventId: listEntry?.provenance.sourceEventId ?? document.sourceRawEventId,
-    parentEventId: listEntry?.provenance.parentEventId ?? null,
-    occurredAt: listEntry?.provenance.occurredAt?.toISOString() ?? null,
-    summary: listEntry?.provenance.summary ?? null,
+    source: fallbackSource,
+    sourceEventId: document.sourceRawEventId,
+    parentEventId: null,
+    occurredAt: null,
+    summary: null,
   };
 }

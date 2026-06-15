@@ -1689,9 +1689,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           ? parsed.data.canonicalName
           : item.title;
       const type = 'task';
-      if (await hasObjectNoteCreateDependent(item, canonicalName, type)) {
-        return null;
-      }
       const canonicalRows = await db
         .select({ id: entities.id })
         .from(entities)
@@ -1861,33 +1858,6 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return resolved.resultId;
   }
 
-  async function hasObjectNoteCreateDependent(
-    item: typeof agentSuggestionItems.$inferSelect,
-    canonicalName: string,
-    type: ObjectType,
-  ): Promise<boolean> {
-    const rows = await db
-      .select({ proposedPayload: agentSuggestionItems.proposedPayload })
-      .from(agentSuggestionItems)
-      .where(
-        and(
-          eq(agentSuggestionItems.teamId, teamId),
-          eq(agentSuggestionItems.suggestionId, item.suggestionId),
-          eq(agentSuggestionItems.operation, 'create'),
-          eq(agentSuggestionItems.targetKind, 'object_note'),
-          inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
-        ),
-      );
-    return rows.some((row) => {
-      const payload =
-        row.proposedPayload && typeof row.proposedPayload === 'object' ? row.proposedPayload : {};
-      const parsed = objectNotePayload.safeParse(payload);
-      if (!parsed.success) return false;
-      if (parsed.data.entityName?.toLowerCase() !== canonicalName.toLowerCase()) return false;
-      return !parsed.data.entityType || parsed.data.entityType === type;
-    });
-  }
-
   async function applyObjectCreateItem(
     item: typeof agentSuggestionItems.$inferSelect,
     payload: Record<string, unknown>,
@@ -1921,10 +1891,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       agent_suggestion_item_id: item.id,
     };
 
-    const canRecoverByCanonicalName =
-      item.targetKind === 'task' &&
-      item.status === 'pending' &&
-      !(await hasObjectNoteCreateDependent(item, canonicalName, type));
+    const canRecoverByCanonicalName = item.targetKind === 'task' && item.status === 'pending';
     const suggestionMarkerPredicate = sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`;
     const existingIdentityPredicate = canRecoverByCanonicalName
       ? (or(
