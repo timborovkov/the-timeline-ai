@@ -101,7 +101,10 @@ export default async function TasksPage() {
           allowBulkAccept={false}
           folded={{
             title: 'Task approvals',
-            summary: (count) => `${count} pending task proposal${count === 1 ? '' : 's'}`,
+            summary: {
+              singular: 'pending task proposal',
+              plural: 'pending task proposals',
+            },
             className: 'border-t border-border pt-4',
           }}
         />

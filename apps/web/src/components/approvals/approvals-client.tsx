@@ -59,7 +59,10 @@ interface Props {
   allowBulkAccept?: boolean;
   folded?: {
     title: string;
-    summary: (count: number) => string;
+    summary: {
+      singular: string;
+      plural: string;
+    };
     className: string;
     summaryClassName?: string;
     bodyClassName?: string;
@@ -186,6 +189,13 @@ function relationshipPayloadSummary(item: SuggestionItem, bundle: SuggestionBund
     return displayText(`${item.title} · ${kind}`);
   }
   return displayText(`${from} ↔ ${to} · ${kind}`);
+}
+
+function foldedSummaryText(
+  count: number,
+  summary: NonNullable<Props['folded']>['summary'],
+): string {
+  return `${count} ${count === 1 ? summary.singular : summary.plural}`;
 }
 
 export function ApprovalsClient({ suggestions, allowBulkAccept = true, folded }: Props) {
@@ -347,7 +357,7 @@ export function ApprovalsClient({ suggestions, allowBulkAccept = true, folded }:
               {folded.title}
             </h2>
             <p className={folded.countClassName ?? 'mt-1 text-sm text-fg-muted'}>
-              {folded.summary(visiblePendingItemCount)}
+              {foldedSummaryText(visiblePendingItemCount, folded.summary)}
             </p>
           </div>
           <span

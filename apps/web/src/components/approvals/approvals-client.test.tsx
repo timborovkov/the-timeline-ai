@@ -376,7 +376,10 @@ describe('ApprovalsClient', () => {
       createElement(ApprovalsClient, {
         folded: {
           title: 'Calendar approvals',
-          summary: (count) => `${count} waiting`,
+          summary: {
+            singular: 'waiting',
+            plural: 'waiting',
+          },
           className: 'border-y border-border py-4',
         },
         suggestions: [
@@ -447,7 +450,10 @@ describe('ApprovalsClient', () => {
 
     const folded = {
       title: 'Calendar approvals',
-      summary: (count: number) => `${count} waiting`,
+      summary: {
+        singular: 'waiting',
+        plural: 'waiting',
+      },
       className: 'border-y border-border py-4',
     };
 
@@ -505,7 +511,10 @@ describe('ApprovalsClient', () => {
 
     const folded = {
       title: 'Calendar approvals',
-      summary: (count: number) => `${count} waiting`,
+      summary: {
+        singular: 'waiting',
+        plural: 'waiting',
+      },
       className: 'border-y border-border py-4',
     };
 
