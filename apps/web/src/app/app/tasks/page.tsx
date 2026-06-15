@@ -96,15 +96,15 @@ export default async function TasksPage() {
       )}
 
       {taskSuggestions.length > 0 ? (
-        <section className="space-y-3 border-t border-border pt-4">
-          <div>
-            <h2 className="text-sm font-medium tracking-tight">Pending task proposals</h2>
-            <p className="mt-1 text-sm text-fg-muted">
-              Review these before they become active tasks on the board.
-            </p>
-          </div>
-          <ApprovalsClient suggestions={taskSuggestions} allowBulkAccept={false} />
-        </section>
+        <ApprovalsClient
+          suggestions={taskSuggestions}
+          allowBulkAccept={false}
+          folded={{
+            title: 'Task approvals',
+            summary: (count) => `${count} pending task proposal${count === 1 ? '' : 's'}`,
+            className: 'border-t border-border pt-4',
+          }}
+        />
       ) : null}
     </div>
   );

@@ -22,8 +22,15 @@ vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/components/approvals/approvals-client', () => ({
-  ApprovalsClient: ({ suggestions }: { suggestions: { title: string }[] }) => (
+  ApprovalsClient: ({
+    suggestions,
+    folded,
+  }: {
+    suggestions: { title: string }[];
+    folded?: { title: string; summary: (count: number) => string };
+  }) => (
     <div data-testid="approvals">
+      {folded ? `${folded.title}: ${folded.summary(1)}. ` : null}
       {suggestions.map((suggestion) => suggestion.title).join(', ')}
     </div>
   ),
@@ -92,7 +99,8 @@ describe('TasksPage', () => {
 
     const html = renderToStaticMarkup(await TasksPage());
 
-    expect(html).toContain('Pending task proposals');
+    expect(html).toContain('Task approvals');
+    expect(html).toContain('1 pending task proposal');
     expect(html).toContain('Commitment: Send proposal');
     expect(html).toContain('approvals');
     expect(html).toContain('1 pending approval');

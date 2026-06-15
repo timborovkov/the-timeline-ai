@@ -1679,6 +1679,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         .limit(1);
       const markerMatch = rows[0]?.id;
       if (markerMatch) return markerMatch;
+      if (item.targetKind === 'object') return null;
+      if (item.status === 'failed') return null;
 
       const parsed = objectCreatePayload.safeParse(normalizeLifecyclePayload(item));
       if (!parsed.success) return null;
@@ -1686,8 +1688,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         parsed.data.canonicalName !== undefined && parsed.data.canonicalName.length > 0
           ? parsed.data.canonicalName
           : item.title;
-      const type =
-        item.targetKind === 'task' ? 'task' : (objectTypeFromValue(parsed.data.type) ?? 'other');
+      const type = 'task';
       const canonicalRows = await db
         .select({ id: entities.id })
         .from(entities)
@@ -1890,6 +1891,13 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       agent_suggestion_item_id: item.id,
     };
 
+    const existingIdentity =
+      item.targetKind === 'task' && item.status === 'pending'
+        ? or(
+            sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
+            sql`lower(${entities.canonicalName}) = ${canonicalName.toLowerCase()}`,
+          )
+        : sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`;
     const existingRows = await db
       .select()
       .from(entities)
@@ -1899,10 +1907,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           eq(entities.type, type),
           isNull(entities.mergedIntoId),
           isNull(entities.archivedAt),
-          or(
-            sql`${entities.metadata} ->> 'agent_suggestion_item_id' = ${item.id}`,
-            sql`lower(${entities.canonicalName}) = ${canonicalName.toLowerCase()}`,
-          ),
+          existingIdentity,
         ),
       )
       .orderBy(desc(sql`(${entities.metadata} ->> 'agent_suggestion_item_id') = ${item.id}`))
