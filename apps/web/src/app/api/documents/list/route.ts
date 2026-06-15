@@ -34,6 +34,7 @@ export async function GET(req: Request): Promise<Response> {
         id: document.id,
         fileKind: document.fileKind,
         name: document.name,
+        metadata: document.metadata,
         visibility: document.visibility,
         updatedAt: document.updatedAt.toISOString(),
         ownerUserId: document.ownerUserId,
@@ -50,6 +51,8 @@ export async function GET(req: Request): Promise<Response> {
           occurredAt: document.provenance.occurredAt?.toISOString() ?? null,
           summary: document.provenance.summary,
         },
+        description: document.description,
+        presentation: document.presentation,
       })),
       nextCursor: result.nextCursor,
     };

@@ -68,7 +68,9 @@ afterEach(() => {
 
 describe('extractTextFromMedia', () => {
   it('sends an image content part for image/* media types', async () => {
-    const { model, calls } = makeCapturingModel('alt text from screenshot');
+    const { model, calls } = makeCapturingModel(
+      'SUGGESTED_TITLE:\nCRM export screenshot\n\nSOURCE_TEXT:\nalt text from screenshot\n\nVISUAL_DESCRIPTION:\nA screenshot of a web app.',
+    );
     const result = await extractTextFromMedia(
       {
         body: Buffer.from([0xff, 0xd8, 0xff]), // JPEG magic bytes
@@ -77,6 +79,8 @@ describe('extractTextFromMedia', () => {
       { model },
     );
     expect(result.text).toBe('alt text from screenshot');
+    expect(result.suggestedTitle).toBe('CRM export screenshot');
+    expect(result.visualDescription).toBe('A screenshot of a web app.');
     expect(calls).toHaveLength(1);
     // ai-sdk normalises image parts into `type: 'file'` with the image
     // mediaType by the time they reach the v3 model layer — both Image
@@ -164,6 +168,7 @@ describe('extractTextFromMedia', () => {
         ? sysContent
         : (sysContent as { text?: string }[]).map((c) => c.text ?? '').join('\n');
     expect(text).toMatch(/no commentary|no preamble|transcribe faithfully/i);
+    expect(text).toMatch(/SUGGESTED_TITLE/);
   });
 
   it('resolveVisionModelId uses the predefined vision model catalog entry', () => {

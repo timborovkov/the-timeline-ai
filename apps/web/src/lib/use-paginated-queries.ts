@@ -27,6 +27,7 @@ export interface DocumentListPage {
     id: string;
     fileKind: 'captured' | 'document';
     name: string;
+    metadata: Record<string, unknown>;
     visibility: string;
     updatedAt: string;
     ownerUserId: string | null;
@@ -45,6 +46,14 @@ export interface DocumentListPage {
       parentEventId: string | null;
       occurredAt: string | null;
       summary: string | null;
+    };
+    description: string | null;
+    presentation: {
+      displayTitle: string;
+      storedName: string;
+      suggestedTitle: string | null;
+      isGeneratedName: boolean;
+      fallbackTitle: string;
     };
     optimistic?: boolean;
   }[];
@@ -190,6 +199,7 @@ export function useDocumentListQuery(folderId: string | null, initialPage: Docum
           id: string;
           fileKind: 'captured' | 'document';
           name: string;
+          metadata: Record<string, unknown>;
           visibility: string;
           updatedAt: string;
           ownerUserId: string | null;
@@ -208,6 +218,14 @@ export function useDocumentListQuery(folderId: string | null, initialPage: Docum
             parentEventId: string | null;
             occurredAt: string | null;
             summary: string | null;
+          };
+          description: string | null;
+          presentation: {
+            displayTitle: string;
+            storedName: string;
+            suggestedTitle: string | null;
+            isGeneratedName: boolean;
+            fallbackTitle: string;
           };
           optimistic?: boolean;
         }[];
@@ -359,6 +377,7 @@ interface DocumentSearchHit {
   pageNumber: number | null;
   text: string;
   summary: string | null;
+  documentDisplayTitle: string;
   documentName: string;
   folderId: string | null;
   sourceRawEventId: string | null;

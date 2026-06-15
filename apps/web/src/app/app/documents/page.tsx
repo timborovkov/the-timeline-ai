@@ -85,6 +85,7 @@ export default async function DocumentsPage({ searchParams }: Props) {
           id: d.id,
           fileKind: d.fileKind,
           name: d.name,
+          metadata: d.metadata,
           visibility: d.visibility,
           updatedAt: d.updatedAt.toISOString(),
           ownerUserId: d.ownerUserId,
@@ -101,6 +102,8 @@ export default async function DocumentsPage({ searchParams }: Props) {
             occurredAt: d.provenance.occurredAt?.toISOString() ?? null,
             summary: d.provenance.summary,
           },
+          description: d.description,
+          presentation: d.presentation,
         }))}
         documentsNextCursor={documentPage.nextCursor}
       />

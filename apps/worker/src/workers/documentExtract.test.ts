@@ -73,6 +73,7 @@ async function makeHarness(
   const extractFromMedia = vi.fn((_input: { body: Buffer; mediaType: string; filename: string }) =>
     Promise.resolve({
       text: opts.visionResponse ?? 'mock vision output',
+      suggestedTitle: 'Suggested media title',
       model: opts.visionModel ?? 'openai/gpt-4o-mini',
     }),
   );
@@ -433,6 +434,36 @@ describe('processDocumentExtractJob — content-type routing', () => {
     expect(chunk.rows.some((row) => row.text.includes('whiteboard with planning notes'))).toBe(
       true,
     );
+  });
+
+  it('stores suggested titles for generated media filenames', async () => {
+    h = await makeHarness('\xff\xd8\xff image bytes');
+    h.extractFromMedia.mockResolvedValueOnce({
+      text: 'invoice total: $48.00',
+      suggestedTitle: 'Coffee receipt photo',
+      visualDescription: 'A photo of a small printed cafe receipt.',
+      model: 'openai/gpt-4o-mini',
+    });
+    const { documentId, versionId } = await createFinalisedCapturedFile(h.pg, {
+      name: 'AgACAgQAAyEFAATcv6dYAAP3aimENrbqY6kNAAEqxvEv6YGMrdExAAK5DmsbjOI.jpg',
+      contentType: 'image/jpeg',
+    });
+
+    await processDocumentExtractJob(
+      { db: h.db },
+      { documentVersionId: versionId, teamId: TEAM_ID },
+      h.io,
+    );
+
+    const row = await h.pg.query<{ metadata: Record<string, unknown> }>(
+      `SELECT metadata FROM documents WHERE id = $1`,
+      [documentId],
+    );
+    expect(row.rows[0]?.metadata).toMatchObject({
+      suggested_title: 'Coffee receipt photo',
+      suggested_title_source: 'document_extract',
+      suggested_title_model: 'openai/gpt-4o-mini',
+    });
   });
 
   it('defers oversized captured files with a metadata preview instead of failing', async () => {

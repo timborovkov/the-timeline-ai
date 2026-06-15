@@ -182,12 +182,13 @@ function StructuredData() {
       },
     ],
   };
+  const graphJson = JSON.stringify(graph)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026');
   return (
     // react-doctor-disable-next-line react-doctor/no-danger
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(graph) }}
-    />
+    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: graphJson }} />
   );
 }
 

@@ -507,6 +507,33 @@ describe('getDocumentPreviewUrlAction', () => {
     );
   });
 
+  it('signs PDF versions for inline preview', async () => {
+    fakeScope.getDocument.mockResolvedValue({
+      id: DOC_ID,
+      currentVersionId: VERSION_ID,
+      visibility: 'team',
+      ownerUserId: USER_ID,
+      visibilityUserIds: null,
+      name: 'contract.pdf',
+    });
+    fakeScope.getDocumentVersion.mockResolvedValue({
+      id: VERSION_ID,
+      documentId: DOC_ID,
+      version: 1,
+      objectKey: `${TEAM_ID}/${DOC_ID}/v1/contract.pdf`,
+      contentType: 'application/pdf',
+    });
+
+    const r = await getDocumentPreviewUrlAction({ documentId: DOC_ID });
+
+    expect(r).toMatchObject({
+      ok: true,
+      filename: 'contract.pdf',
+      contentType: 'application/pdf',
+      mediaKind: 'pdf',
+    });
+  });
+
   it('resolves numeric source metadata to the original document version', async () => {
     fakeScope.getDocument.mockResolvedValue({
       id: DOC_ID,

@@ -20,43 +20,51 @@ evidence; documents are curated workspace knowledge.
   unpromoted captured files. Captured files can appear in a dedicated triage
   view, source-event detail, search results, and agent citations.
 - Folders belong to promoted documents. Unpromoted captured files are organized
-  by source evidence and triage filters such as source, date, sender, file type,
-  processing status, and promotion state.
+  by source evidence and the current Captured inbox filters: source, date, file
+  type, and processing status. Sender filters, bulk triage, and promotion-state
+  filters remain follow-ups.
 - Promotion is identity-preserving: the original captured file becomes visible
   and manageable as a document without copying its blob or losing its source
   evidence link. The original capture can become version 1; later uploads can
   extend the document's version history. Source capture time remains
   provenance; document-drive activity uses promotion, version, and document
   update times.
-- Unpromoted captured files follow source deletion. Promoted documents can
-  remain active after the source event is tombstoned, while preserving
-  tombstoned provenance.
+- Unpromoted captured files only surface provenance for source events that are
+  still visible and active. Promoted documents can remain active after source
+  evidence is tombstoned, while preserving the stored source metadata as
+  provenance.
 - Extracted representations are typed. Source text, transcript text, visual
   description, and metadata preview are distinct queryable representations, so
   generated descriptions are not quoted as literal source text.
+- Suggested titles for captured or generated filenames are UI metadata stored
+  on `documents.metadata.suggested_title`. They are not canonical source
+  filenames and must not overwrite `documents.name` unless a user explicitly
+  renames or promotes with that title.
 - Visual files need both faithful text extraction when available and semantic
-  visual description when useful. Processing depth follows intent: curated
-  documents can justify full indexing, while unpromoted conversational captures
-  start with cheaper preview processing unless promoted, targeted, or explicitly
-  inspected. Persisted visual descriptions should be neutral observations about
-  what is visible; business interpretation belongs in answers or suggestions.
+  visual description when useful. Current processing fully extracts normal
+  image/PDF captures and defers only oversized captured files; future processing
+  can tune depth by intent so lightweight previews are enough until promotion,
+  targeted inspection, or explicit user intent warrants deeper analysis.
+  Persisted visual descriptions should be neutral observations about what is
+  visible; business interpretation belongs in answers or suggestions.
 - Budget deferral is normal product state, not processing failure. Deferred
   files keep lightweight metadata or preview context so they remain findable.
-- Voice memos are timeline evidence. Native voice-message surfaces and
-  intentional manual audio uploads are transcribed by default; ambiguous shared
-  audio can defer deeper processing.
+- Voice memos are timeline evidence. Native voice-message surfaces from
+  Telegram and Slack are transcribed by default. Manual document uploads do not
+  currently transcribe audio through document extraction; ambiguous shared audio
+  can defer deeper processing.
 - Timeline-oriented agent questions include source-evidence representations by
   default. Curated documents are reference knowledge and are searched when the
   question calls for document context.
 - Extraction enriches source evidence. It does not create separate timeline
   activity unless a person takes an explicit workspace action such as promotion,
   deletion, or visibility change.
-- Timeline lists show compact signals for transcripts, OCR, and visual
-  descriptions. Full extracted representations belong in event detail,
-  citations, and agent tools.
-- Users with normal edit rights can add representation corrections. Corrections
-  are layered over model output, audited, and preferred for search/agent use;
-  they do not mutate the source file or require the workspace approval queue.
+- Timeline lists show compact attachment and preview signals today. Richer
+  transcript/OCR/visual-description indicators remain follow-up UI work; full
+  extracted representations belong in event detail, citations, and agent tools.
+- Representation corrections are planned as layered, audited user edits over
+  model output. They should not mutate the source file or require the workspace
+  approval queue.
 - Agents should have a targeted file-inspection tool for asking narrow
   questions about a known captured file or document version. Precomputed
   representations support recall; targeted inspection supports precision.
@@ -77,6 +85,11 @@ evidence; documents are curated workspace knowledge.
   metadata preview instead of failed.
 - The document drive defaults to curated documents and folders, with a captured
   files triage surface for source evidence and promotion.
+- The Documents product surface is now two related workspaces: the default
+  knowledge library for curated uploads, and the Captured inbox for Telegram,
+  Slack, and other event-backed attachments. Captured rows show suggested
+  titles, source/type/status/date filters, preview affordances, event links,
+  and an explicit promotion flow.
 - Timeline-oriented retrieval includes captured-file evidence, while document
   search remains scoped to curated documents.
 
@@ -86,8 +99,9 @@ evidence; documents are curated workspace knowledge.
   run a targeted second-pass vision inspection on a specific original file.
 - Representation corrections are still planned as layered, audited edits over
   model output.
-- Captured-file triage can grow richer source/date/type/status filters beyond
-  the first-pass list and promotion path.
+- Captured-file triage can grow sender filters, bulk actions, and deeper
+  targeted inspection beyond the current source/date/type/status filters and
+  promotion path.
 
 ## Implementation Shape
 
@@ -106,6 +120,9 @@ stable.
   representations, using budget deferral where appropriate.
 - The document drive defaults to curated documents and folders only, with
   captured files available through a separate triage/source-evidence surface.
+- Display titles use a stable precedence everywhere: human `documents.name`,
+  then `metadata.suggested_title` for generated names, then a generic
+  attachment fallback such as "Image attachment" or "PDF attachment".
 - Agent retrieval includes source-evidence representations for timeline
   questions and curated documents for document/reference questions.
 - Existing "everything is a document" assumptions are removed rather than kept

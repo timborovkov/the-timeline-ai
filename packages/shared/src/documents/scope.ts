@@ -10,6 +10,7 @@ import {
 import { type SQL, and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
+import { documentPresentation } from '#src/documents/presentation.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
 import { getQdrantClient, type SearchHit, type SearchOpts } from '#src/qdrant/client.js';
@@ -117,9 +118,18 @@ export interface DocumentListEntry extends DocumentRow {
     summary: string | null;
     metadata: Record<string, unknown>;
   };
+  description: string | null;
+  presentation: {
+    displayTitle: string;
+    storedName: string;
+    suggestedTitle: string | null;
+    isGeneratedName: boolean;
+    fallbackTitle: string;
+  };
 }
 
 export interface DocumentListArgs {
+  documentId?: string;
   folderId?: string | null;
   includeDeleted?: boolean;
   fileKind?: FileKind;
@@ -240,6 +250,7 @@ export interface DocumentChunkSearchHit {
   pageNumber: number | null;
   text: string;
   summary: string | null;
+  documentDisplayTitle: string;
   documentName: string;
   folderId: string | null;
   sourceRawEventId: string | null;
@@ -457,7 +468,9 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     const conditions: SQL[] = [eq(documents.teamId, teamId), eq(documents.fileKind, fileKind)];
     if (documentVisibility) conditions.push(documentVisibility);
     if (!args.includeDeleted) conditions.push(isNull(documents.deletedAt));
-    if (fileKind === 'document') {
+    if (args.documentId) {
+      conditions.push(eq(documents.id, args.documentId));
+    } else if (fileKind === 'document') {
       if (args.folderId === null || args.folderId === undefined) {
         conditions.push(isNull(documents.folderId));
       } else {
@@ -585,6 +598,9 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
             ).map((event) => event.id),
           )
         : new Set<string>();
+    const descriptionByVersionId = await listDocumentVersionChunkPreviewsRaw(
+      mapped.map((row) => row.version?.id).filter((id): id is string => Boolean(id)),
+    );
     return mapped.map((row) => {
       const parentEventId =
         row.provenance.parentEventCandidate &&
@@ -596,6 +612,13 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       return {
         ...row.document,
         currentVersion: row.version,
+        description: row.version ? (descriptionByVersionId.get(row.version.id) ?? null) : null,
+        presentation: documentPresentation({
+          name: row.document.name,
+          contentType: row.version?.contentType ?? null,
+          metadata: row.document.metadata,
+          fileKind: row.document.fileKind,
+        }),
         provenance: {
           source: row.provenance.source,
           sourceEventId: row.provenance.sourceEventId,
@@ -606,6 +629,45 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         },
       };
     });
+  }
+
+  async function listDocumentVersionChunkPreviewsRaw(
+    versionIds: string[],
+  ): Promise<Map<string, string>> {
+    if (versionIds.length === 0) return new Map();
+    const rows = await db
+      .select({
+        versionId: documentChunks.documentVersionId,
+        representationKind: documentChunks.representationKind,
+        text: documentChunks.text,
+        summary: documentChunks.summary,
+        chunkIndex: documentChunks.chunkIndex,
+      })
+      .from(documentChunks)
+      .innerJoin(documents, eq(documents.id, documentChunks.documentId))
+      .where(
+        and(
+          eq(documentChunks.teamId, teamId),
+          inArray(documentChunks.documentVersionId, versionIds),
+          documentVisibility,
+          isNull(documents.deletedAt),
+        ),
+      )
+      .orderBy(asc(documentChunks.documentVersionId), asc(documentChunks.chunkIndex));
+    const byVersion = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const existing = byVersion.get(row.versionId);
+      if (existing) existing.push(row);
+      else byVersion.set(row.versionId, [row]);
+    }
+    const previews = new Map<string, string>();
+    for (const [versionId, versionRows] of byVersion) {
+      const visual = versionRows.find((row) => row.representationKind === 'visual_description');
+      const first = visual ?? versionRows[0];
+      const text = (first?.summary ?? first?.text ?? '').trim().replace(/\s+/g, ' ');
+      if (text) previews.set(versionId, text.slice(0, 260));
+    }
+    return previews;
   }
 
   function stringMetadata(record: Record<string, unknown>, key: string): string | null {
@@ -664,8 +726,10 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         text: documentChunks.text,
         summary: documentChunks.summary,
         version: documentVersions.version,
+        contentType: documentVersions.contentType,
         fileKind: documents.fileKind,
         documentName: documents.name,
+        documentMetadata: documents.metadata,
         folderId: documents.folderId,
         sourceRawEventId: documents.sourceRawEventId,
         createdAt: documentVersions.createdAt,
@@ -716,6 +780,12 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         pageNumber: row.pageNumber,
         text: row.text,
         summary: row.summary,
+        documentDisplayTitle: documentPresentation({
+          name: row.documentName,
+          contentType: row.contentType,
+          metadata: metadataRecord(row.documentMetadata),
+          fileKind: row.fileKind,
+        }).displayTitle,
         documentName: row.documentName,
         folderId: row.folderId,
         sourceRawEventId: row.sourceRawEventId,
@@ -891,8 +961,10 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
     async listDocumentsWithProvenancePage(
       args: {
+        documentId?: string;
         folderId?: string | null;
         includeDeleted?: boolean;
+        fileKind?: FileKind;
         limit?: number;
         cursor?: string | null;
       } = {},
@@ -1154,6 +1226,44 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         .where(eq(documentVersions.documentId, document.id))
         .orderBy(desc(documentVersions.version));
       return rows;
+    },
+
+    async listDocumentVersionChunks(versionId: string): Promise<DocumentChunkRow[]> {
+      await ensureMember();
+      if (!UUID_RE.test(versionId)) return [];
+      const rows = await db
+        .select({
+          id: documentChunks.id,
+          teamId: documentChunks.teamId,
+          documentId: documentChunks.documentId,
+          documentVersionId: documentChunks.documentVersionId,
+          chunkIndex: documentChunks.chunkIndex,
+          representationKind: documentChunks.representationKind,
+          text: documentChunks.text,
+          tokenCount: documentChunks.tokenCount,
+          pageNumber: documentChunks.pageNumber,
+          summary: documentChunks.summary,
+          createdAt: documentChunks.createdAt,
+        })
+        .from(documentChunks)
+        .innerJoin(documents, eq(documents.id, documentChunks.documentId))
+        .where(
+          and(
+            eq(documentChunks.documentVersionId, versionId),
+            eq(documentChunks.teamId, teamId),
+            documentVisibility,
+            isNull(documents.deletedAt),
+          ),
+        )
+        .orderBy(asc(documentChunks.chunkIndex));
+      return rows;
+    },
+
+    async listDocumentVersionChunkPreviews(versionIds: string[]): Promise<Record<string, string>> {
+      await ensureMember();
+      const uniqueIds = [...new Set(versionIds.filter((id) => UUID_RE.test(id)))];
+      const previews = await listDocumentVersionChunkPreviewsRaw(uniqueIds);
+      return Object.fromEntries(previews);
     },
 
     /**

@@ -26,7 +26,9 @@ export async function GET(req: Request): Promise<Response> {
         id: file.id,
         fileKind: file.fileKind,
         name: file.name,
+        metadata: file.metadata,
         visibility: file.visibility,
+        visibilityUserIds: file.visibilityUserIds,
         updatedAt: file.updatedAt.toISOString(),
         ownerUserId: file.ownerUserId,
         sourceRawEventId: file.sourceRawEventId,
@@ -43,6 +45,8 @@ export async function GET(req: Request): Promise<Response> {
           occurredAt: file.provenance.occurredAt?.toISOString() ?? null,
           summary: file.provenance.summary,
         },
+        description: file.description,
+        presentation: file.presentation,
       })),
       nextCursor: result.nextCursor,
     };

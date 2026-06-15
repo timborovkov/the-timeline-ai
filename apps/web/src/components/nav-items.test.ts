@@ -10,6 +10,7 @@ describe('nav items', () => {
       'Timeline',
       'Ask',
       'Work',
+      'Documents',
       'Sources',
       'Team',
     ]);
